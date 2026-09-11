@@ -1,0 +1,61 @@
+name: macOS helpers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "helpers/macos/TermxCapture/**"
+      - "helpers/macos/TermxVirtualDisplay/**"
+      - "helpers/macos/ci-build.sh"
+      - ".github/workflows/macos-helpers.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: macos-helpers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcode-select -p
+          swift --version
+
+      - name: Build helpers
+        run: |
+          chmod +x helpers/macos/ci-build.sh
+          helpers/macos/ci-build.sh
+
+      - name: Upload unsigned binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: termx-macos-helpers
+          path: |
+            helpers/macos/bin/termx-capture
+            helpers/macos/bin/termx-virtual-display
+          if-no-files-found: error
+
+      - name: Commit binaries to main
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add helpers/macos/bin/termx-capture helpers/macos/bin/termx-virtual-display
+          if git diff --cached --quiet; then
+            echo "No binary changes"
+            exit 0
+          fi
+          git commit -m "chore: refresh macOS helper binaries"
+          git pull --rebase origin main
+          git push origin HEAD:main

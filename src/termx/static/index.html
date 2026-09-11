@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Termx</title>
+  <link rel="stylesheet" href="/_/vendor/xterm.css">
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: #000; color: #e8e8e8; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+    header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #111; border-bottom: 1px solid #222; min-height: 44px; }
+    #tabs { display: flex; gap: 4px; overflow-x: auto; flex: 1; scrollbar-width: none; }
+    #tabs::-webkit-scrollbar { display: none; }
+    .tab, .icon-btn, .key {
+      appearance: none; border: 0; background: #1c1c1c; color: #ddd; border-radius: 6px;
+      font: inherit; font-size: 12px; padding: 8px 10px; min-height: 36px;
+    }
+    .tab.active { background: #2a2a2a; color: #9dffb0; }
+    .icon-btn { min-width: 36px; font-size: 16px; }
+    #term { flex: 1; min-height: 0; padding: 4px; position: relative; width: 100%; cursor: text; overflow: hidden; z-index: 0; }
+    #term .xterm, #term .xterm-viewport { height: 100%; width: 100%; }
+    #keys {
+      position: relative;
+      z-index: 50;
+      flex-shrink: 0;
+      background: #161616;
+      border-top: 1px solid #222;
+      padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    }
+    .key-row { display: flex; gap: 4px; margin-bottom: 4px; }
+    .key-row:last-child { margin-bottom: 0; }
+    #keys button {
+      flex: 1;
+      min-width: 0;
+      min-height: 40px;
+      appearance: none;
+      border: 0;
+      border-radius: 6px;
+      background: #1c1c1c;
+      color: #ddd;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #keys button.mod { background: #2a3340; }
+    #keys button.on { background: #3d6d4f; color: #fff; }
+    #gate { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    #gate.hidden { display: none !important; pointer-events: none; }
+    .card { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; }
+    .card h1 { margin: 0; font-size: 22px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .card p { margin: 0; color: #888; font-size: 13px; }
+    input { background: #111; border: 1px solid #333; color: #fff; border-radius: 8px; padding: 12px; font: inherit; }
+    .primary { background: #9dffb0; color: #000; font-weight: 700; }
+    .err { color: #ff8a8a; min-height: 1.2em; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="gate">
+    <form class="card" id="connect">
+      <h1>Termx</h1>
+      <p>Optional passcode, then open a shell on this machine.</p>
+      <input id="pass" type="password" placeholder="Passcode (optional)" autocomplete="off">
+      <button class="key primary" type="submit">Connect</button>
+      <div class="err" id="err"></div>
+    </form>
+  </div>
+  <header>
+    <div id="tabs"></div>
+    <button class="icon-btn" id="new" type="button" aria-label="New session">+</button>
+    <button class="icon-btn" id="kill" type="button" aria-label="Kill session">×</button>
+  </header>
+  <div id="term"></div>
+  <div id="keys">
+    <div class="key-row">
+      <button type="button" data-key="ESC">ESC</button>
+      <button type="button" data-key="TAB">TAB</button>
+      <button type="button" data-key="CTRL" class="mod">CTRL</button>
+      <button type="button" data-key="ALT" class="mod">ALT</button>
+      <button type="button" data-key="INT">^C</button>
+      <button type="button" data-key="BKSP">BKSP</button>
+    </div>
+    <div class="key-row">
+      <button type="button" data-key="HOME">HOME</button>
+      <button type="button" data-key="UP">UP</button>
+      <button type="button" data-key="END">END</button>
+      <button type="button" data-key="PGUP">PGUP</button>
+      <button type="button" data-key="LEFT">LEFT</button>
+      <button type="button" data-key="DOWN">DOWN</button>
+      <button type="button" data-key="RIGHT">RIGHT</button>
+      <button type="button" data-key="PGDN">PGDN</button>
+    </div>
+    <div class="key-row">
+      <button type="button" data-key="CLR">CLR</button>
+      <button type="button" data-key="/">/</button>
+      <button type="button" data-key="-">-</button>
+    </div>
+  </div>
+  <script src="/_/vendor/xterm.js"></script>
+  <script src="/_/vendor/addon-fit.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const passInput = document.getElementById("pass");
+    if (params.get("k")) passInput.value = params.get("k");
+    const headers = () => {
+      const k = passInput.value;
+      return k ? { "X-Termx-Passcode": k, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+    };
+    const api = (path, opts = {}) => fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+
+    let sessions = [];
+    let active = null;
+    let ws = null;
+    let ctrlOn = false;
+    let altOn = false;
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      theme: { background: "#000000", foreground: "#e8e8e8", cursor: "#9dffb0" },
+      scrollback: 4000,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById("term"));
+    document.getElementById("term").addEventListener("mousedown", () => term.focus());
+
+    const pendingInput = [];
+    function sendInput(data) {
+      if (data == null || data === "") return;
+      if (!ws || ws.readyState !== 1) {
+        pendingInput.push(data);
+        return;
+      }
+      ws.send(JSON.stringify({ type: "input", data }));
+    }
+    term.onData((d) => {
+      if (ctrlOn && d.length === 1) {
+        const c = d.toLowerCase().charCodeAt(0);
+        if (c >= 97 && c <= 122) d = String.fromCharCode(c - 96);
+        ctrlOn = false;
+        syncMods();
+      }
+      if (altOn) {
+        d = "\x1b" + d;
+        altOn = false;
+        syncMods();
+      }
+      sendInput(d);
+    });
+
+    function renderTabs() {
+      const el = document.getElementById("tabs");
+      el.innerHTML = "";
+      sessions.forEach((s) => {
+        const b = document.createElement("button");
+        b.className = "tab" + (s.id === active ? " active" : "");
+        b.textContent = s.title;
+        b.onclick = () => attach(s.id);
+        el.appendChild(b);
+      });
+    }
+
+    const SEQ = {
+      ESC: "\x1b", TAB: "\t", "/": "/", "-": "-",
+      UP: "\x1b[A", DOWN: "\x1b[B", RIGHT: "\x1b[C", LEFT: "\x1b[D",
+      HOME: "\x1b[H", END: "\x1b[F", PGUP: "\x1b[5~", PGDN: "\x1b[6~",
+      BKSP: "\x7f", INT: "\x03", CLR: "\x15",
+    };
+    let holdTimer = null;
+    let holdNext = null;
+    function stopHold() {
+      if (holdTimer) clearTimeout(holdTimer);
+      if (holdNext) clearTimeout(holdNext);
+      holdTimer = null;
+      holdNext = null;
+    }
+    function sendSignal(name) {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "signal", name }));
+    }
+    function syncMods() {
+      document.querySelectorAll("#keys [data-key]").forEach((b) => {
+        const name = b.getAttribute("data-key");
+        b.classList.toggle("on", (name === "CTRL" && ctrlOn) || (name === "ALT" && altOn));
+      });
+    }
+    function applyExtraKey(name) {
+      if (name === "CTRL") {
+        ctrlOn = !ctrlOn;
+        syncMods();
+        return;
+      }
+      if (name === "ALT") {
+        altOn = !altOn;
+        syncMods();
+        return;
+      }
+      if (name === "INT") {
+        sendSignal("int");
+        sendInput("\x03");
+        term.focus();
+        return;
+      }
+      let seq = SEQ[name] || name;
+      if (ctrlOn) {
+        if (seq.length === 1) {
+          const c = seq.toLowerCase().charCodeAt(0);
+          if (c >= 97 && c <= 122) seq = String.fromCharCode(c - 96);
+        }
+        ctrlOn = false;
+        syncMods();
+      }
+      if (altOn) {
+        seq = "\x1b" + seq;
+        altOn = false;
+        syncMods();
+      }
+      sendInput(seq);
+      term.focus();
+    }
+    document.getElementById("keys").addEventListener("pointerdown", (e) => {
+      const btn = e.target.closest("[data-key]");
+      if (!btn) return;
+      e.preventDefault();
+      const name = btn.getAttribute("data-key");
+      stopHold();
+      applyExtraKey(name);
+      if (name !== "BKSP") return;
+      const tick = (ms) => {
+        holdNext = setTimeout(() => {
+          sendInput("\x7f");
+          tick(Math.max(32, ms * 0.85));
+        }, ms);
+      };
+      holdTimer = setTimeout(() => tick(80), 400);
+    });
+    document.getElementById("keys").addEventListener("pointerup", stopHold);
+    document.getElementById("keys").addEventListener("pointercancel", stopHold);
+    document.getElementById("keys").addEventListener("pointerleave", stopHold);
+
+    function wsUrl(id) {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const k = passInput.value ? `?k=${encodeURIComponent(passInput.value)}` : "";
+      return `${proto}//${location.host}/api/sessions/${id}/pty${k}`;
+    }
+
+    let connSeq = 0;
+    let pingTimer = null;
+    function attach(id) {
+      const seq = ++connSeq;
+      active = id;
+      renderTabs();
+      if (ws) {
+        ws.onclose = null;
+        ws.onmessage = null;
+        try { ws.close(); } catch {}
+      }
+      term.reset();
+      ws = new WebSocket(wsUrl(id));
+      ws.binaryType = "arraybuffer";
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === "string") {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === "exit") refresh();
+          } catch {}
+          return;
+        }
+        term.write(new Uint8Array(ev.data));
+      };
+      ws.onopen = () => {
+        pendingInput.splice(0).forEach((chunk) => sendInput(chunk));
+        resize();
+        term.focus();
+      };
+      ws.onclose = () => {
+        if (seq !== connSeq || active !== id) return;
+        setTimeout(() => {
+          if (seq === connSeq && active === id) attach(id);
+        }, 400);
+      };
+      if (pingTimer) clearInterval(pingTimer);
+      pingTimer = setInterval(() => {
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" }));
+      }, 15000);
+    }
+    function resumeIfNeeded() {
+      if (!active) return;
+      if (!ws || ws.readyState === 2 || ws.readyState === 3) attach(active);
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") resumeIfNeeded();
+    });
+    window.addEventListener("focus", resumeIfNeeded);
+
+    function resize() {
+      try { fit.fit(); } catch {}
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    }
+    window.addEventListener("resize", resize);
+    new ResizeObserver(resize).observe(document.getElementById("term"));
+
+    async function refresh() {
+      const res = await api("/api/sessions");
+      if (!res.ok) throw new Error(res.status === 401 ? "Wrong passcode" : "Could not list sessions");
+      const data = await res.json();
+      sessions = data.sessions;
+      if (!sessions.length) {
+        const created = await (await api("/api/sessions", { method: "POST", body: JSON.stringify({ cols: term.cols, rows: term.rows }) })).json();
+        sessions = [created];
+      }
+      renderTabs();
+      const still = sessions.find((s) => s.id === active);
+      attach(still ? still.id : sessions[0].id);
+    }
+
+    document.getElementById("new").onclick = async () => {
+      const created = await (await api("/api/sessions", { method: "POST", body: JSON.stringify({ cols: term.cols, rows: term.rows }) })).json();
+      sessions.push(created);
+      attach(created.id);
+    };
+    document.getElementById("kill").onclick = async () => {
+      if (!active) return;
+      await api("/api/sessions/" + active, { method: "DELETE" });
+      active = null;
+      await refresh();
+    };
+
+    document.getElementById("connect").onsubmit = async (e) => {
+      e.preventDefault();
+      document.getElementById("err").textContent = "";
+      try {
+        const health = await (await api("/api/health")).json();
+        if (health.passcode_required && !passInput.value) {
+          document.getElementById("err").textContent = "Passcode required";
+          return;
+        }
+        await refresh();
+        document.getElementById("gate").classList.add("hidden");
+        requestAnimationFrame(() => {
+          resize();
+          term.focus();
+        });
+      } catch (err) {
+        document.getElementById("err").textContent = err.message || String(err);
+      }
+    };
+
+    (async () => {
+      try {
+        const health = await (await fetch("/api/health")).json();
+        if (!health.passcode_required) {
+          document.getElementById("connect").requestSubmit();
+        }
+      } catch {}
+    })();
+  </script>
+</body>
+</html>

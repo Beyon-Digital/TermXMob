@@ -1,0 +1,9 @@
+CI writes `termx-capture` and `termx-virtual-display` here.
+
+Sign locally (Command Line Tools, no Xcode):
+
+```bash
+cp helpers/macos/signing/signing.env.example helpers/macos/signing/signing.env
+# edit identity / p12
+helpers/macos/sign.sh
+```

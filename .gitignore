@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Node / Expo
+node_modules/
+.expo/
+app/dist/
+app/.expo/
+package-lock.json
+.DS_Store
+
+# Swift helper build trees
+helpers/macos/TermxCapture/.build/
+helpers/macos/TermxVirtualDisplay/.build/
+
+# Local codesign identity, p12, and persisted keychain
+helpers/macos/signing/signing.env
+helpers/macos/signing/*.p12
+helpers/macos/signing/*.keychain-db
+helpers/macos/signing/*.keychain-db-db
+helpers/macos/signing/*.keychain-db-old

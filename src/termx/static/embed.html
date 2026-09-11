@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <link rel="stylesheet" href="/_/vendor/xterm.css">
+  <style>
+    html, body, #t { margin: 0; height: 100%; width: 100%; background: #000; overflow: hidden; }
+    .xterm, .xterm-viewport { height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="t"></div>
+  <script src="/_/vendor/xterm.js"></script>
+  <script src="/_/vendor/addon-fit.js"></script>
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      theme: { background: "#000000", foreground: "#e8e8e8", cursor: "#9dffb0" },
+      scrollback: 4000,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById("t"));
+    function send(msg) {
+      const payload = JSON.stringify(msg);
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(payload);
+    }
+    function handle(raw) {
+      let msg = raw;
+      if (typeof raw === "string") {
+        try { msg = JSON.parse(raw); } catch { return; }
+      }
+      if (!msg || typeof msg !== "object") return;
+      if (msg.type === "write") term.write(msg.data);
+      if (msg.type === "bin" && msg.data) {
+        const bin = Uint8Array.from(atob(msg.data), (c) => c.charCodeAt(0));
+        term.write(bin);
+      }
+      if (msg.type === "reset") term.reset();
+      if (msg.type === "theme" && msg.theme) {
+        term.options.theme = msg.theme;
+        if (msg.theme.background) {
+          document.documentElement.style.background = msg.theme.background;
+          document.body.style.background = msg.theme.background;
+        }
+      }
+      if (msg.type === "fit") {
+        fit.fit();
+        send({ type: "resize", cols: term.cols, rows: term.rows });
+      }
+    }
+    term.onData((data) => send({ type: "input", data }));
+    window.addEventListener("message", (e) => handle(e.data));
+    document.addEventListener("message", (e) => handle(e.data));
+    window.addEventListener("resize", () => {
+      fit.fit();
+      send({ type: "resize", cols: term.cols, rows: term.rows });
+    });
+    setTimeout(() => {
+      fit.fit();
+      send({ type: "ready", cols: term.cols, rows: term.rows });
+    }, 40);
+  </script>
+</body>
+</html>

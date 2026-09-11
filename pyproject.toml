@@ -1,0 +1,31 @@
+[project]
+name = "termx"
+version = "0.1.0"
+description = "Host interactive terminal sessions and connect from your phone or browser."
+readme = "README.md"
+authors = [
+    { name = "Jainam", email = "49641518+Psyborgs-git@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "qrcode>=8.2",
+    "uvicorn[standard]>=0.52.4",
+    "websockets>=17.1",
+]
+
+[project.scripts]
+termx = "termx:main"
+
+[build-system]
+requires = ["uv_build>=0.11.14,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

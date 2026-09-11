@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from typing import Any
+
+from termx.desktop.capabilities import probe_desktop
+
+
+class InputError(RuntimeError):
+    pass
+
+
+def clipboard_get() -> str:
+    cmd = _clipboard_read_cmd()
+    if not cmd:
+        return ""
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        return result.stdout or ""
+    except Exception:
+        return ""
+
+
+def clipboard_set(text: str) -> None:
+    cmd = _clipboard_write_cmd()
+    if not cmd:
+        return
+    try:
+        subprocess.run(cmd, input=text or "", capture_output=True, text=True, check=False)
+    except Exception:
+        return
+
+
+def _clipboard_read_cmd() -> list[str] | None:
+    if sys.platform == "darwin" and shutil.which("pbpaste"):
+        return ["pbpaste"]
+    if shutil.which("wl-paste"):
+        return ["wl-paste", "-n"]
+    if shutil.which("xclip"):
+        return ["xclip", "-selection", "clipboard", "-o"]
+    return None
+
+
+def _clipboard_write_cmd() -> list[str] | None:
+    if sys.platform == "darwin" and shutil.which("pbcopy"):
+        return ["pbcopy"]
+    if shutil.which("wl-copy"):
+        return ["wl-copy"]
+    if shutil.which("xclip"):
+        return ["xclip", "-selection", "clipboard", "-i"]
+    return None
+
+
+def apply_event(event: dict[str, Any]) -> None:
+    kind = event.get("type")
+    if kind == "release_all":
+        return
+    if kind == "pointer":
+        _pointer(event)
+        return
+    if kind == "key":
+        _key(event)
+        return
+    if kind == "text":
+        _text(str(event.get("data") or ""))
+
+
+def _pointer(event: dict[str, Any]) -> None:
+    x = float(event.get("x") or 0)
+    y = float(event.get("y") or 0)
+    action = str(event.get("action") or "move")
+    button = int(event.get("button") or 1)
+    probe = probe_desktop()
+    if probe.input_backend == "cgevent" and sys.platform == "darwin":
+        _mac_pointer(x, y, action, button)
+        return
+    if probe.input_backend == "xdotool":
+        px = int(x) if x > 1 else None
+        py = int(y) if y > 1 else None
+        if px is None or py is None:
+            geom = subprocess.run(["xdotool", "getdisplaygeometry"], capture_output=True, text=True, check=False)
+            parts = (geom.stdout or "1920 1080").split()
+            width = int(parts[0]) if parts else 1920
+            height = int(parts[1]) if len(parts) > 1 else 1080
+            px = int(max(0.0, min(1.0, x)) * (width - 1))
+            py = int(max(0.0, min(1.0, y)) * (height - 1))
+        if action == "move":
+            subprocess.run(["xdotool", "mousemove", str(px), str(py)], check=False)
+        elif action == "down":
+            subprocess.run(["xdotool", "mousemove", str(px), str(py), "mousedown", str(button)], check=False)
+        elif action == "up":
+            subprocess.run(["xdotool", "mouseup", str(button)], check=False)
+        elif action == "click":
+            subprocess.run(["xdotool", "mousemove", str(px), str(py), "click", str(button)], check=False)
+        elif action == "wheel":
+            dy = int(event.get("dy") or 0)
+            key = "4" if dy < 0 else "5"
+            subprocess.run(["xdotool", "click", key], check=False)
+        return
+    raise InputError("pointer input is not available")
+
+
+def _key(event: dict[str, Any]) -> None:
+    key = str(event.get("key") or "")
+    action = str(event.get("action") or "down")
+    if not key:
+        return
+    probe = probe_desktop()
+    if probe.input_backend == "xdotool":
+        cmd = "keydown" if action == "down" else "keyup"
+        if action == "tap":
+            subprocess.run(["xdotool", "key", key], check=False)
+            return
+        subprocess.run(["xdotool", cmd, key], check=False)
+        return
+    if probe.input_backend == "cgevent" and action in {"tap", "down"}:
+        _mac_key(key)
+        return
+
+
+def _text(data: str) -> None:
+    if not data:
+        return
+    probe = probe_desktop()
+    if probe.input_backend == "xdotool":
+        subprocess.run(["xdotool", "type", "--", data], check=False)
+        return
+    if probe.input_backend == "cgevent":
+        for char in data:
+            _mac_key(char)
+
+
+def _mac_pointer(x: float, y: float, action: str, button: int) -> None:
+    script = f"""
+    set x to {max(0.0, x) if x > 1 else 0}
+    set y to {max(0.0, y) if y > 1 else 0}
+    """
+    if x <= 1 and y <= 1:
+        script = f"""
+        tell application "Finder" to set {{w, h}} to bounds of window of desktop
+        set x to {max(0.0, min(1.0, x))} * (item 3 of ({{w, h}} & {{1440, 900}}))
+        set y to {max(0.0, min(1.0, y))} * (item 4 of ({{w, h}} & {{1440, 900}}))
+        """
+    if shutil.which("cliclick"):
+        px = str(int(x)) if x > 1 else None
+        py = str(int(y)) if y > 1 else None
+        if px and py:
+            if action in {"move"}:
+                subprocess.run(["cliclick", f"m:{px},{py}"], check=False)
+            elif action in {"down", "click"}:
+                subprocess.run(["cliclick", f"c:{px},{py}"], check=False)
+            elif action == "up":
+                subprocess.run(["cliclick", f"mu:{button}"], check=False)
+            return
+    _cg_pointer(x, y, action, button)
+
+
+def _cg_pointer(x: float, y: float, action: str, button: int) -> None:
+    try:
+        import ctypes
+        import ctypes.util
+
+        path = ctypes.util.find_library("CoreGraphics") or "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        cg = ctypes.CDLL(path)
+        if x <= 1 and y <= 1:
+            width = cg.CGDisplayPixelsWide(cg.CGMainDisplayID())
+            height = cg.CGDisplayPixelsHigh(cg.CGMainDisplayID())
+            x = max(0.0, min(1.0, x)) * max(width - 1, 1)
+            y = max(0.0, min(1.0, y)) * max(height - 1, 1)
+
+        class CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        point = CGPoint(x, y)
+        move, down, up = 5, 1, 2
+        if button == 2:
+            down, up = 3, 4
+        event_type = {"move": move, "down": down, "up": up, "click": down}.get(action, move)
+        cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        event = cg.CGEventCreateMouseEvent(None, event_type, point, max(0, button - 1))
+        if event:
+            cg.CGEventPost(0, event)
+            if action == "click":
+                up_event = cg.CGEventCreateMouseEvent(None, up, point, max(0, button - 1))
+                if up_event:
+                    cg.CGEventPost(0, up_event)
+    except Exception as exc:
+        raise InputError(f"macOS pointer event failed: {exc}") from exc
+
+
+def _mac_key(key: str) -> None:
+    if shutil.which("osascript") and len(key) == 1 and key.isalnum():
+        subprocess.run(
+            ["osascript", "-e", f'tell application "System Events" to keystroke "{key}"'],
+            check=False,
+            capture_output=True,
+        )
+        return
+    mapping = {
+        "Return": 36,
+        "Enter": 36,
+        "Escape": 53,
+        "Tab": 48,
+        "Backspace": 51,
+        " ": 49,
+    }
+    code = mapping.get(key)
+    if code is None and len(key) == 1:
+        return
+    try:
+        import ctypes
+        import ctypes.util
+
+        path = ctypes.util.find_library("CoreGraphics") or "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        cg = ctypes.CDLL(path)
+        cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        down = cg.CGEventCreateKeyboardEvent(None, code or 0, True)
+        up = cg.CGEventCreateKeyboardEvent(None, code or 0, False)
+        if down:
+            cg.CGEventPost(0, down)
+        if up:
+            cg.CGEventPost(0, up)
+    except Exception:
+        pass
