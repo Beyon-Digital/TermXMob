@@ -2,6 +2,7 @@ export type TerminalHandle = {
   write: (data: string | Uint8Array) => void;
   reset: () => void;
   fit: () => void;
+  blur: () => void;
 };
 
 export type TerminalViewProps = {

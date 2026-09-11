@@ -12,6 +12,7 @@ type Props = {
   onMode: (mode: WorkspaceMode) => void;
   onCommands: () => void;
   onDefaults: () => void;
+  onFolders: () => void;
   onTunnel: () => void;
   onSettings: () => void;
   onMachines: () => void;
@@ -25,6 +26,7 @@ export function WorkspaceChrome({
   onMode,
   onCommands,
   onDefaults,
+  onFolders,
   onTunnel,
   onSettings,
   onMachines,
@@ -70,7 +72,8 @@ export function WorkspaceChrome({
       </View>
       <View style={styles.actions}>
         <Action label="Commands" color={ui.text} bg={ui.surfaceAlt} onPress={onCommands} />
-        <Action label="Defaults" color={ui.text} bg={ui.surfaceAlt} onPress={onDefaults} />
+        <Action label="Shell" color={ui.text} bg={ui.surfaceAlt} onPress={onDefaults} />
+        <Action label="Folders" color={ui.text} bg={ui.surfaceAlt} onPress={onFolders} />
         <Action
           label={tunnelOn ? "Tunnel on" : "Tunnel"}
           accessibilityLabel="Tunnel"

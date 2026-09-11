@@ -1,12 +1,12 @@
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BottomSheetModalProvider } from "@expo/ui/community/bottom-sheet";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CommandsSheet } from "@/components/commands-sheet";
 import { DefaultsSheet } from "@/components/defaults-sheet";
+import { DirectoriesSheet } from "@/components/directories-sheet";
 import { DesktopView } from "@/components/desktop-view";
 import { ExtraKeys } from "@/components/extra-keys";
 import { SessionTabs } from "@/components/session-tabs";
@@ -33,7 +33,7 @@ export default function WorkspaceScreen() {
   const [altOn, setAltOn] = useState(false);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<WorkspaceMode>("terminal");
-  const [sheet, setSheet] = useState<"commands" | "defaults" | "tunnel" | null>(null);
+  const [sheet, setSheet] = useState<"commands" | "defaults" | "folders" | "tunnel" | null>(null);
   const termRef = useRef<TerminalHandle>(null);
   const sizeRef = useRef({ cols: 80, rows: 24 });
 
@@ -117,7 +117,6 @@ export default function WorkspaceScreen() {
   const caps = health?.capabilities;
 
   return (
-    <BottomSheetModalProvider>
     <View style={[styles.screen, { backgroundColor: theme.ui.background }]}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <KeyboardAvoidingView
@@ -135,6 +134,7 @@ export default function WorkspaceScreen() {
             }}
             onCommands={() => setSheet("commands")}
             onDefaults={() => setSheet("defaults")}
+            onFolders={() => setSheet("folders")}
             onTunnel={() => setSheet("tunnel")}
             onSettings={() => router.push("/settings")}
             onMachines={() => router.replace("/")}
@@ -172,6 +172,7 @@ export default function WorkspaceScreen() {
                   sendRaw(data);
                 }}
                 onSignal={sendSignal}
+                onHideKeyboard={() => termRef.current?.blur()}
               />
             </>
           ) : (
@@ -224,11 +225,21 @@ export default function WorkspaceScreen() {
         connection={connection}
         isPresented={sheet === "defaults"}
         onDismiss={() => setSheet(null)}
-        onApplied={async () => {
-          const created = await createSession(connection, sizeRef.current.cols, sizeRef.current.rows);
+        onApplied={async (shell) => {
+          const created = await createSession(connection, sizeRef.current.cols, sizeRef.current.rows, { shell });
           setSessions((s) => [...s, created]);
           setActiveId(created.id);
           setSheet(null);
+        }}
+      />
+      <DirectoriesSheet
+        connection={connection}
+        isPresented={sheet === "folders"}
+        onDismiss={() => setSheet(null)}
+        onOpen={async (cwd) => {
+          const created = await createSession(connection, sizeRef.current.cols, sizeRef.current.rows, { cwd });
+          setSessions((s) => [...s, created]);
+          setActiveId(created.id);
         }}
       />
       <TunnelSheet
@@ -240,7 +251,6 @@ export default function WorkspaceScreen() {
         }}
       />
     </View>
-    </BottomSheetModalProvider>
   );
 }
 

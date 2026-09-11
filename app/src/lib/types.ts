@@ -26,8 +26,25 @@ export type SessionInfo = {
   shell?: string;
 };
 
+export type SavedDirectory = {
+  id: string;
+  name: string;
+  path: string;
+  order: number;
+  created_at: number;
+  updated_at: number;
+};
+
+export type FsListing = {
+  path: string;
+  parent: string | null;
+  home: string;
+  entries: { name: string; path: string }[];
+};
+
 export type Capabilities = {
   saved_commands: boolean;
+  saved_directories?: boolean;
   session_defaults: boolean;
   dynamic_tunnels: boolean;
   remote_screen: boolean;

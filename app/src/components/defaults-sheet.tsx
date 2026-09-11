@@ -10,14 +10,13 @@ type Props = {
   connection: Connection;
   isPresented: boolean;
   onDismiss: () => void;
-  onApplied?: () => void | Promise<void>;
+  onApplied?: (shell: string) => void | Promise<void>;
 };
 
 export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }: Props) {
   const { theme } = useAppTheme();
   const { ui } = theme;
   const [shell, setShell] = useState("");
-  const [cwd, setCwd] = useState("");
   const [shells, setShells] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -27,11 +26,10 @@ export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }:
     try {
       const prefs = await fetchPreferences(connection);
       setShell(prefs.shell);
-      setCwd(prefs.cwd);
       setShells(prefs.shells);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load defaults");
+      setError(err instanceof Error ? err.message : "Could not load shells");
     }
   }, [connection]);
 
@@ -44,11 +42,10 @@ export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }:
     setError("");
     setStatus("");
     try {
-      const next = await savePreferences(connection, { shell, cwd });
+      const next = await savePreferences(connection, { shell });
       setShell(next.shell);
-      setCwd(next.cwd);
       setStatus("Saved. Opening a new session with this shell.");
-      await onApplied?.();
+      await onApplied?.(next.shell);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
     } finally {
@@ -57,9 +54,9 @@ export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }:
   };
 
   return (
-    <AppSheet title="Terminal defaults" isPresented={isPresented} onDismiss={onDismiss}>
+    <AppSheet title="Shell" isPresented={isPresented} onDismiss={onDismiss}>
       <Text style={[styles.hint, { color: ui.textMuted }]}>
-        Stored on the host so every client uses the same shell and working directory.
+        Stored on the host. New terminals use this shell. Working directories are under Folders.
       </Text>
       <Text style={[styles.label, { color: ui.textMuted }]}>Shell</Text>
       <View style={styles.chips}>
@@ -84,16 +81,6 @@ export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }:
         autoCapitalize="none"
         autoCorrect={false}
         placeholder="/bin/zsh"
-        placeholderTextColor={ui.textMuted}
-        style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
-      />
-      <Text style={[styles.label, { color: ui.textMuted }]}>Working directory</Text>
-      <SheetInput
-        value={cwd}
-        onChangeText={setCwd}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="/Users/you"
         placeholderTextColor={ui.textMuted}
         style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
       />

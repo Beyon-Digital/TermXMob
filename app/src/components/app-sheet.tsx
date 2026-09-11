@@ -1,11 +1,16 @@
+import { type ReactNode } from "react";
 import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-  type BottomSheetModal as BottomSheetModalRef,
-} from "@expo/ui/community/bottom-sheet";
-import { useEffect, useRef, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/hooks/use-app-theme";
 
@@ -16,43 +21,43 @@ type Props = {
   children: ReactNode;
 };
 
-export { BottomSheetTextInput as SheetInput };
+export { TextInput as SheetInput };
 
 export function AppSheet({ title, isPresented, onDismiss, children }: Props) {
   const { theme } = useAppTheme();
   const { ui } = theme;
-  const ref = useRef<BottomSheetModalRef>(null);
-
-  useEffect(() => {
-    if (isPresented) ref.current?.present();
-    else ref.current?.dismiss();
-  }, [isPresented]);
 
   return (
-    <BottomSheetModal
-      ref={ref}
-      snapPoints={["58%", "92%"]}
-      enablePanDownToClose
-      onDismiss={onDismiss}
-      backgroundStyle={{ backgroundColor: ui.surface }}
-      handleIndicatorStyle={{ backgroundColor: ui.textMuted }}>
-      <View style={[styles.header, { borderBottomColor: ui.border }]}>
-        <Text style={[styles.title, { color: ui.text }]}>{title}</Text>
-        <Pressable onPress={onDismiss} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
-          <Text style={[styles.close, { color: ui.accent }]}>Done</Text>
-        </Pressable>
-      </View>
-      <BottomSheetScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.body}
-        style={{ backgroundColor: ui.surface }}>
-        {children}
-      </BottomSheetScrollView>
-    </BottomSheetModal>
+    <Modal
+      visible={isPresented}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onDismiss}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: ui.surface }]} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.header, { borderBottomColor: ui.border, backgroundColor: ui.surface }]}>
+            <Text style={[styles.title, { color: ui.text }]}>{title}</Text>
+            <Pressable onPress={onDismiss} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={[styles.close, { color: ui.accent }]}>Done</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.body}
+            style={[styles.flex, { backgroundColor: ui.surface }]}>
+            {children}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1 },
+  flex: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",

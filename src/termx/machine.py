@@ -37,6 +37,7 @@ def machine_snapshot(store: ConfigStore, tunnel_status: dict[str, Any] | None = 
         "helper": desktop.helper,
         "capabilities": {
             "saved_commands": True,
+            "saved_directories": True,
             "session_defaults": True,
             "dynamic_tunnels": True,
             "remote_screen": desktop.remote_screen,

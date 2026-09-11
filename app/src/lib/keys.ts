@@ -1,5 +1,5 @@
 export const EXTRA_KEY_ROWS = [
-  ["ESC", "TAB", "CTRL", "ALT", "INT", "BKSP", "CLR"],
+  ["ESC", "TAB", "CTRL", "ALT", "INT", "BKSP", "CLR", "KB"],
   ["HOME", "UP", "END", "PGUP", "LEFT", "DOWN", "RIGHT", "PGDN"],
 ] as const;
 
@@ -21,6 +21,7 @@ const GLYPHS: Record<string, string> = {
   BKSP: "⌫",
   INT: "^C",
   CLR: "⌧",
+  KB: "⌄",
 };
 
 const A11Y_LABELS: Record<string, string> = {
@@ -39,6 +40,7 @@ const A11Y_LABELS: Record<string, string> = {
   BKSP: "Backspace",
   INT: "Interrupt",
   CLR: "Clear line",
+  KB: "Hide keyboard",
 };
 
 export function keyGlyph(name: string): string {

@@ -45,6 +45,11 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(functi
     fit() {
       inject({ type: "fit" });
     },
+    blur() {
+      webRef.current?.injectJavaScript(
+        "if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); true;",
+      );
+    },
   }));
 
   useEffect(() => {

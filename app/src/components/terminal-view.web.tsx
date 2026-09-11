@@ -41,6 +41,9 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(functi
       if (term) onResizeRef.current(term.cols, term.rows);
       term?.focus();
     },
+    blur() {
+      termRef.current?.blur();
+    },
   }));
 
   useEffect(() => {

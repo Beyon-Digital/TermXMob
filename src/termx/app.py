@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import os
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from termx.audit import log_event, read_events
 from termx.auth import Auth, extract_passcode
-from termx.config import ConfigStore, validate_cwd, validate_shell
+from termx.config import ConfigStore, list_dir_entries, validate_cwd, validate_shell
 from termx.desktop.capture import virtual_display_reason
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
@@ -62,6 +63,11 @@ class CommandBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     command: str = Field(min_length=1, max_length=4000)
     confirm: bool = False
+
+
+class DirectoryBody(BaseModel):
+    name: str = Field(default="", max_length=80)
+    path: str = Field(min_length=1, max_length=4000)
 
 
 class CommandPatchBody(BaseModel):
@@ -268,6 +274,77 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         _require(state, provided(x_termx_passcode, authorization, k))
         items = state.store.reorder_commands(body.order)
         return {"commands": [item.public() for item in items]}
+
+    @app.get("/api/fs")
+    def get_fs(
+        path: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            return list_dir_entries(path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/directories")
+    def list_directories(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        prefs = state.store.get().terminal
+        return {
+            "cwd": prefs.cwd,
+            "directories": [item.public() for item in state.store.list_directories()],
+        }
+
+    @app.post("/api/directories")
+    def create_directory(
+        body: DirectoryBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            item = state.store.add_directory(body.name, body.path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("directory_create", directory_id=item.id, name=item.name)
+        return item.public()
+
+    @app.delete("/api/directories/{directory_id}")
+    def delete_directory(
+        directory_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, bool]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        if not state.store.delete_directory(directory_id):
+            raise HTTPException(status_code=404, detail="directory not found")
+        log_event("directory_delete", directory_id=directory_id)
+        return {"ok": True}
+
+    @app.post("/api/directories/{directory_id}/use")
+    def use_directory(
+        directory_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            item = state.store.use_directory(directory_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="directory not found") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("directory_use", directory_id=item.id, path=item.path)
+        return {"directory": item.public(), "cwd": item.path}
 
     @app.get("/api/tunnels")
     def get_tunnels(

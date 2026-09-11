@@ -187,7 +187,7 @@ export default function SettingsScreen() {
 
             <Text style={[styles.section, { color: ui.textMuted }]}>Terminal defaults</Text>
             <Text style={[styles.footer, { color: ui.textMuted, marginTop: 0 }]}>
-              Edit shell and working directory from the workspace Defaults sheet while connected.
+              Pick a shell from Shell, and saved working directories from Folders, while connected.
             </Text>
             <Text style={[styles.section, { color: ui.textMuted }]}>Remote control</Text>
             <Text style={[styles.footer, { color: ui.textMuted, marginTop: 0 }]}>
