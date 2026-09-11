@@ -19,16 +19,18 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
     private var busy = false
 
     func start() {
-        SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
-            if let error {
+        Task {
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                guard let display = content.displays.first else {
+                    fputs("termx-capture: no display available\n", stderr)
+                    exit(1)
+                }
+                self.begin(display: display)
+            } catch {
                 fputs("termx-capture: \(error.localizedDescription)\n", stderr)
                 exit(1)
             }
-            guard let content, let display = content.displays.first else {
-                fputs("termx-capture: no display available\n", stderr)
-                exit(1)
-            }
-            self.begin(display: display)
         }
     }
 
@@ -48,13 +50,15 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
             fputs("termx-capture: \(error.localizedDescription)\n", stderr)
             exit(1)
         }
-        stream.startCapture { error in
-            if let error {
+        self.stream = stream
+        Task {
+            do {
+                try await stream.startCapture()
+            } catch {
                 fputs("termx-capture: \(error.localizedDescription)\n", stderr)
                 exit(1)
             }
         }
-        self.stream = stream
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
