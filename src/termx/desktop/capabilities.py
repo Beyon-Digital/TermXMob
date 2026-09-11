@@ -4,9 +4,9 @@ import os
 import shutil
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
+from termx.desktop.paths import resolve_macos_helper
 from termx.desktop.virtual import active_adapter
 
 
@@ -23,23 +23,7 @@ class DesktopProbe:
 
 
 def capture_helper_path() -> str | None:
-    env = os.environ.get("TERMX_CAPTURE_BIN")
-    if env:
-        candidate = Path(env).expanduser()
-        if candidate.is_file():
-            return str(candidate.resolve())
-        return shutil.which(env)
-    found = shutil.which("termx-capture")
-    if found:
-        return found
-    root = Path(__file__).resolve().parents[3]
-    for bundled in (
-        root / "helpers" / "macos" / "bin" / "termx-capture",
-        root / "helpers" / "macos" / "TermxCapture" / ".build" / "release" / "termx-capture",
-    ):
-        if bundled.is_file():
-            return str(bundled)
-    return None
+    return resolve_macos_helper("termx-capture", "TERMX_CAPTURE_BIN")
 
 
 def probe_desktop() -> DesktopProbe:
@@ -97,7 +81,9 @@ def probe_desktop() -> DesktopProbe:
 
 
 def _helper_dict() -> dict[str, Any]:
-    helper: dict[str, Any] = {"name": "termx-host", "version": "0.1.0", "installed": True}
+    from termx.desktop.paths import host_arch
+
+    helper: dict[str, Any] = {"name": "termx-host", "version": "0.1.0", "installed": True, "arch": host_arch()}
     path = capture_helper_path()
     if path:
         helper["capture_helper"] = path

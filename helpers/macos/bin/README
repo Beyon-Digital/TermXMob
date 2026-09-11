@@ -1,4 +1,9 @@
-CI writes `termx-capture` and `termx-virtual-display` here.
+CI writes per-arch slices and a universal fat binary:
+
+- `termx-capture-arm64` / `termx-capture-x86_64` / `termx-capture`
+- `termx-virtual-display-arm64` / `termx-virtual-display-x86_64` / `termx-virtual-display`
+
+Termx picks `*-$(uname -m)` when it matches, otherwise the fat file.
 
 Sign locally (Command Line Tools, no Xcode):
 

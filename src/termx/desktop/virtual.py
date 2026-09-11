@@ -7,8 +7,9 @@ import subprocess
 import sys
 import time
 import uuid
-from pathlib import Path
 from typing import Any
+
+from termx.desktop.paths import resolve_macos_helper
 
 LEASE_GRACE_S = 30
 
@@ -339,18 +340,12 @@ class HelperAdapter(VirtualAdapter):
     helpers = ("termx-virtual-display", "BetterDisplay", "deskpad")
 
     def _bin(self) -> str | None:
-        env = os.environ.get("TERMX_VIRTUAL_DISPLAY_BIN")
-        if env:
-            candidate = Path(env).expanduser()
-            if candidate.is_file():
-                return str(candidate)
-            found_env = shutil.which(env)
-            if found_env:
-                return found_env
-        bundled = Path(__file__).resolve().parents[3] / "helpers" / "macos" / "bin" / "termx-virtual-display"
-        if bundled.is_file():
-            return str(bundled)
+        found = resolve_macos_helper("termx-virtual-display", "TERMX_VIRTUAL_DISPLAY_BIN")
+        if found:
+            return found
         for name in self.helpers:
+            if name == "termx-virtual-display":
+                continue
             path = shutil.which(name)
             if path:
                 return path

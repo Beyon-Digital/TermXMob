@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import subprocess
+from pathlib import Path
+
+
+def host_arch() -> str:
+    machine = platform.machine().lower()
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+    if machine in {"x86_64", "amd64"}:
+        return "x86_64"
+    return machine
+
+
+def helpers_bin_dir() -> Path:
+    return Path(__file__).resolve().parents[3] / "helpers" / "macos" / "bin"
+
+
+def _matches_host(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    if os.name != "posix":
+        return True
+    try:
+        info = subprocess.check_output(["lipo", "-info", str(path)], text=True, stderr=subprocess.STDOUT)
+    except (OSError, subprocess.CalledProcessError):
+        return True
+    return host_arch() in info
+
+
+def resolve_macos_helper(name: str, env_var: str | None = None) -> str | None:
+    env_name = env_var or f"TERMX_{name.upper().replace('-', '_')}_BIN"
+    env = os.environ.get(env_name)
+    if env:
+        candidate = Path(env).expanduser()
+        if candidate.is_file():
+            return str(candidate.resolve())
+        found = shutil.which(env)
+        if found:
+            return found
+    arch = host_arch()
+    bin_dir = helpers_bin_dir()
+    for candidate in (
+        shutil.which(f"{name}-{arch}"),
+        shutil.which(name),
+        bin_dir / f"{name}-{arch}",
+        bin_dir / name,
+        Path(__file__).resolve().parents[3] / "helpers" / "macos" / "TermxCapture" / ".build" / "release" / name,
+        Path(__file__).resolve().parents[3] / "helpers" / "macos" / "TermxVirtualDisplay" / ".build" / "release" / name,
+    ):
+        if candidate is None:
+            continue
+        path = Path(candidate)
+        if _matches_host(path):
+            return str(path.resolve())
+    return None

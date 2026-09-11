@@ -63,7 +63,12 @@ ensure_keychain() {
 
 sign_one() {
   name="$1"
-  entitlements="$SIGN_DIR/${name}.entitlements"
+  base="$name"
+  case "$name" in
+    *-arm64) base="${name%-arm64}" ;;
+    *-x86_64) base="${name%-x86_64}" ;;
+  esac
+  entitlements="$SIGN_DIR/${base}.entitlements"
   target="$BIN_DIR/$name"
   if [ ! -f "$target" ]; then
     echo "skip $name (missing $target — wait for GitHub Actions build)" >&2
@@ -82,5 +87,13 @@ sign_one() {
 
 ensure_keychain
 mkdir -p "$BIN_DIR"
-sign_one termx-capture
-sign_one termx-virtual-display
+for name in \
+  termx-capture \
+  termx-capture-arm64 \
+  termx-capture-x86_64 \
+  termx-virtual-display \
+  termx-virtual-display-arm64 \
+  termx-virtual-display-x86_64
+do
+  sign_one "$name"
+done

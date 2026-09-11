@@ -43,7 +43,7 @@ Python serves `app/dist` when that folder exists. Otherwise it serves the built-
 
 - Config, tokens, and audit logs live in `~/.config/termx` (or `$TERMX_CONFIG_DIR`).
 - `POST /api/pair` with the passcode returns a Bearer token; passcode still works for QR.
-- CI: `.github/workflows/ci.yml` runs pytest + app `tsc` on Ubuntu. `.github/workflows/macos-helpers.yml` builds Swift helpers on `macos-15` and commits unsigned binaries to `helpers/macos/bin/` on `main` (also downloadable as the `termx-macos-helpers` artifact). Sign locally with Command Line Tools (no Xcode.app):
+- CI: `.github/workflows/ci.yml` runs pytest + app `tsc` on Ubuntu. `.github/workflows/macos-helpers.yml` builds Swift helpers on `macos-15` for **arm64 and x86_64**, lipos a universal binary, and commits all of them to `helpers/macos/bin/` on `main`. Termx selects the slice that matches this machine. Sign locally with Command Line Tools (no Xcode.app):
   `cp helpers/macos/signing/signing.env.example helpers/macos/signing/signing.env && helpers/macos/sign.sh`
   Put a `.p12` path in `signing.env` to import into the persisted `helpers/macos/signing/termx.keychain-db` (gitignored).
 - Desktop capture prefers that signed `termx-capture`, then `ffmpeg`, then `screencapture`/`grim`/`maim`. Grant Screen Recording on macOS.

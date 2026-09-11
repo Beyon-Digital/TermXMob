@@ -41,9 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: termx-macos-helpers
-          path: |
-            helpers/macos/bin/termx-capture
-            helpers/macos/bin/termx-virtual-display
+          path: helpers/macos/bin/termx-*
           if-no-files-found: error
 
       - name: Commit binaries to main
@@ -51,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add helpers/macos/bin/termx-capture helpers/macos/bin/termx-virtual-display
+          git add helpers/macos/bin/termx-capture helpers/macos/bin/termx-capture-arm64 helpers/macos/bin/termx-capture-x86_64 helpers/macos/bin/termx-virtual-display helpers/macos/bin/termx-virtual-display-arm64 helpers/macos/bin/termx-virtual-display-x86_64
           if git diff --cached --quiet; then
             echo "No binary changes"
             exit 0
