@@ -29,30 +29,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        name: Resolve build matrix
+        shell: bash
+        env:
+          INCLUDE_INTEL: ${{ github.event_name != 'workflow_dispatch' || inputs.include_intel }}
+        run: |
+          MATRIX=$(python3 - <<'PY'
+          import json, os
+
+          include = [
+              {"name": "macos-arm64", "platform": "macos-15", "target": "aarch64-apple-darwin", "bundles": "dmg"},
+              {"name": "windows", "platform": "windows-latest", "target": "", "bundles": "msi,nsis"},
+              {"name": "linux", "platform": "ubuntu-22.04", "target": "", "bundles": "deb,rpm,appimage"},
+          ]
+          if os.environ.get("INCLUDE_INTEL") == "true":
+              include.insert(1, {"name": "macos-x86_64", "platform": "macos-15-intel", "target": "x86_64-apple-darwin", "bundles": "dmg"})
+          print(json.dumps({"include": include}))
+          PY
+          )
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.name }}
+    needs: prepare
     runs-on: ${{ matrix.platform }}
-    if: ${{ !(matrix.name == 'macos-x86_64' && github.event_name == 'workflow_dispatch' && !inputs.include_intel) }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: macos-arm64
-            platform: macos-15
-            target: aarch64-apple-darwin
-            bundles: dmg
-          - name: macos-x86_64
-            platform: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: dmg
-          - name: windows
-            platform: windows-latest
-            target: ""
-            bundles: msi,nsis
-          - name: linux
-            platform: ubuntu-22.04
-            target: ""
-            bundles: deb,rpm,appimage
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 

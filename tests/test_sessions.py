@@ -58,6 +58,8 @@ INT_ARGV = [
     "-c",
     "import signal,sys,time\n"
     "signal.signal(signal.SIGINT, lambda s,f: (sys.stdout.write('CAUGHT\\n'), sys.stdout.flush(), sys.exit(0)))\n"
+    "sys.stdout.write('READY\\n')\n"
+    "sys.stdout.flush()\n"
     "time.sleep(20)\n",
 ]
 
@@ -68,7 +70,7 @@ def test_ctrl_c_delivers_sigint() -> None:
         session = mgr.create(argv=INT_ARGV)
         sink = _Collector()
         session.subscribe(sink)
-        await asyncio.sleep(0.2)
+        assert b"READY" in await _wait_echo(sink, b"READY")
         session.write(b"\x03")
         out = await _wait_echo(sink, b"CAUGHT")
         if b"CAUGHT" not in out:
@@ -86,7 +88,7 @@ def test_send_signal_int() -> None:
         session = mgr.create(argv=INT_ARGV)
         sink = _Collector()
         session.subscribe(sink)
-        await asyncio.sleep(0.2)
+        assert b"READY" in await _wait_echo(sink, b"READY")
         assert session.send_signal("int") is True
         out = await _wait_echo(sink, b"CAUGHT")
         if b"CAUGHT" not in out:
