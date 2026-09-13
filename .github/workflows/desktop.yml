@@ -269,7 +269,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd desktop/src-tauri/target
-          find . -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) | sort > /tmp/termx-artifacts.txt
+          find . -path '*/bundle/*' -type f \
+            \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) \
+            | sort > /tmp/termx-artifacts.txt
           if [ ! -s /tmp/termx-artifacts.txt ]; then
             echo "no installers found to checksum"
             exit 0
