@@ -218,7 +218,18 @@ class WinTerminal:
         return data
 
     def write(self, data: bytes) -> None:
+        self._write_raw(data)
+
+    def _write_raw(self, data: bytes) -> None:
+        """pywinpty 3.x expects str; pywinpty 2.x expects bytes. Support both."""
         if self._exited or not data:
+            return
+        try:
+            self._proc.write(data.decode("utf-8", "surrogateescape"))
+            return
+        except TypeError:
+            pass
+        except Exception:
             return
         try:
             self._proc.write(data)
@@ -230,11 +241,8 @@ class WinTerminal:
         if self._exited or not self.alive():
             return False
         if name == "int":
-            try:
-                self._proc.write(b"\x03")
-                return True
-            except Exception:
-                return False
+            self._write_raw(b"\x03")
+            return True
         if name in {"term", "hup"}:
             return self._terminate(force=False)
         if name == "kill":
