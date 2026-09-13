@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 
 from termx.desktop.capabilities import probe_desktop
@@ -38,8 +39,8 @@ def test_close_capture_safe_without_helper() -> None:
     close_capture()
 
 
-def test_grab_jpeg_from_env_helper(tmp_path, monkeypatch) -> None:
-    script = tmp_path / "fake-capture"
+def _make_fake_helper(tmp_path):
+    script = tmp_path / "fake-capture.py"
     script.write_text(
         f"#!{sys.executable}\n"
         "import struct, sys\n"
@@ -47,8 +48,17 @@ def test_grab_jpeg_from_env_helper(tmp_path, monkeypatch) -> None:
         "sys.stdout.buffer.write(struct.pack('>I', len(jpeg)) + jpeg)\n"
         "sys.stdout.buffer.flush()\n"
     )
+    if os.name == "nt":
+        wrapper = tmp_path / "fake-capture.cmd"
+        wrapper.write_text(f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n')
+        return wrapper
     script.chmod(0o755)
-    monkeypatch.setenv("TERMX_CAPTURE_BIN", str(script))
+    return script
+
+
+def test_grab_jpeg_from_env_helper(tmp_path, monkeypatch) -> None:
+    helper = _make_fake_helper(tmp_path)
+    monkeypatch.setenv("TERMX_CAPTURE_BIN", str(helper))
     close_capture()
     try:
         assert grab_jpeg() == TINY_JPEG

@@ -325,14 +325,33 @@ def _win_text(data: str) -> None:
     _send_inputs(events)
 
 
+def _configure_clipboard_types(user32: Any, kernel32: Any) -> None:
+    import ctypes
+    import ctypes.wintypes as wintypes
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+
 def _win_clipboard_get() -> str:
     import ctypes
     import ctypes.wintypes as wintypes
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
-    user32.GetClipboardData.restype = wintypes.HANDLE
-    kernel32.GlobalLock.restype = ctypes.c_void_p
+    _configure_clipboard_types(user32, kernel32)
     CF_UNICODETEXT = 13
     if not user32.OpenClipboard(None):
         return ""
@@ -357,8 +376,7 @@ def _win_clipboard_set(text: str) -> None:
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
-    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
-    kernel32.GlobalLock.restype = ctypes.c_void_p
+    _configure_clipboard_types(user32, kernel32)
     GMEM_MOVEABLE = 0x0002
     CF_UNICODETEXT = 13
     value = text or ""

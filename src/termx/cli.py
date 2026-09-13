@@ -105,7 +105,12 @@ async def _start_server(
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     for candidate in candidates:
         sock = socket.socket(family, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt":
+            # On Windows SO_REUSEADDR allows hijacking a port another process
+            # is using; exclusive use makes the bind fail instead.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, candidate))
             sock.listen(2048)

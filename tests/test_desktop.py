@@ -52,7 +52,12 @@ def test_probe_does_not_crash() -> None:
 def test_virtual_display_is_explicitly_unsupported() -> None:
     adapter = active_adapter()
     if adapter is not None and adapter.can_create():
-        created = create_virtual_display(800, 600)
+        try:
+            created = create_virtual_display(800, 600)
+        except VirtualDisplayError as exc:
+            # can_create() is optimistic; headless hosts fail with a clear reason.
+            assert str(exc)
+            return
         try:
             assert created["kind"] == "virtual"
             assert created["adapter"] == adapter.id

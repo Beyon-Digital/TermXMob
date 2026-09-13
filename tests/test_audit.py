@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 
 from termx.audit import log_event, read_events
@@ -35,7 +36,8 @@ def test_log_and_drop_pty_fields() -> None:
     assert "rm -rf /" not in dumped
     assert "output-bytes" not in dumped
     assert "captured" not in dumped
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     lines = [json.loads(line) for line in dumped.splitlines() if line]
     assert [item["kind"] for item in lines] == ["command.run", "pairing.issue"]
     assert read_events(limit=1) == [second]

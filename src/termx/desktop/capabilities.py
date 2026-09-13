@@ -85,10 +85,10 @@ def probe_desktop() -> DesktopProbe:
             reason = "Windows input APIs are unavailable"
         return DesktopProbe(
             remote_screen=capture is not None and input_backend is not None,
-            virtual_display=False,
+            virtual_display=virtual_display,
             capture_backend=capture,
             input_backend=input_backend,
-            virtual_backend=None,
+            virtual_backend=virtual_backend,
             permissions={},
             helper=helper,
             reason=reason,

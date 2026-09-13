@@ -1,5 +1,8 @@
 import asyncio
+import os
 import sys
+
+import pytest
 
 from termx.sessions import ReplayBuffer, SessionManager
 
@@ -25,7 +28,8 @@ ECHO_ARGV = [
     sys.executable,
     "-u",
     "-c",
-    "import sys; sys.stdout.write(sys.stdin.readline()); sys.stdout.flush(); import time; time.sleep(8)",
+    "import sys; sys.stdout.write('READY\\n'); sys.stdout.flush(); "
+    "sys.stdout.write(sys.stdin.readline()); sys.stdout.flush(); import time; time.sleep(8)",
 ]
 
 
@@ -44,6 +48,7 @@ def test_pty_echo_and_kill() -> None:
         session = mgr.create(argv=ECHO_ARGV)
         sink = _Collector()
         session.subscribe(sink)
+        assert b"READY" in await _wait_echo(sink, b"READY")
         session.write(b"hello\n")
         assert b"hello" in await _wait_echo(sink, b"hello")
         assert mgr.kill(session.id) is True
@@ -64,6 +69,10 @@ INT_ARGV = [
 ]
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows ConPTY cannot deliver POSIX signals; Ctrl+C is sent as \\x03",
+)
 def test_ctrl_c_delivers_sigint() -> None:
     async def inner() -> None:
         mgr = SessionManager()
@@ -82,6 +91,10 @@ def test_ctrl_c_delivers_sigint() -> None:
     asyncio.run(inner())
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows ConPTY cannot deliver POSIX signals",
+)
 def test_send_signal_int() -> None:
     async def inner() -> None:
         mgr = SessionManager()
@@ -122,6 +135,7 @@ def test_pty_echo_when_created_without_event_loop() -> None:
         session.attach(asyncio.get_running_loop())
         sink = _Collector()
         session.subscribe(sink)
+        assert b"READY" in await _wait_echo(sink, b"READY")
         session.write(b"hello\n")
         assert b"hello" in await _wait_echo(sink, b"hello")
         mgr.kill(session.id)

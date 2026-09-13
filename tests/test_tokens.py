@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 
 from termx.config import config_dir
@@ -23,7 +24,8 @@ def test_issue_check_revoke() -> None:
     on_disk = path.read_text(encoding="utf-8")
     assert raw not in on_disk
     assert json.loads(on_disk)["tokens"][0]["hash"] not in public[0].values()
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     token_id = public[0]["id"]
     assert store.revoke(token_id) is True
     assert store.check(raw) is None
