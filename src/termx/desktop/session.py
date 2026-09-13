@@ -2,13 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from termx.desktop.capture import CaptureError, grab_jpeg, list_displays
+from termx.desktop.capture import CaptureError, close_capture, grab_jpeg, list_displays
 from termx.desktop.input import InputError, apply_event, clipboard_get, clipboard_set
+
+IDLE_GRACE_DEFAULT = 5.0
+
+
+def idle_grace() -> float:
+    """Seconds to keep the capture helper alive after the last client leaves."""
+    try:
+        return max(0.0, float(os.environ.get("TERMX_CAPTURE_IDLE_GRACE", IDLE_GRACE_DEFAULT)))
+    except ValueError:
+        return IDLE_GRACE_DEFAULT
 
 
 class DesktopManager:
@@ -18,8 +29,32 @@ class DesktopManager:
         self._lock = asyncio.Lock()
         self._pumps: set[asyncio.Task[None]] = set()
         self._stops: set[asyncio.Event] = set()
+        self._idle_task: asyncio.Task[None] | None = None
         self._fps = 0.0
         self._last_capture_ms = 0
+
+    async def _cancel_idle_close(self) -> None:
+        task = self._idle_task
+        self._idle_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def _close_when_idle(self) -> None:
+        """Release the ScreenCaptureKit stream once nobody is watching."""
+        try:
+            await asyncio.sleep(idle_grace())
+        except asyncio.CancelledError:
+            return
+        if self._stops:
+            return
+        try:
+            await asyncio.to_thread(close_capture)
+        except Exception:
+            pass
 
     def snapshot(self) -> dict[str, Any]:
         displays = list_displays()
@@ -39,6 +74,7 @@ class DesktopManager:
         return {"type": "metrics", "fps": int(round(self._fps)), "last_capture_ms": self._last_capture_ms}
 
     async def attach(self, websocket: WebSocket) -> None:
+        await self._cancel_idle_close()
         self.view_only = True
         await websocket.accept()
         await websocket.send_text(json.dumps({"type": "hello", **self.snapshot()}))
@@ -129,8 +165,14 @@ class DesktopManager:
                 await asyncio.to_thread(apply_event, {"type": "release_all"})
             except Exception:
                 pass
+            if not self._stops:
+                # Last client gone: stop capturing so the helper (and the macOS
+                # screen-recording indicator) is not left running.
+                await self._cancel_idle_close()
+                self._idle_task = asyncio.create_task(self._close_when_idle())
 
     async def close(self) -> None:
+        await self._cancel_idle_close()
         for event in list(self._stops):
             event.set()
         pumps = list(self._pumps)
@@ -142,5 +184,9 @@ class DesktopManager:
         self._stops.clear()
         try:
             await asyncio.to_thread(apply_event, {"type": "release_all"})
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(close_capture)
         except Exception:
             pass
