@@ -129,23 +129,55 @@ Verify downloads with the attached checksums:
 
 Repository → Settings → Secrets and variables → Actions → **New repository secret**.
 
-**macOS (recommended, sign + notarize)**
+**macOS (sign + notarize, no Apple ID or password)**
+
+Signing uses a **Developer ID Application** certificate; notarization uses an
+**App Store Connect API key** — scoped, revocable, and not usable to sign in to your
+Apple account. Neither is your Apple ID/password.
 
 | Secret | Value |
 | --- | --- |
-| `APPLE_CERTIFICATE` | base64 of your **Developer ID Application** `.p12`: `base64 -i cert.p12 \| pbcopy` |
-| `APPLE_CERTIFICATE_PASSWORD` | password used when exporting the `.p12` |
+| `APPLE_CERTIFICATE` | base64 of your **Developer ID Application** `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | password set when exporting the `.p12` |
 | `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_API_KEY_ID` | 10-character Key ID from the API key |
+| `APPLE_API_ISSUER` | Issuer ID (UUID) shown next to the keys |
+| `APPLE_API_KEY_P8` | **contents** of `AuthKey_XXXX.p8` (downloaded once, cannot be re-downloaded) |
 | `KEYCHAIN_PASSWORD` | any random string (temporary CI keychain; has a default if omitted) |
 
-Then pick one notarization method:
+How to create them:
 
-- Apple ID: `APPLE_ID`, `APPLE_PASSWORD` (an **app-specific password** from
-  appleid.apple.com), `APPLE_TEAM_ID`.
-- App Store Connect API key (more reliable in CI): `APPLE_API_KEY_ID`,
-  `APPLE_API_ISSUER`, and `APPLE_API_KEY_P8` containing the **contents** of
-  `AuthKey_XXXX.p8` (the workflow writes it to a temp file and sets
-  `APPLE_API_KEY_PATH`).
+1. **Developer ID certificate** — Xcode → Settings → Accounts → your team →
+   *Manage Certificates* → **+** → *Developer ID Application* (requires a paid team).
+   Right-click the certificate in Keychain Access → *Export* → save as `.p12` with a
+   password. Then: `base64 -i DeveloperID.p12 | pbcopy` → `APPLE_CERTIFICATE`;
+   the password → `APPLE_CERTIFICATE_PASSWORD`; the certificate name →
+   `APPLE_SIGNING_IDENTITY`.
+2. **App Store Connect API key** — appstoreconnect.apple.com → *Users and Access* →
+   *Integrations* → *Team Keys* → **Generate** (role *Developer* or *Admin*).
+   Copy the **Key ID** and **Issuer ID**, download the `.p8` **once**, and paste its
+   contents into `APPLE_API_KEY_P8`. Revoke the key any time from the same page.
+
+Without macOS secrets the build still publishes, ad-hoc signed.
+
+### Keeping Apple credentials off GitHub entirely
+
+If you would rather not put even the certificate/api key in repository secrets, sign on
+your own Mac instead:
+
+```bash
+# 1) one-time: install the Developer ID certificate in your login keychain
+#    (Xcode -> Settings -> Accounts -> Manage Certificates -> + Developer ID Application)
+# 2) one-time: store notarization credentials in your keychain (API key or Apple ID,
+#    entered here only)
+desktop/scripts/setup_macos_notary.sh            # or --key/--key-id/--issuer
+# 3) sign + notarize + staple the downloaded DMG (identity auto-detected)
+desktop/scripts/sign_macos_release.sh --input ~/Downloads
+```
+
+CI keeps publishing unsigned (macOS ad-hoc signed) builds; the signed DMG is produced
+locally. The same pattern applies to Windows (`sign_windows_release.ps1` with a local
+`.pfx`) and Linux (`sign_linux_release.sh` with your GPG key).
 
 **Windows (code signing)**
 
@@ -215,8 +247,9 @@ macOS:
 
 1. `TERMX_MACOS_SIGN_IDENTITY` (used by `build_sidecar.py` to sign the Python sidecar
    and bundled Swift helpers) — e.g. `Developer ID Application: Example (TEAMID)`.
-2. Tauri reads `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
-   (or `APPLE_API_*`) to sign the app and notarize it.
+2. Tauri signs with `APPLE_SIGNING_IDENTITY` and notarizes with the App Store Connect
+   API key (`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`). No Apple ID
+   or password is used.
 
 Windows:
 

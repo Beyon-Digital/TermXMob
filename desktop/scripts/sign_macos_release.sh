@@ -10,7 +10,10 @@
 # (copy desktop/signing.env.example and edit):
 #
 #   APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)"
-#   NOTARY_PROFILE=termx-notary            # or APPLE_ID + APPLE_TEAM_ID + APPLE_PASSWORD
+#     (auto-detected from your keychain when unset)
+#   Notarization, pick one:
+#     APPLE_API_KEY_PATH + APPLE_API_KEY_ID + APPLE_API_ISSUER   # App Store Connect key
+#     NOTARY_PROFILE                                             # xcrun notarytool store-credentials
 #   APPLE_KEYCHAIN=                        # optional
 #
 # With no identity the script ad-hoc signs, which is enough to run the app on this Mac.
@@ -28,7 +31,8 @@ if [ -f "$REPO_ROOT/desktop/signing.env" ]; then
   set +a
 fi
 
-IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
+IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
+IDENTITY_EXPLICIT=0
 KEYCHAIN="${APPLE_KEYCHAIN:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 IN_PLACE=0
@@ -68,8 +72,9 @@ options:
   -h, --help            show this help
 
 environment / desktop/signing.env:
-  APPLE_SIGNING_IDENTITY, APPLE_KEYCHAIN
-  NOTARY_PROFILE  or  APPLE_ID + APPLE_TEAM_ID + APPLE_PASSWORD
+  APPLE_SIGNING_IDENTITY (auto-detected when unset), APPLE_KEYCHAIN
+  APPLE_API_KEY_PATH + APPLE_API_KEY_ID + APPLE_API_ISSUER  (recommended)
+  NOTARY_PROFILE  or  APPLE_ID + APPLE_TEAM_ID + APPLE_PASSWORD (legacy)
 EOF
 }
 
@@ -78,7 +83,7 @@ while [ $# -gt 0 ]; do
     --all) ALL=1; shift ;;
     --input) INPUTS="$INPUTS$2
 "; shift 2 ;;
-    --identity) IDENTITY="$2"; shift 2 ;;
+    --identity) IDENTITY="$2"; IDENTITY_EXPLICIT=1; shift 2 ;;
     --keychain) KEYCHAIN="$2"; shift 2 ;;
     --notary-profile) NOTARY_PROFILE="$2"; shift 2 ;;
     --in-place) IN_PLACE=1; shift ;;
@@ -94,6 +99,28 @@ if [ "$(uname -s)" != "Darwin" ]; then
   echo "error: macOS signing/notarization requires a Mac" >&2
   exit 1
 fi
+
+case "${APPLE_API_KEY_PATH:-}" in
+  "~/"*) APPLE_API_KEY_PATH="$HOME/${APPLE_API_KEY_PATH#\~/}" ;;
+esac
+
+detect_identity() {
+  security find-identity -v -p codesigning 2>/dev/null |
+    grep "Developer ID Application" |
+    head -n 1 |
+    sed -E 's/.*"(.*)"/\1/'
+}
+
+if [ -z "$IDENTITY" ] && [ "$IDENTITY_EXPLICIT" = "0" ]; then
+  DETECTED_IDENTITY="$(detect_identity)"
+  if [ -n "$DETECTED_IDENTITY" ]; then
+    IDENTITY="$DETECTED_IDENTITY"
+    echo "note: using Developer ID identity from the keychain: $IDENTITY"
+  else
+    IDENTITY="-"
+  fi
+fi
+[ -n "$IDENTITY" ] || IDENTITY="-"
 
 newest() {
   [ -n "$1" ] || return 1
@@ -190,6 +217,10 @@ sign_app() {
 }
 
 notary_args() {
+  if [ -n "${APPLE_API_KEY_PATH:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+    echo "--key $APPLE_API_KEY_PATH --key-id $APPLE_API_KEY_ID --issuer $APPLE_API_ISSUER"
+    return 0
+  fi
   if [ -n "$NOTARY_PROFILE" ]; then
     echo "--keychain-profile $NOTARY_PROFILE"
     return 0
