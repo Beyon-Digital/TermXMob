@@ -30,6 +30,8 @@ from termx.sessions import DEFAULT_COLS, DEFAULT_ROWS, SessionManager, default_a
 from termx.tokens import SCOPES, TokenStore
 from termx.tunnels import TunnelManager
 
+from termx import __version__
+
 PACKAGE_STATIC = Path(__file__).parent / "static"
 
 
@@ -162,7 +164,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         return {
             "app": "termx",
             "ok": True,
-            "version": "0.1.0",
+            "version": __version__,
             "passcode_required": state.auth.required,
             "hostname": snapshot["hostname"],
             "os": snapshot["os"],
