@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Clipboard, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppSheet } from "@/components/app-sheet";
+import { AppIcon } from "@/components/app-icon";
+import {
+  AppSheet,
+  SheetButton,
+  SheetError,
+  SheetSection,
+  SheetStatusPill,
+} from "@/components/app-sheet";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import { fetchTunnels, startTunnel, stopTunnel } from "@/lib/api";
 import { httpBase, type Connection, type TunnelProviderInfo, type TunnelRuntime } from "@/lib/types";
@@ -150,101 +157,145 @@ export function TunnelSheet({ connection, isPresented, onDismiss }: Props) {
   };
 
   return (
-    <AppSheet title="Tunnels" isPresented={isPresented} onDismiss={onDismiss}>
-      <View style={[styles.status, { backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}>
-        <Text style={[styles.statusLabel, { color: ui.textMuted }]}>Current route</Text>
-        <Text style={[styles.statusValue, { color: ui.text }]}>
-          {connected ? `${active?.provider} · connected` : "No tunnel running"}
-        </Text>
-        {active?.url ? (
-          <Text selectable style={[styles.url, { color: ui.accent }]}>
-            {active.url}
-          </Text>
-        ) : null}
-        {uptimeS != null ? (
-          <Text style={[styles.uptime, { color: ui.textMuted }]}>Uptime {formatUptime(uptimeS)}</Text>
-        ) : null}
-        <View style={styles.actions}>
+    <AppSheet
+      title="Tunnels"
+      subtitle={connected ? `${active?.provider} · connected` : "Expose this machine to the internet"}
+      isPresented={isPresented}
+      onDismiss={onDismiss}>
+      <SheetSection label="Status">
+        <View style={styles.hero}>
+          <SheetStatusPill
+            tone={connected ? "success" : "muted"}
+            label={connected ? `${active?.provider} · connected` : "No tunnel running"}
+          />
           {active?.url ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Copy URL"
-              style={[styles.action, { borderColor: ui.border }]}
-              onPress={() => void copyUrl(active.url!)}
-              disabled={busy !== null}>
-              <Text style={{ color: ui.accent, fontWeight: "700" }}>Copy URL</Text>
-            </Pressable>
-          ) : null}
-          {connected ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Restart tunnel"
-              style={[styles.action, { borderColor: ui.border }]}
-              onPress={() => void restart()}
-              disabled={busy !== null}>
-              <Text style={{ color: ui.text, fontWeight: "700" }}>{busy === "restart" ? "Restarting…" : "Restart"}</Text>
-            </Pressable>
-          ) : null}
-          {connected ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Stop tunnel"
-              style={[styles.action, { borderColor: ui.danger }]}
-              onPress={() => void stop()}
-              disabled={busy !== null}>
-              <Text style={{ color: ui.danger, fontWeight: "700" }}>{busy === "stop" ? "Stopping…" : "Stop tunnel"}</Text>
-            </Pressable>
-          ) : null}
-        </View>
-        {connected || logs.length > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: detailsOpen }}
-            onPress={() => setDetailsOpen((open) => !open)}>
-            <Text style={{ color: ui.accent, fontWeight: "700" }}>{detailsOpen ? "Hide details" : "Details"}</Text>
-          </Pressable>
-        ) : null}
-        {detailsOpen ? (
-          <Text selectable style={[styles.log, { color: ui.textMuted }]}>
-            {logs.length ? logs.join("\n") : "No log lines"}
-          </Text>
-        ) : null}
-      </View>
-      {(runtime?.providers ?? []).map((provider) => (
-        <View key={provider.id} style={[styles.card, { borderColor: ui.border, backgroundColor: ui.surfaceAlt }]}>
-          <Text style={[styles.name, { color: ui.text }]}>{provider.name}</Text>
-          <Text style={{ color: ui.textMuted, fontSize: 13 }}>
-            {provider.available ? "Ready on this machine" : `Not installed. ${provider.install ?? ""}`}
-          </Text>
-          <Pressable
-            style={[
-              styles.primary,
-              { backgroundColor: provider.available ? ui.accent : ui.border, opacity: busy ? 0.6 : 1 },
-            ]}
-            disabled={!provider.available || busy !== null}
-            onPress={() => void start(provider)}>
-            <Text style={[styles.primaryLabel, { color: provider.available ? ui.accentText : ui.textMuted }]}>
-              {busy === provider.id ? "Starting…" : `Start ${provider.name}`}
+            <Text selectable style={[styles.url, { color: ui.accent }]} numberOfLines={2}>
+              {active.url}
             </Text>
-          </Pressable>
+          ) : null}
+          {uptimeS != null ? (
+            <Text style={[styles.uptime, { color: ui.textMuted }]}>{`Uptime ${formatUptime(uptimeS)}`}</Text>
+          ) : null}
+          {active?.url || connected ? (
+            <View style={styles.actionRow}>
+              {active?.url ? (
+                <View style={styles.actionFlex}>
+                  <SheetButton
+                    variant="secondary"
+                    label="Copy URL"
+                    onPress={() => void copyUrl(active.url!)}
+                    disabled={busy !== null}
+                  />
+                </View>
+              ) : null}
+              {connected ? (
+                <View style={styles.actionFlex}>
+                  <SheetButton
+                    variant="secondary"
+                    label={busy === "restart" ? "Restarting…" : "Restart"}
+                    onPress={() => void restart()}
+                    disabled={busy !== null}
+                  />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {connected ? (
+            <SheetButton
+              variant="danger"
+              label={busy === "stop" ? "Stopping…" : "Stop tunnel"}
+              onPress={() => void stop()}
+              disabled={busy !== null}
+            />
+          ) : null}
+          {connected || logs.length > 0 ? (
+            <Pressable
+              onPress={() => setDetailsOpen((open) => !open)}
+              hitSlop={8}
+              style={styles.detailsToggle}
+              accessibilityRole="button"
+              accessibilityLabel={detailsOpen ? "Hide tunnel details" : "Show tunnel details"}
+              accessibilityState={{ expanded: detailsOpen }}>
+              <Text style={[styles.detailsLabel, { color: ui.textMuted }]}>
+                {detailsOpen ? "Hide details" : "Details"}
+              </Text>
+              <AppIcon name="chevron" color={ui.textMuted} size={12} />
+            </Pressable>
+          ) : null}
+          {detailsOpen ? (
+            <View style={[styles.logBox, { backgroundColor: ui.surface, borderColor: ui.border }]}>
+              <Text selectable style={[styles.log, { color: ui.textMuted }]}>
+                {logs.length ? logs.join("\n") : "No log lines"}
+              </Text>
+            </View>
+          ) : null}
         </View>
-      ))}
-      {error ? <Text style={{ color: ui.danger }}>{error}</Text> : null}
+      </SheetSection>
+      <SheetError message={error} />
+      <SheetSection label="Start a tunnel">
+        {(runtime?.providers ?? []).map((provider, index) => {
+          const starting = busy === provider.id;
+          return (
+            <View
+              key={provider.id}
+              style={[
+                styles.provider,
+                index > 0 && { borderTopColor: ui.border, borderTopWidth: StyleSheet.hairlineWidth },
+              ]}>
+              <View style={[styles.tile, { backgroundColor: ui.surfaceActive }]}>
+                <AppIcon name="tunnel" color={ui.text} size={16} />
+              </View>
+              <View style={styles.providerText}>
+                <Text style={[styles.providerName, { color: ui.text }]}>{provider.name}</Text>
+                <Text style={[styles.providerMeta, { color: ui.textMuted }]}>
+                  {provider.available ? "Ready on this machine" : `Not installed. ${provider.install ?? ""}`}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => void start(provider)}
+                disabled={!provider.available || busy !== null}
+                hitSlop={4}
+                style={[
+                  styles.start,
+                  {
+                    backgroundColor: provider.available ? ui.accent : ui.surfaceActive,
+                    opacity: !provider.available || busy !== null ? 0.5 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Start ${provider.name}`}
+                accessibilityState={!provider.available || busy !== null ? { disabled: true } : undefined}>
+                <Text
+                  style={[
+                    styles.startLabel,
+                    { color: provider.available ? ui.accentText : ui.textMuted },
+                  ]}>
+                  {starting ? "Starting…" : "Start"}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </SheetSection>
     </AppSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  status: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 6 },
-  statusLabel: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
-  statusValue: { fontSize: 16, fontWeight: "700" },
-  url: { fontSize: 13 },
+  hero: { gap: 10, paddingVertical: 12 },
+  url: { fontSize: 13, lineHeight: 18 },
   uptime: { fontSize: 13 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
-  action: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  log: { fontSize: 12, marginTop: 4 },
-  card: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 8 },
-  name: { fontSize: 16, fontWeight: "700" },
-  primary: { borderRadius: 10, paddingVertical: 11, alignItems: "center" },
-  primaryLabel: { fontWeight: "700" },
+  actionRow: { flexDirection: "row", gap: 8 },
+  actionFlex: { flex: 1 },
+  detailsToggle: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4 },
+  detailsLabel: { fontSize: 13, fontWeight: "600" },
+  logBox: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 10 },
+  log: { fontSize: 12, lineHeight: 17, fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }) },
+  provider: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
+  tile: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  providerText: { flex: 1, gap: 2, minWidth: 0 },
+  providerName: { fontSize: 16, fontWeight: "700" },
+  providerMeta: { fontSize: 13, lineHeight: 17 },
+  start: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
+  startLabel: { fontWeight: "700", fontSize: 14 },
 });

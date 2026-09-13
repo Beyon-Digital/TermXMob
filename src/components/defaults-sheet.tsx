@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppSheet, SheetInput } from "@/components/app-sheet";
+import { AppIcon } from "@/components/app-icon";
+import {
+  AppSheet,
+  SheetButton,
+  SheetError,
+  SheetField,
+  SheetSection,
+} from "@/components/app-sheet";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import { fetchPreferences, savePreferences } from "@/lib/api";
 import type { Connection } from "@/lib/types";
@@ -31,7 +38,7 @@ export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }:
       setShells(prefs.shells);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load defaults");
+      setError(err instanceof Error ? err.message : "Could not load shells");
     }
   }, [connection]);
 
@@ -57,64 +64,116 @@ export function DefaultsSheet({ connection, isPresented, onDismiss, onApplied }:
   };
 
   return (
-    <AppSheet title="Terminal defaults" isPresented={isPresented} onDismiss={onDismiss}>
-      <Text style={[styles.hint, { color: ui.textMuted }]}>
-        Stored on the host so every client uses the same shell and working directory.
-      </Text>
-      <Text style={[styles.label, { color: ui.textMuted }]}>Shell</Text>
-      <View style={styles.chips}>
-        {shells.map((item) => {
-          const selected = item === shell;
-          return (
-            <Pressable
-              key={item}
-              onPress={() => setShell(item)}
-              style={[
-                styles.chip,
-                { borderColor: selected ? ui.accent : ui.border, backgroundColor: selected ? ui.surfaceActive : ui.surfaceAlt },
-              ]}>
-              <Text style={{ color: selected ? ui.accent : ui.text, fontSize: 13 }}>{item.split("/").pop()}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <SheetInput
-        value={shell}
-        onChangeText={setShell}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="/bin/zsh"
-        placeholderTextColor={ui.textMuted}
-        style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
-      />
-      <Text style={[styles.label, { color: ui.textMuted }]}>Working directory</Text>
-      <SheetInput
-        value={cwd}
-        onChangeText={setCwd}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="/Users/you"
-        placeholderTextColor={ui.textMuted}
-        style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
-      />
-      {error ? <Text style={{ color: ui.danger }}>{error}</Text> : null}
-      {status ? <Text style={{ color: ui.accent }}>{status}</Text> : null}
-      <Pressable
-        style={[styles.primary, { backgroundColor: ui.accent, opacity: busy ? 0.6 : 1 }]}
-        onPress={() => void save()}
-        disabled={busy}>
-        <Text style={[styles.primaryLabel, { color: ui.accentText }]}>Save and new session</Text>
-      </Pressable>
+    <AppSheet
+      title="Shell"
+      subtitle="New sessions use these defaults"
+      isPresented={isPresented}
+      onDismiss={onDismiss}>
+      {shells.length ? (
+        <SheetSection label={`Available · ${shells.length}`}>
+          {shells.map((item, index) => {
+            const selected = item === shell;
+            return (
+              <Pressable
+                key={item}
+                onPress={() => setShell(item)}
+                disabled={busy}
+                accessibilityRole="radio"
+                accessibilityLabel={`Use ${item}`}
+                accessibilityState={{ selected, disabled: busy }}
+                style={[
+                  styles.row,
+                  index > 0 && { borderTopColor: ui.border, borderTopWidth: StyleSheet.hairlineWidth },
+                ]}>
+                <View
+                  style={[
+                    styles.tile,
+                    { backgroundColor: selected ? ui.accent : ui.surfaceActive },
+                  ]}>
+                  <AppIcon name="shell" color={selected ? ui.accentText : ui.text} size={16} />
+                </View>
+                <View style={styles.rowText}>
+                  <Text
+                    style={[
+                      styles.name,
+                      { color: selected ? ui.accent : ui.text },
+                      selected && styles.nameSelected,
+                    ]}>
+                    {item.split("/").pop()}
+                  </Text>
+                  <Text style={[styles.supporting, { color: ui.textMuted }]} numberOfLines={1}>
+                    {item}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.radio,
+                    { borderColor: selected ? ui.accent : ui.border },
+                  ]}>
+                  {selected ? (
+                    <View style={[styles.radioDot, { backgroundColor: ui.accent }]} />
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </SheetSection>
+      ) : null}
+      <SheetSection label="Defaults">
+        <View style={styles.form}>
+          <SheetField
+            value={shell}
+            onChangeText={setShell}
+            placeholder="/bin/zsh"
+            accessibilityLabel="Shell path"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              backgroundColor: ui.surface,
+              fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+            }}
+          />
+          <SheetField
+            value={cwd}
+            onChangeText={setCwd}
+            placeholder="/Users/you"
+            accessibilityLabel="Working directory"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              backgroundColor: ui.surface,
+              fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+            }}
+          />
+          <SheetError message={error} />
+          {status ? <Text style={[styles.status, { color: ui.accent }]}>{status}</Text> : null}
+          <SheetButton
+            label={busy ? "Saving…" : "Save and new session"}
+            onPress={() => void save()}
+            disabled={busy}
+          />
+        </View>
+      </SheetSection>
     </AppSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  hint: { fontSize: 13, lineHeight: 18 },
-  label: { fontSize: 12, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase" },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
-  primary: { borderRadius: 10, paddingVertical: 12, alignItems: "center" },
-  primaryLabel: { fontWeight: "700" },
+  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
+  tile: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  rowText: { flex: 1, gap: 2, minWidth: 0 },
+  name: { fontSize: 16, fontWeight: "600" },
+  nameSelected: { fontWeight: "700" },
+  supporting: { fontSize: 12, fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }) },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioDot: { width: 12, height: 12, borderRadius: 6 },
+  form: { gap: 10, paddingVertical: 10 },
+  status: { fontSize: 13, lineHeight: 18 },
 });

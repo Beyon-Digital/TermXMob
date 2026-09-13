@@ -9,6 +9,7 @@ type Props = {
   frame: string | null;
   viewOnly: boolean;
   displays: DisplayInfo[];
+  selectedDisplayId?: string;
   error?: string;
   canCreateVirtual: boolean;
   virtualReason?: string;
@@ -32,6 +33,7 @@ export function DesktopView({
   frame,
   viewOnly,
   displays,
+  selectedDisplayId,
   error,
   canCreateVirtual,
   virtualReason,
@@ -141,6 +143,7 @@ export function DesktopView({
       {error ? <Text style={[styles.error, { color: ui.danger }]}>{error}</Text> : null}
       <DisplayDock
         displays={displays}
+        selectedId={selectedDisplayId}
         canCreateVirtual={canCreateVirtual}
         virtualReason={virtualReason}
         onSelect={onSelectDisplay}

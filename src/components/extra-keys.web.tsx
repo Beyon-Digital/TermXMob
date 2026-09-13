@@ -18,9 +18,10 @@ type Props = {
   onAlt: () => void;
   onInput: (data: string) => void;
   onSignal?: (name: string) => void;
+  onHideKeyboard?: () => void;
 };
 
-export function ExtraKeys({ ctrlOn, altOn, onCtrl, onAlt, onInput, onSignal }: Props) {
+export function ExtraKeys({ ctrlOn, altOn, onCtrl, onAlt, onInput, onSignal, onHideKeyboard }: Props) {
   const { theme } = useAppTheme();
   const { ui } = theme;
   const hold = useRef<{ delay?: ReturnType<typeof setTimeout>; next?: ReturnType<typeof setTimeout> }>({});
@@ -45,6 +46,12 @@ export function ExtraKeys({ ctrlOn, altOn, onCtrl, onAlt, onInput, onSignal }: P
     if (name === "INT") {
       onSignal?.("int");
       onInput("\x03");
+      return;
+    }
+    if (name === "KB") {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement) el.blur();
+      onHideKeyboard?.();
       return;
     }
     let seq = sequenceForKey(name);

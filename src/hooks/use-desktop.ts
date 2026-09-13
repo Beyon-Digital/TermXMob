@@ -59,6 +59,7 @@ export function useDesktop(connection: Connection | null, active: boolean, optio
   const [frame, setFrame] = useState<string | null>(null);
   const [viewOnly, setViewOnly] = useState(true);
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
+  const [selectedDisplayId, setSelectedDisplayId] = useState<string | undefined>();
   const [error, setError] = useState("");
 
   const send = useCallback((payload: object) => {
@@ -80,9 +81,14 @@ export function useDesktop(connection: Connection | null, active: boolean, optio
             type?: string;
             view_only?: boolean;
             displays?: DisplayInfo[];
+            selected_display?: string | null;
+            id?: string | null;
             message?: string;
           };
-          if (msg.type === "hello" && msg.displays) setDisplays(msg.displays);
+          if ((msg.type === "hello" || msg.type === "display") && msg.displays) setDisplays(msg.displays);
+          if ((msg.type === "hello" || msg.type === "display") && msg.selected_display) {
+            setSelectedDisplayId(msg.selected_display);
+          }
           if (msg.type === "control" && typeof msg.view_only === "boolean") setViewOnly(msg.view_only);
           if (msg.type === "error" || msg.type === "denied") {
             const text = msg.message || "Desktop error";
@@ -169,6 +175,14 @@ export function useDesktop(connection: Connection | null, active: boolean, optio
     };
   }, [active, connection, send, webrtc]);
 
+  const selectDisplay = useCallback(
+    (id: string) => {
+      setSelectedDisplayId(id);
+      send({ type: "display", id });
+    },
+    [send],
+  );
+
   const setControl = useCallback(
     (nextViewOnly: boolean) => {
       setViewOnly(nextViewOnly);
@@ -198,5 +212,17 @@ export function useDesktop(connection: Connection | null, active: boolean, optio
     [send],
   );
 
-  return { frame, viewOnly, setControl, displays, error, pointer, key, text, send };
+  return {
+    frame,
+    viewOnly,
+    setControl,
+    displays,
+    selectedDisplayId,
+    error,
+    pointer,
+    key,
+    text,
+    send,
+    selectDisplay,
+  };
 }

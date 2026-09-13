@@ -10,7 +10,6 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.jaexxxy.termx",
-      "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Termx connects to your computer on the local network to open a terminal session.",
         "NSAppTransportSecurity": {
