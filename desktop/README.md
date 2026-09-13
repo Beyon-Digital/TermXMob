@@ -127,7 +127,12 @@ Verify downloads with the attached checksums:
 
 ### Signing secrets
 
-Repository → Settings → Secrets and variables → Actions → **New repository secret**.
+**Fast path:** `desktop/scripts/push_signing_secrets.sh` validates your certificate and
+API key and uploads every secret with `gh secret set` (use `--dry-run` to preview).
+The full checklist, Apple setup steps, rotation, and the offline alternative live in
+[`SIGNING.md`](SIGNING.md).
+
+Repository → Settings → Secrets and variables → Actions → **New repository secret** (manual alternative):
 
 **macOS (sign + notarize, no Apple ID or password)**
 

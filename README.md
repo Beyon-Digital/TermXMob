@@ -35,8 +35,8 @@ cd desktop/src-tauri && cargo tauri build
 Installers (`.dmg`, MSI/NSIS, `.deb`/`.rpm`/`.AppImage`) are produced by
 `.github/workflows/desktop.yml`. Push a `vX.Y.Z` tag that matches the app version (or
 run the workflow manually) and GitHub builds, signs, and publishes the release; see
-[`desktop/README.md`](desktop/README.md) for signing, permissions onboarding, lifecycle,
-and log locations.
+[`desktop/README.md`](desktop/README.md) for signing ([`desktop/SIGNING.md`](desktop/SIGNING.md)),
+permissions onboarding, lifecycle, and log locations.
 
 ### Installing unsigned builds
 
