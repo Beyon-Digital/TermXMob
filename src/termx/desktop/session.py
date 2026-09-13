@@ -22,6 +22,14 @@ def idle_grace() -> float:
         return IDLE_GRACE_DEFAULT
 
 
+def pause_grace() -> float:
+    """Seconds to keep capture alive after every viewer paused (hidden tab/window)."""
+    try:
+        return max(0.0, float(os.environ.get("TERMX_CAPTURE_PAUSE_GRACE", 1.0)))
+    except ValueError:
+        return 1.0
+
+
 class DesktopManager:
     def __init__(self) -> None:
         self.view_only = True
@@ -29,6 +37,7 @@ class DesktopManager:
         self._lock = asyncio.Lock()
         self._pumps: set[asyncio.Task[None]] = set()
         self._stops: set[asyncio.Event] = set()
+        self._active: set[object] = set()
         self._idle_task: asyncio.Task[None] | None = None
         self._fps = 0.0
         self._last_capture_ms = 0
@@ -43,18 +52,22 @@ class DesktopManager:
             except (asyncio.CancelledError, Exception):
                 pass
 
-    async def _close_when_idle(self) -> None:
-        """Release the ScreenCaptureKit stream once nobody is watching."""
+    async def _close_when_idle(self, grace: float) -> None:
+        """Release capture once no viewer is actively watching."""
         try:
-            await asyncio.sleep(idle_grace())
+            await asyncio.sleep(grace)
         except asyncio.CancelledError:
             return
-        if self._stops:
+        if self._active:
             return
         try:
             await asyncio.to_thread(close_capture)
         except Exception:
             pass
+
+    async def _schedule_idle_close(self, grace: float) -> None:
+        await self._cancel_idle_close()
+        self._idle_task = asyncio.create_task(self._close_when_idle(grace))
 
     def snapshot(self) -> dict[str, Any]:
         displays = list_displays()
@@ -79,12 +92,19 @@ class DesktopManager:
         await websocket.accept()
         await websocket.send_text(json.dumps({"type": "hello", **self.snapshot()}))
         stop = asyncio.Event()
+        resume = asyncio.Event()
+        resume.set()
+        token = object()
         self._stops.add(stop)
+        self._active.add(token)
 
         async def frames() -> None:
             last = time.monotonic()
             metric_at = last
             while not stop.is_set():
+                await resume.wait()
+                if stop.is_set():
+                    break
                 try:
                     started = time.monotonic()
                     frame = await asyncio.to_thread(grab_jpeg, self.display_id)
@@ -127,6 +147,21 @@ class DesktopManager:
                     self.view_only = bool(payload.get("view_only", True))
                     await websocket.send_text(json.dumps({"type": "control", "view_only": self.view_only}))
                     continue
+                if kind == "pause":
+                    if token in self._active:
+                        self._active.discard(token)
+                        resume.clear()
+                        await websocket.send_text(json.dumps({"type": "paused"}))
+                        if not self._active:
+                            await self._schedule_idle_close(pause_grace())
+                    continue
+                if kind == "resume":
+                    if token not in self._active:
+                        self._active.add(token)
+                        resume.set()
+                        await self._cancel_idle_close()
+                        await websocket.send_text(json.dumps({"type": "resumed"}))
+                    continue
                 if kind == "display":
                     requested = payload.get("id")
                     self.display_id = str(requested) if requested else None
@@ -157,7 +192,9 @@ class DesktopManager:
             pass
         finally:
             stop.set()
+            resume.set()
             self._stops.discard(stop)
+            self._active.discard(token)
             pump.cancel()
             await asyncio.gather(pump, return_exceptions=True)
             self._pumps.discard(pump)
@@ -165,14 +202,14 @@ class DesktopManager:
                 await asyncio.to_thread(apply_event, {"type": "release_all"})
             except Exception:
                 pass
-            if not self._stops:
-                # Last client gone: stop capturing so the helper (and the macOS
+            if not self._active:
+                # No viewer watching: stop capturing so the helper (and the macOS
                 # screen-recording indicator) is not left running.
-                await self._cancel_idle_close()
-                self._idle_task = asyncio.create_task(self._close_when_idle())
+                await self._schedule_idle_close(idle_grace())
 
     async def close(self) -> None:
         await self._cancel_idle_close()
+        self._active.clear()
         for event in list(self._stops):
             event.set()
         pumps = list(self._pumps)

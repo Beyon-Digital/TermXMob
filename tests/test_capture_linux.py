@@ -56,3 +56,71 @@ def test_xrandr_virtual_display_roundtrip() -> None:
         assert created["width"] == 800
     finally:
         destroy_virtual_display(str(created["id"]))
+
+
+class _FakeWS:
+    def __init__(self) -> None:
+        import asyncio
+
+        self.sent_bytes = 0
+        self.sent_text: list[str] = []
+        self._queue: asyncio.Queue = asyncio.Queue()
+
+    async def accept(self) -> None:
+        return None
+
+    async def send_text(self, data: str) -> None:
+        self.sent_text.append(data)
+
+    async def send_bytes(self, data: bytes) -> None:
+        self.sent_bytes += len(data)
+
+    async def receive(self) -> dict:
+        return await self._queue.get()
+
+    def send(self, payload: dict) -> None:
+        import json
+
+        self._queue.put_nowait({"type": "websocket.receive", "text": json.dumps(payload)})
+
+    def disconnect(self) -> None:
+        self._queue.put_nowait({"type": "websocket.disconnect"})
+
+
+def test_linux_pause_stops_real_capture_and_resume_restarts() -> None:
+    import asyncio
+
+    from termx.desktop.capture import close_capture
+    from termx.desktop.session import DesktopManager
+
+    async def wait_until(predicate, timeout: float = 20.0) -> bool:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
+            if predicate():
+                return True
+            await asyncio.sleep(0.1)
+        return predicate()
+
+    async def inner() -> None:
+        manager = DesktopManager()
+        ws = _FakeWS()
+        task = asyncio.create_task(manager.attach(ws))
+        try:
+            assert await wait_until(lambda: ws.sent_bytes > 0), "no frames while active"
+            ws.send({"type": "pause"})
+            assert await wait_until(lambda: any('"paused"' in text for text in ws.sent_text))
+            frozen = ws.sent_bytes
+            await asyncio.sleep(1.5)
+            assert ws.sent_bytes == frozen, "capture continued while paused"
+            ws.send({"type": "resume"})
+            assert await wait_until(lambda: any('"resumed"' in text for text in ws.sent_text))
+            assert await wait_until(lambda: ws.sent_bytes > frozen), "capture did not resume"
+        finally:
+            ws.disconnect()
+            await asyncio.wait_for(task, timeout=10)
+
+    try:
+        asyncio.run(inner())
+    finally:
+        close_capture()

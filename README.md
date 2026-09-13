@@ -88,9 +88,12 @@ the full UI without any Node tooling. Rebuild it with
 - Desktop capture prefers that signed `termx-capture`, then `ffmpeg`, then `screencapture`/`grim`/`maim`. Grant Screen Recording on macOS.
 - Virtual extra displays: Hyprland `hyprctl output create headless`, Sway `create_output`, X11 `xrandr --setmonitor`, or `termx-virtual-display` on PATH. GNOME/KDE only if `gdctl`/`kscreen-doctor` help lists virtual/create.
 - Tunnels: `cloudflared`, `ngrok`, or `tailscale` on `PATH`. Named Cloudflare tunnels need a token on the profile.
-- Screen capture only runs while a desktop viewer is connected; the helper and its
-  ScreenCaptureKit stream stop a few seconds (`TERMX_CAPTURE_IDLE_GRACE`) after the last
-  viewer leaves, so the macOS screen-recording indicator does not stay on.
+- Screen capture only runs while a desktop viewer is actively watching. Hidden tabs,
+  minimized/hidden windows and backgrounded phones send `pause`, so capture and the
+  screen-recording indicator stop everywhere (macOS helper, Windows GDI, Linux tools),
+  and `resume` restarts on demand. Disconnecting releases capture after
+  `TERMX_CAPTURE_IDLE_GRACE` (default 5s); pausing uses `TERMX_CAPTURE_PAUSE_GRACE`
+  (default 1s).
 - Stop (`Ctrl+C` / SIGTERM) drains tunnels, desktop pumps, virtual displays, then PTY process groups.
 - `TERMX_CORS_ORIGINS` optional comma-separated list (default `*`).
 

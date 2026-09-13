@@ -320,11 +320,13 @@ are committed from CI).
 
 ## Lifecycle behavior
 
-- Screen capture runs only while someone is watching: the `termx-capture` helper (and
-  its ScreenCaptureKit stream / TCC indicator) starts when the first desktop viewer
-  connects and is released `TERMX_CAPTURE_IDLE_GRACE` seconds (default 5) after the last
-  one disconnects. Nothing is captured, streamed, or kept in memory when the Desktop
-  view is closed or the app quits.
+- Screen capture runs only while someone is actively watching. It starts when the
+  first viewer connects, pauses when every viewer is hidden/inactive (`pause`/`resume`
+  messages; `TERMX_CAPTURE_PAUSE_GRACE`, default 1s) and is released
+  `TERMX_CAPTURE_IDLE_GRACE` seconds (default 5) after the last one disconnects. On
+  macOS this stops the helper, the ScreenCaptureKit stream and its recording indicator;
+  on Windows/Linux frame capture and input pumps stop the same way. Nothing is captured,
+  streamed, or kept in memory when the Desktop view is closed or the app quits.
 - Single instance: a second launch focuses the existing window.
 - Closing the window hides to the tray; quit from the menu/tray/Cmd+Q.
 - Port 8787 is preferred; a live Termx on it with the stored passcode is adopted,

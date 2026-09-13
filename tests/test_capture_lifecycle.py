@@ -210,3 +210,124 @@ def test_shutdown_state_closes_capture_helper(monkeypatch, tmp_path) -> None:
         close_capture()
 
 
+
+
+def test_pause_stops_capture_and_resume_restarts(monkeypatch, tmp_path) -> None:
+    from termx.desktop.capture import close_capture
+    from termx.desktop.session import DesktopManager
+
+    pidfile = tmp_path / "helper.pid"
+    monkeypatch.setenv("TERMX_CAPTURE_BIN", str(_make_persistent_helper(tmp_path)))
+    monkeypatch.setenv("FAKE_HELPER_PIDFILE", str(pidfile))
+    monkeypatch.setenv("TERMX_CAPTURE_PAUSE_GRACE", "0.3")
+    monkeypatch.setenv("TERMX_CAPTURE_IDLE_GRACE", "0.3")
+    close_capture()
+
+    async def inner() -> None:
+        manager = DesktopManager()
+        ws = FakeWebSocket()
+        task = asyncio.create_task(manager.attach(ws))
+        assert await _wait_until(lambda: ws.sent_bytes > 0)
+        first_pid = int(pidfile.read_text())
+        assert _pid_alive(first_pid)
+
+        ws.send({"type": "pause"})
+        assert await _wait_until(lambda: any('"paused"' in text for text in ws.sent_text))
+        frozen = ws.sent_bytes
+        # no new frames while paused, and the helper is released
+        assert await _wait_until(lambda: not _pid_alive(first_pid), timeout=10)
+        await asyncio.sleep(0.5)
+        assert ws.sent_bytes == frozen
+
+        ws.send({"type": "resume"})
+        assert await _wait_until(lambda: any('"resumed"' in text for text in ws.sent_text))
+        assert await _wait_until(lambda: ws.sent_bytes > frozen)
+        second_pid = int(pidfile.read_text())
+        assert _pid_alive(second_pid)
+
+        ws.disconnect()
+        await asyncio.wait_for(task, timeout=10)
+        assert await _wait_until(lambda: not _pid_alive(second_pid), timeout=10)
+
+    try:
+        asyncio.run(inner())
+    finally:
+        close_capture()
+
+
+def test_pause_keeps_capture_when_another_viewer_is_active(monkeypatch, tmp_path) -> None:
+    from termx.desktop.capture import close_capture
+    from termx.desktop.session import DesktopManager
+
+    pidfile = tmp_path / "helper.pid"
+    monkeypatch.setenv("TERMX_CAPTURE_BIN", str(_make_persistent_helper(tmp_path)))
+    monkeypatch.setenv("FAKE_HELPER_PIDFILE", str(pidfile))
+    monkeypatch.setenv("TERMX_CAPTURE_PAUSE_GRACE", "0.3")
+    monkeypatch.setenv("TERMX_CAPTURE_IDLE_GRACE", "0.3")
+    close_capture()
+
+    async def inner() -> None:
+        manager = DesktopManager()
+        first = FakeWebSocket()
+        second = FakeWebSocket()
+        task_one = asyncio.create_task(manager.attach(first))
+        task_two = asyncio.create_task(manager.attach(second))
+        assert await _wait_until(lambda: first.sent_bytes > 0 and second.sent_bytes > 0)
+        pid = int(pidfile.read_text())
+
+        first.send({"type": "pause"})
+        assert await _wait_until(lambda: any('"paused"' in text for text in first.sent_text))
+        await asyncio.sleep(0.8)
+        assert _pid_alive(pid)
+        frozen = second.sent_bytes
+        assert frozen > 0
+
+        second.send({"type": "pause"})
+        assert await _wait_until(lambda: not _pid_alive(pid), timeout=10)
+
+        second.send({"type": "resume"})
+        assert await _wait_until(lambda: any('"resumed"' in text for text in second.sent_text))
+        assert await _wait_until(lambda: second.sent_bytes > frozen)
+        assert _pid_alive(int(pidfile.read_text()))
+
+        first.disconnect()
+        second.disconnect()
+        await asyncio.wait_for(task_one, timeout=10)
+        await asyncio.wait_for(task_two, timeout=10)
+
+    try:
+        asyncio.run(inner())
+    finally:
+        close_capture()
+
+
+def test_quick_resume_within_pause_grace_keeps_helper(monkeypatch, tmp_path) -> None:
+    from termx.desktop.capture import close_capture
+    from termx.desktop.session import DesktopManager
+
+    pidfile = tmp_path / "helper.pid"
+    monkeypatch.setenv("TERMX_CAPTURE_BIN", str(_make_persistent_helper(tmp_path)))
+    monkeypatch.setenv("FAKE_HELPER_PIDFILE", str(pidfile))
+    monkeypatch.setenv("TERMX_CAPTURE_PAUSE_GRACE", "5")
+    close_capture()
+
+    async def inner() -> None:
+        manager = DesktopManager()
+        ws = FakeWebSocket()
+        task = asyncio.create_task(manager.attach(ws))
+        assert await _wait_until(lambda: ws.sent_bytes > 0)
+        pid = int(pidfile.read_text())
+        ws.send({"type": "pause"})
+        assert await _wait_until(lambda: any('"paused"' in text for text in ws.sent_text))
+        await asyncio.sleep(0.2)
+        ws.send({"type": "resume"})
+        assert await _wait_until(lambda: any('"resumed"' in text for text in ws.sent_text))
+        assert _pid_alive(pid)
+        assert await _wait_until(lambda: ws.sent_bytes > 0)
+        ws.disconnect()
+        await asyncio.wait_for(task, timeout=10)
+
+    try:
+        asyncio.run(inner())
+    finally:
+        close_capture()
