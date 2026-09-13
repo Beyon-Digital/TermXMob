@@ -28,7 +28,29 @@ artifacts locally instead — see [Local signing](#local-signing-no-github-secre
 
 You do **not** need an Apple ID, app-specific password, or two-factor codes for CI.
 
-## Push the secrets with one command
+## Full setup with one command (recommended)
+
+Once you have the `.cer` and the `.p8` on your Mac, `setup_github_signing.sh` does
+everything: validates the certificate type, builds the `.p12`, imports it into your
+keychain, writes `desktop/signing.env`, optionally signs/notarizes the installed app,
+uploads all GitHub secrets, and can trigger the release:
+
+```bash
+desktop/scripts/setup_github_signing.sh \
+  --cer ~/certs/developerid_application.cer \
+  --key ~/certs/termx-developer-id.key \
+  --api-key ~/Downloads/AuthKey_ABC123XYZ.p8 \
+  --api-key-id ABC123XYZ \
+  --api-issuer 00000000-0000-0000-0000-000000000000 \
+  --sign-app /Applications/Termx.app \
+  --tag v0.1.1
+```
+
+Use `--dry-run` first to validate without changing anything. The script refuses
+certificates that are not **Developer ID Application** (for example Apple
+Distribution) with a clear message.
+
+## Push or update secrets only
 
 The helper validates the inputs and uploads them with `gh secret set`:
 

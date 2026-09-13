@@ -154,11 +154,11 @@ if ! openssl pkcs12 -in "$P12" -passin "pass:$P12_PASSWORD" -noout >/dev/null 2>
 fi
 
 extract_identity() {
+  # Apple subjects look like "UID=TEAMID, CN=Developer ID Application: ... (TEAMID), OU=..."
+  # as well as the older "/CN=.../O=..." form, so match the CN component directly.
   openssl pkcs12 "$@" -nokeys -clcerts 2>/dev/null |
     openssl x509 -noout -subject 2>/dev/null |
-    sed -n 's/^subject=//p' |
-    sed 's/,.*$//' |
-    sed 's#^/##; s#^CN *= *##; s#/.*$##'
+    sed -n 's/.*CN *= *\([^,/]*\).*/\1/p'
 }
 
 if [ -z "$IDENTITY" ]; then
