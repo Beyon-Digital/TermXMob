@@ -218,10 +218,11 @@ required to publish.
 
 ## Local build
 
-Prerequisites: Node/pnpm, Rust, `uv`, and PyInstaller via the packaging group.
+Prerequisites: Rust, `uv`, and PyInstaller via the packaging group.
+The web UI is prebuilt in `desktop/web` (committed); refresh it from the private
+client repo with `desktop/scripts/update_web_ui.sh` when the client changes.
 
 ```bash
-pnpm --dir app install --frozen-lockfile
 uv sync --group packaging
 uv run --group packaging python desktop/scripts/build_sidecar.py
 

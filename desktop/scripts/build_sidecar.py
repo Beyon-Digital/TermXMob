@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Build the PyInstaller onedir sidecar and stage it for the Tauri bundle.
 
+The web UI ships prebuilt in desktop/web (see desktop/scripts/update_web_ui.sh).
+
 Usage (from the repository root):
     uv run --group packaging python desktop/scripts/build_sidecar.py
-    uv run --group packaging python desktop/scripts/build_sidecar.py --skip-web
+    uv run --group packaging python desktop/scripts/build_sidecar.py --skip-build
     TERMX_MACOS_SIGN_IDENTITY="Developer ID Application: ..." python desktop/scripts/build_sidecar.py
 """
 
@@ -18,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "desktop"
-APP = ROOT / "app"
+WEB = DESKTOP / "web"
 STAGE = DESKTOP / "src-tauri" / "resources" / "backend"
 BUILD = DESKTOP / "build"
 EXE_NAME = "termx-backend.exe" if os.name == "nt" else "termx-backend"
@@ -29,17 +31,12 @@ def run(argv: list[str], cwd: Path | None = None) -> None:
     subprocess.run(argv, cwd=str(cwd or ROOT), check=True)
 
 
-def export_web() -> None:
-    pnpm = shutil.which("pnpm")
-    if pnpm is None:
-        raise SystemExit("pnpm is required to build the web UI (install pnpm or pass --skip-web)")
-    # Use the resolved path: on Windows pnpm is a .cmd shim that CreateProcess
-    # will not find from the bare name.
-    if not (APP / "node_modules").is_dir():
-        run([pnpm, "install", "--frozen-lockfile"], cwd=APP)
-    run([pnpm, "export:web"], cwd=APP)
-    if not (APP / "dist" / "index.html").is_file():
-        raise SystemExit("web export did not produce app/dist/index.html")
+def verify_web(web_dir: Path) -> None:
+    if not (web_dir / "index.html").is_file():
+        raise SystemExit(
+            f"web UI bundle not found at {web_dir}."
+            " Run desktop/scripts/update_web_ui.sh to refresh it from the client repository."
+        )
 
 
 def build_sidecar(stage_only: bool = False) -> None:
@@ -125,11 +122,10 @@ def sign_windows() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--skip-web", action="store_true", help="reuse the existing app/dist export")
+    parser.add_argument("--web-dir", type=Path, default=WEB, help="web UI bundle to package")
     parser.add_argument("--skip-build", action="store_true", help="only stage/sign an existing build")
     args = parser.parse_args()
-    if not args.skip_web:
-        export_web()
+    verify_web(args.web_dir)
     build_sidecar(stage_only=args.skip_build)
     sign_macos()
     sign_windows()

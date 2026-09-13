@@ -25,26 +25,6 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
-  app-types:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: app
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-      - name: Install and typecheck
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm exec tsc --noEmit
-
   linux-desktop:
     name: linux desktop capture
     runs-on: ubuntu-latest

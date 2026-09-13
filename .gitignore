@@ -9,11 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# Node / Expo
+# Node
 node_modules/
-.expo/
-app/dist/
-app/.expo/
 package-lock.json
 .DS_Store
 

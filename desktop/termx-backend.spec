@@ -7,7 +7,7 @@ ROOT = Path(SPECPATH).parent
 
 datas = [
     (str(ROOT / "src" / "termx" / "static"), "termx/static"),
-    (str(ROOT / "app" / "dist"), "web"),
+    (str(ROOT / "desktop" / "web"), "web"),
 ]
 
 if ROOT.joinpath("helpers", "macos", "bin").is_dir():

@@ -31,10 +31,14 @@ def default_web_dir() -> Path:
     if bundled is not None:
         return bundled
     cwd = Path.cwd()
-    for candidate in (cwd / "app" / "dist", cwd.parent / "app" / "dist"):
+    for candidate in (
+        cwd / "desktop" / "web",
+        cwd.parent / "desktop" / "web",
+        cwd / "web",
+    ):
         if candidate.is_dir():
             return candidate
-    return cwd / "app" / "dist"
+    return cwd / "desktop" / "web"
 
 
 def build_parser() -> argparse.ArgumentParser:

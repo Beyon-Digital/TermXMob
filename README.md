@@ -26,11 +26,13 @@ Build a native desktop host that bundles the Python server, the web UI, and the 
 helpers. End users install the artifact for their OS and need no Python or tooling.
 
 ```bash
-pnpm --dir app install --frozen-lockfile
 uv sync --group packaging
-uv run --group packaging python desktop/scripts/build_sidecar.py
+uv run --group packaging python desktop/scripts/build_sidecar.py   # packages python + desktop/web
 cd desktop/src-tauri && cargo tauri build
 ```
+
+The web UI ships prebuilt in `desktop/web`; refresh it from the private client repo with
+`desktop/scripts/update_web_ui.sh`.
 
 Installers (`.dmg`, MSI/NSIS, `.deb`/`.rpm`/`.AppImage`) are produced by
 `.github/workflows/desktop.yml`. Push a `vX.Y.Z` tag that matches the app version (or
@@ -67,30 +69,20 @@ signed so Apple Silicon accepts them. First run:
 Each release attaches `SHA256SUMS-<platform>.txt`; verify with
 `shasum -a 256 -c SHA256SUMS-macos-arm64.txt` (or `sha256sum -c`, GNU coreutils).
 
-## Phone app
+## Client apps
 
-```bash
-cd app
-pnpm install
-pnpm start
-```
-
-Expo Go on iOS/Android, or press `w` for web. Enter `host:port` from the server, or scan the QR.
-
-## Serve the Expo web UI from Python
-
-```bash
-cd app && pnpm export:web
-uv run termx
-```
-
-Python serves `app/dist` when that folder exists. Otherwise it serves the built-in terminal page.
+The mobile (Expo) and web client lives in the private repository
+`Psyborgs-git/termx-app`; it is not part of this host repository. A prebuilt web
+bundle is committed under `desktop/web` so the desktop app and `uv run termx` serve
+the full UI without any Node tooling. Rebuild it with
+`desktop/scripts/update_web_ui.sh` after client changes.
 
 ## Host notes
 
 - Config, tokens, and audit logs live in `~/.config/termx` (or `$TERMX_CONFIG_DIR`).
 - `POST /api/pair` with the passcode returns a Bearer token; passcode still works for QR.
-- CI: `.github/workflows/ci.yml` runs pytest + app `tsc` on Ubuntu. `.github/workflows/macos-helpers.yml` builds Swift helpers on `macos-15` for **arm64 and x86_64**, lipos a universal binary, and commits all of them to `helpers/macos/bin/` on `main`. Termx selects the slice that matches this machine. Sign locally with Command Line Tools (no Xcode.app):
+- CI: `.github/workflows/ci.yml` runs pytest on Linux/macOS/Windows plus a Linux
+  desktop capture job. `.github/workflows/macos-helpers.yml` builds Swift helpers on `macos-15` for **arm64 and x86_64**, lipos a universal binary, and commits all of them to `helpers/macos/bin/` on `main`. Termx selects the slice that matches this machine. Sign locally with Command Line Tools (no Xcode.app):
   `cp helpers/macos/signing/signing.env.example helpers/macos/signing/signing.env && helpers/macos/sign.sh`
   Put a `.p12` path in `signing.env` to import into the persisted `helpers/macos/signing/termx.keychain-db` (gitignored).
 - Desktop capture prefers that signed `termx-capture`, then `ffmpeg`, then `screencapture`/`grim`/`maim`. Grant Screen Recording on macOS.
