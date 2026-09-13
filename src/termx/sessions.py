@@ -1,14 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import os
-import pty
-import select
 import signal
-import struct
-import subprocess
-import termios
 import threading
 import uuid
 from collections import deque
@@ -17,9 +11,18 @@ from pathlib import Path
 from time import time
 from typing import Protocol
 
+from termx.terminals import TerminalError, spawn_terminal, set_winsize
+
 REPLAY_MAX_BYTES = 256_000
 DEFAULT_COLS = 80
 DEFAULT_ROWS = 24
+
+SIGNALS = {
+    "int": signal.SIGINT,
+    "term": signal.SIGTERM,
+    "hup": signal.SIGHUP,
+    "kill": signal.SIGKILL,
+}
 
 
 class ByteSink(Protocol):
@@ -45,46 +48,22 @@ class ReplayBuffer:
         return b"".join(self._chunks)
 
 
-def _winsize(rows: int, cols: int) -> bytes:
-    return struct.pack("HHHH", max(1, rows), max(1, cols), 0, 0)
-
-
-def set_winsize(fd: int, rows: int, cols: int) -> None:
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, _winsize(rows, cols))
-
-
 def default_shell() -> str:
+    if os.name == "nt":
+        return os.environ.get("COMSPEC") or "powershell.exe"
     return os.environ.get("SHELL") or "/bin/zsh"
 
 
 def default_argv(shell: str | None = None) -> list[str]:
     sh = shell or default_shell()
-    name = os.path.basename(sh)
+    name = os.path.basename(sh).lower()
     if name in {"zsh", "bash", "sh"}:
         return [sh, "-l"]
+    if name in {"powershell.exe", "pwsh.exe", "powershell", "pwsh"}:
+        return [sh, "-NoLogo"]
+    if name in {"cmd.exe", "cmd"}:
+        return [sh]
     return [sh]
-
-
-def _preexec_controlling_tty(slave_fd: int) -> None:
-    os.setsid()
-    try:
-        fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
-    except OSError:
-        pass
-    try:
-        attrs = termios.tcgetattr(slave_fd)
-        attrs[3] |= termios.ISIG
-        termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
-    except termios.error:
-        pass
-
-
-SIGNALS = {
-    "int": signal.SIGINT,
-    "term": signal.SIGTERM,
-    "hup": signal.SIGHUP,
-    "kill": signal.SIGKILL,
-}
 
 
 @dataclass
@@ -98,7 +77,7 @@ class Session:
     cwd: str = field(default_factory=lambda: str(Path.home()))
     shell: str = field(default_factory=default_shell)
     master_fd: int = -1
-    proc: subprocess.Popen[bytes] | None = None
+    proc: object | None = None
     replay: ReplayBuffer = field(default_factory=ReplayBuffer)
     subscribers: set[ByteSink] = field(default_factory=set)
     exited: bool = False
@@ -106,30 +85,19 @@ class Session:
     _loop: asyncio.AbstractEventLoop | None = None
     _reader: threading.Thread | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _terminal: object | None = None
 
     def start(self) -> None:
-        master, slave = pty.openpty()
-        set_winsize(master, self.rows, self.cols)
-        try:
-            set_winsize(slave, self.rows, self.cols)
-        except OSError:
-            pass
         env = os.environ.copy()
         env.setdefault("TERM", "xterm-256color")
         env.setdefault("COLORTERM", "truecolor")
-        self.proc = subprocess.Popen(
-            self.argv,
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
-            cwd=self.cwd,
-            env=env,
-            preexec_fn=lambda: _preexec_controlling_tty(slave),
-        )
-        os.close(slave)
-        flags = fcntl.fcntl(master, fcntl.F_GETFL)
-        fcntl.fcntl(master, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-        self.master_fd = master
+        try:
+            terminal = spawn_terminal(self.argv, self.cwd, env, self.rows, self.cols)
+        except TerminalError:
+            raise
+        self._terminal = terminal
+        self.master_fd = getattr(terminal, "master_fd", -1)
+        self.proc = getattr(terminal, "proc", None)
         self._reader = threading.Thread(target=self._read_loop, name=f"pty-{self.id}", daemon=True)
         self._reader.start()
 
@@ -138,33 +106,21 @@ class Session:
 
     def _read_loop(self) -> None:
         while not self.exited:
-            fd = self.master_fd
-            if fd < 0:
+            terminal = self._terminal
+            if terminal is None:
                 break
             try:
-                ready, _, _ = select.select([fd], [], [], 0.25)
+                data = terminal.read(0.25)  # type: ignore[attr-defined]
             except (OSError, ValueError):
                 break
-            if not ready:
-                if self.proc is not None and self.proc.poll() is not None:
-                    try:
-                        leftover = os.read(fd, 8192)
-                    except OSError:
-                        leftover = b""
-                    if leftover:
-                        self._emit_threadsafe(leftover)
-                    self._emit_threadsafe(b"")
-                    break
-                continue
-            try:
-                data = os.read(fd, 8192)
-            except BlockingIOError:
-                continue
-            except OSError:
-                data = b""
-            self._emit_threadsafe(data)
-            if not data:
+            except Exception:
                 break
+            if data is None:
+                continue
+            if not data:
+                self._emit_threadsafe(b"")
+                break
+            self._emit_threadsafe(data)
 
     def _emit_threadsafe(self, data: bytes) -> None:
         loop = self._loop
@@ -197,14 +153,21 @@ class Session:
         if self.exited:
             return
         self.exited = True
+        terminal = self._terminal
         code = None
-        if self.proc is not None:
-            code = self.proc.poll()
-            if code is None:
+        if terminal is not None:
+            try:
+                code = terminal.exit_code()  # type: ignore[attr-defined]
+            except Exception:
+                code = None
+            if code is None and getattr(terminal, "proc", None) is not None:
                 try:
-                    code = self.proc.wait(timeout=0.2)
-                except subprocess.TimeoutExpired:
-                    code = self.proc.poll()
+                    proc = terminal.proc  # type: ignore[attr-defined]
+                    wait = getattr(proc, "wait", None)
+                    if callable(wait):
+                        code = proc.wait(timeout=0.2)
+                except Exception:
+                    code = None
         self.exit_code = code
         with self._lock:
             sinks = list(self.subscribers)
@@ -221,36 +184,27 @@ class Session:
                     pass
 
     def write(self, data: bytes) -> None:
-        if self.exited or self.master_fd < 0 or not data:
+        if self.exited or not data:
             return
-        os.write(self.master_fd, data)
+        terminal = self._terminal
+        if terminal is None:
+            return
+        terminal.write(data)  # type: ignore[attr-defined]
 
     def send_signal(self, name: str) -> bool:
-        if self.exited or self.proc is None:
+        if self.exited:
             return False
-        sig = SIGNALS.get(name.lower())
-        if sig is None:
+        terminal = self._terminal
+        if terminal is None:
             return False
-        if self.proc.poll() is not None:
-            return False
-        try:
-            os.killpg(os.getpgid(self.proc.pid), sig)
-            return True
-        except OSError:
-            try:
-                self.proc.send_signal(sig)
-                return True
-            except OSError:
-                return False
+        return bool(terminal.send_signal(name))  # type: ignore[attr-defined]
 
     def resize(self, cols: int, rows: int) -> None:
         self.cols = max(1, cols)
         self.rows = max(1, rows)
-        if self.master_fd >= 0 and not self.exited:
-            try:
-                set_winsize(self.master_fd, self.rows, self.cols)
-            except OSError:
-                pass
+        terminal = self._terminal
+        if terminal is not None and not self.exited:
+            terminal.resize(self.rows, self.cols)  # type: ignore[attr-defined]
 
     def subscribe(self, sink: ByteSink) -> bytes:
         with self._lock:
@@ -263,36 +217,13 @@ class Session:
 
     def kill(self, timeout: float = 1.5) -> None:
         self.exited = True
-        proc = self.proc
-        if proc is not None and proc.poll() is None:
+        terminal = self._terminal
+        if terminal is not None:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except OSError:
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except OSError:
-                    try:
-                        proc.kill()
-                    except OSError:
-                        pass
-                try:
-                    proc.wait(timeout=0.5)
-                except subprocess.TimeoutExpired:
-                    pass
-        fd = self.master_fd
-        self.master_fd = -1
-        if fd >= 0:
-            try:
-                os.close(fd)
-            except OSError:
+                terminal.kill(timeout)  # type: ignore[attr-defined]
+            except Exception:
                 pass
+            self.master_fd = getattr(terminal, "master_fd", -1)
         reader = self._reader
         if reader is not None and reader.is_alive():
             reader.join(timeout=0.5)

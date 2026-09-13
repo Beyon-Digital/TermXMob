@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Termx — Connect</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #0b0d10; color: #e8eaed;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { width: min(420px, 92vw); padding: 28px; }
+  h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.01em; }
+  p.hint { margin: 0 0 20px; color: #9aa0a6; font-size: 13px; }
+  .qr {
+    display: flex; align-items: center; justify-content: center;
+    background: #fff; border-radius: 12px; padding: 14px; aspect-ratio: 1; max-width: 260px; margin: 0 auto 20px;
+  }
+  .qr svg, .qr img { width: 100%; height: 100%; }
+  .mark { display: block; width: 68px; height: 68px; margin: 0 auto 14px; }
+  .row { margin-bottom: 12px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #9aa0a6; margin-bottom: 4px; }
+  code { display: block; background: #171a1f; border: 1px solid #262a31; border-radius: 8px; padding: 10px 12px; font-size: 13px; overflow-wrap: anywhere; }
+  button {
+    width: 100%; margin-top: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid #2d6cdf;
+    background: #2d6cdf; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary { background: transparent; color: #c6c9ce; border-color: #33383f; }
+  .status { min-height: 18px; margin-top: 8px; font-size: 12px; color: #7fd18b; }
+</style>
+</head>
+<body>
+<main>
+  <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
+    <defs>
+      <linearGradient id="connect-cyan" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#00D9FF"/>
+        <stop offset="100%" stop-color="#38F2B2"/>
+      </linearGradient>
+    </defs>
+    <rect x="244" y="96" width="24" height="74" rx="12" fill="#162431"/>
+    <circle cx="256" cy="78" r="46" fill="#162431"/>
+    <circle cx="256" cy="78" r="27" fill="url(#connect-cyan)"/>
+    <rect x="48" y="238" width="76" height="104" rx="38" fill="#162431"/>
+    <rect x="388" y="238" width="76" height="104" rx="38" fill="#162431"/>
+    <rect x="90" y="150" width="332" height="244" rx="92" fill="#162431"/>
+    <rect x="112" y="172" width="288" height="200" rx="72" fill="#F7F8FA"/>
+    <rect x="138" y="204" width="236" height="136" rx="36" fill="#0E1822"/>
+    <path d="M187 242 L233 272 L187 302" stroke="url(#connect-cyan)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <rect x="258" y="287" width="72" height="18" rx="9" fill="url(#connect-cyan)"/>
+  </svg>
+  <h1>Termx</h1>
+  <p class="hint">Scan the QR code from your phone, or open the address in a browser.</p>
+  <div class="qr" id="qr"></div>
+  <div class="row">
+    <div class="label">Connection address</div>
+    <code id="address">loading…</code>
+  </div>
+  <div class="row" id="passcode-row" hidden>
+    <div class="label">Passcode</div>
+    <code id="passcode"></code>
+  </div>
+  <button id="copy">Copy connection link</button>
+  <button class="secondary" id="copy-raw">Copy address only</button>
+  <div class="status" id="status"></div>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  const key = params.get("k") || "";
+  const suffix = key ? "?k=" + encodeURIComponent(key) : "";
+  const status = document.getElementById("status");
+  let connectUrl = "";
+
+  function flash(text) {
+    status.textContent = text;
+    setTimeout(() => { status.textContent = ""; }, 2500);
+  }
+
+  async function copy(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+      flash("Copied");
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = value;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+      flash("Copied");
+    }
+  }
+
+  document.getElementById("copy").addEventListener("click", () => connectUrl && copy(connectUrl));
+  document.getElementById("copy-raw").addEventListener("click", () => connectUrl && copy(connectUrl.split("?")[0]));
+
+  const qr = document.getElementById("qr");
+  const img = document.createElement("img");
+  img.alt = "Connection QR code";
+  img.src = "/api/connect/qr.svg" + suffix;
+  qr.appendChild(img);
+
+  fetch("/api/connect" + suffix)
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error("HTTP " + res.status))))
+    .then((data) => {
+      connectUrl = data.connect_url || "";
+      const urls = (data.urls || []).filter((u) => !u.includes("127.0.0.1"));
+      document.getElementById("address").textContent = urls[0] || data.connect_url || "unknown";
+      if (data.passcode) {
+        document.getElementById("passcode").textContent = data.passcode;
+        document.getElementById("passcode-row").hidden = false;
+      }
+    })
+    .catch(() => {
+      document.getElementById("address").textContent = "Could not load connection info";
+    });
+</script>
+</body>
+</html>

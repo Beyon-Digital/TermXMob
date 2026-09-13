@@ -20,9 +20,10 @@ type Props = {
   onAlt: () => void;
   onInput: (data: string) => void;
   onSignal?: (name: string) => void;
+  onHideKeyboard?: () => void;
 };
 
-export function ExtraKeys({ ctrlOn, altOn, onCtrl, onAlt, onInput, onSignal }: Props) {
+export function ExtraKeys({ ctrlOn, altOn, onCtrl, onAlt, onInput, onSignal, onHideKeyboard }: Props) {
   const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
   const { ui } = theme;
@@ -62,6 +63,11 @@ export function ExtraKeys({ ctrlOn, altOn, onCtrl, onAlt, onInput, onSignal }: P
     if (name === "INT") {
       onSignal?.("int");
       onInput("\x03");
+      return;
+    }
+    if (name === "KB") {
+      Keyboard.dismiss();
+      onHideKeyboard?.();
       return;
     }
     let seq = sequenceForKey(name);

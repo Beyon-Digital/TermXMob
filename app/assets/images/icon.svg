@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00D9FF"/>
+      <stop offset="100%" stop-color="#38F2B2"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#162431"/>
+      <stop offset="100%" stop-color="#0B131C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Antenna stem -->
+  <rect x="244" y="96" width="24" height="74" rx="12" fill="url(#shell)"/>
+
+  <!-- Antenna outer ring -->
+  <circle cx="256" cy="78" r="46" fill="url(#shell)"/>
+
+  <!-- Antenna light -->
+  <circle cx="256" cy="78" r="27" fill="url(#cyan)"/>
+
+  <!-- Left ear -->
+  <rect x="48" y="238" width="76" height="104" rx="38" fill="url(#shell)"/>
+
+  <!-- Left ear light -->
+  <path d="M87 257 C75 257 67 267 67 280 V300 C67 313 75 323 87 323 Z" fill="url(#cyan)"/>
+
+  <!-- Right ear -->
+  <rect x="388" y="238" width="76" height="104" rx="38" fill="url(#shell)"/>
+
+  <!-- Right ear light -->
+  <path d="M425 257 C437 257 445 267 445 280 V300 C445 313 437 323 425 323 Z" fill="url(#cyan)"/>
+
+  <!-- Main robot shell -->
+  <rect x="90" y="150" width="332" height="244" rx="92" fill="url(#shell)"/>
+
+  <!-- White inner bezel -->
+  <rect x="112" y="172" width="288" height="200" rx="72" fill="#F7F8FA"/>
+
+  <!-- Terminal screen -->
+  <rect x="138" y="204" width="236" height="136" rx="36" fill="#0E1822"/>
+
+  <!-- Prompt > -->
+  <path d="M187 242 L233 272 L187 302" stroke="url(#cyan)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Prompt underscore -->
+  <rect x="258" y="287" width="72" height="18" rx="9" fill="url(#cyan)"/>
+</svg>

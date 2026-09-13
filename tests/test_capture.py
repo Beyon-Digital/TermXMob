@@ -26,6 +26,10 @@ def test_probe_does_not_crash() -> None:
         "maim",
         "imagemagick",
         "xwd",
+        "gdi",
+        "scrot",
+        "spectacle",
+        "gnome-screenshot",
     }
 
 

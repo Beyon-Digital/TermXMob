@@ -13,6 +13,8 @@ class InputError(RuntimeError):
 
 
 def clipboard_get() -> str:
+    if sys.platform == "win32":
+        return _win_clipboard_get()
     cmd = _clipboard_read_cmd()
     if not cmd:
         return ""
@@ -24,6 +26,9 @@ def clipboard_get() -> str:
 
 
 def clipboard_set(text: str) -> None:
+    if sys.platform == "win32":
+        _win_clipboard_set(text)
+        return
     cmd = _clipboard_write_cmd()
     if not cmd:
         return
@@ -73,6 +78,9 @@ def _pointer(event: dict[str, Any]) -> None:
     action = str(event.get("action") or "move")
     button = int(event.get("button") or 1)
     probe = probe_desktop()
+    if probe.input_backend == "sendinput" and sys.platform == "win32":
+        _win_pointer(event, x, y, action, button)
+        return
     if probe.input_backend == "cgevent" and sys.platform == "darwin":
         _mac_pointer(x, y, action, button)
         return
@@ -108,6 +116,9 @@ def _key(event: dict[str, Any]) -> None:
     if not key:
         return
     probe = probe_desktop()
+    if probe.input_backend == "sendinput" and sys.platform == "win32":
+        _win_key(key, action)
+        return
     if probe.input_backend == "xdotool":
         cmd = "keydown" if action == "down" else "keyup"
         if action == "tap":
@@ -124,12 +135,254 @@ def _text(data: str) -> None:
     if not data:
         return
     probe = probe_desktop()
+    if probe.input_backend == "sendinput" and sys.platform == "win32":
+        _win_text(data)
+        return
     if probe.input_backend == "xdotool":
         subprocess.run(["xdotool", "type", "--", data], check=False)
         return
     if probe.input_backend == "cgevent":
         for char in data:
             _mac_key(char)
+
+
+# --- Windows SendInput -------------------------------------------------------
+
+
+INPUT_MOUSE = 0
+INPUT_KEYBOARD = 1
+MOUSEEVENTF_MOVE = 0x0001
+MOUSEEVENTF_LEFTDOWN = 0x0002
+MOUSEEVENTF_LEFTUP = 0x0004
+MOUSEEVENTF_RIGHTDOWN = 0x0008
+MOUSEEVENTF_RIGHTUP = 0x0010
+MOUSEEVENTF_MIDDLEDOWN = 0x0020
+MOUSEEVENTF_MIDDLEUP = 0x0040
+MOUSEEVENTF_WHEEL = 0x0800
+KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_UNICODE = 0x0004
+WHEEL_DELTA = 120
+
+_WIN_VK = {
+    "return": 0x0D,
+    "enter": 0x0D,
+    "escape": 0x1B,
+    "esc": 0x1B,
+    "tab": 0x09,
+    "backspace": 0x08,
+    " ": 0x20,
+    "space": 0x20,
+    "delete": 0x2E,
+    "home": 0x24,
+    "end": 0x23,
+    "pageup": 0x21,
+    "pgup": 0x21,
+    "pagedown": 0x22,
+    "pgdn": 0x22,
+    "up": 0x26,
+    "arrowup": 0x26,
+    "down": 0x28,
+    "arrowdown": 0x28,
+    "left": 0x25,
+    "arrowleft": 0x25,
+    "right": 0x27,
+    "arrowright": 0x27,
+    "clear": 0x0C,
+}
+
+
+def _win_input_structs() -> tuple[Any, Any, Any]:
+    import ctypes
+
+    # Fixed-width Win32 types: c_long is 8 bytes on POSIX, so do not use
+    # ctypes.wintypes here if the structures must have identical layouts everywhere.
+    LONG = ctypes.c_int32
+    DWORD = ctypes.c_uint32
+    WORD = ctypes.c_uint16
+    ulong_ptr = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", LONG),
+            ("dy", LONG),
+            ("mouseData", DWORD),
+            ("dwFlags", DWORD),
+            ("time", DWORD),
+            ("dwExtraInfo", ulong_ptr),
+        ]
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [
+            ("wVk", WORD),
+            ("wScan", WORD),
+            ("dwFlags", DWORD),
+            ("time", DWORD),
+            ("dwExtraInfo", ulong_ptr),
+        ]
+
+    class HARDWAREINPUT(ctypes.Structure):
+        _fields_ = [
+            ("uMsg", DWORD),
+            ("wParamL", WORD),
+            ("wParamH", WORD),
+        ]
+
+    class INPUTUNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _anonymous_ = ("u",)
+        _fields_ = [("type", DWORD), ("u", INPUTUNION)]
+
+    return INPUT, MOUSEINPUT, KEYBDINPUT
+
+
+def _send_inputs(inputs: list[Any]) -> None:
+    import ctypes
+
+    if not inputs:
+        return
+    user32 = ctypes.windll.user32
+    array = (type(inputs[0]) * len(inputs))(*inputs)
+    user32.SendInput(len(inputs), array, ctypes.sizeof(inputs[0]))
+
+
+def _mouse_input(mouse_class: Any, flags: int, data: int = 0) -> Any:
+    value = mouse_class()
+    value.dwFlags = flags
+    value.mouseData = data
+    return value
+
+
+def _win_pointer(event: dict[str, Any], x: float, y: float, action: str, button: int) -> None:
+    import ctypes
+
+    INPUT, MOUSEINPUT, _KEYBDINPUT = _win_input_structs()
+    user32 = ctypes.windll.user32
+    if x <= 1 and y <= 1:
+        width = int(user32.GetSystemMetrics(0)) or 1920
+        height = int(user32.GetSystemMetrics(1)) or 1080
+        px = int(max(0.0, min(1.0, x)) * max(width - 1, 1))
+        py = int(max(0.0, min(1.0, y)) * max(height - 1, 1))
+    else:
+        px, py = int(x), int(y)
+    user32.SetCursorPos(px, py)
+    down = {1: MOUSEEVENTF_LEFTDOWN, 2: MOUSEEVENTF_RIGHTDOWN, 3: MOUSEEVENTF_MIDDLEDOWN}.get(button, MOUSEEVENTF_LEFTDOWN)
+    up = {1: MOUSEEVENTF_LEFTUP, 2: MOUSEEVENTF_RIGHTUP, 3: MOUSEEVENTF_MIDDLEUP}.get(button, MOUSEEVENTF_LEFTUP)
+    if action == "move":
+        return
+    if action == "down":
+        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, down))])
+        return
+    if action == "up":
+        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, up))])
+        return
+    if action == "click":
+        _send_inputs(
+            [
+                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, down)),
+                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, up)),
+            ]
+        )
+        return
+    if action == "wheel":
+        delta = int(event.get("dy") or 0)
+        direction = -WHEEL_DELTA if delta < 0 else WHEEL_DELTA
+        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, MOUSEEVENTF_WHEEL, direction))])
+
+
+def _win_key(key: str, action: str) -> None:
+    INPUT, _MOUSEINPUT, KEYBDINPUT = _win_input_structs()
+    code = _WIN_VK.get(key.lower())
+    if code is None and len(key) == 1:
+        _win_text(key)
+        return
+    if code is None:
+        return
+    events = []
+    if action in {"down", "tap"}:
+        events.append(INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=code)))
+    if action in {"up", "tap"}:
+        events.append(INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=code, dwFlags=KEYEVENTF_KEYUP)))
+    _send_inputs(events)
+
+
+def _win_text(data: str) -> None:
+    INPUT, _MOUSEINPUT, KEYBDINPUT = _win_input_structs()
+    units = data.encode("utf-16-le")
+    events = []
+    for index in range(0, len(units), 2):
+        scan = int.from_bytes(units[index : index + 2], "little")
+        if scan == 0:
+            continue
+        events.append(INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=0, wScan=scan, dwFlags=KEYEVENTF_UNICODE)))
+        events.append(
+            INPUT(
+                type=INPUT_KEYBOARD,
+                ki=KEYBDINPUT(wVk=0, wScan=scan, dwFlags=KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+            )
+        )
+    _send_inputs(events)
+
+
+def _win_clipboard_get() -> str:
+    import ctypes
+    import ctypes.wintypes as wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    CF_UNICODETEXT = 13
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return ""
+        pointer = kernel32.GlobalLock(handle)
+        if not pointer:
+            return ""
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def _win_clipboard_set(text: str) -> None:
+    import ctypes
+    import ctypes.wintypes as wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    GMEM_MOVEABLE = 0x0002
+    CF_UNICODETEXT = 13
+    value = text or ""
+    size = (len(value) + 1) * ctypes.sizeof(ctypes.c_wchar)
+    handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, size)
+    if not handle:
+        return
+    pointer = kernel32.GlobalLock(handle)
+    if not pointer:
+        return
+    try:
+        ctypes.memmove(pointer, ctypes.create_unicode_buffer(value), size)
+    finally:
+        kernel32.GlobalUnlock(handle)
+    if not user32.OpenClipboard(None):
+        return
+    try:
+        user32.EmptyClipboard()
+        user32.SetClipboardData(CF_UNICODETEXT, handle)
+    finally:
+        user32.CloseClipboard()
+
+
+# --- macOS CoreGraphics ------------------------------------------------------
 
 
 def _mac_pointer(x: float, y: float, action: str, button: int) -> None:

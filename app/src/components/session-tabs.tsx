@@ -1,37 +1,34 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { IconButton } from "@/components/app-icon";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import type { SessionInfo } from "@/lib/types";
 
 type Props = {
   sessions: SessionInfo[];
   activeId: string | null;
+  splitEnabled?: boolean;
+  splitActive?: boolean;
   onSelect: (id: string) => void;
   onNew: () => void;
   onKill: () => void;
-  onServers: () => void;
-  onSettings: () => void;
+  onSplit?: () => void;
 };
 
 export function SessionTabs({
   sessions,
   activeId,
+  splitEnabled = false,
+  splitActive = false,
   onSelect,
   onNew,
   onKill,
-  onServers,
-  onSettings,
+  onSplit,
 }: Props) {
   const { theme } = useAppTheme();
   const { ui } = theme;
   return (
     <View style={[styles.bar, { backgroundColor: ui.surface, borderBottomColor: ui.border }]}>
-      <Pressable
-        onPress={onServers}
-        style={[styles.icon, { backgroundColor: ui.surfaceAlt }]}
-        accessibilityLabel="Saved servers">
-        <Text style={[styles.iconLabel, { color: ui.text }]}>⇄</Text>
-      </Pressable>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
         {sessions.map((session) => {
           const active = session.id === activeId;
@@ -49,24 +46,17 @@ export function SessionTabs({
           );
         })}
       </ScrollView>
-      <Pressable
-        onPress={onNew}
-        style={[styles.icon, { backgroundColor: ui.surfaceAlt }]}
-        accessibilityLabel="New session">
-        <Text style={[styles.iconLabel, { color: ui.text }]}>+</Text>
-      </Pressable>
-      <Pressable
-        onPress={onKill}
-        style={[styles.icon, { backgroundColor: ui.surfaceAlt }]}
-        accessibilityLabel="Kill session">
-        <Text style={[styles.iconLabel, { color: ui.text }]}>×</Text>
-      </Pressable>
-      <Pressable
-        onPress={onSettings}
-        style={[styles.icon, { backgroundColor: ui.surfaceAlt }]}
-        accessibilityLabel="Settings">
-        <Text style={[styles.iconLabel, { color: ui.text }]}>⚙</Text>
-      </Pressable>
+      {splitEnabled ? (
+        <IconButton
+          name={splitActive ? "unsplit" : "split"}
+          color={splitActive ? ui.accent : ui.text}
+          bg={splitActive ? ui.surfaceActive : ui.surfaceAlt}
+          onPress={onSplit ?? (() => {})}
+          accessibilityLabel={splitActive ? "Close split view" : "Split terminal"}
+        />
+      ) : null}
+      <IconButton name="add" color={ui.text} bg={ui.surfaceAlt} onPress={onNew} accessibilityLabel="New session" />
+      <IconButton name="kill" color={ui.text} bg={ui.surfaceAlt} onPress={onKill} accessibilityLabel="Kill session" />
     </View>
   );
 }
@@ -77,24 +67,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    minHeight: 44,
+    minHeight: 40,
     paddingHorizontal: 6,
     gap: 6,
   },
-  tabs: { gap: 4, alignItems: "center", paddingVertical: 6 },
+  tabs: { gap: 4, alignItems: "center", paddingVertical: 5 },
   tab: {
     borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    maxWidth: 160,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 140,
   },
   tabLabel: { fontSize: 13 },
-  icon: {
-    width: 36,
-    height: 36,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconLabel: { fontSize: 18, lineHeight: 20 },
 });

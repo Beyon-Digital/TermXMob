@@ -12,6 +12,15 @@ dependencies = [
     "qrcode>=8.2",
     "uvicorn[standard]>=0.52.4",
     "websockets>=17.1",
+    "pywinpty>=2.0.15; sys_platform == 'win32'",
+    "pillow>=11.0; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+webrtc = [
+    "aiortc>=1.14",
+    "av>=15",
+    "numpy>=2.3",
 ]
 
 [project.scripts]
@@ -25,6 +34,9 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
+]
+packaging = [
+    "pyinstaller>=6.16",
 ]
 
 [tool.pytest.ini_options]

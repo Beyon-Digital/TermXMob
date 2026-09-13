@@ -10,6 +10,18 @@ let package = Package(
         .executable(name: "termx-virtual-display", targets: ["TermxVirtualDisplay"])
     ],
     targets: [
-        .executableTarget(name: "TermxVirtualDisplay")
+        .target(
+            name: "CTermxVirtualDisplay",
+            path: "Sources/CTermxVirtualDisplay",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("Foundation"),
+            ]
+        ),
+        .executableTarget(
+            name: "TermxVirtualDisplay",
+            dependencies: ["CTermxVirtualDisplay"]
+        ),
     ]
 )

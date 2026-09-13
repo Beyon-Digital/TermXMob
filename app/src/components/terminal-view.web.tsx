@@ -9,7 +9,7 @@ import { useAppTheme } from "@/hooks/use-app-theme";
 import "@xterm/xterm/css/xterm.css";
 
 export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(function TerminalView(
-  { onInput, onResize },
+  { onInput, onResize, onFocus },
   ref,
 ) {
   const { theme } = useAppTheme();
@@ -19,9 +19,11 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(functi
   const fitRef = useRef<FitAddon | null>(null);
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
+  const onFocusRef = useRef(onFocus);
   const themeRef = useRef(terminalTheme);
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
+  onFocusRef.current = onFocus;
   themeRef.current = terminalTheme;
 
   useImperativeHandle(ref, () => ({
@@ -40,6 +42,9 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(functi
       const term = termRef.current;
       if (term) onResizeRef.current(term.cols, term.rows);
       term?.focus();
+    },
+    blur() {
+      termRef.current?.blur();
     },
   }));
 
@@ -77,7 +82,10 @@ export const TerminalView = forwardRef<TerminalHandle, TerminalViewProps>(functi
       onResizeRef.current(term.cols, term.rows);
       term.focus();
     });
-    el.addEventListener("mousedown", () => term.focus());
+    el.addEventListener("mousedown", () => {
+      onFocusRef.current?.();
+      term.focus();
+    });
     return () => {
       dataDisp.dispose();
       ro.disconnect();

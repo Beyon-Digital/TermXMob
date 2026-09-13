@@ -12,7 +12,11 @@ concurrency:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -40,3 +44,29 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm exec tsc --noEmit
+
+  linux-desktop:
+    name: linux desktop capture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install desktop tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            x11-utils \
+            x11-xserver-utils \
+            x11-apps \
+            imagemagick \
+            ffmpeg \
+            scrot \
+            xdotool
+      - name: Capture and virtual display tests (Xvfb)
+        run: |
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            env TERMX_LINUX_DESKTOP_TESTS=1 \
+            uv run pytest tests/test_capture_linux.py tests/test_displays.py -q

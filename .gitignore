@@ -27,3 +27,13 @@ helpers/macos/signing/*.p12
 helpers/macos/signing/*.keychain-db
 helpers/macos/signing/*.keychain-db-db
 helpers/macos/signing/*.keychain-db-old
+
+# Desktop packaging artifacts
+desktop/build/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/resources/backend/
+desktop/src-tauri/resources/backend.pid
+
+# Local desktop signing credentials
+desktop/signing.env

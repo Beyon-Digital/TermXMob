@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from termx.desktop.paths import resolve_macos_helper
+from termx.desktop.permissions import permission_snapshot
 from termx.desktop.virtual import active_adapter
 
 
@@ -23,6 +24,12 @@ class DesktopProbe:
 
 
 def capture_helper_path() -> str | None:
+    override = os.environ.get("TERMX_CAPTURE_BIN")
+    if override:
+        # An explicit override is honored on every platform (tests, custom helpers).
+        return resolve_macos_helper("termx-capture", "TERMX_CAPTURE_BIN")
+    if sys.platform != "darwin":
+        return None
     return resolve_macos_helper("termx-capture", "TERMX_CAPTURE_BIN")
 
 
@@ -39,10 +46,7 @@ def probe_desktop() -> DesktopProbe:
             capture_backend=capture,
             input_backend="cgevent",
             virtual_backend=virtual_backend,
-            permissions={
-                "screen_recording": "unknown",
-                "accessibility": "unknown",
-            },
+            permissions=permission_snapshot(),
             helper=helper,
             reason=None if capture else "No capture tool (termx-capture, ffmpeg, screencapture)",
         )
@@ -56,19 +60,36 @@ def probe_desktop() -> DesktopProbe:
             input_backend = "ydotool"
         reason = None
         if not capture:
-            reason = "No capture tool (termx-capture, ffmpeg, grim, maim, import)"
+            reason = "No capture tool (termx-capture, ffmpeg, grim, maim, scrot, spectacle, import, xwd)"
         elif not input_backend:
             reason = "No input tool (xdotool or ydotool)"
+        permissions = permission_snapshot()
+        permissions.setdefault("portal", "unknown" if wayland else "n/a")
+        permissions.setdefault("display", "wayland" if wayland else "x11" if x11 else "none")
         return DesktopProbe(
             remote_screen=capture is not None and input_backend is not None,
             virtual_display=virtual_display,
             capture_backend=capture,
             input_backend=input_backend,
             virtual_backend=virtual_backend,
-            permissions={
-                "portal": "unknown" if wayland else "n/a",
-                "display": "wayland" if wayland else "x11" if x11 else "none",
-            },
+            permissions=permissions,
+            helper=helper,
+            reason=reason,
+        )
+    if sys.platform == "win32":
+        input_backend = "sendinput" if _windows_input_available() else None
+        reason = None
+        if not capture:
+            reason = "No capture backend (install Pillow or ffmpeg)"
+        elif not input_backend:
+            reason = "Windows input APIs are unavailable"
+        return DesktopProbe(
+            remote_screen=capture is not None and input_backend is not None,
+            virtual_display=False,
+            capture_backend=capture,
+            input_backend=input_backend,
+            virtual_backend=None,
+            permissions={},
             helper=helper,
             reason=reason,
         )
@@ -90,12 +111,33 @@ def _helper_dict() -> dict[str, Any]:
     return helper
 
 
+def _windows_input_available() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.user32) and hasattr(ctypes.windll.user32, "SendInput")
+    except Exception:
+        return False
+
+
 def _select_capture_backend() -> str | None:
+    if sys.platform == "win32":
+        try:
+            import PIL  # noqa: F401
+
+            return "gdi"
+        except ImportError:
+            pass
+        if shutil.which("ffmpeg"):
+            return "ffmpeg"
+        return None
     if capture_helper_path():
         return "termx-capture"
     if shutil.which("ffmpeg"):
         return "ffmpeg"
-    if shutil.which("screencapture"):
+    if sys.platform == "darwin" and shutil.which("screencapture"):
         return "screencapture"
     wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
     x11 = bool(os.environ.get("DISPLAY"))
@@ -105,6 +147,12 @@ def _select_capture_backend() -> str | None:
         return "maim"
     if x11 and shutil.which("import"):
         return "imagemagick"
+    if shutil.which("scrot"):
+        return "scrot"
+    if shutil.which("spectacle"):
+        return "spectacle"
+    if shutil.which("gnome-screenshot"):
+        return "gnome-screenshot"
     if x11 and shutil.which("xwd"):
         return "xwd"
     return None

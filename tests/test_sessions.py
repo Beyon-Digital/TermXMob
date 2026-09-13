@@ -88,7 +88,12 @@ def test_send_signal_int() -> None:
         session.subscribe(sink)
         await asyncio.sleep(0.2)
         assert session.send_signal("int") is True
-        assert b"CAUGHT" in await _wait_echo(sink, b"CAUGHT")
+        out = await _wait_echo(sink, b"CAUGHT")
+        if b"CAUGHT" not in out:
+            # The signal can arrive before the child installs its handler.
+            session.send_signal("int")
+            out = await _wait_echo(sink, b"CAUGHT")
+        assert b"CAUGHT" in out
         mgr.kill(session.id)
 
     asyncio.run(inner())

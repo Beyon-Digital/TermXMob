@@ -1,0 +1,283 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create a GitHub release with this tag (e.g. v0.1.0). Leave empty to only upload workflow artifacts."
+        required: false
+        type: string
+      draft:
+        description: "Keep the release as a draft so you can review it first"
+        required: false
+        type: boolean
+        default: false
+      include_intel:
+        description: "Also build the macOS Intel (x86_64) DMG on the macos-15-intel runner"
+        required: false
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    if: ${{ !(matrix.name == 'macos-x86_64' && github.event_name == 'workflow_dispatch' && !inputs.include_intel) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            platform: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - name: macos-x86_64
+            platform: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - name: windows
+            platform: windows-latest
+            target: ""
+            bundles: msi,nsis
+          - name: linux
+            platform: ubuntu-22.04
+            target: ""
+            bundles: deb,rpm,appimage
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add Rust target
+        if: matrix.target != ''
+        run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Tauri CLI
+        run: npm install --global @tauri-apps/cli@^2
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm \
+            file
+
+      - name: Import macOS signing material
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'termx-ci-keychain' }}
+        run: |
+          set -e
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+            printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+            echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          fi
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "No Apple certificate configured; building unsigned."
+            exit 0
+          fi
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          KEYCHAIN="$RUNNER_TEMP/termx.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT_PATH" -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security > /dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+      - name: Build macOS helpers
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x helpers/macos/ci-build.sh
+          helpers/macos/ci-build.sh
+
+      - name: Locate signtool
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($signtool) { "TERMX_SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV }
+
+      - name: Build web export and Python sidecar
+        env:
+          TERMX_MACOS_SIGN_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          pnpm --dir app install --frozen-lockfile
+          uv sync --group packaging --group dev
+          uv run pytest -q
+          uv run --group packaging python desktop/scripts/build_sidecar.py
+
+      - name: Resolve release metadata
+        id: release
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.release_tag }}"
+            draft="${{ inputs.draft }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            draft="false"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+
+      - name: Determine signing mode
+        id: signing
+        shell: bash
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE }}
+        run: |
+          signed="no"
+          if [ "${{ runner.os }}" = "macOS" ] && [ -n "$APPLE_CERT" ]; then signed="yes"; fi
+          if [ "${{ runner.os }}" = "Windows" ] && [ -n "$WINDOWS_CERT" ]; then signed="yes"; fi
+          if [ "$signed" = "yes" ]; then
+            echo "note=**Code-signed build.**" >> "$GITHUB_OUTPUT"
+          else
+            echo "note=**Unsigned developer build.** macOS builds are ad-hoc signed; Windows may show SmartScreen." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match desktop/src-tauri/tauri.conf.json version $version"
+            exit 1
+          fi
+
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop/src-tauri
+          tauriScript: tauri
+          args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }} --bundles ${{ matrix.bundles }}
+          tagName: ${{ steps.release.outputs.tag }}
+          releaseName: ${{ steps.release.outputs.tag != '' && format('Termx {0}', steps.release.outputs.tag) || '' }}
+          releaseDraft: ${{ steps.release.outputs.draft }}
+          prerelease: false
+          includeUpdaterJson: false
+          releaseBody: |
+            ## Termx ${{ steps.release.outputs.tag }}
+
+            Native desktop builds of Termx. The Python backend, web UI, and native
+            helpers are bundled — no Python or developer tools required.
+
+            ${{ steps.signing.outputs.note }}
+
+            | Platform | Files |
+            | --- | --- |
+            | macOS 13+ (Apple Silicon) | `.dmg` |
+            | macOS 13+ (Intel) | `.dmg` |
+            | Windows 10+ | `.msi`, `.exe` (NSIS) |
+            | Linux | `.deb`, `.rpm`, `.AppImage` |
+
+            **First run (unsigned builds)**
+
+            - macOS: right-click the app → **Open**, or run
+              `xattr -dr com.apple.quarantine /Applications/Termx.app`.
+            - Windows: if SmartScreen appears, choose **More info → Run anyway**.
+            - Linux: `chmod +x Termx*.AppImage` before running.
+
+            Screen Recording and Accessibility are requested on first use of the
+            Desktop view. Windows capture uses GDI (bundled Pillow); Windows virtual
+            displays need an IddCx driver. Linux capture needs the tools listed in
+            `desktop/README.md`. Each platform's `SHA256SUMS-<platform>.txt` is
+            attached for verification.
+
+      - name: Add checksums to the release
+        if: steps.release.outputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd desktop/src-tauri/target
+          find . -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) | sort > /tmp/termx-artifacts.txt
+          if [ ! -s /tmp/termx-artifacts.txt ]; then
+            echo "no installers found to checksum"
+            exit 0
+          fi
+          sums="/tmp/SHA256SUMS-${{ matrix.name }}.txt"
+          : > "$sums"
+          while IFS= read -r file; do
+            dir="$(dirname "$file")"
+            base="$(basename "$file")"
+            if command -v sha256sum >/dev/null 2>&1; then
+              (cd "$dir" && sha256sum "$base") >> "$sums"
+            else
+              (cd "$dir" && shasum -a 256 "$base") >> "$sums"
+            fi
+          done < /tmp/termx-artifacts.txt
+          cat "$sums"
+          gh release upload "${{ steps.release.outputs.tag }}" "$sums" --clobber
+
+      - name: Upload installers as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: termx-${{ matrix.name }}-${{ github.run_number }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            desktop/src-tauri/target/**/bundle/dmg/*.dmg
+            desktop/src-tauri/target/**/bundle/msi/*.msi
+            desktop/src-tauri/target/**/bundle/nsis/*.exe
+            desktop/src-tauri/target/**/bundle/deb/*.deb
+            desktop/src-tauri/target/**/bundle/rpm/*.rpm
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage

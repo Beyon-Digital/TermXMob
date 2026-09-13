@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import tempfile
 import threading
@@ -36,7 +37,19 @@ def default_cwd() -> str:
 
 
 def available_shells() -> list[str]:
-    found: list[str] = []
+    if os.name == "nt":
+        found: list[str] = []
+        candidates = [
+            os.environ.get("COMSPEC"),
+            shutil.which("pwsh.exe"),
+            shutil.which("powershell.exe"),
+            shutil.which("bash.exe"),
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate) and candidate not in found:
+                found.append(candidate)
+        return found
+    found = []
     path = Path("/etc/shells")
     if path.is_file():
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -73,6 +86,35 @@ def validate_cwd(cwd: str) -> str:
     return str(path)
 
 
+FS_LIST_MAX = 400
+
+
+def list_dir_entries(path: str | None = None) -> dict[str, Any]:
+    current = Path(validate_cwd(path or default_cwd()))
+    entries: list[dict[str, str]] = []
+    try:
+        children = list(current.iterdir())
+    except OSError as exc:
+        raise ValueError(f"cannot list directory: {exc}") from exc
+    children.sort(key=lambda child: child.name.lower())
+    for child in children:
+        try:
+            if not child.is_dir():
+                continue
+        except OSError:
+            continue
+        entries.append({"name": child.name, "path": str(child)})
+        if len(entries) >= FS_LIST_MAX:
+            break
+    parent = current.parent
+    return {
+        "path": str(current),
+        "parent": str(parent) if parent != current else None,
+        "home": default_cwd(),
+        "entries": entries,
+    }
+
+
 def atomic_write(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".termx-")
@@ -103,6 +145,19 @@ class SavedCommand:
     name: str
     command: str
     confirm: bool = False
+    order: int = 0
+    created_at: float = 0
+    updated_at: float = 0
+
+    def public(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class SavedDirectory:
+    id: str
+    name: str
+    path: str
     order: int = 0
     created_at: float = 0
     updated_at: float = 0
@@ -149,6 +204,7 @@ class HostConfig:
     version: int = CONFIG_VERSION
     terminal: TerminalPrefs = field(default_factory=TerminalPrefs)
     commands: list[SavedCommand] = field(default_factory=list)
+    directories: list[SavedDirectory] = field(default_factory=list)
     tunnels: TunnelPrefs = field(default_factory=TunnelPrefs)
     desktop: DesktopPrefs = field(default_factory=DesktopPrefs)
 
@@ -157,6 +213,7 @@ class HostConfig:
             "version": self.version,
             "terminal": asdict(self.terminal),
             "commands": [asdict(item) for item in self.commands],
+            "directories": [asdict(item) for item in self.directories],
             "tunnels": {
                 "active_profile_id": self.tunnels.active_profile_id,
                 "profiles": [asdict(item) for item in self.tunnels.profiles],
@@ -171,6 +228,17 @@ def _command_from(raw: dict[str, Any]) -> SavedCommand:
         name=str(raw.get("name") or ""),
         command=str(raw.get("command") or ""),
         confirm=bool(raw.get("confirm", False)),
+        order=int(raw.get("order") or 0),
+        created_at=float(raw.get("created_at") or 0),
+        updated_at=float(raw.get("updated_at") or 0),
+    )
+
+
+def _directory_from(raw: dict[str, Any]) -> SavedDirectory:
+    return SavedDirectory(
+        id=str(raw.get("id") or uuid.uuid4().hex[:12]),
+        name=str(raw.get("name") or ""),
+        path=str(raw.get("path") or ""),
         order=int(raw.get("order") or 0),
         created_at=float(raw.get("created_at") or 0),
         updated_at=float(raw.get("updated_at") or 0),
@@ -193,6 +261,7 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
     tunnels_raw = raw.get("tunnels") if isinstance(raw.get("tunnels"), dict) else {}
     desktop_raw = raw.get("desktop") if isinstance(raw.get("desktop"), dict) else {}
     commands_raw = raw.get("commands") if isinstance(raw.get("commands"), list) else []
+    directories_raw = raw.get("directories") if isinstance(raw.get("directories"), list) else []
     profiles_raw = tunnels_raw.get("profiles") if isinstance(tunnels_raw.get("profiles"), list) else []
     shell = str(terminal_raw.get("shell") or default_shell())
     cwd = str(terminal_raw.get("cwd") or default_cwd())
@@ -200,6 +269,7 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
         version=int(raw.get("version") or CONFIG_VERSION),
         terminal=TerminalPrefs(shell=shell, cwd=cwd),
         commands=[_command_from(item) for item in commands_raw if isinstance(item, dict)],
+        directories=[_directory_from(item) for item in directories_raw if isinstance(item, dict)],
         tunnels=TunnelPrefs(
             active_profile_id=tunnels_raw.get("active_profile_id")
             if isinstance(tunnels_raw.get("active_profile_id"), str)
@@ -328,6 +398,60 @@ class ConfigStore:
             self._config.commands = next_items
             self._save()
             return list(next_items)
+
+    def list_directories(self) -> list[SavedDirectory]:
+        with self._lock:
+            return sorted(self._config.directories, key=lambda item: (item.order, item.created_at))
+
+    def add_directory(self, name: str, path: str) -> SavedDirectory:
+        resolved = validate_cwd(path)
+        label = name.strip() or Path(resolved).name or resolved
+        now = time()
+        with self._lock:
+            for item in self._config.directories:
+                if item.path == resolved:
+                    raise ValueError("directory already saved")
+            item = SavedDirectory(
+                id=uuid.uuid4().hex[:12],
+                name=label,
+                path=resolved,
+                order=len(self._config.directories),
+                created_at=now,
+                updated_at=now,
+            )
+            self._config.directories.append(item)
+            self._save()
+            return item
+
+    def get_directory(self, directory_id: str) -> SavedDirectory | None:
+        with self._lock:
+            for item in self._config.directories:
+                if item.id == directory_id:
+                    return item
+            return None
+
+    def delete_directory(self, directory_id: str) -> bool:
+        with self._lock:
+            before = len(self._config.directories)
+            self._config.directories = [item for item in self._config.directories if item.id != directory_id]
+            if len(self._config.directories) == before:
+                return False
+            for index, item in enumerate(self._config.directories):
+                item.order = index
+            self._save()
+            return True
+
+    def use_directory(self, directory_id: str) -> SavedDirectory:
+        item = self.get_directory(directory_id)
+        if item is None:
+            raise KeyError(directory_id)
+        resolved = validate_cwd(item.path)
+        with self._lock:
+            item.path = resolved
+            item.updated_at = time()
+            self._config.terminal.cwd = resolved
+            self._save()
+            return item
 
     def list_profiles(self) -> list[TunnelProfile]:
         with self._lock:

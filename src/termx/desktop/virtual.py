@@ -42,6 +42,13 @@ def unsupported_reason() -> str:
         return "macOS virtual display requires the signed host helper (not installed)"
     if sys.platform.startswith("linux"):
         return "No compositor virtual-output adapter is available yet"
+    if sys.platform == "win32":
+        return (
+            "Windows cannot create virtual displays from user space. Install an IddCx-based "
+            "virtual display driver, then set TERMX_WINDOWS_VIRTUAL_DISPLAY_CREATE_CMD "
+            "(and _DESTROY_CMD) to its command line, or use the driver's own tool. "
+            "Driver-created displays are listed, mirrored, and controlled automatically."
+        )
     return "Virtual displays are not supported on this OS"
 
 
@@ -94,7 +101,9 @@ class XrandrAdapter(VirtualAdapter):
 
     def create(self, display_id: str, width: int, height: int, dpr: float, refresh_hz: int) -> str:
         name = f"termx-{display_id}"
-        geom = f"{width}/96x{height}/96+{self._offset()}+0"
+        offset = self._offset()
+        self.last_geometry = {"x": offset, "y": 0}
+        geom = f"{width}/96x{height}/96+{offset}+0"
         proc = _run(["xrandr", "--setmonitor", name, geom, "none"])
         _fail(proc, "xrandr --setmonitor failed")
         return name
@@ -339,6 +348,9 @@ class HelperAdapter(VirtualAdapter):
     id = "helper"
     helpers = ("termx-virtual-display", "BetterDisplay", "deskpad")
 
+    def __init__(self) -> None:
+        self._procs: dict[str, subprocess.Popen[str]] = {}
+
     def _bin(self) -> str | None:
         found = resolve_macos_helper("termx-virtual-display", "TERMX_VIRTUAL_DISPLAY_BIN")
         if found:
@@ -368,7 +380,28 @@ class HelperAdapter(VirtualAdapter):
         binary = self._bin()
         if not binary:
             raise VirtualDisplayError(self.reason())
-        proc = _run(
+        if binary.rsplit("/", 1)[-1] != "termx-virtual-display":
+            proc = _run(
+                [
+                    binary,
+                    "create",
+                    "--width",
+                    str(width),
+                    "--height",
+                    str(height),
+                    "--dpr",
+                    str(dpr),
+                    "--refresh",
+                    str(refresh_hz),
+                    "--id",
+                    display_id,
+                ]
+            )
+            _fail(proc, f"{os.path.basename(binary)} create failed")
+            return (proc.stdout or "").strip() or f"termx-{display_id}"
+        # The termx helper keeps the CGVirtualDisplay alive for the lifetime of
+        # its process, so it runs until destroyed or its parent exits.
+        process = subprocess.Popen(
             [
                 binary,
                 "create",
@@ -382,17 +415,153 @@ class HelperAdapter(VirtualAdapter):
                 str(refresh_hz),
                 "--id",
                 display_id,
-            ]
+                "--parent-pid",
+                str(os.getpid()),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
         )
-        _fail(proc, f"{os.path.basename(binary)} create failed")
-        return (proc.stdout or "").strip() or f"termx-{display_id}"
+        line = _read_line(process, timeout=15)
+        if not line:
+            if process.poll() is not None:
+                error = ""
+                try:
+                    if process.stderr is not None:
+                        error = (process.stderr.read() or "").strip()
+                except (OSError, ValueError):
+                    error = ""
+                raise VirtualDisplayError(error or "termx-virtual-display create failed")
+            process.terminate()
+            raise VirtualDisplayError("termx-virtual-display timed out")
+        name = line.strip() or f"termx-{display_id}"
+        if process.poll() is None:
+            # Real CGVirtualDisplay: the helper holds the display until killed.
+            self._procs[name] = process
+            return name
+        # One-shot helper (older bundle or a third-party CLI): the display is
+        # managed by the helper itself and destroyed through its CLI.
+        if process.returncode not in (0, None):
+            error = ""
+            try:
+                if process.stderr is not None:
+                    error = (process.stderr.read() or "").strip()
+            except (OSError, ValueError):
+                error = ""
+            raise VirtualDisplayError(error or "termx-virtual-display create failed")
+        return name
 
     def destroy(self, name: str) -> None:
+        process = self._procs.pop(name, None)
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    try:
+                        process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        pass
+            return
         binary = self._bin()
         if not binary:
             raise VirtualDisplayError(self.reason())
+        if binary.rsplit("/", 1)[-1] != "termx-virtual-display":
+            proc = _run([binary, "destroy", name])
+            _fail(proc, f"{os.path.basename(binary)} destroy failed")
+            return
         proc = _run([binary, "destroy", name])
         _fail(proc, f"{os.path.basename(binary)} destroy failed")
+
+
+def _read_line(process: subprocess.Popen[str], timeout: float) -> str | None:
+    import select
+
+    if process.stdout is None:
+        return None
+    try:
+        ready, _, _ = select.select([process.stdout], [], [], timeout)
+    except (OSError, ValueError):
+        return None
+    if not ready:
+        return None
+    try:
+        return process.stdout.readline()
+    except (OSError, ValueError):
+        return None
+
+
+class WindowsVirtualAdapter(VirtualAdapter):
+    """IddCx driver bridge: creation delegates to a user-configured command hook."""
+
+    id = "windows-idd"
+    create_env = "TERMX_WINDOWS_VIRTUAL_DISPLAY_CREATE_CMD"
+    destroy_env = "TERMX_WINDOWS_VIRTUAL_DISPLAY_DESTROY_CMD"
+
+    def _create_command(self) -> str:
+        return (os.environ.get(self.create_env) or "").strip()
+
+    def _destroy_command(self) -> str:
+        return (os.environ.get(self.destroy_env) or "").strip()
+
+    def available(self) -> bool:
+        return sys.platform == "win32" and bool(self._create_command())
+
+    def can_create(self) -> bool:
+        return self.available()
+
+    def reason(self) -> str:
+        if sys.platform != "win32":
+            return unsupported_reason()
+        if not self._create_command():
+            return unsupported_reason()
+        return "IddCx virtual display command hook is configured"
+
+    def create(self, display_id: str, width: int, height: int, dpr: float, refresh_hz: int) -> str:
+        name = f"termx-{display_id}"
+        _run_shell(
+            self._create_command(),
+            {
+                "id": display_id,
+                "name": name,
+                "width": width,
+                "height": height,
+                "dpr": dpr,
+                "refresh": refresh_hz,
+            },
+        )
+        return name
+
+    def destroy(self, name: str) -> None:
+        command = self._destroy_command()
+        if not command:
+            raise VirtualDisplayError(
+                f"{self.destroy_env} is not set; remove the display with the driver's own tool"
+            )
+        _run_shell(command, {"name": name, "id": name})
+
+
+def _run_shell(template: str, values: dict[str, Any]) -> None:
+    import shlex
+
+    try:
+        command = template.format(**{key: str(value) for key, value in values.items()})
+    except KeyError as exc:
+        raise VirtualDisplayError(f"unknown placeholder {exc} in virtual display command") from exc
+    argv = shlex.split(command, posix=(os.name != "nt"))
+    if not argv:
+        raise VirtualDisplayError("empty virtual display command")
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    except FileNotFoundError as exc:
+        raise VirtualDisplayError(str(exc)) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise VirtualDisplayError(f"{argv[0]} timed out") from exc
+    if proc.returncode != 0:
+        raise VirtualDisplayError((proc.stderr or proc.stdout or f"{argv[0]} failed").strip())
 
 
 _ADAPTERS: list[VirtualAdapter] = [
@@ -402,6 +571,7 @@ _ADAPTERS: list[VirtualAdapter] = [
     XrandrAdapter(),
     GnomeAdapter(),
     KscreenAdapter(),
+    WindowsVirtualAdapter(),
 ]
 _active: dict[str, dict[str, Any]] = {}
 _impls: dict[str, VirtualAdapter] = {}
@@ -436,6 +606,8 @@ def list_virtual_displays() -> list[dict[str, Any]]:
             "name": rec["name"],
             "width": rec["width"],
             "height": rec["height"],
+            "x": rec.get("x", 0),
+            "y": rec.get("y", 0),
             "adapter": rec["adapter"],
             "owner": rec.get("owner"),
             "lease_until": rec.get("lease_until"),
@@ -459,10 +631,13 @@ def create_virtual_display(
     display_id = uuid.uuid4().hex[:8]
     name = adapter.create(display_id, width, height, dpr, refresh_hz)
     now = time.time()
+    geometry = getattr(adapter, "last_geometry", None) or {}
     rec = {
         "name": name,
         "width": width,
         "height": height,
+        "x": int(geometry.get("x", 0)),
+        "y": int(geometry.get("y", 0)),
         "adapter": adapter.id,
         "owner": owner,
         "lease_until": now + 60,

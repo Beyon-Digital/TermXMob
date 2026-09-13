@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppSheet, SheetInput } from "@/components/app-sheet";
+import { AppIcon } from "@/components/app-icon";
+import {
+  AppSheet,
+  SheetButton,
+  SheetEmpty,
+  SheetError,
+  SheetField,
+  SheetSearchField,
+  SheetSection,
+} from "@/components/app-sheet";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import { createCommand, deleteCommand, listCommands } from "@/lib/api";
 import type { Connection, SavedCommand } from "@/lib/types";
@@ -35,11 +44,13 @@ export function CommandsSheet({ connection, isPresented, onDismiss, onRun }: Pro
     if (isPresented) void reload();
   }, [isPresented, reload]);
 
-  const filtered = items.filter((item) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return item.name.toLowerCase().includes(q) || item.command.toLowerCase().includes(q);
-  });
+  const q = query.trim().toLowerCase();
+  const filtered = items.filter(
+    (item) =>
+      !q ||
+      item.name.toLowerCase().includes(q) ||
+      item.command.toLowerCase().includes(q),
+  );
 
   const run = (item: SavedCommand) => {
     const fire = () => {
@@ -91,78 +102,108 @@ export function CommandsSheet({ connection, isPresented, onDismiss, onRun }: Pro
   };
 
   return (
-    <AppSheet title="Commands" isPresented={isPresented} onDismiss={onDismiss}>
-      <Text style={[styles.hint, { color: ui.textMuted }]}>
-        Saved on this machine. A tap runs the command immediately.
-      </Text>
-      <SheetInput
+    <AppSheet
+      title="Commands"
+      subtitle={items.length ? `${items.length} saved` : "Save commands you run often"}
+      isPresented={isPresented}
+      onDismiss={onDismiss}>
+      <SheetSearchField
         value={query}
         onChangeText={setQuery}
-        placeholder="Search"
-        placeholderTextColor={ui.textMuted}
-        autoCapitalize="none"
-        style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
-      />
-      {filtered.length === 0 ? (
-        <Text style={{ color: ui.textMuted }}>No saved commands yet.</Text>
-      ) : (
-        filtered.map((item) => (
-          <View key={item.id} style={[styles.row, { borderColor: ui.border, backgroundColor: ui.surfaceAlt }]}>
-            <Pressable style={styles.rowMain} onPress={() => run(item)} accessibilityRole="button">
-              <Text style={[styles.name, { color: ui.text }]}>{item.name}</Text>
-              <Text style={[styles.cmd, { color: ui.textMuted }]} numberOfLines={1}>
-                {item.command}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => remove(item)} hitSlop={8}>
-              <Text style={{ color: ui.danger }}>Delete</Text>
-            </Pressable>
-          </View>
-        ))
-      )}
-      <Text style={[styles.section, { color: ui.textMuted }]}>New command</Text>
-      <SheetInput
-        value={name}
-        onChangeText={setName}
-        placeholder="Name"
-        placeholderTextColor={ui.textMuted}
-        style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
-      />
-      <SheetInput
-        value={command}
-        onChangeText={setCommand}
-        placeholder="git status"
+        placeholder="Search commands"
+        inputMode="search"
+        enterKeyHint="search"
+        returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        placeholderTextColor={ui.textMuted}
-        style={[styles.input, { color: ui.text, backgroundColor: ui.surfaceAlt, borderColor: ui.border }]}
       />
-      {error ? <Text style={{ color: ui.danger }}>{error}</Text> : null}
-      <Pressable
-        style={[styles.primary, { backgroundColor: ui.accent, opacity: busy ? 0.6 : 1 }]}
-        onPress={() => void save()}
-        disabled={busy}>
-        <Text style={[styles.primaryLabel, { color: ui.accentText }]}>Save command</Text>
-      </Pressable>
+      {filtered.length === 0 ? (
+        <SheetEmpty
+          icon="commands"
+          title={items.length === 0 ? "No saved commands yet" : "No matching commands"}
+          copy={
+            items.length === 0
+              ? "Save the commands you run often and fire them in one tap."
+              : "Try a different search."
+          }
+        />
+      ) : (
+        <SheetSection label={`Saved · ${filtered.length}`}>
+          {filtered.map((item, index) => (
+            <View
+              key={item.id}
+              style={[
+                styles.row,
+                index > 0 && { borderTopColor: ui.border, borderTopWidth: StyleSheet.hairlineWidth },
+              ]}>
+              <Pressable
+                style={styles.rowMain}
+                onPress={() => run(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Run ${item.name}`}>
+                <View style={[styles.tile, { backgroundColor: ui.surfaceActive }]}>
+                  <AppIcon name="commands" color={ui.text} size={16} />
+                </View>
+                <View style={styles.rowText}>
+                  <Text style={[styles.name, { color: ui.text }]}>{item.name}</Text>
+                  <Text style={[styles.cmd, { color: ui.textMuted }]} numberOfLines={1}>
+                    {item.command}
+                  </Text>
+                </View>
+                <AppIcon name="chevron" color={ui.textMuted} size={14} />
+              </Pressable>
+              <Pressable
+                onPress={() => remove(item)}
+                hitSlop={12}
+                style={styles.deleteBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${item.name}`}>
+                <AppIcon name="kill" color={ui.danger} size={14} />
+              </Pressable>
+            </View>
+          ))}
+        </SheetSection>
+      )}
+      <SheetSection label="New command">
+        <View style={styles.form}>
+          <SheetField
+            value={name}
+            onChangeText={setName}
+            placeholder="Name"
+            style={{ backgroundColor: ui.surface }}
+          />
+          <SheetField
+            value={command}
+            onChangeText={setCommand}
+            placeholder="git status"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{ backgroundColor: ui.surface }}
+          />
+          <SheetError message={error} />
+          <SheetButton
+            label={busy ? "Saving…" : "Save command"}
+            onPress={() => void save()}
+            disabled={busy}
+          />
+        </View>
+      </SheetSection>
     </AppSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  hint: { fontSize: 13, lineHeight: 18 },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
   row: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
+    paddingVertical: 12,
   },
-  rowMain: { flex: 1, gap: 2 },
+  rowMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 },
+  tile: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  rowText: { flex: 1, gap: 2, minWidth: 0 },
+  deleteBtn: { padding: 6 },
   name: { fontSize: 16, fontWeight: "600" },
   cmd: { fontSize: 12, fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }) },
-  section: { fontSize: 12, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", marginTop: 8 },
-  primary: { borderRadius: 10, paddingVertical: 12, alignItems: "center" },
-  primaryLabel: { fontWeight: "700" },
+  form: { gap: 10, paddingVertical: 10 },
 });

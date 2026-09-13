@@ -5,7 +5,9 @@ import {
   type DisplayInfo,
   type Health,
   type MachineInfo,
+  type FsListing,
   type SavedCommand,
+  type SavedDirectory,
   type SessionInfo,
   type TunnelRuntime,
   type TunnelStatus,
@@ -73,10 +75,11 @@ export async function createSession(
   connection: Connection,
   cols: number,
   rows: number,
+  opts?: { cwd?: string; shell?: string; title?: string },
 ): Promise<SessionInfo> {
   return request<SessionInfo>(connection, "/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ cols, rows }),
+    body: JSON.stringify({ cols, rows, ...opts }),
   });
 }
 
@@ -111,6 +114,35 @@ export async function createCommand(
 
 export async function deleteCommand(connection: Connection, id: string): Promise<void> {
   await request(connection, `/api/commands/${id}`, { method: "DELETE" });
+}
+
+export async function listFs(connection: Connection, path?: string): Promise<FsListing> {
+  const q = path ? `?path=${encodeURIComponent(path)}` : "";
+  return request(connection, `/api/fs${q}`);
+}
+
+export async function listDirectories(
+  connection: Connection,
+): Promise<{ cwd: string; directories: SavedDirectory[] }> {
+  return request(connection, "/api/directories");
+}
+
+export async function createDirectory(
+  connection: Connection,
+  body: { name?: string; path: string },
+): Promise<SavedDirectory> {
+  return request(connection, "/api/directories", { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function deleteDirectory(connection: Connection, id: string): Promise<void> {
+  await request(connection, `/api/directories/${id}`, { method: "DELETE" });
+}
+
+export async function useDirectory(
+  connection: Connection,
+  id: string,
+): Promise<{ directory: SavedDirectory; cwd: string }> {
+  return request(connection, `/api/directories/${id}/use`, { method: "POST", body: "{}" });
 }
 
 export async function fetchTunnels(connection: Connection): Promise<TunnelRuntime> {

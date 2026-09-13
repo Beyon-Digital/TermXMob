@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import os
@@ -7,21 +8,24 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, Response
 
 from pydantic import BaseModel, Field
 
+from termx import notify
 from termx.audit import log_event, read_events
 from termx.auth import Auth, extract_passcode
-from termx.config import ConfigStore, validate_cwd, validate_shell
+from termx.config import ConfigStore, list_dir_entries, validate_cwd, validate_shell
 from termx.desktop.capture import virtual_display_reason
+from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
 from termx.desktop.webrtc import RtcError, RtcManager
 from termx.lifecycle import shutdown_state
 from termx.machine import machine_snapshot
+from termx.net import connect_url, http_urls, qr_svg
 from termx.sessions import DEFAULT_COLS, DEFAULT_ROWS, SessionManager, default_argv
 from termx.tokens import SCOPES, TokenStore
 from termx.tunnels import TunnelManager
@@ -39,6 +43,7 @@ class AppState:
         self.desktop = DesktopManager()
         self.rtc = RtcManager()
         self.port = port
+        self.request_shutdown = None
 
 
 class CreateSessionBody(BaseModel):
@@ -62,6 +67,11 @@ class CommandBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     command: str = Field(min_length=1, max_length=4000)
     confirm: bool = False
+
+
+class DirectoryBody(BaseModel):
+    name: str = Field(default="", max_length=80)
+    path: str = Field(min_length=1, max_length=4000)
 
 
 class CommandPatchBody(BaseModel):
@@ -104,6 +114,16 @@ class RtcIceBody(BaseModel):
     candidate: dict[str, object]
 
 
+class NotifyBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=1000)
+    url: str | None = Field(default=None, max_length=2000)
+
+
+class PermissionsBody(BaseModel):
+    which: list[str] | None = None
+
+
 def _require(state: AppState, provided: str | None) -> None:
     if not state.auth.check(provided):
         raise HTTPException(status_code=401, detail="invalid passcode")
@@ -140,6 +160,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         capabilities = dict(snapshot["capabilities"])
         capabilities["webrtc"] = state.rtc.available()
         return {
+            "app": "termx",
             "ok": True,
             "version": "0.1.0",
             "passcode_required": state.auth.required,
@@ -148,6 +169,90 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             "capabilities": capabilities,
             "tunnel": snapshot["tunnel"],
         }
+
+    def _connect_target() -> tuple[str, str | None]:
+        tunnel = state.tunnels.status_public()
+        urls = http_urls(state.port)
+        target = tunnel.get("url") or (urls[0] if urls else f"http://127.0.0.1:{state.port}")
+        return str(target), tunnel.get("url")
+
+    @app.get("/api/connect")
+    def connect_info(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        target, tunnel_url = _connect_target()
+        return {
+            "urls": http_urls(state.port),
+            "tunnel_url": tunnel_url,
+            "passcode": state.auth.passcode,
+            "connect_url": connect_url(target, state.auth.passcode),
+            "qr_svg": "/api/connect/qr.svg",
+        }
+
+    @app.get("/api/connect/qr.svg")
+    def connect_qr(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> Response:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        target, _tunnel = _connect_target()
+        svg = qr_svg(connect_url(target, state.auth.passcode))
+        return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/notify")
+    def send_notification(
+        body: NotifyBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, bool]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        notify.notify(body.title, body.body, kind="info", url=body.url)
+        return {"ok": True}
+
+    @app.get("/api/permissions")
+    def get_permissions(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        return permission_snapshot()
+
+    @app.post("/api/permissions/request")
+    def post_permissions(
+        body: PermissionsBody | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        which = body.which if body is not None else None
+        return request_permissions(which)
+
+    @app.post("/api/shutdown")
+    def shutdown(
+        request: Request,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, bool]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        if os.environ.get("TERMX_DESKTOP") != "1":
+            raise HTTPException(status_code=404, detail="not found")
+        client = request.client.host if request.client is not None else ""
+        if client not in {"127.0.0.1", "::1", "localhost"}:
+            raise HTTPException(status_code=403, detail="loopback only")
+        callback = state.request_shutdown
+        if not callable(callback):
+            raise HTTPException(status_code=503, detail="shutdown unavailable")
+        log_event("shutdown", source="desktop")
+        callback()
+        return {"ok": True}
 
     @app.post("/api/pair")
     def pair(
@@ -269,6 +374,77 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         items = state.store.reorder_commands(body.order)
         return {"commands": [item.public() for item in items]}
 
+    @app.get("/api/fs")
+    def get_fs(
+        path: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            return list_dir_entries(path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/directories")
+    def list_directories(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        prefs = state.store.get().terminal
+        return {
+            "cwd": prefs.cwd,
+            "directories": [item.public() for item in state.store.list_directories()],
+        }
+
+    @app.post("/api/directories")
+    def create_directory(
+        body: DirectoryBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            item = state.store.add_directory(body.name, body.path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("directory_create", directory_id=item.id, name=item.name)
+        return item.public()
+
+    @app.delete("/api/directories/{directory_id}")
+    def delete_directory(
+        directory_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, bool]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        if not state.store.delete_directory(directory_id):
+            raise HTTPException(status_code=404, detail="directory not found")
+        log_event("directory_delete", directory_id=directory_id)
+        return {"ok": True}
+
+    @app.post("/api/directories/{directory_id}/use")
+    def use_directory(
+        directory_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            item = state.store.use_directory(directory_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="directory not found") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("directory_use", directory_id=item.id, path=item.path)
+        return {"directory": item.public(), "cwd": item.path}
+
     @app.get("/api/tunnels")
     def get_tunnels(
         x_termx_passcode: str | None = Header(default=None),
@@ -328,8 +504,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         else:
             status = await state.tunnels.start(profile)
         if status.state == "error":
+            notify.notify("Tunnel failed", status.detail or "tunnel failed", kind="error")
             raise HTTPException(status_code=400, detail=status.detail or "tunnel failed")
         log_event("tunnel_start", provider=status.provider, state=status.state)
+        if status.state == "connected" and status.url:
+            notify.notify("Tunnel connected", status.url, kind="success", url=status.url)
         return status.public()
 
     @app.post("/api/tunnels/stop")
@@ -352,8 +531,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         _require(state, provided(x_termx_passcode, authorization, k))
         status = await state.tunnels.restart()
         if status.state == "error":
+            notify.notify("Tunnel failed", status.detail or "tunnel failed", kind="error")
             raise HTTPException(status_code=400, detail=status.detail or "tunnel failed")
         log_event("tunnel_restart", provider=status.provider, state=status.state)
+        if status.state == "connected" and status.url:
+            notify.notify("Tunnel connected", status.url, kind="success", url=status.url)
         return status.public()
 
     @app.get("/api/displays")
@@ -568,6 +750,10 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     def builtin_app() -> FileResponse:
         return FileResponse(PACKAGE_STATIC / "index.html", media_type="text/html", headers=html_headers)
 
+    @app.get("/_/connect.html")
+    def connect_page() -> FileResponse:
+        return FileResponse(PACKAGE_STATIC / "connect.html", media_type="text/html", headers=html_headers)
+
     dist = web_dir if web_dir and web_dir.is_dir() else None
     index_html = (dist / "index.html") if dist else None
     fallback = PACKAGE_STATIC / "index.html"
@@ -581,7 +767,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     if dist is not None:
 
         @app.get("/{path:path}")
-        def spa(path: str) -> FileResponse | JSONResponse | HTMLResponse:
+        def spa(path: str) -> FileResponse:
             if path.startswith("api/") or path.startswith("_/"):
                 raise HTTPException(status_code=404)
             target = (dist / path).resolve()

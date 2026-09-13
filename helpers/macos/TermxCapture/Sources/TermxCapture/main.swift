@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreImage
 import CoreMedia
 import CoreVideo
@@ -6,7 +7,65 @@ import Foundation
 import ImageIO
 import ScreenCaptureKit
 
-let runner = CaptureRunner()
+func emitDisplays() {
+    Task {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let main = CGMainDisplayID()
+            var lines: [String] = []
+            for display in content.displays {
+                let frame = CGDisplayBounds(display.displayID)
+                let entry: [String: Any] = [
+                    "id": Int(display.displayID),
+                    "width": Int(display.width),
+                    "height": Int(display.height),
+                    "x": Int(frame.origin.x),
+                    "y": Int(frame.origin.y),
+                    "main": display.displayID == main,
+                ]
+                if let data = try? JSONSerialization.data(withJSONObject: entry),
+                   let text = String(data: data, encoding: .utf8)
+                {
+                    lines.append(text)
+                }
+            }
+            if !lines.isEmpty {
+                FileHandle.standardOutput.write(Data((lines.joined(separator: "\n") + "\n").utf8))
+            }
+            exit(0)
+        } catch {
+            fputs("termx-capture: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+    dispatchMain()
+}
+
+var requestedDisplay: CGDirectDisplayID?
+var listOnly = false
+var arguments = CommandLine.arguments
+arguments.removeFirst()
+var index = 0
+while index < arguments.count {
+    switch arguments[index] {
+    case "--display":
+        if index + 1 < arguments.count, let value = UInt32(arguments[index + 1]) {
+            requestedDisplay = value
+        }
+        index += 2
+    case "--list":
+        listOnly = true
+        index += 1
+    default:
+        index += 1
+    }
+}
+
+if listOnly {
+    emitDisplays()
+}
+
+let runner = CaptureRunner(displayID: requestedDisplay)
 DispatchQueue.main.async {
     runner.start()
 }
@@ -17,14 +76,25 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
     private let ciContext = CIContext()
     private var stream: SCStream?
     private var busy = false
+    private let requestedDisplay: CGDirectDisplayID?
+
+    init(displayID: CGDirectDisplayID?) {
+        self.requestedDisplay = displayID
+        super.init()
+    }
 
     func start() {
         Task {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard let display = content.displays.first else {
+                let display = content.displays.first(where: { $0.displayID == self.requestedDisplay })
+                    ?? content.displays.first
+                guard let display else {
                     fputs("termx-capture: no display available\n", stderr)
                     exit(1)
+                }
+                if let requested = self.requestedDisplay, display.displayID != requested {
+                    fputs("termx-capture: display \(requested) not found, using \(display.displayID)\n", stderr)
                 }
                 self.begin(display: display)
             } catch {

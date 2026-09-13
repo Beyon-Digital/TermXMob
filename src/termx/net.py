@@ -43,6 +43,17 @@ def qr_ascii(data: str) -> str:
     return buf.getvalue().rstrip()
 
 
+def qr_svg(data: str, box_size: int = 8, border: int = 2) -> str:
+    from qrcode.image.svg import SvgPathImage
+
+    qr = qrcode.QRCode(image_factory=SvgPathImage, box_size=box_size, border=border)
+    qr.add_data(data)
+    qr.make(fit=True)
+    buf = io.BytesIO()
+    qr.make_image().save(buf)
+    return buf.getvalue().decode("utf-8")
+
+
 def connect_url(base: str, passcode: str | None) -> str:
     if not passcode:
         return base

@@ -198,6 +198,7 @@ def test_adapter_registry_order() -> None:
         "xrandr",
         "gdctl",
         "kscreen-doctor",
+        "windows-idd",
     ]
 
 
