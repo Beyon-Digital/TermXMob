@@ -193,3 +193,21 @@ def test_start_server_falls_back_when_port_taken() -> None:
             blocker.close()
 
     asyncio.run(inner())
+
+
+def test_connect_qr_prefers_lan_address() -> None:
+    from termx import app as app_module
+
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    body = client.get("/api/connect", headers={"X-Termx-Passcode": "secret"}).json()
+    target = body["connect_url"].split("?")[0]
+    loopback = target.startswith("http://127.") or target.startswith("http://localhost")
+    has_lan = any(
+        not url.startswith("http://127.") and not url.startswith("http://localhost")
+        for url in body["urls"]
+    )
+    if has_lan:
+        assert not loopback, body["connect_url"]
+    svg = client.get("/api/connect/qr.svg", headers={"X-Termx-Passcode": "secret"})
+    assert svg.status_code == 200

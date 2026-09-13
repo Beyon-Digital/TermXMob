@@ -14,6 +14,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Phone Link").build(app)?;
     let tunnel = MenuItemBuilder::with_id("tunnel", "Start / Stop Tunnel").build(app)?;
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
+    let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
     let autostart = CheckMenuItemBuilder::with_id("autostart", "Launch at Login")
         .checked(app.autolaunch().is_enabled().unwrap_or(false))
         .build(app)?;
@@ -28,6 +29,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .item(&tunnel)
         .separator()
         .item(&restart)
+        .item(&restart_app)
         .item(&permissions)
         .item(&autostart)
         .separator()

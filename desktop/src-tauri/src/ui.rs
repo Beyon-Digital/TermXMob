@@ -5,7 +5,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::backend::{api_get, api_post, Backend, ReadyInfo};
+use crate::backend::{api_get, Backend, ReadyInfo};
 use crate::{config, logging};
 
 pub static START_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -174,26 +174,6 @@ pub fn open_accessibility_settings(app: &AppHandle) {
     );
 }
 
-fn permission_summary(app: &AppHandle) -> String {
-    let value = api_get(app, "/api/permissions");
-    let get = |key: &str| {
-        value
-            .as_ref()
-            .and_then(|item| item.get(key))
-            .and_then(|item| item.as_str())
-            .unwrap_or("unknown")
-            .to_string()
-    };
-    let mut lines = vec![
-        format!("Screen Recording: {}", get("screen_recording")),
-        format!("Accessibility: {}", get("accessibility")),
-    ];
-    if value.is_none() {
-        lines = vec!["Termx backend is not running yet.".to_string()];
-    }
-    lines.join("\n")
-}
-
 pub fn permission_dialog(app: &AppHandle) {
     if !cfg!(target_os = "macos") {
         notify(
@@ -203,38 +183,42 @@ pub fn permission_dialog(app: &AppHandle) {
         );
         return;
     }
-    let summary = permission_summary(app);
+    // Prompts come from the app process, not the Python sidecar, so macOS
+    // attributes the grant to Termx.app and never signals the backend.
+    let before = crate::permissions::status();
     let handle = app.clone();
     app.dialog()
         .message(format!(
-            "Termx uses two macOS permissions:\n\n• Screen Recording — stream your desktop to your phone\n• Accessibility — send pointer and keyboard input\n\nCurrent status:\n{summary}\n\nRequest permissions now?",
+            "Termx uses two macOS permissions:\n\n• Screen Recording — stream your desktop to your phone\n• Accessibility — send pointer and keyboard input\n\nCurrent status:\nScreen Recording: {}\nAccessibility: {}\n\nRequest permissions now?",
+            before.screen_recording_label(),
+            before.accessibility_label(),
         ))
         .title("Termx Permissions")
         .buttons(MessageDialogButtons::OkCustom("Request".to_string()))
         .show(move |requested| {
             if requested {
-                let _ = api_post(&handle, "/api/permissions/request", serde_json::json!({}));
+                let prompt = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    crate::permissions::request_screen_recording();
+                    crate::permissions::request_accessibility();
+                });
+                let _ = prompt;
             }
             config::set_onboarded(&handle);
-            let status = api_get(&handle, "/api/permissions");
-            let denied = |key: &str| {
-                status
-                    .as_ref()
-                    .and_then(|value| value.get(key))
-                    .and_then(|value| value.as_str())
-                    .map(|value| value == "denied")
-                    .unwrap_or(false)
-            };
-            if denied("screen_recording") {
+            let status = crate::permissions::status();
+            if !status.screen_recording {
                 open_permission_settings(&handle);
-            } else if denied("accessibility") {
+            }
+            if !status.accessibility {
                 open_accessibility_settings(&handle);
             }
-            notify(
-                &handle,
-                "Grant permissions to Termx",
-                "Enable Screen Recording and Accessibility for Termx, then restart the app if capture still fails.",
-            );
+            if requested {
+                notify(
+                    &handle,
+                    "Grant permissions to Termx, then restart",
+                    "Screen Recording and Accessibility are listed under Termx in System Settings. Use Termx → Restart Termx afterwards.",
+                );
+            }
         });
 }
 

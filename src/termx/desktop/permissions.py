@@ -44,56 +44,12 @@ def _screen_recording_status() -> str:
     return _bool_status(lambda: cg.CGPreflightScreenCaptureAccess())
 
 
-def _request_screen_recording() -> str:
-    cg = _core_graphics()
-    if cg is None or not hasattr(cg, "CGRequestScreenCaptureAccess"):
-        return "unknown"
-    cg.CGRequestScreenCaptureAccess.restype = ctypes.c_bool
-    return _bool_status(lambda: cg.CGRequestScreenCaptureAccess())
-
-
 def _accessibility_status() -> str:
     svc = _application_services()
     if svc is None or not hasattr(svc, "AXIsProcessTrusted"):
         return "unknown"
     svc.AXIsProcessTrusted.restype = ctypes.c_bool
     return _bool_status(lambda: svc.AXIsProcessTrusted())
-
-
-def _request_accessibility() -> str:
-    svc = _application_services()
-    cf = None
-    try:
-        path = ctypes.util.find_library("CoreFoundation") or (
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        cf = ctypes.CDLL(path)
-    except OSError:
-        cf = None
-    if svc is None or cf is None or not hasattr(svc, "AXIsProcessTrustedWithOptions"):
-        return _accessibility_status()
-    try:
-        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
-        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
-        cf.CFDictionaryCreate.restype = ctypes.c_void_p
-        cf.CFDictionaryCreate.argtypes = [
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.c_long,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
-        key = cf.CFStringCreateWithCString(None, b"AXTrustedCheckOptionPrompt", 0x08000100)
-        value = ctypes.c_void_p.in_dll(cf, "kCFBooleanTrue")
-        keys = (ctypes.c_void_p * 1)(key)
-        values = (ctypes.c_void_p * 1)(value)
-        options = cf.CFDictionaryCreate(None, keys, values, 1, None, None)
-        svc.AXIsProcessTrustedWithOptions.restype = ctypes.c_bool
-        svc.AXIsProcessTrustedWithOptions.argtypes = [ctypes.c_void_p]
-        return _bool_status(lambda: svc.AXIsProcessTrustedWithOptions(options))
-    except Exception:
-        return _accessibility_status()
 
 
 def permission_snapshot() -> dict[str, Any]:
@@ -113,12 +69,10 @@ def permission_snapshot() -> dict[str, Any]:
 
 
 def request_permissions(which: list[str] | None = None) -> dict[str, Any]:
-    """Trigger native permission prompts where supported, then return the snapshot."""
-    if sys.platform != "darwin":
-        return permission_snapshot()
-    wanted = set(which or [_SCREEN_RECORDING, _ACCESSIBILITY])
-    if _SCREEN_RECORDING in wanted:
-        _request_screen_recording()
-    if _ACCESSIBILITY in wanted:
-        _request_accessibility()
+    """Return the current state only.
+
+    Prompting used to run here, but TCC APIs invoked from the Python sidecar were
+    killed by macOS and were attributed to the wrong process. The desktop shell
+    now owns prompting from the Termx.app process; this stays read-only.
+    """
     return permission_snapshot()

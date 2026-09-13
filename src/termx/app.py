@@ -175,7 +175,17 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     def _connect_target() -> tuple[str, str | None]:
         tunnel = state.tunnels.status_public()
         urls = http_urls(state.port)
-        target = tunnel.get("url") or (urls[0] if urls else f"http://127.0.0.1:{state.port}")
+        # Phones cannot reach loopback, so the QR/pairing link must prefer the LAN
+        # address when one exists.
+        remote = next(
+            (
+                url
+                for url in urls
+                if not url.startswith("http://127.") and not url.startswith("http://localhost")
+            ),
+            None,
+        )
+        target = tunnel.get("url") or remote or (urls[0] if urls else f"http://127.0.0.1:{state.port}")
         return str(target), tunnel.get("url")
 
     @app.get("/api/connect")

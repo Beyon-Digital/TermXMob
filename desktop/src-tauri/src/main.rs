@@ -2,6 +2,7 @@ mod backend;
 mod config;
 mod logging;
 mod menu;
+mod permissions;
 mod tray;
 mod ui;
 

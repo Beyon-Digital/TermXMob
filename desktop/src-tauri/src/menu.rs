@@ -13,6 +13,7 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
     let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Phone Link").build(app)?;
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
+    let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
     let check_updates = MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
     let autostart = CheckMenuItemBuilder::with_id("autostart", "Launch at Login")
         .checked(false)
@@ -35,6 +36,7 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
         .separator()
         .item(&permissions)
         .item(&restart)
+        .item(&restart_app)
         .item(&check_updates)
         .item(&autostart)
         .item(&open_logs)
@@ -93,6 +95,12 @@ pub fn handle_menu_event(app: &AppHandle, id: &str) {
             if let Some(backend) = app.try_state::<Backend>() {
                 backend.restart();
             }
+        }
+        "restart_app" => {
+            if let Some(backend) = app.try_state::<Backend>() {
+                backend.stop();
+            }
+            app.restart();
         }
         "check_updates" => check_updates(app),
         "autostart" => toggle_autostart(app),
