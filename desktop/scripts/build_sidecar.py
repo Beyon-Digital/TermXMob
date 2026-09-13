@@ -30,11 +30,14 @@ def run(argv: list[str], cwd: Path | None = None) -> None:
 
 
 def export_web() -> None:
-    if shutil.which("pnpm") is None:
+    pnpm = shutil.which("pnpm")
+    if pnpm is None:
         raise SystemExit("pnpm is required to build the web UI (install pnpm or pass --skip-web)")
+    # Use the resolved path: on Windows pnpm is a .cmd shim that CreateProcess
+    # will not find from the bare name.
     if not (APP / "node_modules").is_dir():
-        run(["pnpm", "install", "--frozen-lockfile"], cwd=APP)
-    run(["pnpm", "export:web"], cwd=APP)
+        run([pnpm, "install", "--frozen-lockfile"], cwd=APP)
+    run([pnpm, "export:web"], cwd=APP)
     if not (APP / "dist" / "index.html").is_file():
         raise SystemExit("web export did not produce app/dist/index.html")
 
