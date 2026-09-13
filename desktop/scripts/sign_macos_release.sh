@@ -26,9 +26,13 @@ ENTITLEMENTS="$REPO_ROOT/desktop/src-tauri/entitlements.plist"
 
 # shellcheck disable=SC1090
 if [ -f "$REPO_ROOT/desktop/signing.env" ]; then
-  set -a
-  . "$REPO_ROOT/desktop/signing.env"
-  set +a
+  if sh -n "$REPO_ROOT/desktop/signing.env" 2>/dev/null; then
+    set -a
+    . "$REPO_ROOT/desktop/signing.env"
+    set +a
+  else
+    echo "warning: ignoring invalid desktop/signing.env" >&2
+  fi
 fi
 
 IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
@@ -234,6 +238,24 @@ notary_args() {
   return 1
 }
 
+notarize_submit() {
+  # $1 = zip or dmg to submit. Fails loudly with the Apple notary log on Invalid.
+  target="$1"
+  # shellcheck disable=SC2086
+  output="$(xcrun notarytool submit "$target" $args --wait --output-format json 2>&1)" || true
+  echo "$output"
+  if ! printf '%s' "$output" | grep -q '"status"[[:space:]]*:[[:space:]]*"Accepted"'; then
+    submission_id="$(printf '%s' "$output" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+    echo "error: Apple notarization did not accept the build" >&2
+    if [ -n "$submission_id" ]; then
+      # shellcheck disable=SC2086
+      xcrun notarytool log "$submission_id" $args >&2 || true
+    fi
+    return 1
+  fi
+  return 0
+}
+
 notarize_dmg() {
   # shellcheck disable=SC2046
   if ! args="$(notary_args)"; then
@@ -242,8 +264,7 @@ notarize_dmg() {
     echo "             xcrun stapler staple \"$1\""
     return 1
   fi
-  # shellcheck disable=SC2086
-  xcrun notarytool submit "$1" $args --wait
+  notarize_submit "$1" || return 1
   xcrun stapler staple "$1"
   xcrun stapler validate "$1"
   return 0
@@ -260,8 +281,7 @@ notarize_app() {
     echo "             xcrun stapler staple \"$app\""
     return 1
   fi
-  # shellcheck disable=SC2086
-  xcrun notarytool submit "$zip_path" $args --wait
+  notarize_submit "$zip_path" || return 1
   xcrun stapler staple "$app"
   xcrun stapler validate "$app"
   return 0

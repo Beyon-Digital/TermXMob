@@ -26,9 +26,13 @@ REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1090
 if [ -f "$REPO_ROOT/desktop/signing.env" ]; then
-  set -a
-  . "$REPO_ROOT/desktop/signing.env"
-  set +a
+  if sh -n "$REPO_ROOT/desktop/signing.env" 2>/dev/null; then
+    set -a
+    . "$REPO_ROOT/desktop/signing.env"
+    set +a
+  else
+    echo "warning: ignoring invalid desktop/signing.env" >&2
+  fi
 fi
 
 REPO="${TERMX_GITHUB_REPO:-}"
@@ -228,7 +232,7 @@ echo "==> api key:    $API_KEY_ID / $API_ISSUER"
 if [ -n "$WINDOWS_PFX" ]; then
   echo "==> windows:    $WINDOWS_PFX"
 fi
-echo "==> setting secrets${DRY_RUN:+ (dry run)}"
+if [ "$DRY_RUN" = "1" ]; then echo "==> setting secrets (dry run)"; else echo "==> setting secrets"; fi
 echo
 
 set_secret APPLE_CERTIFICATE "$(base64 < "$P12" | tr -d '\n')"

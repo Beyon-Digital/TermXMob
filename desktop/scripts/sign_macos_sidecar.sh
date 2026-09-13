@@ -51,40 +51,57 @@ sign_one() {
 }
 
 sign_all() {
-  find "$TARGET" -type f "$@" -print | while IFS= read -r file; do
+  find "$TARGET" -type f "$@" ! -path "*.framework/*" -print | while IFS= read -r file; do
     if is_macho "$file"; then
       sign_one "$file"
     fi
   done
 }
 
-sign_ambiguous() {
-  # codesign cannot classify "<name>.framework/<name>" in PyInstaller's shallow
-  # framework layout. Sign through a hardlink outside the .framework path; the
-  # signature is stored in the file itself.
-  file="$1"
-  linkdir="$TARGET/.termx-sign-links"
-  mkdir -p "$linkdir"
-  link="$linkdir/$(basename "$file")"
-  rm -f "$link"
-  if ln "$file" "$link" 2>/dev/null; then
-    sign_one "$link"
-    rm -f "$link"
+normalize_framework() {
+  # Tauri's resource copy flattens the framework symlinks PyInstaller creates,
+  # which makes codesign report "bundle format is ambiguous". Rebuild the
+  # standard versioned layout before signing.
+  framework="$1"
+  base="$(basename "$framework" .framework)"
+  [ -d "$framework/Versions" ] || return 0
+  version_dir=""
+  if [ -L "$framework/Versions/Current" ]; then
+    version_dir="$(readlink "$framework/Versions/Current")"
   else
-    echo "warning: could not hardlink $file; signing it in place" >&2
-    sign_one "$file"
+    for candidate in "$framework"/Versions/*; do
+      [ -d "$candidate" ] || continue
+      case "$(basename "$candidate")" in
+        Current) continue ;;
+      esac
+      version_dir="$(basename "$candidate")"
+      break
+    done
+  fi
+  [ -n "$version_dir" ] || return 0
+  if [ ! -L "$framework/Versions/Current" ]; then
+    rm -rf "$framework/Versions/Current"
+    ln -s "$version_dir" "$framework/Versions/Current"
+  fi
+  if [ ! -L "$framework/$base" ]; then
+    rm -f "$framework/$base"
+    ln -s "Versions/Current/$base" "$framework/$base"
+  fi
+  if [ -d "$framework/Resources" ] && [ ! -L "$framework/Resources" ]; then
+    rm -rf "$framework/Resources"
+    ln -s "Versions/Current/Resources" "$framework/Resources"
   fi
 }
 
 sign_frameworks() {
   find "$TARGET" -type d -name "*.framework" -print | while IFS= read -r framework; do
-    find "$framework" -type f -print | while IFS= read -r file; do
-      is_macho "$file" || continue
-      case "$file" in
-        "$framework"/*/*) sign_one "$file" ;;
-        *) sign_ambiguous "$file" ;;
-      esac
-    done
+    normalize_framework "$framework"
+    if [ "$IDENTITY" = "-" ]; then
+      "$CODESIGN" --force --sign - "$framework"
+    else
+      "$CODESIGN" --force --options runtime --timestamp --sign "$IDENTITY" "$framework"
+    fi
+    "$CODESIGN" --verify --strict "$framework"
   done
 }
 
