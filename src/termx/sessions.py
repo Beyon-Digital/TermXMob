@@ -20,9 +20,11 @@ DEFAULT_ROWS = 24
 SIGNALS = {
     "int": signal.SIGINT,
     "term": signal.SIGTERM,
-    "hup": signal.SIGHUP,
-    "kill": signal.SIGKILL,
 }
+if hasattr(signal, "SIGHUP"):
+    SIGNALS["hup"] = signal.SIGHUP
+if hasattr(signal, "SIGKILL"):
+    SIGNALS["kill"] = signal.SIGKILL
 
 
 class ByteSink(Protocol):
