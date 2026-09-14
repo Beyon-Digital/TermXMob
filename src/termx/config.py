@@ -89,9 +89,10 @@ def validate_cwd(cwd: str) -> str:
 FS_LIST_MAX = 400
 
 
-def list_dir_entries(path: str | None = None) -> dict[str, Any]:
+def list_dir_entries(path: str | None = None, include_files: bool = False) -> dict[str, Any]:
     current = Path(validate_cwd(path or default_cwd()))
-    entries: list[dict[str, str]] = []
+    dirs: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
     try:
         children = list(current.iterdir())
     except OSError as exc:
@@ -99,13 +100,25 @@ def list_dir_entries(path: str | None = None) -> dict[str, Any]:
     children.sort(key=lambda child: child.name.lower())
     for child in children:
         try:
-            if not child.is_dir():
+            if child.is_dir():
+                dirs.append({"name": child.name, "path": str(child), "dir": True})
                 continue
+            if not include_files or not child.is_file():
+                continue
+            stat = child.stat()
+            files.append(
+                {
+                    "name": child.name,
+                    "path": str(child),
+                    "dir": False,
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                }
+            )
         except OSError:
             continue
-        entries.append({"name": child.name, "path": str(child)})
-        if len(entries) >= FS_LIST_MAX:
-            break
+    entries = dirs + files if include_files else dirs
+    entries = entries[:FS_LIST_MAX]
     parent = current.parent
     return {
         "path": str(current),

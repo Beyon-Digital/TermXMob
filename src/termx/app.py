@@ -4,7 +4,9 @@ import asyncio
 import hmac
 import json
 import os
+import tempfile
 import uuid
+from urllib.parse import unquote
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -411,15 +413,77 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     @app.get("/api/fs")
     def get_fs(
         path: str | None = Query(default=None),
+        files: int = Query(default=0, ge=0, le=1),
         x_termx_passcode: str | None = Header(default=None),
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
         _require(state, provided(x_termx_passcode, authorization, k))
         try:
-            return list_dir_entries(path)
+            return list_dir_entries(path, include_files=bool(files))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/fs/download")
+    def download_file(
+        path: str = Query(...),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> FileResponse:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            resolved = Path(path).expanduser().resolve(strict=True)
+        except OSError as exc:
+            raise HTTPException(status_code=404, detail="file not found") from exc
+        if not resolved.is_file():
+            raise HTTPException(status_code=404, detail="not a file")
+        log_event("fs_download", path=str(resolved), size=resolved.stat().st_size)
+        return FileResponse(resolved, filename=resolved.name)
+
+    @app.post("/api/fs/upload")
+    async def upload_file(
+        request: Request,
+        dir: str = Query(...),
+        x_termx_name: str | None = Header(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        name = Path(unquote(x_termx_name or "")).name.strip()
+        if not name or name in {".", ".."}:
+            raise HTTPException(status_code=400, detail="file name required")
+        try:
+            target_dir = Path(validate_cwd(dir))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        target = target_dir / name
+        if target.exists():
+            stem, suffix = target.stem, target.suffix
+            for index in range(1, 1000):
+                candidate = target_dir / f"{stem} ({index}){suffix}"
+                if not candidate.exists():
+                    target = candidate
+                    break
+        written = 0
+        fd, tmp = tempfile.mkstemp(dir=str(target_dir), prefix=".termx-upload-")
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                async for chunk in request.stream():
+                    if not chunk:
+                        continue
+                    handle.write(chunk)
+                    written += len(chunk)
+            os.replace(tmp, target)
+        except Exception as exc:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise HTTPException(status_code=500, detail=f"upload failed: {exc}") from exc
+        log_event("fs_upload", path=str(target), size=written)
+        return {"ok": True, "path": str(target), "name": target.name, "size": written}
 
     @app.get("/api/directories")
     def list_directories(
