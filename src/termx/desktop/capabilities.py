@@ -54,7 +54,11 @@ def probe_desktop() -> DesktopProbe:
         wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
         x11 = bool(os.environ.get("DISPLAY"))
         input_backend = None
-        if shutil.which("xdotool") and x11:
+        if x11 and _xtest_available():
+            # libXtst is the documented X11 input-injection extension and needs
+            # no external binary; xdotool is only a fallback.
+            input_backend = "xtest"
+        elif shutil.which("xdotool") and x11:
             input_backend = "xdotool"
         elif shutil.which("ydotool"):
             input_backend = "ydotool"
@@ -62,7 +66,10 @@ def probe_desktop() -> DesktopProbe:
         if not capture:
             reason = "No capture tool (termx-capture, ffmpeg, grim, maim, scrot, spectacle, import, xwd)"
         elif not input_backend:
-            reason = "No input tool (xdotool or ydotool)"
+            reason = (
+                "No input backend: on X11 install libXtst or xdotool; on Wayland the "
+                "RemoteDesktop portal (or ydotool) is required"
+            )
         permissions = permission_snapshot()
         permissions.setdefault("portal", "unknown" if wayland else "n/a")
         permissions.setdefault("display", "wayland" if wayland else "x11" if x11 else "none")
@@ -109,6 +116,17 @@ def _helper_dict() -> dict[str, Any]:
     if path:
         helper["capture_helper"] = path
     return helper
+
+
+def _xtest_available() -> bool:
+    if sys.platform != "linux":
+        return False
+    import ctypes.util
+
+    try:
+        return bool(ctypes.util.find_library("Xtst") and ctypes.util.find_library("X11"))
+    except Exception:
+        return False
 
 
 def _windows_input_available() -> bool:

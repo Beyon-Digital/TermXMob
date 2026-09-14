@@ -119,9 +119,25 @@ def screen_recording_denied() -> bool:
 def close_capture() -> None:
     with _LOCK:
         _stop_helper_locked()
+    from termx.desktop import broker
+
+    if broker.available():
+        broker.stop_capture()
 
 
 def grab_jpeg(display_id: str | None = None) -> bytes:
+    from termx.desktop import broker
+
+    if broker.available():
+        target = _target(display_id)
+        numeric = _helper_display_id(target)
+        for attempt in range(2):
+            try:
+                return broker.capture_frame(numeric, quality=55, timeout_ms=700)
+            except broker.BrokerError as exc:
+                if exc.kind == "waiting" and attempt == 0:
+                    continue
+                raise CaptureError(str(exc)) from exc
     if screen_recording_denied():
         raise CaptureError(
             "Screen Recording permission is required to mirror this Mac. "
@@ -324,6 +340,26 @@ def _ffmpeg_jpeg(target: dict[str, Any] | None) -> bytes:
             ]
         )
     elif sys.platform == "win32":
+        # Tiers by capability, newest first: ddagrab wraps the DXGI Desktop
+        # Duplication API (Windows 8+) and captures GPU-composited windows that
+        # gdigrab misses; gdigrab (GDI BitBlt) stays as the universal fallback
+        # for ffmpeg builds without ddagrab.
+        attempts.append(
+            [
+                "ffmpeg",
+                "-y",
+                "-nostdin",
+                "-filter_complex",
+                "ddagrab=0,hwdownload,format=bgra",
+                "-frames:v",
+                "1",
+                "-q:v",
+                "5",
+                "-f",
+                "image2",
+                "pipe:1",
+            ]
+        )
         geometry = _geometry(target)
         argv = ["ffmpeg", "-y", "-nostdin", "-f", "gdigrab"]
         if geometry:

@@ -55,6 +55,16 @@ def _accessibility_status() -> str:
 def permission_snapshot() -> dict[str, Any]:
     """Report permission state without prompting. Safe to call on any platform."""
     if sys.platform == "darwin":
+        from termx.desktop import broker
+
+        # The shell process owns the app's TCC identity; its answer is the only
+        # one that matches what macOS will actually enforce.
+        state = broker.status()
+        if state is not None:
+            return {
+                _SCREEN_RECORDING: "granted" if state.get("screen_recording") else "denied",
+                _ACCESSIBILITY: "granted" if state.get("accessibility") else "denied",
+            }
         return {
             _SCREEN_RECORDING: _screen_recording_status(),
             _ACCESSIBILITY: _accessibility_status(),
@@ -69,10 +79,16 @@ def permission_snapshot() -> dict[str, Any]:
 
 
 def request_permissions(which: list[str] | None = None) -> dict[str, Any]:
-    """Return the current state only.
+    """Trigger the system prompts and return the resulting state.
 
-    Prompting used to run here, but TCC APIs invoked from the Python sidecar were
-    killed by macOS and were attributed to the wrong process. The desktop shell
-    now owns prompting from the Termx.app process; this stays read-only.
+    Prompting happens in the Termx.app process through the privileged broker:
+    TCC records the grant against the process that asks, and only the app's own
+    identity is the one the user manages in System Settings.
     """
+    if sys.platform == "darwin":
+        from termx.desktop import broker
+
+        if broker.available():
+            for item in which or [_SCREEN_RECORDING, _ACCESSIBILITY]:
+                broker.request_permission(item)
     return permission_snapshot()

@@ -73,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--broker",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -193,6 +198,9 @@ async def _start_server(
 async def _serve(args: argparse.Namespace) -> None:
     if args.desktop:
         os.environ["TERMX_DESKTOP"] = "1"
+    from termx.desktop import broker as desktop_broker
+
+    desktop_broker.configure(getattr(args, "broker", None))
     web_dir = Path(args.web_dir) if args.web_dir else default_web_dir()
     state = AppState(passcode=args.passcode, port=args.port)
     app = create_app(state, web_dir=web_dir if web_dir.is_dir() else None)

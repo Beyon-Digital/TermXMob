@@ -1,3 +1,5 @@
+import re
+
 import time
 
 from fastapi.testclient import TestClient
@@ -40,6 +42,20 @@ def test_builtin_ui_served() -> None:
     assert "Termx" in res.text
     css = client.get("/_/vendor/xterm.css")
     assert css.status_code == 200
+
+
+def test_builtin_pages_reference_loadable_assets() -> None:
+    client = TestClient(create_app(AppState(), web_dir=None))
+    pattern = re.compile(r'(?:src|href)="(/_/[^"]+)"')
+    for page, needs_assets in (("/_/embed.html", True), ("/_/app.html", True), ("/_/connect.html", False)):
+        html = client.get(page)
+        assert html.status_code == 200, page
+        refs = pattern.findall(html.text)
+        if needs_assets:
+            assert refs, f"{page} references no local assets"
+        for ref in refs:
+            res = client.get(ref)
+            assert res.status_code == 200, f"{page} -> {ref} returned {res.status_code}"
 
 
 def test_exported_web_ui_served(tmp_path) -> None:

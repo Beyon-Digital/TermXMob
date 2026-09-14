@@ -126,6 +126,7 @@ class DesktopManager:
         async def frames() -> None:
             last = time.monotonic()
             metric_at = last
+            reported: str | None = None
             while not stop.is_set():
                 await resume.wait()
                 if stop.is_set():
@@ -140,14 +141,22 @@ class DesktopManager:
                     self._last_capture_ms = int((now - started) * 1000)
                     last = now
                     await websocket.send_bytes(frame)
+                    if reported is not None:
+                        reported = None
+                        await websocket.send_text(json.dumps({"type": "cleared"}))
                     if now - metric_at >= 1.0:
                         metric_at = now
                         await websocket.send_text(json.dumps(self._metrics_payload()))
                 except CaptureError as exc:
-                    try:
-                        await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
-                    except Exception:
-                        break
+                    # Report each distinct failure once: repeating the same
+                    # message every retry floods clients with stale banners.
+                    message = str(exc)
+                    if message != reported:
+                        reported = message
+                        try:
+                            await websocket.send_text(json.dumps({"type": "error", "message": message}))
+                        except Exception:
+                            break
                     await asyncio.sleep(1.5)
                 except Exception:
                     break

@@ -6,6 +6,8 @@
   <string>Termx uses Apple Events to send keyboard input to applications when you control this machine remotely.</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Termx lets devices on your local network connect to terminal sessions running on this machine.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Termx mirrors this Mac's screen to devices you pair with so you can view and control it remotely.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key>

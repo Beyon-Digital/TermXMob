@@ -1,5 +1,8 @@
 mod backend;
+mod broker;
+mod capture;
 mod config;
+mod input_macos;
 mod logging;
 mod menu;
 mod permissions;
@@ -53,6 +56,10 @@ fn main() {
             ui::create_main_window(&handle)?;
             tray::init(&handle)?;
             menu::sync_autostart(&handle);
+            let log_handle = handle.clone();
+            if let Some(path) = broker::start(handle.clone(), move |line| logging::desktop(&log_handle, line)) {
+                logging::desktop(&handle, &format!("privileged broker ready at {path}"));
+            }
             let backend = backend::Backend::new(handle.clone());
             app.manage(backend.clone());
             backend.start();

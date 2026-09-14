@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import os
+import re
 import tempfile
 import uuid
 from urllib.parse import unquote
@@ -282,9 +283,16 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         _require(state, provided(x_termx_passcode, authorization, k))
         which = body.which if body is not None else ["screen_recording", "accessibility"]
-        for item in which:
-            if item in {"screen_recording", "accessibility", "open_settings"}:
-                notify.permission(item)
+        from termx.desktop import broker as desktop_broker
+
+        # With the desktop shell attached, the broker prompts from the Termx.app
+        # process itself (the identity the user manages in System Settings).
+        # Without it (plain `termx` from a terminal) fall back to the shell
+        # notification channel for a best-effort prompt.
+        if not desktop_broker.available():
+            for item in which:
+                if item in {"screen_recording", "accessibility", "open_settings"}:
+                    notify.permission(item)
         log_event("permissions_request", which=",".join(which))
         return request_permissions(which)
 
@@ -1018,11 +1026,10 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         await state.desktop.attach(websocket)
 
     vendor = PACKAGE_STATIC / "vendor"
-    allowed_vendor = {"xterm.js", "xterm.css", "addon-fit.js"}
 
     @app.get("/_/vendor/{name}")
     def vendor_file(name: str) -> FileResponse:
-        if name not in allowed_vendor:
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
             raise HTTPException(status_code=404)
         path = vendor / name
         if not path.is_file():

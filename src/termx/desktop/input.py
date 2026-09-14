@@ -62,6 +62,20 @@ def _clipboard_write_cmd() -> list[str] | None:
 
 def apply_event(event: dict[str, Any], target: str | None = None) -> None:
     kind = event.get("type")
+    if sys.platform == "darwin":
+        from termx.desktop import broker
+
+        # The shell owns the app's Accessibility grant; events posted from the
+        # backend process are judged against the backend's own identity.
+        if broker.available():
+            if kind == "release_all":
+                broker.send_input({"kind": "release_all"})
+                return
+            if not _broker_event(event, target):
+                raise InputError(
+                    "the Termx app could not post this input — grant Accessibility permission to Termx"
+                )
+            return
     if kind == "release_all":
         return
     if kind == "pointer":
@@ -72,6 +86,65 @@ def apply_event(event: dict[str, Any], target: str | None = None) -> None:
         return
     if kind == "text":
         _text(str(event.get("data") or ""))
+
+
+def _pointer_points(x: float, y: float, display_id: int | None) -> tuple[float, float]:
+    if x > 1 or y > 1:
+        return x, y
+    try:
+        import ctypes
+        import ctypes.util
+
+        path = (
+            ctypes.util.find_library("CoreGraphics")
+            or "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        cg = ctypes.CDLL(path)
+        return map_normalized(x, y, _cg_display_bounds(cg, display_id))
+    except Exception:
+        return x, y
+
+
+def _broker_event(event: dict[str, Any], target: str | None) -> bool:
+    from termx.desktop import broker
+
+    kind = event.get("type")
+    if kind == "pointer":
+        action = str(event.get("action") or "move")
+        if action == "wheel":
+            return broker.send_input(
+                {
+                    "kind": "scroll",
+                    "dy": float(event.get("dy") or 0),
+                    "dx": float(event.get("dx") or 0),
+                }
+            )
+        display_id = int(target) if target and str(target).isdigit() else None
+        px, py = _pointer_points(float(event.get("x") or 0), float(event.get("y") or 0), display_id)
+        return broker.send_input(
+            {
+                "kind": "mouse",
+                "event": action,
+                "x": px,
+                "y": py,
+                "button": int(event.get("button") or 1),
+                "dragging": bool(event.get("down")),
+            }
+        )
+    if kind == "key":
+        name = str(event.get("key") or "")
+        action = str(event.get("action") or "down")
+        if not name:
+            return True
+        if len(name) == 1:
+            return broker.send_input({"kind": "text", "text": name})
+        sent = broker.send_input({"kind": "key", "key": name.lower(), "down": action != "up"})
+        if action == "tap":
+            sent = broker.send_input({"kind": "key", "key": name.lower(), "down": False}) and sent
+        return sent
+    if kind == "text":
+        return broker.send_input({"kind": "text", "text": str(event.get("data") or "")})
+    return False
 
 
 def _pointer(event: dict[str, Any], target: str | None = None) -> None:
@@ -85,6 +158,8 @@ def _pointer(event: dict[str, Any], target: str | None = None) -> None:
         return
     if probe.input_backend == "cgevent" and sys.platform == "darwin":
         _mac_pointer(x, y, action, button, event, target)
+        return
+    if _xtest_pointer(x, y, action, button, event):
         return
     if probe.input_backend == "xdotool":
         px = int(x) if x > 1 else None
@@ -121,11 +196,13 @@ def _key(event: dict[str, Any]) -> None:
     if probe.input_backend == "sendinput" and sys.platform == "win32":
         _win_key(key, action)
         return
+    if _xtest_key(key, action):
+        return
     if probe.input_backend == "xdotool":
-        cmd = "keydown" if action == "down" else "keyup"
         if action == "tap":
             subprocess.run(["xdotool", "key", key], check=False)
             return
+        cmd = "keydown" if action == "down" else "keyup"
         subprocess.run(["xdotool", cmd, key], check=False)
         return
     if probe.input_backend == "cgevent" and action in {"tap", "down"}:
@@ -139,6 +216,8 @@ def _text(data: str) -> None:
     probe = probe_desktop()
     if probe.input_backend == "sendinput" and sys.platform == "win32":
         _win_text(data)
+        return
+    if _xtest_text(data):
         return
     if probe.input_backend == "xdotool":
         subprocess.run(["xdotool", "type", "--", data], check=False)
@@ -160,10 +239,77 @@ MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
+MOUSEEVENTF_ABSOLUTE = 0x8000
+MOUSEEVENTF_VIRTUALDESK = 0x4000
 MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_HWHEEL = 0x1000
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 WHEEL_DELTA = 120
+
+_DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+
+
+def _ensure_windows_dpi_awareness() -> None:
+    """Opt into per-monitor DPI awareness before any coordinate math.
+
+    Without this, GetSystemMetrics/BitBlt report DPI-virtualized sizes on
+    scaled displays (documented behaviour: the APIs are "virtualized" for
+    non-DPI-aware processes), which corrupts both pointer mapping and capture
+    geometry. Tiers follow Microsoft's documented order: Windows 10 1703+
+    per-monitor v2, Windows 8.1+ per-monitor, else system aware (Vista+).
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        if hasattr(user32, "SetProcessDpiAwarenessContext"):
+            if user32.SetProcessDpiAwarenessContext(
+                ctypes.c_void_p(_DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+            ):
+                return
+        try:
+            shcore = ctypes.windll.shcore
+            if shcore.SetProcessDpiAwareness(2) == 0:  # PROCESS_PER_MONITOR_DPI_AWARE
+                return
+        except OSError:
+            pass
+        user32.SetProcessDPIAware()
+    except Exception:
+        return
+
+
+def _windows_virtual_desktop() -> tuple[int, int, int, int]:
+    """Virtual desktop bounds in physical pixels (SM_XVIRTUALSCREEN ...)."""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN = 76, 77
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
+    left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+    top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+    width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)) or 1
+    height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)) or 1
+    return left, top, width, height
+
+
+def _virtual_desktop_point(px: int, py: int, bounds: tuple[int, int, int, int]) -> tuple[int, int]:
+    """Map physical pixels onto the 0..65535 absolute range for SendInput.
+
+    Microsoft documents absolute mouse coordinates as a 0..65535 range; with
+    MOUSEEVENTF_VIRTUALDESK the range spans the whole virtual desktop
+    (left/top/width/height from SM_*VIRTUALSCREEN).
+    """
+    left, top, width, height = bounds
+    dx = int(round((px - left) * 65535 / max(width - 1, 1)))
+    dy = int(round((py - top) * 65535 / max(height - 1, 1)))
+    return max(0, min(65535, dx)), max(0, min(65535, dy))
+
+
+def _windows_absolute_point(px: int, py: int) -> tuple[int, int]:
+    return _virtual_desktop_point(px, py, _windows_virtual_desktop())
 
 _WIN_VK = {
     "return": 0x0D,
@@ -239,18 +385,22 @@ def _win_input_structs() -> tuple[Any, Any, Any]:
     return INPUT, MOUSEINPUT, KEYBDINPUT
 
 
-def _send_inputs(inputs: list[Any]) -> None:
+def _send_inputs(inputs: list[Any]) -> bool:
+    """Post input events; False means the OS blocked them (documented UIPI case)."""
     import ctypes
 
     if not inputs:
-        return
+        return True
     user32 = ctypes.windll.user32
     array = (type(inputs[0]) * len(inputs))(*inputs)
-    user32.SendInput(len(inputs), array, ctypes.sizeof(inputs[0]))
+    inserted = user32.SendInput(len(inputs), array, ctypes.sizeof(inputs[0]))
+    return bool(inserted)
 
 
-def _mouse_input(mouse_class: Any, flags: int, data: int = 0) -> Any:
+def _mouse_input(mouse_class: Any, flags: int, data: int = 0, *, dx: int = 0, dy: int = 0) -> Any:
     value = mouse_class()
+    value.dx = dx
+    value.dy = dy
     value.dwFlags = flags
     value.mouseData = data
     return value
@@ -259,38 +409,50 @@ def _mouse_input(mouse_class: Any, flags: int, data: int = 0) -> Any:
 def _win_pointer(event: dict[str, Any], x: float, y: float, action: str, button: int) -> None:
     import ctypes
 
+    _ensure_windows_dpi_awareness()
     INPUT, MOUSEINPUT, _KEYBDINPUT = _win_input_structs()
     user32 = ctypes.windll.user32
     if x <= 1 and y <= 1:
-        width = int(user32.GetSystemMetrics(0)) or 1920
-        height = int(user32.GetSystemMetrics(1)) or 1080
-        px = int(max(0.0, min(1.0, x)) * max(width - 1, 1))
-        py = int(max(0.0, min(1.0, y)) * max(height - 1, 1))
+        left, top, width, height = _windows_virtual_desktop()
+        px = int(left + max(0.0, min(1.0, x)) * max(width - 1, 1))
+        py = int(top + max(0.0, min(1.0, y)) * max(height - 1, 1))
     else:
         px, py = int(x), int(y)
-    user32.SetCursorPos(px, py)
+    absolute = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+    dx, dy = _windows_absolute_point(px, py)
+    moved = INPUT(type=INPUT_MOUSE, mi=MOUSEINPUT(dx=dx, dy=dy, mouseData=0, dwFlags=absolute, time=0, dwExtraInfo=0))
     down = {1: MOUSEEVENTF_LEFTDOWN, 2: MOUSEEVENTF_RIGHTDOWN, 3: MOUSEEVENTF_MIDDLEDOWN}.get(button, MOUSEEVENTF_LEFTDOWN)
     up = {1: MOUSEEVENTF_LEFTUP, 2: MOUSEEVENTF_RIGHTUP, 3: MOUSEEVENTF_MIDDLEUP}.get(button, MOUSEEVENTF_LEFTUP)
     if action == "move":
+        if not _send_inputs([moved]):
+            user32.SetCursorPos(px, py)
         return
     if action == "down":
-        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, down))])
+        _send_inputs([moved, INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, down, flags=absolute, dx=dx, dy=dy))])
         return
     if action == "up":
-        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, up))])
+        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, up, flags=absolute, dx=dx, dy=dy))])
         return
     if action == "click":
-        _send_inputs(
+        sent = _send_inputs(
             [
-                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, down)),
-                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, up)),
+                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, down, flags=absolute, dx=dx, dy=dy)),
+                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, up, flags=absolute, dx=dx, dy=dy)),
             ]
         )
+        if not sent:
+            raise InputError(
+                "Windows blocked the input (UIPI): run Termx at the same integrity level as the target window"
+            )
         return
     if action == "wheel":
         delta = int(event.get("dy") or 0)
         direction = -WHEEL_DELTA if delta < 0 else WHEEL_DELTA
-        _send_inputs([INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, MOUSEEVENTF_WHEEL, direction))])
+        _send_inputs(
+            [
+                INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, MOUSEEVENTF_WHEEL, direction, flags=absolute, dx=dx, dy=dy))
+            ]
+        )
 
 
 def _win_key(key: str, action: str) -> None:
@@ -400,6 +562,190 @@ def _win_clipboard_set(text: str) -> None:
         user32.SetClipboardData(CF_UNICODETEXT, handle)
     finally:
         user32.CloseClipboard()
+
+
+# --- X11 XTest ---------------------------------------------------------------
+
+_XTST_KEYSYMS = {
+    "return": "Return",
+    "enter": "Return",
+    "escape": "Escape",
+    "esc": "Escape",
+    "tab": "Tab",
+    "backspace": "BackSpace",
+    "delete": "Delete",
+    "space": "space",
+    " ": "space",
+    "home": "Home",
+    "end": "End",
+    "pageup": "Page_Up",
+    "pgup": "Page_Up",
+    "pagedown": "Page_Down",
+    "pgdn": "Page_Down",
+    "up": "Up",
+    "down": "Down",
+    "left": "Left",
+    "right": "Right",
+    "arrowup": "Up",
+    "arrowdown": "Down",
+    "arrowleft": "Left",
+    "arrowright": "Right",
+    "shift": "Shift_L",
+    "control": "Control_L",
+    "ctrl": "Control_L",
+    "alt": "Alt_L",
+    "meta": "Super_L",
+    "super": "Super_L",
+}
+
+_xtest_singleton: Any = None
+
+
+class _XTest:
+    """Minimal XTest client: the X11 input-injection extension (libXtst)."""
+
+    def __init__(self, x11: Any, xtst: Any) -> None:
+        self.x11 = x11
+        self.xtst = xtst
+        self.display = x11.XOpenDisplay(None)
+        if not self.display:
+            raise OSError("cannot open the X display")
+        self.screen = x11.XDefaultScreen(self.display)
+        self.width = int(x11.XDisplayWidth(self.display, 0))
+        self.height = int(x11.XDisplayHeight(self.display, 0))
+
+    def _flush(self) -> None:
+        self.x11.XFlush(self.display)
+
+    def motion(self, x: float, y: float) -> None:
+        self.xtst.XTestFakeMotionEvent(self.display, self.screen, int(x), int(y), 0)
+        self._flush()
+
+    def button(self, button: int, pressed: bool) -> None:
+        self.xtst.XTestFakeButtonEvent(self.display, int(button), bool(pressed), 0)
+        self._flush()
+
+    def scroll(self, dy: float, dx: float) -> None:
+        # X11 buttons 4/5 are vertical wheel, 6/7 horizontal.
+        if dy:
+            button = 4 if dy > 0 else 5
+            for _ in range(max(1, int(abs(dy)))):
+                self.button(button, True)
+                self.button(button, False)
+        if dx:
+            button = 6 if dx > 0 else 7
+            for _ in range(max(1, int(abs(dx)))):
+                self.button(button, True)
+                self.button(button, False)
+
+    def keycode(self, keysym_name: str) -> int | None:
+        keysym = self.x11.XStringToKeysym(keysym_name.encode("utf-8"))
+        if not keysym:
+            return None
+        code = self.x11.XKeysymToKeycode(self.display, keysym)
+        return int(code) or None
+
+    def needs_shift(self, code: int) -> bool:
+        """True when the keysym sits on the shifted level of this keycode."""
+        unshifted = self.x11.XkbKeycodeToKeysym(self.display, code, 0, 0)
+        char = self.x11.XkbKeycodeToKeysym(self.display, code, 0, 1)
+        return False if not unshifted else bool(char and char != unshifted)
+
+    def press(self, code: int, shift: bool = False) -> None:
+        shift_code = self.keycode("Shift_L") if shift else None
+        if shift_code:
+            self.xtst.XTestFakeKeyEvent(self.display, shift_code, True, 0)
+        self.xtst.XTestFakeKeyEvent(self.display, code, True, 0)
+        self.xtst.XTestFakeKeyEvent(self.display, code, False, 0)
+        if shift_code:
+            self.xtst.XTestFakeKeyEvent(self.display, shift_code, False, 0)
+        self._flush()
+
+
+def _xtest() -> _XTest | None:
+    """Return a cached XTest client for X11 sessions, or None."""
+    global _xtest_singleton
+    if _xtest_singleton is not None:
+        return _xtest_singleton
+    if sys.platform != "linux" or os.environ.get("WAYLAND_DISPLAY"):
+        return None
+    if not os.environ.get("DISPLAY"):
+        return None
+    try:
+        import ctypes
+        import ctypes.util
+
+        xtst_path = ctypes.util.find_library("Xtst")
+        x11_path = ctypes.util.find_library("X11")
+        if not xtst_path or not x11_path:
+            return None
+        x11 = ctypes.CDLL(x11_path)
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XDefaultScreen.restype = ctypes.c_int
+        x11.XDisplayWidth.restype = ctypes.c_int
+        x11.XDisplayHeight.restype = ctypes.c_int
+        x11.XStringToKeysym.restype = ctypes.c_ulong
+        x11.XKeysymToKeycode.restype = ctypes.c_ubyte
+        x11.XkbKeycodeToKeysym.restype = ctypes.c_ulong
+        xtst = ctypes.CDLL(xtst_path)
+        _xtest_singleton = _XTest(x11, xtst)
+    except Exception:
+        return None
+    return _xtest_singleton
+
+
+def _xtest_pointer(x: float, y: float, action: str, button: int, event: dict[str, Any]) -> bool:
+    adapter = _xtest()
+    if adapter is None:
+        return False
+    if x <= 1 and y <= 1:
+        px = max(0.0, min(1.0, x)) * max(adapter.width - 1, 1)
+        py = max(0.0, min(1.0, y)) * max(adapter.height - 1, 1)
+    else:
+        px, py = x, y
+    if action == "wheel":
+        adapter.scroll(float(event.get("dy") or 0), float(event.get("dx") or 0))
+        return True
+    adapter.motion(px, py)
+    if action in {"down", "click"}:
+        adapter.button(button, True)
+    if action in {"up", "click"}:
+        adapter.button(button, False)
+    return True
+
+
+def _xtest_key(key: str, action: str) -> bool:
+    adapter = _xtest()
+    if adapter is None:
+        return False
+    name = _XTST_KEYSYMS.get(key.lower())
+    if name is None and len(key) == 1:
+        name = key
+    if name is None:
+        return False
+    code = adapter.keycode(name)
+    if code is None:
+        return False
+    if action == "up":
+        shift_code = adapter.keycode("Shift_L")
+        if shift_code:
+            adapter.xtst.XTestFakeKeyEvent(adapter.display, code, False, 0)
+            adapter.x11.XFlush(adapter.display)
+        return True
+    adapter.press(code, shift=len(key) == 1 and adapter.needs_shift(code))
+    return True
+
+
+def _xtest_text(data: str) -> bool:
+    adapter = _xtest()
+    if adapter is None:
+        return False
+    for char in data:
+        code = adapter.keycode(char)
+        if code is None:
+            return False
+        adapter.press(code, shift=adapter.needs_shift(code))
+    return True
 
 
 # --- macOS CoreGraphics ------------------------------------------------------

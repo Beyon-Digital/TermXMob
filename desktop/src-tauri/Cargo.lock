@@ -4457,6 +4457,7 @@ dependencies = [
 name = "termx-desktop"
 version = "0.1.2"
 dependencies = [
+ "cc",
  "core-foundation 0.10.1",
  "libc",
  "log",

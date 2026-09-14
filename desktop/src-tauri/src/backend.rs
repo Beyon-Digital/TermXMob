@@ -211,6 +211,9 @@ impl Backend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if let Some(socket) = crate::broker::socket_path() {
+            command.arg("--broker").arg(socket);
+        }
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
