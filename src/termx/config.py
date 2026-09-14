@@ -201,6 +201,28 @@ class TunnelProfile:
 
 
 @dataclass
+class ForwardRule:
+    id: str
+    name: str
+    kind: str = "local"
+    listen_host: str = "127.0.0.1"
+    listen_port: int = 0
+    target_host: str = "127.0.0.1"
+    target_port: int = 0
+    ssh_host: str = ""
+    auto_start: bool = False
+    created_at: float = 0
+
+    def public(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ForwardPrefs:
+    rules: list[ForwardRule] = field(default_factory=list)
+
+
+@dataclass
 class TunnelPrefs:
     active_profile_id: str | None = None
     profiles: list[TunnelProfile] = field(default_factory=list)
@@ -219,6 +241,7 @@ class HostConfig:
     commands: list[SavedCommand] = field(default_factory=list)
     directories: list[SavedDirectory] = field(default_factory=list)
     tunnels: TunnelPrefs = field(default_factory=TunnelPrefs)
+    forwards: ForwardPrefs = field(default_factory=ForwardPrefs)
     desktop: DesktopPrefs = field(default_factory=DesktopPrefs)
 
     def to_json(self) -> dict[str, Any]:
@@ -231,6 +254,7 @@ class HostConfig:
                 "active_profile_id": self.tunnels.active_profile_id,
                 "profiles": [asdict(item) for item in self.tunnels.profiles],
             },
+            "forwards": {"rules": [asdict(item) for item in self.forwards.rules]},
             "desktop": asdict(self.desktop),
         }
 
@@ -258,6 +282,21 @@ def _directory_from(raw: dict[str, Any]) -> SavedDirectory:
     )
 
 
+def _rule_from(raw: dict[str, Any]) -> ForwardRule:
+    return ForwardRule(
+        id=str(raw.get("id") or uuid.uuid4().hex[:12]),
+        name=str(raw.get("name") or "Forward"),
+        kind=str(raw.get("kind") or "local"),
+        listen_host=str(raw.get("listen_host") or "127.0.0.1"),
+        listen_port=int(raw.get("listen_port") or 0),
+        target_host=str(raw.get("target_host") or "127.0.0.1"),
+        target_port=int(raw.get("target_port") or 0),
+        ssh_host=str(raw.get("ssh_host") or ""),
+        auto_start=bool(raw.get("auto_start", False)),
+        created_at=float(raw.get("created_at") or 0),
+    )
+
+
 def _profile_from(raw: dict[str, Any]) -> TunnelProfile:
     extra = raw.get("extra") if isinstance(raw.get("extra"), dict) else {}
     return TunnelProfile(
@@ -272,10 +311,12 @@ def _profile_from(raw: dict[str, Any]) -> TunnelProfile:
 def config_from_json(raw: dict[str, Any]) -> HostConfig:
     terminal_raw = raw.get("terminal") if isinstance(raw.get("terminal"), dict) else {}
     tunnels_raw = raw.get("tunnels") if isinstance(raw.get("tunnels"), dict) else {}
+    forwards_raw = raw.get("forwards") if isinstance(raw.get("forwards"), dict) else {}
     desktop_raw = raw.get("desktop") if isinstance(raw.get("desktop"), dict) else {}
     commands_raw = raw.get("commands") if isinstance(raw.get("commands"), list) else []
     directories_raw = raw.get("directories") if isinstance(raw.get("directories"), list) else []
     profiles_raw = tunnels_raw.get("profiles") if isinstance(tunnels_raw.get("profiles"), list) else []
+    rules_raw = forwards_raw.get("rules") if isinstance(forwards_raw.get("rules"), list) else []
     shell = str(terminal_raw.get("shell") or default_shell())
     cwd = str(terminal_raw.get("cwd") or default_cwd())
     return HostConfig(
@@ -289,6 +330,7 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
             else None,
             profiles=[_profile_from(item) for item in profiles_raw if isinstance(item, dict)],
         ),
+        forwards=ForwardPrefs(rules=[_rule_from(item) for item in rules_raw if isinstance(item, dict)]),
         desktop=DesktopPrefs(
             view_only_default=bool(desktop_raw.get("view_only_default", True)),
             retain_virtual_display=bool(desktop_raw.get("retain_virtual_display", False)),
@@ -497,6 +539,95 @@ class ConfigStore:
             if self._config.tunnels.active_profile_id == profile_id:
                 self._config.tunnels.active_profile_id = None
             if len(self._config.tunnels.profiles) == before:
+                return False
+            self._save()
+            return True
+
+    FORWARD_KINDS = {"local", "remote", "dynamic"}
+
+    @staticmethod
+    def validate_rule(
+        kind: str,
+        listen_port: int,
+        target_port: int,
+        ssh_host: str,
+        listen_host: str = "127.0.0.1",
+        target_host: str = "127.0.0.1",
+    ) -> tuple[str, int, int, str, str, str]:
+        kind = kind.strip().lower()
+        if kind not in ConfigStore.FORWARD_KINDS:
+            raise ValueError("kind must be local, remote, or dynamic")
+        if not 1 <= int(listen_port) <= 65535:
+            raise ValueError("listen port must be between 1 and 65535")
+        destination = ssh_host.strip()
+        if not destination or destination.startswith("-") or any(ch.isspace() for ch in destination):
+            raise ValueError("ssh destination is required (e.g. user@server)")
+        if kind != "dynamic" and not 1 <= int(target_port) <= 65535:
+            raise ValueError("target port must be between 1 and 65535")
+        listen_host = listen_host.strip() or "127.0.0.1"
+        target_host = target_host.strip() or "127.0.0.1"
+        return kind, int(listen_port), int(target_port), destination, listen_host, target_host
+
+    def list_rules(self) -> list[ForwardRule]:
+        with self._lock:
+            return sorted(self._config.forwards.rules, key=lambda item: item.created_at)
+
+    def add_rule(
+        self,
+        name: str,
+        kind: str,
+        listen_port: int,
+        target_port: int,
+        ssh_host: str,
+        listen_host: str = "127.0.0.1",
+        target_host: str = "127.0.0.1",
+        auto_start: bool = False,
+    ) -> ForwardRule:
+        kind, listen_port, target_port, ssh_host, listen_host, target_host = self.validate_rule(
+            kind, listen_port, target_port, ssh_host, listen_host, target_host
+        )
+        with self._lock:
+            rule = ForwardRule(
+                id=uuid.uuid4().hex[:12],
+                name=name.strip() or f"{listen_port} → {ssh_host}",
+                kind=kind,
+                listen_host=listen_host,
+                listen_port=listen_port,
+                target_host=target_host,
+                target_port=target_port,
+                ssh_host=ssh_host,
+                auto_start=auto_start,
+                created_at=time(),
+            )
+            self._config.forwards.rules.append(rule)
+            self._save()
+            return rule
+
+    def get_rule(self, rule_id: str) -> ForwardRule | None:
+        with self._lock:
+            for item in self._config.forwards.rules:
+                if item.id == rule_id:
+                    return item
+            return None
+
+    def patch_rule(self, rule_id: str, auto_start: bool | None = None, name: str | None = None) -> ForwardRule | None:
+        with self._lock:
+            for item in self._config.forwards.rules:
+                if item.id != rule_id:
+                    continue
+                if auto_start is not None:
+                    item.auto_start = auto_start
+                if name is not None and name.strip():
+                    item.name = name.strip()
+                self._save()
+                return item
+            return None
+
+    def delete_rule(self, rule_id: str) -> bool:
+        with self._lock:
+            before = len(self._config.forwards.rules)
+            self._config.forwards.rules = [item for item in self._config.forwards.rules if item.id != rule_id]
+            if len(self._config.forwards.rules) == before:
                 return False
             self._save()
             return True

@@ -25,6 +25,7 @@ from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
 from termx.desktop.webrtc import RtcError, RtcManager
+from termx.forwards import ForwardManager
 from termx.lifecycle import shutdown_state
 from termx.machine import machine_snapshot
 from termx.net import connect_url, http_urls, qr_svg
@@ -44,6 +45,7 @@ class AppState:
         self.store = ConfigStore()
         self.sessions = SessionManager()
         self.tunnels = TunnelManager(self.store, port=port)
+        self.forwards = ForwardManager(self.store)
         self.desktop = DesktopManager()
         self.rtc = RtcManager()
         self.port = port
@@ -56,6 +58,22 @@ class CreateSessionBody(BaseModel):
     title: str | None = None
     shell: str | None = None
     cwd: str | None = None
+
+
+class ForwardBody(BaseModel):
+    name: str = Field(default="", max_length=80)
+    kind: str = Field(default="local")
+    listen_host: str = Field(default="127.0.0.1", max_length=120)
+    listen_port: int = Field(ge=1, le=65535)
+    target_host: str = Field(default="127.0.0.1", max_length=120)
+    target_port: int = Field(default=0, ge=0, le=65535)
+    ssh_host: str = Field(min_length=1, max_length=200)
+    auto_start: bool = False
+
+
+class ForwardPatchBody(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    auto_start: bool | None = None
 
 
 class RenameSessionBody(BaseModel):
@@ -138,7 +156,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        state.forwards.start_auto()
         yield
+        state.forwards.stop_all()
         await shutdown_state(state)
 
     app = FastAPI(title="termx", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -702,6 +722,99 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         _require(state, provided(x_termx_passcode, authorization, k))
         state.rtc.add_ice(body.session_id, body.candidate)
         return {"ok": True}
+
+    @app.get("/api/forwards")
+    def list_forwards(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        return {
+            "rules": [rule.public() for rule in state.store.list_rules()],
+            "statuses": state.forwards.statuses(),
+        }
+
+    @app.post("/api/forwards")
+    def create_forward(
+        body: ForwardBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        try:
+            rule = state.store.add_rule(
+                name=body.name,
+                kind=body.kind,
+                listen_port=body.listen_port,
+                target_port=body.target_port,
+                ssh_host=body.ssh_host,
+                listen_host=body.listen_host,
+                target_host=body.target_host,
+                auto_start=body.auto_start,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("forward_create", rule_id=rule.id, forward_kind=rule.kind, listen_port=rule.listen_port)
+        return rule.public()
+
+    @app.patch("/api/forwards/{rule_id}")
+    def patch_forward(
+        rule_id: str,
+        body: ForwardPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        rule = state.store.patch_rule(rule_id, auto_start=body.auto_start, name=body.name)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="rule not found")
+        return rule.public()
+
+    @app.delete("/api/forwards/{rule_id}")
+    def delete_forward(
+        rule_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, bool]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        state.forwards.stop(rule_id)
+        if not state.store.delete_rule(rule_id):
+            raise HTTPException(status_code=404, detail="rule not found")
+        log_event("forward_delete", rule_id=rule_id)
+        return {"ok": True}
+
+    @app.post("/api/forwards/{rule_id}/start")
+    def start_forward(
+        rule_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        rule = state.store.get_rule(rule_id)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="rule not found")
+        status = state.forwards.start(rule)
+        log_event("forward_start", rule_id=rule_id, state=status.state)
+        return status.public()
+
+    @app.post("/api/forwards/{rule_id}/stop")
+    def stop_forward(
+        rule_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        if state.store.get_rule(rule_id) is None:
+            raise HTTPException(status_code=404, detail="rule not found")
+        state.forwards.stop(rule_id)
+        log_event("forward_stop", rule_id=rule_id)
+        return state.forwards.status_for(rule_id).public()
 
     @app.get("/api/sessions")
     def list_sessions(
