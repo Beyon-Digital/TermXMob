@@ -279,6 +279,28 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         log_event("pair", scopes=list(SCOPES))
         return {"token": token, "scopes": list(SCOPES)}
 
+    @app.get("/api/devices")
+    def list_devices(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        return {"devices": state.tokens.list_public()}
+
+    @app.delete("/api/devices/{device_id}")
+    def revoke_device(
+        device_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, bool]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        if not state.tokens.revoke(device_id):
+            raise HTTPException(status_code=404, detail="device not found")
+        log_event("device_revoke", device_id=device_id)
+        return {"ok": True}
+
     @app.get("/api/audit")
     def get_audit(
         x_termx_passcode: str | None = Header(default=None),
