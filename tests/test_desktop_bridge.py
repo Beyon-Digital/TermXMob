@@ -211,3 +211,25 @@ def test_connect_qr_prefers_lan_address() -> None:
         assert not loopback, body["connect_url"]
     svg = client.get("/api/connect/qr.svg", headers={"X-Termx-Passcode": "secret"})
     assert svg.status_code == 200
+
+
+def test_parent_watchdog_stops_when_parent_is_gone() -> None:
+    import threading
+    import time
+
+    from termx.cli import pid_alive, watch_parent
+
+    assert pid_alive(0) is False
+    assert pid_alive(2**30) is False
+
+    fired = threading.Event()
+    watch_parent(2**30, fired.set, interval=0.05)
+    assert fired.wait(timeout=2.0), "watchdog did not request shutdown"
+
+
+def test_pid_alive_for_current_process() -> None:
+    import os
+
+    from termx.cli import pid_alive
+
+    assert pid_alive(os.getpid()) is True

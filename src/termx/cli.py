@@ -5,6 +5,8 @@ import asyncio
 import os
 import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 import uvicorn
@@ -13,6 +15,7 @@ from termx.app import AppState, create_app
 from termx.hostenv import augment_path
 from termx.lifecycle import shutdown_state
 from termx.net import connect_url, http_urls, qr_ascii
+from typing import Any
 from termx import notify
 
 
@@ -64,7 +67,47 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run as a desktop host: no banner, structured stdout events, local shutdown API",
     )
+    parser.add_argument(
+        "--parent-pid",
+        type=int,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     return parser
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not process:
+                return False
+            ctypes.windll.kernel32.CloseHandle(process)
+            return True
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def watch_parent(parent_pid: int, request_shutdown: Any, interval: float = 2.0) -> None:
+    """Exit the desktop sidecar when the app that launched it disappears."""
+
+    def loop() -> None:
+        while True:
+            time.sleep(interval)
+            if not pid_alive(parent_pid):
+                request_shutdown()
+                return
+
+    threading.Thread(target=loop, name="termx-parent-watchdog", daemon=True).start()
 
 
 def print_banner(urls: list[str], tunnel_url: str | None, passcode: str | None) -> None:
@@ -169,6 +212,8 @@ async def _serve(args: argparse.Namespace) -> None:
         server.should_exit = True
 
     state.request_shutdown = _request_shutdown
+    if args.parent_pid:
+        watch_parent(args.parent_pid, _request_shutdown)
     try:
         try:
             loop.add_signal_handler(signal.SIGTERM, _request_shutdown)

@@ -204,6 +204,8 @@ impl Backend {
             .arg(port.to_string())
             .arg("--passcode")
             .arg(&config.passcode)
+            .arg("--parent-pid")
+            .arg(std::process::id().to_string())
             .env("TERMX_DESKTOP", "1")
             .env("TERMX_CONFIG_DIR", config::config_dir(&self.0.app))
             .stdin(Stdio::null())
