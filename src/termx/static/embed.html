@@ -13,8 +13,11 @@
   <div id="t"></div>
   <script src="/_/vendor/xterm.js"></script>
   <script src="/_/vendor/addon-fit.js"></script>
+  <script src="/_/vendor/addon-search.js"></script>
+  <script src="/_/vendor/addon-serialize.js"></script>
   <script>
     const term = new Terminal({
+      allowProposedApi: true,
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
@@ -23,6 +26,10 @@
     });
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon.SearchAddon();
+    term.loadAddon(search);
+    const serialize = new SerializeAddon.SerializeAddon();
+    term.loadAddon(serialize);
     term.open(document.getElementById("t"));
     function send(msg) {
       const payload = JSON.stringify(msg);
@@ -51,6 +58,15 @@
         fit.fit();
         send({ type: "resize", cols: term.cols, rows: term.rows });
       }
+      if (msg.type === "find" && typeof msg.query === "string") {
+        const options = { decorations: { matchOverviewRuler: "#9dffb0", activeMatchColorOverviewRuler: "#9dffb0" } };
+        const found = msg.backwards
+          ? search.findPrevious(msg.query, options)
+          : search.findNext(msg.query, options);
+        send({ type: "searchResult", found: !!found });
+      }
+      if (msg.type === "clearSearch") search.clearDecorations();
+      if (msg.type === "serialize") send({ type: "scrollback", data: serialize.serialize() });
     }
     term.onData((data) => send({ type: "input", data }));
     window.addEventListener("message", (e) => handle(e.data));
