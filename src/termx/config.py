@@ -229,6 +229,22 @@ class TunnelPrefs:
 
 
 @dataclass
+class WorkspaceSession:
+    title: str = ""
+    shell: str = ""
+    cwd: str = ""
+
+    def public(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class WorkspacePrefs:
+    sessions: list[WorkspaceSession] = field(default_factory=list)
+    saved_at: float = 0
+
+
+@dataclass
 class DesktopPrefs:
     view_only_default: bool = True
     retain_virtual_display: bool = False
@@ -242,6 +258,7 @@ class HostConfig:
     directories: list[SavedDirectory] = field(default_factory=list)
     tunnels: TunnelPrefs = field(default_factory=TunnelPrefs)
     forwards: ForwardPrefs = field(default_factory=ForwardPrefs)
+    workspace: WorkspacePrefs = field(default_factory=WorkspacePrefs)
     desktop: DesktopPrefs = field(default_factory=DesktopPrefs)
 
     def to_json(self) -> dict[str, Any]:
@@ -255,6 +272,10 @@ class HostConfig:
                 "profiles": [asdict(item) for item in self.tunnels.profiles],
             },
             "forwards": {"rules": [asdict(item) for item in self.forwards.rules]},
+            "workspace": {
+                "sessions": [asdict(item) for item in self.workspace.sessions],
+                "saved_at": self.workspace.saved_at,
+            },
             "desktop": asdict(self.desktop),
         }
 
@@ -312,11 +333,15 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
     terminal_raw = raw.get("terminal") if isinstance(raw.get("terminal"), dict) else {}
     tunnels_raw = raw.get("tunnels") if isinstance(raw.get("tunnels"), dict) else {}
     forwards_raw = raw.get("forwards") if isinstance(raw.get("forwards"), dict) else {}
+    workspace_raw = raw.get("workspace") if isinstance(raw.get("workspace"), dict) else {}
     desktop_raw = raw.get("desktop") if isinstance(raw.get("desktop"), dict) else {}
     commands_raw = raw.get("commands") if isinstance(raw.get("commands"), list) else []
     directories_raw = raw.get("directories") if isinstance(raw.get("directories"), list) else []
     profiles_raw = tunnels_raw.get("profiles") if isinstance(tunnels_raw.get("profiles"), list) else []
     rules_raw = forwards_raw.get("rules") if isinstance(forwards_raw.get("rules"), list) else []
+    workspace_sessions_raw = (
+        workspace_raw.get("sessions") if isinstance(workspace_raw.get("sessions"), list) else []
+    )
     shell = str(terminal_raw.get("shell") or default_shell())
     cwd = str(terminal_raw.get("cwd") or default_cwd())
     return HostConfig(
@@ -331,6 +356,18 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
             profiles=[_profile_from(item) for item in profiles_raw if isinstance(item, dict)],
         ),
         forwards=ForwardPrefs(rules=[_rule_from(item) for item in rules_raw if isinstance(item, dict)]),
+        workspace=WorkspacePrefs(
+            sessions=[
+                WorkspaceSession(
+                    title=str(item.get("title") or ""),
+                    shell=str(item.get("shell") or ""),
+                    cwd=str(item.get("cwd") or ""),
+                )
+                for item in workspace_sessions_raw
+                if isinstance(item, dict)
+            ],
+            saved_at=float(workspace_raw.get("saved_at") or 0),
+        ),
         desktop=DesktopPrefs(
             view_only_default=bool(desktop_raw.get("view_only_default", True)),
             retain_virtual_display=bool(desktop_raw.get("retain_virtual_display", False)),
@@ -542,6 +579,31 @@ class ConfigStore:
                 return False
             self._save()
             return True
+
+    def get_workspace(self) -> WorkspacePrefs:
+        with self._lock:
+            return WorkspacePrefs(
+                sessions=[
+                    WorkspaceSession(title=item.title, shell=item.shell, cwd=item.cwd)
+                    for item in self._config.workspace.sessions
+                ],
+                saved_at=self._config.workspace.saved_at,
+            )
+
+    def save_workspace(self, sessions: list[WorkspaceSession]) -> WorkspacePrefs:
+        cleaned = [
+            WorkspaceSession(
+                title=item.title.strip()[:80],
+                shell=item.shell.strip(),
+                cwd=item.cwd.strip(),
+            )
+            for item in sessions[:20]
+        ]
+        with self._lock:
+            self._config.workspace.sessions = cleaned
+            self._config.workspace.saved_at = time()
+            self._save()
+            return WorkspacePrefs(sessions=list(cleaned), saved_at=self._config.workspace.saved_at)
 
     FORWARD_KINDS = {"local", "remote", "dynamic"}
 

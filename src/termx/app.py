@@ -19,7 +19,13 @@ from pydantic import BaseModel, Field
 from termx import notify
 from termx.audit import log_event, read_events
 from termx.auth import Auth, extract_passcode
-from termx.config import ConfigStore, list_dir_entries, validate_cwd, validate_shell
+from termx.config import (
+    ConfigStore,
+    WorkspaceSession,
+    list_dir_entries,
+    validate_cwd,
+    validate_shell,
+)
 from termx.desktop.capture import virtual_display_reason
 from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
@@ -58,6 +64,16 @@ class CreateSessionBody(BaseModel):
     title: str | None = None
     shell: str | None = None
     cwd: str | None = None
+
+
+class WorkspaceSessionBody(BaseModel):
+    title: str = Field(default="", max_length=80)
+    shell: str = Field(default="", max_length=400)
+    cwd: str = Field(default="", max_length=2000)
+
+
+class WorkspaceBody(BaseModel):
+    sessions: list[WorkspaceSessionBody] = Field(default_factory=list)
 
 
 class ForwardBody(BaseModel):
@@ -722,6 +738,64 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         _require(state, provided(x_termx_passcode, authorization, k))
         state.rtc.add_ice(body.session_id, body.candidate)
         return {"ok": True}
+
+    @app.get("/api/workspace")
+    def get_workspace(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        workspace = state.store.get_workspace()
+        return {
+            "sessions": [item.public() for item in workspace.sessions],
+            "saved_at": workspace.saved_at,
+        }
+
+    @app.put("/api/workspace")
+    def put_workspace(
+        body: WorkspaceBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        saved = state.store.save_workspace(
+            [WorkspaceSession(title=item.title, shell=item.shell, cwd=item.cwd) for item in body.sessions]
+        )
+        return {"sessions": [item.public() for item in saved.sessions], "saved_at": saved.saved_at}
+
+    @app.post("/api/workspace/restore")
+    def restore_workspace(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        prefs = state.store.get().terminal
+        workspace = state.store.get_workspace()
+        restored = []
+        for item in workspace.sessions:
+            try:
+                shell = validate_shell(item.shell or prefs.shell)
+            except ValueError:
+                shell = prefs.shell
+            try:
+                cwd = validate_cwd(item.cwd or prefs.cwd)
+            except ValueError:
+                cwd = prefs.cwd
+            session = state.sessions.create(
+                cols=DEFAULT_COLS,
+                rows=DEFAULT_ROWS,
+                title=item.title or None,
+                argv=default_argv(shell),
+                cwd=cwd,
+                shell=shell,
+            )
+            restored.append(session.snapshot())
+        if restored:
+            log_event("workspace_restore", count=len(restored))
+        return {"sessions": restored, "restored": len(restored)}
 
     @app.get("/api/forwards")
     def list_forwards(
