@@ -368,6 +368,13 @@ impl Backend {
                 };
                 self.handle_ready(info);
             }
+            Some("permission") => {
+                let which = value
+                    .get("which")
+                    .and_then(Value::as_str)
+                    .unwrap_or("screen_recording");
+                ui::permission_event(&self.0.app, which);
+            }
             Some("notify") => {
                 let title = value
                     .get("title")

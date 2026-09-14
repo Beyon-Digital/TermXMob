@@ -36,5 +36,10 @@ def notify(title: str, body: str = "", *, kind: str = "info", url: str | None = 
     emit(event)
 
 
+def permission(which: str) -> None:
+    """Ask the desktop shell to run the native permission prompt (macOS TCC)."""
+    emit({"termx": "permission", "which": which})
+
+
 def ready(port: int, urls: list[str], tunnel: str | None = None) -> None:
     emit({"termx": "ready", "port": port, "urls": list(urls), "tunnel": tunnel})

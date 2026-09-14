@@ -174,6 +174,50 @@ pub fn open_accessibility_settings(app: &AppHandle) {
     );
 }
 
+/// Called when the backend reports that a permission is missing (e.g. the
+/// phone opened the desktop mirror without Screen Recording granted).
+pub fn permission_event(app: &AppHandle, which: &str) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    match which {
+        "screen_recording" => {
+            let status = crate::permissions::status();
+            if !status.screen_recording {
+                notify(
+                    app,
+                    "Screen Recording needed",
+                    "Grant Termx Screen Recording to mirror your Mac to your phone.",
+                );
+                let handle = app.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    crate::permissions::request_screen_recording();
+                });
+                let handle = app.clone();
+                let _ = handle.run_on_main_thread(move || open_permission_settings(&handle));
+            }
+        }
+        "accessibility" => {
+            let status = crate::permissions::status();
+            if !status.accessibility {
+                notify(
+                    app,
+                    "Accessibility needed",
+                    "Grant Termx Accessibility to control your Mac from your phone.",
+                );
+                let handle = app.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    crate::permissions::request_accessibility();
+                });
+                let handle = app.clone();
+                let _ = handle.run_on_main_thread(move || open_accessibility_settings(&handle));
+            }
+        }
+        "open_settings" => open_permission_settings(app),
+        _ => {}
+    }
+}
+
 pub fn permission_dialog(app: &AppHandle) {
     if !cfg!(target_os = "macos") {
         notify(

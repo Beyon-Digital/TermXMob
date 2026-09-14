@@ -344,6 +344,10 @@ class KscreenAdapter(VirtualAdapter):
         _fail(proc, self.reason())
 
 
+def _is_termx_helper(binary: str) -> bool:
+    return os.path.basename(binary).startswith("termx-virtual-display")
+
+
 class HelperAdapter(VirtualAdapter):
     id = "helper"
     helpers = ("termx-virtual-display", "BetterDisplay", "deskpad")
@@ -380,7 +384,7 @@ class HelperAdapter(VirtualAdapter):
         binary = self._bin()
         if not binary:
             raise VirtualDisplayError(self.reason())
-        if binary.rsplit("/", 1)[-1] != "termx-virtual-display":
+        if not _is_termx_helper(binary):
             proc = _run(
                 [
                     binary,
@@ -469,7 +473,7 @@ class HelperAdapter(VirtualAdapter):
         binary = self._bin()
         if not binary:
             raise VirtualDisplayError(self.reason())
-        if binary.rsplit("/", 1)[-1] != "termx-virtual-display":
+        if not _is_termx_helper(binary):
             proc = _run([binary, "destroy", name])
             _fail(proc, f"{os.path.basename(binary)} destroy failed")
             return

@@ -58,12 +58,12 @@ def _clipboard_write_cmd() -> list[str] | None:
     return None
 
 
-def apply_event(event: dict[str, Any]) -> None:
+def apply_event(event: dict[str, Any], target: str | None = None) -> None:
     kind = event.get("type")
     if kind == "release_all":
         return
     if kind == "pointer":
-        _pointer(event)
+        _pointer(event, target)
         return
     if kind == "key":
         _key(event)
@@ -72,7 +72,7 @@ def apply_event(event: dict[str, Any]) -> None:
         _text(str(event.get("data") or ""))
 
 
-def _pointer(event: dict[str, Any]) -> None:
+def _pointer(event: dict[str, Any], target: str | None = None) -> None:
     x = float(event.get("x") or 0)
     y = float(event.get("y") or 0)
     action = str(event.get("action") or "move")
@@ -82,7 +82,7 @@ def _pointer(event: dict[str, Any]) -> None:
         _win_pointer(event, x, y, action, button)
         return
     if probe.input_backend == "cgevent" and sys.platform == "darwin":
-        _mac_pointer(x, y, action, button)
+        _mac_pointer(x, y, action, button, event, target)
         return
     if probe.input_backend == "xdotool":
         px = int(x) if x > 1 else None
@@ -403,62 +403,129 @@ def _win_clipboard_set(text: str) -> None:
 # --- macOS CoreGraphics ------------------------------------------------------
 
 
-def _mac_pointer(x: float, y: float, action: str, button: int) -> None:
-    script = f"""
-    set x to {max(0.0, x) if x > 1 else 0}
-    set y to {max(0.0, y) if y > 1 else 0}
-    """
-    if x <= 1 and y <= 1:
-        script = f"""
-        tell application "Finder" to set {{w, h}} to bounds of window of desktop
-        set x to {max(0.0, min(1.0, x))} * (item 3 of ({{w, h}} & {{1440, 900}}))
-        set y to {max(0.0, min(1.0, y))} * (item 4 of ({{w, h}} & {{1440, 900}}))
-        """
-    if shutil.which("cliclick"):
-        px = str(int(x)) if x > 1 else None
-        py = str(int(y)) if y > 1 else None
-        if px and py:
-            if action in {"move"}:
-                subprocess.run(["cliclick", f"m:{px},{py}"], check=False)
-            elif action in {"down", "click"}:
-                subprocess.run(["cliclick", f"c:{px},{py}"], check=False)
-            elif action == "up":
-                subprocess.run(["cliclick", f"mu:{button}"], check=False)
-            return
-    _cg_pointer(x, y, action, button)
+def map_normalized(x: float, y: float, bounds: tuple[float, float, float, float]) -> tuple[float, float]:
+    """Map a normalized (0..1) point onto a display's bounds (origin + size in points)."""
+    width, height, origin_x, origin_y = bounds
+    px = origin_x + max(0.0, min(1.0, x)) * max(width - 1.0, 1.0)
+    py = origin_y + max(0.0, min(1.0, y)) * max(height - 1.0, 1.0)
+    return px, py
 
 
-def _cg_pointer(x: float, y: float, action: str, button: int) -> None:
+def _mac_pointer(
+    x: float,
+    y: float,
+    action: str,
+    button: int,
+    event: dict[str, Any] | None = None,
+    target: str | None = None,
+) -> None:
+    if action == "wheel":
+        _cg_scroll(event or {})
+        return
+    dragging = bool((event or {}).get("down"))
+    _cg_pointer(x, y, action, button, dragging=dragging, target=target)
+
+
+def _cg_display_bounds(cg: Any, display_id: int | None) -> tuple[float, float, float, float]:
+    class CGPoint(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+    class CGSize(ctypes.Structure):
+        _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+    class CGRect(ctypes.Structure):
+        _fields_ = [("origin", CGPoint), ("size", CGSize)]
+
+    cg.CGDisplayBounds.restype = CGRect
+    cg.CGDisplayBounds.argtypes = [ctypes.c_uint32]
+    cg.CGMainDisplayID.restype = ctypes.c_uint32
+    identifier = display_id if display_id else int(cg.CGMainDisplayID())
+    rect = cg.CGDisplayBounds(ctypes.c_uint32(identifier))
+    width = float(rect.size.width)
+    height = float(rect.size.height)
+    if width <= 0 or height <= 0:
+        return (1920.0, 1080.0, 0.0, 0.0)
+    return (width, height, float(rect.origin.x), float(rect.origin.y))
+
+
+def _cg_pointer(
+    x: float,
+    y: float,
+    action: str,
+    button: int,
+    dragging: bool = False,
+    target: str | None = None,
+) -> None:
     try:
         import ctypes
         import ctypes.util
 
         path = ctypes.util.find_library("CoreGraphics") or "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
         cg = ctypes.CDLL(path)
-        if x <= 1 and y <= 1:
-            width = cg.CGDisplayPixelsWide(cg.CGMainDisplayID())
-            height = cg.CGDisplayPixelsHigh(cg.CGMainDisplayID())
-            x = max(0.0, min(1.0, x)) * max(width - 1, 1)
-            y = max(0.0, min(1.0, y)) * max(height - 1, 1)
+        display_id = int(target) if target and str(target).isdigit() else None
+        bounds = _cg_display_bounds(cg, display_id)
+        px, py = map_normalized(x, y, bounds) if x <= 1 and y <= 1 else (x, y)
 
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
-        point = CGPoint(x, y)
-        move, down, up = 5, 1, 2
+        point = CGPoint(px, py)
+        left_down, left_up, right_down, right_up = 1, 2, 3, 4
+        moved, left_drag, right_drag = 5, 6, 7
         if button == 2:
-            down, up = 3, 4
-        event_type = {"move": move, "down": down, "up": up, "click": down}.get(action, move)
+            down, up, drag = right_down, right_up, right_drag
+        else:
+            down, up, drag = left_down, left_up, left_drag
+        event_type = {
+            "move": drag if dragging else moved,
+            "drag": drag,
+            "down": down,
+            "up": up,
+            "click": down,
+            "right_click": right_down,
+        }.get(action, moved)
         cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, CGPoint, ctypes.c_int]
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         event = cg.CGEventCreateMouseEvent(None, event_type, point, max(0, button - 1))
         if event:
             cg.CGEventPost(0, event)
-            if action == "click":
-                up_event = cg.CGEventCreateMouseEvent(None, up, point, max(0, button - 1))
+            if action in {"click", "right_click"}:
+                up_type = right_up if action == "right_click" else up
+                up_event = cg.CGEventCreateMouseEvent(None, up_type, point, max(0, button - 1))
                 if up_event:
                     cg.CGEventPost(0, up_event)
     except Exception as exc:
         raise InputError(f"macOS pointer event failed: {exc}") from exc
+
+
+def _cg_scroll(event: dict[str, Any]) -> None:
+    try:
+        import ctypes
+        import ctypes.util
+
+        path = ctypes.util.find_library("CoreGraphics") or "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        cg = ctypes.CDLL(path)
+        dy = float(event.get("dy") or 0)
+        dx = float(event.get("dx") or 0)
+        if dy == 0 and dx == 0:
+            return
+        lines_v = int(-dy) if abs(dy) > 0 else 0
+        lines_h = int(dx)
+        cg.CGEventCreateScrollWheelEvent.restype = ctypes.c_void_p
+        cg.CGEventCreateScrollWheelEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_int32,
+            ctypes.c_int32,
+        ]
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        scroll = cg.CGEventCreateScrollWheelEvent(None, 1, 2, lines_v, lines_h)
+        if scroll:
+            cg.CGEventPost(0, scroll)
+    except Exception as exc:
+        raise InputError(f"macOS scroll event failed: {exc}") from exc
 
 
 def _mac_key(key: str) -> None:

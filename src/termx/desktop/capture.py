@@ -27,8 +27,14 @@ _HELPER_DISPLAY: str | None = None
 def list_displays() -> list[dict[str, object]]:
     from termx.desktop.virtual import list_virtual_displays
 
+    virtuals = list_virtual_displays()
+    virtual_names = {str(item.get("name")) for item in virtuals}
     displays: list[dict[str, object]] = []
     for index, item in enumerate(list_physical_displays()):
+        if str(item.get("id")) in virtual_names:
+            # CGActiveDisplayList also reports virtual displays; the dock shows
+            # the dedicated virtual entry instead of a duplicate "physical" one.
+            continue
         displays.append(
             {
                 "id": item["id"],
@@ -45,7 +51,7 @@ def list_displays() -> list[dict[str, object]]:
                 "selected": bool(item.get("main")),
             }
         )
-    for item in list_virtual_displays():
+    for item in virtuals:
         displays.append(
             {
                 "id": item["id"],
@@ -97,12 +103,30 @@ def _target(display_id: str | None) -> dict[str, Any] | None:
     return physical
 
 
+def pointer_target(display_id: str | None) -> str | None:
+    """Return the numeric CoreGraphics display id used for pointer mapping."""
+    return _helper_display_id(_target(display_id))
+
+
+def screen_recording_denied() -> bool:
+    if sys.platform != "darwin":
+        return False
+    from termx.desktop.permissions import permission_snapshot
+
+    return permission_snapshot().get("screen_recording") == "denied"
+
+
 def close_capture() -> None:
     with _LOCK:
         _stop_helper_locked()
 
 
 def grab_jpeg(display_id: str | None = None) -> bytes:
+    if screen_recording_denied():
+        raise CaptureError(
+            "Screen Recording permission is required to mirror this Mac. "
+            "Grant it to Termx in System Settings → Privacy & Security → Screen Recording."
+        )
     target = _target(display_id)
     helper = capture_helper_path()
     if helper and (sys.platform == "darwin" or os.environ.get("TERMX_CAPTURE_BIN")):

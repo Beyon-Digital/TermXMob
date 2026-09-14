@@ -3,13 +3,23 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from termx.desktop.capture import CaptureError, close_capture, grab_jpeg, list_displays
+from termx import notify
+from termx.config import ConfigStore
+from termx.desktop.capture import (
+    CaptureError,
+    close_capture,
+    grab_jpeg,
+    list_displays,
+    pointer_target,
+)
 from termx.desktop.input import InputError, apply_event, clipboard_get, clipboard_set
+from termx.desktop.permissions import permission_snapshot
 
 IDLE_GRACE_DEFAULT = 5.0
 
@@ -30,9 +40,21 @@ def pause_grace() -> float:
         return 1.0
 
 
+_PROMPTED: set[str] = set()
+
+
+def _prompt_once(which: str) -> None:
+    """Ask the desktop shell for the native TCC prompt, at most once per process."""
+    if which in _PROMPTED:
+        return
+    _PROMPTED.add(which)
+    notify.permission(which)
+
+
 class DesktopManager:
-    def __init__(self) -> None:
-        self.view_only = True
+    def __init__(self, store: ConfigStore | None = None) -> None:
+        self.store = store
+        self.view_only = store.get().desktop.view_only_default if store is not None else True
         self.display_id: str | None = None
         self._lock = asyncio.Lock()
         self._pumps: set[asyncio.Task[None]] = set()
@@ -79,6 +101,7 @@ class DesktopManager:
             "displays": displays,
             "selected_display": selected,
             "view_only": self.view_only,
+            "permissions": permission_snapshot(),
             "fps": int(round(self._fps)),
             "last_capture_ms": self._last_capture_ms,
         }
@@ -88,7 +111,9 @@ class DesktopManager:
 
     async def attach(self, websocket: WebSocket) -> None:
         await self._cancel_idle_close()
-        self.view_only = True
+        permissions = permission_snapshot()
+        if permissions.get("screen_recording") == "denied":
+            _prompt_once("screen_recording")
         await websocket.accept()
         await websocket.send_text(json.dumps({"type": "hello", **self.snapshot()}))
         stop = asyncio.Event()
@@ -145,6 +170,11 @@ class DesktopManager:
                 kind = payload.get("type")
                 if kind == "control":
                     self.view_only = bool(payload.get("view_only", True))
+                    if self.store is not None:
+                        try:
+                            self.store.set_view_only(self.view_only)
+                        except Exception:
+                            pass
                     await websocket.send_text(json.dumps({"type": "control", "view_only": self.view_only}))
                     continue
                 if kind == "pause":
@@ -183,9 +213,24 @@ class DesktopManager:
                 if self.view_only and kind in {"pointer", "key", "text"}:
                     await websocket.send_text(json.dumps({"type": "denied", "message": "view-only"}))
                     continue
+                if kind in {"pointer", "key", "text"} and self._input_denied():
+                    _prompt_once("accessibility")
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "denied",
+                                "message": (
+                                    "Accessibility permission is required to control this Mac. "
+                                    "Grant it to Termx in System Settings → Privacy & Security → Accessibility."
+                                ),
+                            }
+                        )
+                    )
+                    continue
                 if kind in {"pointer", "key", "text", "release_all"}:
                     try:
-                        await asyncio.to_thread(apply_event, payload)
+                        target = pointer_target(self.display_id) if kind == "pointer" else None
+                        await asyncio.to_thread(apply_event, payload, target)
                     except InputError as exc:
                         await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         except WebSocketDisconnect:
@@ -206,6 +251,11 @@ class DesktopManager:
                 # No viewer watching: stop capturing so the helper (and the macOS
                 # screen-recording indicator) is not left running.
                 await self._schedule_idle_close(idle_grace())
+
+    def _input_denied(self) -> bool:
+        if sys.platform != "darwin":
+            return False
+        return permission_snapshot().get("accessibility") == "denied"
 
     async def close(self) -> None:
         await self._cancel_idle_close()

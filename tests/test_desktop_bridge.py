@@ -233,3 +233,26 @@ def test_pid_alive_for_current_process() -> None:
     from termx.cli import pid_alive
 
     assert pid_alive(os.getpid()) is True
+
+
+def test_map_normalized_maps_to_display_bounds() -> None:
+    from termx.desktop.input import map_normalized
+
+    assert map_normalized(0.5, 0.5, (1920, 1080, 0, 0)) == (959.5, 539.5)
+    assert map_normalized(1.0, 1.0, (1920, 1080, 0, 0)) == (1919.0, 1079.0)
+    assert map_normalized(0.0, 0.0, (1440, 900, 1920, 0)) == (1920.0, 0.0)
+    # out-of-range values clamp
+    assert map_normalized(-1.0, 2.0, (100, 100, 0, 0)) == (0.0, 99.0)
+
+
+def test_desktop_hello_reports_permissions(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    with client.websocket_connect("/api/desktop/session?k=secret") as ws:
+        hello = ws.receive_json()
+        assert hello["type"] == "hello"
+        assert "permissions" in hello
+        assert "view_only" in hello

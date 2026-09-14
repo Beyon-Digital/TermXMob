@@ -76,6 +76,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
     private let ciContext = CIContext()
     private var stream: SCStream?
     private var busy = false
+    private var lastJPEG: Data?
+    private var lastSentAt: CFAbsoluteTime = 0
+    private var heartbeat: DispatchSourceTimer?
     private let requestedDisplay: CGDirectDisplayID?
 
     init(displayID: CGDirectDisplayID?) {
@@ -121,6 +124,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
             exit(1)
         }
         self.stream = stream
+        startHeartbeat()
         Task {
             do {
                 try await stream.startCapture()
@@ -129,6 +133,25 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
                 exit(1)
             }
         }
+    }
+
+    /// ScreenCaptureKit only delivers frames when the screen changes, which makes
+    /// a still desktop (or a virtual display with no windows) look frozen. Re-send
+    /// the last frame on a fixed cadence so the client always gets a live feed.
+    private func startHeartbeat() {
+        let timer = DispatchSource.makeTimerSource(queue: outputQueue)
+        let interval = 1.0 / 12.0
+        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.setEventHandler { [weak self] in
+            guard let self, let jpeg = self.lastJPEG else { return }
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - self.lastSentAt >= interval {
+                self.lastSentAt = now
+                self.writeFrame(jpeg)
+            }
+        }
+        timer.resume()
+        self.heartbeat = timer
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -158,7 +181,10 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let dest = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return }
         CGImageDestinationAddImage(dest, cgImage, [kCGImageDestinationLossyCompressionQuality: 0.55] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { return }
-        writeFrame(data as Data)
+        let jpeg = data as Data
+        lastJPEG = jpeg
+        lastSentAt = CFAbsoluteTimeGetCurrent()
+        writeFrame(jpeg)
     }
 
     private func writeFrame(_ jpeg: Data) {

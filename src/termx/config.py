@@ -580,6 +580,11 @@ class ConfigStore:
             self._save()
             return True
 
+    def set_view_only(self, value: bool) -> None:
+        with self._lock:
+            self._config.desktop.view_only_default = value
+            self._save()
+
     def get_workspace(self) -> WorkspacePrefs:
         with self._lock:
             return WorkspacePrefs(

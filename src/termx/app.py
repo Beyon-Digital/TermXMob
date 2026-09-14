@@ -52,7 +52,7 @@ class AppState:
         self.sessions = SessionManager()
         self.tunnels = TunnelManager(self.store, port=port)
         self.forwards = ForwardManager(self.store)
-        self.desktop = DesktopManager()
+        self.desktop = DesktopManager(self.store)
         self.rtc = RtcManager()
         self.port = port
         self.request_shutdown = None
@@ -281,7 +281,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
         _require(state, provided(x_termx_passcode, authorization, k))
-        which = body.which if body is not None else None
+        which = body.which if body is not None else ["screen_recording", "accessibility"]
+        for item in which:
+            if item in {"screen_recording", "accessibility", "open_settings"}:
+                notify.permission(item)
+        log_event("permissions_request", which=",".join(which))
         return request_permissions(which)
 
     @app.post("/api/shutdown")
