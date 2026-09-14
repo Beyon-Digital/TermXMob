@@ -194,7 +194,7 @@ pub fn permission_event(app: &AppHandle, which: &str) {
                     crate::permissions::request_screen_recording();
                 });
                 let handle = app.clone();
-                let _ = handle.run_on_main_thread(move || open_permission_settings(&handle));
+                let _ = handle.clone().run_on_main_thread(move || open_permission_settings(&handle));
             }
         }
         "accessibility" => {
@@ -210,7 +210,7 @@ pub fn permission_event(app: &AppHandle, which: &str) {
                     crate::permissions::request_accessibility();
                 });
                 let handle = app.clone();
-                let _ = handle.run_on_main_thread(move || open_accessibility_settings(&handle));
+                let _ = handle.clone().run_on_main_thread(move || open_accessibility_settings(&handle));
             }
         }
         "open_settings" => open_permission_settings(app),

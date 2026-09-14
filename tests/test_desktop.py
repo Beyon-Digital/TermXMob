@@ -291,3 +291,75 @@ def test_gnome_can_create_requires_virtual_help(monkeypatch) -> None:
     monkeypatch.setattr(capable, "_bin", lambda: "/usr/bin/gdctl")
     monkeypatch.setattr(vmod, "_help_text", has_virtual)
     assert capable.can_create() is True
+
+
+def test_view_only_preference_persists(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    from termx.config import ConfigStore
+    from termx.desktop.session import DesktopManager
+
+    store = ConfigStore()
+    assert DesktopManager(store).view_only is True
+    store.set_view_only(False)
+    assert ConfigStore().get().desktop.view_only_default is False
+    assert DesktopManager(ConfigStore()).view_only is False
+
+
+def test_control_message_updates_preference(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    with client.websocket_connect("/api/desktop/session?k=secret") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "control", "view_only": False})
+        assert ws.receive_json()["view_only"] is False
+    state.store.__class__  # keep reference; preference is written synchronously
+    from termx.config import ConfigStore
+
+    assert ConfigStore(state.store.path).get().desktop.view_only_default is False
+
+
+def test_capture_blocked_without_screen_recording(monkeypatch) -> None:
+    from termx.desktop import capture
+
+    monkeypatch.setattr(capture, "screen_recording_denied", lambda: True)
+    try:
+        capture.grab_jpeg(None)
+    except capture.CaptureError as exc:
+        assert "Screen Recording" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected CaptureError")
+
+
+def test_list_displays_deduplicates_virtual_entries(monkeypatch) -> None:
+    from termx.desktop import capture
+
+    physical = [
+        {"id": "111", "name": "Display 1", "kind": "physical", "width": 1920, "height": 1080, "main": True},
+        {"id": "222", "name": "Display 2", "kind": "physical", "width": 1280, "height": 800},
+    ]
+    virtual = [
+        {"id": "abc123", "name": "222", "width": 1280, "height": 800, "adapter": "helper", "x": 0, "y": 0}
+    ]
+    monkeypatch.setattr(capture, "list_physical_displays", lambda: physical)
+    import termx.desktop.virtual as virtual_module
+
+    monkeypatch.setattr(virtual_module, "list_virtual_displays", lambda: virtual)
+    displays = capture.list_displays()
+    ids = [item["id"] for item in displays]
+    assert ids == ["111", "abc123"]
+    assert displays[1]["kind"] == "virtual"
+
+
+def test_mac_pointer_routes_wheel_to_scroll(monkeypatch) -> None:
+    from termx.desktop import input as input_module
+
+    calls: list[object] = []
+    monkeypatch.setattr(input_module, "_cg_scroll", lambda event: calls.append(event))
+    monkeypatch.setattr(input_module, "probe_desktop", lambda: type("P", (), {"input_backend": "cgevent"})())
+    input_module._mac_pointer(0.5, 0.5, "wheel", 1, {"dy": 3, "dx": 0}, None)
+    assert calls and calls[0]["dy"] == 3

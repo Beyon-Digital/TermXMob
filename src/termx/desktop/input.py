@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import shutil
 import subprocess
 import sys
