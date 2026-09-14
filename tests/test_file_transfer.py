@@ -37,7 +37,7 @@ def test_listing_includes_files_when_requested(tmp_path: Path, monkeypatch) -> N
 def test_download_file(tmp_path: Path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     target = tmp_path / "report.csv"
-    target.write_text("a,b\n1,2\n")
+    target.write_bytes(b"a,b\n1,2\n")
 
     response = client.get("/api/fs/download", params={"path": str(target), "k": "secret"})
     assert response.status_code == 200

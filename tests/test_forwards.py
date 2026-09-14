@@ -15,9 +15,14 @@ from termx.forwards import ForwardManager, ssh_args
 
 @pytest.fixture()
 def fake_ssh(tmp_path: Path, monkeypatch) -> str:
-    script = tmp_path / "fakessh"
-    script.write_text("#!/bin/sh\nsleep 30\n")
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    if os.name == "nt":
+        script = tmp_path / "fakessh.bat"
+        # ping is the classic no-input sleep; timeout would steal stdin
+        script.write_bytes(b"@echo off\r\nping -n 31 127.0.0.1 >nul\r\n")
+    else:
+        script = tmp_path / "fakessh"
+        script.write_text("#!/bin/sh\nsleep 30\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("TERMX_SSH_BIN", str(script))
     return str(script)
 
@@ -28,7 +33,7 @@ def test_ssh_args_local_remote_dynamic() -> None:
     local = ssh_args(
         ForwardRule(id="1", name="web", kind="local", listen_port=8080, target_port=3000, ssh_host="me@box")
     )
-    assert local[0].endswith("ssh") or "fakessh" in local[0] or local[0] == "ssh"
+    assert Path(local[0]).stem == "ssh" or "fakessh" in local[0]
     assert "-N" in local
     assert "-L127.0.0.1:8080:127.0.0.1:3000" in local
     assert local[-1] == "me@box"

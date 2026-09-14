@@ -111,6 +111,9 @@ class ForwardManager:
             status.started_at = time.time()
             status.log = []
             argv = ssh_args(rule)
+            if os.name == "nt" and argv[0].lower().endswith((".bat", ".cmd")):
+                # CreateProcess cannot exec batch files directly
+                argv = ["cmd", "/c", *argv]
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *argv,
