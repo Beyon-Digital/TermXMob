@@ -108,7 +108,8 @@ func createDisplay(width: Int, height: Int, refresh: Int, id: String, parentPID:
     let pid = ProcessInfo.processInfo.processIdentifier
     let pidURL = try pidFile(displayID: displayID)
     try "\(pid)\n".write(to: pidURL, atomically: true, encoding: .utf8)
-    let record = "{\"id\":\"\(safe(id))\",\"display_id\":\(displayID),\"width\":\(width),\"height\":\(height),\"refresh\":\(refresh),\"pid\":\(pid)}\n"
+    let parentField = parentPID.map { ",\"parent_pid\":\($0)" } ?? ""
+    let record = "{\"id\":\"\(safe(id))\",\"display_id\":\(displayID),\"width\":\(width),\"height\":\(height),\"refresh\":\(refresh),\"pid\":\(pid)\(parentField)}\n"
     try record.write(to: try jsonFile(displayID: displayID), atomically: true, encoding: .utf8)
     FileHandle.standardOutput.write(Data("\(displayID)\n".utf8))
 

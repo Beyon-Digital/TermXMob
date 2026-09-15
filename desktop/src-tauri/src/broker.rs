@@ -148,10 +148,12 @@ fn handle_request(stream: &mut UnixStream, request: &Value) -> std::io::Result<b
             )?;
         }
         "frame" => {
-            let display = request
-                .get("display")
-                .and_then(Value::as_u64)
-                .unwrap_or(0) as u32;
+            // The backend may send the display id as a JSON number or string.
+            let display = match request.get("display") {
+                Some(Value::Number(number)) => number.as_u64().unwrap_or(0) as u32,
+                Some(Value::String(text)) => text.parse::<u32>().unwrap_or(0),
+                _ => 0,
+            };
             let width = request.get("width").and_then(Value::as_i64).unwrap_or(0) as i32;
             let height = request.get("height").and_then(Value::as_i64).unwrap_or(0) as i32;
             let fps = request.get("fps").and_then(Value::as_i64).unwrap_or(12) as i32;
