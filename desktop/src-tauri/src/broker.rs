@@ -10,8 +10,11 @@
 //! (`{"ok":...}`) or, for `frame`, a binary reply: `b'F'` + 4-byte big-endian
 //! length + JPEG bytes.
 
+#[cfg(unix)]
 use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 
 use std::sync::{Mutex, OnceLock};
@@ -65,7 +68,7 @@ pub fn start(app: tauri::AppHandle, log: impl Fn(&str) + Send + 'static) -> Opti
     Some(path_string)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn start(app: tauri::AppHandle, log: impl Fn(&str) + Send + 'static) -> Option<String> {
     let _ = (app, log);
     None
@@ -285,7 +288,8 @@ fn apply_input(request: &Value) -> Result<(), String> {
     }
 }
 
-// Silences unused warnings on non-macOS builds where the socket server is absent.
+// Silences unused warnings on non-Unix builds where the socket server is absent.
+#[cfg(unix)]
 #[allow(dead_code)]
 fn _unused(stream: &mut UnixStream) {
     let _ = stream.read(&mut [0u8; 0]);

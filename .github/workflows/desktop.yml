@@ -271,18 +271,36 @@ jobs:
           cat "$sums"
           gh release upload "${{ steps.release.outputs.tag }}" "$sums" --clobber
 
-      - name: Prepare updater payload
+      - name: Publish updater payload
         if: steps.release.outputs.tag != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           TARGET: ${{ matrix.target }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          version="${TAG#v}"
           cd desktop/src-tauri/target
-          version=$(python3 -c "import json;print(json.load(open('../tauri.conf.json'))['version'])")
-          found=0
+          payloads="$(find . -name '*.sig' -path '*bundle*' | sort || true)"
+          if [ -z "$payloads" ]; then
+            # macOS: rebuild the updater archive from the signed app bundle, since
+            # the bundler's own copy is consumed while uploading installers.
+            app="$(find . -type d -name '*.app' -path '*bundle/macos*' | head -1 || true)"
+            if [ -n "$app" ]; then
+              dir="$(dirname "$app")"
+              base="$(basename "$app")"
+              ( cd "$dir" && tar -czf "$base.tar.gz" "$base" )
+              tauri signer sign -p "" "$app.tar.gz"
+              payloads="$app.tar.gz.sig"
+            fi
+          fi
+          if [ -z "$payloads" ]; then
+            echo "::warning::no updater payloads for ${{ matrix.name }}"
+            exit 0
+          fi
           while IFS= read -r sig; do
             payload="${sig%.sig}"
             [ -f "$payload" ] || continue
@@ -292,27 +310,21 @@ jobs:
               *.nsis.zip) platform="windows-x86_64" ;;
               *) continue ;;
             esac
-            asset="$(basename "$payload")"
             gh release upload "$TAG" "$payload" "$sig" --clobber
             python3 - "$payload" "$sig" "$platform" "$version" "$TAG" <<'PY'
-          import json, sys, urllib.parse
+          import json, sys
           payload, sig, platform, version, tag = sys.argv[1:6]
           name = payload.rsplit("/", 1)[-1]
-          url = f"https://github.com/{urllib.parse.quote('Psyborgs-git/TermXMob', safe='/')}/releases/download/{tag}/{urllib.parse.quote(name)}"
+          url = f"https://github.com/Psyborgs-git/TermXMob/releases/download/{tag}/{name}"
           entry = {"signature": open(sig).read().strip(), "url": url}
           manifest = {"version": version, "notes": f"Termx {tag}", "platforms": {platform: entry}}
           open(f"/tmp/updater-{platform}.json", "w").write(json.dumps(manifest, indent=2))
           print(f"updater entry {platform} -> {name}")
           PY
-            echo "$platform" >> /tmp/termx-updater-platforms.txt
-            found=1
-          done < <(find . -path '*/bundle/*' -name '*.sig' | sort)
-          if [ "$found" = "0" ]; then
-            echo "::warning::no updater artifacts found for ${{ matrix.name }}"
-          fi
+          done <<< "$payloads"
 
       - name: Upload updater manifest fragment
-        if: steps.release.outputs.tag != '' && hashFiles('/tmp/updater-*.json') != ''
+        if: steps.release.outputs.tag != ''
         uses: actions/upload-artifact@v4
         with:
           name: updater-${{ matrix.name }}-${{ github.run_number }}
