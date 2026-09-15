@@ -707,6 +707,17 @@ _ADOPT_TTL_S = 5.0
 _ADOPT_AT = 0.0
 
 
+def _helper_binary() -> str | None:
+    """Path of the termx virtual-display helper, when one is installed."""
+    adapter = _adapter_by_id("helper")
+    if adapter is None:
+        return None
+    binary = adapter._bin()
+    if not binary or not _is_termx_helper(binary):
+        return None
+    return binary
+
+
 def _adopt_helper_displays(force: bool = False) -> None:
     """Adopt live displays, drop dead ones, and clean up orphaned helpers.
 
@@ -723,10 +734,8 @@ def _adopt_helper_displays(force: bool = False) -> None:
         return
     _ADOPT_AT = now
     adapter = _adapter_by_id("helper")
-    if adapter is None or not adapter.available():
-        return
-    list_existing = getattr(adapter, "list_existing", None)
-    if not callable(list_existing):
+    list_existing = getattr(adapter, "list_existing", None) if adapter is not None else None
+    if not callable(list_existing) or _helper_binary() is None:
         return
     records = list_existing()
     live_names = {str(record.get("display_id")) for record in records}

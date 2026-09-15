@@ -2,7 +2,10 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
+
+import pytest
 
 import termx.desktop.virtual as vmod
 from termx.desktop.capabilities import probe_desktop
@@ -384,6 +387,14 @@ def _fake_virtual_helper(tmp_path, output: str) -> str:
     return str(script)
 
 
+# The helper is a POSIX executable (and macOS-only in production), so these
+# tests only run where such a script can be executed.
+needs_posix_helper = pytest.mark.skipif(
+    sys.platform == "win32", reason="the virtual-display helper is a POSIX executable"
+)
+
+
+@needs_posix_helper
 def test_virtual_displays_adopted_and_orphans_pruned(tmp_path, monkeypatch) -> None:
     import json as json_module
 
@@ -428,6 +439,7 @@ def test_virtual_displays_adopted_and_orphans_pruned(tmp_path, monkeypatch) -> N
     assert adopted[0]["width"] == 1170
 
 
+@needs_posix_helper
 def test_virtual_display_destroy_uses_helper_cli(tmp_path, monkeypatch) -> None:
     from termx.desktop import virtual as virtual_module
 

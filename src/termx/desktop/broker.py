@@ -103,7 +103,12 @@ def configure(path: str | None) -> None:
 
 
 def available() -> bool:
-    return _CLIENT is not None and sys.platform == "darwin"
+    """True when a shell socket has been handed to this process.
+
+    The client itself is platform-neutral: only the desktop shell serves a
+    broker today, so anything else simply never calls configure().
+    """
+    return _CLIENT is not None
 
 
 def _call(payload: dict[str, Any]) -> dict[str, Any] | bytes:

@@ -16,14 +16,20 @@ import pytest
 from termx.desktop import broker
 from termx.desktop.input import _virtual_desktop_point
 
+# The broker speaks over a Unix socket, which Windows does not support reliably.
+pytestmark = pytest.mark.skipif(
+    not hasattr(socket, "AF_UNIX") or sys.platform == "win32",
+    reason="the privileged broker uses Unix domain sockets",
+)
+
 
 class FakeBroker:
     """Minimal stand-in for the shell's privileged socket server."""
 
     def __init__(self, tmp_path: Path, responses: dict[str, object] | None = None) -> None:
-        # Unix socket paths are capped near 104 bytes, and pytest temp dirs are
+        # Unix socket paths are capped near 104 bytes and pytest temp dirs are
         # long on macOS, so the fake broker lives in its own short directory.
-        self.dir = Path(tempfile.mkdtemp(prefix="tb-", dir="/tmp"))
+        self.dir = Path(tempfile.mkdtemp(prefix="tb-"))
         self.path = str(self.dir / "b.sock")
         self.responses = responses or {}
         self.seen: list[dict] = []
@@ -131,8 +137,6 @@ def test_unreachable_broker_disables_helpers(tmp_path: Path) -> None:
 
         state = permission_snapshot()
         assert set(state) == {"screen_recording", "accessibility"}
-    fake = FakeBroker(tmp_path, {})
-    fake.close()
 
 
 def test_virtual_desktop_point_maps_within_range() -> None:
