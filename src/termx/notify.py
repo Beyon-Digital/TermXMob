@@ -41,5 +41,10 @@ def permission(which: str) -> None:
     emit({"termx": "permission", "which": which})
 
 
+def update(action: str) -> None:
+    """Ask the desktop shell to run an update step (check or install)."""
+    emit({"termx": "update", "action": action})
+
+
 def ready(port: int, urls: list[str], tunnel: str | None = None) -> None:
     emit({"termx": "ready", "port": port, "urls": list(urls), "tunnel": tunnel})

@@ -153,7 +153,13 @@ fn toggle_autostart(app: &AppHandle) {
 }
 
 fn check_updates(app: &AppHandle) {
+    run_update(app, "install");
+}
+
+/// Run an update step: `check` only reports, `install` downloads and restarts.
+pub fn run_update(app: &AppHandle, action: &str) {
     let handle = app.clone();
+    let install = action == "install";
     tauri::async_runtime::spawn(async move {
         let updater = match handle.updater() {
             Ok(updater) => updater,
@@ -169,12 +175,21 @@ fn check_updates(app: &AppHandle) {
         match updater.check().await {
             Ok(Some(update)) => {
                 let version = update.version.clone();
-                ui::notify(&handle, "Update available", &format!("Termx {version} is ready to install."));
-                if let Err(error) = update
-                    .download_and_install(|_, _| {}, || {})
-                    .await
-                {
-                    ui::notify(&handle, "Update failed", &error.to_string());
+                if !install {
+                    ui::notify(
+                        &handle,
+                        "Update available",
+                        &format!("Termx {version} is ready — open the menu to install it."),
+                    );
+                    return;
+                }
+                ui::notify(&handle, "Updating Termx", &format!("Downloading Termx {version}…"));
+                match update.download_and_install(|_, _| {}, || {}).await {
+                    Ok(()) => {
+                        ui::notify(&handle, "Termx updated", &format!("Restarting on {version}"));
+                        handle.restart();
+                    }
+                    Err(error) => ui::notify(&handle, "Update failed", &error.to_string()),
                 }
             }
             Ok(None) => ui::notify(&handle, "Termx is up to date", ""),

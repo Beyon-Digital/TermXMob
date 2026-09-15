@@ -378,6 +378,10 @@ impl Backend {
                     .unwrap_or("screen_recording");
                 ui::permission_event(&self.0.app, which);
             }
+            Some("update") => {
+                let action = value.get("action").and_then(Value::as_str).unwrap_or("check");
+                crate::menu::run_update(&self.0.app, action);
+            }
             Some("notify") => {
                 let title = value
                     .get("title")

@@ -561,3 +561,50 @@ def test_ws_rtc_signalling_reports_availability(tmp_path, monkeypatch) -> None:
         else:
             assert reply["ok"] is False
             assert "unavailable" in reply["error"]
+
+
+def test_update_version_ordering() -> None:
+    from termx.update import is_newer, parse_version
+
+    assert parse_version("v0.1.7") == (0, 1, 7)
+    assert parse_version("1.2.3") == (1, 2, 3)
+    assert parse_version("0.10") > parse_version("0.9")
+    assert is_newer("0.1.7", "0.1.6") is True
+    assert is_newer("0.1.6", "0.1.7") is False
+    assert is_newer("0.1.6", "0.1.6") is False
+
+
+def test_update_check_reports_release(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    from fastapi.testclient import TestClient
+
+    import termx.update as update_module
+    from termx.app import AppState, create_app
+
+    monkeypatch.setattr(
+        update_module,
+        "fetch_latest_release",
+        lambda timeout=8.0: {"tag_name": "v9.9.9", "html_url": "https://example.test/v9.9.9", "body": "notes", "published_at": "2026-01-01T00:00:00Z"},
+    )
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    body = client.get("/api/update/check?k=secret").json()
+    assert body["available"] is True
+    assert body["latest"] == "9.9.9"
+    assert body["url"].endswith("v9.9.9")
+
+
+def test_update_apply_without_desktop_shell(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.delenv("TERMX_DESKTOP", raising=False)
+    from fastapi.testclient import TestClient
+
+    import termx.update as update_module
+    from termx.app import AppState, create_app
+
+    monkeypatch.setattr(update_module, "fetch_latest_release", lambda timeout=8.0: None)
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    body = client.post("/api/update/apply?k=secret").json()
+    assert body["started"] is False
+    assert "instructions" in body

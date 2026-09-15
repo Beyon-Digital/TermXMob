@@ -1,6 +1,6 @@
 [project]
 name = "termx"
-version = "0.1.6"
+version = "0.1.7"
 description = "Host interactive terminal sessions and connect from your phone or browser."
 readme = "README.md"
 authors = [

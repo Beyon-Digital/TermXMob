@@ -296,6 +296,40 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         log_event("permissions_request", which=",".join(which))
         return request_permissions(which)
 
+    @app.get("/api/update/check")
+    def get_update(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        from termx import __version__
+        from termx.update import check_for_update
+
+        return check_for_update(__version__)
+
+    @app.post("/api/update/apply")
+    def post_update(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require(state, provided(x_termx_passcode, authorization, k))
+        from termx import __version__
+        from termx.update import check_for_update, desktop_managed
+
+        if not desktop_managed():
+            info = check_for_update(__version__)
+            return {
+                "started": False,
+                "reason": "this host runs the backend without the desktop app",
+                "instructions": "install the new release, or update the termx package",
+                **info,
+            }
+        notify.update("install")
+        log_event("update_apply", version=__version__)
+        return {"started": True}
+
     @app.post("/api/shutdown")
     def shutdown(
         request: Request,
