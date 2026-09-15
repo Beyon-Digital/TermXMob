@@ -522,6 +522,9 @@ def test_ws_display_create_and_delete(tmp_path, monkeypatch) -> None:
 
     adapter = FakeAdapter()
     monkeypatch.setattr(virtual_module, "_adapter_by_id", lambda _id: adapter)
+    # Patch the resolver: on machines without a real display adapter the create
+    # path would otherwise fail before reaching the fake.
+    monkeypatch.setattr(virtual_module, "_resolve_adapter", lambda *_args, **_kwargs: adapter)
     monkeypatch.setattr(virtual_module, "active_adapter", lambda: adapter)
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
