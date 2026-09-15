@@ -183,3 +183,8 @@ def send_input(payload: dict[str, Any]) -> bool:
     except BrokerError:
         return False
     return bool(isinstance(result, dict) and result.get("ok"))
+
+
+def send_relative_move(dx: float, dy: float) -> bool:
+    """Trackpad-style cursor movement by a delta (macOS shell only)."""
+    return send_input({"kind": "mouse", "event": "move", "dx": dx, "dy": dy, "relative": True})

@@ -229,11 +229,22 @@ fn apply_input(request: &Value) -> Result<(), String> {
         .unwrap_or(0);
     match kind {
         "mouse" => {
-            let x = request.get("x").and_then(Value::as_f64).unwrap_or(0.0);
-            let y = request.get("y").and_then(Value::as_f64).unwrap_or(0.0);
             let action = request.get("event").and_then(Value::as_str).unwrap_or("move");
             let button = request.get("button").and_then(Value::as_i64).unwrap_or(1) as i32;
             let dragging = request.get("dragging").and_then(Value::as_bool).unwrap_or(false);
+            if request.get("relative").and_then(Value::as_bool).unwrap_or(false) {
+                // Trackpad-style input: movement is a delta, and button events
+                // apply wherever the cursor currently is (no warping).
+                let dx = request.get("dx").and_then(Value::as_f64).unwrap_or(0.0);
+                let dy = request.get("dy").and_then(Value::as_f64).unwrap_or(0.0);
+                if action == "move" || action == "drag" {
+                    return input_macos::relative_move(dx, dy, flags);
+                }
+                let current = input_macos::pointer_location();
+                return input_macos::mouse(current.x, current.y, action, button, dragging, flags);
+            }
+            let x = request.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+            let y = request.get("y").and_then(Value::as_f64).unwrap_or(0.0);
             input_macos::mouse(x, y, action, button, dragging, flags)
         }
         "scroll" => {
@@ -249,7 +260,20 @@ fn apply_input(request: &Value) -> Result<(), String> {
             let name = request.get("key").and_then(Value::as_str).unwrap_or("");
             match input_macos::key_code(name) {
                 Some(code) => input_macos::key(code, down, flags),
-                None => input_macos::text(name, flags),
+                None => {
+                    // Single characters with modifiers (⌘C, ⇧A, …) must be posted
+                    // as real key events: the Unicode path ignores flags.
+                    if flags != 0 {
+                        if let Some(code) = input_macos::char_key_code(&name.to_lowercase()) {
+                            input_macos::key(code, down, flags)?;
+                            if !down {
+                                return Ok(());
+                            }
+                            return input_macos::key(code, false, flags);
+                        }
+                    }
+                    input_macos::text(name, flags)
+                }
             }
         }
         "text" => {

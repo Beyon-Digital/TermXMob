@@ -288,7 +288,9 @@ def test_pause_keeps_capture_when_another_viewer_is_active(monkeypatch, tmp_path
         second.send({"type": "resume"})
         assert await _wait_until(lambda: any('"resumed"' in text for text in second.sent_text))
         assert await _wait_until(lambda: second.sent_bytes > frozen)
-        assert _pid_alive(int(pidfile.read_text()))
+        # The helper restarts asynchronously once frames flow again; poll rather
+        # than sampling once, so suite load cannot make this flap.
+        assert await _wait_until(lambda: _pid_alive(int(pidfile.read_text())), timeout=5.0)
 
         first.disconnect()
         second.disconnect()
