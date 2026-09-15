@@ -36,6 +36,17 @@ echo "==> replacing $DEST"
 rm -rf "$DEST"
 ditto "$SOURCE" "$DEST"
 
+# LaunchServices would otherwise be free to launch the build-tree copy (which
+# looks newer), and a rebuilt binary is a new TCC identity: grants made for the
+# installed app would silently stop applying. Remove the staging bundle so only
+# the installed app exists.
+STAGE_DIR="$(dirname "$SOURCE")"
+for stale in "$STAGE_DIR/Termx.app" "$STAGE_DIR/signed-Termx.app"; do
+    if [ "$stale" != "$DEST" ] && [ -d "$stale" ]; then
+        rm -rf "$stale"
+    fi
+done
+
 echo "==> verifying the installed bundle"
 codesign --verify --deep --strict "$DEST"
 

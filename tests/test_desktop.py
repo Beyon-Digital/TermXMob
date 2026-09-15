@@ -1,3 +1,5 @@
+import json
+import os
 import shutil
 import subprocess
 import time
@@ -348,7 +350,7 @@ def test_list_displays_deduplicates_virtual_entries(monkeypatch) -> None:
     monkeypatch.setattr(capture, "list_physical_displays", lambda: physical)
     import termx.desktop.virtual as virtual_module
 
-    monkeypatch.setattr(virtual_module, "list_virtual_displays", lambda: virtual)
+    monkeypatch.setattr(virtual_module, "list_virtual_displays", lambda adopt=False: virtual)
     displays = capture.list_displays()
     ids = [item["id"] for item in displays]
     assert ids == ["111", "abc123"]
@@ -363,3 +365,117 @@ def test_mac_pointer_routes_wheel_to_scroll(monkeypatch) -> None:
     monkeypatch.setattr(input_module, "probe_desktop", lambda: type("P", (), {"input_backend": "cgevent"})())
     input_module._mac_pointer(0.5, 0.5, "wheel", 1, {"dy": 3, "dx": 0}, None)
     assert calls and calls[0]["dy"] == 3
+
+
+_REAL_ADOPT = vmod._adopt_helper_displays
+
+
+def _write_helper_store(tmp_path, entries: list[dict]) -> None:
+    store = tmp_path / "termx-virtual-displays"
+    store.mkdir(parents=True, exist_ok=True)
+    for entry in entries:
+        (store / f"{entry['display_id']}.json").write_text(json.dumps(entry), encoding="utf-8")
+
+
+def _fake_virtual_helper(tmp_path, output: str) -> str:
+    script = tmp_path / "termx-virtual-display-fake"
+    script.write_text(f"#!/bin/sh\nif [ \"$1\" = list ]; then\ncat <<'JSON'\n{output}\nJSON\nfi\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_virtual_displays_adopted_and_orphans_pruned(tmp_path, monkeypatch) -> None:
+    import json as json_module
+
+    from termx.desktop import virtual as virtual_module
+
+    live = {
+        "id": "live0001",
+        "display_id": 424242,
+        "width": 1170,
+        "height": 2532,
+        "refresh": 60,
+        "pid": os.getpid(),
+        "parent_pid": os.getpid(),
+    }
+    orphan = {
+        "id": "orphan01",
+        "display_id": 434343,
+        "width": 800,
+        "height": 600,
+        "refresh": 60,
+        "pid": 2**30,
+        "parent_pid": 2**30,
+    }
+    outputs = "\n".join(json_module.dumps(entry) for entry in (live, orphan))
+    binary = _fake_virtual_helper(tmp_path, outputs)
+    monkeypatch.setenv("TERMX_VIRTUAL_DISPLAY_BIN", binary)
+    monkeypatch.setattr(virtual_module, "_pid_alive", lambda pid: pid == os.getpid())
+    # conftest disables adoption so real displays never leak into tests; this
+    # test exercises it on purpose.
+    monkeypatch.setattr(virtual_module, "_adopt_helper_displays", _REAL_ADOPT)
+
+    adapter = virtual_module.HelperAdapter()
+    existing = adapter.list_existing()
+    assert [item["id"] for item in existing] == ["live0001"]
+
+    virtual_module._active.clear()
+    virtual_module._impls.clear()
+    virtual_module._adopt_helper_displays(force=True)
+    adopted = virtual_module.list_virtual_displays()
+    assert [item["id"] for item in adopted] == ["424242"]
+    assert adopted[0]["adopted"] is True
+    assert adopted[0]["width"] == 1170
+
+
+def test_virtual_display_destroy_uses_helper_cli(tmp_path, monkeypatch) -> None:
+    from termx.desktop import virtual as virtual_module
+
+    calls: list[list[str]] = []
+
+    def fake_run(argv, timeout=20):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    binary = _fake_virtual_helper(tmp_path, "")
+    monkeypatch.setenv("TERMX_VIRTUAL_DISPLAY_BIN", binary)
+    monkeypatch.setattr(virtual_module, "_run", fake_run)
+    adapter = virtual_module.HelperAdapter()
+    virtual_module._active.clear()
+    virtual_module._impls.clear()
+    virtual_module._active["424242"] = {
+        "name": "424242",
+        "width": 1,
+        "height": 1,
+        "adapter": "helper",
+    }
+    virtual_module._impls["424242"] = adapter
+    virtual_module.destroy_virtual_display("424242")
+    assert calls and calls[0][1:] == ["destroy", "424242"]
+    assert "424242" not in virtual_module._active
+
+
+def test_destroy_all_skips_foreign_displays(monkeypatch) -> None:
+    from termx.desktop import virtual as virtual_module
+
+    destroyed: list[str] = []
+
+    class Recorder(VirtualAdapter):
+        id = "recorder"
+
+        def destroy(self, name: str) -> None:
+            destroyed.append(name)
+
+    adapter = Recorder()
+    virtual_module._active.clear()
+    virtual_module._impls.clear()
+    virtual_module._active["mine"] = {"name": "mine", "adapter": "recorder", "owner_pid": os.getpid()}
+    virtual_module._active["theirs"] = {"name": "theirs", "adapter": "recorder", "owner_pid": 999999}
+    virtual_module._impls["mine"] = adapter
+    virtual_module._impls["theirs"] = adapter
+
+    virtual_module.destroy_all_virtual_displays()
+    assert destroyed == ["mine"]
+    assert "theirs" in virtual_module._active
+    virtual_module._active.clear()
+    virtual_module._impls.clear()

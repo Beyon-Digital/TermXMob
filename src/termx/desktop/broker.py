@@ -157,7 +157,8 @@ def capture_frame(
         "height": height,
     }
     if display:
-        payload["display"] = display
+        text = str(display)
+        payload["display"] = int(text) if text.isdigit() else display
     result = _call(payload)
     if isinstance(result, bytes):
         return result

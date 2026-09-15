@@ -27,7 +27,9 @@ _HELPER_DISPLAY: str | None = None
 def list_displays() -> list[dict[str, object]]:
     from termx.desktop.virtual import list_virtual_displays
 
-    virtuals = list_virtual_displays()
+    # Adopt displays whose helpers survived an app restart so they stay visible
+    # (and closeable) instead of leaking as anonymous "physical" entries.
+    virtuals = list_virtual_displays(adopt=True)
     virtual_names = {str(item.get("name")) for item in virtuals}
     displays: list[dict[str, object]] = []
     for index, item in enumerate(list_physical_displays()):
@@ -131,9 +133,19 @@ def grab_jpeg(display_id: str | None = None) -> bytes:
     if broker.available():
         target = _target(display_id)
         numeric = _helper_display_id(target)
+        # A freshly created virtual display reports a 0x0 mode through
+        # ScreenCaptureKit, which would capture a 1x1 frame; use the size the
+        # helper recorded at creation instead.
+        width = 0
+        height = 0
+        if target is not None and target.get("kind") == "virtual":
+            width = int(target.get("width") or 0)
+            height = int(target.get("height") or 0)
         for attempt in range(2):
             try:
-                return broker.capture_frame(numeric, quality=55, timeout_ms=700)
+                return broker.capture_frame(
+                    numeric, width=width, height=height, quality=55, timeout_ms=700
+                )
             except broker.BrokerError as exc:
                 if exc.kind == "waiting" and attempt == 0:
                     continue

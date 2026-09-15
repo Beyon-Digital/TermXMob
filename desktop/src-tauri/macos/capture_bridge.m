@@ -198,8 +198,17 @@ int32_t termx_capture_start(uint32_t display_id, int32_t max_width, int32_t max_
                                                      excludingApplications:@[]
                                                           exceptingWindows:@[]];
         SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
-        config.width = max_width > 0 ? (size_t)max_width : (size_t)display.width;
-        config.height = max_height > 0 ? (size_t)max_height : (size_t)display.height;
+        size_t width = max_width > 0 ? (size_t)max_width : (size_t)display.width;
+        size_t height = max_height > 0 ? (size_t)max_height : (size_t)display.height;
+        if (width < 16 || height < 16) {
+            // A brand-new virtual display can report 0x0 until the window
+            // server finishes registering its mode; fall back to a usable size
+            // rather than streaming a 1x1 frame.
+            width = max_width > 0 ? (size_t)max_width : 1920;
+            height = max_height > 0 ? (size_t)max_height : 1080;
+        }
+        config.width = width;
+        config.height = height;
         config.pixelFormat = kCVPixelFormatType_32BGRA;
         config.showsCursor = YES;
         config.queueDepth = 5;

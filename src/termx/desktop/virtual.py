@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -367,6 +368,41 @@ class HelperAdapter(VirtualAdapter):
                 return path
         return None
 
+    def list_existing(self) -> list[dict[str, Any]]:
+        """Displays whose helper processes are still alive.
+
+        The helper records one JSON state file per display, so displays created
+        before this backend started (or by an earlier app run) are recoverable
+        instead of leaking as uncloseable orphans. Entries whose owning process
+        is gone are pruned from the store.
+        """
+        binary = self._bin()
+        if not binary or not _is_termx_helper(binary):
+            return []
+        try:
+            proc = _run([binary, "list"])
+        except VirtualDisplayError:
+            return []
+        live: list[dict[str, Any]] = []
+        for line in (proc.stdout or "").splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            display_id = record.get("display_id")
+            pid = record.get("pid")
+            if not isinstance(display_id, int) or not isinstance(pid, int):
+                _prune_helper_entry(binary, record)
+                continue
+            if _pid_alive(pid):
+                live.append(record)
+            else:
+                _prune_helper_entry(binary, record)
+        return live
+
     def available(self) -> bool:
         return sys.platform == "darwin" and self._bin() is not None
 
@@ -603,7 +639,142 @@ def _resolve_adapter(force_adapter: VirtualAdapter | str | None = None) -> Virtu
     return active_adapter()
 
 
-def list_virtual_displays() -> list[dict[str, Any]]:
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _prune_helper_entry(binary: str, record: dict[str, Any]) -> None:
+    """Drop a state file whose owning helper is gone."""
+    display_id = record.get("display_id")
+    if not isinstance(display_id, int):
+        store = os.environ.get("TMPDIR") or "/tmp"
+        legacy = os.path.join(store, "termx-virtual-displays", f"{record.get('id', '')}.json")
+        try:
+            os.unlink(legacy)
+        except OSError:
+            pass
+        return
+    try:
+        _run([binary, "destroy", str(display_id)])
+    except VirtualDisplayError:
+        # No pid file (helper already gone): clear the leftover record directly
+        # so the display stops being reported.
+        store = os.environ.get("TMPDIR") or "/tmp"
+        for suffix in (".json", ".pid"):
+            try:
+                os.unlink(os.path.join(store, "termx-virtual-displays", f"{display_id}{suffix}"))
+            except OSError:
+                continue
+
+
+def _helper_parent_pid(pid: int) -> int | None:
+    """Parent pid of a helper process.
+
+    Helpers record their own parent when launched by a recent build; older ones
+    only expose it through ps. A reparented helper (ppid == 1) has lost its
+    backend and is a leak.
+    """
+    try:
+        proc = subprocess.run(
+            ["ps", "-o", "ppid=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    text = (proc.stdout or "").strip()
+    if not text:
+        return None
+    try:
+        value = int(text.split()[0])
+    except (ValueError, IndexError):
+        return None
+    return value or None
+
+
+_ADOPT_TTL_S = 5.0
+_ADOPT_AT = 0.0
+
+
+def _adopt_helper_displays(force: bool = False) -> None:
+    """Adopt live displays, drop dead ones, and clean up orphaned helpers.
+
+    A display is live while its helper process runs. Helpers watch their parent
+    (the backend) and exit with it, so a helper whose parent is gone is a leak
+    from an earlier run: its display still exists but nothing can address it.
+
+    Adoption shells out to the helper, so it is cached: display listings happen
+    on every session attach and must not spawn processes each time.
+    """
+    global _ADOPT_AT
+    now = time.time()
+    if not force and now - _ADOPT_AT < _ADOPT_TTL_S:
+        return
+    _ADOPT_AT = now
+    adapter = _adapter_by_id("helper")
+    if adapter is None or not adapter.available():
+        return
+    list_existing = getattr(adapter, "list_existing", None)
+    if not callable(list_existing):
+        return
+    records = list_existing()
+    live_names = {str(record.get("display_id")) for record in records}
+    for display_id, rec in list(_active.items()):
+        if rec.get("adapter") != "helper":
+            continue
+        if str(rec.get("name")) not in live_names:
+            # The helper exited: the display is gone, so stop advertising it.
+            _active.pop(display_id, None)
+            _impls.pop(display_id, None)
+    for record in records:
+        display_id = str(record.get("display_id"))
+        if display_id in _active:
+            continue
+        # Displays created by this backend are keyed by their client id, but the
+        # helper reports them by numeric display id: match on the latter too so
+        # the same display is not listed twice.
+        if any(str(item.get("name")) == display_id for item in _active.values()):
+            continue
+        parent = record.get("parent_pid")
+        if not isinstance(parent, int) or parent <= 0:
+            pid = record.get("pid")
+            parent = _helper_parent_pid(pid) if isinstance(pid, int) else None
+        if parent is None or parent <= 1 or not _pid_alive(parent):
+            _prune_helper_entry(adapter._bin() or "", record)
+            continue
+        _active[display_id] = {
+            "name": display_id,
+            "width": int(record.get("width") or 0),
+            "height": int(record.get("height") or 0),
+            "x": 0,
+            "y": 0,
+            "adapter": adapter.id,
+            "owner": None,
+            "lease_until": None,
+            "created_at": time.time(),
+            "client_id": record.get("id"),
+            "adopted": True,
+            # The helper's parent owns the display: only that process may tear it
+            # down, otherwise a second backend would kill a running one's screens.
+            "owner_pid": parent,
+        }
+        _impls[display_id] = adapter
+
+
+def list_virtual_displays(adopt: bool = False) -> list[dict[str, Any]]:
+    if adopt:
+        _adopt_helper_displays()
     return [
         {
             "id": display_id,
@@ -615,9 +786,22 @@ def list_virtual_displays() -> list[dict[str, Any]]:
             "adapter": rec["adapter"],
             "owner": rec.get("owner"),
             "lease_until": rec.get("lease_until"),
+            "adopted": bool(rec.get("adopted")),
         }
         for display_id, rec in _active.items()
     ]
+
+
+def _virtual_display_geometry(name: str) -> tuple[int, int] | None:
+    """Unused on purpose.
+
+    Calling CGDisplayBounds for a CGVirtualDisplay as a process's first
+    CoreGraphics display query wedges SkyLight's display-state initialisation
+    on macOS 13 (verified: the call blocks indefinitely in
+    `initDisplayState`). Positions of virtual displays are cosmetic here, so
+    they are reported as 0,0 rather than risking a hung backend.
+    """
+    return None
 
 
 def create_virtual_display(
@@ -636,16 +820,18 @@ def create_virtual_display(
     name = adapter.create(display_id, width, height, dpr, refresh_hz)
     now = time.time()
     geometry = getattr(adapter, "last_geometry", None) or {}
+    placed = _virtual_display_geometry(name)
     rec = {
         "name": name,
         "width": width,
         "height": height,
-        "x": int(geometry.get("x", 0)),
-        "y": int(geometry.get("y", 0)),
+        "x": int(placed[0]) if placed else int(geometry.get("x", 0)),
+        "y": int(placed[1]) if placed else int(geometry.get("y", 0)),
         "adapter": adapter.id,
         "owner": owner,
         "lease_until": now + 60,
         "created_at": now,
+        "owner_pid": os.getpid(),
     }
     _active[display_id] = rec
     _impls[display_id] = adapter
@@ -655,6 +841,8 @@ def create_virtual_display(
         "kind": "virtual",
         "width": width,
         "height": height,
+        "x": rec["x"],
+        "y": rec["y"],
         "selected": True,
         "adapter": adapter.id,
     }
@@ -699,7 +887,12 @@ def destroy_virtual_display(display_id: str) -> None:
 
 
 def destroy_all_virtual_displays() -> None:
+    """Tear down this backend's displays, leaving other instances' alone."""
     for display_id in list(_active):
+        rec = _active.get(display_id)
+        owner = rec.get("owner_pid") if rec else None
+        if owner is not None and owner != os.getpid():
+            continue
         rec = _active.pop(display_id, None)
         impl = _impls.pop(display_id, None)
         if rec is None:
