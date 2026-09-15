@@ -10,16 +10,20 @@
 //! (`{"ok":...}`) or, for `frame`, a binary reply: `b'F'` + 4-byte big-endian
 //! length + JPEG bytes.
 
-#[cfg(unix)]
-use std::io::{BufRead, BufReader, Read, Write};
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
+use std::io::{BufRead, BufReader, Write};
+#[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 use std::os::unix::net::{UnixListener, UnixStream};
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+#[cfg(target_os = "macos")]
+use std::sync::Mutex;
+#[cfg(target_os = "macos")]
 use std::thread;
 
+#[cfg(target_os = "macos")]
 use serde_json::{json, Value};
 
 static SOCKET_PATH: OnceLock<String> = OnceLock::new();
@@ -68,7 +72,7 @@ pub fn start(app: tauri::AppHandle, log: impl Fn(&str) + Send + 'static) -> Opti
     Some(path_string)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "macos"))]
 pub fn start(app: tauri::AppHandle, log: impl Fn(&str) + Send + 'static) -> Option<String> {
     let _ = (app, log);
     None
@@ -288,9 +292,3 @@ fn apply_input(request: &Value) -> Result<(), String> {
     }
 }
 
-// Silences unused warnings on non-Unix builds where the socket server is absent.
-#[cfg(unix)]
-#[allow(dead_code)]
-fn _unused(stream: &mut UnixStream) {
-    let _ = stream.read(&mut [0u8; 0]);
-}
