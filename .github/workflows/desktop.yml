@@ -283,7 +283,8 @@ jobs:
           version="${TAG#v}"
           if [ -n "${TARGET:-}" ]; then
             platform="darwin-x86_64"
-            case "$TARGET" in *aarch64*) platform="darwin-aarch64";; esac
+            dmg_pattern="*x64.dmg"
+            case "$TARGET" in *aarch64*) platform="darwin-aarch64"; dmg_pattern="*aarch64.dmg";; esac
             payload="Termx.app.tar.gz"
           elif [ "$RUNNER_OS" = "Linux" ]; then
             platform="linux-x86_64"
@@ -296,6 +297,31 @@ jobs:
             exit 0
           fi
           tmp="$(mktemp -d)"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # macOS: the bundler publishes the notarized app inside the DMG but
+            # not as an updater archive, so build it from the DMG here.
+            gh release download "$TAG" --pattern "$dmg_pattern" --dir "$tmp" --clobber
+            dmg="$(ls "$tmp"/*.dmg | head -1)"
+            mount="$(mktemp -d)"
+            hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -quiet
+            ( cd "$mount" && tar -czf "$tmp/$payload" *.app )
+            hdiutil detach "$mount" -quiet
+            out="$tmp/$payload"
+            TAURI_SIGNING_PRIVATE_KEY="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" \
+              TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" \
+              tauri signer sign -p "" "$out"
+            gh release upload "$TAG" "$out" "$out.sig" --clobber
+            python3 - "$payload" "$out.sig" "$platform" "$version" "$TAG" <<'PY'
+          import json, sys
+          name, sig, platform, version, tag = sys.argv[1:6]
+          url = f"https://github.com/Psyborgs-git/TermXMob/releases/download/{tag}/{name}"
+          entry = {"signature": open(sig).read().strip(), "url": url}
+          manifest = {"version": version, "notes": f"Termx {tag}", "platforms": {platform: entry}}
+          open(f"/tmp/updater-{platform}.json", "w").write(json.dumps(manifest, indent=2))
+          print(f"updater entry {platform} -> {name}")
+          PY
+            exit 0
+          fi
           # The release already carries the updater payload and its signature
           # (uploaded by the bundler); fetch them to build this platform's entry.
           if ! gh release download "$TAG" --pattern "$payload" --pattern "$payload.sig" --dir "$tmp" --clobber; then
