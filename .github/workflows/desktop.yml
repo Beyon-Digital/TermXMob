@@ -298,7 +298,10 @@ jobs:
           tmp="$(mktemp -d)"
           # The release already carries the updater payload and its signature
           # (uploaded by the bundler); fetch them to build this platform's entry.
-          gh release download "$TAG" --pattern "$payload" --pattern "$payload.sig" --dir "$tmp" --clobber
+          if ! gh release download "$TAG" --pattern "$payload" --pattern "$payload.sig" --dir "$tmp" --clobber; then
+            echo "::warning::updater payload for $platform is not attached to the release"
+            exit 0
+          fi
           file="$(ls "$tmp"/$payload | head -1)"
           sig="${file}.sig"
           if [ ! -f "$sig" ]; then
@@ -347,6 +350,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: updater-*
