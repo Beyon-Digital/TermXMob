@@ -13,13 +13,15 @@ type CGEventSourceRef = *mut c_void;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct CGPoint {
-    x: f64,
-    y: f64,
+pub struct CGPoint {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
+    fn CGEventCreate(source: CGEventSourceRef) -> CGEventRef;
+    fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
     fn CGEventCreateMouseEvent(
         source: CGEventSourceRef,
         mouse_type: u32,
@@ -136,6 +138,27 @@ pub fn mouse(x: f64, y: f64, action: &str, button: i32, dragging: bool, flags: u
     Ok(())
 }
 
+pub fn pointer_location() -> CGPoint {
+    unsafe {
+        let event = CGEventCreate(source());
+        if event.is_null() {
+            return CGPoint { x: 0.0, y: 0.0 };
+        }
+        let point = CGEventGetLocation(event);
+        CFRelease(event as *const c_void);
+        point
+    }
+}
+
+/// Move the cursor by a delta, the way a hardware trackpad does.
+pub fn relative_move(dx: f64, dy: f64, flags: u64) -> Result<(), String> {
+    if dx == 0.0 && dy == 0.0 {
+        return Ok(());
+    }
+    let current = pointer_location();
+    mouse(current.x + dx, current.y + dy, "move", 1, false, flags)
+}
+
 pub fn scroll(dy: f64, dx: f64, flags: u64) -> Result<(), String> {
     if dy == 0.0 && dx == 0.0 {
         return Ok(());
@@ -202,8 +225,7 @@ pub fn text(data: &str, flags: u64) -> Result<(), String> {
 }
 
 /// Physical key codes for keys that have no Unicode representation.
-pub fn key_code(name: &str) -> Option<u16> {
-    let code = match name {
+pub fn key_code(name: &str) -> Option<u16> {    let code = match name {
         "return" | "enter" => 36,
         "tab" => 48,
         "space" | " " => 49,
@@ -251,6 +273,65 @@ pub fn key_code(name: &str) -> Option<u16> {
         "right" | "arrowright" => 124,
         "down" | "arrowdown" => 125,
         "up" | "arrowup" => 126,
+        _ => return None,
+    };
+    Some(code)
+}
+
+/// US-layout virtual key codes for printable characters.
+///
+/// Modifier chords (⌘C, ⌘V, Shift+letter) only take effect on real key events;
+/// `CGEventKeyboardSetUnicodeString` ignores modifier flags, so characters that
+/// need modifiers must be posted by key code instead.
+pub fn char_key_code(character: &str) -> Option<u16> {
+    let code = match character {
+        "a" => 0,
+        "s" => 1,
+        "d" => 2,
+        "f" => 3,
+        "h" => 4,
+        "g" => 5,
+        "z" => 6,
+        "x" => 7,
+        "c" => 8,
+        "v" => 9,
+        "b" => 11,
+        "q" => 12,
+        "w" => 13,
+        "e" => 14,
+        "r" => 15,
+        "y" => 16,
+        "t" => 17,
+        "1" => 18,
+        "2" => 19,
+        "3" => 20,
+        "4" => 21,
+        "6" => 22,
+        "5" => 23,
+        "=" => 24,
+        "9" => 25,
+        "7" => 26,
+        "-" => 27,
+        "8" => 28,
+        "0" => 29,
+        "]" => 30,
+        "o" => 31,
+        "u" => 32,
+        "[" => 33,
+        "i" => 34,
+        "p" => 35,
+        "l" => 37,
+        "j" => 38,
+        "'" => 39,
+        "k" => 40,
+        ";" => 41,
+        "\\" => 42,
+        "," => 43,
+        "/" => 44,
+        "n" => 45,
+        "m" => 46,
+        "." => 47,
+        "`" => 50,
         _ => return None,
     };
     Some(code)

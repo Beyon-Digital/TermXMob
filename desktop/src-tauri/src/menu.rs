@@ -78,12 +78,23 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
 }
 
 pub fn sync_autostart(app: &AppHandle) {
-    let enabled = app.autolaunch().is_enabled().unwrap_or(false);
-    if let Some(menu) = app.menu() {
-        if let Some(check) = menu.get("autostart").and_then(|item| item.as_check_menuitem().cloned()) {
-            let _ = check.set_checked(enabled);
-        }
-    }
+    // `is_enabled()` for the LaunchAgent launcher talks to a system daemon over
+    // XPC. That call blocks until the daemon answers, and running it on the
+    // main thread during startup leaves the app stuck with no window if the
+    // daemon is slow or wedged — so query it off the main thread and only touch
+    // the menu once the answer arrives.
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let enabled = handle.autolaunch().is_enabled().unwrap_or(false);
+        let handle_for_menu = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Some(menu) = handle_for_menu.menu() {
+                if let Some(check) = menu.get("autostart").and_then(|item| item.as_check_menuitem().cloned()) {
+                    let _ = check.set_checked(enabled);
+                }
+            }
+        });
+    });
 }
 
 pub fn handle_menu_event(app: &AppHandle, id: &str) {

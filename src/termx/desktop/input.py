@@ -111,6 +111,8 @@ def _broker_event(event: dict[str, Any], target: str | None) -> bool:
     kind = event.get("type")
     if kind == "pointer":
         action = str(event.get("action") or "move")
+        if event.get("relative"):
+            return broker.send_relative_move(float(event.get("dx") or 0), float(event.get("dy") or 0))
         if action == "wheel":
             return broker.send_input(
                 {
@@ -134,16 +136,41 @@ def _broker_event(event: dict[str, Any], target: str | None) -> bool:
     if kind == "key":
         name = str(event.get("key") or "")
         action = str(event.get("action") or "down")
+        modifiers = [str(item) for item in (event.get("modifiers") or []) if isinstance(item, str)]
         if not name:
             return True
         if len(name) == 1:
+            if modifiers:
+                # Chords (⌘C, ⇧A) need real key events; the shell maps characters
+                # to virtual key codes.
+                return broker.send_input(
+                    {"kind": "key", "key": name, "down": action != "up", "modifiers": modifiers}
+                )
             return broker.send_input({"kind": "text", "text": name})
-        sent = broker.send_input({"kind": "key", "key": name.lower(), "down": action != "up"})
+        payload = {"kind": "key", "key": name.lower(), "down": action != "up"}
+        if modifiers:
+            payload["modifiers"] = modifiers
+        sent = broker.send_input(payload)
         if action == "tap":
-            sent = broker.send_input({"kind": "key", "key": name.lower(), "down": False}) and sent
+            release = {"kind": "key", "key": name.lower(), "down": False}
+            sent = broker.send_input(release) and sent
         return sent
     if kind == "text":
-        return broker.send_input({"kind": "text", "text": str(event.get("data") or "")})
+        data = str(event.get("data") or "")
+        modifiers = [str(item) for item in (event.get("modifiers") or []) if isinstance(item, str)]
+        if modifiers:
+            # Typing while a modifier is held: post each character as a key
+            # event so the modifier applies.
+            ok = True
+            for character in data:
+                ok = (
+                    broker.send_input(
+                        {"kind": "key", "key": character, "down": True, "modifiers": modifiers}
+                    )
+                    and ok
+                )
+            return ok
+        return broker.send_input({"kind": "text", "text": data})
     return False
 
 
@@ -152,6 +179,9 @@ def _pointer(event: dict[str, Any], target: str | None = None) -> None:
     y = float(event.get("y") or 0)
     action = str(event.get("action") or "move")
     button = int(event.get("button") or 1)
+    if event.get("relative"):
+        if _relative_pointer(event):
+            return
     probe = probe_desktop()
     if probe.input_backend == "sendinput" and sys.platform == "win32":
         _win_pointer(event, x, y, action, button)
@@ -185,6 +215,41 @@ def _pointer(event: dict[str, Any], target: str | None = None) -> None:
             subprocess.run(["xdotool", "click", key], check=False)
         return
     raise InputError("pointer input is not available")
+
+
+def _relative_pointer(event: dict[str, Any]) -> bool:
+    """Trackpad-style relative movement, per platform API.
+
+    Windows: SendInput with MOUSEEVENTF_MOVE and no ABSOLUTE flag is a relative
+    move by definition. X11: XTestFakeRelativeMotionEvent. macOS: applied by the
+    privileged shell through the broker.
+    """
+    dx = float(event.get("dx") or 0)
+    dy = float(event.get("dy") or 0)
+    if dx == 0 and dy == 0:
+        return True
+    if sys.platform == "win32":
+        INPUT, MOUSEINPUT, _KEYBDINPUT = _win_input_structs()
+        _ensure_windows_dpi_awareness()
+        return _send_inputs(
+            [
+                INPUT(
+                    type=INPUT_MOUSE,
+                    mi=MOUSEINPUT(dx=int(round(dx)), dy=int(round(dy)), mouseData=0, dwFlags=MOUSEEVENTF_MOVE, time=0, dwExtraInfo=0),
+                )
+            ]
+        )
+    if sys.platform.startswith("linux"):
+        adapter = _xtest()
+        if adapter is None:
+            return False
+        adapter.relative_motion(dx, dy)
+        return True
+    if sys.platform == "darwin":
+        from termx.desktop import broker
+
+        return broker.send_relative_move(dx, dy)
+    return False
 
 
 def _key(event: dict[str, Any]) -> None:
@@ -619,6 +684,10 @@ class _XTest:
 
     def motion(self, x: float, y: float) -> None:
         self.xtst.XTestFakeMotionEvent(self.display, self.screen, int(x), int(y), 0)
+        self._flush()
+
+    def relative_motion(self, dx: float, dy: float) -> None:
+        self.xtst.XTestFakeRelativeMotionEvent(self.display, int(dx), int(dy), 0)
         self._flush()
 
     def button(self, button: int, pressed: bool) -> None:

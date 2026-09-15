@@ -27,14 +27,44 @@ pub fn quit(app: &tauri::AppHandle) {
     });
 }
 
+/// True when another Termx shell process is already running.
+///
+/// This replaces tauri-plugin-single-instance: that plugin blocks the main
+/// thread in synchronous XPC when a previous instance left a stale
+/// registration behind (observed: the app never finished launching), so the
+/// guard is a plain process scan instead.
+#[cfg(unix)]
+fn other_instance_running() -> bool {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-A", "-o", "pid=,command="])
+        .output();
+    let Ok(output) = output else {
+        return false;
+    };
+    let me = std::process::id().to_string();
+    String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+        let line = line.trim();
+        if !line.contains("Termx.app/Contents/MacOS/termx-desktop") {
+            return false;
+        }
+        !line.starts_with(&format!("{me} "))
+    })
+}
+
+#[cfg(not(unix))]
+fn other_instance_running() -> bool {
+    false
+}
+
 fn main() {
     let autostart = std::env::args().any(|arg| arg == "--autostart");
     ui::START_HIDDEN.store(autostart, Ordering::SeqCst);
+    if other_instance_running() {
+        eprintln!("termx: another Termx instance is already running");
+        return;
+    }
 
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            ui::show_main_window(app);
-        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -51,11 +81,16 @@ fn main() {
     builder
         .setup(|app| {
             let handle = app.handle().clone();
+            logging::desktop(&handle, "setup: start");
             config::prepare_dirs(&handle);
             let desktop_config = config::load(&handle);
+            logging::desktop(&handle, "setup: config loaded");
             ui::create_main_window(&handle)?;
+            logging::desktop(&handle, "setup: window created");
             tray::init(&handle)?;
+            logging::desktop(&handle, "setup: tray ready");
             menu::sync_autostart(&handle);
+            logging::desktop(&handle, "setup: autostart syncing");
             let log_handle = handle.clone();
             if let Some(path) = broker::start(handle.clone(), move |line| logging::desktop(&log_handle, line)) {
                 logging::desktop(&handle, &format!("privileged broker ready at {path}"));
