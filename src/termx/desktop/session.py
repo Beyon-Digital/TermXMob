@@ -20,6 +20,7 @@ from termx.desktop.capture import (
 )
 from termx.desktop.input import InputError, apply_event, clipboard_get, clipboard_set
 from termx.desktop.permissions import permission_snapshot
+from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
 
 IDLE_GRACE_DEFAULT = 5.0
 
@@ -52,8 +53,11 @@ def _prompt_once(which: str) -> None:
 
 
 class DesktopManager:
-    def __init__(self, store: ConfigStore | None = None) -> None:
+    def __init__(self, store: ConfigStore | None = None, rtc: Any | None = None) -> None:
         self.store = store
+        # WebRTC signalling runs over the session socket so the real-time path
+        # never needs an HTTP round trip.
+        self.rtc = rtc
         self.view_only = store.get().desktop.view_only_default if store is not None else True
         self.display_id: str | None = None
         self._lock = asyncio.Lock()
@@ -90,6 +94,69 @@ class DesktopManager:
     async def _schedule_idle_close(self, grace: float) -> None:
         await self._cancel_idle_close()
         self._idle_task = asyncio.create_task(self._close_when_idle(grace))
+
+    async def _ws_create_display(self, websocket: WebSocket, payload: dict[str, Any]) -> None:
+        """Create a virtual display on behalf of a socket client."""
+        width = int(payload.get("width") or 1170)
+        height = int(payload.get("height") or 2532)
+        try:
+            created = await asyncio.to_thread(
+                create_virtual_display,
+                width,
+                height,
+                float(payload.get("dpr") or 2.0),
+                int(payload.get("refresh_hz") or 60),
+                owner=payload.get("owner"),
+            )
+        except VirtualDisplayError as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            return
+        self.display_id = str(created["id"])
+        await websocket.send_text(
+            json.dumps({"type": "displays", "created": created, "id": self.display_id, **self.snapshot()})
+        )
+
+    async def _ws_rtc(self, websocket: WebSocket, payload: dict[str, Any]) -> None:
+        """WebRTC signalling over the session socket instead of HTTP."""
+        rtc = self.rtc
+        session_id = str(payload.get("session_id") or "desktop")
+        if rtc is None or not rtc.available():
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "rtc",
+                        "action": payload.get("action") or "offer",
+                        "ok": False,
+                        "error": "WebRTC is unavailable on this host; using WebSocket frames",
+                    }
+                )
+            )
+            return
+        action = str(payload.get("action") or "offer")
+        try:
+            if action == "offer":
+                result = await asyncio.to_thread(
+                    rtc.handle_offer, session_id, payload.get("offer") or {}
+                )
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "rtc",
+                            "action": "answer",
+                            "ok": True,
+                            "session_id": result.get("session_id", session_id),
+                            "answer": result.get("answer"),
+                        }
+                    )
+                )
+            elif action == "ice":
+                await asyncio.to_thread(rtc.add_ice, session_id, payload.get("candidate") or {})
+            elif action == "close":
+                await asyncio.to_thread(rtc.close, session_id)
+        except Exception as exc:  # surface negotiation failures to the client
+            await websocket.send_text(
+                json.dumps({"type": "rtc", "action": action, "ok": False, "error": str(exc)})
+            )
 
     def snapshot(self) -> dict[str, Any]:
         displays = list_displays()
@@ -212,6 +279,21 @@ class DesktopManager:
                     await websocket.send_text(
                         json.dumps({"type": "displays", **self.snapshot()})
                     )
+                    continue
+                if kind == "display_create":
+                    await self._ws_create_display(websocket, payload)
+                    continue
+                if kind == "display_delete":
+                    display_id = str(payload.get("id") or "")
+                    try:
+                        await asyncio.to_thread(destroy_virtual_display, display_id)
+                    except VirtualDisplayError as exc:
+                        await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+                        continue
+                    await websocket.send_text(json.dumps({"type": "displays", **self.snapshot()}))
+                    continue
+                if kind == "rtc":
+                    await self._ws_rtc(websocket, payload)
                     continue
                 if kind == "metrics":
                     await websocket.send_text(json.dumps(self._metrics_payload()))

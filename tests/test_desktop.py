@@ -491,3 +491,73 @@ def test_destroy_all_skips_foreign_displays(monkeypatch) -> None:
     assert "theirs" in virtual_module._active
     virtual_module._active.clear()
     virtual_module._impls.clear()
+
+
+def test_ws_display_create_and_delete(tmp_path, monkeypatch) -> None:
+    """Displays are managed over the session socket, not HTTP."""
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+    from termx.desktop import virtual as virtual_module
+
+    created = {"value": None}
+    destroyed: list[str] = []
+
+    class FakeAdapter(VirtualAdapter):
+        id = "helper"
+
+        def available(self) -> bool:
+            return True
+
+        def can_create(self) -> bool:
+            return True
+
+        def create(self, display_id, width, height, dpr, refresh_hz) -> str:
+            created["value"] = {"id": display_id, "width": width, "height": height}
+            return "424242"
+
+        def destroy(self, name: str) -> None:
+            destroyed.append(name)
+
+    adapter = FakeAdapter()
+    monkeypatch.setattr(virtual_module, "_adapter_by_id", lambda _id: adapter)
+    monkeypatch.setattr(virtual_module, "active_adapter", lambda: adapter)
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    with client.websocket_connect("/api/desktop/session?k=secret") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "display_create", "width": 1170, "height": 2532})
+        created_message = ws.receive_json()
+        assert created_message["type"] == "displays"
+        assert created_message["created"]["kind"] == "virtual"
+        assert created_message["created"]["width"] == 1170
+        display_id = created_message["created"]["id"]
+        assert created["value"]["width"] == 1170
+
+        ws.send_json({"type": "display_delete", "id": display_id})
+        after = ws.receive_json()
+        assert after["type"] == "displays"
+        assert all(item["id"] != display_id for item in after["displays"])
+    assert destroyed == ["424242"]
+
+
+def test_ws_rtc_signalling_reports_availability(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    with client.websocket_connect("/api/desktop/session?k=secret") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "rtc", "action": "offer", "session_id": "abc", "offer": {"type": "offer", "sdp": "v=0\r\n"}})
+        reply = ws.receive_json()
+        assert reply["type"] == "rtc"
+        if state.rtc.available():
+            assert reply["action"] == "answer"
+            assert reply["answer"]["type"] == "answer"
+        else:
+            assert reply["ok"] is False
+            assert "unavailable" in reply["error"]

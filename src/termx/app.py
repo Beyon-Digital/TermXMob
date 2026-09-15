@@ -53,8 +53,8 @@ class AppState:
         self.sessions = SessionManager()
         self.tunnels = TunnelManager(self.store, port=port)
         self.forwards = ForwardManager(self.store)
-        self.desktop = DesktopManager(self.store)
         self.rtc = RtcManager()
+        self.desktop = DesktopManager(self.store, rtc=self.rtc)
         self.port = port
         self.request_shutdown = None
 
