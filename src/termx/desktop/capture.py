@@ -27,7 +27,9 @@ _HELPER_DISPLAY: str | None = None
 def list_displays() -> list[dict[str, object]]:
     from termx.desktop.virtual import list_virtual_displays
 
-    virtuals = list_virtual_displays()
+    # Adopt displays whose helpers survived an app restart so they stay visible
+    # (and closeable) instead of leaking as anonymous "physical" entries.
+    virtuals = list_virtual_displays(adopt=True)
     virtual_names = {str(item.get("name")) for item in virtuals}
     displays: list[dict[str, object]] = []
     for index, item in enumerate(list_physical_displays()):

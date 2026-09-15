@@ -95,7 +95,9 @@ def test_capture_frame_reads_binary_reply(tmp_path: Path) -> None:
     frame = broker.capture_frame("1", quality=55)
     assert frame == payload
     assert fake.seen[-1]["op"] == "frame"
-    assert fake.seen[-1]["display"] == "1"
+    # The broker parses the display id as a number; a string id would silently
+    # fall back to the main display.
+    assert fake.seen[-1]["display"] == 1
     fake.close()
 
 

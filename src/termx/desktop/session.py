@@ -208,6 +208,11 @@ class DesktopManager:
                         json.dumps({"type": "display", "id": self.display_id, **self.snapshot()})
                     )
                     continue
+                if kind == "displays":
+                    await websocket.send_text(
+                        json.dumps({"type": "displays", **self.snapshot()})
+                    )
+                    continue
                 if kind == "metrics":
                     await websocket.send_text(json.dumps(self._metrics_payload()))
                     continue
