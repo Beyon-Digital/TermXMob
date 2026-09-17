@@ -311,13 +311,13 @@ jobs:
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" \
               tauri signer sign -p "" "$out"
             gh release upload "$TAG" "$out" "$out.sig" --clobber
-            python3 - "$payload" "$out.sig" "$platform" "$version" "$TAG" <<'PY'
+            python3 - "$payload" "$out.sig" "$platform" "$version" "$TAG" "$RUNNER_TEMP/updater-$platform.json" <<'PY'
           import json, sys
-          name, sig, platform, version, tag = sys.argv[1:6]
+          name, sig, platform, version, tag, output = sys.argv[1:7]
           url = f"https://github.com/Psyborgs-git/TermXMob/releases/download/{tag}/{name}"
           entry = {"signature": open(sig).read().strip(), "url": url}
           manifest = {"version": version, "notes": f"Termx {tag}", "platforms": {platform: entry}}
-          open(f"/tmp/updater-{platform}.json", "w").write(json.dumps(manifest, indent=2))
+          open(output, "w").write(json.dumps(manifest, indent=2))
           print(f"updater entry {platform} -> {name}")
           PY
             exit 0
@@ -334,13 +334,13 @@ jobs:
             echo "::warning::no updater signature published for $platform"
             exit 0
           fi
-          python3 - "$(basename "$file")" "$sig" "$platform" "$version" "$TAG" <<'PY'
+          python3 - "$(basename "$file")" "$sig" "$platform" "$version" "$TAG" "$RUNNER_TEMP/updater-$platform.json" <<'PY'
           import json, sys
-          name, sig, platform, version, tag = sys.argv[1:6]
+          name, sig, platform, version, tag, output = sys.argv[1:7]
           url = f"https://github.com/Psyborgs-git/TermXMob/releases/download/{tag}/{name}"
           entry = {"signature": open(sig).read().strip(), "url": url}
           manifest = {"version": version, "notes": f"Termx {tag}", "platforms": {platform: entry}}
-          open(f"/tmp/updater-{platform}.json", "w").write(json.dumps(manifest, indent=2))
+          open(output, "w").write(json.dumps(manifest, indent=2))
           print(f"updater entry {platform} -> {name}")
           PY
 
@@ -349,7 +349,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-${{ matrix.name }}-${{ github.run_number }}
-          path: /tmp/updater-*.json
+          path: ${{ runner.temp }}/updater-*.json
           if-no-files-found: warn
           retention-days: 14
 
