@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hmac
 
-from termx.tokens import TokenStore
+from termx.tokens import SCOPES, TokenStore
 
 
 class Auth:
@@ -15,13 +15,23 @@ class Auth:
         return self.passcode is not None
 
     def check(self, provided: str | None) -> bool:
+        return self.scopes(provided) is not None
+
+    def scopes(self, provided: str | None) -> list[str] | None:
+        # A host without a passcode retains the existing trusted-local/open
+        # behavior. A passcode is the administrator credential and therefore
+        # receives every scope; paired tokens remain least-privilege capable.
         if self.passcode is None:
-            return True
+            return list(SCOPES)
         if hmac.compare_digest(provided or "", self.passcode):
-            return True
-        if self.token_store is not None and self.token_store.check(provided) is not None:
-            return True
-        return False
+            return list(SCOPES)
+        if self.token_store is not None:
+            return self.token_store.check(provided)
+        return None
+
+    def allows(self, provided: str | None, scope: str) -> bool:
+        scopes = self.scopes(provided)
+        return scopes is not None and scope in scopes
 
     def check_secret(self, provided: str | None) -> bool:
         if self.passcode is not None and hmac.compare_digest(provided or "", self.passcode):

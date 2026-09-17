@@ -61,6 +61,15 @@ def test_workspace_api_saves_and_restores(tmp_path: Path, monkeypatch) -> None:
 
     live = client.get("/api/sessions", params={"k": "secret"}).json()["sessions"]
     assert [item["id"] for item in live] == [snapshot["id"]]
+
+    # A second client connection must reuse the host-owned live PTY instead of
+    # replaying the persisted spec into a duplicate terminal.
+    repeated = client.post("/api/workspace/restore", params={"k": "secret"}).json()
+    assert repeated["restored"] == 0
+    assert repeated["already_running"] == 1
+    assert [item["id"] for item in repeated["sessions"]] == [snapshot["id"]]
+    assert len(client.get("/api/sessions", params={"k": "secret"}).json()["sessions"]) == 1
+
     client.delete(f"/api/sessions/{snapshot['id']}", params={"k": "secret"})
 
     assert client.get("/api/workspace", params={"k": "secret"}).status_code == 200

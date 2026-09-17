@@ -12,7 +12,17 @@ from typing import Any
 
 from termx.config import atomic_write, config_dir
 
-SCOPES = ("terminal", "screen-view", "screen-control", "tunnel-admin", "settings-admin")
+SCOPES = (
+    "terminal",
+    "screen-view",
+    "screen-control",
+    "tunnel-admin",
+    "settings-admin",
+    "agent-view",
+    "agent-run",
+    "agent-control",
+    "ai-settings",
+)
 _ALLOWED = frozenset(SCOPES)
 
 
