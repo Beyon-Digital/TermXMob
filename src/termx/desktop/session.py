@@ -67,6 +67,7 @@ class DesktopManager:
         self._idle_task: asyncio.Task[None] | None = None
         self._fps = 0.0
         self._last_capture_ms = 0
+        self._target_fps = 12
 
     async def _cancel_idle_close(self) -> None:
         task = self._idle_task
@@ -136,7 +137,9 @@ class DesktopManager:
         try:
             if action == "offer":
                 result = await asyncio.to_thread(
-                    rtc.handle_offer, session_id, payload.get("offer") or {}
+                    rtc.handle_offer,
+                    session_id,
+                    {**(payload.get("offer") or {}), "_termx_fps": self._target_fps},
                 )
                 await websocket.send_text(
                     json.dumps(
@@ -170,6 +173,7 @@ class DesktopManager:
             "view_only": self.view_only,
             "permissions": permission_snapshot(),
             "fps": int(round(self._fps)),
+            "target_fps": self._target_fps,
             "last_capture_ms": self._last_capture_ms,
         }
 
@@ -227,7 +231,8 @@ class DesktopManager:
                     await asyncio.sleep(1.5)
                 except Exception:
                     break
-                await asyncio.sleep(0.12)
+                elapsed = time.monotonic() - started
+                await asyncio.sleep(max(0.0, (1.0 / self._target_fps) - elapsed))
 
         pump = asyncio.create_task(frames())
         self._pumps.add(pump)
@@ -285,12 +290,38 @@ class DesktopManager:
                     continue
                 if kind == "display_delete":
                     display_id = str(payload.get("id") or "")
+                    previous_display = self.display_id
                     try:
+                        if self.display_id == display_id:
+                            # Stop the capture helper before removing its output,
+                            # then select a surviving screen for the next frame.
+                            await asyncio.to_thread(close_capture)
+                            remaining = [item for item in list_displays() if str(item.get("id")) != display_id]
+                            self.display_id = next(
+                                (str(item["id"]) for item in remaining if item.get("main")),
+                                str(remaining[0]["id"]) if remaining else None,
+                            )
                         await asyncio.to_thread(destroy_virtual_display, display_id)
                     except VirtualDisplayError as exc:
+                        self.display_id = previous_display
                         await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
                         continue
                     await websocket.send_text(json.dumps({"type": "displays", **self.snapshot()}))
+                    continue
+                if kind == "stream":
+                    try:
+                        requested_fps = int(payload.get("fps") or 12)
+                    except (TypeError, ValueError):
+                        requested_fps = 12
+                    self._target_fps = max(1, min(30, requested_fps))
+                    if self.rtc is not None:
+                        try:
+                            await asyncio.to_thread(self.rtc.set_fps, "desktop", self._target_fps)
+                        except Exception:
+                            pass
+                    await websocket.send_text(
+                        json.dumps({"type": "stream", "fps": self._target_fps})
+                    )
                     continue
                 if kind == "rtc":
                     await self._ws_rtc(websocket, payload)

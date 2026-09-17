@@ -538,10 +538,15 @@ def test_ws_display_create_and_delete(tmp_path, monkeypatch) -> None:
         display_id = created_message["created"]["id"]
         assert created["value"]["width"] == 1170
 
+        ws.send_json({"type": "stream", "fps": 24})
+        stream = ws.receive_json()
+        assert stream == {"type": "stream", "fps": 24}
+
         ws.send_json({"type": "display_delete", "id": display_id})
         after = ws.receive_json()
         assert after["type"] == "displays"
         assert all(item["id"] != display_id for item in after["displays"])
+        assert after["selected_display"] != display_id
     assert destroyed == ["424242"]
 
 

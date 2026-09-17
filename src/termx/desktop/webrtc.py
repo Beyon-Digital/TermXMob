@@ -110,13 +110,22 @@ def _jpeg_to_video_frame(jpeg: bytes) -> Any:
     return _av.VideoFrame.from_ndarray(array, format="bgr24")
 
 
-def _screen_track() -> Any:
+def _screen_track(fps: int = 12) -> Any:
     base = _VideoStreamTrack
     if base is None:
         raise RtcError("WebRTC backend unavailable")
 
     class ScreenTrack(base):
+        def __init__(self) -> None:
+            super().__init__()
+            self.target_fps = max(1, min(30, int(fps)))
+            self._last_frame_at = 0.0
+
         async def recv(self) -> Any:
+            loop = asyncio.get_running_loop()
+            remaining = (1.0 / self.target_fps) - (loop.time() - self._last_frame_at)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
             pts, time_base = await self.next_timestamp()
             from termx.desktop.capture import grab_jpeg
 
@@ -126,6 +135,7 @@ def _screen_track() -> Any:
                 raise RtcError("video frame conversion unavailable")
             frame.pts = pts
             frame.time_base = time_base
+            self._last_frame_at = loop.time()
             return frame
 
     return ScreenTrack()
@@ -156,16 +166,22 @@ class AiortcBackend:
 
     def __init__(self) -> None:
         self._pcs: dict[str, Any] = {}
+        self._tracks: dict[str, Any] = {}
+        self._target_fps: dict[str, int] = {}
 
     def handle_offer(self, session_id: str, offer: dict[str, Any]) -> dict[str, Any]:
         if not self.available or _RTCPeerConnection is None or _RTCSessionDescription is None:
             raise RtcError("WebRTC backend unavailable")
+        target_fps = self._target_fps.get(session_id, 12)
         self.close(session_id)
+        self._target_fps[session_id] = target_fps
         return _run_coro(self._handle_offer(session_id, offer))
 
     async def _handle_offer(self, session_id: str, offer: dict[str, Any]) -> dict[str, Any]:
         pc = _RTCPeerConnection()
-        pc.addTrack(_screen_track())
+        track = _screen_track(self._target_fps.get(session_id, 12))
+        pc.addTrack(track)
+        self._tracks[session_id] = track
         self._pcs[session_id] = pc
         remote = _RTCSessionDescription(sdp=str(offer.get("sdp") or ""), type=str(offer.get("type") or "offer"))
         await pc.setRemoteDescription(remote)
@@ -194,6 +210,8 @@ class AiortcBackend:
             return
 
     def close(self, session_id: str) -> None:
+        self._tracks.pop(session_id, None)
+        self._target_fps.pop(session_id, None)
         pc = self._pcs.pop(session_id, None)
         if pc is None:
             return
@@ -203,6 +221,12 @@ class AiortcBackend:
                 _run_coro(closer)
         except Exception:
             return
+
+    def set_fps(self, session_id: str, fps: int) -> None:
+        self._target_fps[session_id] = max(1, min(30, int(fps)))
+        track = self._tracks.get(session_id)
+        if track is not None:
+            track.target_fps = self._target_fps[session_id]
 
 
 class RtcManager:
@@ -217,6 +241,7 @@ class RtcManager:
         self._backend = backend
         self._ice_servers = list(ice_servers or DEFAULT_ICE_SERVERS)
         self._sessions: dict[str, RtcSession] = {}
+        self._target_fps: dict[str, int] = {}
 
     def available(self) -> bool:
         backend = self._backend
@@ -237,12 +262,23 @@ class RtcManager:
         if session is None or session.closed:
             self.create_session(session_id)
             session = self._sessions[session_id]
+        requested_fps = offer.get("_termx_fps")
+        offer = {key: value for key, value in offer.items() if key != "_termx_fps"}
+        if requested_fps is not None:
+            self.set_fps(session_id, int(requested_fps))
         session.offer = offer
         if self._backend is None:
             raise RtcError("WebRTC backend unavailable")
         answer = self._backend.handle_offer(session_id, offer)
         session.answer = answer
         return {"answer": answer, "session_id": session_id}
+
+    def set_fps(self, session_id: str, fps: int) -> None:
+        target = max(1, min(30, int(fps)))
+        self._target_fps[session_id] = target
+        setter = getattr(self._backend, "set_fps", None)
+        if callable(setter):
+            setter(session_id, target)
 
     def add_ice(self, session_id: str, candidate: dict[str, Any]) -> None:
         session = self._sessions.get(session_id)
@@ -253,6 +289,7 @@ class RtcManager:
             self._backend.add_ice(session_id, candidate)
 
     def close(self, session_id: str) -> None:
+        self._target_fps.pop(session_id, None)
         session = self._sessions.pop(session_id, None)
         if session is None:
             return

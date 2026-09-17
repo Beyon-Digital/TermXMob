@@ -6,6 +6,7 @@ class FakeBackend:
         self.offers: list[tuple[str, dict]] = []
         self.ice: list[tuple[str, dict]] = []
         self.closed: list[str] = []
+        self.fps: list[tuple[str, int]] = []
 
     def handle_offer(self, session_id: str, offer: dict) -> dict:
         self.offers.append((session_id, offer))
@@ -16,6 +17,9 @@ class FakeBackend:
 
     def close(self, session_id: str) -> None:
         self.closed.append(session_id)
+
+    def set_fps(self, session_id: str, fps: int) -> None:
+        self.fps.append((session_id, fps))
 
 
 class RealBackend(FakeBackend):
@@ -48,6 +52,18 @@ def test_handle_offer_returns_answer() -> None:
     assert result["session_id"] == "s1"
     assert result["answer"] == {"type": "answer", "sdp": "v=0\r\n"}
     assert backend.offers == [("s1", {"type": "offer", "sdp": "v=0\r\n"})]
+
+
+def test_handle_offer_applies_fps_without_leaking_private_metadata() -> None:
+    backend = FakeBackend()
+    mgr = RtcManager(backend=backend)
+    result = mgr.handle_offer(
+        "desktop",
+        {"type": "offer", "sdp": "v=0\r\n", "_termx_fps": 24},
+    )
+    assert result["session_id"] == "desktop"
+    assert backend.fps == [("desktop", 24)]
+    assert backend.offers == [("desktop", {"type": "offer", "sdp": "v=0\r\n"})]
 
 
 def test_handle_offer_without_backend_raises() -> None:
