@@ -25,13 +25,26 @@ def _git(
     if shutil.which("git") is None:
         raise HTTPException(400, "Git is not installed on this host")
     try:
-        return subprocess.run(
+        if input_text is None:
+            return subprocess.run(
+                ["git", "-C", root, *args],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        result = subprocess.run(
             ["git", "-C", root, *args],
             capture_output=True,
-            text=True,
-            input=input_text,
+            input=input_text.encode("utf-8"),
             timeout=timeout,
             check=False,
+        )
+        return subprocess.CompletedProcess(
+            result.args,
+            result.returncode,
+            result.stdout.decode("utf-8", "replace"),
+            result.stderr.decode("utf-8", "replace"),
         )
     except subprocess.TimeoutExpired as exc:  # pragma: no cover - timing dependent
         raise HTTPException(504, "Git command timed out") from exc

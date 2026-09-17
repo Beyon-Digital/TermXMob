@@ -38,7 +38,7 @@ def test_project_tree_read_and_revision_checked_save(tmp_path: Path, monkeypatch
 
     read = client.get(f"/api/projects/{project_id}/file", params={"path": "app.py", "k": "secret"}).json()
     assert read["editable"] is True
-    assert read["content"] == "print('hello')\n"
+    assert read["content"] == (project / "app.py").read_bytes().decode("utf-8")
     revision = read["revision"]
 
     # Saving with the correct revision succeeds.
