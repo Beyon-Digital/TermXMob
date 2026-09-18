@@ -544,6 +544,16 @@ def test_ws_display_create_and_delete(tmp_path, monkeypatch) -> None:
     # path would otherwise fail before reaching the fake.
     monkeypatch.setattr(virtual_module, "_resolve_adapter", lambda *_args, **_kwargs: adapter)
     monkeypatch.setattr(virtual_module, "active_adapter", lambda: adapter)
+
+    from termx.desktop import session as session_module
+
+    def _no_capture(*_args: object, **_kwargs: object) -> bytes:
+        raise RuntimeError("no capture backend in this test")
+
+    # The frame pump reports capture failures over the socket; on headless hosts
+    # that error races the control replies asserted below. A non-CaptureError
+    # failure exits the pump silently instead.
+    monkeypatch.setattr(session_module, "grab_jpeg", _no_capture)
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
     with client.websocket_connect("/api/desktop/session?k=secret") as ws:
