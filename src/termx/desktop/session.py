@@ -211,6 +211,10 @@ class DesktopManager:
                         self._fps = 1.0 / dt
                     self._last_capture_ms = int((now - started) * 1000)
                     last = now
+                    if stop.is_set() or not resume.is_set():
+                        # Paused or disconnected while this frame was in flight;
+                        # don't deliver a frame after "paused" was acknowledged.
+                        continue
                     await websocket.send_bytes(frame)
                     if reported is not None:
                         reported = None
