@@ -2,6 +2,10 @@ import CTermxVirtualDisplay
 import Darwin
 import Foundation
 
+/// The dispatch source must stay referenced for the lifetime of the process:
+/// releasing a resumed source cancels it, which silently kills the watchdog.
+private var parentWatchdog: DispatchSourceTimer?
+
 enum CLIError: Error {
     case usage
     case io(String)
@@ -122,6 +126,7 @@ func createDisplay(width: Int, height: Int, refresh: Int, id: String, parentPID:
             }
         }
         timer.resume()
+        parentWatchdog = timer
     }
 
     // Keep the CGVirtualDisplay object alive for as long as this process runs.

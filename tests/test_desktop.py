@@ -115,6 +115,24 @@ def test_destroy_all_virtual_displays_clears_registry() -> None:
     assert len(fake.destroyed) == 2
 
 
+def test_destroy_all_sweeps_helpers_owned_by_this_process(monkeypatch) -> None:
+    """Helpers that drifted out of the registry are still killed at shutdown."""
+    destroy_all_virtual_displays()
+    helper = vmod._adapter_by_id("helper")
+    destroyed: list[str] = []
+    monkeypatch.setattr(
+        helper,
+        "list_existing",
+        lambda: [
+            {"display_id": 111, "pid": 999999, "parent_pid": os.getpid()},
+            {"display_id": 222, "pid": 999998, "parent_pid": os.getpid() + 1},
+        ],
+    )
+    monkeypatch.setattr(helper, "destroy", lambda name: destroyed.append(name))
+    destroy_all_virtual_displays()
+    assert destroyed == ["111"]
+
+
 def test_probe_virtual_true_only_when_adapter_can_create(monkeypatch) -> None:
     import termx.desktop.virtual as vmod
 

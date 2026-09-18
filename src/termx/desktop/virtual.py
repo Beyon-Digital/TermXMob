@@ -914,3 +914,18 @@ def destroy_all_virtual_displays() -> None:
             impl.destroy(str(rec["name"]))
         except VirtualDisplayError:
             continue
+    # Helpers spawned by this process can drift out of the registry (e.g. the
+    # rec was pruned while the helper still ran); sweep them by recorded owner.
+    adapter = _adapter_by_id("helper")
+    list_existing = getattr(adapter, "list_existing", None) if adapter is not None else None
+    if callable(list_existing):
+        try:
+            for record in list_existing():
+                if record.get("parent_pid") != os.getpid():
+                    continue
+                try:
+                    adapter.destroy(str(record["display_id"]))
+                except VirtualDisplayError:
+                    continue
+        except Exception:
+            pass
