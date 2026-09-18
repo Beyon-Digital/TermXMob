@@ -11,6 +11,9 @@ wheels/
 
 # Node
 node_modules/
+# The exported web bundle keeps its fonts under assets/node_modules/*/build/;
+# ignoring any of those paths ships packaged builds with no icon font.
+!desktop/web/assets/**
 package-lock.json
 .DS_Store
 
