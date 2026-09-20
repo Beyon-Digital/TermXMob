@@ -12,7 +12,7 @@ from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.manager import AgentManager
 from termx.agent.policy import evaluate_computer, evaluate_shell, redact
-from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderTurn
+from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderTurn, _parse_plan
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.app import AppState, create_app
@@ -33,6 +33,21 @@ class FakeComputer:
 
     async def release_all(self) -> None:
         self.released += 1
+
+
+def test_parse_plan_rejects_tool_markup_and_honors_requested_step_count() -> None:
+    prompt = "Use the computer to inspect the desktop in exactly two safe steps."
+    plan = _parse_plan(
+        "<tool_call>computer\n<arg_key>action</arg_key>\n<arg_value>screenshot</arg_value>\n</tool_call>",
+        prompt,
+    )
+
+    assert plan["summary"] == prompt
+    assert plan["steps"] == [
+        "Inspect the approved project or computer state",
+        "Verify and report the requested result",
+    ]
+    assert plan["tools"] == ["computer"]
 
 
 class FakeAdapter:

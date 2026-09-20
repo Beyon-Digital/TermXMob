@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -98,7 +99,8 @@ class OpenAIResponsesAdapter:
                     "You plan bounded development work on a user's paired computer. "
                     "Return JSON only with keys summary (string), steps (array of short strings), "
                     "tools (array containing shell and/or computer), and risks (array of strings). "
-                    "Do not claim work is complete. Keep the plan to 3-6 concrete steps."
+                    "Do not call tools or claim work is complete. Keep the plan to 3-6 concrete steps "
+                    "unless the user explicitly requests a different bounded count."
                 ),
                 "input": _task_input(prompt, cwd, manifest),
                 "max_output_tokens": 900,
@@ -414,9 +416,45 @@ def _parse_plan(text: str, prompt: str) -> dict[str, Any]:
             "tools": [str(item) for item in parsed.get("tools", []) if str(item) in {"shell", "computer"}],
             "risks": [str(item) for item in parsed.get("risks", []) if str(item).strip()][:6],
         }
+    tool_markup = bool(re.search(r"<(?:tool_call|arg_key|arg_value)>", candidate, re.IGNORECASE))
+    requested_count = _requested_step_count(prompt)
+    tools = []
+    if re.search(r"<tool_call>\s*computer\b", candidate, re.IGNORECASE):
+        tools.append("computer")
+    if re.search(r"<tool_call>\s*(?:run_shell|shell)\b", candidate, re.IGNORECASE):
+        tools.append("shell")
     return {
-        "summary": candidate[:500] or prompt[:500],
-        "steps": ["Inspect the selected project", "Complete the requested work", "Verify the result"],
-        "tools": ["shell"],
+        "summary": (prompt if tool_markup else candidate)[:500] or prompt[:500],
+        "steps": _fallback_plan_steps(requested_count),
+        "tools": tools or ["shell"],
         "risks": [],
     }
+
+
+def _requested_step_count(prompt: str) -> int | None:
+    words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+    match = re.search(
+        r"\b(?:exactly|in|with)\s+(one|two|three|four|five|six|[1-6])\s+(?:[a-z-]+\s+){0,3}steps?\b",
+        prompt,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = match.group(1).lower()
+    return words.get(value, int(value) if value.isdigit() else 3)
+
+
+def _fallback_plan_steps(count: int | None) -> list[str]:
+    if count == 1:
+        return ["Complete and verify the requested work"]
+    if count == 2:
+        return ["Inspect the approved project or computer state", "Verify and report the requested result"]
+    steps = [
+        "Inspect the approved project or computer state",
+        "Complete the requested work with the allowed tools",
+        "Verify and report the result",
+        "Review the result for unintended changes",
+        "Summarize the completed work and remaining risks",
+        "Provide the replayable evidence requested by the user",
+    ]
+    return steps[: count or 3]
