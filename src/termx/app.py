@@ -696,7 +696,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/agent/tasks/{task_id}/cancel")
-    def cancel_agent_task(
+    async def cancel_agent_task(
         task_id: str,
         x_termx_passcode: str | None = Header(default=None),
         authorization: str | None = Header(default=None),

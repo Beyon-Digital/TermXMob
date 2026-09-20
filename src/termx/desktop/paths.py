@@ -50,6 +50,19 @@ def _ensure_executable(path: Path) -> None:
 def _matches_host(path: Path) -> bool:
     if not path.is_file():
         return False
+    try:
+        magic = path.read_bytes()[:4]
+    except OSError:
+        return False
+    if magic in {
+        b"\xfe\xed\xfa\xce",
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xcf\xfa\xed\xfe",
+        b"\xca\xfe\xba\xbe",
+        b"\xbe\xba\xfe\xca",
+    }:
+        return sys.platform == "darwin"
     if os.name != "posix":
         return True
     try:

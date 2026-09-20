@@ -5,26 +5,85 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.manager import AgentManager
 from termx.agent.policy import evaluate_computer, evaluate_shell, redact
-from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderTurn
+from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderError, ProviderTurn, _parse_plan
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.app import AppState, create_app
+from termx.desktop import broker, input as desktop_input
 
 
 class FakeComputer:
     def __init__(self) -> None:
         self.released = 0
 
-    async def execute(self, actions: list[dict[str, Any]]) -> bytes:
+    async def execute(
+        self,
+        actions: list[dict[str, Any]],
+        *,
+        cancel: asyncio.Event | None = None,
+    ) -> bytes:
         return b"jpeg"
 
     async def release_all(self) -> None:
         self.released += 1
+
+
+def test_parse_plan_rejects_tool_markup_and_honors_requested_step_count() -> None:
+    prompt = "Use the computer to inspect the desktop in exactly two safe steps."
+    plan = _parse_plan(
+        "<tool_call>computer\n<arg_key>action</arg_key>\n<arg_value>screenshot</arg_value>\n</tool_call>",
+        prompt,
+    )
+
+    assert plan["summary"] == prompt
+    assert plan["steps"] == [
+        "Inspect the current desktop state",
+        "Verify and report the requested result",
+    ]
+    assert plan["tools"] == ["computer"]
+
+
+def test_parse_plan_rejects_nested_json_and_invalid_step_values() -> None:
+    prompt = "Inspect the desktop in exactly two safe steps."
+    plan = _parse_plan(
+        json.dumps(
+            {
+                "summary": json.dumps({"summary": "Inspect", "steps": ["One", "Two"]}),
+                "steps": [{"raw": "one"}, "[\"two\"]"],
+                "tools": ["computer"],
+                "risks": [{"raw": "none"}],
+            }
+        ),
+        prompt,
+    )
+
+    assert plan == {
+        "summary": prompt,
+        "steps": [
+            "Inspect the current desktop state",
+            "Verify and report the requested result",
+        ],
+        "tools": ["computer"],
+        "risks": [],
+    }
+
+
+def test_parse_plan_fallback_preserves_explicit_screenshot_and_wait_actions() -> None:
+    prompt = "Take a screenshot of the current desktop, then wait for 15 seconds in exactly two safe steps."
+    plan = _parse_plan("<tool_call>computer</tool_call>", prompt)
+
+    assert plan["steps"] == [
+        "Capture a screenshot of the current desktop",
+        "Wait for 15 seconds while keeping the task interruptible",
+    ]
+    assert plan["tools"] == ["computer"]
 
 
 class FakeAdapter:
@@ -131,6 +190,80 @@ class ComputerAdapter(FakeAdapter):
             usage={},
             output_items=[{"type": "message", "content": [{"type": "output_text", "text": "The visible result is verified."}]}],
         )
+
+
+class ComputerFunctionAdapter(FakeAdapter):
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        self.inputs.append(input_items)
+        self.turns += 1
+        if self.turns == 1:
+            call = ProviderCall(
+                type="computer",
+                call_id="computer-function-1",
+                name="use_computer",
+                actions=[{"type": "screenshot"}],
+            )
+            return ProviderTurn(
+                response_id="computer-function-response-1",
+                text="I will inspect the current screen.",
+                calls=[call],
+                usage={},
+                output_items=[
+                    {
+                        "type": "function_call",
+                        "call_id": call.call_id,
+                        "name": call.name,
+                        "arguments": json.dumps({"actions": call.actions}),
+                    }
+                ],
+            )
+        assert allow_computer is True
+        assert input_items is not None
+        output = next(item for item in input_items if item.get("type") == "function_call_output")
+        assert output["output"] == "Computer action completed."
+        screenshot = next(item for item in input_items if item.get("role") == "user")
+        assert screenshot["content"][1]["type"] == "input_image"
+        assert screenshot["content"][1]["image_url"].startswith("data:image/jpeg;base64,")
+        return ProviderTurn(
+            response_id="computer-function-response-2",
+            text="The current screen is visible.",
+            calls=[],
+            usage={},
+            output_items=[
+                {"type": "message", "content": [{"type": "output_text", "text": "The current screen is visible."}]}
+            ],
+        )
+
+
+class BlockingProviderAdapter(FakeAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        self.started.set()
+        await asyncio.sleep(30)
+        raise ProviderError("Provider request failed (404): The provider returned an error.")
 
 
 async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout: float = 3.0) -> dict[str, Any]:
@@ -280,7 +413,42 @@ def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Pat
         taken_over = await manager.takeover(paused["id"])
         assert taken_over["status"] == "cancelled"
         assert computer.released == 1
-        assert any(event["type"] == "control.takeover" for event in store.events(paused["id"]))
+        await manager.takeover(paused["id"])
+        events = store.events(paused["id"])
+        assert len([event for event in events if event["type"] == "control.takeover"]) == 1
+        assert len([event for event in events if event["type"] == "task.cancelled"]) == 1
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_cancel_interrupts_provider_wait_without_overwriting_cancelled_state(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = BlockingProviderAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Wait for the provider", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        await asyncio.wait_for(adapter.started.wait(), timeout=1)
+        manager.cancel(task["id"])
+
+        cancelled = await wait_for_status(store, task["id"], "cancelled")
+        assert cancelled["error"] == "Cancelled by user"
+        assert not any(event["type"] == "task.failed" for event in cancelled["events"])
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_computer_function_returns_screenshot_as_follow_up_input(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = ComputerFunctionAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Inspect the desktop", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        completed = await wait_for_status(store, task["id"], "completed")
+        assert completed["result"] == "The current screen is visible."
         await manager.close()
         store.close()
 
@@ -302,6 +470,84 @@ def test_policy_and_manifest_boundaries(tmp_path: Path) -> None:
     assert evaluate_shell("cat .env", str(tmp_path)).approval_required is True
     assert evaluate_computer([{"type": "type", "text": "password=secret"}]).approval_required is True
     assert "secret-value" not in redact("api_key=secret-value")
+
+
+def test_provider_call_public_redacts_sensitive_action_text() -> None:
+    call = ProviderCall(
+        type="computer",
+        call_id="computer-secret",
+        arguments={"purpose": "Use token=super-secret-value"},
+        actions=[{"type": "type", "text": "password=super-secret-value"}],
+        safety_checks=[{"message": "Submit api_key=super-secret-value"}],
+    )
+
+    public = call.public()
+
+    assert "super-secret-value" not in json.dumps(public)
+    assert public["actions"][0]["text"] == "[redacted]"
+
+
+def test_computer_controller_interrupts_and_executes_key_chords(monkeypatch) -> None:
+    async def run() -> None:
+        events: list[dict[str, Any]] = []
+        controller = ComputerController()
+
+        monkeypatch.setattr(
+            "termx.agent.computer.apply_event",
+            lambda event, target=None: events.append(event),
+        )
+
+        async def screenshot() -> bytes:
+            return b"jpeg"
+
+        monkeypatch.setattr(controller, "screenshot", screenshot)
+        result = await controller.execute([{"type": "keypress", "keys": ["CTRL", "L"]}])
+        assert result == b"jpeg"
+        assert events == [
+            {
+                "type": "key",
+                "key": "l",
+                "action": "tap",
+                "modifiers": ["control"],
+            },
+        ]
+
+        events.clear()
+        cancel = asyncio.Event()
+        cancel.set()
+        with pytest.raises(asyncio.CancelledError):
+            await controller.execute([{"type": "wait", "seconds": 5}], cancel=cancel)
+        assert events == [{"type": "release_all"}]
+
+    asyncio.run(run())
+
+
+def test_desktop_input_releases_character_key_chords(monkeypatch) -> None:
+    events: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        broker,
+        "send_input",
+        lambda event: events.append(event) or True,
+    )
+
+    assert desktop_input._broker_event(
+        {
+            "type": "key",
+            "key": "l",
+            "action": "tap",
+            "modifiers": ["meta"],
+        },
+        None,
+    )
+    assert events == [
+        {
+            "kind": "key",
+            "key": "l",
+            "down": True,
+            "modifiers": ["meta"],
+        },
+        {"kind": "key", "key": "l", "down": False},
+    ]
 
 
 def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:
@@ -335,6 +581,45 @@ def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:
     assert turn.calls[0].arguments["command"] == "pwd"
     assert turn.calls[1].actions[0]["type"] == "click"
     assert turn.calls[1].safety_checks[0]["id"] == "check-1"
+
+
+def test_compatible_adapter_uses_function_computer_tool(monkeypatch) -> None:
+    adapter = OpenAIResponsesAdapter(
+        base_url="https://example.com/v1",
+        model="model",
+        api_key="secret",
+        capabilities=["shell", "computer"],
+        native_computer=False,
+    )
+    payloads: list[dict[str, Any]] = []
+
+    async def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        payloads.append(payload)
+        return {
+            "id": "resp",
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": "pc",
+                    "name": "use_computer",
+                    "arguments": '{"actions":[{"type":"screenshot"}]}',
+                }
+            ],
+        }
+
+    monkeypatch.setattr(adapter, "_post", fake_post)
+    turn = asyncio.run(adapter.turn(prompt="look", cwd="/tmp", manifest={}, allow_computer=True))
+    computer_tool = next(tool for tool in payloads[0]["tools"] if tool.get("name") == "use_computer")
+    assert computer_tool["type"] == "function"
+    assert computer_tool["parameters"]["properties"]["actions"]["maxItems"] == 12
+    assert turn.calls == [
+        ProviderCall(
+            type="computer",
+            call_id="pc",
+            name="use_computer",
+            actions=[{"type": "screenshot"}],
+        )
+    ]
 
 
 def test_agent_api_scopes_and_write_only_provider(tmp_path: Path) -> None:
