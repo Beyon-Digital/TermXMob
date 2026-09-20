@@ -12,7 +12,7 @@ from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.manager import AgentManager
 from termx.agent.policy import evaluate_computer, evaluate_shell, redact
-from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderTurn, _parse_plan
+from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderError, ProviderTurn, _parse_plan
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.app import AppState, create_app
@@ -48,6 +48,31 @@ def test_parse_plan_rejects_tool_markup_and_honors_requested_step_count() -> Non
         "Verify and report the requested result",
     ]
     assert plan["tools"] == ["computer"]
+
+
+def test_parse_plan_rejects_nested_json_and_invalid_step_values() -> None:
+    prompt = "Inspect the desktop in exactly two safe steps."
+    plan = _parse_plan(
+        json.dumps(
+            {
+                "summary": json.dumps({"summary": "Inspect", "steps": ["One", "Two"]}),
+                "steps": [{"raw": "one"}, "[\"two\"]"],
+                "tools": ["computer"],
+                "risks": [{"raw": "none"}],
+            }
+        ),
+        prompt,
+    )
+
+    assert plan == {
+        "summary": prompt,
+        "steps": [
+            "Inspect the approved project or computer state",
+            "Verify and report the requested result",
+        ],
+        "tools": ["computer"],
+        "risks": [],
+    }
 
 
 class FakeAdapter:
@@ -209,6 +234,27 @@ class ComputerFunctionAdapter(FakeAdapter):
         )
 
 
+class BlockingProviderAdapter(FakeAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        self.started.set()
+        await asyncio.sleep(30)
+        raise ProviderError("Provider request failed (404): The provider returned an error.")
+
+
 async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout: float = 3.0) -> dict[str, Any]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
@@ -356,7 +402,28 @@ def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Pat
         taken_over = await manager.takeover(paused["id"])
         assert taken_over["status"] == "cancelled"
         assert computer.released == 1
-        assert any(event["type"] == "control.takeover" for event in store.events(paused["id"]))
+        await manager.takeover(paused["id"])
+        events = store.events(paused["id"])
+        assert len([event for event in events if event["type"] == "control.takeover"]) == 1
+        assert len([event for event in events if event["type"] == "task.cancelled"]) == 1
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_cancel_interrupts_provider_wait_without_overwriting_cancelled_state(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = BlockingProviderAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Wait for the provider", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        await asyncio.wait_for(adapter.started.wait(), timeout=1)
+        manager.cancel(task["id"])
+
+        cancelled = await wait_for_status(store, task["id"], "cancelled")
+        assert cancelled["error"] == "Cancelled by user"
+        assert not any(event["type"] == "task.failed" for event in cancelled["events"])
         await manager.close()
         store.close()
 

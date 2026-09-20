@@ -18,6 +18,7 @@ from termx.agent.providers import (
     ProviderAdapter,
     ProviderCall,
     ProviderError,
+    ProviderTurn,
 )
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import ACTIVE_STATUSES, AgentStore
@@ -204,10 +205,12 @@ class AgentManager:
         return self._task(task_id)
 
     async def takeover(self, task_id: str) -> dict[str, Any]:
-        task = self.cancel(task_id)
+        self.cancel(task_id)
         await self._computer.release_all()
-        self._emit(task_id, "control.takeover", {"message": "You have control"})
-        return task
+        if not any(event["type"] == "control.takeover" for event in self.store.events(task_id)):
+            self._emit(task_id, "control.takeover", {"message": "You have control"})
+        self._mark_cancelled(task_id)
+        return self._task(task_id)
 
     def steer(self, task_id: str, message: str) -> dict[str, Any]:
         task = self._task(task_id)
@@ -277,7 +280,9 @@ class AgentManager:
                 adapter = self._adapter(provider)
                 manifest = runtime.get("manifest") or await asyncio.to_thread(workspace_manifest, task["cwd"])
                 read_only = task.get("mode") == "ask"
-                turn = await adapter.turn(
+                turn = await self._provider_turn(
+                    adapter,
+                    cancel,
                     prompt=task["prompt"],
                     cwd=task["cwd"],
                     manifest=manifest,
@@ -285,6 +290,9 @@ class AgentManager:
                     allow_computer=(not read_only) and "computer" in provider["capabilities"],
                     read_only=read_only,
                 )
+                if cancel.is_set():
+                    await self._cancelled(task_id)
+                    return
                 self.store.update_task(task_id, previous_response_id=turn.response_id)
                 if turn.text:
                     self._emit(task_id, "assistant.message", {"text": turn.text})
@@ -310,7 +318,10 @@ class AgentManager:
         except asyncio.CancelledError:
             await self._cancelled(task_id)
         except Exception as exc:
-            self._fail(task_id, exc)
+            if cancel.is_set():
+                await self._cancelled(task_id)
+            else:
+                self._fail(task_id, exc)
         finally:
             self._cancel.pop(task_id, None)
 
@@ -386,6 +397,8 @@ class AgentManager:
     ) -> dict[str, Any] | list[dict[str, Any]]:
         task = self._task(task_id)
         cancel = self._cancel.setdefault(task_id, asyncio.Event())
+        if cancel.is_set():
+            raise asyncio.CancelledError
         self._emit(task_id, "tool.started", {"call": call.public()})
         if call.type == "function" and call.name == "run_shell":
             command = str(call.arguments.get("command") or "")
@@ -544,9 +557,52 @@ class AgentManager:
         return PolicyDecision(False, True, "Unknown tool", "Runs an unsupported tool request")
 
     async def _cancelled(self, task_id: str) -> None:
+        if self._task(task_id)["status"] == "cancelled":
+            return
         await self._computer.release_all()
+        self._mark_cancelled(task_id)
+
+    def _mark_cancelled(self, task_id: str) -> None:
+        if self._task(task_id)["status"] == "cancelled":
+            return
         self.store.update_task(task_id, status="cancelled", error="Cancelled by user")
         self._emit(task_id, "task.cancelled", {"message": "Cancelled by user"})
+
+    @staticmethod
+    async def _provider_turn(
+        adapter: ProviderAdapter,
+        cancel: asyncio.Event,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        input_items: list[dict[str, Any]] | None,
+        allow_computer: bool,
+        read_only: bool,
+    ) -> ProviderTurn:
+        turn = asyncio.create_task(
+            adapter.turn(
+                prompt=prompt,
+                cwd=cwd,
+                manifest=manifest,
+                input_items=input_items,
+                allow_computer=allow_computer,
+                read_only=read_only,
+            )
+        )
+        cancelled = asyncio.create_task(cancel.wait())
+        try:
+            done, _ = await asyncio.wait({turn, cancelled}, return_when=asyncio.FIRST_COMPLETED)
+            if cancelled in done:
+                turn.cancel()
+                await asyncio.gather(turn, return_exceptions=True)
+                raise asyncio.CancelledError
+            return await turn
+        finally:
+            cancelled.cancel()
+            if not turn.done():
+                turn.cancel()
+            await asyncio.gather(cancelled, turn, return_exceptions=True)
 
     def _fail(self, task_id: str, exc: Exception) -> None:
         if isinstance(exc, ProviderError):

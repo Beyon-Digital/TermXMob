@@ -404,31 +404,65 @@ def _parse_plan(text: str, prompt: str) -> dict[str, Any]:
         candidate = candidate.strip("`")
         if candidate.startswith("json"):
             candidate = candidate[4:].lstrip()
+    requested_count = _requested_step_count(prompt)
     try:
         parsed = json.loads(candidate)
     except json.JSONDecodeError:
         parsed = None
     if isinstance(parsed, dict):
-        steps = [str(item) for item in parsed.get("steps", []) if str(item).strip()][:6]
+        raw_steps = parsed.get("steps")
+        steps = [
+            cleaned
+            for item in (raw_steps if isinstance(raw_steps, list) else [])
+            if (cleaned := _plain_plan_text(item))
+        ][:6]
+        if requested_count is not None and len(steps) != requested_count:
+            steps = _fallback_plan_steps(requested_count)
         return {
-            "summary": str(parsed.get("summary") or prompt)[:500],
-            "steps": steps or ["Inspect the selected project", "Complete the requested work", "Verify the result"],
+            "summary": _plain_plan_text(parsed.get("summary")) or prompt[:500],
+            "steps": steps or _fallback_plan_steps(requested_count),
             "tools": [str(item) for item in parsed.get("tools", []) if str(item) in {"shell", "computer"}],
-            "risks": [str(item) for item in parsed.get("risks", []) if str(item).strip()][:6],
+            "risks": [
+                cleaned
+                for item in (
+                    parsed.get("risks", []) if isinstance(parsed.get("risks"), list) else []
+                )
+                if (cleaned := _plain_plan_text(item))
+            ][:6],
         }
     tool_markup = bool(re.search(r"<(?:tool_call|arg_key|arg_value)>", candidate, re.IGNORECASE))
-    requested_count = _requested_step_count(prompt)
     tools = []
     if re.search(r"<tool_call>\s*computer\b", candidate, re.IGNORECASE):
         tools.append("computer")
     if re.search(r"<tool_call>\s*(?:run_shell|shell)\b", candidate, re.IGNORECASE):
         tools.append("shell")
     return {
-        "summary": (prompt if tool_markup else candidate)[:500] or prompt[:500],
+        "summary": prompt[:500] if tool_markup else (_plain_plan_text(candidate) or prompt[:500]),
         "steps": _fallback_plan_steps(requested_count),
         "tools": tools or ["shell"],
         "risks": [],
     }
+
+
+def _plain_plan_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or re.search(r"<(?:tool_call|arg_key|arg_value)>", text, re.IGNORECASE):
+        return ""
+    if text.startswith("```"):
+        return ""
+    try:
+        structured = json.loads(text)
+    except json.JSONDecodeError:
+        structured = None
+    if isinstance(structured, (dict, list)):
+        return ""
+    if (text.startswith("{") and text.endswith("}")) or (
+        text.startswith("[") and text.endswith("]")
+    ):
+        return ""
+    return text[:500]
 
 
 def _requested_step_count(prompt: str) -> int | None:
