@@ -648,6 +648,12 @@ def test_desktop_input_release_all_releases_xtest_buttons_and_modifiers(monkeypa
             self.keys.append((code, pressed))
 
     adapter = FakeXTest()
+    monkeypatch.setattr(desktop_input.sys, "platform", "linux")
+    monkeypatch.setattr(
+        desktop_input,
+        "probe_desktop",
+        lambda: SimpleNamespace(input_backend="xtest"),
+    )
     monkeypatch.setattr(desktop_input, "_xtest", lambda: adapter)
     desktop_input.apply_event({"type": "release_all"})
 
