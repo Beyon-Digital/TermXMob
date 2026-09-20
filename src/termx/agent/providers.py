@@ -417,10 +417,10 @@ def _parse_plan(text: str, prompt: str) -> dict[str, Any]:
             if (cleaned := _plain_plan_text(item))
         ][:6]
         if requested_count is not None and len(steps) != requested_count:
-            steps = _fallback_plan_steps(requested_count)
+            steps = _fallback_plan_steps(prompt, requested_count)
         return {
             "summary": _plain_plan_text(parsed.get("summary")) or prompt[:500],
-            "steps": steps or _fallback_plan_steps(requested_count),
+            "steps": steps or _fallback_plan_steps(prompt, requested_count),
             "tools": [str(item) for item in parsed.get("tools", []) if str(item) in {"shell", "computer"}],
             "risks": [
                 cleaned
@@ -438,7 +438,7 @@ def _parse_plan(text: str, prompt: str) -> dict[str, Any]:
         tools.append("shell")
     return {
         "summary": prompt[:500] if tool_markup else (_plain_plan_text(candidate) or prompt[:500]),
-        "steps": _fallback_plan_steps(requested_count),
+        "steps": _fallback_plan_steps(prompt, requested_count),
         "tools": tools or ["shell"],
         "risks": [],
     }
@@ -478,17 +478,42 @@ def _requested_step_count(prompt: str) -> int | None:
     return words.get(value, int(value) if value.isdigit() else 3)
 
 
-def _fallback_plan_steps(count: int | None) -> list[str]:
-    if count == 1:
-        return ["Complete and verify the requested work"]
-    if count == 2:
-        return ["Inspect the approved project or computer state", "Verify and report the requested result"]
-    steps = [
-        "Inspect the approved project or computer state",
-        "Complete the requested work with the allowed tools",
-        "Verify and report the result",
-        "Review the result for unintended changes",
-        "Summarize the completed work and remaining risks",
-        "Provide the replayable evidence requested by the user",
-    ]
-    return steps[: count or 3]
+def _fallback_plan_steps(prompt: str, count: int | None) -> list[str]:
+    requested: list[str] = []
+    if re.search(r"\b(?:take|capture|grab|save)\s+(?:a\s+)?screenshot\b", prompt, re.IGNORECASE):
+        requested.append("Capture a screenshot of the current desktop")
+    wait = re.search(
+        r"\b(?:wait|pause)\s+(?:for\s+)?(\d+(?:\.\d+)?)\s*(seconds?|minutes?)\b",
+        prompt,
+        re.IGNORECASE,
+    )
+    if wait:
+        amount, unit = wait.groups()
+        requested.append(f"Wait for {amount} {unit.lower()} while keeping the task interruptible")
+    if not requested and re.search(r"\b(?:desktop|screen|computer)\b", prompt, re.IGNORECASE):
+        requested.append("Inspect the current desktop state")
+
+    defaults = (
+        [
+            "Verify and report the requested result",
+            "Review the result for unintended changes",
+            "Summarize the completed work and remaining risks",
+            "Complete the requested work with the allowed tools",
+            "Inspect the approved project or computer state",
+            "Provide the replayable evidence requested by the user",
+        ]
+        if requested
+        else [
+            "Inspect the approved project or computer state",
+            "Complete the requested work with the allowed tools",
+            "Verify and report the result",
+            "Review the result for unintended changes",
+            "Summarize the completed work and remaining risks",
+            "Provide the replayable evidence requested by the user",
+        ]
+    )
+    target = count or 3
+    steps = requested + [step for step in defaults if step not in requested]
+    if target == 1 and len(requested) > 1:
+        return ["; then ".join([requested[0], requested[1][0].lower() + requested[1][1:]])]
+    return steps[:target]

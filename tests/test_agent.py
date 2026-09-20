@@ -44,7 +44,7 @@ def test_parse_plan_rejects_tool_markup_and_honors_requested_step_count() -> Non
 
     assert plan["summary"] == prompt
     assert plan["steps"] == [
-        "Inspect the approved project or computer state",
+        "Inspect the current desktop state",
         "Verify and report the requested result",
     ]
     assert plan["tools"] == ["computer"]
@@ -67,12 +67,23 @@ def test_parse_plan_rejects_nested_json_and_invalid_step_values() -> None:
     assert plan == {
         "summary": prompt,
         "steps": [
-            "Inspect the approved project or computer state",
+            "Inspect the current desktop state",
             "Verify and report the requested result",
         ],
         "tools": ["computer"],
         "risks": [],
     }
+
+
+def test_parse_plan_fallback_preserves_explicit_screenshot_and_wait_actions() -> None:
+    prompt = "Take a screenshot of the current desktop, then wait for 15 seconds in exactly two safe steps."
+    plan = _parse_plan("<tool_call>computer</tool_call>", prompt)
+
+    assert plan["steps"] == [
+        "Capture a screenshot of the current desktop",
+        "Wait for 15 seconds while keeping the task interruptible",
+    ]
+    assert plan["tools"] == ["computer"]
 
 
 class FakeAdapter:
