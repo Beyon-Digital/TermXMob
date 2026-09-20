@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.manager import AgentManager
 from termx.agent.policy import evaluate_computer, evaluate_shell, redact
@@ -14,13 +16,19 @@ from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, Provider
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.app import AppState, create_app
+from termx.desktop import broker, input as desktop_input
 
 
 class FakeComputer:
     def __init__(self) -> None:
         self.released = 0
 
-    async def execute(self, actions: list[dict[str, Any]]) -> bytes:
+    async def execute(
+        self,
+        actions: list[dict[str, Any]],
+        *,
+        cancel: asyncio.Event | None = None,
+    ) -> bytes:
         return b"jpeg"
 
     async def release_all(self) -> None:
@@ -302,6 +310,84 @@ def test_policy_and_manifest_boundaries(tmp_path: Path) -> None:
     assert evaluate_shell("cat .env", str(tmp_path)).approval_required is True
     assert evaluate_computer([{"type": "type", "text": "password=secret"}]).approval_required is True
     assert "secret-value" not in redact("api_key=secret-value")
+
+
+def test_provider_call_public_redacts_sensitive_action_text() -> None:
+    call = ProviderCall(
+        type="computer",
+        call_id="computer-secret",
+        arguments={"purpose": "Use token=super-secret-value"},
+        actions=[{"type": "type", "text": "password=super-secret-value"}],
+        safety_checks=[{"message": "Submit api_key=super-secret-value"}],
+    )
+
+    public = call.public()
+
+    assert "super-secret-value" not in json.dumps(public)
+    assert public["actions"][0]["text"] == "[redacted]"
+
+
+def test_computer_controller_interrupts_and_executes_key_chords(monkeypatch) -> None:
+    async def run() -> None:
+        events: list[dict[str, Any]] = []
+        controller = ComputerController()
+
+        monkeypatch.setattr(
+            "termx.agent.computer.apply_event",
+            lambda event, target=None: events.append(event),
+        )
+
+        async def screenshot() -> bytes:
+            return b"jpeg"
+
+        monkeypatch.setattr(controller, "screenshot", screenshot)
+        result = await controller.execute([{"type": "keypress", "keys": ["CTRL", "L"]}])
+        assert result == b"jpeg"
+        assert events == [
+            {
+                "type": "key",
+                "key": "l",
+                "action": "tap",
+                "modifiers": ["control"],
+            },
+        ]
+
+        events.clear()
+        cancel = asyncio.Event()
+        cancel.set()
+        with pytest.raises(asyncio.CancelledError):
+            await controller.execute([{"type": "wait", "seconds": 5}], cancel=cancel)
+        assert events == [{"type": "release_all"}]
+
+    asyncio.run(run())
+
+
+def test_desktop_input_releases_character_key_chords(monkeypatch) -> None:
+    events: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        broker,
+        "send_input",
+        lambda event: events.append(event) or True,
+    )
+
+    assert desktop_input._broker_event(
+        {
+            "type": "key",
+            "key": "l",
+            "action": "tap",
+            "modifiers": ["meta"],
+        },
+        None,
+    )
+    assert events == [
+        {
+            "kind": "key",
+            "key": "l",
+            "down": True,
+            "modifiers": ["meta"],
+        },
+        {"kind": "key", "key": "l", "down": False},
+    ]
 
 
 def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:

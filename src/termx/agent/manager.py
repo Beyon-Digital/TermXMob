@@ -417,7 +417,7 @@ class AgentManager:
                 "output": json.dumps(public, ensure_ascii=False),
             }
         if call.type == "computer":
-            screenshot = await self._computer.execute(call.actions)
+            screenshot = await self._computer.execute(call.actions, cancel=cancel)
             artifact = self.store.save_artifact(task_id, "screenshot", "image/jpeg", screenshot)
             self._emit(task_id, "computer.screenshot", {"artifact": artifact})
             self._emit(task_id, "tool.finished", {"call_id": call.call_id, "artifact": artifact})

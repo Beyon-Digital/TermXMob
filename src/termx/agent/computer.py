@@ -16,12 +16,25 @@ class ComputerController:
     async def screenshot(self) -> bytes:
         return await asyncio.to_thread(grab_jpeg, self.display_id)
 
-    async def execute(self, actions: list[dict[str, Any]]) -> bytes:
+    async def execute(
+        self,
+        actions: list[dict[str, Any]],
+        *,
+        cancel: asyncio.Event | None = None,
+    ) -> bytes:
         if len(actions) > MAX_ACTIONS:
             raise ValueError(f"computer action batch exceeds {MAX_ACTIONS} actions")
-        for action in actions:
-            await self._action(action)
-        return await self.screenshot()
+        try:
+            for action in actions:
+                if cancel is not None and cancel.is_set():
+                    raise asyncio.CancelledError
+                await self._action(action, cancel=cancel)
+            if cancel is not None and cancel.is_set():
+                raise asyncio.CancelledError
+            return await self.screenshot()
+        except BaseException:
+            await self.release_all()
+            raise
 
     async def release_all(self) -> None:
         await asyncio.to_thread(apply_event, {"type": "release_all"})
@@ -35,13 +48,25 @@ class ComputerController:
         display_id = str(selected.get("id")) if selected.get("id") is not None else None
         return display_id, float(selected.get("width") or 1), float(selected.get("height") or 1)
 
-    async def _action(self, action: dict[str, Any]) -> None:
+    async def _action(
+        self,
+        action: dict[str, Any],
+        *,
+        cancel: asyncio.Event | None = None,
+    ) -> None:
         kind = str(action.get("type") or "")
         if kind in {"screenshot", ""}:
             return
         if kind == "wait":
-            await asyncio.sleep(min(5.0, max(0.0, float(action.get("seconds") or 1))))
-            return
+            delay = min(5.0, max(0.0, float(action.get("seconds") or 1)))
+            if cancel is None:
+                await asyncio.sleep(delay)
+                return
+            try:
+                await asyncio.wait_for(cancel.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                return
+            raise asyncio.CancelledError
         display_id, width, height = self._display()
         target = pointer_target(display_id) if display_id else None
         if kind in {"click", "double_click", "move"}:
@@ -74,6 +99,8 @@ class ComputerController:
                 target,
             )
             for point in path[1:]:
+                if cancel is not None and cancel.is_set():
+                    raise asyncio.CancelledError
                 await asyncio.to_thread(
                     apply_event,
                     {
@@ -120,11 +147,41 @@ class ComputerController:
             keys = action.get("keys") or []
             if isinstance(keys, str):
                 keys = [keys]
-            for key in keys:
-                await asyncio.to_thread(apply_event, {"type": "key", "key": str(key), "action": "tap"})
+            normalized = [_key_name(key) for key in keys if str(key).strip()]
+            modifiers = [key for key in normalized if key in _MODIFIERS]
+            regular = [key for key in normalized if key not in _MODIFIERS]
+            if not regular:
+                regular = modifiers
+                modifiers = []
+            for key in regular:
+                await asyncio.to_thread(
+                    apply_event,
+                    {
+                        "type": "key",
+                        "key": key,
+                        "action": "tap",
+                        "modifiers": modifiers,
+                    },
+                )
             return
         raise ValueError(f"unsupported computer action: {kind}")
 
 
 def _button(value: Any) -> int:
     return {"left": 1, "middle": 2, "right": 3}.get(str(value or "left").lower(), 1)
+
+
+_MODIFIERS = {"shift", "control", "alt", "meta"}
+_KEY_ALIASES = {
+    "cmd": "meta",
+    "command": "meta",
+    "ctrl": "control",
+    "option": "alt",
+    "return": "enter",
+    "esc": "escape",
+}
+
+
+def _key_name(value: Any) -> str:
+    key = str(value).strip().lower()
+    return _KEY_ALIASES.get(key, key)

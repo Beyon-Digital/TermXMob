@@ -143,9 +143,12 @@ def _broker_event(event: dict[str, Any], target: str | None) -> bool:
             if modifiers:
                 # Chords (⌘C, ⇧A) need real key events; the shell maps characters
                 # to virtual key codes.
-                return broker.send_input(
+                sent = broker.send_input(
                     {"kind": "key", "key": name, "down": action != "up", "modifiers": modifiers}
                 )
+                if action == "tap":
+                    sent = broker.send_input({"kind": "key", "key": name, "down": False}) and sent
+                return sent
             return broker.send_input({"kind": "text", "text": name})
         payload = {"kind": "key", "key": name.lower(), "down": action != "up"}
         if modifiers:
@@ -255,7 +258,21 @@ def _relative_pointer(event: dict[str, Any]) -> bool:
 def _key(event: dict[str, Any]) -> None:
     key = str(event.get("key") or "")
     action = str(event.get("action") or "down")
+    modifiers = [
+        str(item)
+        for item in (event.get("modifiers") or [])
+        if isinstance(item, str)
+    ]
     if not key:
+        return
+    if modifiers:
+        if action in {"down", "tap"}:
+            for modifier in modifiers:
+                _key({"key": modifier, "action": "down"})
+        _key({"key": key, "action": action})
+        if action in {"up", "tap"}:
+            for modifier in reversed(modifiers):
+                _key({"key": modifier, "action": "up"})
         return
     probe = probe_desktop()
     if probe.input_backend == "sendinput" and sys.platform == "win32":
@@ -377,6 +394,13 @@ def _windows_absolute_point(px: int, py: int) -> tuple[int, int]:
     return _virtual_desktop_point(px, py, _windows_virtual_desktop())
 
 _WIN_VK = {
+    "shift": 0x10,
+    "control": 0x11,
+    "ctrl": 0x11,
+    "alt": 0x12,
+    "meta": 0x5B,
+    "super": 0x5B,
+    "command": 0x5B,
     "return": 0x0D,
     "enter": 0x0D,
     "escape": 0x1B,
@@ -523,6 +547,8 @@ def _win_pointer(event: dict[str, Any], x: float, y: float, action: str, button:
 def _win_key(key: str, action: str) -> None:
     INPUT, _MOUSEINPUT, KEYBDINPUT = _win_input_structs()
     code = _WIN_VK.get(key.lower())
+    if code is None and len(key) == 1 and key.isascii() and key.isalnum():
+        code = ord(key.upper())
     if code is None and len(key) == 1:
         _win_text(key)
         return
@@ -730,6 +756,10 @@ class _XTest:
             self.xtst.XTestFakeKeyEvent(self.display, shift_code, False, 0)
         self._flush()
 
+    def key(self, code: int, pressed: bool) -> None:
+        self.xtst.XTestFakeKeyEvent(self.display, code, pressed, 0)
+        self._flush()
+
 
 def _xtest() -> _XTest | None:
     """Return a cached XTest client for X11 sessions, or None."""
@@ -795,11 +825,11 @@ def _xtest_key(key: str, action: str) -> bool:
     code = adapter.keycode(name)
     if code is None:
         return False
+    if action == "down":
+        adapter.key(code, True)
+        return True
     if action == "up":
-        shift_code = adapter.keycode("Shift_L")
-        if shift_code:
-            adapter.xtst.XTestFakeKeyEvent(adapter.display, code, False, 0)
-            adapter.x11.XFlush(adapter.display)
+        adapter.key(code, False)
         return True
     adapter.press(code, shift=len(key) == 1 and adapter.needs_shift(code))
     return True
