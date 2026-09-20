@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
     "qrcode>=8.2",
     "uvicorn[standard]>=0.52.4",
     "websockets>=17.1",
@@ -32,7 +33,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]
 packaging = [

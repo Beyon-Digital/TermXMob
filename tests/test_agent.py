@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from termx.agent import providers as agent_providers
 from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.manager import AgentManager
@@ -22,6 +24,7 @@ from termx.desktop import broker, input as desktop_input
 class FakeComputer:
     def __init__(self) -> None:
         self.released = 0
+        self.actions: list[list[dict[str, Any]]] = []
 
     async def execute(
         self,
@@ -29,6 +32,7 @@ class FakeComputer:
         *,
         cancel: asyncio.Event | None = None,
     ) -> bytes:
+        self.actions.append(actions)
         return b"jpeg"
 
     async def release_all(self) -> None:
@@ -245,6 +249,45 @@ class ComputerFunctionAdapter(FakeAdapter):
         )
 
 
+class SecretComputerAdapter(ComputerAdapter):
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        if self.turns == 0:
+            self.turns += 1
+            call = ProviderCall(
+                type="computer",
+                call_id="computer-secret",
+                actions=[{"type": "type", "text": "token=super-secret-value"}],
+            )
+            return ProviderTurn(
+                response_id="computer-secret-response-1",
+                text="I will enter the approved value.",
+                calls=[call],
+                usage={},
+                output_items=[
+                    {"type": "computer_call", "call_id": call.call_id, "action": call.actions[0]}
+                ],
+            )
+        return await super().turn(
+            prompt=prompt,
+            cwd=cwd,
+            manifest=manifest,
+            previous_response_id=previous_response_id,
+            input_items=input_items,
+            allow_computer=allow_computer,
+            read_only=read_only,
+        )
+
+
 class BlockingProviderAdapter(FakeAdapter):
     def __init__(self) -> None:
         super().__init__()
@@ -374,6 +417,25 @@ def test_consequential_tool_pauses_and_denial_cancels(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_approved_tool_executes_private_call_without_persisting_secrets(tmp_path: Path) -> None:
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, SecretComputerAdapter())
+        task = await manager.create_task(prompt="Enter the value", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        _, pending = await wait_for_pending_approval(store, task["id"], "tool")
+
+        assert "super-secret-value" not in json.dumps(pending["payload"])
+        await manager.resolve_approval(task["id"], pending["id"], "approved")
+        await wait_for_status(store, task["id"], "completed")
+        assert manager._computer.actions == [
+            [{"type": "type", "text": "token=super-secret-value"}]
+        ]
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
 def test_ask_mode_runs_read_only_without_approval(tmp_path: Path) -> None:
     async def run() -> None:
         # Ask mode issues a mutating command; the manager must refuse it and the
@@ -417,6 +479,25 @@ def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Pat
         events = store.events(paused["id"])
         assert len([event for event in events if event["type"] == "control.takeover"]) == 1
         assert len([event for event in events if event["type"] == "task.cancelled"]) == 1
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_takeover_preserves_terminal_task_status(tmp_path: Path) -> None:
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await manager.create_task(prompt="Finish normally", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        completed = await wait_for_status(store, task["id"], "completed")
+
+        taken_over = await manager.takeover(task["id"])
+
+        assert taken_over["status"] == "completed"
+        assert taken_over["result"] == completed["result"]
+        assert manager._computer.released == 0
+        assert not any(event["type"] == "control.takeover" for event in store.events(task["id"]))
         await manager.close()
         store.close()
 
@@ -522,6 +603,111 @@ def test_computer_controller_interrupts_and_executes_key_chords(monkeypatch) -> 
     asyncio.run(run())
 
 
+def test_computer_controller_releases_drag_on_cancellation(monkeypatch) -> None:
+    async def run() -> None:
+        events: list[dict[str, Any]] = []
+        cancel = asyncio.Event()
+        controller = ComputerController()
+
+        def apply(event: dict[str, Any], target: str | None = None) -> None:
+            events.append(event)
+            if event.get("action") == "down":
+                cancel.set()
+
+        monkeypatch.setattr("termx.agent.computer.apply_event", apply)
+        monkeypatch.setattr(
+            controller,
+            "_display",
+            lambda: (None, 100.0, 100.0),
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await controller.execute(
+                [{"type": "drag", "path": [{"x": 10, "y": 10}, {"x": 20, "y": 20}]}],
+                cancel=cancel,
+            )
+
+        assert events[-1] == {"type": "release_all"}
+
+    asyncio.run(run())
+
+
+def test_desktop_input_release_all_releases_xtest_buttons_and_modifiers(monkeypatch) -> None:
+    class FakeXTest:
+        def __init__(self) -> None:
+            self.buttons: list[tuple[int, bool]] = []
+            self.keys: list[tuple[int, bool]] = []
+
+        def button(self, button: int, pressed: bool) -> None:
+            self.buttons.append((button, pressed))
+
+        def keycode(self, name: str) -> int:
+            return {"Shift_L": 1, "Control_L": 2, "Alt_L": 3, "Super_L": 4}[name]
+
+        def key(self, code: int, pressed: bool) -> None:
+            self.keys.append((code, pressed))
+
+    adapter = FakeXTest()
+    monkeypatch.setattr(desktop_input, "_xtest", lambda: adapter)
+    desktop_input.apply_event({"type": "release_all"})
+
+    assert adapter.buttons == [(1, False), (2, False), (3, False)]
+    assert adapter.keys == [(1, False), (2, False), (3, False), (4, False)]
+
+
+def test_desktop_input_release_all_uses_xdotool_fallback(monkeypatch) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        desktop_input,
+        "probe_desktop",
+        lambda: SimpleNamespace(input_backend="xdotool"),
+    )
+    monkeypatch.setattr(desktop_input, "_xtest", lambda: None)
+    monkeypatch.setattr(
+        desktop_input.subprocess,
+        "run",
+        lambda command, check=False: commands.append(command),
+    )
+
+    desktop_input.apply_event({"type": "release_all"})
+
+    assert commands == [
+        ["xdotool", "mouseup", "1"],
+        ["xdotool", "mouseup", "2"],
+        ["xdotool", "mouseup", "3"],
+        ["xdotool", "keyup", "Shift_L"],
+        ["xdotool", "keyup", "Control_L"],
+        ["xdotool", "keyup", "Alt_L"],
+        ["xdotool", "keyup", "Super_L"],
+    ]
+
+
+def test_desktop_input_release_all_uses_sendinput_on_windows(monkeypatch) -> None:
+    sent: list[Any] = []
+    monkeypatch.setattr(desktop_input.sys, "platform", "win32")
+    monkeypatch.setattr(
+        desktop_input,
+        "probe_desktop",
+        lambda: SimpleNamespace(input_backend="sendinput"),
+    )
+    monkeypatch.setattr(desktop_input, "_send_inputs", lambda inputs: sent.extend(inputs))
+
+    desktop_input.apply_event({"type": "release_all"})
+
+    assert [item.mi.dwFlags for item in sent[:3]] == [
+        desktop_input.MOUSEEVENTF_LEFTUP,
+        desktop_input.MOUSEEVENTF_MIDDLEUP,
+        desktop_input.MOUSEEVENTF_RIGHTUP,
+    ]
+    assert [item.ki.wVk for item in sent[3:]] == [
+        desktop_input._WIN_VK["shift"],
+        desktop_input._WIN_VK["control"],
+        desktop_input._WIN_VK["alt"],
+        desktop_input._WIN_VK["meta"],
+    ]
+    assert all(item.ki.dwFlags == desktop_input.KEYEVENTF_KEYUP for item in sent[3:])
+
+
 def test_desktop_input_releases_character_key_chords(monkeypatch) -> None:
     events: list[dict[str, Any]] = []
     monkeypatch.setattr(
@@ -548,6 +734,48 @@ def test_desktop_input_releases_character_key_chords(monkeypatch) -> None:
         },
         {"kind": "key", "key": "l", "down": False},
     ]
+
+
+def test_openai_adapter_cancellation_stops_http_request(monkeypatch) -> None:
+    async def run() -> None:
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            async def post(self, url: str, *, json: dict[str, Any]):
+                started.set()
+                try:
+                    await asyncio.sleep(30)
+                finally:
+                    stopped.set()
+
+        monkeypatch.setattr(
+            agent_providers.httpx,
+            "AsyncClient",
+            lambda **kwargs: FakeClient(),
+        )
+        adapter = OpenAIResponsesAdapter(
+            base_url="https://example.com/v1",
+            model="model",
+            api_key="secret",
+            capabilities=["shell"],
+        )
+
+        request = asyncio.create_task(adapter._post({"model": "model"}))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        request.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await request
+        await asyncio.wait_for(stopped.wait(), timeout=1)
+
+    asyncio.run(run())
 
 
 def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:

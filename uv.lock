@@ -748,6 +748,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pillow", marker = "sys_platform == 'win32'" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "qrcode" },
@@ -764,7 +765,6 @@ webrtc = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
 ]
 packaging = [
@@ -776,6 +776,7 @@ requires-dist = [
     { name = "aiortc", marker = "extra == 'webrtc'", specifier = ">=1.14" },
     { name = "av", marker = "extra == 'webrtc'", specifier = ">=15" },
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", marker = "extra == 'webrtc'", specifier = ">=2.3" },
     { name = "pillow", marker = "sys_platform == 'win32'", specifier = ">=11.0" },
     { name = "pywinpty", marker = "sys_platform == 'win32'", specifier = ">=2.0.15" },
@@ -786,10 +787,7 @@ requires-dist = [
 provides-extras = ["webrtc"]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "pytest", specifier = ">=9.1.1" },
-]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 packaging = [{ name = "pyinstaller", specifier = ">=6.16" }]
 
 [[package]]
