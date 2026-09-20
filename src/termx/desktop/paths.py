@@ -50,8 +50,6 @@ def _ensure_executable(path: Path) -> None:
 def _matches_host(path: Path) -> bool:
     if not path.is_file():
         return False
-    if os.name != "posix":
-        return True
     try:
         magic = path.read_bytes()[:4]
     except OSError:
@@ -65,6 +63,8 @@ def _matches_host(path: Path) -> bool:
         b"\xbe\xba\xfe\xca",
     }:
         return sys.platform == "darwin"
+    if os.name != "posix":
+        return True
     try:
         info = subprocess.check_output(["lipo", "-info", str(path)], text=True, stderr=subprocess.STDOUT)
     except (OSError, subprocess.CalledProcessError):
