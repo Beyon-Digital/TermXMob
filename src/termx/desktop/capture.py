@@ -190,7 +190,7 @@ def grab_jpeg(display_id: str | None = None) -> bytes:
             pass
     if shutil.which("scrot"):
         try:
-            return _tempfile_capture(["scrot", "-o", "-q", "55"])
+            return _tempfile_capture(["scrot", "-o", "-q", "55"], "jpg")
         except CaptureError:
             pass
     if shutil.which("spectacle"):

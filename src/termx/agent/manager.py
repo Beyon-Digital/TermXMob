@@ -331,7 +331,7 @@ class AgentManager:
                 # Read-only Ask mode never enters the approval flow: mutating
                 # commands are refused inline so the model can adjust.
                 output = await self._execute_call(task_id, call)
-                history.append(output)
+                history.extend(output if isinstance(output, list) else [output])
                 step += 1
                 continue
             if read_only and call.type == "computer":
@@ -353,7 +353,7 @@ class AgentManager:
                 self._emit(task_id, "task.status", {"status": "awaiting_approval"})
                 return True, history, step
             output = await self._execute_call(task_id, call)
-            history.append(output)
+            history.extend(output if isinstance(output, list) else [output])
             step += 1
         return False, history, step
 
@@ -379,7 +379,11 @@ class AgentManager:
         except Exception as exc:
             self._fail(task_id, exc)
 
-    async def _execute_call(self, task_id: str, call: ProviderCall) -> dict[str, Any]:
+    async def _execute_call(
+        self,
+        task_id: str,
+        call: ProviderCall,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         task = self._task(task_id)
         cancel = self._cancel.setdefault(task_id, asyncio.Event())
         self._emit(task_id, "tool.started", {"call": call.public()})
@@ -422,6 +426,27 @@ class AgentManager:
             self._emit(task_id, "computer.screenshot", {"artifact": artifact})
             self._emit(task_id, "tool.finished", {"call_id": call.call_id, "artifact": artifact})
             image = base64.b64encode(screenshot).decode("ascii")
+            if call.name == "use_computer":
+                return [
+                    {
+                        "type": "function_call_output",
+                        "call_id": call.call_id,
+                        "output": "Computer action completed.",
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": "Inspect the screenshot and continue the approved task.",
+                            },
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:image/jpeg;base64,{image}",
+                            },
+                        ],
+                    },
+                ]
             return {
                 "type": "computer_call_output",
                 "call_id": call.call_id,
@@ -470,6 +495,7 @@ class AgentManager:
             model=provider["model"],
             api_key=key,
             capabilities=provider["capabilities"],
+            native_computer=provider["kind"] == "openai",
         )
 
     def _task(self, task_id: str) -> dict[str, Any]:

@@ -141,6 +141,59 @@ class ComputerAdapter(FakeAdapter):
         )
 
 
+class ComputerFunctionAdapter(FakeAdapter):
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        self.inputs.append(input_items)
+        self.turns += 1
+        if self.turns == 1:
+            call = ProviderCall(
+                type="computer",
+                call_id="computer-function-1",
+                name="use_computer",
+                actions=[{"type": "screenshot"}],
+            )
+            return ProviderTurn(
+                response_id="computer-function-response-1",
+                text="I will inspect the current screen.",
+                calls=[call],
+                usage={},
+                output_items=[
+                    {
+                        "type": "function_call",
+                        "call_id": call.call_id,
+                        "name": call.name,
+                        "arguments": json.dumps({"actions": call.actions}),
+                    }
+                ],
+            )
+        assert allow_computer is True
+        assert input_items is not None
+        output = next(item for item in input_items if item.get("type") == "function_call_output")
+        assert output["output"] == "Computer action completed."
+        screenshot = next(item for item in input_items if item.get("role") == "user")
+        assert screenshot["content"][1]["type"] == "input_image"
+        assert screenshot["content"][1]["image_url"].startswith("data:image/jpeg;base64,")
+        return ProviderTurn(
+            response_id="computer-function-response-2",
+            text="The current screen is visible.",
+            calls=[],
+            usage={},
+            output_items=[
+                {"type": "message", "content": [{"type": "output_text", "text": "The current screen is visible."}]}
+            ],
+        )
+
+
 async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout: float = 3.0) -> dict[str, Any]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
@@ -295,6 +348,20 @@ def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Pat
     asyncio.run(run())
 
 
+def test_computer_function_returns_screenshot_as_follow_up_input(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = ComputerFunctionAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Inspect the desktop", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        completed = await wait_for_status(store, task["id"], "completed")
+        assert completed["result"] == "The current screen is visible."
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
 def test_policy_and_manifest_boundaries(tmp_path: Path) -> None:
     (tmp_path / "visible.py").write_text("print('ok')", encoding="utf-8")
     (tmp_path / ".env").write_text("TOKEN=secret", encoding="utf-8")
@@ -421,6 +488,45 @@ def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:
     assert turn.calls[0].arguments["command"] == "pwd"
     assert turn.calls[1].actions[0]["type"] == "click"
     assert turn.calls[1].safety_checks[0]["id"] == "check-1"
+
+
+def test_compatible_adapter_uses_function_computer_tool(monkeypatch) -> None:
+    adapter = OpenAIResponsesAdapter(
+        base_url="https://example.com/v1",
+        model="model",
+        api_key="secret",
+        capabilities=["shell", "computer"],
+        native_computer=False,
+    )
+    payloads: list[dict[str, Any]] = []
+
+    async def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        payloads.append(payload)
+        return {
+            "id": "resp",
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": "pc",
+                    "name": "use_computer",
+                    "arguments": '{"actions":[{"type":"screenshot"}]}',
+                }
+            ],
+        }
+
+    monkeypatch.setattr(adapter, "_post", fake_post)
+    turn = asyncio.run(adapter.turn(prompt="look", cwd="/tmp", manifest={}, allow_computer=True))
+    computer_tool = next(tool for tool in payloads[0]["tools"] if tool.get("name") == "use_computer")
+    assert computer_tool["type"] == "function"
+    assert computer_tool["parameters"]["properties"]["actions"]["maxItems"] == 12
+    assert turn.calls == [
+        ProviderCall(
+            type="computer",
+            call_id="pc",
+            name="use_computer",
+            actions=[{"type": "screenshot"}],
+        )
+    ]
 
 
 def test_agent_api_scopes_and_write_only_provider(tmp_path: Path) -> None:
