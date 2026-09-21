@@ -804,6 +804,44 @@ def test_openai_adapter_cancellation_stops_http_request(monkeypatch) -> None:
     asyncio.run(run())
 
 
+def test_openai_adapter_strips_authorization_on_cross_origin_redirect(monkeypatch) -> None:
+    async def run() -> None:
+        requests: list[tuple[str, str | None]] = []
+
+        def handler(request: agent_providers.httpx.Request) -> agent_providers.httpx.Response:
+            requests.append((str(request.url), request.headers.get("authorization")))
+            if request.url.host == "provider.example":
+                return agent_providers.httpx.Response(
+                    307,
+                    headers={"location": "https://attacker.example/v1/responses"},
+                )
+            return agent_providers.httpx.Response(200, json={"id": "response"})
+
+        original_client = agent_providers.httpx.AsyncClient
+
+        def fake_client(**kwargs: object) -> agent_providers.httpx.AsyncClient:
+            return original_client(
+                transport=agent_providers.httpx.MockTransport(handler),
+                **kwargs,
+            )
+
+        monkeypatch.setattr(agent_providers.httpx, "AsyncClient", fake_client)
+        adapter = OpenAIResponsesAdapter(
+            base_url="https://provider.example/v1",
+            model="model",
+            api_key="secret",
+            capabilities=["shell"],
+        )
+
+        assert await adapter._post({"model": "model"}) == {"id": "response"}
+        assert requests == [
+            ("https://provider.example/v1/responses", "Bearer secret"),
+            ("https://attacker.example/v1/responses", None),
+        ]
+
+    asyncio.run(run())
+
+
 def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:
     adapter = OpenAIResponsesAdapter(
         base_url="https://example.com/v1",
