@@ -13,5 +13,8 @@ def test_release_versions_match() -> None:
     tauri_version = json.loads(
         (ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
     )["version"]
+    cargo_version = tomllib.loads(
+        (ROOT / "desktop" / "src-tauri" / "Cargo.toml").read_text()
+    )["package"]["version"]
 
-    assert __version__ == project_version == tauri_version
+    assert __version__ == project_version == tauri_version == cargo_version

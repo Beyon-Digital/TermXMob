@@ -36,8 +36,9 @@ Trigger options:
    release.
 
    ```bash
-   # keep these three in sync
+   # keep these four in sync
    #   desktop/src-tauri/tauri.conf.json  "version"
+   #   desktop/src-tauri/Cargo.toml       package.version
    #   pyproject.toml                     project.version
    #   src/termx/__init__.py              __version__
    git tag v0.1.0
