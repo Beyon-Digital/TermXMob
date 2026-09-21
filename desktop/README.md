@@ -39,7 +39,7 @@ Trigger options:
    # keep these three in sync
    #   desktop/src-tauri/tauri.conf.json  "version"
    #   pyproject.toml                     project.version
-   #   app/app.json                       expo.version
+   #   src/termx/__init__.py              __version__
    git tag v0.1.0
    git push origin v0.1.0
    ```
