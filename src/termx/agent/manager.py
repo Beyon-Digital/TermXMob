@@ -190,7 +190,7 @@ class AgentManager:
             and approval["kind"] == "tool"
             and approval_id not in self._pending_approval_calls
         ):
-            raise RuntimeError("approved tool request is no longer available")
+            raise ValueError("approved tool request is no longer available")
         approval = self.store.resolve_approval(approval_id, decision)
         self._emit(task_id, "approval.resolved", {"approval": approval})
         private_payload = self._pending_approval_calls.pop(approval_id, None)

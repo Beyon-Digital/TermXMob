@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+import termx.desktop.capabilities as desktop_capabilities
 import termx.desktop.virtual as vmod
 from termx.desktop.capabilities import probe_desktop
 from termx.desktop.virtual import (
@@ -52,6 +53,30 @@ def test_probe_does_not_crash() -> None:
     adapter = active_adapter()
     assert probe.virtual_display is bool(adapter and adapter.can_create())
     assert probe.virtual_backend == (adapter.id if adapter else None)
+
+
+def test_probe_does_not_advertise_unimplemented_ydotool_backend(monkeypatch) -> None:
+    monkeypatch.setattr(desktop_capabilities.sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setattr(desktop_capabilities, "active_adapter", lambda: None)
+    monkeypatch.setattr(desktop_capabilities, "_select_capture_backend", lambda: "grim")
+    monkeypatch.setattr(desktop_capabilities, "_xtest_available", lambda: False)
+    monkeypatch.setattr(desktop_capabilities, "permission_snapshot", lambda: {})
+    monkeypatch.setattr(
+        desktop_capabilities.shutil,
+        "which",
+        lambda name: "/usr/bin/ydotool" if name == "ydotool" else None,
+    )
+
+    probe = desktop_capabilities.probe_desktop()
+
+    assert probe.input_backend is None
+    assert probe.remote_screen is False
+    assert probe.reason == (
+        "No supported input backend: on X11 install libXtst or xdotool; "
+        "native Wayland input is not yet supported"
+    )
 
 
 def test_virtual_display_is_explicitly_unsupported() -> None:

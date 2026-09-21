@@ -60,15 +60,13 @@ def probe_desktop() -> DesktopProbe:
             input_backend = "xtest"
         elif shutil.which("xdotool") and x11:
             input_backend = "xdotool"
-        elif shutil.which("ydotool"):
-            input_backend = "ydotool"
         reason = None
         if not capture:
             reason = "No capture tool (termx-capture, ffmpeg, grim, maim, scrot, spectacle, import, xwd)"
         elif not input_backend:
             reason = (
-                "No input backend: on X11 install libXtst or xdotool; on Wayland the "
-                "RemoteDesktop portal (or ydotool) is required"
+                "No supported input backend: on X11 install libXtst or xdotool; "
+                "native Wayland input is not yet supported"
             )
         permissions = permission_snapshot()
         permissions.setdefault("portal", "unknown" if wayland else "n/a")

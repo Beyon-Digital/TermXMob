@@ -436,6 +436,24 @@ def test_approved_tool_executes_private_call_without_persisting_secrets(tmp_path
     asyncio.run(run())
 
 
+def test_approved_tool_without_private_call_is_an_approval_conflict(tmp_path: Path) -> None:
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, SecretComputerAdapter())
+        task = await manager.create_task(prompt="Enter the value", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        _, pending = await wait_for_pending_approval(store, task["id"], "tool")
+        manager._pending_approval_calls.pop(pending["id"])
+
+        with pytest.raises(ValueError, match="approved tool request is no longer available"):
+            await manager.resolve_approval(task["id"], pending["id"], "approved")
+
+        assert store.get_task(task["id"])["status"] == "awaiting_approval"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
 def test_ask_mode_runs_read_only_without_approval(tmp_path: Path) -> None:
     async def run() -> None:
         # Ask mode issues a mutating command; the manager must refuse it and the
@@ -746,6 +764,7 @@ def test_openai_adapter_cancellation_stops_http_request(monkeypatch) -> None:
     async def run() -> None:
         started = asyncio.Event()
         stopped = asyncio.Event()
+        client_options: dict[str, object] = {}
 
         class FakeClient:
             async def __aenter__(self):
@@ -761,11 +780,11 @@ def test_openai_adapter_cancellation_stops_http_request(monkeypatch) -> None:
                 finally:
                     stopped.set()
 
-        monkeypatch.setattr(
-            agent_providers.httpx,
-            "AsyncClient",
-            lambda **kwargs: FakeClient(),
-        )
+        def fake_client(**kwargs: object) -> FakeClient:
+            client_options.update(kwargs)
+            return FakeClient()
+
+        monkeypatch.setattr(agent_providers.httpx, "AsyncClient", fake_client)
         adapter = OpenAIResponsesAdapter(
             base_url="https://example.com/v1",
             model="model",
@@ -780,6 +799,7 @@ def test_openai_adapter_cancellation_stops_http_request(monkeypatch) -> None:
         with pytest.raises(asyncio.CancelledError):
             await request
         await asyncio.wait_for(stopped.wait(), timeout=1)
+        assert client_options["follow_redirects"] is True
 
     asyncio.run(run())
 

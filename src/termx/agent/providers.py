@@ -248,7 +248,11 @@ class OpenAIResponsesAdapter:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_s, headers=headers) as client:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_s,
+                headers=headers,
+                follow_redirects=True,
+            ) as client:
                 response = await client.post(self.url, json=payload)
         except httpx.RequestError as exc:
             raise ProviderError(f"Could not reach provider: {exc}") from exc
