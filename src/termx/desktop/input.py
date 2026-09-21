@@ -77,6 +77,7 @@ def apply_event(event: dict[str, Any], target: str | None = None) -> None:
                 )
             return
     if kind == "release_all":
+        _release_all()
         return
     if kind == "pointer":
         _pointer(event, target)
@@ -86,6 +87,39 @@ def apply_event(event: dict[str, Any], target: str | None = None) -> None:
         return
     if kind == "text":
         _text(str(event.get("data") or ""))
+
+
+def _release_all() -> None:
+    probe = probe_desktop()
+    if probe.input_backend == "sendinput" and sys.platform == "win32":
+        INPUT, MOUSEINPUT, KEYBDINPUT = _win_input_structs()
+        inputs = [
+            INPUT(type=INPUT_MOUSE, mi=_mouse_input(MOUSEINPUT, flag))
+            for flag in (MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTUP)
+        ]
+        inputs.extend(
+            INPUT(
+                type=INPUT_KEYBOARD,
+                ki=KEYBDINPUT(wVk=code, dwFlags=KEYEVENTF_KEYUP),
+            )
+            for code in (_WIN_VK["shift"], _WIN_VK["control"], _WIN_VK["alt"], _WIN_VK["meta"])
+        )
+        _send_inputs(inputs)
+        return
+    adapter = _xtest()
+    if adapter is not None:
+        for button in (1, 2, 3):
+            adapter.button(button, False)
+        for key in ("Shift_L", "Control_L", "Alt_L", "Super_L"):
+            code = adapter.keycode(key)
+            if code is not None:
+                adapter.key(code, False)
+        return
+    if probe.input_backend == "xdotool":
+        for button in ("1", "2", "3"):
+            subprocess.run(["xdotool", "mouseup", button], check=False)
+        for key in ("Shift_L", "Control_L", "Alt_L", "Super_L"):
+            subprocess.run(["xdotool", "keyup", key], check=False)
 
 
 def _pointer_points(x: float, y: float, display_id: int | None) -> tuple[float, float]:

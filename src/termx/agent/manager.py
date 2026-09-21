@@ -12,7 +12,13 @@ from typing import Any
 from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.execution import run_shell
-from termx.agent.policy import PolicyDecision, evaluate_computer, evaluate_shell, is_mutating_shell
+from termx.agent.policy import (
+    PolicyDecision,
+    evaluate_computer,
+    evaluate_shell,
+    is_mutating_shell,
+    redact,
+)
 from termx.agent.providers import (
     OpenAIResponsesAdapter,
     ProviderAdapter,
@@ -46,6 +52,7 @@ class AgentManager:
         self._cancel: dict[str, asyncio.Event] = {}
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
         self._steering: dict[str, list[str]] = defaultdict(list)
+        self._pending_approval_calls: dict[str, dict[str, Any]] = {}
         self._computer = ComputerController()
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
@@ -178,8 +185,15 @@ class AgentManager:
         approval = self.store.get_approval(approval_id)
         if approval is None or approval["task_id"] != task_id:
             raise KeyError(approval_id)
+        if (
+            decision != "denied"
+            and approval["kind"] == "tool"
+            and approval_id not in self._pending_approval_calls
+        ):
+            raise ValueError("approved tool request is no longer available")
         approval = self.store.resolve_approval(approval_id, decision)
         self._emit(task_id, "approval.resolved", {"approval": approval})
+        private_payload = self._pending_approval_calls.pop(approval_id, None)
         if decision == "denied":
             self.store.update_task(task_id, status="cancelled", error="Approval denied")
             self._emit(task_id, "task.cancelled", {"message": "Approval denied"})
@@ -187,7 +201,8 @@ class AgentManager:
         if approval["kind"] == "plan":
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
-            self._launch(task_id, self._resume_approved(task_id, approval["payload"]))
+            assert private_payload is not None
+            self._launch(task_id, self._resume_approved(task_id, private_payload))
         return approval
 
     def cancel(self, task_id: str) -> dict[str, Any]:
@@ -202,9 +217,13 @@ class AgentManager:
         else:
             self.store.update_task(task_id, status="cancelled", error="Cancelled by user")
             self._emit(task_id, "task.cancelled", {"message": "Cancelled by user"})
+            self._drop_pending_approvals(task_id)
         return self._task(task_id)
 
     async def takeover(self, task_id: str) -> dict[str, Any]:
+        task = self._task(task_id)
+        if task["status"] not in ACTIVE_STATUSES:
+            return task
         self.cancel(task_id)
         await self._computer.release_all()
         if not any(event["type"] == "control.takeover" for event in self.store.events(task_id)):
@@ -349,16 +368,24 @@ class AgentManager:
                 raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
             decision = self._decision(call, task["cwd"])
             if decision.approval_required and not (approved_first and index == 0):
-                payload = {
+                public_payload = {
                     "title": decision.reason,
                     "consequence": decision.consequence,
                     "call": call.public(),
                     "remaining_calls": [item.public() for item in calls[index + 1 :]],
-                    "history": history,
+                    "history": self._public_value(history),
                     "step": step,
                     "started_at": started_at,
                 }
-                approval = self.store.create_approval(task_id, "tool", payload)
+                private_payload = {
+                    **public_payload,
+                    "task_id": task_id,
+                    "call": self._call_payload(call),
+                    "remaining_calls": [self._call_payload(item) for item in calls[index + 1 :]],
+                    "history": history,
+                }
+                approval = self.store.create_approval(task_id, "tool", public_payload)
+                self._pending_approval_calls[approval["id"]] = private_payload
                 self.store.update_task(task_id, status="awaiting_approval")
                 self._emit(task_id, "approval.requested", {"approval": approval})
                 self._emit(task_id, "task.status", {"status": "awaiting_approval"})
@@ -555,6 +582,35 @@ class AgentManager:
                 )
             return evaluate_computer(call.actions)
         return PolicyDecision(False, True, "Unknown tool", "Runs an unsupported tool request")
+
+    @staticmethod
+    def _call_payload(call: ProviderCall) -> dict[str, Any]:
+        return {
+            "type": call.type,
+            "call_id": call.call_id,
+            "name": call.name,
+            "arguments": call.arguments,
+            "actions": call.actions,
+            "safety_checks": call.safety_checks,
+        }
+
+    @staticmethod
+    def _public_value(value: Any) -> Any:
+        if isinstance(value, str):
+            return redact(value)
+        if isinstance(value, list):
+            return [AgentManager._public_value(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                str(key): AgentManager._public_value(item)
+                for key, item in value.items()
+            }
+        return value
+
+    def _drop_pending_approvals(self, task_id: str) -> None:
+        for approval_id, payload in list(self._pending_approval_calls.items()):
+            if payload["task_id"] == task_id:
+                self._pending_approval_calls.pop(approval_id, None)
 
     async def _cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":

@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+import httpx
 
 from termx.agent.policy import redact
 
@@ -241,32 +241,26 @@ class OpenAIResponsesAdapter:
         )
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await asyncio.to_thread(self._post_sync, payload)
-
-    def _post_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "termx-agent/1",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        request = urllib.request.Request(
-            self.url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                raw = response.read()
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:1000]
-            raise ProviderError(_provider_http_error(exc.code, detail)) from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_s,
+                headers=headers,
+                follow_redirects=True,
+            ) as client:
+                response = await client.post(self.url, json=payload)
+        except httpx.RequestError as exc:
             raise ProviderError(f"Could not reach provider: {exc}") from exc
+        if response.is_error:
+            raise ProviderError(_provider_http_error(response.status_code, response.text[:1000]))
         try:
-            body = json.loads(raw)
-        except json.JSONDecodeError as exc:
+            body = response.json()
+        except ValueError as exc:
             raise ProviderError("Provider returned invalid JSON") from exc
         if not isinstance(body, dict):
             raise ProviderError("Provider returned an invalid response")
