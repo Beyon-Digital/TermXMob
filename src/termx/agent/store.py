@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import json
 import os
 import sqlite3
@@ -12,6 +13,15 @@ from time import time
 from typing import Any
 
 from termx.config import config_dir
+
+def configured_models(model: str) -> list[str]:
+    found: list[str] = []
+    for part in re.split(r"[\n,]", model or ""):
+        item = part.strip()
+        if item and item not in found:
+            found.append(item)
+    return found
+
 
 ACTIVE_STATUSES = frozenset({"planning", "awaiting_approval", "running", "paused", "cancelling"})
 TASK_STATUSES = frozenset({*ACTIVE_STATUSES, "cancelled", "failed", "completed"})
@@ -239,6 +249,7 @@ class AgentStore:
             "name": row["name"],
             "base_url": row["base_url"],
             "model": row["model"],
+            "models": configured_models(row["model"]),
             "capabilities": _load_json(row["capabilities"], []),
             "secret_configured": bool(row["secret_configured"]),
             "created_at": row["created_at"],
@@ -451,7 +462,12 @@ class AgentStore:
 
     def save_artifact(self, task_id: str, kind: str, mime: str, data: bytes) -> dict[str, Any]:
         digest = hashlib.sha256(data).hexdigest()
-        suffix = ".jpg" if mime == "image/jpeg" else ".png" if mime == "image/png" else ".bin"
+        suffix = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+        }.get(mime, ".bin")
         destination = self.artifact_dir / f"{digest}{suffix}"
         if not destination.exists():
             temporary = destination.with_name(f".{destination.name}-{uuid.uuid4().hex}")
