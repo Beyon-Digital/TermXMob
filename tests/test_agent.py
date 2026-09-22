@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -968,3 +969,44 @@ def test_agent_api_scopes_and_write_only_provider(tmp_path: Path) -> None:
         assert [item["sequence"] for item in replay.json()["events"]] == sorted(
             item["sequence"] for item in replay.json()["events"]
         )
+
+
+def test_selected_model_and_image_attachment(tmp_path: Path) -> None:
+    async def run() -> None:
+        seen: dict[str, str] = {}
+
+        def factory(provider: dict[str, Any], _key: str) -> FakeAdapter:
+            seen["model"] = provider["model"]
+            return FakeAdapter()
+
+        store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+        manager = AgentManager(store, CredentialStore(memory={}), desktop=None, adapter_factory=factory)
+        manager._computer = FakeComputer()  # type: ignore[assignment]
+        manager.save_provider(
+            provider_id="fake",
+            kind="openai-compatible",
+            name="Fake",
+            base_url="http://127.0.0.1:9999/v1",
+            model="fake-model, other-model",
+            capabilities=["shell"],
+            api_key="test-key",
+        )
+        image = base64.b64encode(b"png-bytes").decode("ascii")
+        task = await manager.create_task(
+            prompt="Look at this",
+            cwd=str(tmp_path),
+            provider_id="fake",
+            mode="ask",
+            model="other-model",
+            attachments=[{"name": "shot.png", "mime": "image/png", "data": image}],
+        )
+        assert task["model"] == "other-model"
+        assert seen["model"] == "other-model"
+        assert any(item["type"] == "user.media" for item in task["events"])
+        loaded = store.get_provider("fake")
+        assert loaded is not None
+        assert loaded["models"] == ["fake-model", "other-model"]
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())

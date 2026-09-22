@@ -200,10 +200,18 @@ class AgentProviderBody(BaseModel):
     api_key: str | None = Field(default=None, max_length=4000)
 
 
+class AgentImageBody(BaseModel):
+    name: str = Field(default="image", max_length=180)
+    mime: str = Field(pattern=r"^image/(jpeg|png|gif|webp)$")
+    data: str = Field(min_length=16, max_length=3_000_000)
+
+
 class AgentTaskBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     cwd: str = Field(min_length=1, max_length=4000)
     provider_id: str = Field(min_length=1, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
     limits: dict[str, int] | None = None
     mode: str = Field(default="agent", pattern=r"^(ask|agent)$")
 
@@ -621,6 +629,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
                 provider_id=body.provider_id,
                 limits=body.limits,
                 mode=body.mode,
+                model=body.model,
+                attachments=[{"name": item.name, "mime": item.mime, "data": item.data} for item in body.attachments],
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
@@ -754,7 +764,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         artifact = state.agent_store.get_artifact(task_id, artifact_id)
         if artifact is None:
             raise HTTPException(status_code=404, detail="artifact not found")
-        return FileResponse(artifact["path"], media_type=artifact["mime"], filename=f"{artifact_id}.jpg")
+        suffix = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}.get(artifact["mime"], "bin")
+        return FileResponse(artifact["path"], media_type=artifact["mime"], filename=f"{artifact_id}.{suffix}")
 
     @app.get("/api/agent/storage")
     def get_agent_storage(

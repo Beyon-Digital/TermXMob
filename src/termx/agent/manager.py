@@ -27,7 +27,7 @@ from termx.agent.providers import (
     ProviderTurn,
 )
 from termx.agent.secrets import CredentialStore
-from termx.agent.store import ACTIVE_STATUSES, AgentStore
+from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
 
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
 DEFAULT_LIMITS = {"max_steps": 24, "max_seconds": 900, "shell_timeout_s": 120}
@@ -126,6 +126,8 @@ class AgentManager:
         provider_id: str,
         limits: dict[str, Any] | None = None,
         mode: str = "agent",
+        model: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -134,30 +136,42 @@ class AgentManager:
         root = Path(cwd).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
-        provider = self._provider(provider_id)
+        images = _decode_images(attachments)
+        provider = dict(self._provider(provider_id))
+        chosen = _resolve_model(provider, model)
+        provider["model"] = chosen
         adapter = self._adapter(provider)
         bounded = self._limits(limits)
         task = self.store.create_task(
             prompt=prompt,
             cwd=str(root),
             provider_id=provider_id,
-            model=provider["model"],
+            model=chosen,
             limits=bounded,
             mode=mode,
         )
         task_id = task["id"]
+        uploads = [
+            self.store.save_artifact(task_id, "upload", mime, data)
+            for _name, mime, data in images
+        ]
+        if uploads:
+            self._emit(task_id, "user.media", {"artifacts": uploads})
         self._emit(task_id, "task.created", {"task": task})
         try:
             manifest = await asyncio.to_thread(workspace_manifest, str(root))
+            upload_ids = [item["id"] for item in uploads]
             if mode == "ask":
                 # Ask mode is read-only and low-risk, so it starts immediately
                 # instead of waiting for plan approval.
-                runtime = {"manifest": manifest, "history": [], "step": 0, "started_at": None}
+                history = [self._upload_message(task_id, upload_ids)] if upload_ids else []
+                runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
                 self.store.update_task(task_id, runtime=runtime)
                 self._launch(task_id, self._drive(task_id))
                 return self.store.get_task(task_id, include_events=True) or task
             plan, response_id = await adapter.plan(prompt, str(root), manifest)
-            runtime = {"manifest": manifest, "history": [], "step": 0, "started_at": None}
+            history = [self._upload_message(task_id, upload_ids)] if upload_ids else []
+            runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
             task = self.store.update_task(
                 task_id,
                 status="awaiting_approval",
@@ -295,7 +309,8 @@ class AgentManager:
                 steering = self._steering.pop(task_id, [])
                 for message in steering:
                     history.append({"role": "user", "content": message})
-                provider = self._provider(task["provider_id"])
+                provider = dict(self._provider(task["provider_id"]))
+                provider["model"] = str(task.get("model") or _resolve_model(provider, None))
                 adapter = self._adapter(provider)
                 manifest = runtime.get("manifest") or await asyncio.to_thread(workspace_manifest, task["cwd"])
                 read_only = task.get("mode") == "ask"
@@ -497,6 +512,16 @@ class AgentManager:
 
     # Helpers ---------------------------------------------------------
 
+    def _upload_message(self, task_id: str, artifact_ids: list[str]) -> dict[str, Any]:
+        parts: list[dict[str, Any]] = [{"type": "input_text", "text": "The user attached these images to the message."}]
+        for artifact_id in artifact_ids:
+            artifact = self.store.get_artifact(task_id, artifact_id)
+            if artifact is None or not str(artifact.get("mime") or "").startswith("image/"):
+                continue
+            encoded = base64.b64encode(Path(artifact["path"]).read_bytes()).decode("ascii")
+            parts.append({"type": "input_image", "image_url": f"data:{artifact['mime']};base64,{encoded}"})
+        return {"role": "user", "content": parts}
+
     def _emit(self, task_id: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         event = self.store.append_event(task_id, event_type, payload)
         for queue in tuple(self._subscribers.get(task_id, ())):
@@ -669,3 +694,37 @@ class AgentManager:
             message = "Agent run failed"
         self.store.update_task(task_id, status="failed", error=message)
         self._emit(task_id, "task.failed", {"message": message})
+
+
+_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:
+    models = configured_models(str(provider.get("model") or ""))
+    if not models:
+        raise ValueError("provider has no model configured")
+    chosen = (requested or "").strip()
+    if not chosen:
+        return models[0]
+    if chosen not in models:
+        raise ValueError("model is not configured on this provider")
+    return chosen
+
+
+def _decode_images(attachments: list[dict[str, Any]] | None) -> list[tuple[str, str, bytes]]:
+    images: list[tuple[str, str, bytes]] = []
+    for item in attachments or []:
+        mime = str(item.get("mime") or "")
+        if mime not in _IMAGE_TYPES:
+            raise ValueError("only JPEG, PNG, GIF, and WebP images can be attached")
+        try:
+            raw = base64.b64decode(str(item.get("data") or ""), validate=True)
+        except Exception as exc:
+            raise ValueError("image data is not valid base64") from exc
+        if not raw or len(raw) > 2_000_000:
+            raise ValueError("each image must be under 2 MB")
+        name = str(item.get("name") or "image")[:180]
+        images.append((name, mime, raw))
+    if len(images) > 4:
+        raise ValueError("attach at most 4 images")
+    return images
