@@ -608,7 +608,7 @@ class AgentManager:
                 "max_seconds": min(900, parent_limits["max_seconds"]),
                 "shell_timeout_s": parent_limits["shell_timeout_s"],
             },
-            mode="agent",
+            mode="ask" if str(call.arguments.get("mode") or "").strip().lower() == "ask" else "agent",
             model=str(task.get("model") or "") or None,
         )
         child_id = child["id"]

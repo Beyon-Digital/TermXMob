@@ -199,6 +199,16 @@ class OpenAIResponsesAdapter:
                                     "type": "string",
                                     "description": "Optional rules or persona for the sub-agent to follow.",
                                 },
+                                "mode": {
+                                    "type": "string",
+                                    "enum": ["agent", "ask"],
+                                    "description": (
+                                        "Autonomy level: 'agent' (default) runs with full tools; "
+                                        "'ask' runs read-only — it may inspect and report but cannot "
+                                        "modify files, use the desktop, or spawn further sub-agents. "
+                                        "Pre-configured delegates advertise their mode; pass it through unchanged."
+                                    ),
+                                },
                             },
                             "required": ["task"],
                             "additionalProperties": False,
