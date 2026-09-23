@@ -813,6 +813,17 @@ class AgentManager:
                     detail[:500],
                 )
             return evaluate_computer(call.actions)
+        if call.type == "function" and call.name == "spawn_subagent":
+            agent = str(call.arguments.get("agent") or "sub-agent")
+            task_hint = str(call.arguments.get("task") or "").strip()
+            detail = f'Hands the task off to the "{agent}" sub-agent.'
+            if task_hint:
+                detail = f"{detail} Task: {task_hint[:200]}"
+            return PolicyDecision(False, True, "Delegate to a sub-agent", detail)
+        if call.type == "function" and call.name == "share_file":
+            path = str(call.arguments.get("path") or "").strip()
+            detail = f"Attaches {path} to the chat." if path else "Attaches a project file to the chat."
+            return PolicyDecision(False, True, "Share a file", detail)
         return PolicyDecision(False, True, "Unknown tool", "Runs an unsupported tool request")
 
     @staticmethod
