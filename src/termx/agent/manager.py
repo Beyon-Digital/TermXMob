@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import mimetypes
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
@@ -475,6 +476,34 @@ class AgentManager:
                 "call_id": call.call_id,
                 "output": json.dumps(public, ensure_ascii=False),
             }
+        if call.type == "function" and call.name == "share_file":
+            result = await self._share_file(task_id, task, call)
+            self._emit(task_id, "tool.finished", {"call_id": call.call_id, "name": call.name, "result": result})
+            return {
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": json.dumps(result, ensure_ascii=False),
+            }
+        if call.type == "function" and call.name == "spawn_subagent":
+            if task.get("mode") == "ask":
+                refusal = {
+                    "ok": False,
+                    "refused": True,
+                    "output": "Refused: Ask mode cannot spawn sub-agents. Switch to Agent mode.",
+                }
+                self._emit(task_id, "tool.finished", {"call_id": call.call_id, "name": call.name, "result": refusal})
+                return {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": json.dumps(refusal, ensure_ascii=False),
+                }
+            result = await self._spawn_subagent(task_id, task, call, cancel)
+            self._emit(task_id, "tool.finished", {"call_id": call.call_id, "name": call.name, "result": result})
+            return {
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": json.dumps(result, ensure_ascii=False),
+            }
         if call.type == "computer":
             screenshot = await self._computer.execute(call.actions, cancel=cancel)
             artifact = self.store.save_artifact(task_id, "screenshot", "image/jpeg", screenshot)
@@ -511,6 +540,184 @@ class AgentManager:
         raise ValueError(f"unsupported provider tool: {call.name or call.type}")
 
     # Helpers ---------------------------------------------------------
+
+    async def _share_file(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        call: ProviderCall,
+    ) -> dict[str, Any]:
+        raw_path = str(call.arguments.get("path") or "").strip()
+        caption = str(call.arguments.get("caption") or "").strip()
+        if not raw_path:
+            return {"ok": False, "error": "share_file requires a path"}
+        root = Path(task["cwd"]).resolve()
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            return {"ok": False, "error": f"File not found: {raw_path}"}
+        if resolved != root and root not in resolved.parents:
+            return {"ok": False, "error": "share_file stays inside the project folder"}
+        if not resolved.is_file():
+            return {"ok": False, "error": f"Not a file: {raw_path}"}
+        size = resolved.stat().st_size
+        if size > _SHARE_MAX_BYTES:
+            return {"ok": False, "error": f"File too large to share ({size} bytes, max {_SHARE_MAX_BYTES})"}
+        data = await asyncio.to_thread(resolved.read_bytes)
+        mime = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+        artifact = await asyncio.to_thread(self.store.save_artifact, task_id, "media", mime, data)
+        self._emit(
+            task_id,
+            "agent.media",
+            {"artifact": artifact, "name": resolved.name, "caption": caption, "call_id": call.call_id},
+        )
+        return {
+            "ok": True,
+            "shared": resolved.name,
+            "artifact": {"id": artifact["id"], "mime": artifact["mime"], "size": artifact["size"]},
+        }
+
+    async def _spawn_subagent(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        call: ProviderCall,
+        cancel: asyncio.Event,
+    ) -> dict[str, Any]:
+        prompt = str(call.arguments.get("task") or "").strip()
+        if not prompt:
+            return {"ok": False, "error": "spawn_subagent requires a task"}
+        agent = str(call.arguments.get("agent") or "").strip() or "Sub-agent"
+        instructions = str(call.arguments.get("instructions") or "").strip()
+        child_prompt = prompt
+        if instructions:
+            child_prompt = (
+                f'You are the "{agent}" sub-agent. Follow these instructions:\n'
+                f"{instructions}\n\nTask: {prompt}"
+            )
+        parent_limits = task["limits"]
+        child = await self.create_task(
+            prompt=child_prompt,
+            cwd=task["cwd"],
+            provider_id=task["provider_id"],
+            limits={
+                "max_steps": min(24, parent_limits["max_steps"]),
+                "max_seconds": min(900, parent_limits["max_seconds"]),
+                "shell_timeout_s": parent_limits["shell_timeout_s"],
+            },
+            mode="agent",
+            model=str(task.get("model") or "") or None,
+        )
+        child_id = child["id"]
+        if child["status"] in {"completed", "failed", "cancelled"}:
+            self._emit(
+                task_id,
+                "subagent.started",
+                {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id},
+            )
+            self._emit(
+                task_id,
+                "subagent.finished",
+                {
+                    "call_id": call.call_id,
+                    "child_id": child_id,
+                    "agent": agent,
+                    "status": child["status"],
+                    "result": str(child.get("error") or child.get("result") or ""),
+                },
+            )
+            return {
+                "ok": child["status"] == "completed",
+                "status": child["status"],
+                "result": str(child.get("error") or child.get("result") or "")[:4000],
+                "task_id": child_id,
+            }
+        # The parent task was already approved, so the delegated child runs
+        # autonomously under that approval: resolve its plan and tool checks.
+        await self._auto_approve(child_id)
+        self._emit(
+            task_id,
+            "subagent.started",
+            {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id},
+        )
+        queue = self.subscribe(child_id)
+        deadline = monotonic() + min(parent_limits["max_seconds"], _SUBAGENT_MAX_SECONDS)
+        status = "failed"
+        result = ""
+        try:
+            while True:
+                if cancel.is_set():
+                    self.cancel(child_id)
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.4)
+                except asyncio.TimeoutError:
+                    current = self._task(child_id)
+                    if current["status"] not in ACTIVE_STATUSES:
+                        status = current["status"]
+                        result = str(current.get("result") or current.get("error") or "")
+                        break
+                    if monotonic() >= deadline:
+                        self.cancel(child_id)
+                    continue
+                event_type = event["type"]
+                payload = event.get("payload") or {}
+                if event_type == "approval.requested":
+                    approval = payload.get("approval") or {}
+                    if approval.get("id"):
+                        asyncio.create_task(self._auto_approve(child_id, approval["id"]))
+                self._emit(
+                    task_id,
+                    "subagent.event",
+                    {
+                        "call_id": call.call_id,
+                        "child_id": child_id,
+                        "agent": agent,
+                        "type": event_type,
+                        "payload": _slim_payload(payload),
+                    },
+                )
+                if event_type in {"task.completed", "task.failed", "task.cancelled"}:
+                    status = {
+                        "task.completed": "completed",
+                        "task.failed": "failed",
+                        "task.cancelled": "cancelled",
+                    }[event_type]
+                    result = str(payload.get("result") or payload.get("message") or "")
+                    break
+        finally:
+            self.unsubscribe(child_id, queue)
+        self._emit(
+            task_id,
+            "subagent.finished",
+            {
+                "call_id": call.call_id,
+                "child_id": child_id,
+                "agent": agent,
+                "status": status,
+                "result": result,
+            },
+        )
+        return {
+            "ok": status == "completed",
+            "status": status,
+            "result": result[:4000],
+            "task_id": child_id,
+        }
+
+    async def _auto_approve(self, task_id: str, approval_id: str | None = None) -> None:
+        approvals = self.store.approvals(task_id)
+        for approval in approvals:
+            if approval["status"] != "pending":
+                continue
+            if approval_id is not None and approval["id"] != approval_id:
+                continue
+            try:
+                await self.resolve_approval(task_id, approval["id"], "approved")
+            except (KeyError, ValueError):
+                continue
 
     def _upload_message(self, task_id: str, artifact_ids: list[str]) -> dict[str, Any]:
         parts: list[dict[str, Any]] = [{"type": "input_text", "text": "The user attached these images to the message."}]
@@ -697,6 +904,24 @@ class AgentManager:
 
 
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_SHARE_MAX_BYTES = 16 * 1024 * 1024
+_SUBAGENT_MAX_SECONDS = 1800
+
+
+def _slim_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop transcript-sized fields before forwarding a child event to the parent stream."""
+    slim = {
+        str(key): value
+        for key, value in payload.items()
+        if key not in {"history", "remaining_calls"}
+    }
+    approval = slim.get("approval")
+    if isinstance(approval, dict):
+        inner = dict(approval.get("payload") or {})
+        inner.pop("history", None)
+        inner.pop("remaining_calls", None)
+        slim["approval"] = {**approval, "payload": inner}
+    return slim
 
 
 def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:
