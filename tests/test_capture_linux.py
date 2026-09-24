@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
 import pytest
 
@@ -33,6 +34,37 @@ def test_linux_capture_returns_jpeg() -> None:
         close_capture()
     assert frame[:3] == b"\xff\xd8\xff"
     assert len(frame) > 512
+
+
+def test_linux_xtest_release_across_threads() -> None:
+    from termx.desktop import input as desktop_input
+
+    desktop_input._xtest_singleton = None
+    if desktop_input._xtest() is None:
+        pytest.skip("XTest is unavailable")
+
+    errors: list[BaseException] = []
+
+    def apply(event: dict[str, object]) -> None:
+        try:
+            desktop_input.apply_event(event)
+        except BaseException as exc:
+            errors.append(exc)
+
+    press = threading.Thread(
+        target=apply,
+        args=({"type": "key", "key": "shift", "action": "down"},),
+    )
+    press.start()
+    press.join(timeout=2)
+
+    release = threading.Thread(target=apply, args=({"type": "release_all"},))
+    release.start()
+    release.join(timeout=2)
+
+    assert not press.is_alive()
+    assert not release.is_alive()
+    assert not errors
 
 
 def test_xrandr_virtual_display_roundtrip() -> None:
