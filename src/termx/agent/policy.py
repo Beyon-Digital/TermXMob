@@ -52,6 +52,11 @@ _MUTATING = re.compile(
 _WRITE_REDIRECT = re.compile(r"(?<![>0-9])>>?(?![>])|\bsed\b[^\n]*-i|\bperl\b[^\n]*-i")
 
 
+def is_sensitive_path(path: str) -> bool:
+    """Return True when a path names a credential, key, or environment file."""
+    return bool(_SENSITIVE_PATH.search(f"{path} "))
+
+
 def is_mutating_shell(command: str) -> bool:
     """Return True when a command could change files, state, or reach the network."""
     return bool(_MUTATING.search(command) or _WRITE_REDIRECT.search(command))
