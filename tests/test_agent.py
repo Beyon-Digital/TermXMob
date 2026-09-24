@@ -480,6 +480,140 @@ def test_ask_mode_runs_read_only_without_approval(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+class ScriptedAdapter(FakeAdapter):
+    """Returns one scripted list of calls per turn, then a final text turn."""
+
+    def __init__(self, script: list[list[ProviderCall]], plan_delay: float = 0.0) -> None:
+        super().__init__()
+        self.script = script
+        self.plan_delay = plan_delay
+        self.plan_calls = 0
+
+    async def plan(self, prompt: str, cwd: str, manifest: dict[str, Any]):
+        self.plan_calls += 1
+        if self.plan_delay:
+            await asyncio.sleep(self.plan_delay)
+        return await super().plan(prompt, cwd, manifest)
+
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        self.inputs.append(input_items)
+        self.read_only_flags.append(read_only)
+        self.turns += 1
+        if self.script:
+            calls = self.script.pop(0)
+            return ProviderTurn(
+                response_id=f"response-{self.turns}",
+                text="",
+                calls=calls,
+                usage={},
+                output_items=[
+                    {"type": "function_call", "call_id": c.call_id, "name": c.name, "arguments": json.dumps(c.arguments)}
+                    for c in calls
+                ],
+            )
+        return ProviderTurn(
+            response_id=f"response-{self.turns}",
+            text="Done.",
+            calls=[],
+            usage={},
+            output_items=[{"type": "message", "content": [{"type": "output_text", "text": "Done."}]}],
+        )
+
+
+def _fn(call_id: str, name: str, **arguments: Any) -> ProviderCall:
+    return ProviderCall(type="function", call_id=call_id, name=name, arguments=arguments)
+
+
+def test_ask_mode_shares_files_inline_and_refuses_sensitive_paths(tmp_path: Path) -> None:
+    (tmp_path / "report.txt").write_text("hello")
+    (tmp_path / ".env").write_text("SECRET=1")
+
+    async def run() -> None:
+        adapter = ScriptedAdapter([[_fn("s1", "share_file", path="report.txt"), _fn("s2", "share_file", path=".env")]])
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Show me the report", cwd=str(tmp_path), provider_id="fake", mode="ask")
+        completed = await wait_for_status(store, task["id"], "completed")
+        assert not completed["approvals"]
+        media = [e for e in completed["events"] if e["type"] == "agent.media"]
+        assert [m["payload"]["name"] for m in media] == ["report.txt"]
+        finished = [e for e in completed["events"] if e["type"] == "tool.finished"]
+        assert finished[0]["payload"]["result"]["ok"] is True
+        assert finished[1]["payload"]["result"]["refused"] is True
+        assert len(completed["artifacts"]) == 1
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_subagent_escalates_consequential_actions_to_parent(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = ScriptedAdapter(
+            [
+                [_fn("p1", "spawn_subagent", task="Publish it", agent="publisher")],
+                [_fn("c1", "run_shell", command="git push origin main")],
+            ]
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(prompt="Delegate", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        _, delegate = await wait_for_pending_approval(store, parent["id"], "tool")
+        assert delegate["payload"]["title"] == "Delegate to a sub-agent"
+        await manager.resolve_approval(parent["id"], delegate["id"], "approved")
+
+        paused, escalated = await wait_for_pending_approval(store, parent["id"], "tool")
+        assert paused["status"] == "awaiting_approval"
+        assert escalated["payload"]["title"] == "publisher: External publication"
+        child_id = escalated["payload"]["child_id"]
+        child = store.get_task(child_id, include_events=True)
+        assert child["status"] == "awaiting_approval"
+        assert all(a["status"] != "pending" or a["kind"] == "tool" for a in child["approvals"])
+
+        await manager.resolve_approval(parent["id"], escalated["id"], "denied")
+        completed = await wait_for_status(store, parent["id"], "completed")
+        assert store.get_task(child_id)["status"] == "cancelled"
+        finished = next(e for e in completed["events"] if e["type"] == "subagent.finished")
+        assert finished["payload"]["status"] == "cancelled"
+        assert any(e["type"] == "subagent.event" and e["payload"]["type"] == "task.status" for e in completed["events"])
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_parent_cancel_interrupts_child_planning(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = ScriptedAdapter([[_fn("p1", "spawn_subagent", task="Slow child")]], plan_delay=30.0)
+        manager, store = build_manager(tmp_path, adapter)
+        adapter.plan_delay = 0.0
+        parent = await manager.create_task(prompt="Delegate", cwd=str(tmp_path), provider_id="fake")
+        adapter.plan_delay = 30.0
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        _, delegate = await wait_for_pending_approval(store, parent["id"], "tool")
+        await manager.resolve_approval(parent["id"], delegate["id"], "approved")
+        while adapter.plan_calls < 2:
+            await asyncio.sleep(0.02)
+        manager.cancel(parent["id"])
+        cancelled = await wait_for_status(store, parent["id"], "cancelled")
+        assert cancelled["error"] == "Cancelled by user"
+        children = [t for t in store.list_tasks() if t["id"] != parent["id"]]
+        assert len(children) == 1 and children[0]["status"] == "cancelled"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
 def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Path) -> None:
     async def run() -> None:
         manager, store = build_manager(tmp_path, ComputerAdapter())
