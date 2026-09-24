@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import os
 import shutil
 import subprocess
 import sys
+import threading
 from typing import Any
 
 from termx.desktop.capabilities import probe_desktop
@@ -12,6 +14,9 @@ from termx.desktop.capabilities import probe_desktop
 
 class InputError(RuntimeError):
     pass
+
+
+_INPUT_LOCK = threading.RLock()
 
 
 def clipboard_get() -> str:
@@ -61,6 +66,11 @@ def _clipboard_write_cmd() -> list[str] | None:
 
 
 def apply_event(event: dict[str, Any], target: str | None = None) -> None:
+    with _INPUT_LOCK:
+        _apply_event(event, target)
+
+
+def _apply_event(event: dict[str, Any], target: str | None = None) -> None:
     kind = event.get("type")
     if sys.platform == "darwin":
         from termx.desktop import broker
@@ -813,14 +823,57 @@ def _xtest() -> _XTest | None:
         if not xtst_path or not x11_path:
             return None
         x11 = ctypes.CDLL(x11_path)
+        display_pointer = ctypes.c_void_p
+        if hasattr(x11, "XInitThreads"):
+            x11.XInitThreads.argtypes = []
+            x11.XInitThreads.restype = ctypes.c_int
+            x11.XInitThreads()
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
         x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XDefaultScreen.argtypes = [display_pointer]
         x11.XDefaultScreen.restype = ctypes.c_int
+        x11.XDisplayWidth.argtypes = [display_pointer, ctypes.c_int]
         x11.XDisplayWidth.restype = ctypes.c_int
+        x11.XDisplayHeight.argtypes = [display_pointer, ctypes.c_int]
         x11.XDisplayHeight.restype = ctypes.c_int
+        x11.XStringToKeysym.argtypes = [ctypes.c_char_p]
         x11.XStringToKeysym.restype = ctypes.c_ulong
+        x11.XKeysymToKeycode.argtypes = [display_pointer, ctypes.c_ulong]
         x11.XKeysymToKeycode.restype = ctypes.c_ubyte
+        x11.XkbKeycodeToKeysym.argtypes = [display_pointer, ctypes.c_ubyte, ctypes.c_int, ctypes.c_int]
         x11.XkbKeycodeToKeysym.restype = ctypes.c_ulong
+        x11.XFlush.argtypes = [display_pointer]
+        x11.XFlush.restype = ctypes.c_int
         xtst = ctypes.CDLL(xtst_path)
+        xtst.XTestFakeMotionEvent.argtypes = [
+            display_pointer,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
+        xtst.XTestFakeMotionEvent.restype = ctypes.c_int
+        xtst.XTestFakeRelativeMotionEvent.argtypes = [
+            display_pointer,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
+        xtst.XTestFakeRelativeMotionEvent.restype = ctypes.c_int
+        xtst.XTestFakeButtonEvent.argtypes = [
+            display_pointer,
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
+        xtst.XTestFakeButtonEvent.restype = ctypes.c_int
+        xtst.XTestFakeKeyEvent.argtypes = [
+            display_pointer,
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
+        xtst.XTestFakeKeyEvent.restype = ctypes.c_int
         _xtest_singleton = _XTest(x11, xtst)
     except Exception:
         return None

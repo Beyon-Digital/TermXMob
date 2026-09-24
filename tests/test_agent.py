@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -812,6 +813,50 @@ def test_desktop_input_release_all_releases_xtest_buttons_and_modifiers(monkeypa
 
     assert adapter.buttons == [(1, False), (2, False), (3, False)]
     assert adapter.keys == [(1, False), (2, False), (3, False), (4, False)]
+
+
+def test_desktop_input_serializes_events_across_threads(monkeypatch) -> None:
+    first_started = threading.Event()
+    finish_first = threading.Event()
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+
+    def apply(event: dict[str, Any], target: str | None = None) -> None:
+        nonlocal active, max_active
+        with guard:
+            active += 1
+            max_active = max(max_active, active)
+        if event["id"] == 1:
+            first_started.set()
+            assert finish_first.wait(timeout=1)
+        with guard:
+            active -= 1
+
+    monkeypatch.setattr(desktop_input, "_apply_event", apply)
+    first = threading.Thread(target=desktop_input.apply_event, args=({"id": 1},))
+    second = threading.Thread(target=desktop_input.apply_event, args=({"id": 2},))
+
+    first.start()
+    assert first_started.wait(timeout=1)
+    second.start()
+    assert second.is_alive()
+    finish_first.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert max_active == 1
+
+
+def test_desktop_input_xtest_is_unavailable_without_display(monkeypatch) -> None:
+    monkeypatch.setattr(desktop_input.sys, "platform", "linux")
+    monkeypatch.setattr(desktop_input, "_xtest_singleton", None)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    assert desktop_input._xtest() is None
 
 
 def test_desktop_input_release_all_uses_xdotool_fallback(monkeypatch) -> None:
