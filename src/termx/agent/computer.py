@@ -141,7 +141,10 @@ class ComputerController:
             )
             return
         if kind == "type":
-            await asyncio.to_thread(apply_event, {"type": "text", "data": str(action.get("text") or "")})
+            for character in str(action.get("text") or ""):
+                if cancel is not None and cancel.is_set():
+                    raise asyncio.CancelledError
+                await asyncio.to_thread(apply_event, {"type": "text", "data": character})
             return
         if kind == "keypress":
             keys = action.get("keys") or []

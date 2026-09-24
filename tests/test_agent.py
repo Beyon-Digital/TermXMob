@@ -786,6 +786,42 @@ def test_computer_controller_releases_drag_on_cancellation(monkeypatch) -> None:
     asyncio.run(run())
 
 
+def test_computer_controller_stops_typing_before_takeover_release(monkeypatch) -> None:
+    async def run() -> None:
+        first_character = threading.Event()
+        finish_character = threading.Event()
+        events: list[dict[str, Any]] = []
+        cancel = asyncio.Event()
+        controller = ComputerController()
+
+        def apply(event: dict[str, Any], target: str | None = None) -> None:
+            events.append(event)
+            if event.get("type") == "text":
+                first_character.set()
+                assert finish_character.wait(timeout=1)
+
+        monkeypatch.setattr("termx.agent.computer.apply_event", apply)
+        typing = asyncio.create_task(
+            controller.execute([{"type": "type", "text": "long input"}], cancel=cancel)
+        )
+        assert await asyncio.to_thread(first_character.wait, 1)
+
+        cancel.set()
+        release = asyncio.create_task(controller.release_all())
+        finish_character.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await typing
+        await release
+
+        assert [event for event in events if event.get("type") == "text"] == [
+            {"type": "text", "data": "l"}
+        ]
+        assert events[-1] == {"type": "release_all"}
+
+    asyncio.run(run())
+
+
 def test_desktop_input_release_all_releases_xtest_buttons_and_modifiers(monkeypatch) -> None:
     class FakeXTest:
         def __init__(self) -> None:
