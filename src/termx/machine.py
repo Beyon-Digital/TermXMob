@@ -19,7 +19,12 @@ def os_name() -> str:
     return sys.platform
 
 
-def machine_snapshot(store: ConfigStore, tunnel_status: dict[str, Any] | None = None) -> dict[str, Any]:
+def machine_snapshot(
+    store: ConfigStore,
+    tunnel_status: dict[str, Any] | None = None,
+    *,
+    webrtc: bool = False,
+) -> dict[str, Any]:
     desktop = probe_desktop()
     prefs = store.get().terminal
     providers = {
@@ -42,7 +47,7 @@ def machine_snapshot(store: ConfigStore, tunnel_status: dict[str, Any] | None = 
             "dynamic_tunnels": True,
             "remote_screen": desktop.remote_screen,
             "virtual_display": desktop.virtual_display,
-            "webrtc": False,
+            "webrtc": webrtc,
             "agent": True,
             "agent_shell": True,
             "agent_computer": desktop.remote_screen,

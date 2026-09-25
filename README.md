@@ -16,6 +16,11 @@ uv run termx --passcode hunter2
 uv run termx --passcode hunter2 --tunnel
 ```
 
+> **SECURITY**: the passcode is the only gate on a full remote-shell bridge —
+> anyone holding it gets unrestricted shell and filesystem access to the host.
+> Run the daemon on trusted LANs only; do not expose it to untrusted networks,
+> and treat `--tunnel` as publishing that shell to the internet.
+
 `--tunnel` needs [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 
 The process prints LAN URLs, an optional Cloudflare URL, and a QR code. Open the URL or scan the QR. Sessions keep running if you disconnect.
@@ -95,7 +100,7 @@ the full UI without any Node tooling. Rebuild it with
   `TERMX_CAPTURE_IDLE_GRACE` (default 5s); pausing uses `TERMX_CAPTURE_PAUSE_GRACE`
   (default 1s).
 - Stop (`Ctrl+C` / SIGTERM) drains tunnels, desktop pumps, virtual displays, then PTY process groups.
-- `TERMX_CORS_ORIGINS` optional comma-separated list (default `*`).
+- `TERMX_CORS_ORIGINS` optional comma-separated list of explicit origins; when unset, CORS defaults to localhost + private-LAN origins only.
 
 ## Remote screen and displays by platform
 
