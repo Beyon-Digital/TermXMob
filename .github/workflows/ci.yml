@@ -14,8 +14,9 @@ jobs:
   python:
     strategy:
       fail-fast: false
+      # PRs run backend tests on one OS; pushes to main get the full OS matrix.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +28,8 @@ jobs:
 
   linux-desktop:
     name: linux desktop capture
+    # PRs only run the python test matrix; desktop capture runs on main/dispatch.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
