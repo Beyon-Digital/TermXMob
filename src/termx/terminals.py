@@ -115,7 +115,7 @@ class PosixTerminal:
         if sig is None:
             return False
         try:
-            os.killpg(os.getpgid(self.proc.pid), sig)
+            os.killpg(self._signal_pgrp(), sig)
             return True
         except OSError:
             try:
@@ -123,6 +123,21 @@ class PosixTerminal:
                 return True
             except OSError:
                 return False
+
+    def _signal_pgrp(self) -> int:
+        """Foreground process group of the pty.
+
+        Interactive jobs run in their own foreground group on the pty, so
+        signals must target it to reach them. Falls back to the session
+        leader's group when the foreground group is unavailable.
+        """
+        try:
+            pgrp = os.tcgetpgrp(self.master_fd)
+        except OSError:
+            pgrp = 0
+        if pgrp > 0:
+            return pgrp
+        return os.getpgid(self.proc.pid)
 
     def resize(self, rows: int, cols: int) -> None:
         if self.master_fd >= 0 and not self._exited:
