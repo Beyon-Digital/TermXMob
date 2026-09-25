@@ -1,5 +1,6 @@
 import asyncio
 import os
+import shutil
 import sys
 
 import pytest
@@ -109,6 +110,47 @@ def test_send_signal_int() -> None:
             session.send_signal("int")
             out = await _wait_echo(sink, b"CAUGHT")
         assert b"CAUGHT" in out
+        mgr.kill(session.id)
+
+    asyncio.run(inner())
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows ConPTY cannot deliver POSIX signals",
+)
+@pytest.mark.skipif(
+    shutil.which("bash") is None,
+    reason="interactive bash is required for pty job control",
+)
+def test_send_signal_int_reaches_foreground_job() -> None:
+    async def inner() -> None:
+        mgr = SessionManager()
+        session = mgr.create(argv=["bash", "-i"])
+        sink = _Collector()
+        session.subscribe(sink)
+        # Quoted marker: the pty echoes typed input, so only the command's own
+        # output contains the unquoted needle.
+        session.write(b"echo TM''XRDY\n")
+        assert b"TMXRDY" in await _wait_echo(sink, b"TMXRDY")
+
+        leader_pgrp = os.getpgid(session.proc.pid)
+        session.write(b"sleep 60\n")
+        for _ in range(80):
+            if os.tcgetpgrp(session.master_fd) != leader_pgrp:
+                break
+            await asyncio.sleep(0.05)
+        fg_pgrp = os.tcgetpgrp(session.master_fd)
+        assert fg_pgrp != leader_pgrp, "sleep did not take the pty foreground"
+
+        assert session.send_signal("int") is True
+        for _ in range(80):
+            if os.tcgetpgrp(session.master_fd) == leader_pgrp:
+                break
+            await asyncio.sleep(0.05)
+        assert os.tcgetpgrp(session.master_fd) == leader_pgrp, "SIGINT did not reach the foreground job"
+        session.write(b"echo TM''XDONE\n")
+        assert b"TMXDONE" in await _wait_echo(sink, b"TMXDONE")
         mgr.kill(session.id)
 
     asyncio.run(inner())
