@@ -17,6 +17,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # PRs run the ubuntu leg only; windows/macos legs run on push to main
+    if: github.event_name != 'pull_request' || matrix.os == 'ubuntu-latest'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -28,6 +30,8 @@ jobs:
   linux-desktop:
     name: linux desktop capture
     runs-on: ubuntu-latest
+    # desktop-capture suite only on push to main, not on PRs
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
