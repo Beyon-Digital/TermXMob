@@ -84,10 +84,73 @@ def test_health_includes_capabilities() -> None:
     client = TestClient(create_app(AppState(), web_dir=None))
     body = client.get("/api/health").json()
     assert body["ok"] is True
-    assert "hostname" in body
     assert body["capabilities"]["saved_commands"] is True
     assert body["capabilities"]["dynamic_tunnels"] is True
     assert "cloudflare" in body["capabilities"]["providers"]
+
+
+def test_health_does_not_fingerprint_host() -> None:
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    body = client.get("/api/health").json()
+    assert body["ok"] is True
+    assert body["passcode_required"] is True
+    for field in ("hostname", "os", "tunnel"):
+        assert field not in body
+    machine = client.get("/api/machine", headers={"X-Termx-Passcode": "secret"}).json()
+    assert machine["hostname"]
+    assert machine["os"]
+    assert "tunnel" in machine
+
+
+def test_machine_reports_rtc_availability() -> None:
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    body = client.get("/api/machine", headers={"X-Termx-Passcode": "secret"}).json()
+    assert body["capabilities"]["webrtc"] == state.rtc.available()
+    health = client.get("/api/health").json()
+    assert health["capabilities"]["webrtc"] == state.rtc.available()
+
+
+def _preflight(client: TestClient, origin: str):
+    return client.options(
+        "/api/health",
+        headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
+    )
+
+
+def test_cors_allows_lan_origins() -> None:
+    client = TestClient(create_app(AppState(), web_dir=None))
+    for origin in (
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://192.168.1.20:8081",
+        "http://10.0.0.5",
+        "http://172.16.3.4:9000",
+        "http://172.31.255.254",
+    ):
+        res = _preflight(client, origin)
+        assert res.status_code == 200, origin
+        assert res.headers["access-control-allow-origin"] == origin
+
+
+def test_cors_rejects_external_origins() -> None:
+    client = TestClient(create_app(AppState(), web_dir=None))
+    for origin in (
+        "https://evil.example.com",
+        "http://172.32.0.1:8081",
+        "http://11.0.0.1",
+        "https://localhost.evil.com",
+    ):
+        assert _preflight(client, origin).status_code == 400, origin
+
+
+def test_cors_env_override(monkeypatch) -> None:
+    monkeypatch.setenv("TERMX_CORS_ORIGINS", "https://console.example.com, https://ops.example.com")
+    client = TestClient(create_app(AppState(), web_dir=None))
+    res = _preflight(client, "https://ops.example.com")
+    assert res.status_code == 200
+    assert res.headers["access-control-allow-origin"] == "https://ops.example.com"
+    assert _preflight(client, "http://192.168.1.20:8081").status_code == 400
 
 
 def test_commands_and_preferences_roundtrip(tmp_path) -> None:

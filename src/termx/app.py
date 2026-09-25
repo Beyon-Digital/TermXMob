@@ -50,6 +50,14 @@ from termx import __version__
 
 PACKAGE_STATIC = Path(__file__).parent / "static"
 
+# Browsers on loopback or private LAN addresses are the only web origins the
+# daemon serves by default; anything else (e.g. a public tunnel hostname used
+# from another origin) must be opted in via TERMX_CORS_ORIGINS.
+_LAN_ORIGIN_REGEX = (
+    r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$"
+)
+
 
 class AppState:
     def __init__(
@@ -305,10 +313,13 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     app = FastAPI(title="termx", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.termx = state
-    origins = [item.strip() for item in os.environ.get("TERMX_CORS_ORIGINS", "*").split(",") if item.strip()]
+    cors_origins = [
+        item.strip() for item in os.environ.get("TERMX_CORS_ORIGINS", "").split(",") if item.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins or ["*"],
+        allow_origins=cors_origins,
+        allow_origin_regex=None if cors_origins else _LAN_ORIGIN_REGEX,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -322,19 +333,18 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     @app.get("/api/health")
     def health() -> dict[str, object]:
-        snapshot = machine_snapshot(state.store, state.tunnels.status_public())
-        capabilities = dict(snapshot["capabilities"])
-        capabilities["webrtc"] = state.rtc.available()
+        # Unauthenticated: keep the payload minimal. Clients gate features on
+        # capabilities here (machine detail lives behind auth in /api/machine).
+        capabilities = dict(
+            machine_snapshot(state.store, webrtc=state.rtc.available())["capabilities"]
+        )
         capabilities["agent_credentials"] = state.credentials.available()
         return {
             "app": "termx",
             "ok": True,
             "version": __version__,
             "passcode_required": state.auth.required,
-            "hostname": snapshot["hostname"],
-            "os": snapshot["os"],
             "capabilities": capabilities,
-            "tunnel": snapshot["tunnel"],
         }
 
     def _connect_target() -> tuple[str, str | None]:
@@ -527,7 +537,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
         _require(state, provided(x_termx_passcode, authorization, k))
-        return machine_snapshot(state.store, state.tunnels.status_public())
+        return machine_snapshot(
+            state.store, state.tunnels.status_public(), webrtc=state.rtc.available()
+        )
 
     # Agent -----------------------------------------------------------
 
