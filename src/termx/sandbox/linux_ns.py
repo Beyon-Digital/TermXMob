@@ -64,6 +64,10 @@ _GRANTABLE = frozenset(
 _ETC_FILES = ("resolv.conf", "hosts", "nsswitch.conf", "passwd", "group")
 _ETC_DIRS = ("ssl", "pki", "ca-certificates")
 
+# Task-less spawns get an ephemeral HOME inside the per-ns tmpfs — it dies
+# with the namespace and can never expose an unrelated run's leftovers.
+_EPHEMERAL_HOME = "/tmp/termx-home"
+
 # prlimit defaults for every restricted spawn (per-tree bounds; pids counts
 # the real uid so it is kept generous enough to avoid false failures).
 _DEFAULT_LIMITS = ResourceLimits(pids=1024, memory_bytes=8 << 30)
@@ -143,14 +147,18 @@ class LinuxNamespaceRunner:
                 "loopback-only networking is not enforceable by linux-ns",
             )
         home = self._sandbox_home(spec)
-        home.mkdir(parents=True, exist_ok=True)
+        if home is not None:
+            home.mkdir(parents=True, exist_ok=True)
         env = spec.env or build_environment(
-            spec.profile, home=str(home), tmp_dir="/tmp"
+            spec.profile, home=str(home) if home else _EPHEMERAL_HOME, tmp_dir="/tmp"
         )
         argv = self._argv(spec, env, home)
         try:
+            # env={}: the bwrap launcher itself must not inherit host secrets —
+            # only the inner child (inside the ns, via --setenv) needs env.
             process = await asyncio.create_subprocess_exec(
                 *argv,
+                env={},
                 stdin=spec.stdin,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
@@ -162,11 +170,20 @@ class LinuxNamespaceRunner:
 
     # -- internals ------------------------------------------------------
 
-    def _sandbox_home(self, spec: SpawnSpec) -> Path:
-        scope = spec.task_id or self._profile
-        return self._state_dir / "home" / _safe_name(scope)
+    def _sandbox_home(self, spec: SpawnSpec) -> Path | None:
+        """Persistent private HOME path, or None for an ephemeral one.
 
-    def _argv(self, spec: SpawnSpec, env: dict[str, str], home: Path) -> list[str]:
+        Task-scoped (or caller-pinned) homes persist on disk; task-less
+        spawns get a fresh dir inside the per-ns tmpfs so files from an
+        unrelated earlier run can never leak into this one.
+        """
+        if spec.home:
+            return Path(spec.home)
+        if spec.task_id:
+            return self._state_dir / "home" / _safe_name(spec.task_id)
+        return None
+
+    def _argv(self, spec: SpawnSpec, env: dict[str, str], home: Path | None) -> list[str]:
         argv = [_BWRAP or "bwrap"]
         argv += [
             "--unshare-user",
@@ -201,10 +218,27 @@ class LinuxNamespaceRunner:
             if src.is_dir():
                 argv += ["--ro-bind", str(src), f"/etc/{name}"]
         argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
-        argv += ["--bind", str(home), str(home)]
+        seen: set[str] = set()
+        if home is not None:
+            argv += ["--bind", str(home), str(home)]
+            seen.add(str(home))
+        else:
+            # Ephemeral HOME inside the per-ns tmpfs — nothing persists to a
+            # shared dir, so an unrelated earlier run's files can't leak in.
+            argv += ["--dir", _EPHEMERAL_HOME]
+            seen.add(_EPHEMERAL_HOME)
         workspace = str(Path(spec.workspace_root).resolve())
         argv += ["--bind", workspace, workspace]
-        seen = {workspace, str(home)}
+        seen.add(workspace)
+        # Linked-git-worktree metadata: the worktree's `.git` file points at
+        # <base>/.git/worktrees/<name>; git needs that dir (rw — index/refs)
+        # and its commondir object store (rw — new objects). The base
+        # checkout's *files* stay unmounted entirely.
+        for meta in _git_metadata_roots(Path(workspace)):
+            resolved = str(meta)
+            if resolved not in seen:
+                seen.add(resolved)
+                argv += ["--bind", resolved, resolved]
         for root in spec.writable_roots:
             resolved = str(Path(root).resolve())
             if resolved not in seen:
@@ -244,6 +278,48 @@ class LinuxNamespaceRunner:
 
 def _safe_name(value: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in value)[:80] or "agent"
+
+
+def _git_metadata_roots(workspace: Path) -> list[Path]:
+    """Git metadata a linked worktree needs beyond the workspace bind.
+
+    A worktree's `.git` is a text file (`gitdir: <abs>`) pointing into the
+    base repository's `.git/worktrees/<name>`; that dir's `commondir` in
+    turn points at the shared object store. Both are bound rw — git refuses
+    to operate otherwise — while the base checkout's working files stay
+    unmounted entirely.
+    """
+    dotgit = workspace / ".git"
+    if not dotgit.is_file():
+        return []
+    try:
+        text = dotgit.read_text(encoding="utf-8", errors="replace").strip()
+        target = next(
+            (ln.split(":", 1)[1].strip() for ln in text.splitlines() if ln.startswith("gitdir:")),
+            "",
+        )
+        if not target:
+            return []
+        gitdir = Path(target)
+        if not gitdir.is_absolute():
+            gitdir = workspace / gitdir
+        gitdir = gitdir.resolve(strict=False)
+        if not gitdir.is_dir():
+            return []
+        roots = [gitdir]
+        commondir_file = gitdir / "commondir"
+        if commondir_file.is_file():
+            common = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
+            if common:
+                common_path = Path(common)
+                if not common_path.is_absolute():
+                    common_path = gitdir / common_path
+                resolved = common_path.resolve(strict=False)
+                if resolved.is_dir() and resolved not in roots:
+                    roots.append(resolved)
+        return roots
+    except OSError:
+        return []
 
 
 def _default_state_dir() -> Path:

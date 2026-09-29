@@ -60,7 +60,7 @@ class RunbookRunner:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._procs: dict[str, set[asyncio.subprocess.Process]] = {}
         self._profiles: dict[str, str] = {}
-        self._grant_ctx: dict[str, tuple[str | None, str | None]] = {}
+        self._grant_ctx: dict[str, tuple[str | None, str | None, str | None]] = {}
         self._confirm_events: dict[str, asyncio.Event] = {}
         if runner_for is None:
             from termx.sandbox import runner_for as _default
@@ -88,13 +88,14 @@ class RunbookRunner:
         profile: str = "host",
         task_id: str | None = None,
         project_id: str | None = None,
+        custom_agent_id: str | None = None,
     ) -> dict[str, Any]:
         run = self._store.create_runbook_run(
             runbook["id"], cwd=cwd, steps=runbook["steps"]
         )
         run_id = run["id"]
         self._profiles[run_id] = profile
-        self._grant_ctx[run_id] = (task_id, project_id)
+        self._grant_ctx[run_id] = (task_id, project_id, custom_agent_id)
         task = asyncio.create_task(self._execute(run_id, runbook, cwd, profile=profile))
         self._tasks[run_id] = task
         task.add_done_callback(
@@ -280,7 +281,9 @@ class RunbookRunner:
         """
         if self._policy_engine is None or profile == "host":
             return frozenset(), "none" if profile != "host" else "outbound"
-        task_id, project_id = self._grant_ctx.get(run_id, (None, None))
+        task_id, project_id, custom_agent_id = self._grant_ctx.get(
+            run_id, (None, None, None)
+        )
         if project_id is None and self._project_id_for is not None and cwd:
             try:
                 project_id = self._project_id_for(cwd)
@@ -291,7 +294,7 @@ class RunbookRunner:
                 profile,
                 task_id=task_id,
                 project_id=project_id or "",
-                custom_agent_id=None,
+                custom_agent_id=custom_agent_id,
             )
         except Exception:
             grants = frozenset()

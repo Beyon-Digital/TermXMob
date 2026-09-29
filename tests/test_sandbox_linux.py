@@ -330,7 +330,10 @@ def test_env_is_clean_and_home_private(tmp_path):
     )
     home_line = [l for l in out.splitlines() if l.startswith("HOME=")][0]
     home = home_line.split("=", 1)[1]
-    assert "/sandbox/home/" in home or home.startswith(str(tmp_path))
+    # Private HOME: task-scoped state dir, caller-pinned dir, or the
+    # per-namespace ephemeral dir — never the real host HOME.
+    assert home != str(Path.home())
+    assert "/sandbox/home/" in home or home.startswith(str(tmp_path)) or home == "/tmp/termx-home"
     assert "TERM=" in out
 
 
@@ -395,3 +398,73 @@ def test_run_shell_path_runs_sandboxed(tmp_path):
         run_shell("id -u", str(ws), runner=runner, profile="agent")
     )
     assert "65534" in result.output
+
+
+def test_taskless_spawn_gets_ephemeral_home(tmp_path):
+    """Two task-less spawns must not share HOME state — leftovers from an
+    unrelated earlier run can never leak into a later one."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    marker = ws / "marker"  # workspace files are out of scope; HOME is the test
+    rc, _ = asyncio.run(
+        _run(runner, _spec(ws, 'mkdir -p "$HOME" && touch "$HOME/leak"'))
+    )
+    assert rc == 0
+    rc, out = asyncio.run(_run(runner, _spec(ws, 'test -e "$HOME/leak" || echo ABSENT')))
+    assert rc == 0
+    assert "ABSENT" in out
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="git worktree as root mask test")
+def test_git_worktree_metadata_writable_but_base_checkout_hidden(tmp_path):
+    """Agent worktrees are the writable project root — git needs the
+    worktree's linked metadata (index/refs/objects) rw while the base
+    checkout's working files stay unmounted."""
+    import subprocess
+
+    base = tmp_path / "base"
+    base.mkdir()
+    subprocess.run(
+        ["git", "-C", str(base), "init", "-b", "main"],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(base), "config", "user.email", "t@t"],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(base), "config", "user.name", "t"],
+        check=True, capture_output=True,
+    )
+    secret = base / "host-secret.txt"
+    secret.write_text("do-not-read")
+    subprocess.run(
+        ["git", "-C", str(base), "commit", "--allow-empty", "-m", "init"],
+        check=True, capture_output=True,
+    )
+    wt = tmp_path / "wt"
+    subprocess.run(
+        ["git", "-C", str(base), "worktree", "add", "-b", "wt-branch", str(wt)],
+        check=True, capture_output=True,
+    )
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                wt,
+                "git status --porcelain >/dev/null && "
+                "git commit --allow-empty -m wt && "
+                "echo GIT_OK",
+            ),
+        )
+    )
+    assert "GIT_OK" in out
+    # The base checkout file tree itself is not mounted — traversal to it
+    # fails (the worktree gitdir bind is the only host .git surface).
+    rc, out = asyncio.run(
+        _run(runner, _spec(wt, f"cat {base}/host-secret.txt || echo HIDDEN"))
+    )
+    assert "HIDDEN" in out

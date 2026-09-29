@@ -69,6 +69,9 @@ async def _run_runbook(call: Any, ctx: ToolContext) -> ToolOutcome:
         profile=sandbox_profile(ctx),
         task_id=str(ctx.task_id),
         project_id=str(getattr(ctx, "project_id", "") or "") or None,
+        custom_agent_id=(
+            str((getattr(ctx, "task", None) or {}).get("custom_agent_id") or "") or None
+        ),
     )
     run_id = run["id"]
     while True:

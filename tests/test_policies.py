@@ -672,6 +672,57 @@ def test_capability_resolution_writes_capability_rule(store, tmp_path):
     assert rule["capabilities"] == ["net.outbound:any"]
 
 
+def test_capability_resolution_stores_only_elevated_subset(store, tmp_path):
+    """Baseline capabilities (process.execute, fs.workspace) are provided by
+    the envelope — legitimate requirement context, but not an elevation.
+    Only the grantable-covered elevated subset may persist in the rule."""
+    engine = _engine(
+        store,
+        envelope=lambda _p: _RESTRICTED_ENVELOPE,
+        grantable=lambda _p: frozenset({"net.outbound:any"}),
+    )
+    intent = PolicyIntent(
+        action_type="tool", tool="run_shell", fingerprint="fp-cap",
+        fingerprint_kind="exact", display="curl https://x", cwd=str(tmp_path),
+        project_id="proj-1", task_id="task-1",
+        required_capabilities=(
+            "process.execute:any", "fs.workspace:any", "net.outbound:any",
+        ),
+    )
+    rule = engine.record_resolution(
+        intent, decision="approved", remember="project",
+        project_id="proj-1", source_approval_id="a1", approval_kind="capability",
+    )
+    assert rule["action_type"] == "capability"
+    assert rule["capabilities"] == ["net.outbound:any"]
+
+
+def test_runbook_step_grants_honor_custom_agent_scope(store, tmp_path):
+    """A custom-agent capability rule must reach runbook step spawns —
+    previously the runner dropped custom_agent_id from the grant context,
+    so agent-scoped elevations silently never applied."""
+    from termx.runbooks import RunbookRunner
+
+    engine = _engine(
+        store,
+        envelope=lambda _p: _RESTRICTED_ENVELOPE,
+        grantable=lambda _p: frozenset({"net.outbound:any"}),
+    )
+    agent = store.create_custom_agent(name="pub", approval_mode="remember")
+    _rule(
+        store, fingerprint="cap", action_type="capability",
+        capabilities=["net.outbound:any"],
+        scope_type="custom_agent", scope_id=agent["id"],
+    )
+    runner = RunbookRunner(
+        store, runner_for=lambda _p, **_kw: None, policy_engine=engine
+    )
+    runner._grant_ctx["run-1"] = ("task-1", "proj-1", agent["id"])
+    grants, network = runner._step_grants("run-1", str(tmp_path), "agent")
+    assert "net.outbound:any" in grants
+    assert network == "outbound"
+
+
 def test_capability_resolution_rejects_ungrantable_or_unprovidable(store, tmp_path):
     """A capability approval may only persist powers the profile's backend
     can actually provide — never the ungrantable set, never off-grantable."""

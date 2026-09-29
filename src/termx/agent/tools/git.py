@@ -72,14 +72,15 @@ async def _run_mutating(
     from termx.sandbox import SpawnSpec
 
     profile = sandbox_profile(ctx)
+    grants = sandbox_grants(ctx, profile, call.call_id)
     spec = SpawnSpec(
         profile=profile,
         argv=("git", "-C", ctx.cwd, *args),
         cwd=ctx.cwd,
         workspace_root=ctx.cwd,
         writable_roots=[ctx.cwd],
-        network=sandbox_network(ctx, profile, call.call_id),
-        granted_capabilities=sorted(sandbox_grants(ctx, profile, call.call_id)),
+        network=sandbox_network(grants),
+        granted_capabilities=sorted(grants),
         task_id=str(getattr(ctx, "task_id", "") or "") or None,
         purpose=f"git_{args[0] if args else 'command'}",
         stdin=stdin,

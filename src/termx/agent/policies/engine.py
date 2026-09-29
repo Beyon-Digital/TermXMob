@@ -282,16 +282,30 @@ class PolicyEngine:
             return None
         if approval_kind == "capability":
             # Capability rules may only name capabilities this profile's backend
-            # can actually provide — a rule must never invent powers.
+            # can actually provide — a rule must never invent powers. The
+            # intent's requirement list also carries baseline capabilities the
+            # envelope always grants (process.execute, fs.workspace); those
+            # are legitimate context but only the elevated subset is recorded.
             grantable = self._grantable(intent.sandbox_profile)
+            envelope = self._envelope(intent.sandbox_profile)
             bad = [
                 c
                 for c in intent.required_capabilities
-                if c in UNGRANTABLE_CAPABILITIES or not _covers(grantable, c)
+                if c in UNGRANTABLE_CAPABILITIES
+                or (not _covers(grantable, c) and not _covers(envelope, c))
             ]
             if bad:
                 raise ValueError(
                     f"capability rule cannot grant {', '.join(bad)} on profile {intent.sandbox_profile}"
+                )
+            capabilities = [
+                c
+                for c in intent.required_capabilities
+                if _covers(grantable, c)
+            ]
+            if not capabilities:
+                raise ValueError(
+                    f"no grantable capability to remember on profile {intent.sandbox_profile}"
                 )
         scope_id = {
             "task": intent.task_id,
@@ -311,7 +325,11 @@ class PolicyEngine:
             fingerprint=intent.fingerprint,
             fingerprint_kind=intent.fingerprint_kind,
             matcher=intent.matcher,
-            capabilities=list(intent.required_capabilities),
+            capabilities=(
+                list(capabilities)
+                if approval_kind == "capability"
+                else list(intent.required_capabilities)
+            ),
             sandbox_profile=intent.sandbox_profile,
             source_approval_id=source_approval_id,
             task_id=intent.task_id if remember == "task" else None,

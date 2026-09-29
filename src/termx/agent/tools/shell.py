@@ -82,6 +82,7 @@ async def _streamed_process(
         )
 
     profile = sandbox_profile(ctx)
+    grants = sandbox_grants(ctx, profile, call.call_id)
     result = await stream_shell(
         command,
         ctx.cwd,
@@ -91,8 +92,8 @@ async def _streamed_process(
         runner=sandbox_spawn(ctx, profile),
         profile=profile,
         workspace_root=ctx.cwd,
-        network=sandbox_network(ctx, profile, call.call_id),
-        granted_capabilities=sorted(sandbox_grants(ctx, profile, call.call_id)),
+        network=sandbox_network(grants),
+        granted_capabilities=sorted(grants),
         task_id=str(getattr(ctx, "task_id", "") or "") or None,
     )
     tail = redactor.flush()
