@@ -11,6 +11,15 @@ from termx.config import ConfigStore, available_shells
 from termx.desktop.capabilities import probe_desktop
 
 
+def _process_discovery_supported() -> bool:
+    from termx.processes import supported
+
+    try:
+        return supported()
+    except Exception:
+        return False
+
+
 def hostname() -> str:
     return socket.gethostname()
 
@@ -62,7 +71,7 @@ def machine_snapshot(
             "custom_agents": True,
             "agent_worktrees": True,
             "activity": True,
-            "process_discovery": True,
+            "process_discovery": _process_discovery_supported(),
             "runbooks": True,
             "device_scopes_v2": True,
             "editor": True,

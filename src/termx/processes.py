@@ -19,11 +19,108 @@ from __future__ import annotations
 
 import os
 import socket
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 _PROC = Path("/proc")
+
+
+def supported() -> bool:
+    """Whether this host can discover listeners/processes: Linux via /proc,
+    macOS via lsof+ps. Windows is truthfully gated off."""
+    return sys.platform.startswith("linux") or sys.platform == "darwin"
+
+
+def _lsof(*args: str) -> str:
+    try:
+        return subprocess.run(
+            ["lsof", *args], capture_output=True, text=True, timeout=15
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _darwin_listeners() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for line in _lsof("-nP", "-iTCP", "-sTCP:LISTEN").splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 9:
+            continue
+        name = parts[-2] if parts[-1].startswith("(") else parts[-1]
+        addr, _, port_raw = name.rpartition(":")
+        try:
+            port = int(port_raw)
+        except ValueError:
+            continue
+        try:
+            pid = int(parts[1])
+        except (ValueError, IndexError):
+            pid = None
+        address = addr.lstrip("*") or "0.0.0.0"
+        loopback = address in {"127.0.0.1", "0.0.0.0", "::", "::1", "localhost"}
+        is_http = probe_http(port) if loopback else False
+        url = None
+        if is_http:
+            url = f"http://{'127.0.0.1' if address in {'0.0.0.0', '::'} else address}:{port}"
+        out.append(
+            {
+                "port": port,
+                "address": address,
+                "family": "ipv6" if ":" in addr else "ipv4",
+                "pid": pid,
+                "process": parts[0],
+                "cmdline": None,
+                "cwd": None,
+                "is_http": is_http,
+                "url": url,
+            }
+        )
+    out.sort(key=lambda item: (item["port"], item["family"]))
+    return out
+
+
+def _darwin_infos() -> dict[int, dict[str, Any]]:
+    infos: dict[int, dict[str, Any]] = {}
+    try:
+        out = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,comm=,args="],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return infos
+    for line in out.splitlines()[1:]:
+        parts = line.split(None, 3)
+        if len(parts) < 4:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        infos[pid] = {
+            "pid": pid,
+            "ppid": ppid,
+            "name": parts[2],
+            "cmdline": parts[3],
+            "cwd": None,
+        }
+    pid: int | None = None
+    for line in _lsof("-n", "-d", "cwd", "-FpLn").splitlines():
+        if line.startswith("p"):
+            try:
+                pid = int(line[1:])
+            except ValueError:
+                pid = None
+        elif line.startswith("n") and pid is not None:
+            if pid in infos:
+                infos[pid]["cwd"] = line[1:]
+            pid = None
+    return infos
+
+
 _HTTP_PROBE_BYTES = b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
 _PROBE_TIMEOUT = 0.25
 
@@ -126,8 +223,10 @@ def probe_http(port: int, host: str = "127.0.0.1") -> bool:
 
 def listeners(probe: bool = True) -> list[dict[str, Any]]:
     """Listening TCP sockets enriched with owner process data when permitted."""
-    if sys.platform.startswith("win"):
-        return []  # /proc-based discovery is POSIX-only; degrade honestly
+    if not supported():
+        return []
+    if sys.platform == "darwin":
+        return _darwin_listeners()
     sockets = _proc_net_listeners()
     if not sockets:
         return []
@@ -171,11 +270,17 @@ def termx_processes(project_roots: list[str] | None = None) -> list[dict[str, An
     """Processes owned by this Termx host (our PID tree) plus processes whose
     cwd sits inside one of `project_roots`. Arbitrary system processes are
     never returned — discovery stays scoped to Termx and project workspaces."""
-    if sys.platform.startswith("win"):
+    if not supported():
         return []
-    infos = {
-        pid: info for pid in _live_pids() if (info := _proc_info(pid)) is not None
-    }
+    infos = (
+        _darwin_infos()
+        if sys.platform == "darwin"
+        else {
+            pid: info
+            for pid in _live_pids()
+            if (info := _proc_info(pid)) is not None
+        }
+    )
     own = os.getpid()
     children: dict[int, list[int]] = {}
     for pid, info in infos.items():

@@ -1084,12 +1084,14 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             projects = state.projects.projects()
         except Exception:
             projects = []
+        from termx.processes import supported
+
         ports = listeners()
         for entry in ports:
             entry["project_id"] = _project_for(projects, entry.get("cwd"))
         if project_id:
             ports = [entry for entry in ports if entry["project_id"] == project_id]
-        return {"ports": ports}
+        return {"ports": ports, "supported": supported()}
 
     @app.get("/api/processes")
     def get_processes(
@@ -1107,12 +1109,14 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         except Exception:
             projects = []
         roots = [str(project["path"]) for project in projects if project.get("path")]
+        from termx.processes import supported
+
         procs = termx_processes(roots)
         for proc in procs:
             proc["project_id"] = _project_for(projects, proc.get("cwd"))
         if project_id:
             procs = [proc for proc in procs if proc["project_id"] == project_id]
-        return {"processes": procs}
+        return {"processes": procs, "supported": supported()}
 
     @app.post("/api/projects/{project_id}/previews/from-port")
     def preview_from_port(

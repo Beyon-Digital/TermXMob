@@ -3438,3 +3438,64 @@ def test_task_missing_conversation_or_agent_rejected(tmp_path: Path) -> None:
             raise AssertionError("expected ValueError")
 
 
+def test_process_discovery_platform_gating(monkeypatch) -> None:
+    import sys
+    import termx.processes as processes
+
+    real_platform = sys.platform
+
+    for platform, expected in (("linux", True), ("darwin", True), ("win32", False)):
+        monkeypatch.setattr(sys, "platform", platform)
+        assert processes.supported() is expected
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert processes.listeners() == []
+    assert processes.termx_processes([]) == []
+    monkeypatch.setattr(sys, "platform", real_platform)
+
+
+def test_darwin_process_discovery_parsers(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    import termx.processes as processes
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    lsof_listeners = (
+        "COMMAND     PID   USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\n"
+        "python3   12345 ubuntu   10u  IPv4 0xdeadbeef      0t0  TCP 127.0.0.1:8000 (LISTEN)\n"
+        "node      22345 ubuntu   22u  IPv6 0xbeefdead      0t0  TCP *:3000 (LISTEN)\n"
+        "malformed row\n"
+    )
+    ps_out = (
+        "  PID  PPID COMM              ARGS\n"
+        f"{os.getpid():6d}     1 python3           python3 -m termx\n"
+        "99999 12345 sshd              sshd: root\n"
+    )
+    lsof_cwds = f"p{os.getpid()}\nfcwd\nn{tmp_path}\n"
+
+    def fake_run(cmd, **_kw):
+        class R:
+            stdout = ""
+        r = R()
+        if cmd[:2] == ["lsof", "-nP"]:
+            r.stdout = lsof_listeners
+        elif cmd[:2] == ["lsof", "-n"]:
+            r.stdout = lsof_cwds
+        elif cmd[0] == "ps":
+            r.stdout = ps_out
+        return r
+
+    monkeypatch.setattr(processes.subprocess, "run", fake_run)
+    monkeypatch.setattr(processes, "probe_http", lambda port, host="127.0.0.1": port == 8000)
+    ports = processes.listeners()
+    assert {p["port"] for p in ports} == {8000, 3000}
+    loop = next(p for p in ports if p["port"] == 8000)
+    assert loop["pid"] == 12345 and loop["process"] == "python3"
+    assert loop["is_http"] is True and loop["url"] == "http://127.0.0.1:8000"
+    wild = next(p for p in ports if p["port"] == 3000)
+    assert wild["is_http"] is False and wild["url"] is None
+
+    procs = processes.termx_processes([str(tmp_path)])
+    ours = next(p for p in procs if p["pid"] == os.getpid())
+    assert ours["cwd"] == str(tmp_path) and ours["name"] == "python3"
+    assert all(p["pid"] != 99999 for p in procs)  # unrelated system procs excluded
+
+
