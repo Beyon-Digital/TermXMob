@@ -3499,3 +3499,40 @@ def test_darwin_process_discovery_parsers(monkeypatch, tmp_path: Path) -> None:
     assert all(p["pid"] != 99999 for p in procs)  # unrelated system procs excluded
 
 
+def test_delete_task_removes_orphan_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        assert record is not None
+        wt_path = record["worktree_path"]
+        branch = record["branch"]
+        assert Path(wt_path).exists()
+        assert manager.delete_task(task["id"]) is True
+        assert not Path(wt_path).exists()  # orphan checkout removed
+        branches = _git(repo, "branch", "--list", branch)
+        assert branches == ""  # orphan branch removed
+
+
+def test_delete_task_preserves_kept_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        assert record is not None
+        wt_path = record["worktree_path"]
+        manager.resolve_worktree(task["id"], "keep")
+        assert manager.delete_task(task["id"]) is True
+        assert Path(wt_path).exists()  # kept worktrees belong to the user
+
+

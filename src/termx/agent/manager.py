@@ -441,6 +441,40 @@ class AgentManager:
         self._mark_cancelled(task_id)
         return self._task(task_id)
 
+    def _cleanup_orphan_worktree(self, record: dict[str, Any] | None) -> None:
+        """Best-effort removal of a worktree+branch whose task row is gone.
+        'active' records only — 'kept' worktrees belong to the user."""
+        if not record or record.get("status") != "active":
+            return
+        path = record.get("worktree_path")
+        base = record.get("base_repo")
+        if not path or not base:
+            return
+        try:
+            worktrees.discard_worktree(base, str(path), str(record.get("branch") or ""))
+        except Exception:
+            pass
+
+    def delete_task(self, task_id: str) -> bool:
+        record = self.store.task_worktree(task_id)
+        deleted = self.store.delete_task(task_id)
+        if deleted:
+            self._cleanup_orphan_worktree(record)
+        return deleted
+
+    def prune_storage(
+        self, *, retention_days: int | None = None, max_bytes: int | None = None
+    ) -> list[str]:
+        candidates = {
+            task["id"]: self.store.task_worktree(task["id"])
+            for task in self.store.list_tasks(limit=500)
+            if task["status"] not in ACTIVE_STATUSES
+        }
+        removed = self.store.prune(retention_days=retention_days, max_bytes=max_bytes)
+        for task_id in removed:
+            self._cleanup_orphan_worktree(candidates.get(task_id))
+        return removed
+
     def task_worktree(self, task_id: str) -> dict[str, Any]:
         self._task(task_id)
         record = self.store.task_worktree(task_id)

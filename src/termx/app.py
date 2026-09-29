@@ -851,7 +851,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
-            deleted = state.agent_store.delete_task(task_id)
+            deleted = state.agent.delete_task(task_id)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         if not deleted:
@@ -1324,7 +1324,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             retention_days=body.retention_days,
             max_bytes=body.max_bytes,
         )
-        removed = state.agent_store.prune(retention_days=body.retention_days, max_bytes=body.max_bytes)
+        removed = state.agent.prune_storage(retention_days=body.retention_days, max_bytes=body.max_bytes)
         return {"removed": removed, "storage": state.agent_store.storage_status(retention_days=body.retention_days, max_bytes=body.max_bytes)}
 
     # Host-persisted conversations (PROD-001) -------------------------------
