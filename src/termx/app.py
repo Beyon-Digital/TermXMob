@@ -224,7 +224,13 @@ class AgentTaskBody(BaseModel):
     attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
     limits: dict[str, int] | None = None
     mode: str = Field(default="agent", pattern=r"^(ask|agent)$")
+    execution_mode: str | None = Field(default=None, pattern=r"^(direct|worktree)$")
     conversation_id: str | None = Field(default=None, max_length=80)
+
+
+class WorktreeActionBody(BaseModel):
+    action: str = Field(pattern=r"^(apply|keep|discard)$")
+    confirm: bool = False
 
 
 class ConversationBody(BaseModel):
@@ -710,6 +716,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
                 mode=body.mode,
                 model=body.model,
                 attachments=[{"name": item.name, "mime": item.mime, "data": item.data} for item in body.attachments],
+                execution_mode=body.execution_mode,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
@@ -872,6 +879,54 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=404, detail="artifact not found")
         suffix = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}.get(artifact["mime"], "bin")
         return FileResponse(artifact["path"], media_type=artifact["mime"], filename=f"{artifact_id}.{suffix}")
+
+    @app.get("/api/agent/tasks/{task_id}/worktree")
+    def get_task_worktree(
+        task_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        try:
+            return {"worktree": state.agent.task_worktree(task_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+
+    @app.post("/api/agent/tasks/{task_id}/worktree")
+    def resolve_task_worktree(
+        task_id: str,
+        body: WorktreeActionBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        from termx.agent.worktrees import WorktreeConfirmRequired
+
+        try:
+            worktree = state.agent.resolve_worktree(
+                task_id, body.action, confirm=body.confirm
+            )
+        except WorktreeConfirmRequired as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "worktree has uncommitted changes — confirm to discard",
+                    "requires_confirm": True,
+                    "dirty": exc.dirty,
+                },
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        log_event("agent_worktree", task_id=task_id, action=body.action)
+        return {"worktree": worktree}
 
     @app.get("/api/agent/storage")
     def get_agent_storage(

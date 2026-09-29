@@ -343,8 +343,29 @@ tasks:
       - "test_agent.py: test_custom_agents_crud (401 gate, create/list/patch/delete, tools+limits round-trip, blank name rejected)"
       - "uv run pytest tests -q -> 291 passed, 10 skipped"
     notes: ""
-  - id: PROD-003..006 / SEC-001..002 / VRF-001
-    title: Worktrees, activity, ports, runbooks, scopes v2, final verification
+  - id: PROD-003
+    title: Worktree/checkpoint task execution
+    status: done
+    depends_on: [AG2-017]
+    owner: devin
+    write_scope:
+      - src/termx/agent/worktrees.py (new: git_root/head_sha/create_worktree/worktree_dirty/diff_against/apply_worktree/discard_worktree + WorktreeConfirmRequired)
+      - src/termx/agent/store.py (task_worktrees table + save/task_worktree/update_task_worktree)
+      - src/termx/agent/manager.py (create_task execution_mode, _finalize_worktree, task_worktree, resolve_worktree)
+      - src/termx/app.py (AgentTaskBody.execution_mode, GET/POST /api/agent/tasks/{id}/worktree)
+      - src/termx/machine.py (capabilities.agent_worktrees)
+    acceptance:
+      - "execution_mode=worktree provisions <config_dir>/worktrees/<slug> on branch termx/task-<slug> off the repo HEAD and runs the task with cwd inside it"
+      - "Ask mode and non-git projects reject execution_mode=worktree; invalid values rejected"
+      - "task_worktrees row persists mode/base_repo/base_ref/worktree_path/branch/head_sha/status; task.worktree.created + task.worktree.final events"
+      - "GET worktree returns record+live dirty/head/diff (mode=direct for normal tasks); POST apply merges --no-ff + removes worktree+branch, keep marks kept, discard removes tree+branch"
+      - "discard with uncommitted changes -> 409 requires_confirm + dirty list; confirm=true proceeds; never silently merges into the user tree"
+    evidence:
+      - "test_agent.py: test_worktree_task_runs_in_isolated_checkout (cwd redirect, branch+README, events), test_worktree_apply_merges_into_base (file lands in base, branch deleted), test_worktree_discard_requires_confirm (409 gate + confirm), test_worktree_keep_marks_without_merging, test_worktree_mode_validation (non-git/ask/invalid/direct), test_worktree_rest_endpoints (404, active view, 409, confirmed discard)"
+      - "uv run pytest tests -q -> 297 passed, 10 skipped"
+    notes: worktrees live under TERMX_CONFIG_DIR so the base checkout is never touched; agent boundary = worktree path itself
+  - id: PROD-004..006 / SEC-001..002 / VRF-001
+    title: Activity, ports, runbooks, scopes v2, final verification
     status: pending
     depends_on: [AG2-017, PROD-001]
     owner: unassigned

@@ -2490,3 +2490,268 @@ def test_custom_agents_crud(tmp_path: Path) -> None:
             client.post("/api/custom-agents", json={"name": "  "}, headers=headers).status_code
             in {400, 422}
         )
+
+
+# ---------------------------------------------------------------------------
+# PROD-003 — worktree/checkpoint task execution
+
+
+def _git_repo(path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "config", "user.email", "t@example.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(path), "config", "user.name", "Test"],
+        check=True,
+        capture_output=True,
+    )
+    (path / "README.md").write_text("base\n")
+    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "commit", "-qm", "init"], check=True, capture_output=True
+    )
+
+
+def _git(path: Path, *args: str) -> str:
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", "-C", str(path), *args], capture_output=True, text=True, check=True
+    )
+    return proc.stdout.strip()
+
+
+async def _complete_worktree_task(
+    manager: AgentManager,
+    store: AgentStore,
+    repo: Path,
+    *,
+    execution_mode: str | None = "worktree",
+) -> dict[str, Any]:
+    task = await manager.create_task(
+        prompt="change things",
+        cwd=str(repo),
+        provider_id="fake",
+        execution_mode=execution_mode,
+    )
+    await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+    await wait_for_status(store, task["id"], "completed")
+    return task
+
+
+def test_worktree_task_runs_in_isolated_checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        assert record is not None
+        assert record["mode"] == "worktree"
+        assert record["branch"].startswith("termx/task-")
+        assert record["base_repo"] == str(repo)
+        worktree_path = Path(record["worktree_path"])
+        assert worktree_path != repo
+        assert Path(task["cwd"]) == worktree_path
+        assert worktree_path.is_dir()
+        # The user's checkout never sees the task branch's HEAD.
+        assert (worktree_path / "README.md").exists()
+        events = store.events(task["id"])
+        assert any(e["type"] == "task.worktree.created" for e in events)
+        assert any(e["type"] == "task.worktree.final" for e in events)
+        assert record["head_sha"]
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_worktree_apply_merges_into_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        worktree_path = Path(record["worktree_path"])
+        # Simulate the agent's edit inside its isolated checkout.
+        (worktree_path / "agent.txt").write_text("agent change\n")
+        assert not (repo / "agent.txt").exists()
+        view = manager.task_worktree(task["id"])
+        assert view["dirty"]
+        updated = manager.resolve_worktree(task["id"], "apply")
+        assert updated["status"] == "applied"
+        assert (repo / "agent.txt").read_text() == "agent change\n"
+        assert not worktree_path.exists()
+        assert "termx/task-" not in _git(repo, "branch", "--list")
+        assert any(
+            e["type"] == "task.worktree.applied" for e in store.events(task["id"])
+        )
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_worktree_discard_requires_confirm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from termx.agent.worktrees import WorktreeConfirmRequired
+
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        worktree_path = Path(record["worktree_path"])
+        (worktree_path / "stray.txt").write_text("uncommitted\n")
+        with pytest.raises(WorktreeConfirmRequired) as blocked:
+            manager.resolve_worktree(task["id"], "discard")
+        assert blocked.value.dirty
+        updated = manager.resolve_worktree(task["id"], "discard", confirm=True)
+        assert updated["status"] == "discarded"
+        assert not worktree_path.exists()
+        assert "termx/task-" not in _git(repo, "branch", "--list")
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_worktree_keep_marks_without_merging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        updated = manager.resolve_worktree(task["id"], "keep")
+        assert updated["status"] == "kept"
+        # second resolution is a no-op read
+        assert manager.resolve_worktree(task["id"], "keep")["status"] == "kept"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_worktree_mode_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        plain = tmp_path / "not-a-repo"
+        plain.mkdir()
+        with pytest.raises(ValueError, match="Git"):
+            await manager.create_task(
+                prompt="x", cwd=str(plain), provider_id="fake", execution_mode="worktree"
+            )
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_repo(repo)
+        with pytest.raises(ValueError, match="Ask mode"):
+            await manager.create_task(
+                prompt="x",
+                cwd=str(repo),
+                provider_id="fake",
+                mode="ask",
+                execution_mode="worktree",
+            )
+        with pytest.raises(ValueError, match="execution_mode"):
+            await manager.create_task(
+                prompt="x", cwd=str(repo), provider_id="fake", execution_mode="branchless"
+            )
+        # direct-mode task reports mode=direct and no row
+        task = await manager.create_task(prompt="x", cwd=str(repo), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        await wait_for_status(store, task["id"], "completed")
+        assert store.task_worktree(task["id"]) is None
+        assert manager.task_worktree(task["id"])["mode"] == "direct"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_worktree_rest_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    adapter = FakeAdapter()
+    store = AgentStore(tmp_path / "api.sqlite3", tmp_path / "api-artifacts")
+    credentials = CredentialStore(memory={})
+    state = AppState(
+        passcode="secret",
+        agent_store=store,
+        credentials=credentials,
+        adapter_factory=lambda _provider, _key: adapter,
+    )
+    state.agent._computer = FakeComputer()  # type: ignore[assignment]
+    state.agent.save_provider(
+        provider_id="fake",
+        kind="openai-compatible",
+        name="Fake",
+        base_url="http://127.0.0.1:9/v1",
+        model="m",
+        capabilities=["shell"],
+    )
+    headers = {"x-termx-passcode": "secret"}
+
+    async def drive(task_id: str) -> None:
+        await wait_for_pending_approval(store, task_id, "plan")
+        task = store.get_task(task_id, include_events=True)
+        await state.agent.resolve_approval(
+            task_id, task["approvals"][0]["id"], "approved"
+        )
+        await wait_for_status(store, task_id, "completed")
+
+    with TestClient(create_app(state, web_dir=None)) as client:
+        assert client.get("/api/agent/tasks/nope/worktree", headers=headers).status_code == 404
+        task = client.post(
+            "/api/agent/tasks",
+            json={
+                "prompt": "do it",
+                "cwd": str(repo),
+                "provider_id": "fake",
+                "execution_mode": "worktree",
+            },
+            headers=headers,
+        ).json()
+        asyncio.run(drive(task["id"]))
+        view = client.get(
+            f"/api/agent/tasks/{task['id']}/worktree", headers=headers
+        ).json()["worktree"]
+        assert view["mode"] == "worktree"
+        assert view["status"] == "active"
+        # Dirty the worktree, then verify the 409 confirm gate + confirm path.
+        Path(view["worktree_path"], "extra.txt").write_text("x\n")
+        blocked = client.post(
+            f"/api/agent/tasks/{task['id']}/worktree",
+            json={"action": "discard"},
+            headers=headers,
+        )
+        assert blocked.status_code == 409
+        assert blocked.json()["detail"]["requires_confirm"] is True
+        confirmed = client.post(
+            f"/api/agent/tasks/{task['id']}/worktree",
+            json={"action": "discard", "confirm": True},
+            headers=headers,
+        )
+        assert confirmed.status_code == 200
+        assert confirmed.json()["worktree"]["status"] == "discarded"

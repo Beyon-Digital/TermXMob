@@ -218,6 +218,18 @@ class AgentStore:
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS task_worktrees (
+                task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+                mode TEXT NOT NULL DEFAULT 'worktree',
+                base_repo TEXT NOT NULL,
+                base_ref TEXT NOT NULL DEFAULT '',
+                worktree_path TEXT,
+                branch TEXT,
+                head_sha TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS events_task_sequence ON events(task_id, sequence);
             CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS approvals_task ON approvals(task_id, created_at);
@@ -1204,3 +1216,67 @@ class AgentStore:
             )
             self._db.commit()
         return cursor.rowcount > 0
+
+    # Task worktrees -------------------------------------------------------
+
+    def save_task_worktree(
+        self,
+        task_id: str,
+        *,
+        mode: str,
+        base_repo: str,
+        base_ref: str = "",
+        worktree_path: str | None = None,
+        branch: str | None = None,
+        status: str = "active",
+    ) -> dict[str, Any]:
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO task_worktrees
+                    (task_id, mode, base_repo, base_ref, worktree_path, branch,
+                     status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, mode, base_repo, base_ref, worktree_path, branch, status, now, now),
+            )
+            self._db.commit()
+        return self.task_worktree(task_id)  # type: ignore[return-value]
+
+    def task_worktree(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM task_worktrees WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return self._worktree(row) if row else None
+
+    def update_task_worktree(self, task_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"worktree_path", "branch", "head_sha", "status"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.task_worktree(task_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = list(updates.values()) + [time(), task_id]
+        with self._lock:
+            self._db.execute(
+                f"UPDATE task_worktrees SET {assignments}, updated_at = ? WHERE task_id = ?",
+                params,
+            )
+            self._db.commit()
+        return self.task_worktree(task_id)
+
+    @staticmethod
+    def _worktree(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "task_id": row["task_id"],
+            "mode": row["mode"],
+            "base_repo": row["base_repo"],
+            "base_ref": row["base_ref"],
+            "worktree_path": row["worktree_path"],
+            "branch": row["branch"],
+            "head_sha": row["head_sha"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }

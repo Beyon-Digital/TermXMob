@@ -461,3 +461,35 @@ until the child terminated. It is now a first-class durable handle:
   `paste_text` text with the same credential/secret pattern as `type`.
 - `machine_snapshot` advertises `computer_observation_v2: true` and
   `agent_subagents: true`.
+
+## 19. Worktree task execution (PROD-003)
+
+`AgentTaskBody.execution_mode` accepts `direct` (default) or `worktree`. In worktree
+mode `AgentManager.create_task` rejects Ask mode and non-git projects, provisions a
+`termx/task-<slug>` branch at the repo's current HEAD via
+`agent/worktrees.py` (git subprocess helpers), checks it out at
+`<config_dir>/worktrees/<slug>` (outside the user checkout so the base tree is never
+touched), and runs the whole task with `cwd` inside the worktree — the normal
+project-boundary machinery then confines every tool to the isolated checkout. A
+`task_worktrees` row (task_id PK → tasks CASCADE, mode, base_repo, base_ref,
+worktree_path, branch, head_sha, status active|applied|kept|discarded) persists the
+link; `task.worktree.created` fires on creation and `task.worktree.final` (via
+`_finalize_worktree`, called on the completed path and every `_finish_state`
+transition) captures the terminal head SHA.
+
+Resolution is explicit, never silent:
+
+- `GET /api/agent/tasks/{id}/worktree` (agent-view) — `{"mode":"direct"}` for normal
+  tasks; otherwise the record plus live `dirty` (porcelain lines), `head_sha`, and a
+  name-status `diff` against the base ref.
+- `POST /api/agent/tasks/{id}/worktree` (agent-control) — `action` in
+  `apply|keep|discard`, `confirm` bool. `apply` auto-commits outstanding worktree
+  changes (author `termx-agent`), `merge --no-ff` into the base repo, removes the
+  worktree and deletes the branch → `task.worktree.applied`. `keep` marks the row
+  `kept` and leaves the checkout/branch in place → `task.worktree.kept`. `discard`
+  removes the worktree (`--force`) and deletes the branch → `task.worktree.discarded`;
+  uncommitted changes without `confirm` return **409**
+  `{requires_confirm:true, dirty:[...]}` so the client can surface a confirmation
+  (VRF "never delete a worktree containing unknown user changes"). Resolutions are
+  one-way; repeating a terminal action returns the stored record.
+- Capability: `machine.capabilities.agent_worktrees`.

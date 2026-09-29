@@ -46,6 +46,7 @@ from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
+from termx.agent import worktrees
 
 T = TypeVar("T")
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
@@ -205,14 +206,31 @@ class AgentManager:
         cancel: asyncio.Event | None = None,
         on_created: Callable[[str], None] | None = None,
         parent_id: str | None = None,
+        execution_mode: str | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("task prompt is required")
         mode = "ask" if mode == "ask" else "agent"
+        execution = (execution_mode or "direct").strip().lower()
+        if execution not in {"direct", "worktree"}:
+            raise ValueError("execution_mode must be 'direct' or 'worktree'")
         root = Path(cwd).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
+        worktree_spec: dict[str, str] | None = None
+        if execution == "worktree":
+            if mode == "ask":
+                raise ValueError("Ask mode is read-only — worktrees require Agent mode")
+            base_repo = worktrees.git_root(str(root))
+            if base_repo is None:
+                raise ValueError("worktree execution requires a Git project")
+            slug = uuid.uuid4().hex[:12]
+            worktree_spec = worktrees.create_worktree(base_repo, slug)
+            worktree_spec["base_repo"] = base_repo
+            # The worktree becomes the task's project boundary — the agent
+            # cannot see or touch the user's working tree.
+            root = Path(worktree_spec["worktree_path"])
         images = _decode_images(attachments)
         provider = dict(self._provider(provider_id))
         chosen = _resolve_model(provider, model)
@@ -229,6 +247,15 @@ class AgentManager:
             parent_id=parent_id,
         )
         task_id = task["id"]
+        if worktree_spec is not None:
+            self.store.save_task_worktree(
+                task_id,
+                mode="worktree",
+                base_repo=worktree_spec["base_repo"],
+                base_ref=worktree_spec["base_ref"],
+                worktree_path=worktree_spec["worktree_path"],
+                branch=worktree_spec["branch"],
+            )
         if on_created is not None:
             on_created(task_id)
         uploads = [
@@ -238,6 +265,17 @@ class AgentManager:
         if uploads:
             self._emit(task_id, "user.media", {"artifacts": uploads})
         self._emit(task_id, "task.created", {"task": task})
+        if worktree_spec is not None:
+            self._emit(
+                task_id,
+                "task.worktree.created",
+                {
+                    "worktree_path": worktree_spec["worktree_path"],
+                    "branch": worktree_spec["branch"],
+                    "base_repo": worktree_spec["base_repo"],
+                    "base_ref": worktree_spec["base_ref"],
+                },
+            )
         try:
             engine = ContextEngine(str(root))
             manifest = await engine.snapshot()
@@ -363,6 +401,64 @@ class AgentManager:
             self._emit(task_id, "control.takeover", {"message": "You have control"})
         self._mark_cancelled(task_id)
         return self._task(task_id)
+
+    def task_worktree(self, task_id: str) -> dict[str, Any]:
+        self._task(task_id)
+        record = self.store.task_worktree(task_id)
+        if record is None:
+            return {"task_id": task_id, "mode": "direct"}
+        payload = dict(record)
+        path = record["worktree_path"]
+        if record["status"] == "active" and path and worktrees.worktree_exists(path):
+            try:
+                payload["dirty"] = worktrees.worktree_dirty(path)
+            except Exception:
+                payload["dirty"] = None
+            try:
+                payload["head_sha"] = worktrees.head_sha(path)
+            except Exception:
+                pass
+            payload["diff"] = worktrees.diff_against(
+                record["base_repo"], record["base_ref"], path
+            )
+        return payload
+
+    def resolve_worktree(
+        self, task_id: str, action: str, *, confirm: bool = False
+    ) -> dict[str, Any]:
+        task = self._task(task_id)
+        record = self.store.task_worktree(task_id)
+        if record is None or record["mode"] != "worktree":
+            raise ValueError("task has no worktree")
+        if record["status"] != "active":
+            return record
+        if task["status"] in ACTIVE_STATUSES:
+            raise ValueError("worktree actions require a finished task")
+        path = record["worktree_path"] or ""
+        branch = record["branch"] or ""
+        base = record["base_repo"]
+        if action == "keep":
+            updated = self.store.update_task_worktree(task_id, status="kept") or record
+            self._emit(task_id, "task.worktree.kept", {"worktree": updated})
+            return updated
+        if action == "apply":
+            head = worktrees.apply_worktree(base, path, branch, task_id)
+            updated = self.store.update_task_worktree(
+                task_id, status="applied", head_sha=head
+            ) or record
+            self._emit(task_id, "task.worktree.applied", {"worktree": updated})
+            return updated
+        if action == "discard":
+            dirty = (
+                worktrees.worktree_dirty(path) if worktrees.worktree_exists(path) else []
+            )
+            if dirty and not confirm:
+                raise worktrees.WorktreeConfirmRequired(dirty)
+            worktrees.discard_worktree(base, path, branch)
+            updated = self.store.update_task_worktree(task_id, status="discarded") or record
+            self._emit(task_id, "task.worktree.discarded", {"worktree": updated})
+            return updated
+        raise ValueError("worktree action must be apply, keep, or discard")
 
     def steer(self, task_id: str, message: str) -> dict[str, Any]:
         task = self._task(task_id)
@@ -618,6 +714,7 @@ class AgentManager:
                 if not turn.calls:
                     result = turn.text or "Task completed."
                     snapshot = metrics.snapshot()
+                    self._finalize_worktree(task_id)
                     self.store.update_task(task_id, status="completed", result=result, runtime={}, metrics=snapshot)
                     self._emit(task_id, "task.metrics", {"metrics": snapshot})
                     self._emit(task_id, "task.completed", {"result": result})
@@ -1712,6 +1809,19 @@ class AgentManager:
                 continue
             self._pending_approval_calls.pop(approval_id, None)
 
+    def _finalize_worktree(self, task_id: str) -> None:
+        """Record the terminal head SHA and mark the worktree inspectable."""
+        record = self.store.task_worktree(task_id)
+        if record is None or record["status"] != "active":
+            return
+        try:
+            head = worktrees.head_sha(record["worktree_path"] or "")
+        except Exception:
+            head = None
+        if head:
+            record = self.store.update_task_worktree(task_id, head_sha=head) or record
+        self._emit(task_id, "task.worktree.final", {"worktree": record})
+
     def _persist_metrics(self, task_id: str) -> None:
         metrics = self._metrics.get(task_id)
         if metrics is None:
@@ -1735,6 +1845,7 @@ class AgentManager:
         self._context_engines.pop(task_id, None)
         self._metrics.pop(task_id, None)
         self._steering.pop(task_id, None)
+        self._finalize_worktree(task_id)
         # Escalated child approvals stay resolvable past a terminal parent — the
         # child is still waiting on the user's decision and its watcher drops
         # the entry when it finishes.
