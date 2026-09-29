@@ -210,10 +210,43 @@ class AgentManager:
         on_created: Callable[[str], None] | None = None,
         parent_id: str | None = None,
         execution_mode: str | None = None,
+        conversation_id: str | None = None,
+        custom_agent_id: str | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("task prompt is required")
+        custom_agent = (
+            self.store.get_custom_agent(custom_agent_id) if custom_agent_id else None
+        )
+        if custom_agent_id and custom_agent is None:
+            raise ValueError("custom agent not found")
+        conversation = (
+            self.store.get_conversation(conversation_id) if conversation_id else None
+        )
+        if conversation_id and conversation is None:
+            raise ValueError("conversation not found")
+        if custom_agent is None and conversation is not None:
+            linked = conversation.get("custom_agent_id")
+            if linked:
+                custom_agent = self.store.get_custom_agent(str(linked))
+        if custom_agent is not None:
+            instructions = str(custom_agent.get("instructions") or "").strip()
+            if instructions:
+                prompt = (
+                    f'You are the "{custom_agent["name"]}" agent. '
+                    f"Follow these instructions:\n{instructions}\n\nTask: {prompt}"
+                )
+            if custom_agent.get("provider_id") and not provider_id:
+                provider_id = str(custom_agent["provider_id"])
+            if custom_agent.get("model") and not model:
+                model = str(custom_agent["model"])
+        if provider_id is None and conversation is not None and conversation.get("provider_id"):
+            provider_id = str(conversation["provider_id"])
+        if model is None and conversation is not None and conversation.get("model"):
+            model = str(conversation["model"])
+        agent_limits = dict(custom_agent.get("limits") or {}) if custom_agent else {}
+        limits = {**agent_limits, **(limits or {})}
         mode = "ask" if mode == "ask" else "agent"
         execution = (execution_mode or "direct").strip().lower()
         if execution not in {"direct", "worktree"}:
@@ -281,6 +314,7 @@ class AgentManager:
                     "base_branch": worktree_spec.get("base_branch"),
                 },
             )
+        seed = self._conversation_seed(conversation)
         try:
             engine = ContextEngine(str(root))
             manifest = await engine.snapshot()
@@ -291,7 +325,7 @@ class AgentManager:
             if mode == "ask":
                 # Ask mode is read-only and low-risk, so it starts immediately
                 # instead of waiting for plan approval.
-                history = [self._upload_message(task_id, upload_ids)] if upload_ids else []
+                history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
                 runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
                 self.store.update_task(task_id, runtime=runtime)
                 self._launch(task_id, self._drive(task_id))
@@ -307,7 +341,7 @@ class AgentManager:
                     self._mark_cancelled(task_id)
                     return self.store.get_task(task_id, include_events=True) or task
             self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
-            history = [self._upload_message(task_id, upload_ids)] if upload_ids else []
+            history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
             runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
             task = self.store.update_task(
                 task_id,
@@ -1072,6 +1106,46 @@ class AgentManager:
             if engine is not None:
                 engine.note_mutation()
         return outcome
+
+    def _conversation_seed(
+        self, conversation: dict[str, Any] | None
+    ) -> list[dict[str, Any]]:
+        """Prior conversation turns as the first history item — the durable
+        carry-over so a follow-up task sees earlier work in this thread."""
+        if conversation is None:
+            return []
+        detailed = self.store.get_conversation(conversation["id"], include_turns=True)
+        turns = (detailed or {}).get("turns") or []
+        entries: list[dict[str, Any]] = []
+        for turn in turns[-12:]:
+            entry: dict[str, Any] = {
+                "prompt": str(turn.get("prompt") or "")[:400],
+                "mode": turn.get("mode"),
+            }
+            linked = turn.get("task_id")
+            if linked:
+                prior = self.store.get_task(str(linked))
+                if prior is not None:
+                    entry["task_status"] = prior["status"]
+                    entry["result"] = str(
+                        prior.get("result") or prior.get("error") or ""
+                    )[:400]
+            entries.append(entry)
+        if not entries:
+            return []
+        return [
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "type": "conversation_context",
+                        "conversation_id": conversation["id"],
+                        "title": conversation.get("title") or "",
+                        "prior_turns": entries,
+                    }
+                ),
+            }
+        ]
 
     def _tool_context(self, task_id: str, task: dict[str, Any]) -> ToolContext:
         return ToolContext(

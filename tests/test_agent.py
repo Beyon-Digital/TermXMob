@@ -3352,3 +3352,89 @@ def test_observation_dedup_scoped_per_task_display_region() -> None:
     assert "previous_id" not in b_region.extra
 
 
+def test_task_uses_custom_agent_instructions_and_limits(tmp_path: Path) -> None:
+    adapter = FakeAdapter()
+    manager, store = build_manager(tmp_path, adapter)
+    agent = store.create_custom_agent(
+        name="Reviewer",
+        instructions="Prefer read-only inspection.",
+        provider_id="fake",
+        model="fake-model",
+        limits={"max_steps": 5},
+    )
+
+    async def _run() -> dict[str, Any]:
+        task = await manager.create_task(
+            prompt="check the readme",
+            cwd=str(tmp_path),
+            provider_id="fake",
+            mode="ask",
+            custom_agent_id=agent["id"],
+        )
+        return await wait_for_status(store, task["id"], "completed")
+
+    task = asyncio.run(_run())
+    assert "Prefer read-only inspection." in task["prompt"]
+    assert "check the readme" in task["prompt"]
+    assert task["limits"]["max_steps"] == 5
+
+
+def test_task_seeds_conversation_context(tmp_path: Path) -> None:
+    adapter = FakeAdapter()
+    manager, store = build_manager(tmp_path, adapter)
+    conversation = store.create_conversation(title="Thread", provider_id="fake")
+
+    async def _run() -> dict[str, Any]:
+        first = await manager.create_task(
+            prompt="remember primrose",
+            cwd=str(tmp_path),
+            provider_id="fake",
+            mode="ask",
+            conversation_id=conversation["id"],
+        )
+        first = await wait_for_status(store, first["id"], "completed")
+        store.add_conversation_turn(
+            conversation["id"],
+            prompt="remember primrose",
+            task_id=first["id"],
+            mode="ask",
+        )
+        adapter.turns = 0  # FakeAdapter is scripted for one task per manager
+        second = await manager.create_task(
+            prompt="what did I say?",
+            cwd=str(tmp_path),
+            provider_id="fake",
+            mode="ask",
+            conversation_id=conversation["id"],
+        )
+        return await wait_for_status(store, second["id"], "completed")
+
+    second = asyncio.run(_run())
+    assert second["status"] == "completed"
+    first_input = (adapter.inputs[-1] or [])[0]
+    payload = json.loads(first_input["content"])
+    assert payload["type"] == "conversation_context"
+    assert payload["conversation_id"] == conversation["id"]
+    assert payload["prior_turns"][0]["prompt"] == "remember primrose"
+    assert payload["prior_turns"][0]["task_status"] == "completed"
+
+
+def test_task_missing_conversation_or_agent_rejected(tmp_path: Path) -> None:
+    adapter = FakeAdapter()
+    manager, _ = build_manager(tmp_path, adapter)
+    for kwargs in (
+        {"conversation_id": "nope"},
+        {"custom_agent_id": "nope"},
+    ):
+        try:
+            asyncio.run(
+                manager.create_task(
+                    prompt="x", cwd=str(tmp_path), provider_id="fake", mode="ask", **kwargs
+                )
+            )
+        except ValueError:
+            pass
+        else:  # pragma: no cover
+            raise AssertionError("expected ValueError")
+
+

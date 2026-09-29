@@ -220,13 +220,14 @@ class AgentImageBody(BaseModel):
 class AgentTaskBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     cwd: str = Field(min_length=1, max_length=4000)
-    provider_id: str = Field(min_length=1, max_length=80)
+    provider_id: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=200)
     attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
     limits: dict[str, int] | None = None
     mode: str = Field(default="agent", pattern=r"^(ask|agent)$")
     execution_mode: str | None = Field(default=None, pattern=r"^(direct|worktree)$")
     conversation_id: str | None = Field(default=None, max_length=80)
+    custom_agent_id: str | None = Field(default=None, max_length=80)
 
 
 class WorktreeActionBody(BaseModel):
@@ -757,18 +758,57 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-run")
-        if body.conversation_id and state.agent_store.get_conversation(body.conversation_id) is None:
+        conversation = (
+            state.agent_store.get_conversation(body.conversation_id)
+            if body.conversation_id
+            else None
+        )
+        if body.conversation_id and conversation is None:
             raise HTTPException(status_code=404, detail="conversation not found")
+        custom_agent_id = body.custom_agent_id or (
+            str(conversation.get("custom_agent_id"))
+            if conversation and conversation.get("custom_agent_id")
+            else None
+        )
+        custom_agent = (
+            state.agent_store.get_custom_agent(custom_agent_id)
+            if custom_agent_id
+            else None
+        )
+        if custom_agent_id and custom_agent is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        provider_id = body.provider_id or (
+            str(conversation.get("provider_id"))
+            if conversation and conversation.get("provider_id")
+            else None
+        ) or (
+            str(custom_agent.get("provider_id"))
+            if custom_agent and custom_agent.get("provider_id")
+            else None
+        )
+        model = body.model or (
+            str(conversation.get("model"))
+            if conversation and conversation.get("model")
+            else None
+        ) or (
+            str(custom_agent.get("model"))
+            if custom_agent and custom_agent.get("model")
+            else None
+        )
+        if not provider_id:
+            raise HTTPException(status_code=400, detail="provider_id is required")
         try:
             task = await state.agent.create_task(
                 prompt=body.prompt,
                 cwd=body.cwd,
-                provider_id=body.provider_id,
+                provider_id=provider_id,
                 limits=body.limits,
                 mode=body.mode,
-                model=body.model,
+                model=model,
                 attachments=[{"name": item.name, "mime": item.mime, "data": item.data} for item in body.attachments],
                 execution_mode=body.execution_mode,
+                conversation_id=body.conversation_id or None,
+                custom_agent_id=custom_agent_id,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
