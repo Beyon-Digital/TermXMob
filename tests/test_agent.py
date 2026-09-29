@@ -3186,3 +3186,79 @@ def test_old_db_migrates_to_v2_schema(tmp_path: Path) -> None:
         assert store.list_runbooks()
     finally:
         store.close()
+
+
+def test_worktree_apply_refuses_branch_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Apply must land on the branch recorded at creation — not a drifted checkout."""
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    from termx.agent.worktrees import WorktreeApplyConflict
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        assert record["base_branch"] == _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        worktree_path = Path(record["worktree_path"])
+        (worktree_path / "agent.txt").write_text("agent change\n")
+        # The user moved to another branch since the task started.
+        _git(repo, "checkout", "-qb", "other")
+        with pytest.raises(WorktreeApplyConflict, match="other"):
+            manager.resolve_worktree(task["id"], "apply")
+        # Nothing landed: file absent, worktree still active + present.
+        assert not (repo / "agent.txt").exists()
+        assert store.task_worktree(task["id"])["status"] == "active"
+        assert worktree_path.exists()
+        assert any(
+            e["type"] == "task.worktree.conflict" for e in store.events(task["id"])
+        )
+        # Moving back to the recorded branch makes apply succeed.
+        _git(repo, "checkout", "-q", record["base_branch"])
+        updated = manager.resolve_worktree(task["id"], "apply")
+        assert updated["status"] == "applied"
+        assert (repo / "agent.txt").exists()
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_worktree_apply_conflict_rolls_back_merge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A conflicting merge is aborted transactionally — base is never left MERGING."""
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    from termx.agent.worktrees import WorktreeApplyConflict
+
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await _complete_worktree_task(manager, store, repo)
+        record = store.task_worktree(task["id"])
+        worktree_path = Path(record["worktree_path"])
+        # Same file diverges on both sides -> real merge conflict.
+        (worktree_path / "README.md").write_text("agent version\n")
+        (repo / "README.md").write_text("user version\n")
+        _git(repo, "add", "README.md")
+        _git(repo, "commit", "-qm", "user change")
+        with pytest.raises(WorktreeApplyConflict, match="rolled back"):
+            manager.resolve_worktree(task["id"], "apply")
+        # Transactional: no MERGE_HEAD, base content untouched, clean status.
+        assert not (repo / ".git" / "MERGE_HEAD").exists()
+        assert (repo / "README.md").read_text() == "user version\n"
+        assert worktree_dirty_clean(repo)
+        # Worktree survives for retry or discard; status stays active.
+        assert store.task_worktree(task["id"])["status"] == "active"
+        assert worktree_path.exists()
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def worktree_dirty_clean(repo: Path) -> bool:
+    return not _git(repo, "status", "--porcelain").strip()
+
+

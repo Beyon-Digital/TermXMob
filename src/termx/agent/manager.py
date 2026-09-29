@@ -256,6 +256,7 @@ class AgentManager:
                 mode="worktree",
                 base_repo=worktree_spec["base_repo"],
                 base_ref=worktree_spec["base_ref"],
+                base_branch=worktree_spec.get("base_branch"),
                 worktree_path=worktree_spec["worktree_path"],
                 branch=worktree_spec["branch"],
             )
@@ -277,6 +278,7 @@ class AgentManager:
                     "branch": worktree_spec["branch"],
                     "base_repo": worktree_spec["base_repo"],
                     "base_ref": worktree_spec["base_ref"],
+                    "base_branch": worktree_spec.get("base_branch"),
                 },
             )
         try:
@@ -445,7 +447,18 @@ class AgentManager:
             self._emit(task_id, "task.worktree.kept", {"worktree": updated})
             return updated
         if action == "apply":
-            head = worktrees.apply_worktree(base, path, branch, task_id)
+            try:
+                head = worktrees.apply_worktree(
+                    base, path, branch, task_id,
+                    base_branch=record.get("base_branch"),
+                )
+            except worktrees.WorktreeApplyConflict as exc:
+                self._emit(
+                    task_id,
+                    "task.worktree.conflict",
+                    {"error": str(exc), "base_branch": record.get("base_branch")},
+                )
+                raise
             updated = self.store.update_task_worktree(
                 task_id, status="applied", head_sha=head
             ) or record

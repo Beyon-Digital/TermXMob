@@ -40,19 +40,32 @@ def head_sha(path: str) -> str:
     return _git(path, "rev-parse", "HEAD")
 
 
-def create_worktree(base_repo: str, slug: str) -> dict[str, str]:
+def current_branch(path: str) -> str | None:
+    """Checked-out branch name, or None when HEAD is detached."""
+    name = _git(path, "rev-parse", "--abbrev-ref", "HEAD")
+    return None if name == "HEAD" else name
+
+
+def create_worktree(base_repo: str, slug: str) -> dict[str, str | None]:
     """Create `<config>/worktrees/<slug>` on branch `termx/task-<slug>`.
 
     Kept outside the repository so the worktree itself never shows up as
-    untracked content in the user's checkout.
+    untracked content in the user's checkout. Records the base branch so a
+    later apply can refuse to land on a drifted checkout.
     """
     branch = f"{BRANCH_PREFIX}{slug}"
     root = config_dir() / "worktrees"
     root.mkdir(parents=True, exist_ok=True)
     worktree_path = root / slug
     base_ref = head_sha(base_repo)
+    base_branch = current_branch(base_repo)
     _git(base_repo, "worktree", "add", "-b", branch, str(worktree_path), base_ref)
-    return {"worktree_path": str(worktree_path), "branch": branch, "base_ref": base_ref}
+    return {
+        "worktree_path": str(worktree_path),
+        "branch": branch,
+        "base_ref": base_ref,
+        "base_branch": base_branch,
+    }
 
 
 def worktree_dirty(path: str) -> list[str]:
@@ -75,17 +88,48 @@ def diff_against(base_repo: str, base_ref: str, worktree_path: str) -> list[dict
     return entries
 
 
-def apply_worktree(base_repo: str, worktree_path: str, branch: str, task_id: str) -> str:
+def apply_worktree(
+    base_repo: str,
+    worktree_path: str,
+    branch: str,
+    task_id: str,
+    *,
+    base_branch: str | None = None,
+) -> str:
     """Commit outstanding worktree changes and merge the branch into base.
+
+    Branch-safe: refuses to merge when the base checkout has moved off the
+    branch recorded at creation. Conflict-transactional: a failed merge is
+    aborted so the base repo is never left in MERGING state; the worktree
+    and branch are kept for retry/discard.
 
     Returns the merged head SHA. The worktree and branch are removed after a
     successful merge — the base checkout becomes the source of truth.
     """
+    checked_out = current_branch(base_repo)
+    if checked_out is None:
+        raise WorktreeApplyConflict(
+            "base checkout is detached — checkout the base branch before applying"
+        )
+    if base_branch is not None and checked_out != base_branch:
+        raise WorktreeApplyConflict(
+            f"base checkout is on '{checked_out}' but the worktree was created "
+            f"from '{base_branch}' — checkout '{base_branch}' or discard"
+        )
     if worktree_dirty(worktree_path):
         _git(worktree_path, "add", "-A")
         _git(worktree_path, "commit", "-m", f"termx: task {task_id[:12]}")
     head = head_sha(worktree_path)
-    _git(base_repo, "merge", "--no-ff", branch, "-m", f"termx: apply task {task_id[:12]}")
+    try:
+        _git(base_repo, "merge", "--no-ff", branch, "-m", f"termx: apply task {task_id[:12]}")
+    except RuntimeError as exc:
+        try:
+            _git(base_repo, "merge", "--abort")
+        except Exception:
+            pass
+        raise WorktreeApplyConflict(
+            f"merge failed and was rolled back: {exc}"
+        ) from exc
     _git(base_repo, "worktree", "remove", str(worktree_path))
     try:
         _git(base_repo, "branch", "-D", branch)
@@ -113,3 +157,7 @@ class WorktreeConfirmRequired(Exception):
     def __init__(self, dirty: list[str]) -> None:
         super().__init__("worktree has uncommitted changes")
         self.dirty = dirty
+
+
+class WorktreeApplyConflict(RuntimeError):
+    """Apply refused/failed safely — base repo left unmodified."""

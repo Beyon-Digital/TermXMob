@@ -223,6 +223,7 @@ class AgentStore:
                 mode TEXT NOT NULL DEFAULT 'worktree',
                 base_repo TEXT NOT NULL,
                 base_ref TEXT NOT NULL DEFAULT '',
+                base_branch TEXT,
                 worktree_path TEXT,
                 branch TEXT,
                 head_sha TEXT,
@@ -269,6 +270,11 @@ class AgentStore:
             self._db.execute("ALTER TABLE tasks ADD COLUMN metrics TEXT")
         if "parent_id" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT")
+        wt_columns = {
+            row["name"] for row in self._db.execute("PRAGMA table_info(task_worktrees)")
+        }
+        if wt_columns and "base_branch" not in wt_columns:
+            self._db.execute("ALTER TABLE task_worktrees ADD COLUMN base_branch TEXT")
         self._db.commit()
 
     def close(self) -> None:
@@ -1387,6 +1393,7 @@ class AgentStore:
         mode: str,
         base_repo: str,
         base_ref: str = "",
+        base_branch: str | None = None,
         worktree_path: str | None = None,
         branch: str | None = None,
         status: str = "active",
@@ -1396,11 +1403,12 @@ class AgentStore:
             self._db.execute(
                 """
                 INSERT INTO task_worktrees
-                    (task_id, mode, base_repo, base_ref, worktree_path, branch,
-                     status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (task_id, mode, base_repo, base_ref, base_branch,
+                     worktree_path, branch, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, mode, base_repo, base_ref, worktree_path, branch, status, now, now),
+                (task_id, mode, base_repo, base_ref, base_branch, worktree_path,
+                 branch, status, now, now),
             )
             self._db.commit()
         return self.task_worktree(task_id)  # type: ignore[return-value]
@@ -1413,7 +1421,7 @@ class AgentStore:
         return self._worktree(row) if row else None
 
     def update_task_worktree(self, task_id: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {"worktree_path", "branch", "head_sha", "status"}
+        allowed = {"worktree_path", "branch", "head_sha", "status", "base_branch"}
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return self.task_worktree(task_id)
@@ -1434,6 +1442,7 @@ class AgentStore:
             "mode": row["mode"],
             "base_repo": row["base_repo"],
             "base_ref": row["base_ref"],
+            "base_branch": row["base_branch"],
             "worktree_path": row["worktree_path"],
             "branch": row["branch"],
             "head_sha": row["head_sha"],
