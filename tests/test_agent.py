@@ -3129,3 +3129,60 @@ def test_agent_run_runbook_tool(tmp_path: Path) -> None:
         store.close()
 
     asyncio.run(run())
+
+
+def test_old_db_migrates_to_v2_schema(tmp_path: Path) -> None:
+    """A v1-era agent.sqlite3 (pre-mode/metrics/parent_id + none of the new
+    tables) upgrades in place and stays functional."""
+    import sqlite3
+
+    db_path = tmp_path / "agent.sqlite3"
+    legacy = sqlite3.connect(db_path)
+    legacy.executescript(
+        """
+        CREATE TABLE tasks (
+            id TEXT PRIMARY KEY, prompt TEXT NOT NULL, cwd TEXT NOT NULL,
+            provider_id TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL,
+            limits TEXT NOT NULL, plan TEXT, result TEXT, error TEXT,
+            previous_response_id TEXT, runtime TEXT,
+            next_sequence INTEGER NOT NULL DEFAULT 1,
+            created_at REAL NOT NULL, updated_at REAL NOT NULL
+        );
+        CREATE TABLE events (
+            id TEXT PRIMARY KEY, task_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+            type TEXT NOT NULL, payload TEXT NOT NULL, created_at REAL NOT NULL,
+            UNIQUE(task_id, sequence)
+        );
+        CREATE TABLE approvals (
+            id TEXT PRIMARY KEY, task_id TEXT NOT NULL, kind TEXT NOT NULL,
+            status TEXT NOT NULL, payload TEXT NOT NULL,
+            created_at REAL NOT NULL, resolved_at REAL
+        );
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO tasks (id, prompt, cwd, provider_id, model, status, limits,
+                           created_at, updated_at)
+        VALUES ('old-task', 'p', '/tmp', 'prov', 'm', 'completed', '{}', 1.0, 1.0);
+        """
+    )
+    legacy.commit()
+    legacy.close()
+
+    store = AgentStore(db_path, tmp_path / "artifacts")
+    try:
+        cols = {r["name"] for r in store._db.execute("PRAGMA table_info(tasks)")}
+        assert {"mode", "metrics", "parent_id"} <= cols
+        for table in ("checkpoints", "conversations", "conversation_turns",
+                      "conversation_context_refs", "custom_agents",
+                      "task_worktrees", "runbooks", "runbook_runs", "artifacts",
+                      "providers"):
+            store._db.execute(f"SELECT * FROM {table} LIMIT 0")
+        task = store.get_task("old-task")
+        assert task["status"] == "completed" and task["mode"] == "agent"
+        # New v2 surfaces work on the upgraded DB.
+        conv = store.create_conversation(title="old-db")
+        store.add_conversation_turn(conv["id"], prompt="hi")
+        assert store.list_conversations()
+        store.create_runbook(name="rb", steps=[{"kind": "shell", "command": "true"}])
+        assert store.list_runbooks()
+    finally:
+        store.close()

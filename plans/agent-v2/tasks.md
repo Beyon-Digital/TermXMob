@@ -460,11 +460,22 @@ tasks:
       - "uv run pytest tests -q -> 319 passed, 10 skipped"
   - id: VRF-001
     title: Final verification pass
-    status: pending
+    status: done
     depends_on: [SEC-002]
     owner: devin
-    write_scope: []
-    acceptance: []
-    evidence: []
-    notes: see handoff section 23 for full dep graph
+    write_scope:
+      - tests/test_agent.py (old-DB migration test)
+      - plans/agent-v2/tasks.md
+    acceptance:
+      - "full suite green: 320 passed, 10 skipped"
+      - "migration checks: v1-era agent.sqlite3 upgrades in place (mode/metrics/parent_id added, all v2 tables created, data preserved, new surfaces functional); v1 tokens.json scope migration covered in test_tokens"
+      - "cancellation/takeover/recovery + no-secrets-in-replay verified by the existing 53-test safety battery"
+      - "worktree apply/discard + conversations CRUD/turns + capability flags (incl device_scopes_v2) all covered"
+      - "live OpenRouter Agent-mode smoke: plan->approval->write_file->run_check->completed (agent_smoke_agent_mode.py)"
+    evidence:
+      - "uv run pytest tests -q -> 320 passed, 10 skipped, 39s"
+      - "uv run pytest tests -q -k 'worktree|conversation|takeover|cancel|recover|redact|secret|scope|device|token|capability|checkpoint' -> 53 passed"
+      - "test_agent.py::test_old_db_migrates_to_v2_schema"
+      - "OPEN_ROUTER=... uv run python scripts/agent_smoke_agent_mode.py -> status completed, tools write_file x2 + run_check"
+    notes: verification-pass discipline preserved; all handoff phases through SEC-002 landed
 ```
