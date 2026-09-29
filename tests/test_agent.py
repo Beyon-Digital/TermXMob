@@ -3318,3 +3318,37 @@ def test_provider_tools_hide_subagents_for_children() -> None:
     assert "list_files" in child_names  # other tools unaffected
 
 
+def test_observation_dedup_scoped_per_task_display_region() -> None:
+    """Dedup compares within one stream only: same task+display+region."""
+    from termx.agent.observation import ObservationTracker
+
+    tracker = ObservationTracker()
+    a1 = tracker.record(
+        scope="task-a", frame=b"jpeg", display_id="1",
+        width=10, height=10, dpr=1.0, backend="fake",
+    )
+    b1 = tracker.record(
+        scope="task-b", frame=b"jpeg", display_id="1",
+        width=10, height=10, dpr=1.0, backend="fake",
+    )
+    # Task B's first capture must not inherit A's frame as its baseline.
+    assert a1.changed is True
+    assert b1.changed is True
+    assert "previous_id" not in b1.extra
+    # Same frame again in B dedupes against B's own stream.
+    b2 = tracker.record(
+        scope="task-b", frame=b"jpeg", display_id="1",
+        width=10, height=10, dpr=1.0, backend="fake",
+    )
+    assert b2.changed is False
+    assert b2.extra["previous_id"] == b1.id
+    # A different region on the same display is a different stream.
+    b_region = tracker.record(
+        scope="task-b", frame=b"jpeg", display_id="1",
+        width=10, height=10, dpr=1.0, backend="fake",
+        region={"x": 0, "y": 0, "width": 5, "height": 5},
+    )
+    assert b_region.changed is True
+    assert "previous_id" not in b_region.extra
+
+

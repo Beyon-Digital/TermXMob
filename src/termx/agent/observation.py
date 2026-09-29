@@ -172,16 +172,34 @@ class Observation:
 
 
 class ObservationTracker:
-    """Screen-wide dedup + control-ownership state shared across agent tasks."""
+    """Per-stream dedup + shared control-ownership state.
+
+    ``changed`` compares a frame only against the same observation stream —
+    same scope (agent task), same display, same region — so a task's first
+    capture always reports changed=True and ``previous_id`` never points into
+    another task's stream. ``control_owner`` stays screen-global by design.
+    """
 
     def __init__(self) -> None:
         self._last: Observation | None = None
-        self._last_identity: tuple[str, str] | None = None
+        # (scope, display_id, region-key) -> (observation id, frame identity)
+        self._streams: dict[tuple[str, str, str], tuple[str, tuple[str, str]]] = {}
         self.control_owner = "agent"
 
     @property
     def last(self) -> Observation | None:
         return self._last
+
+    @staticmethod
+    def _region_key(region: dict[str, int] | None) -> str:
+        if region is None:
+            return "full"
+        return "{x},{y},{w},{h}".format(
+            x=region.get("x", 0),
+            y=region.get("y", 0),
+            w=region.get("width", region.get("w", 0)),
+            h=region.get("height", region.get("h", 0)),
+        )
 
     def record(
         self,
@@ -192,6 +210,7 @@ class ObservationTracker:
         height: int,
         dpr: float,
         backend: str,
+        scope: str = "",
         region: dict[str, int] | None = None,
         region_cropped: bool = False,
         pointer: dict[str, float] | None = None,
@@ -199,7 +218,8 @@ class ObservationTracker:
     ) -> Observation:
         kind, digest = frame_identity(frame)
         identity = (kind, digest)
-        previous_id = self._last.id if self._last is not None else None
+        key = (scope, display_id or "", self._region_key(region))
+        previous_id, last_identity = self._streams.get(key, (None, None))
         observation = Observation(
             id=uuid.uuid4().hex[:12],
             display_id=display_id,
@@ -210,7 +230,7 @@ class ObservationTracker:
             artifact_id=None,
             frame_hash=digest,
             hash_kind=kind,
-            changed=not _same_frame(self._last_identity, identity),
+            changed=not _same_frame(last_identity, identity),
             control_owner=self.control_owner,
             capture_backend=backend,
             region=region,
@@ -220,6 +240,6 @@ class ObservationTracker:
         )
         if previous_id is not None:
             observation.extra["previous_id"] = previous_id
+        self._streams[key] = (observation.id, identity)
         self._last = observation
-        self._last_identity = identity
         return observation

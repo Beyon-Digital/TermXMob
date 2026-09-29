@@ -1140,6 +1140,7 @@ class AgentManager:
         size = jpeg_size(model_frame) or (0, 0)
         dpr = (size[0] / logical_w) if size[0] and logical_w else 1.0
         observation = self._observation.record(
+            scope=task_id,
             frame=model_frame,
             display_id=display_id,
             width=size[0],
