@@ -491,8 +491,12 @@ def _computer_function_tool() -> dict[str, Any]:
         "type": "function",
         "name": "use_computer",
         "description": (
-            "Observe and control the paired desktop. Start with a screenshot action, then use small action "
-            "batches and inspect the returned screenshot before continuing."
+            "Observe and control the paired desktop. Start with a screenshot action (optionally with a "
+            "region), then use small action batches and inspect the returned screenshot before continuing. "
+            "Prefer paste_text over type for long text — it is faster where native paste is available; type "
+            "remains the fallback. mouse_down/mouse_up and key_down/key_up give explicit press control; "
+            "release_all clears held inputs. set_display switches the target display. When the screen is "
+            "unchanged the result says so instead of attaching another screenshot."
         ),
         "parameters": {
             "type": "object",
@@ -516,6 +520,13 @@ def _computer_function_tool() -> dict[str, Any]:
                                     "scroll",
                                     "type",
                                     "keypress",
+                                    "paste_text",
+                                    "mouse_down",
+                                    "mouse_up",
+                                    "key_down",
+                                    "key_up",
+                                    "release_all",
+                                    "set_display",
                                 ],
                             },
                             "x": {"type": "number"},
@@ -526,6 +537,19 @@ def _computer_function_tool() -> dict[str, Any]:
                             "keys": {
                                 "type": "array",
                                 "items": {"type": "string"},
+                            },
+                            "key": {"type": "string"},
+                            "display_id": {"type": "string"},
+                            "region": {
+                                "type": "object",
+                                "properties": {
+                                    "x": {"type": "number"},
+                                    "y": {"type": "number"},
+                                    "width": {"type": "number"},
+                                    "height": {"type": "number"},
+                                },
+                                "required": ["x", "y", "width", "height"],
+                                "additionalProperties": False,
                             },
                             "path": {
                                 "type": "array",

@@ -405,3 +405,59 @@ until the child terminated. It is now a first-class durable handle:
   reduced limits, and the parent's cancel event; they do not inherit any
   approval to expand scope — consequential actions still escalate.
 - `manager.close()` cancels live watchers alongside workers.
+
+# Phase 4 — computer observation v2 + richer actions
+
+## 16. Observation layer (`agent/observation.py`)
+- `Observation` dataclass emits the handoff schema: `id`, `display_id`,
+  `width`/`height` (frame pixels read straight from the JPEG SOF marker —
+  no decoder needed), `dpr` (pixels ÷ logical display width), `captured_at`
+  + computed `age_ms`, `artifact_id`, `frame_hash`, `hash_kind`, `changed`,
+  `control_owner`, `capture_backend`; optional `region`/`region_cropped`,
+  `pointer`, `previous_id`.
+- `frame_identity(frame)` prefers a perceptual aHash (Pillow decode → 8×8
+  grayscale → 64-bit fingerprint, Hamming ≤10 = unchanged) and falls back
+  to a truncated SHA-256 exact hash where Pillow is absent — honest dedup
+  on every host, stronger dedup where the image codec exists.
+- `ObservationTracker` is one per `AgentManager` (the screen is a shared
+  resource): records the last frame identity + `control_owner`, and marks
+  each new observation `changed` accordingly.
+- `scale_for_model(frame, max_px=TERMX_MODEL_IMAGE_MAX_PX∥1568)` downscales
+  the model-bound copy only — the artifact store keeps the full frame.
+  `crop_region(frame, region)` crops a region post-capture; both return
+  the input unchanged / `None` where Pillow is missing.
+
+## 17. Batching, dedup, control ownership (`manager._execute_computer`)
+- Every computer batch gets a `batch_id`; emits `computer.action.started`
+  `{batch_id, actions}` before input dispatch and
+  `computer.action.finished` `{batch_id, ok, error?}` after (error reports
+  `cancelled` distinctly for CancelledError).
+- After capture: region crop (if requested + decodable) → observation
+  record → artifacts (region crop saved as the screenshot artifact; the
+  full frame is preserved via `full_artifact_id`) → `computer.screenshot`
+  (unchanged legacy event) + `computer.observation`.
+- Duplicate suppression: `changed=False` frames emit `computer.no_change`
+  `{batch_id, observation_id, frame_hash}`. On the `use_computer` path the
+  follow-up message is text-only ("Screen unchanged (frame matches
+  observation …)") — no second `input_image` enters model context. On the
+  native `computer` path the `computer_call_output` keeps its screenshot
+  (API contract) and the signal rides an adjacent user message.
+- `control_owner` transitions emit `computer.control.changed`: takeover →
+  `"user"`, the next agent batch → `"agent"`.
+
+## 18. Richer computer actions (`agent/computer.py`, `providers.py`, `policy.py`)
+- `paste_text`: `clipboard_set` → read-back verification → native paste
+  chord (`meta+v` macOS / `control+v` elsewhere). Hosts with no clipboard
+  command fall back to per-character `type` events — the safe fallback the
+  handoff requires.
+- `mouse_down`/`mouse_up` → pointer `down`/`up` at normalized coords with
+  the same button mapping as `click`; `key_down`/`key_up` → key `down`/`up`
+  with modifiers; `release_all` exposed as an action (previously only the
+  controller method); `set_display` switches `controller.display_id`.
+- `screenshot` actions accept `region {x,y,width,height}` (normalized
+  negative/zero-safe) — served cropped where the host can decode JPEG.
+- `use_computer` schema advertises every new action kind plus
+  `key`/`display_id`/`region` properties; `evaluate_computer` scans
+  `paste_text` text with the same credential/secret pattern as `type`.
+- `machine_snapshot` advertises `computer_observation_v2: true` and
+  `agent_subagents: true`.

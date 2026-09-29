@@ -20,6 +20,12 @@ from termx.agent.context.engine import (
     estimate_tokens,
 )
 from termx.agent.metrics import TaskMetrics
+from termx.agent.observation import (
+    ObservationTracker,
+    crop_region,
+    jpeg_size,
+    scale_for_model,
+)
 from termx.agent.retry import classify, retrying
 from termx.agent.policy import (
     PolicyDecision,
@@ -80,6 +86,7 @@ class AgentManager:
         self._metrics: dict[str, TaskMetrics] = {}
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
+        self._observation = ObservationTracker()
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
@@ -349,6 +356,9 @@ class AgentManager:
             return task
         self.cancel(task_id)
         await self._computer.release_all()
+        if self._observation.control_owner != "user":
+            self._observation.control_owner = "user"
+            self._emit(task_id, "computer.control.changed", {"owner": "user"})
         if not any(event["type"] == "control.takeover" for event in self.store.events(task_id)):
             self._emit(task_id, "control.takeover", {"message": "You have control"})
         self._mark_cancelled(task_id)
@@ -980,16 +990,102 @@ class AgentManager:
         call: ProviderCall,
         cancel: asyncio.Event,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        screenshot = await self._computer.execute(call.actions, cancel=cancel)
-        artifact = await asyncio.to_thread(
-            self.store.save_artifact, task_id, "screenshot", "image/jpeg", screenshot
+        batch_id = uuid.uuid4().hex[:12]
+        action_types = [str(action.get("type") or "") for action in call.actions]
+        self._emit(
+            task_id,
+            "computer.action.started",
+            {"batch_id": batch_id, "actions": action_types},
         )
+        # Taking control back: a user takeover flips control_owner to "user";
+        # the next agent batch reasserts it with a visible transition.
+        if self._observation.control_owner != "agent":
+            self._observation.control_owner = "agent"
+            self._emit(task_id, "computer.control.changed", {"owner": "agent"})
+        try:
+            screenshot = await self._computer.execute(call.actions, cancel=cancel)
+        except BaseException as exc:
+            self._emit(
+                task_id,
+                "computer.action.finished",
+                {
+                    "batch_id": batch_id,
+                    "ok": False,
+                    "error": "cancelled" if isinstance(exc, asyncio.CancelledError) else str(exc),
+                },
+            )
+            raise
+        self._emit(task_id, "computer.action.finished", {"batch_id": batch_id, "ok": True})
+
+        region = _screenshot_region(call.actions)
+        cropped = crop_region(screenshot, region) if region is not None else None
+        model_frame = cropped if cropped is not None else screenshot
+        display_id, logical_w, logical_h = _computer_display(self._computer)
+        size = jpeg_size(model_frame) or (0, 0)
+        dpr = (size[0] / logical_w) if size[0] and logical_w else 1.0
+        observation = self._observation.record(
+            frame=model_frame,
+            display_id=display_id,
+            width=size[0],
+            height=size[1],
+            dpr=round(dpr, 3),
+            backend=_capture_backend(),
+            region=region,
+            region_cropped=cropped is not None,
+        )
+        # The model-bound frame is saved as the screenshot artifact; the full
+        # display frame is preserved alongside it when a region was cropped so
+        # replay never loses context.
+        artifact = await asyncio.to_thread(
+            self.store.save_artifact, task_id, "screenshot", "image/jpeg", model_frame
+        )
+        observation.artifact_id = artifact["id"]
+        if cropped is not None:
+            full_artifact = await asyncio.to_thread(
+                self.store.save_artifact, task_id, "screenshot", "image/jpeg", screenshot
+            )
+            observation.extra["full_artifact_id"] = full_artifact["id"]
         metrics = self._metrics.get(task_id)
         if metrics is not None:
-            metrics.record_screenshot(len(screenshot))
+            metrics.record_screenshot(len(model_frame))
         self._emit(task_id, "computer.screenshot", {"artifact": artifact})
-        image = base64.b64encode(screenshot).decode("ascii")
+        self._emit(
+            task_id,
+            "computer.observation",
+            {"batch_id": batch_id, "observation": observation.payload()},
+        )
+        image = base64.b64encode(scale_for_model(model_frame)).decode("ascii")
         if call.name == "use_computer":
+            if not observation.changed:
+                self._emit(
+                    task_id,
+                    "computer.no_change",
+                    {
+                        "batch_id": batch_id,
+                        "observation_id": observation.id,
+                        "frame_hash": observation.frame_hash,
+                    },
+                )
+                return artifact, [
+                    {
+                        "type": "function_call_output",
+                        "call_id": call.call_id,
+                        "output": "Computer action completed.",
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    f"Screen unchanged (frame matches observation "
+                                    f"{observation.extra.get('previous_id') or observation.id}). "
+                                    "Continue the approved task without re-inspecting."
+                                ),
+                            }
+                        ],
+                    },
+                ]
             return artifact, [
                 {
                     "type": "function_call_output",
@@ -1010,7 +1106,7 @@ class AgentManager:
                     ],
                 },
             ]
-        return artifact, [
+        items: list[dict[str, Any]] = [
             {
                 "type": "computer_call_output",
                 "call_id": call.call_id,
@@ -1018,6 +1114,33 @@ class AgentManager:
                 "acknowledged_safety_checks": call.safety_checks,
             }
         ]
+        if not observation.changed:
+            self._emit(
+                task_id,
+                "computer.no_change",
+                {
+                    "batch_id": batch_id,
+                    "observation_id": observation.id,
+                    "frame_hash": observation.frame_hash,
+                },
+            )
+            # The computer_call_output contract needs an image, so the dedup
+            # signal travels in an adjacent user message instead.
+            items.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                f"Screen unchanged (frame matches observation "
+                                f"{observation.extra.get('previous_id') or observation.id})."
+                            ),
+                        }
+                    ],
+                }
+            )
+        return artifact, items
 
     @staticmethod
     def _decide_computer(call: ProviderCall) -> PolicyDecision:
@@ -1676,6 +1799,45 @@ def _snapshot_event(snapshot: dict[str, Any]) -> dict[str, Any]:
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _SHARE_MAX_BYTES = 16 * 1024 * 1024
 _SUBAGENT_MAX_SECONDS = 1800
+
+
+def _screenshot_region(actions: list[dict[str, Any]]) -> dict[str, int] | None:
+    """Region requested by the last screenshot action, normalized to pixels."""
+    for action in reversed(actions):
+        if str(action.get("type") or "") != "screenshot":
+            continue
+        region = action.get("region")
+        if not isinstance(region, dict):
+            return None
+        try:
+            return {
+                "x": max(0, int(region.get("x") or 0)),
+                "y": max(0, int(region.get("y") or 0)),
+                "width": max(1, int(region.get("width") or region.get("w") or 0)),
+                "height": max(1, int(region.get("height") or region.get("h") or 0)),
+            }
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _computer_display(computer: Any) -> tuple[str | None, float, float]:
+    display_fn = getattr(computer, "_display", None)
+    if not callable(display_fn):
+        return None, 0.0, 0.0
+    try:
+        return display_fn()
+    except Exception:
+        return None, 0.0, 0.0
+
+
+def _capture_backend() -> str:
+    try:
+        from termx.desktop.capabilities import probe_desktop
+
+        return str(probe_desktop().capture_backend or "unknown")
+    except Exception:
+        return "unknown"
 
 
 @dataclass

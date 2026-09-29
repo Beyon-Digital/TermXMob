@@ -97,7 +97,11 @@ def evaluate_shell(command: str, root: str) -> PolicyDecision:
 
 
 def evaluate_computer(actions: list[dict[str, Any]]) -> PolicyDecision:
-    typed = " ".join(str(action.get("text") or "") for action in actions if action.get("type") == "type")
+    typed = " ".join(
+        str(action.get("text") or "")
+        for action in actions
+        if action.get("type") in {"type", "paste_text"}
+    )
     if _SECRET.search(typed):
         return PolicyDecision(
             True,

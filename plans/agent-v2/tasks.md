@@ -2,10 +2,10 @@
 
 ## Resume checkpoint
 - Updated: 2026-09-29
-- Current phase: Phase 3 complete (AG2-012/013 async subagent handles + fan-out); PR #16 open (ready for review)
-- Next ready tasks: Phase 4 (AG2-015 Observation v2, AG2-016 computer actions), then PROD/SEC/VRF scope
+- Current phase: Phase 4 complete (AG2-015 Observation v2, AG2-016 richer computer actions); PR #16 open (ready for review)
+- Next ready tasks: PROD/SEC/VRF scope (host conversations, custom agents, worktrees, Activity Center, port/process discovery, runbooks, scopes v2, final verification)
 - Active owners: devin-session
-- Last verified command: `uv run pytest tests -q` — 276 passed, 10 skipped, ~27s
+- Last verified command: `uv run pytest tests -q` — 288 passed, 10 skipped, ~27s
 - Last inspected surface: `src/termx/agent/**`, `project_files`, `git_ops`, `app.py` agent routes
 - Blockers: none
 - Resume instruction: continue the ledger below top-down; keep tests green.
@@ -262,22 +262,39 @@ tasks:
     notes: Phase 3 — children inherit cwd/provider/model/limits; consequential child actions still escalate to the parent/user (no scope widening)
   - id: AG2-015
     title: Implement Computer Observation v2
-    status: pending
+    status: done
     depends_on: [AG2-002]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
-    notes: Phase 4
+    owner: devin
+    write_scope:
+      - src/termx/agent/observation.py (new: Observation schema, ObservationTracker, frame identity)
+      - src/termx/agent/manager.py (_execute_computer: batch_id, computer.action.*, computer.observation/no_change/control.changed events, dedup)
+    acceptance:
+      - "observation {id, display_id, width, height, dpr, captured_at, artifact_id, frame_hash, changed, control_owner, capture_backend} emitted per batch; frame pixels via JPEG SOF, dpr=px/logical width"
+      - "unchanged frames emit computer.no_change and produce text-only model follow-up on the use_computer path (no duplicate input_image); every frame still persisted as a screenshot artifact for replay"
+      - "computer.action.started/finished share a stable batch_id; finished reports ok/error incl. cancelled; control.changed fires on takeover->user and next-batch->agent"
+      - "capture/input backends unchanged — observation layer is post-capture and backend-agnostic; Pillow-gated paths (aHash, downscale, crop) fall back honestly (sha256, full frame) on hosts without it"
+    evidence:
+      - "uv run pytest tests -q -> 288 passed, 10 skipped"
+      - "test_agent.py: test_computer_observation_schema_and_batch_events, test_computer_no_change_suppresses_duplicate_frame (2 obs, changed=[True,False], no input_image after call computer-2, 2 artifacts), test_computer_control_changed_on_takeover, test_frame_identity_dedupes_identical_frames, test_jpeg_size_parses_sof_marker"
+    notes: Phase 4 — model-bound frame downscaled (TERMX_MODEL_IMAGE_MAX_PX, default 1568) only where Pillow can decode; native computer_call_output keeps the screenshot per API contract and gets the no-change signal via an adjacent user message
   - id: AG2-016
     title: Add efficient paste and richer computer actions
-    status: pending
+    status: done
     depends_on: [AG2-015]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
-    notes: Phase 4
+    owner: devin
+    write_scope:
+      - src/termx/agent/computer.py (paste_text via clipboard_set+verify+paste chord with per-char fallback; mouse_down/up; key_down/up; release_all action; set_display)
+      - src/termx/agent/providers.py (use_computer schema: new action kinds, key/display_id/region props, description teaches paste-first)
+      - src/termx/agent/policy.py (paste_text text joins the secret scan alongside type)
+      - src/termx/machine.py (capabilities: computer_observation_v2, agent_subagents)
+    acceptance:
+      - "paste_text writes the clipboard, verifies via read-back, and sends the native paste chord (meta+v macOS, control+v elsewhere); falls back to per-character typing when the clipboard bridge is unavailable"
+      - "mouse_down/mouse_up emit pointer down/up with normalized coords+button; key_down/key_up emit key down/up; release_all reachable as an action; set_display switches target display"
+      - "machine capabilities advertise computer_observation_v2: true; paste_text gets the same credential/secret approval scan as type"
+    evidence:
+      - "test_agent.py: test_paste_text_uses_clipboard_chord, test_paste_text_falls_back_to_typing, test_mouse_and_key_hold_actions, test_paste_text_secret_scanned_like_type, test_computer_region_screenshot_records_region, test_machine_snapshot_reports_observation_v2"
+      - "uv run pytest tests -q -> 288 passed, 10 skipped"
+    notes: Phase 4 — screenshot actions accept region {x,y,width,height}; crop is post-capture and Pillow-gated (full frame served with region_cropped=false when undecodable)
   - id: AG2-017
     title: Resumable task checkpoints without replaying side effects
     status: done
