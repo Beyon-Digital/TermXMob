@@ -2,10 +2,10 @@
 
 ## Resume checkpoint
 - Updated: 2026-09-28
-- Current phase: Phase 1 implementation complete, pending PR + verify record
-- Next ready tasks: VRF-P1 (evidence recorded), then Phase 2 scope
+- Current phase: Phase 1 complete; PR #16 open (draft), Devin Review round 1 addressed (12/12 findings fixed or answered, commit 2aab7d4)
+- Next ready tasks: Phase 2 scope (provider streaming/retry, compaction, async subagents, observation v2)
 - Active owners: devin-session
-- Last verified command: `uv run pytest tests -q` — 218 passed, 10 skipped, 24.4s
+- Last verified command: `uv run pytest tests -q` — 227 passed, 10 skipped, 27.9s
 - Last inspected surface: `src/termx/agent/**`, `project_files`, `git_ops`, `app.py` agent routes
 - Blockers: none
 - Resume instruction: continue the ledger below top-down; keep tests green.
@@ -47,7 +47,7 @@ tasks:
     acceptance:
       - ToolSpec carries mutability/parallel_safe/approval
       - Provider tools[] generated from registry; legacy names unchanged on the wire
-      - Unknown tool names produce inline error results, not crashes
+      - Unknown tool names pause on the preserved "Unknown tool" approval; execution raises a structured failure, never a crash
     evidence:
       - "src/termx/agent/tools/registry.py: ToolSpec/ToolOutcome/ToolContext + decide_never/make_always/unknown_decision"
       - "providers.py turn() sources function tools from default_registry().provider_tools(read_only=...)"
