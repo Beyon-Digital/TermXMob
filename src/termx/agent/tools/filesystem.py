@@ -10,6 +10,8 @@ import asyncio
 import difflib
 import fnmatch
 import os
+import stat
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -306,6 +308,8 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
             elif old_path and not new_path:
                 raise ValueError(f"{source_path} does not exist")
             after, hunks = _apply_hunks(before, lines)
+            if hunks == 0:
+                raise ValueError(f"{target}: patch section contains no hunks")
             if not dry_run:
                 writes.append((resolved, after))
             changed.append(
@@ -324,9 +328,11 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(
             {"ok": True, "dry_run": True, "changed_paths": [c["path"] for c in changed], "changes": changed}
         )
-    for resolved, after in writes:
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_text("\n".join(after) + ("\n" if after else ""), "utf-8")
+    write_error = _commit_patch_writes(writes)
+    if write_error is not None:
+        return ToolOutcome(
+            error_result(f"patch failed: {write_error}", changed_paths=[c["path"] for c in changed])
+        )
     return ToolOutcome(
         {
             "ok": True,
@@ -335,6 +341,49 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
             "changes": changed,
         }
     )
+
+
+def _commit_patch_writes(writes: list[tuple[Path, list[str]]]) -> str | None:
+    """Apply all replacements atomically-ish: temp-file each write first, then
+    commit with os.replace and roll back completed replacements on failure."""
+    prepared: list[tuple[Path, Path]] = []
+    applied: list[tuple[Path, Path | None]] = []
+    try:
+        for resolved, after in writes:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(dir=resolved.parent, prefix=".termx-patch-")
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write("\n".join(after) + ("\n" if after else ""))
+            tmp = Path(tmp_name)
+            if resolved.exists():
+                os.chmod(tmp, stat.S_IMODE(resolved.stat().st_mode))
+            prepared.append((resolved, tmp))
+        for resolved, tmp in prepared:
+            backup = None
+            if resolved.exists():
+                fd, backup_name = tempfile.mkstemp(dir=resolved.parent, prefix=".termx-bak-")
+                os.close(fd)
+                backup = Path(backup_name)
+                os.replace(resolved, backup)
+            os.replace(tmp, resolved)
+            applied.append((resolved, backup))
+    except OSError as exc:
+        for resolved, backup in reversed(applied):
+            try:
+                if backup is not None:
+                    os.replace(backup, resolved)
+                else:
+                    resolved.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return str(exc)
+    finally:
+        for _resolved, tmp in prepared:
+            tmp.unlink(missing_ok=True)
+    for _resolved, backup in applied:
+        if backup is not None:
+            backup.unlink(missing_ok=True)
+    return None
 
 
 def register(registry: ToolRegistry) -> None:

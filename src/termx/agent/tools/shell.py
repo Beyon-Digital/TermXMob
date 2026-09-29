@@ -15,7 +15,29 @@ if TYPE_CHECKING:
 
 CHECK_OUTPUT_LIMIT = 64_000
 STREAM_EVENT_LIMIT = 128_000
+# Hold back this many trailing bytes from each emitted chunk so a secret split
+# across pipe reads can never be persisted unredacted (redact() sees the join).
+_STREAM_HOLD_BACK = 128
 _ASK_REFUSAL = "Refused: Ask mode is read-only. Switch to Agent mode to change files or reach the network."
+
+
+class _StreamRedactor:
+    """Redact process output while a carry buffer guards chunk boundaries."""
+
+    def __init__(self, hold_back: int = _STREAM_HOLD_BACK) -> None:
+        self._pending = ""
+        self._hold_back = hold_back
+
+    def feed(self, text: str) -> str:
+        self._pending += text
+        if len(self._pending) <= self._hold_back:
+            return ""
+        emit, self._pending = self._pending[: -self._hold_back], self._pending[-self._hold_back :]
+        return redact(emit)
+
+    def flush(self) -> str:
+        pending, self._pending = self._pending, ""
+        return redact(pending)
 
 
 async def _streamed_process(
@@ -32,23 +54,37 @@ async def _streamed_process(
         {"call_id": call.call_id, "command": redact(command), "cwd": ctx.cwd},
     )
     emitted = 0
+    redactor = _StreamRedactor()
 
     def on_output(data: bytes) -> None:
         nonlocal emitted
         if emitted >= STREAM_EVENT_LIMIT:
             return
-        text = data.decode("utf-8", "replace")
-        emitted += len(text)
+        chunk = redactor.feed(data.decode("utf-8", "replace"))
+        if not chunk:
+            return
+        emitted += len(chunk)
         ctx.emit(
             "process.output",
             {
                 "call_id": call.call_id,
-                "chunk": redact(text),
+                "chunk": chunk,
                 "truncated": emitted >= STREAM_EVENT_LIMIT,
             },
         )
 
     result = await stream_shell(command, ctx.cwd, timeout_s=timeout_s, cancel=ctx.cancel, on_output=on_output)
+    tail = redactor.flush()
+    if tail and emitted < STREAM_EVENT_LIMIT:
+        emitted += len(tail)
+        ctx.emit(
+            "process.output",
+            {
+                "call_id": call.call_id,
+                "chunk": tail,
+                "truncated": emitted >= STREAM_EVENT_LIMIT,
+            },
+        )
     duration_ms = int((time.monotonic() - started) * 1000)
     if result.cancelled:
         ctx.emit("process.cancelled", {"call_id": call.call_id, "duration_ms": duration_ms})
@@ -99,11 +135,13 @@ async def _run_check(call: "ProviderCall", ctx: ToolContext) -> ToolOutcome:
     command = call_string(call, "command")
     if not command:
         return ToolOutcome(error_result("run_check requires 'command'"))
-    if ctx.read_only and is_mutating_shell(command):
+    if ctx.read_only:
+        # Checks can mutate (fixtures, caches, installers) in ways the shell
+        # heuristic cannot classify, so Ask mode refuses them outright.
         return ToolOutcome(
             {"ok": False, "exit_code": None, "output": _ASK_REFUSAL, "refused": True, "kind": kind}
         )
-    timeout = min(600.0, max(1.0, call_int(call, "timeout_s", 300)))
+    timeout = _shell_timeout(call, ctx, 300.0)
     result, duration_ms = await _streamed_process(call, ctx, command, timeout_s=timeout)
     output = result.public()["output"]
     artifact: dict[str, Any] | None = None
@@ -198,5 +236,6 @@ def register(registry: ToolRegistry) -> None:
             approval="policy",
             execute=_run_check,
             decide=_decide_shell,
+            expose_read_only=False,
         )
     )

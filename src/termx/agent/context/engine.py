@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from termx import git_ops
-from termx.agent.context.manifest import SKIP_DIRS, workspace_manifest
+from termx.agent.context.manifest import SKIP_DIRS, _secret_name, workspace_manifest
 
 DEFAULT_CONTEXT_LIMITS = {
     "max_context_estimate_tokens": 120_000,
@@ -27,6 +27,7 @@ DEFAULT_CONTEXT_LIMITS = {
 
 _RECENT_FILES = 12
 _SNAPSHOT_DEPTH = 2
+_SNAPSHOT_TTL_S = 30.0
 
 
 def project_snapshot(root: str) -> dict[str, Any]:
@@ -101,14 +102,14 @@ def _tree(base: Path) -> list[str]:
     entries: list[str] = []
     try:
         for top in sorted(base.iterdir()):
-            if top.name in SKIP_DIRS or top.name.startswith("."):
+            if top.name in SKIP_DIRS or top.name.startswith(".") or _secret_name(top.name):
                 continue
             if top.is_dir():
                 entries.append(top.name + "/")
                 if len(entries) >= 60:
                     break
                 for child in sorted(top.iterdir())[:20]:
-                    if child.name.startswith(".") or child.name in SKIP_DIRS:
+                    if child.name.startswith(".") or child.name in SKIP_DIRS or _secret_name(child.name):
                         continue
                     entries.append(f"{top.name}/{child.name}{'/' if child.is_dir() else ''}")
             else:
@@ -129,7 +130,7 @@ def _recent(base: Path) -> list[str]:
         if depth >= 4:
             dirnames[:] = []
         for name in filenames:
-            if name.startswith("."):
+            if name.startswith(".") or _secret_name(name):
                 continue
             try:
                 mtime = (current_path / name).stat().st_mtime
@@ -160,27 +161,42 @@ class ContextEngine:
         self._root = root
         self._limits = {**DEFAULT_CONTEXT_LIMITS, **(limits or {})}
         self._snapshot: dict[str, Any] | None = None
+        self._snapshot_at = 0.0
 
     async def snapshot(self) -> dict[str, Any]:
         import asyncio
+        import time
 
-        if self._snapshot is None:
+        if self._snapshot is None or time.monotonic() - self._snapshot_at > _SNAPSHOT_TTL_S:
             self._snapshot = await asyncio.to_thread(project_snapshot, self._root)
+            self._snapshot_at = time.monotonic()
         return self._snapshot
 
     def note_mutation(self) -> None:
         self._snapshot = None
+        self._snapshot_at = 0.0
 
     def slim_history(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Bound transcript size without breaking call/output pairing.
 
-        Caps each tool-output string at ``max_tool_output_chars_per_turn`` and
-        keeps at most ``max_images_in_context`` image parts (newest kept).
+        Keeps the leading user item, bounds the transcript to the newest
+        ``max_history_events`` items (never severing a tool call from its
+        output), applies ``max_tool_output_chars_per_turn`` as a cumulative
+        newest-first budget across tool outputs, and keeps at most
+        ``max_images_in_context`` image parts (newest kept).
         """
         char_cap = int(self._limits["max_tool_output_chars_per_turn"])
         image_cap = int(self._limits["max_images_in_context"])
+        max_events = int(self._limits["max_history_events"])
+        head: list[dict[str, Any]] = []
+        if items and isinstance(items[0], dict) and items[0].get("role") == "user":
+            head, items = items[:1], items[1:]
+        if len(items) > max(0, max_events - len(head)):
+            items = items[max(0, len(items) - max(0, max_events - len(head))):]
+            while items and isinstance(items[0], dict) and items[0].get("type") == "function_call_output":
+                items = items[1:]
         slimmed: list[dict[str, Any]] = []
-        for item in items:
+        for item in head + list(items):
             if not isinstance(item, dict):
                 slimmed.append(item)
                 continue
@@ -189,6 +205,23 @@ class ContextEngine:
                 if len(output) > char_cap:
                     item = {**item, "output": output[:char_cap] + "\n...[truncated by context engine]"}
             slimmed.append(item)
+        # Newest outputs keep their budget; older ones collapse once the
+        # cumulative allowance is spent.
+        remaining = char_cap
+        for index in range(len(slimmed) - 1, -1, -1):
+            item = slimmed[index]
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "function_call_output" or not isinstance(item.get("output"), str):
+                continue
+            output = item["output"]
+            if len(output) <= remaining:
+                remaining -= len(output)
+                continue
+            keep = max(0, remaining)
+            remaining = 0
+            marker = "\n...[elided by context budget]"
+            slimmed[index] = {**item, "output": output[:keep] + marker if keep else marker.strip()}
         # Walk from newest to oldest to decide which image parts survive.
         image_positions: list[tuple[int, int]] = []
         for index, item in enumerate(slimmed):

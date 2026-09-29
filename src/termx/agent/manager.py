@@ -994,6 +994,18 @@ class AgentManager:
         except (KeyError, ValueError):
             pass
 
+    def _finish_state(self, task_id: str) -> None:
+        """Persist final metrics and drop all in-memory per-task state.
+
+        Runs on every terminal transition so tasks denied while awaiting
+        approval (whose worker already exited) are reclaimed too.
+        """
+        self._persist_metrics(task_id)
+        self._context_engines.pop(task_id, None)
+        self._metrics.pop(task_id, None)
+        self._steering.pop(task_id, None)
+        self._drop_pending_approvals(task_id)
+
     async def _cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
             return
@@ -1003,7 +1015,7 @@ class AgentManager:
     def _mark_cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
             return
-        self._persist_metrics(task_id)
+        self._finish_state(task_id)
         self.store.update_task(task_id, status="cancelled", error="Cancelled by user")
         self._emit(task_id, "task.cancelled", {"message": "Cancelled by user"})
 
@@ -1038,7 +1050,7 @@ class AgentManager:
             message = str(exc)
         else:
             message = "Agent run failed"
-        self._persist_metrics(task_id)
+        self._finish_state(task_id)
         self.store.update_task(task_id, status="failed", error=message)
         self._emit(task_id, "task.failed", {"message": message})
 

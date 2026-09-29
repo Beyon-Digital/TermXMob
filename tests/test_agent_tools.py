@@ -313,6 +313,142 @@ def test_context_engine(tmp_path):
     assert len(slim[0]["output"]) < 60000
 
 
+def test_context_engine_hides_sensitive_names(tmp_path):
+    from termx.agent.context import ContextEngine
+
+    (tmp_path / ".env").write_text("TOKEN=x\n")
+    (tmp_path / "credentials.json").write_text("{}\n")
+    (tmp_path / "id_rsa").write_text("key\n")
+    (tmp_path / "visible.py").write_text("x\n")
+    snapshot = asyncio.run(ContextEngine(str(tmp_path)).snapshot())
+    assert ".env" not in snapshot["files"]
+    assert not any(".env" in e or "credentials.json" in e or "id_rsa" in e for e in snapshot["tree"])
+    assert not any(".env" in e or "credentials.json" in e or "id_rsa" in e for e in snapshot["recent"])
+
+
+def test_context_engine_bounds_history(tmp_path):
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine(str(tmp_path), {"max_history_events": 5})
+    items = [{"role": "user", "content": "hello"}] + [
+        {"type": "function_call", "name": "read_file", "call_id": f"c{i}"}
+        for i in range(20)
+    ]
+    slim = engine.slim_history(items)
+    assert len(slim) <= 6  # leading user item + <=5 newest
+
+
+def test_context_engine_cumulative_output_budget(tmp_path):
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine(str(tmp_path), {"max_tool_output_chars_per_turn": 1000})
+    items = [
+        {"type": "function_call_output", "call_id": "old", "output": "o" * 900},
+        {"type": "function_call_output", "call_id": "new", "output": "n" * 900},
+    ]
+    slim = engine.slim_history(items)
+    assert slim[1]["output"].startswith("n" * 500)  # newest keeps most budget
+    assert "elided" in slim[0]["output"] or len(slim[0]["output"]) <= 200
+
+
+def test_search_filters_sensitive(env):
+    _, make_ctx, _ = env
+    outcome = asyncio.run(
+        default_registry().get("search_project").execute(
+            _call("search_project", {"query": "TOKEN"}), make_ctx()
+        )
+    )
+    assert outcome.result["ok"] is True
+    assert outcome.result["matches"] == []
+    assert outcome.result.get("filtered_sensitive") == 1
+
+
+def test_git_diff_refuses_sensitive(tmp_path):
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / ".env").write_text("A=1\n")
+    (repo / "ok.txt").write_text("x\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
+    (repo / ".env").write_text("A=2\n")
+    (repo / "ok.txt").write_text("y\n")
+
+    files = ProjectFiles()
+    ctx = ToolContext(
+        task_id="t",
+        cwd=str(repo),
+        task={"limits": {}, "mode": "agent"},
+        read_only=False,
+        cancel=asyncio.Event(),
+        emit=lambda *_: None,
+        store=None,
+        manager=None,
+        project_files=files,
+        project_id=files.register(str(repo))["id"],
+    )
+    registry = default_registry()
+    refused = asyncio.run(
+        registry.get("git_diff").execute(_call("git_diff", {"path": ".env"}), ctx)
+    )
+    assert refused.result["ok"] is False and refused.result["refused"] is True
+    whole = asyncio.run(
+        registry.get("git_diff").execute(_call("git_diff"), ctx)
+    )
+    assert whole.result["ok"] is True
+    assert "A=2" not in whole.result["diff"]
+    assert whole.result.get("filtered_sensitive") == 1
+
+
+def test_apply_patch_requires_hunks(env):
+    root, make_ctx, _ = env
+    outcome = asyncio.run(
+        default_registry().get("apply_patch").execute(
+            _call("apply_patch", {"patch": "--- a/a.py\n+++ b/a.py\n"}),
+            make_ctx(),
+        )
+    )
+    assert outcome.result["ok"] is False
+    assert "no hunks" in outcome.result["output"]
+    assert (root / "a.py").read_text() == "print('one')\nprint('two')\n"
+
+
+def test_run_check_ask_refusal(env):
+    _, make_ctx, _ = env
+    outcome = asyncio.run(
+        default_registry().get("run_check").execute(
+            _call("run_check", {"kind": "test", "command": "echo hi"}), make_ctx(read_only=True)
+        )
+    )
+    assert outcome.result["ok"] is False and outcome.result["refused"] is True
+
+
+def test_run_check_timeout_clamped(env):
+    from termx.agent.tools.shell import _shell_timeout
+
+    _, make_ctx, _ = env
+    ctx = make_ctx()
+    call = _call("run_check", {"kind": "test", "command": "x", "timeout_s": 600})
+    assert _shell_timeout(call, ctx, 300.0) == 30.0  # task limit is 30 in env
+
+
+def test_stream_redactor_splits_secret():
+    from termx.agent.tools.shell import _StreamRedactor
+
+    redactor = _StreamRedactor(hold_back=32)
+    out = redactor.feed("api_ke")
+    assert out == ""
+    out = redactor.feed("y=TOPSECRET1234567890" + "x" * 64)
+    assert "TOPSECRET" not in out
+    tail = redactor.flush()
+    joined = (out + tail)
+    assert "TOPSECRET" not in joined
+
+
 def test_metrics():
     metrics = TaskMetrics()
     metrics.record_provider(120, {"input_tokens": 3, "output_tokens": 2})

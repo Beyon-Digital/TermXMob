@@ -5,6 +5,7 @@ import asyncio
 
 from fastapi import HTTPException
 
+from termx.agent.policy import is_sensitive_path
 from termx.agent.providers import ProviderCall
 from termx.agent.tools.helpers import call_bool, call_string, error_result, http_error_result
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec, decide_never
@@ -26,12 +27,21 @@ async def _search_project(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         )
     except HTTPException as exc:
         return ToolOutcome(http_error_result(exc))
+    # ProjectFiles.search does not apply the sensitive-path policy — drop
+    # matches from credential/key/env files before they reach the transcript.
+    matches = [
+        match
+        for match in (result.get("results") or [])
+        if not is_sensitive_path(str(match.get("path") or ""))
+    ]
+    filtered = len(result.get("results") or []) - len(matches)
     return ToolOutcome(
         {
             "ok": True,
             "query": query,
-            "matches": result.get("results") or [],
+            "matches": matches,
             "truncated": bool(result.get("truncated")),
+            **({"filtered_sensitive": filtered} if filtered else {}),
         }
     )
 

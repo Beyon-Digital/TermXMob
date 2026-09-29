@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 from fastapi import HTTPException
 
 from termx import git_ops
-from termx.agent.policy import PolicyDecision
+from termx.agent.policy import PolicyDecision, is_sensitive_path
 from termx.agent.providers import ProviderCall
 from termx.agent.tools.helpers import call_bool, call_string, denied_result, error_result
 from termx.agent.tools.registry import (
@@ -43,11 +44,35 @@ async def _git_status(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
 
 async def _git_diff(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     path = call_string(call, "path") or "."
+    if path != "." and is_sensitive_path(path):
+        return ToolOutcome(denied_result(path))
     try:
         diff = await asyncio.to_thread(git_ops.diff, ctx.cwd, path, call_bool(call, "staged"))
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **diff})
+    text, dropped = _filter_sensitive_diff(str(diff.get("diff") or ""))
+    payload: dict[str, Any] = {"ok": True, **diff, "diff": text}
+    if dropped:
+        payload["filtered_sensitive"] = dropped
+    return ToolOutcome(payload)
+
+
+def _filter_sensitive_diff(diff_text: str) -> tuple[str, int]:
+    """Drop per-file diff sections for credential/key/env paths."""
+    if not diff_text:
+        return diff_text, 0
+    kept: list[str] = []
+    dropped = 0
+    for section in re.split(r"(?=^diff --git )", diff_text, flags=re.MULTILINE):
+        if not section.strip():
+            continue
+        header = section.splitlines()[0]
+        match = re.match(r"diff --git a/(.+?) b/(.+)", header)
+        if match and (is_sensitive_path(match.group(1)) or is_sensitive_path(match.group(2))):
+            dropped += 1
+            continue
+        kept.append(section)
+    return "".join(kept), dropped
 
 
 async def _git_stage(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
