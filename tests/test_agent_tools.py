@@ -716,6 +716,15 @@ def test_git_status_hides_sensitive_filenames(tmp_path):
 
 def test_run_mutating_cancel_kills_process(tmp_path):
     from termx.agent.tools.git import _run_mutating
+    from termx.sandbox import runner_for
+
+    # `git daemon --listen` needs a bind that every kernel-strength sandbox
+    # backend denies by default (no net capability grant in this ctx), so the
+    # process exits before the cancel window on macos/linux-ns. The kill path
+    # itself is covered by the backend suites; run the end-to-end check only
+    # where the default backend leaves the spawn unrestricted.
+    if runner_for("agent").capabilities().strength != "none":
+        pytest.skip("restricted sandbox denies the listener this test needs")
 
     ctx = ToolContext(
         task_id="t", cwd=str(tmp_path), task={"limits": {}, "mode": "agent"},

@@ -181,11 +181,23 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
     assert caps["policy_engine_v2"] is True
     sandbox = caps["execution_sandbox"]
     # Truthful report: the snapshot mirrors whatever the runner selected for
-    # this machine — host ("none") where namespaces are unavailable, linux-ns
-    # ("kernel") where they are — and never invents controls.
-    from termx.sandbox import linux_ns_available, runner_for
+    # this machine — host ("none") where no kernel backend is available,
+    # linux-ns/macos ("kernel") where one is — and never invents controls.
+    import sys
 
-    expected_backend = "linux-ns" if linux_ns_available() else "host"
+    from termx.sandbox import (
+        linux_ns_available,
+        macos_backend_available,
+        runner_for,
+    )
+    from termx.sandbox.macos_runner import macos_helper_available
+
+    if sys.platform == "darwin" and macos_backend_available():
+        expected_backend = "macos-helper" if macos_helper_available() else "macos-seatbelt"
+    elif linux_ns_available():
+        expected_backend = "linux-ns"
+    else:
+        expected_backend = "host"
     assert sandbox["backend"] == expected_backend
     agent_caps = runner_for("agent").capabilities()
     assert sandbox["strength"] == agent_caps.strength

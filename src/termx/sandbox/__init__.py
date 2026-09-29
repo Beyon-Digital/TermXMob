@@ -13,9 +13,11 @@ it so ``manager.py``/tool code stays platform-neutral. The ``host`` backend
 is the explicit compatibility runner — it does not hide behind "no sandbox":
 ``capabilities()`` truthfully reports unrestricted authority. On Linux with
 bubblewrap + unprivileged user namespaces, restricted profiles resolve to the
-kernel-enforcing ``linux-ns`` backend; everywhere else they stay on ``host``
-and report so. ``TERMX_SANDBOX_BACKEND`` (``auto``|``host``|``linux-ns``)
-overrides selection for debugging — never silently.
+kernel-enforcing ``linux-ns`` backend; on macOS they resolve to ``macos``
+(seatbelt always, restricted-user helper when provisioned); everywhere else
+they stay on ``host`` and report so. ``TERMX_SANDBOX_BACKEND``
+(``auto``|``host``|``linux-ns``|``macos``) overrides selection for debugging —
+never silently.
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ from termx.sandbox.runner import SandboxRunner
 __all__ = [
     "HostSandboxRunner",
     "LinuxNamespaceRunner",
+    "MacOSRunner",
     "ResourceLimits",
     "SandboxCapabilities",
     "SandboxFailure",
@@ -48,24 +51,31 @@ __all__ = [
     "build_environment",
     "host_environment",
     "linux_ns_available",
+    "macos_backend_available",
     "runner_for",
 ]
 
 _HOST_BACKEND = "host"
 _LINUX_NS_BACKEND = "linux-ns"
+_MACOS_BACKEND = "macos"
 
 
 from termx.sandbox.linux_ns import LinuxNamespaceRunner, linux_ns_available
+from termx.sandbox.macos_runner import MacOSRunner, macos_backend_available
 
 
 def _default_backend(profile: str) -> str:
     """Pick the strongest available backend for a profile — truthful, never
     silently downgraded per-spawn (a failed spawn raises, no fallback)."""
+    import sys
+
     if profile == "host":
         return _HOST_BACKEND
     override = os.environ.get("TERMX_SANDBOX_BACKEND", "").strip().lower()
     if override:
         return override
+    if sys.platform == "darwin" and macos_backend_available():
+        return _MACOS_BACKEND
     if linux_ns_available():
         return _LINUX_NS_BACKEND
     return _HOST_BACKEND
@@ -87,6 +97,8 @@ def runner_for(
     backend = backend or _default_backend(profile)
     if backend == _LINUX_NS_BACKEND:
         return LinuxNamespaceRunner(profile=profile, state_dir=state_dir)
+    if backend == _MACOS_BACKEND:
+        return MacOSRunner(profile=profile, state_dir=state_dir)
     if backend == _HOST_BACKEND:
         return HostSandboxRunner(profile=profile)
     raise SandboxFailure("invalid_backend", f"unknown sandbox backend {backend!r}")

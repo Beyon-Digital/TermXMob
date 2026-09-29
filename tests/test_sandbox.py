@@ -144,13 +144,21 @@ def test_runner_for_profiles():
 
 
 def test_runner_for_default_backend_selection(monkeypatch):
-    """Auto selection: host profile → host; restricted profiles → linux-ns
-    when namespaces are available, host otherwise. An explicit bad backend
-    raises instead of downgrading."""
-    from termx.sandbox import linux_ns_available
+    """Auto selection: host profile → host; restricted profiles → the best
+    available restricted backend (linux-ns, then macos on darwin), host
+    otherwise. An explicit bad backend raises instead of downgrading."""
+    import sys
+
+    from termx.sandbox import linux_ns_available, macos_backend_available
+    from termx.sandbox.macos_runner import macos_helper_available
 
     assert runner_for("host").capabilities().backend == "host"
-    expected = "linux-ns" if linux_ns_available() else "host"
+    if sys.platform == "darwin" and macos_backend_available():
+        expected = "macos-helper" if macos_helper_available() else "macos-seatbelt"
+    elif linux_ns_available():
+        expected = "linux-ns"
+    else:
+        expected = "host"
     assert runner_for("agent").capabilities().backend == expected
     monkeypatch.setenv("TERMX_SANDBOX_BACKEND", "host")
     assert runner_for("agent").capabilities().backend == "host"
