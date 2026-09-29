@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+_WINDOWS = os.name == "nt"
 
 
 @dataclass(frozen=True)
@@ -136,15 +139,23 @@ def _outside_paths(command: str, root: Path) -> list[str]:
     outside: list[str] = []
     for token in tokens:
         candidate = token.strip("'\"")
-        if not candidate.startswith(("/", "~")):
+        if _WINDOWS:
+            # Windows flags (`whoami /groups`, `net user /add`) are `/name` —
+            # not paths. Real Windows paths are drive-letter or UNC or ~/x.
+            if not (
+                candidate.startswith(("~", "\\\\"))
+                or (len(candidate) > 2 and candidate[1] == ":" and candidate[2] in "/\\")
+            ):
+                continue
+        elif not candidate.startswith(("/", "~")):
             continue
         # System executable and pseudo paths used as commands are not file targets.
         if candidate.startswith(("/usr/bin/", "/bin/", "/opt/homebrew/bin/", "/dev/null")):
             continue
-        path = Path(candidate).expanduser()
         try:
+            path = Path(candidate).expanduser()
             resolved = path.resolve(strict=False)
             resolved.relative_to(root)
-        except (OSError, ValueError):
-            outside.append(str(path))
+        except (OSError, ValueError, RuntimeError):
+            outside.append(str(Path(candidate)))
     return outside

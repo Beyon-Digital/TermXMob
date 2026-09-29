@@ -3912,3 +3912,16 @@ def test_runbook_tool_accepts_runbook_bound_to_worktree_base(tmp_path: Path) -> 
         store.close()
 
     asyncio.run(run())
+
+
+def test_windows_flags_not_read_as_outside_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On Windows `foo /flag` is a flag, not a path — commands like
+    `whoami /groups` must not trip the outside-project gate."""
+    import termx.agent.policy as policy
+
+    monkeypatch.setattr(policy, "_WINDOWS", True)
+    assert evaluate_shell("whoami /groups", str(tmp_path)).approval_required is False
+    assert evaluate_shell("net user /add", str(tmp_path)).approval_required is False
+    # ~ and parent traversal still gate on Windows.
+    assert evaluate_shell("type ~\\secret.txt", str(tmp_path)).approval_required is True
+    assert evaluate_shell("type ..\\up.txt", str(tmp_path)).approval_required is True
