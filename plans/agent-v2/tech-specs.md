@@ -515,3 +515,20 @@ Endpoints: `GET /api/activity` gated by `_require_any_scope(agent-view |
 screen-view | terminal)`; `WS /api/activity/events` (same auth, closes 4401 /
 4403) streams `activity.upsert` / `activity.remove` diffs computed by re-running
 the snapshot every 2s — no cross-manager event plumbing. `capabilities.activity`.
+
+## 21. Port + process discovery (PROD-005)
+
+`termx.processes` (Linux `/proc` only — non-POSIX returns empty):
+
+- `_proc_net_listeners()` parses `tcp`/`tcp6` LISTEN rows → address/port/inode.
+- `listeners()` joins socket inodes to PIDs by scanning `/proc/<pid>/fd`
+  (permitted only), enriches with comm/cmdline/cwd, and runs a bounded
+  (250 ms) HTTP probe on loopback/wildcard listeners → `is_http` + `url`.
+- `termx_processes(project_roots)` returns the host PID's whole descendant
+  tree (PTY shells, forward/tunnel helpers, agent children) plus processes
+  whose cwd prefixes a registered project root — nothing else.
+
+Routes (any of agent-view|screen-view|terminal, both `?project_id=` filterable):
+`GET /api/ports`, `GET /api/processes`,
+`POST /api/projects/{id}/previews/from-port` (404 unless the port is a live
+listener; creates the preview from the probed URL). `capabilities.process_discovery`.

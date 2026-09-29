@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import sys
 import threading
 import time
@@ -2835,3 +2836,84 @@ def test_activity_ws_pushes_changes(tmp_path: Path) -> None:
             assert any(key.startswith("preview:") for key in seen), seen
         # stale terminal rows don't leak into a second snapshot
         assert client.get("/api/activity", headers=headers).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# PROD-005 — port + process discovery
+
+
+def _http_listener() -> tuple[Any, int]:
+    import http.server
+    import socketserver
+    import threading as _threading
+
+    handler = http.server.SimpleHTTPRequestHandler
+    server = socketserver.TCPServer(("127.0.0.1", 0), handler)
+    port = server.server_address[1]
+    _threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, port
+
+
+def test_ports_and_processes_endpoints(tmp_path: Path) -> None:
+    state = AppState(
+        passcode="secret",
+        agent_store=AgentStore(tmp_path / "p.sqlite3", tmp_path / "p-artifacts"),
+        credentials=CredentialStore(memory={}),
+        adapter_factory=lambda _p, _k: FakeAdapter(),
+    )
+    headers = {"x-termx-passcode": "secret"}
+    server, port = _http_listener()
+    try:
+        with TestClient(create_app(state, web_dir=None)) as client:
+            assert client.get("/api/ports").status_code == 401
+            assert client.get("/api/processes").status_code == 401
+            ports = client.get("/api/ports", headers=headers).json()["ports"]
+            entry = next((e for e in ports if e["port"] == port), None)
+            assert entry is not None, ports
+            assert entry["is_http"] is True
+            assert entry["url"] == f"http://127.0.0.1:{port}"
+            assert entry["pid"] == os.getpid()  # in-proc listener is discoverable
+            procs = client.get("/api/processes", headers=headers).json()["processes"]
+            pids = {p["pid"] for p in procs}
+            assert os.getpid() in pids
+            # never lists unrelated system processes
+            assert all(p["pid"] > 0 for p in procs)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_preview_from_port(tmp_path: Path) -> None:
+    state = AppState(
+        passcode="secret",
+        agent_store=AgentStore(tmp_path / "pf.sqlite3", tmp_path / "pf-artifacts"),
+        credentials=CredentialStore(memory={}),
+        adapter_factory=lambda _p, _k: FakeAdapter(),
+    )
+    headers = {"x-termx-passcode": "secret"}
+    server, port = _http_listener()
+    try:
+        with TestClient(create_app(state, web_dir=None)) as client:
+            project = state.projects.register(str(tmp_path), "demo")
+            missing = client.post(
+                f"/api/projects/{project['id']}/previews/from-port",
+                json={"port": port + 99},
+                headers=headers,
+            )
+            assert missing.status_code == 404
+            created = client.post(
+                f"/api/projects/{project['id']}/previews/from-port",
+                json={"port": port, "name": "dev server"},
+                headers=headers,
+            )
+            assert created.status_code == 200
+            preview = created.json()["preview"]
+            assert preview["name"] == "dev server"
+            assert preview["url"] == f"http://127.0.0.1:{port}"
+            listed = client.get(
+                f"/api/projects/{project['id']}/previews", headers=headers
+            ).json()["previews"]
+            assert any(p["id"] == preview["id"] for p in listed)
+    finally:
+        server.shutdown()
+        server.server_close()

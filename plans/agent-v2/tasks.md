@@ -383,8 +383,26 @@ tasks:
       - "test_agent.py: test_activity_endpoint_and_snapshot (401 gate, normalized keys, agent/terminal project matching, preview url), test_activity_ws_pushes_changes (preview upsert observed live)"
       - "uv run pytest tests -q -> 299 passed, 10 skipped"
     notes: WS is a poll-diff every 2s — no cross-manager event plumbing needed; tick-free updated_at keeps diffs quiet
-  - id: PROD-005..006 / SEC-001..002 / VRF-001
-    title: Ports, runbooks, scopes v2, final verification
+  - id: PROD-005
+    title: Port + process discovery
+    status: done
+    depends_on: []
+    owner: devin
+    write_scope:
+      - src/termx/processes.py (new: /proc/net/tcp{,6} LISTEN parse, fd-socket inode->pid join, bounded HTTP probe, termx_processes own-tree + project-cwd scan)
+      - src/termx/app.py (GET /api/ports, GET /api/processes, POST /api/projects/{id}/previews/from-port, PreviewFromPortBody)
+      - src/termx/machine.py (capabilities.process_discovery)
+    acceptance:
+      - "ports: listening TCP sockets w/ address/family/port/pid/process/cmdline/cwd + project_id via cwd prefix + is_http + url"
+      - "processes: Termx PID-tree only plus project-cwd processes — never arbitrary system processes"
+      - "?project_id= filters both endpoints; previews/from-port 404s on unknown port and creates http:// preview from the discovered listener"
+      - "auth: any of agent-view|screen-view|terminal; 401 unauthenticated"
+    evidence:
+      - "test_agent.py: test_ports_and_processes_endpoints (live in-proc HTTP listener discovered w/ is_http+url+pid, Termx tree present), test_preview_from_port (404 unknown port, create + list round-trip)"
+      - "uv run pytest tests -q -> 301 passed, 10 skipped"
+    notes: Linux /proc impl; non-POSIX degrades to empty lists rather than fake data
+  - id: PROD-006 / SEC-001..002 / VRF-001
+    title: Runbooks, scopes v2, final verification
     status: pending
     depends_on: [AG2-017, PROD-001]
     owner: unassigned

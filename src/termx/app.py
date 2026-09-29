@@ -233,6 +233,11 @@ class WorktreeActionBody(BaseModel):
     confirm: bool = False
 
 
+class PreviewFromPortBody(BaseModel):
+    port: int = Field(ge=1, le=65535)
+    name: str = Field(default="", max_length=80)
+
+
 class ConversationBody(BaseModel):
     title: str = Field(default="", max_length=300)
     project_id: str | None = Field(default=None, max_length=200)
@@ -981,6 +986,75 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
                 await asyncio.sleep(2.0)
         except WebSocketDisconnect:
             pass
+
+    # ------------------------------------------------------------------
+    # Port + process discovery (PROD-005).
+
+    @app.get("/api/ports")
+    def get_ports(
+        project_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.activity import _project_for
+        from termx.processes import listeners
+
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        try:
+            projects = state.projects.projects()
+        except Exception:
+            projects = []
+        ports = listeners()
+        for entry in ports:
+            entry["project_id"] = _project_for(projects, entry.get("cwd"))
+        if project_id:
+            ports = [entry for entry in ports if entry["project_id"] == project_id]
+        return {"ports": ports}
+
+    @app.get("/api/processes")
+    def get_processes(
+        project_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.activity import _project_for
+        from termx.processes import termx_processes
+
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        try:
+            projects = state.projects.projects()
+        except Exception:
+            projects = []
+        roots = [str(project["path"]) for project in projects if project.get("path")]
+        procs = termx_processes(roots)
+        for proc in procs:
+            proc["project_id"] = _project_for(projects, proc.get("cwd"))
+        if project_id:
+            procs = [proc for proc in procs if proc["project_id"] == project_id]
+        return {"processes": procs}
+
+    @app.post("/api/projects/{project_id}/previews/from-port")
+    def preview_from_port(
+        project_id: str,
+        body: PreviewFromPortBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.processes import listeners
+
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        match = next(
+            (entry for entry in listeners() if entry["port"] == body.port), None
+        )
+        if match is None:
+            raise HTTPException(status_code=404, detail="no listening process on that port")
+        url = match.get("url") or f"http://127.0.0.1:{body.port}"
+        result = state.projects.add_preview(project_id, body.name, str(url))
+        log_event("project_preview_from_port", project_id=project_id, port=body.port)
+        return {"preview": result, "listener": match}
 
     @app.get("/api/agent/storage")
     def get_agent_storage(
