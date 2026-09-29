@@ -18,10 +18,16 @@ from typing import Any
 import httpx
 
 
+# Grace period before an evicted client is closed, so an in-flight provider
+# turn finishes on the old client instead of erroring mid-request.
+_EVICT_GRACE_S = 300.0
+
+
 class ProviderHttpRuntime:
     def __init__(self) -> None:
         self._clients: dict[str, httpx.AsyncClient] = {}
         self._retired: set[httpx.AsyncClient] = set()
+        self._pending: set[asyncio.Task[None]] = set()
 
     def client_for(
         self,
@@ -42,15 +48,33 @@ class ProviderHttpRuntime:
 
     def evict(self, key: str) -> None:
         client = self._clients.pop(key, None)
-        if client is not None:
-            # Retire instead of closing: in-flight requests keep their client
-            # alive, and aclose() guarantees eventual closure at shutdown.
-            self._retired.add(client)
+        if client is None:
+            return
+        # Held in _retired until the grace task fires or aclose() drains it.
+        self._retired.add(client)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No loop to defer on: aclose() at shutdown drains it.
+            return
+        task = loop.create_task(self._deferred_close(client))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _deferred_close(self, client: httpx.AsyncClient) -> None:
+        await asyncio.sleep(_EVICT_GRACE_S)
+        self._retired.discard(client)
+        try:
+            await client.aclose()
+        except Exception:
+            pass
 
     async def aclose(self) -> None:
         clients = list(self._clients.values()) + list(self._retired)
         self._clients.clear()
         self._retired.clear()
+        for task in self._pending:
+            task.cancel()
         await asyncio.gather(
             *(client.aclose() for client in clients),
             return_exceptions=True,

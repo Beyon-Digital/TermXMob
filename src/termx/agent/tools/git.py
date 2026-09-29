@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import shutil
+import signal
 from typing import Any
 
 from fastapi import HTTPException
@@ -34,12 +37,83 @@ def _read_only_result() -> dict[str, Any]:
     return denied_result("", "Task is running in read-only mode")
 
 
+def _sanitize_status(status: dict[str, Any]) -> dict[str, Any]:
+    """Strip protected filenames out of a git status payload."""
+    files = status.get("files")
+    if not isinstance(files, list):
+        return status
+    kept = [f for f in files if not is_sensitive_path(str(f.get("path", "")))]
+    dropped = len(files) - len(kept)
+    result = {**status, "files": kept}
+    if dropped:
+        result["filtered_sensitive"] = dropped
+    return result
+
+
+async def _run_mutating(
+    ctx: ToolContext, *args: str, timeout: int = 120, stdin: Any = None
+) -> None:
+    """Run a mutating ``git`` command so task cancellation kills its process group.
+
+    ``asyncio.to_thread`` cannot interrupt the subprocess inside ``git_ops``,
+    so mutating actions run here where ``ctx.cancel`` terminates them.
+    """
+    if shutil.which("git") is None:
+        raise HTTPException(400, "Git is not installed on this host")
+    kwargs: dict[str, Any] = {
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.STDOUT,
+        "stdin": stdin,
+    }
+    if os.name == "nt":
+        import subprocess
+
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    process = await asyncio.create_subprocess_exec("git", "-C", ctx.cwd, *args, **kwargs)
+    communicate = asyncio.create_task(process.communicate())
+    cancel_wait = asyncio.create_task(ctx.cancel.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {communicate, cancel_wait}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+        )
+        if cancel_wait in done and communicate not in done:
+            await _kill_process(process)
+            raise asyncio.CancelledError
+        if communicate not in done:
+            await _kill_process(process)
+            raise HTTPException(504, "Git command timed out")
+        output = communicate.result()[0]
+    finally:
+        cancel_wait.cancel()
+    if process.returncode != 0:
+        detail = output.decode("utf-8", "replace").strip() or "git command failed"
+        raise HTTPException(409, detail[:500])
+
+
+async def _kill_process(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is not None:
+        return
+    try:
+        if os.name == "nt":
+            process.terminate()
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
+    try:
+        await asyncio.wait_for(process.wait(), timeout=2.0)
+    except asyncio.TimeoutError:
+        pass
+
+
 async def _git_status(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     try:
         status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **status})
+    return ToolOutcome({"ok": True, **_sanitize_status(status)})
 
 
 async def _git_diff(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
@@ -86,10 +160,26 @@ async def _git_stage(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(denied_result(sensitive[0]))
     unstage = call_bool(call, "unstage", False)
     try:
-        status = await asyncio.to_thread(git_ops.stage, ctx.cwd, paths, not unstage)
+        # Directory args (".", "src/") stage every changed file beneath them —
+        # expand via porcelain status and refuse if a protected path is inside.
+        current = await asyncio.to_thread(git_ops.status, ctx.cwd)
+        affected = [
+            f["path"]
+            for f in current.get("files", [])
+            if any(
+                p in (".", "", "./") or f["path"] == p or f["path"].startswith(p.rstrip("/") + "/")
+                for p in paths
+            )
+        ]
+        protected = [p for p in affected if is_sensitive_path(p)]
+        if protected:
+            return ToolOutcome(denied_result(protected[0]))
+        args = (["restore", "--staged", "--"] if unstage else ["add", "--"]) + paths
+        await _run_mutating(ctx, *args)
+        status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **status})
+    return ToolOutcome({"ok": True, **_sanitize_status(status)})
 
 
 async def _git_commit(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
@@ -99,10 +189,11 @@ async def _git_commit(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if not message:
         return ToolOutcome(error_result("git_commit requires 'message'"))
     try:
-        status = await asyncio.to_thread(git_ops.commit, ctx.cwd, message)
+        await _run_mutating(ctx, "commit", "-m", message)
+        status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **status})
+    return ToolOutcome({"ok": True, **_sanitize_status(status)})
 
 
 async def _git_branch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
@@ -120,12 +211,12 @@ async def _git_branch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         if not name:
             return ToolOutcome(error_result("git_branch switch requires 'name'"))
         try:
-            status = await asyncio.to_thread(
-                git_ops.switch_branch, ctx.cwd, name, call_bool(call, "create", False)
-            )
+            args = ("switch", "-c", name) if call_bool(call, "create", False) else ("switch", name)
+            await _run_mutating(ctx, *args)
+            status = await asyncio.to_thread(git_ops.status, ctx.cwd)
         except Exception as exc:
             return ToolOutcome(_git_error(exc))
-        return ToolOutcome({"ok": True, **status})
+        return ToolOutcome({"ok": True, **_sanitize_status(status)})
     return ToolOutcome(error_result(f"unsupported git_branch action: {action}"))
 
 
@@ -143,30 +234,34 @@ async def _git_fetch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if ctx.read_only:
         return ToolOutcome(_read_only_result())
     try:
-        status = await asyncio.to_thread(git_ops.fetch, ctx.cwd)
+        await _run_mutating(ctx, "fetch", "--prune", timeout=90)
+        status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **status})
+    return ToolOutcome({"ok": True, **_sanitize_status(status)})
 
 
 async def _git_pull(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if ctx.read_only:
         return ToolOutcome(_read_only_result())
     try:
-        status = await asyncio.to_thread(git_ops.pull, ctx.cwd)
+        # Fast-forward only, matching git_ops.pull.
+        await _run_mutating(ctx, "pull", "--ff-only")
+        status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **status})
+    return ToolOutcome({"ok": True, **_sanitize_status(status)})
 
 
 async def _git_push(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if ctx.read_only:
         return ToolOutcome(_read_only_result())
     try:
-        status = await asyncio.to_thread(git_ops.push, ctx.cwd)
+        await _run_mutating(ctx, "push")
+        status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
-    return ToolOutcome({"ok": True, **status})
+    return ToolOutcome({"ok": True, **_sanitize_status(status)})
 
 
 def register(registry: ToolRegistry) -> None:

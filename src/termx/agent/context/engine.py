@@ -115,6 +115,14 @@ def _tree(base: Path, ignored: list[str]) -> list[str]:
                 entries.append(top.name + "/")
                 if len(entries) >= 60:
                     break
+                if top.is_symlink():
+                    # Linked dirs are listed but never traversed: a symlink
+                    # outside the project would leak external names otherwise.
+                    try:
+                        if not top.resolve(strict=True).is_relative_to(base.resolve()):
+                            continue
+                    except OSError:
+                        continue
                 for child in sorted(top.iterdir())[:20]:
                     rel_child = f"{top.name}/{child.name}"
                     if (
@@ -215,7 +223,9 @@ class ContextEngine:
             head, items = items[:1], items[1:]
         if len(items) > max(0, max_events - len(head)):
             items = items[max(0, len(items) - max(0, max_events - len(head))):]
-            while items and isinstance(items[0], dict) and items[0].get("type") == "function_call_output":
+            # An output whose call was cut would leave an unmatched pair — drop
+            # leading orphans of every call-output kind.
+            while items and isinstance(items[0], dict) and str(items[0].get("type") or "").endswith("call_output"):
                 items = items[1:]
         slimmed: list[dict[str, Any]] = []
         for item in head + list(items):

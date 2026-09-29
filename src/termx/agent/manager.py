@@ -64,7 +64,6 @@ class AgentManager:
         self._metrics: dict[str, TaskMetrics] = {}
         self._context_engines: dict[str, ContextEngine] = {}
         self._project_files = project_files
-        self._project_ids: dict[str, str] = {}
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
                 self.store.update_task(
@@ -576,11 +575,9 @@ class AgentManager:
         return self._project_files
 
     def _project_id(self, cwd: str) -> str:
-        project_id = self._project_ids.get(cwd)
-        if project_id is None:
-            project_id = str(self._files_service().register(cwd)["id"])
-            self._project_ids[cwd] = project_id
-        return project_id
+        # register() is an idempotent upsert keyed on the resolved path, so a
+        # forgotten project is re-registered instead of leaving a stale id.
+        return str(self._files_service().register(cwd)["id"])
 
     async def _execute_computer(
         self,
@@ -991,10 +988,14 @@ class AgentManager:
         metrics = self._metrics.get(task_id)
         if metrics is None:
             return
+        snapshot = metrics.snapshot()
         try:
-            self.store.update_task(task_id, metrics=metrics.snapshot())
+            self.store.update_task(task_id, metrics=snapshot)
         except (KeyError, ValueError):
-            pass
+            return
+        # Publish on every terminal transition (deny/cancel/fail go through
+        # _finish_state) — the completed path already emitted the same event.
+        self._emit(task_id, "task.metrics", {"metrics": snapshot})
 
     def _finish_state(self, task_id: str) -> None:
         """Persist final metrics and drop all in-memory per-task state.

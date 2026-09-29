@@ -416,6 +416,8 @@ def test_consequential_tool_pauses_and_denial_cancels(tmp_path: Path) -> None:
         assert task["id"] not in manager._context_engines
         assert task["id"] not in manager._metrics
         assert task["id"] not in manager._steering
+        metrics_events = [e for e in store.events(task["id"]) if e["type"] == "task.metrics"]
+        assert metrics_events, "terminal transitions must publish task.metrics"
         await manager.close()
         store.close()
 

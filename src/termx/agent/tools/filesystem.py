@@ -38,6 +38,27 @@ from termx.agent.tools.registry import (
 
 _SKIP_DIRS = {".git", ".termx", "__pycache__", ".venv", "venv", "node_modules", "dist", "build", "target", ".next", ".mypy_cache", ".pytest_cache"}
 _MAX_LIST_ENTRIES = 500
+# How far a hunk may drift from its stated line and still apply; matches
+# must also be unique within that window so stale patches can't silently
+# rewrite a later identical block.
+_FUZZ_WINDOW_LINES = 10
+
+
+def _create_exclusive(path: Path, content: str) -> None:
+    """Create ``path`` only if it does not exist (no check-then-write race)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except BaseException:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise
+
+
 _DEFAULT_READ_LIMIT = 400
 _PATCH_PREVIEW_LINES = 40
 
@@ -188,8 +209,14 @@ async def _write_file(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
             )
         )
     try:
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(resolved.write_text, str(content), "utf-8")
+        await asyncio.to_thread(_create_exclusive, resolved, str(content))
+    except FileExistsError:
+        return ToolOutcome(
+            error_result(
+                f"{rel} already exists; pass its revision from read_file as 'expected_revision' to overwrite.",
+                conflict=True,
+            )
+        )
     except OSError as exc:
         return ToolOutcome(error_result(str(exc)))
     return ToolOutcome(
@@ -255,13 +282,20 @@ def _apply_hunks(original: list[str], lines: list[str]) -> tuple[list[str], int]
         removed = [h[1:] for h in hunk if h[:1] in {" ", "-"}]
         added = [h[1:] for h in hunk if h[:1] in {" ", "+"}]
         hint = max(old_start - 1 + shift, 0)
-        found = -1
-        for pos in range(hint, min(hint + len(output) + 1, len(output) + 1)):
-            if output[pos : pos + len(removed)] == removed:
-                found = pos
-                break
-        if found < 0:
-            raise ValueError(f"hunk at line {old_start} does not apply")
+        if not removed:
+            found = min(hint, len(output))  # pure insertion at the stated line
+        else:
+            lo = max(0, hint - _FUZZ_WINDOW_LINES)
+            hi = min(len(output) - len(removed), hint + _FUZZ_WINDOW_LINES)
+            candidates = [
+                pos for pos in range(lo, hi + 1)
+                if output[pos : pos + len(removed)] == removed
+            ]
+            if not candidates:
+                raise ValueError(f"hunk at line {old_start} does not apply")
+            found = min(candidates, key=lambda p: abs(p - hint))
+            if any(p != found and abs(p - hint) == abs(found - hint) for p in candidates):
+                raise ValueError(f"hunk at line {old_start} is ambiguous — patch is stale")
         output[found : found + len(removed)] = added
         shift += len(added) - len(removed)
         applied += 1
@@ -338,10 +372,13 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
                 return ToolOutcome(denied_result(source_path))
             before: list[str] = []
             had_nl = True
+            newline = "\n"
             existed = source_resolved.exists()
             if existed:
-                source_text = source_resolved.read_text("utf-8", errors="replace")
+                raw = source_resolved.read_bytes()
+                source_text = raw.decode("utf-8", errors="replace")
                 had_nl = source_text.endswith("\n") or not source_text
+                newline = "\r\n" if b"\r\n" in raw else "\n"
                 before = source_text.splitlines()
             elif old_path:
                 raise ValueError(f"{source_path} does not exist")
@@ -353,11 +390,11 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
             final_nl = _trailing_newline(lines, existed, had_nl)
             if not dry_run:
                 if deleted:
-                    writes.append((source_resolved, None, final_nl))
+                    writes.append((source_resolved, None, final_nl, newline))
                 else:
-                    writes.append((resolved, after, final_nl))
+                    writes.append((resolved, after, final_nl, newline))
                     if renamed:
-                        writes.append((source_resolved, None, had_nl))
+                        writes.append((source_resolved, None, had_nl, newline))
             changed.append(
                 {
                     **_diff_summary(target, before, after),
@@ -391,22 +428,25 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     )
 
 
-def _commit_patch_writes(writes: list[tuple[Path, list[str] | None, bool]]) -> str | None:
+def _commit_patch_writes(
+    writes: list[tuple[Path, list[str] | None, bool, str]],
+) -> str | None:
     """Apply writes/deletes atomically-ish: temp-file each write first, then
     commit with os.replace and roll back completed replacements on failure.
     ``after`` of None deletes ``resolved``; ``final_nl`` controls whether the
-    written content ends with a newline."""
+    written content ends with a newline; ``newline`` preserves the source
+    file's line-ending convention."""
     prepared: list[tuple[Path, Path | None]] = []
     applied: list[tuple[Path, Path | None]] = []
     try:
-        for resolved, after, final_nl in writes:
+        for resolved, after, final_nl, newline in writes:
             if after is None:
                 prepared.append((resolved, None))
                 continue
             resolved.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp_name = tempfile.mkstemp(dir=resolved.parent, prefix=".termx-patch-")
             with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-                handle.write("\n".join(after) + ("\n" if final_nl and after else ""))
+                handle.write(newline.join(after) + (newline if final_nl and after else ""))
             tmp = Path(tmp_name)
             if resolved.exists():
                 os.chmod(tmp, stat.S_IMODE(resolved.stat().st_mode))

@@ -583,6 +583,182 @@ def test_slim_history_bounds_computer_screenshots(tmp_path):
     assert all(u.startswith("data:image/png") for u in urls[:-2])
 
 
+def test_stream_shell_bounds_output_memory(tmp_path):
+    from termx.agent.execution import OUTPUT_LIMIT, stream_shell
+
+    result = asyncio.run(
+        stream_shell(
+            "python3 -c 'import sys; sys.stdout.write(\"x\" * 3_000_000)'",
+            str(tmp_path),
+            timeout_s=60.0,
+        )
+    )
+    assert result.truncated is True
+    assert len(result.output) <= OUTPUT_LIMIT
+
+
+def test_stream_shell_early_stdout_eof_not_timeout(tmp_path):
+    from termx.agent.execution import stream_shell
+
+    result = asyncio.run(stream_shell("exec 1>&-; sleep 0.2", str(tmp_path), timeout_s=10.0))
+    assert result.timed_out is False
+    assert result.exit_code == 0
+
+
+def test_apply_patch_preserves_crlf(env):
+    root, make_ctx, _ = env
+    (root / "win.txt").write_bytes(b"first\r\nsecond\r\nthird\r\n")
+    patch = "--- a/win.txt\n+++ b/win.txt\n@@ -1,3 +1,3 @@\n first\n-second\n+SECOND\n third\n"
+    outcome = asyncio.run(
+        default_registry().get("apply_patch").execute(_call("apply_patch", {"patch": patch}), make_ctx())
+    )
+    assert outcome.result["ok"] is True, outcome.result
+    assert (root / "win.txt").read_bytes() == b"first\r\nSECOND\r\nthird\r\n"
+
+
+def test_apply_patch_rejects_stale_ambiguous_hunk(env):
+    root, make_ctx, _ = env
+    lines = "".join(f"line{i}\n" for i in range(30)) + "enabled = false\n" + "".join(
+        f"mid{i}\n" for i in range(5)
+    ) + "enabled = false\n"
+    (root / "dup.txt").write_text(lines)
+    # Hunk claims line 31 area; both copies match within the window -> ambiguous? Only if
+    # equal distance; force single wrong block: patch context targets line 31 block but
+    # it no longer matches (context differs), nearest match is the duplicate.
+    patch = (
+        "--- a/dup.txt\n+++ b/dup.txt\n@@ -30,2 +30,2 @@\n line29\n-enabled = false\n+enabled = true\n"
+    )
+    # Make the stated context stale so only the *other* copy matches fully.
+    (root / "dup.txt").write_text(lines.replace("line29\nenabled = false", "line29\nchanged"))
+    outcome = asyncio.run(
+        default_registry().get("apply_patch").execute(_call("apply_patch", {"patch": patch}), make_ctx())
+    )
+    assert outcome.result["ok"] is False
+    assert "does not apply" in outcome.result["output"] or "ambiguous" in outcome.result["output"]
+    assert (root / "dup.txt").read_text().count("enabled = true") == 0
+
+
+def test_slim_history_drops_orphaned_computer_output(tmp_path):
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine(str(tmp_path), {"max_history_events": 3})
+    items = [
+        {"role": "user", "content": "go"},
+        {"type": "computer_call", "call_id": "c1"},
+        {"type": "computer_call_output", "call_id": "c1", "output": {"image_url": "x"}},
+        {"type": "function_call", "call_id": "f1", "name": "list_files", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "f1", "output": "ok"},
+    ]
+    slim = engine.slim_history(items)
+    types = [i.get("type", i.get("role")) for i in slim]
+    # cut keeps newest 3 after the head user item: [computer_call_output(orphan), fc, fco]
+    # -> orphan dropped, call/output pair stays intact.
+    assert "computer_call_output" not in types
+    assert "function_call" in types and "function_call_output" in types
+
+
+def test_snapshot_tree_skips_external_symlink(tmp_path):
+    from termx.agent.context.engine import project_snapshot
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "real.txt").write_text("x\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "external_secret_names.txt").write_text("x\n")
+    (proj / "linkdir").symlink_to(outside, target_is_directory=True)
+    snap = project_snapshot(str(proj))
+    flat = " ".join(snap.get("tree", []))
+    assert "external_secret_names" not in flat
+
+
+def test_git_stage_directory_refuses_sensitive(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "ok.txt").write_text("x\n")
+    (repo / ".env").write_text("A=1\n")  # untracked sensitive file
+
+    files = ProjectFiles()
+    ctx = ToolContext(
+        task_id="t", cwd=str(repo), task={"limits": {}, "mode": "agent"},
+        read_only=False, cancel=asyncio.Event(), emit=lambda *_: None,
+        store=None, manager=None, project_files=files,
+        project_id=files.register(str(repo))["id"],
+    )
+    outcome = asyncio.run(
+        default_registry().get("git_stage").execute(_call("git_stage", {"paths": ["."]}), ctx)
+    )
+    assert outcome.result["ok"] is False and outcome.result["refused"] is True
+
+
+def test_git_status_hides_sensitive_filenames(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / ".env").write_text("A=1\n")
+
+    files = ProjectFiles()
+    ctx = ToolContext(
+        task_id="t", cwd=str(repo), task={"limits": {}, "mode": "agent"},
+        read_only=False, cancel=asyncio.Event(), emit=lambda *_: None,
+        store=None, manager=None, project_files=files,
+        project_id=files.register(str(repo))["id"],
+    )
+    outcome = asyncio.run(default_registry().get("git_status").execute(_call("git_status"), ctx))
+    paths = [f["path"] for f in outcome.result["files"]]
+    assert ".env" not in paths and outcome.result.get("filtered_sensitive") == 1
+
+
+def test_run_mutating_cancel_kills_process(tmp_path):
+    from termx.agent.tools.git import _run_mutating
+
+    ctx = ToolContext(
+        task_id="t", cwd=str(tmp_path), task={"limits": {}, "mode": "agent"},
+        read_only=False, cancel=asyncio.Event(), emit=lambda *_: None,
+        store=None, manager=None, project_files=None, project_id="p",
+    )
+
+    # `git daemon` runs until killed: cancellation must terminate the process
+    # group, not just abandon the waiting task.
+    async def run():
+        task = asyncio.create_task(
+            _run_mutating(ctx, "daemon", "--listen=127.0.0.1", "--port=0", "--export-all")
+        )
+        await asyncio.sleep(0.3)
+        ctx.cancel.set()
+        try:
+            await task
+        except asyncio.CancelledError:
+            return True
+        return False
+
+    assert asyncio.run(run()) is True
+
+
+def test_provider_runtime_evict_defers_close_with_loop(monkeypatch):
+    import termx.agent.runtime as runtime_mod
+    from termx.agent.runtime import ProviderHttpRuntime
+
+    monkeypatch.setattr(runtime_mod, "_EVICT_GRACE_S", 0.05)
+
+    async def run():
+        runtime = ProviderHttpRuntime()
+        client = runtime.client_for("p", timeout_s=5.0, headers={})
+        runtime.evict("p")
+        await asyncio.sleep(0.02)
+        assert not client.is_closed
+        await asyncio.sleep(0.2)
+        assert client.is_closed
+        await runtime.aclose()
+
+    asyncio.run(run())
+
+
 def test_run_check_ask_refusal(env):
     _, make_ctx, _ = env
     outcome = asyncio.run(

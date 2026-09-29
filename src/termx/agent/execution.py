@@ -80,27 +80,37 @@ async def stream_shell(
     else:
         kwargs["start_new_session"] = True
     process = await asyncio.create_subprocess_shell(command, **kwargs)
-    chunks: list[bytes] = []
+    # Rolling tail: memory stays bounded no matter how much the process prints.
+    tail = bytearray()
+    dropped = 0
 
     async def pump() -> None:
+        nonlocal dropped
         assert process.stdout is not None
         while True:
             data = await process.stdout.read(chunk_size)
             if not data:
                 return
-            chunks.append(data)
             if on_output is not None:
                 on_output(data)
+            tail.extend(data)
+            if len(tail) > 2 * OUTPUT_LIMIT:
+                drop = len(tail) - OUTPUT_LIMIT
+                del tail[:drop]
+                dropped += drop
 
     reader = asyncio.create_task(pump())
     exited = asyncio.create_task(process.wait())
     cancelled = asyncio.create_task(cancel.wait()) if cancel is not None else None
     timed_out = False
     was_cancelled = False
+    reader_open = True
     deadline = asyncio.get_running_loop().time() + max(1.0, timeout_s)
     try:
         while True:
-            waiters: set[asyncio.Task[Any]] = {exited, reader}
+            waiters: set[asyncio.Task[Any]] = {exited}
+            if reader_open:
+                waiters.add(reader)
             if cancelled is not None:
                 waiters.add(cancelled)
             remaining = deadline - asyncio.get_running_loop().time()
@@ -109,19 +119,21 @@ async def stream_shell(
                 await _terminate(process)
                 break
             done, _ = await asyncio.wait(waiters, timeout=remaining, return_when=asyncio.FIRST_COMPLETED)
-            if reader in done and reader.exception() is not None:
-                # Output delivery failed — stop the process promptly rather
-                # than letting it block on a full stdout pipe until timeout.
-                await _terminate(process)
-                break
+            if reader_open and reader in done:
+                reader_open = False
+                if reader.exception() is not None:
+                    # Output delivery failed — stop the process promptly rather
+                    # than letting it block on a full stdout pipe until timeout.
+                    await _terminate(process)
+                    break
+                # stdout drained early; keep waiting for exit/cancel/deadline.
+                continue
             if exited in done:
                 break
             if cancelled is not None and cancelled in done:
                 was_cancelled = True
                 await _terminate(process)
                 break
-            if reader in done:
-                continue  # stdout drained early; keep waiting for exit
             timed_out = True
             await _terminate(process)
             break
@@ -130,10 +142,8 @@ async def stream_shell(
         if cancelled is not None:
             cancelled.cancel()
         exited.cancel()
-    raw = b"".join(chunks)
-    truncated = len(raw) > OUTPUT_LIMIT
-    if truncated:
-        raw = raw[-OUTPUT_LIMIT:]
+    raw = bytes(tail)[-OUTPUT_LIMIT:]
+    truncated = dropped > 0 or len(tail) > OUTPUT_LIMIT
     text = raw.decode("utf-8", "replace")
     return ShellResult(
         command=command,
