@@ -2,10 +2,10 @@
 
 ## Resume checkpoint
 - Updated: 2026-09-28
-- Current phase: Phase 1 complete; PR #16 open (draft), Devin Review round 1 addressed (12/12 findings fixed or answered, commit 2aab7d4)
+- Current phase: Phase 1 complete; PR #16 open (draft); Devin Review rounds 1+2 addressed (27/27 threads resolved; fixes 2aab7d4, d09eec2)
 - Next ready tasks: Phase 2 scope (provider streaming/retry, compaction, async subagents, observation v2)
 - Active owners: devin-session
-- Last verified command: `uv run pytest tests -q` — 227 passed, 10 skipped, 27.9s
+- Last verified command: `uv run pytest tests -q` — 236 passed, 10 skipped, 24.75s
 - Last inspected surface: `src/termx/agent/**`, `project_files`, `git_ops`, `app.py` agent routes
 - Blockers: none
 - Resume instruction: continue the ledger below top-down; keep tests green.
