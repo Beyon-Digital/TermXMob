@@ -267,32 +267,46 @@ class AgentManager:
             # The worktree becomes the task's project boundary — the agent
             # cannot see or touch the user's working tree.
             root = Path(worktree_spec["worktree_path"])
-        images = _decode_images(attachments)
-        provider = dict(self._provider(provider_id))
-        chosen = _resolve_model(provider, model)
-        provider["model"] = chosen
-        adapter = self._adapter(provider)
-        bounded = self._limits(limits)
-        task = self.store.create_task(
-            prompt=prompt,
-            cwd=str(root),
-            provider_id=provider_id,
-            model=chosen,
-            limits=bounded,
-            mode=mode,
-            parent_id=parent_id,
-        )
-        task_id = task["id"]
-        if worktree_spec is not None:
-            self.store.save_task_worktree(
-                task_id,
-                mode="worktree",
-                base_repo=worktree_spec["base_repo"],
-                base_ref=worktree_spec["base_ref"],
-                base_branch=worktree_spec.get("base_branch"),
-                worktree_path=worktree_spec["worktree_path"],
-                branch=worktree_spec["branch"],
+        try:
+            images = _decode_images(attachments)
+            provider = dict(self._provider(provider_id))
+            chosen = _resolve_model(provider, model)
+            provider["model"] = chosen
+            adapter = self._adapter(provider)
+            bounded = self._limits(limits)
+            task = self.store.create_task(
+                prompt=prompt,
+                cwd=str(root),
+                provider_id=provider_id,
+                model=chosen,
+                limits=bounded,
+                mode=mode,
+                parent_id=parent_id,
             )
+            task_id = task["id"]
+            if worktree_spec is not None:
+                self.store.save_task_worktree(
+                    task_id,
+                    mode="worktree",
+                    base_repo=worktree_spec["base_repo"],
+                    base_ref=worktree_spec["base_ref"],
+                    base_branch=worktree_spec.get("base_branch"),
+                    worktree_path=worktree_spec["worktree_path"],
+                    branch=worktree_spec["branch"],
+                )
+        except Exception:
+            # Validation failed after the checkout was provisioned — remove it
+            # so a rejected request never leaves an orphan worktree+branch.
+            if worktree_spec is not None:
+                try:
+                    worktrees.discard_worktree(
+                        worktree_spec["base_repo"],
+                        worktree_spec["worktree_path"],
+                        worktree_spec["branch"],
+                    )
+                except Exception:
+                    pass
+            raise
         if on_created is not None:
             on_created(task_id)
         uploads = [
@@ -393,11 +407,9 @@ class AgentManager:
                 await self.resolve_approval(child_id, str(private_payload["child_approval_id"]), decision)
             except (KeyError, ValueError):
                 pass
-            # Async sub-agents let the parent finish while an escalation is open;
-            # only wake it back to running when it is still genuinely paused.
-            if self._task(task_id)["status"] == "awaiting_approval":
-                self.store.update_task(task_id, status="running")
-                self._emit(task_id, "task.status", {"status": "running"})
+            # Async sub-agents let the parent finish while an escalation is
+            # open; only wake it back to running when genuinely idle.
+            self._unpause_if_idle(task_id)
             return approval
         if decision == "denied":
             self._finish_state(task_id)
@@ -1648,9 +1660,7 @@ class AgentManager:
             self._drop_pending_approvals(parent_id, child_id=child_id)
             handle.status = status
             handle.result = result
-            if self._task(parent_id)["status"] == "awaiting_approval":
-                self.store.update_task(parent_id, status="running")
-                self._emit(parent_id, "task.status", {"status": "running"})
+            self._unpause_if_idle(parent_id)
             self._emit(
                 parent_id,
                 "subagent.finished",
@@ -1929,6 +1939,22 @@ class AgentManager:
                 for key, item in value.items()
             }
         return value
+
+    def _has_pending_approvals(self, task_id: str) -> bool:
+        return any(
+            payload.get("task_id") == task_id
+            for payload in self._pending_approval_calls.values()
+        )
+
+    def _unpause_if_idle(self, task_id: str) -> None:
+        """Restore 'running' only when nothing remains to approve — the
+        task's own pending tool approvals must stay resolvable."""
+        if self._task(task_id)["status"] != "awaiting_approval":
+            return
+        if self._has_pending_approvals(task_id):
+            return
+        self.store.update_task(task_id, status="running")
+        self._emit(task_id, "task.status", {"status": "running"})
 
     def _drop_pending_approvals(
         self, task_id: str, *, child_id: str | None = None, keep_escalations: bool = False

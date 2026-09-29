@@ -10,6 +10,7 @@ the human gate.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from termx.agent.tools.helpers import call_string
@@ -31,13 +32,27 @@ async def _run_runbook(call: Any, ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(result={"error": "runbook not found", "runbook_id": runbook_id})
     cwd = ctx.cwd
     project_id = runbook.get("project_id")
-    if project_id and ctx.project_files is not None:
-        try:
-            project = ctx.project_files.project(project_id)
-            cwd = str(project.get("path") or cwd)
-        except Exception:
+    if project_id:
+        # A runbook bound to another project may not rewrite the task's
+        # approved working directory — the agent's boundary is ctx.cwd.
+        project = None
+        if ctx.project_files is not None:
+            try:
+                project = ctx.project_files.project(project_id)
+            except Exception:
+                project = None
+        if project is None:
             return ToolOutcome(
                 result={"error": "runbook project not found", "project_id": project_id}
+            )
+        bound = str(Path(str(project.get("path") or "")).expanduser().resolve())
+        if bound != str(Path(cwd).expanduser().resolve()):
+            return ToolOutcome(
+                result={
+                    "error": "runbook targets a different project than this task",
+                    "runbook_id": runbook_id,
+                    "project_id": project_id,
+                }
             )
     runner = getattr(ctx.manager, "runbooks", None)
     if runner is None:

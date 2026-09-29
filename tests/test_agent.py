@@ -3609,3 +3609,173 @@ def test_runbook_step_output_tail_truncated(tmp_path: Path) -> None:
         assert all(e["status"] == "running" for e in emitted)
 
     asyncio.run(run())
+
+
+def test_runbook_confirm_resumes_after_restart(tmp_path: Path) -> None:
+    """A run parked at awaiting_confirmation survives a host restart:
+    a fresh runner resumes it at the gated step without re-parking."""
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+    book = store.create_runbook(
+        name="gated",
+        project_id=None,
+        steps=[
+            {"kind": "shell", "command": "echo before", "confirm": False, "parallel": False},
+            {"kind": "shell", "command": "echo gated", "confirm": True, "parallel": False},
+            {"kind": "shell", "command": "echo after", "confirm": False, "parallel": False},
+        ],
+    )
+
+    async def run() -> None:
+        runner = runbooks.RunbookRunner(store)
+        live = runner.start({**book, "steps": book["steps"]}, cwd=str(tmp_path))
+        parked = await _wait_run(store, live["id"], "awaiting_confirmation")
+        assert parked["current_step"] == 1
+        assert len(parked["step_results"]) == 1  # only 'before' ran
+        # Simulate restart: drop the runner entirely, build a fresh one.
+        runner2 = runbooks.RunbookRunner(store)
+        runner2.confirm(live["id"])
+        final = await _wait_run(store, live["id"], "completed")
+        outputs = [s["output"].strip() for s in final["step_results"]]
+        assert outputs == ["before", "gated", "after"]
+        await runner2.shutdown()
+
+    asyncio.run(run())
+
+
+def test_runbook_dead_running_run_fails_on_restart(tmp_path: Path) -> None:
+    """A run left 'running' by a dead host is failed, never replayed."""
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+    book = store.create_runbook(
+        name="dead", project_id=None,
+        steps=[{"kind": "shell", "command": "sleep 60", "confirm": False, "parallel": False}],
+    )
+    run = store.create_runbook_run(book["id"], cwd=str(tmp_path))
+    store.update_runbook_run(run["id"], status="running")
+    runbooks.RunbookRunner(store)  # init sweep
+    row = store.get_runbook_run(run["id"])
+    assert row["status"] == "failed"
+    assert "restarted" in row["error"]
+
+
+
+
+def test_runbook_tool_refuses_cross_project_runbook(tmp_path: Path) -> None:
+    """A runbook bound to a different project must not rewrite the task's cwd."""
+    from termx.agent.tools.runbooks import _run_runbook
+    from termx.agent.tools.registry import ToolContext
+
+    other = tmp_path / "other-project"
+    other.mkdir()
+    store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+    runbook = store.create_runbook(
+        name="foreign", project_id="p-other",
+        steps=[{"kind": "shell", "command": "echo nope", "confirm": False, "parallel": False}],
+    )
+
+    class PF:
+        def project(self, project_id):
+            return {"id": project_id, "path": str(other)}
+
+    ctx = ToolContext(
+        task_id="t1", cwd=str(tmp_path), task={}, read_only=False,
+        cancel=asyncio.Event(), emit=lambda *_a, **_k: {},
+        store=store, manager=None, project_files=PF(),
+    )
+
+    async def run() -> None:
+        outcome = await _run_runbook(
+            _fn("rb-x", "run_runbook", runbook_id=runbook["id"]), ctx
+        )
+        assert "different project" in outcome.result["error"]
+        assert store.list_runbook_runs(runbook["id"]) == []
+
+    asyncio.run(run())
+    store.close()
+
+
+def test_runbook_tool_runs_within_bound_project(tmp_path: Path) -> None:
+    """A runbook bound to the task's own project runs in ctx.cwd."""
+    from termx.agent.tools.runbooks import _run_runbook
+    from termx.agent.tools.registry import ToolContext
+
+    async def run() -> None:
+        adapter = FakeAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        runbook = store.create_runbook(
+            name="local", project_id="p-same",
+            steps=[{"kind": "shell", "command": "echo ok", "confirm": False, "parallel": False}],
+        )
+
+        class PF:
+            def project(self, project_id):
+                return {"id": project_id, "path": str(tmp_path)}
+
+        ctx = ToolContext(
+            task_id="t1", cwd=str(tmp_path), task={}, read_only=False,
+            cancel=asyncio.Event(), emit=lambda *_a, **_k: {},
+            store=store, manager=manager, project_files=PF(),
+        )
+        outcome = await _run_runbook(
+            _fn("rb-y", "run_runbook", runbook_id=runbook["id"]), ctx
+        )
+        assert outcome.result["status"] == "completed"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_parent_approvals_survive_child_completion(tmp_path: Path) -> None:
+    """A finishing child must not flip a parent that has its own pending
+    tool approval back to 'running' — that strands the approval."""
+    manager, store = build_manager(tmp_path, FakeAdapter())
+    task = store.create_task(
+        prompt="p", cwd=str(tmp_path), provider_id="fake", model="fake-model",
+        limits={}, mode="agent",
+    )
+    approval = store.create_approval(task["id"], "tool", {"title": "own gate"})
+    manager._pending_approval_calls[approval["id"]] = {
+        "task_id": task["id"], "call": {}, "remaining_calls": [], "history": [],
+    }
+    store.update_task(task["id"], status="awaiting_approval")
+
+    # Child finishes while parent's own approval is still pending.
+    manager._drop_pending_approvals(task["id"], child_id="child-x")
+    manager._unpause_if_idle(task["id"])
+    assert store.get_task(task["id"])["status"] == "awaiting_approval"
+
+    # Once no pending approvals remain, the unpause still works.
+    manager._pending_approval_calls.pop(approval["id"])
+    manager._unpause_if_idle(task["id"])
+    assert store.get_task(task["id"])["status"] == "running"
+    store.close()
+
+
+def test_worktree_create_task_validation_failure_discards_checkout(tmp_path: Path) -> None:
+    """A rejected create_task must not leave an orphan worktree + branch."""
+    repo = tmp_path / "wt-src"
+    repo.mkdir()
+    _git_repo(repo)
+    (tmp_path / "work").mkdir()
+    manager, store = build_manager(tmp_path / "work", FakeAdapter())
+
+    async def run() -> None:
+        with pytest.raises(ValueError):
+            await manager.create_task(
+                prompt="nope",
+                cwd=str(repo),
+                provider_id="fake",
+                model="not-a-configured-model",
+                execution_mode="worktree",
+            )
+
+    asyncio.run(run())
+    assert _git(repo, "branch", "--list", "termx/*") == ""
+    assert _git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
+    store.close()

@@ -53,6 +53,17 @@ class RunbookRunner:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._procs: dict[str, set[asyncio.subprocess.Process]] = {}
         self._confirm_events: dict[str, asyncio.Event] = {}
+        # Runs left 'running' by a dead host have ambiguous in-flight steps;
+        # mark them failed rather than replaying. 'awaiting_confirmation' runs
+        # parked BEFORE their step started can safely resume on confirm().
+        for run in store.list_runbook_runs(limit=200):
+            if run["status"] == "running":
+                store.update_runbook_run(
+                    run["id"],
+                    status="failed",
+                    finished_at=time.time(),
+                    error="Host restarted while the run was in-flight",
+                )
 
     def start(self, runbook: dict[str, Any], cwd: str) -> dict[str, Any]:
         run = self._store.create_runbook_run(runbook["id"], cwd=cwd)
@@ -71,6 +82,30 @@ class RunbookRunner:
             event = self._confirm_events.get(run_id)
             if event is not None:
                 event.set()
+            elif run_id not in self._tasks:
+                # Host restarted while parked: the gated step never ran, so
+                # resuming from it replays nothing — only its pre-step pause.
+                # current_step is the gated step; re-run it with the gate
+                # already satisfied by this confirm.
+                runbook = self._store.get_runbook(run["runbook_id"])
+                if runbook is not None:
+                    gated = int(run.get("current_step") or -1)
+                    task = asyncio.create_task(
+                        self._execute(
+                            run_id,
+                            runbook,
+                            run.get("cwd") or "",
+                            resume={
+                                "index": max(0, gated),
+                                "step_results": list(run.get("step_results") or []),
+                                "skip_confirm_at": gated,
+                            },
+                        )
+                    )
+                    self._tasks[run_id] = task
+                    task.add_done_callback(
+                        lambda _t, rid=run_id: self._tasks.pop(rid, None)
+                    )
         return self._store.get_runbook_run(run_id) or run
 
     async def cancel(self, run_id: str) -> dict[str, Any]:
@@ -188,10 +223,19 @@ class RunbookRunner:
             bytes(tail).decode("utf-8", "replace"),
         )
 
-    async def _execute(self, run_id: str, runbook: dict[str, Any], cwd: str) -> None:
+    async def _execute(
+        self,
+        run_id: str,
+        runbook: dict[str, Any],
+        cwd: str,
+        resume: dict[str, Any] | None = None,
+    ) -> None:
         steps = runbook["steps"]
-        results: list[dict[str, Any]] = []
-        index = 0
+        results: list[dict[str, Any]] = list(
+            (resume or {}).get("step_results") or []
+        )
+        index = int((resume or {}).get("index") or 0)
+        skip_confirm_at = (resume or {}).get("skip_confirm_at")
         status = "completed"
         error: str | None = None
         try:
@@ -206,7 +250,10 @@ class RunbookRunner:
                     ):
                         group.append(steps[index + len(group)])
                 for member in group:
-                    if member["confirm"]:
+                    if (
+                        member["confirm"]
+                        and index + group.index(member) != skip_confirm_at
+                    ):
                         self._store.update_runbook_run(
                             run_id,
                             status="awaiting_confirmation",
