@@ -181,11 +181,23 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
     assert caps["policy_engine_v2"] is True
     sandbox = caps["execution_sandbox"]
     # Truthful report: the snapshot mirrors whatever the runner selected for
-    # this machine — host ("none") where namespaces are unavailable, linux-ns
-    # ("kernel") where they are — and never invents controls.
+    # this machine — host ("none") where no restricted backend probes OK,
+    # linux-ns ("kernel") on linux, windows-token/user on win32 — and never
+    # invents controls.
+    import sys
+
     from termx.sandbox import linux_ns_available, runner_for
 
-    expected_backend = "linux-ns" if linux_ns_available() else "host"
+    if sys.platform == "win32":
+        from termx.sandbox.windows_runner import windows_backend_available
+
+        expected_backend = (
+            runner_for("agent", backend="windows").capabilities().backend
+            if windows_backend_available()
+            else "host"
+        )
+    else:
+        expected_backend = "linux-ns" if linux_ns_available() else "host"
     assert sandbox["backend"] == expected_backend
     agent_caps = runner_for("agent").capabilities()
     assert sandbox["strength"] == agent_caps.strength

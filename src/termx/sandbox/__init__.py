@@ -13,13 +13,16 @@ it so ``manager.py``/tool code stays platform-neutral. The ``host`` backend
 is the explicit compatibility runner — it does not hide behind "no sandbox":
 ``capabilities()`` truthfully reports unrestricted authority. On Linux with
 bubblewrap + unprivileged user namespaces, restricted profiles resolve to the
-kernel-enforcing ``linux-ns`` backend; everywhere else they stay on ``host``
-and report so. ``TERMX_SANDBOX_BACKEND`` (``auto``|``host``|``linux-ns``)
+kernel-enforcing ``linux-ns`` backend; on Windows where the restricted-token
++ Job Object primitives work they resolve to the ``windows`` backend;
+everywhere else they stay on ``host`` and report so.
+``TERMX_SANDBOX_BACKEND`` (``auto``|``host``|``linux-ns``|``windows``)
 overrides selection for debugging — never silently.
 """
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -45,17 +48,21 @@ __all__ = [
     "SandboxRunner",
     "SpawnResult",
     "SpawnSpec",
+    "WindowsSandboxRunner",
     "build_environment",
     "host_environment",
     "linux_ns_available",
     "runner_for",
+    "windows_backend_available",
 ]
 
 _HOST_BACKEND = "host"
 _LINUX_NS_BACKEND = "linux-ns"
+_WINDOWS_BACKEND = "windows"
 
 
 from termx.sandbox.linux_ns import LinuxNamespaceRunner, linux_ns_available
+from termx.sandbox.windows_runner import WindowsSandboxRunner, windows_backend_available
 
 
 def _default_backend(profile: str) -> str:
@@ -68,6 +75,8 @@ def _default_backend(profile: str) -> str:
         return override
     if linux_ns_available():
         return _LINUX_NS_BACKEND
+    if sys.platform == "win32" and windows_backend_available():
+        return _WINDOWS_BACKEND
     return _HOST_BACKEND
 
 
@@ -87,6 +96,8 @@ def runner_for(
     backend = backend or _default_backend(profile)
     if backend == _LINUX_NS_BACKEND:
         return LinuxNamespaceRunner(profile=profile, state_dir=state_dir)
+    if backend == _WINDOWS_BACKEND:
+        return WindowsSandboxRunner(profile=profile, state_dir=state_dir)
     if backend == _HOST_BACKEND:
         return HostSandboxRunner(profile=profile)
     raise SandboxFailure("invalid_backend", f"unknown sandbox backend {backend!r}")
