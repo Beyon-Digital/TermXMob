@@ -176,30 +176,55 @@ tasks:
   # ---- Later phases (ledgered, not in this delivery) ----
   - id: AG2-008
     title: Context budgeting and compaction checkpoints
-    status: pending
+    status: done
     depends_on: [AG2-007]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
-    notes: Phase 2 — durable checkpoint summaries
+    owner: devin
+    write_scope:
+      - src/termx/agent/store.py (checkpoints table + CRUD)
+      - src/termx/agent/context/engine.py (plan_compaction, estimate_tokens)
+      - src/termx/agent/manager.py (compaction wiring in _drive)
+    acceptance:
+      - "compaction triggers at >=75% of max_context_estimate_tokens, keeps head user item + retain tail, never splits call->output pairs"
+      - "summary shape {summary, completed_steps, important_files, decisions, pending_work, git_state, approvals, artifacts, last_safe_execution_checkpoint, created_at} persisted as checkpoints(kind='context')"
+      - "events context.compaction.started/completed + context.checkpoint emitted"
+    evidence:
+      - "uv run pytest tests -q -> 262 passed, 10 skipped (bb4b032)"
+      - "test_agent_tools.py: test_plan_compaction_below_threshold, test_plan_compaction_preserves_pairs_and_bounds, test_plan_compaction_records_unresolved_calls, test_context_checkpoint_store_roundtrip"
+    notes: Phase 2 — deterministic summarizer (no model call); unresolved calls described in pending_work, not re-injected
   - id: AG2-010
     title: Provider streaming and bounded retry/backoff
-    status: pending
+    status: done
     depends_on: [AG2-009]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
+    owner: devin
+    write_scope:
+      - src/termx/agent/providers.py (supports_streaming, stream_turn SSE, ProviderError status/retry_after/network)
+      - src/termx/agent/retry.py (new: classify + retrying, bounded backoff+jitter, cancel-aware)
+      - src/termx/agent/metrics.py (provider_first_token_ms/stream_ms/output_tokens/retries/rate_limited)
+      - src/termx/agent/manager.py (streaming turn + retry wrap in _drive)
+    acceptance:
+      - "capability-based stream_turn with turn() fallback; SSE deltas -> assistant.delta / provider.tool_call.delta; provider.stream.started/completed events"
+      - "bounded 3 attempts, exp backoff+jitter, Retry-After honored (429), cancel-aware, non-retryable 4xx fails fast, no retry after tool dispatch"
+      - "no secrets/Authorization in events or persisted state"
+    evidence:
+      - "uv run pytest tests -q -> 262 passed, 10 skipped (d4d9044)"
+      - "test_agent_tools.py: test_stream_turn_parses_sse, test_stream_turn_error_status_raises, test_retry_classification, test_retrying_retries_and_emits, test_retrying_no_retry_on_401, test_retrying_cancel_during_backoff"
     notes: Phase 2
   - id: AG2-011
     title: Abstract continuation strategy and recovery state
-    status: pending
+    status: done
     depends_on: [AG2-008, AG2-010]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
+    owner: devin
+    write_scope:
+      - src/termx/agent/recovery.py (new: recovery_decision, public_checkpoint)
+      - src/termx/agent/store.py (ACTIVE_STATUSES += recovering, recovery_confirmation_required)
+      - src/termx/agent/manager.py (restart classification, recover_task, _resume_execution)
+      - src/termx/app.py (POST /api/agent/tasks/{id}/recover + lifespan auto-resume)
+    acceptance:
+      - "checkpoint payload mirrors approval-payload shape {call, remaining_calls, history, step, started_at} so resume reuses the _drive/_run_calls pattern"
+      - "new statuses/events additive; ambiguous side effects never auto-replayed; resumable tasks resume via lifespan + explicit endpoint"
+    evidence:
+      - "uv run pytest tests -q -> 262 passed, 10 skipped (1771901)"
+      - "test_agent.py: test_recovery_* (7 tests) + test_restart_fails_task_without_checkpoint + test_execution_checkpoint_events_during_normal_run"
     notes: Phase 2
   - id: AG2-012
     title: Convert subagents to asynchronous child handles
@@ -239,12 +264,18 @@ tasks:
     notes: Phase 4
   - id: AG2-017
     title: Resumable task checkpoints without replaying side effects
-    status: pending
+    status: done
     depends_on: [AG2-011]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
+    owner: devin
+    write_scope:
+      - src/termx/agent/manager.py (prepared->running->completed_uncommitted->committed wrapper in _run_calls)
+      - src/termx/agent/store.py (checkpoints table, kind='execution', side_effect_state)
+    acceptance:
+      - "side-effecting serial calls checkpointed at all 4 boundaries; crash-safe resume: prepared->re-execute once, committed->continue, completed_uncommitted->reuse stored result (+tool.finished dedup), running/unknown->confirm_required"
+      - "no duplicate side effects on resume; resumable=0/not_resumable -> legacy fail"
+    evidence:
+      - "uv run pytest tests -q -> 262 passed, 10 skipped (1771901)"
+      - "test_agent.py crash-boundary tests: prepared(1 write), running(confirm gate, 0 writes until confirmed), completed_uncommitted(0 writes, 1 tool.finished), committed(0 writes), events order prepared>running>completed_uncommitted>committed"
     notes: Phase 2/6 prerequisite
   - id: PROD-001..006 / SEC-001..002 / VRF-001
     title: Host conversations, custom agents, worktrees, activity, ports, runbooks, scopes v2, final verification

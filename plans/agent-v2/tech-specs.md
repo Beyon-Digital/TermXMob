@@ -184,12 +184,12 @@ class ProviderHttpRuntime:
 
 ## 10. Capability flags (`machine_snapshot`)
 
-`agent_tools_v2: true`, `agent_context_v2: true`, `agent_streaming: false`
-(streaming lands in Phase 2), `agent_parallel_tools: true`.
+`agent_tools_v2`, `agent_context_v2`, `agent_parallel_tools`,
+`agent_streaming` (Phase 2), `agent_recovery` (Phase 2) — all `true`.
 
 # Phase 2 — execution/recovery layer (AG2-008/010/011/017)
 
-## 11. Checkpoints (`agent/checkpoint.py` + `store.checkpoints` table)
+## 11. Checkpoints (`agent/recovery.py` + `store.checkpoints` table)
 
 One durable table carries both checkpoint kinds — `kind` column is
 `"execution"` (AG2-011/017) or `"context"` (AG2-008):
@@ -244,12 +244,14 @@ prepared ──invoke begins──> running ──outcome lands──> completed
   - `prepared` → resume safely (side effect never started) → status
     `recovering` then drive from payload; emit `task.recovery.started`,
     `task.recovery.resumed`, `execution.checkpoint`.
-  - `committed` → resume from the task's `runtime` (history already
-    committed) → drive.
+  - `committed` → resume from the checkpoint `payload` (the committed
+    history was written back into the payload at commit time) → drive
+    `remaining_calls`.
   - `completed_uncommitted` + stored `result` → resume **without
     re-executing**: append stored `output_items` to payload history,
-    re-emit `tool.finished`, mark checkpoint `committed`, drive
-    `remaining_calls`.
+    re-emit `tool.finished` only if it is not already in the event log
+    (a crash can land between `tool.finished` and `committed`), mark
+    checkpoint `committed`, drive `remaining_calls`.
   - `running` / `unknown` → `recovery_confirmation_required`; emit
     `task.recovery.blocked`. Confirming calls `recover_task(confirm=True)`
     which re-drives from `prepared` semantics (documented as accepting
@@ -300,8 +302,11 @@ prepared ──invoke begins──> running ──outcome lands──> completed
 
 ## 14. Context compaction checkpoints (AG2-008)
 
-`ContextEngine.maybe_compact(history, *, emit, checkpoint_fn) ->
-history` runs before each provider turn after `slim_history`:
+`ContextEngine.plan_compaction(items, *, git_state=None, keep_recent=40) ->
+{history, payload, history_cursor, dropped}` — called by the manager
+before each provider turn after `slim_history`; the manager emits the
+events, fills in approvals/artifacts/`last_safe_execution_checkpoint`,
+and persists the `kind="context"` checkpoint row:
 
 - Trigger: `estimate_tokens(history) >= 0.75 * max_context_estimate_tokens`.
 - Split point: find the newest index `i` where `history[i:]` contains no

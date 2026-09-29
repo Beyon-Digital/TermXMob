@@ -77,4 +77,5 @@ worktrees (PROD-003), activity/ports/runbooks (PROD-004/005/006), scopes v2
 - Task replay event names keep working; new event types are additive
   (`process.*`, `tool.batch`, `context.snapshot`, `task.metrics`).
 - `machine_snapshot` gains capability flags `agent_tools_v2`,
-  `agent_streaming:false`, `agent_context_v2` — advertised conservatively.
+  `agent_context_v2`, `agent_parallel_tools`, `agent_streaming`,
+  `agent_recovery` — all `true` (streaming/recovery landed in Phase 2).
