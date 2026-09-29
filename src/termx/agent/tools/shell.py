@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 from termx.agent.execution import stream_shell
 from termx.agent.policy import evaluate_shell, is_mutating_shell, redact
-from termx.agent.tools.helpers import call_int, call_string, error_result
+from termx.agent.tools.helpers import (
+    call_int,
+    call_string,
+    error_result,
+    sandbox_profile,
+    sandbox_spawn,
+)
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec
 
 if TYPE_CHECKING:
@@ -73,7 +79,17 @@ async def _streamed_process(
             },
         )
 
-    result = await stream_shell(command, ctx.cwd, timeout_s=timeout_s, cancel=ctx.cancel, on_output=on_output)
+    profile = sandbox_profile(ctx)
+    result = await stream_shell(
+        command,
+        ctx.cwd,
+        timeout_s=timeout_s,
+        cancel=ctx.cancel,
+        on_output=on_output,
+        runner=sandbox_spawn(ctx, profile),
+        profile=profile,
+        workspace_root=ctx.cwd,
+    )
     tail = redactor.flush()
     if tail and emitted < STREAM_EVENT_LIMIT:
         emitted += len(tail)
@@ -181,7 +197,12 @@ async def _run_check(call: "ProviderCall", ctx: ToolContext) -> ToolOutcome:
 
 
 def _decide_shell(call: "ProviderCall", ctx: ToolContext):
-    return evaluate_shell(call_string(call, "command"), ctx.cwd)
+    command = call_string(call, "command")
+    base = evaluate_shell(command, ctx.cwd)
+    engine = getattr(ctx, "policy_engine", None)
+    if engine is not None:
+        return engine.decide_shell(call, ctx, command, base)
+    return base
 
 
 def register(registry: ToolRegistry) -> None:

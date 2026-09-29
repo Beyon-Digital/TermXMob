@@ -88,6 +88,15 @@ class AgentManager:
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
         self._observation = ObservationTracker()
+        from termx.agent.policies.engine import PolicyEngine
+        from termx.sandbox import runner_for
+
+        self._sandbox_runners: dict[str, Any] = {}
+        self._runner_for = runner_for
+        self._policy_engine = PolicyEngine(
+            self.store,
+            envelope=lambda profile: runner_for(profile).capabilities().granted,
+        )
         from termx.runbooks import RunbookRunner
 
         self.runbooks = RunbookRunner(self.store)
@@ -282,6 +291,7 @@ class AgentManager:
                 limits=bounded,
                 mode=mode,
                 parent_id=parent_id,
+                custom_agent_id=custom_agent["id"] if custom_agent is not None else None,
             )
             task_id = task["id"]
             if worktree_spec is not None:
@@ -377,7 +387,14 @@ class AgentManager:
             self._fail(task_id, exc)
             return self.store.get_task(task_id, include_events=True) or task
 
-    async def resolve_approval(self, task_id: str, approval_id: str, decision: str) -> dict[str, Any]:
+    async def resolve_approval(
+        self,
+        task_id: str,
+        approval_id: str,
+        decision: str,
+        *,
+        remember: str | None = None,
+    ) -> dict[str, Any]:
         task = self._task(task_id)
         approval = self.store.get_approval(approval_id)
         if approval is None or approval["task_id"] != task_id:
@@ -401,16 +418,30 @@ class AgentManager:
         private_payload = self._pending_approval_calls.pop(approval_id, None)
         if private_payload is not None and "child_approval_id" in private_payload:
             # A sub-agent's consequential action was escalated to this parent;
-            # relay the decision and let the parent keep waiting on the child.
+            # relay the decision AND the remember scope — the durable rule is
+            # written with the child's context so it can't outlive its task.
             child_id = str(private_payload["child_id"])
             try:
-                await self.resolve_approval(child_id, str(private_payload["child_approval_id"]), decision)
+                await self.resolve_approval(
+                    child_id,
+                    str(private_payload["child_approval_id"]),
+                    decision,
+                    remember=remember,
+                )
             except (KeyError, ValueError):
                 pass
             # Async sub-agents let the parent finish while an escalation is
             # open; only wake it back to running when genuinely idle.
             self._unpause_if_idle(task_id)
             return approval
+        if remember:
+            self._record_remembered_rule(
+                task,
+                approval,
+                private_payload,
+                decision=decision,
+                remember=remember,
+            )
         if decision == "denied":
             self._finish_state(task_id)
             self.store.update_task(task_id, status="cancelled", error="Approval denied")
@@ -422,6 +453,54 @@ class AgentManager:
             assert private_payload is not None
             self._launch(task_id, self._resume_approved(task_id, private_payload))
         return approval
+
+    def _record_remembered_rule(
+        self,
+        task: dict[str, Any],
+        approval: dict[str, Any],
+        private_payload: dict[str, Any] | None,
+        *,
+        decision: str,
+        remember: str,
+    ) -> None:
+        """Persist the durable rule implied by a `remember=...` resolution.
+
+        Emits ``policy.created`` on success. Failure never un-resolves the
+        approval — it emits ``policy.rejected`` with the reason instead.
+        """
+        from termx.agent.policies.models import PolicyIntent, rule_public
+
+        intent_record = (private_payload or {}).get("intent")
+        if not intent_record:
+            self._emit(
+                task["id"],
+                "policy.rejected",
+                {"approval_id": approval["id"], "reason": "no policy intent recorded"},
+            )
+            return
+        intent = PolicyIntent.from_record(intent_record)
+        try:
+            rule = self._policy_engine.record_resolution(
+                intent,
+                decision=decision,
+                remember=remember,
+                project_id=self._project_id(task["cwd"]),
+                source_approval_id=approval["id"],
+                approval_kind=str((private_payload or {}).get("approval_kind") or "action"),
+            )
+        except (ValueError, KeyError) as exc:
+            self._emit(
+                task["id"],
+                "policy.rejected",
+                {"approval_id": approval["id"], "reason": str(exc)},
+            )
+            return
+        if rule is not None:
+            self._emit(
+                task["id"],
+                "policy.created",
+                {"rule": rule_public(rule), "approval_id": approval["id"]},
+            )
 
     def cancel(self, task_id: str) -> dict[str, Any]:
         task = self._task(task_id)
@@ -843,6 +922,10 @@ class AgentManager:
             if ended is not None and ended["status"] not in ACTIVE_STATUSES:
                 self._context_engines.pop(task_id, None)
                 self._metrics.pop(task_id, None)
+                # Task-scoped remembered rules die with the task on EVERY
+                # terminal transition — completed, failed, cancelled or a
+                # crashed worker — not just the paths that call _finish_state.
+                self.store.expire_task_policy_rules(task_id)
 
     async def _run_calls(
         self,
@@ -905,6 +988,52 @@ class AgentManager:
                     index += 1
                     continue
             decision = entry.decision
+            if decision.auto_resolved and not (approved_first and index == 0):
+                # A remembered rule or the Agent's own mode resolved this call.
+                # The audit trail is the point — every auto-resolution is an
+                # event, never a silent skip of the approval system.
+                self._emit(
+                    task_id,
+                    "policy.matched",
+                    {
+                        "call": call.public(),
+                        "decision": decision.auto_resolved,
+                        "rule_id": decision.matched_rule_id,
+                        "reason": decision.reason,
+                        "intent": decision.intent.to_public() if decision.intent is not None else None,
+                    },
+                )
+                self._emit(
+                    task_id,
+                    "approval.auto_resolved",
+                    {
+                        "call": call.public(),
+                        "decision": "denied" if decision.auto_resolved == "deny" else "approved",
+                        "source": decision.auto_resolved,
+                        "rule_id": decision.matched_rule_id,
+                        "reason": decision.reason,
+                    },
+                )
+                if decision.auto_resolved == "deny":
+                    # Refused in-band like a policy refusal: the model sees the
+                    # denial and can choose a different approach; the task keeps
+                    # running. No execution checkpoint — nothing ran.
+                    self._emit(task_id, "tool.started", {"call": call.public()})
+                    outcome = ToolOutcome(
+                        result={
+                            "refused": True,
+                            "error": decision.consequence or decision.reason,
+                            "auto_resolved": "denied",
+                            "rule_id": decision.matched_rule_id,
+                        }
+                    )
+                    self._emit(task_id, "tool.finished", outcome.finished_payload(call))
+                    history.extend(outcome.output_items(call))
+                    step += 1
+                    index += 1
+                    continue
+                # "allow"/"autonomous": fall through to normal execution with
+                # the checkpoint/recovery machinery untouched.
             if decision.approval_required and not (approved_first and index == 0):
                 public_payload = {
                     "title": decision.reason,
@@ -914,6 +1043,17 @@ class AgentManager:
                     "history": self._public_value(history),
                     "step": step,
                     "started_at": started_at,
+                    # Approval API v2 — extra keys are ignored by v1 clients.
+                    "policy_intent": (
+                        decision.intent.to_public() if decision.intent is not None else None
+                    ),
+                    "policy_fingerprint": (
+                        decision.intent.fingerprint if decision.intent is not None else None
+                    ),
+                    "approval_kind": decision.approval_kind,
+                    "required_capabilities": list(decision.required_capabilities),
+                    "sandbox_profile": decision.sandbox_profile,
+                    "remember_options": list(decision.remember_options),
                 }
                 private_payload = {
                     **public_payload,
@@ -921,6 +1061,9 @@ class AgentManager:
                     "call": self._call_payload(call),
                     "remaining_calls": [self._call_payload(item) for item in calls[index + 1 :]],
                     "history": history,
+                    "intent": decision.intent.to_record() if decision.intent is not None else None,
+                    "approval_kind": decision.approval_kind,
+                    "required_capabilities": list(decision.required_capabilities),
                 }
                 approval = self.store.create_approval(task_id, "tool", public_payload)
                 self._pending_approval_calls[approval["id"]] = private_payload
@@ -1206,7 +1349,16 @@ class AgentManager:
             project_files=self._files_service(),
             project_id=self._project_id(task["cwd"]),
             metrics=self._metrics.get(task_id),
+            policy_engine=self._policy_engine,
+            sandbox_runner=self._sandbox_runner,
         )
+
+    def _sandbox_runner(self, profile: str = "agent") -> Any:
+        runner = self._sandbox_runners.get(profile)
+        if runner is None:
+            runner = self._runner_for(profile)
+            self._sandbox_runners[profile] = runner
+        return runner
 
     def _files_service(self) -> Any:
         if self._project_files is None:
@@ -2004,6 +2156,9 @@ class AgentManager:
         self._context_engines.pop(task_id, None)
         self._metrics.pop(task_id, None)
         self._steering.pop(task_id, None)
+        # Task-scoped remembered rules die with their task — they can never
+        # leak into a later task in the same project.
+        self.store.expire_task_policy_rules(task_id)
         self._finalize_worktree(task_id)
         # Escalated child approvals stay resolvable past a terminal parent — the
         # child is still waiting on the user's decision and its watcher drops

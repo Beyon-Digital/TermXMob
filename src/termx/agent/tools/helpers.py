@@ -61,3 +61,29 @@ def items_json(call: ProviderCall, result: dict[str, Any]) -> list[dict[str, Any
             "output": json.dumps(result, ensure_ascii=False),
         }
     ]
+
+
+def sandbox_profile(ctx: Any) -> str:
+    """The execution profile this tool call's spawns must run under.
+
+    Custom agents may pin `sandbox_profile` (host|workspace|agent); the
+    default is "agent" — the restricted default. Never silently upgrades an
+    agent profile to host.
+    """
+    agent_id = (getattr(ctx, "task", None) or {}).get("custom_agent_id")
+    if agent_id and getattr(ctx, "store", None) is not None:
+        custom = ctx.store.get_custom_agent(str(agent_id))
+        if custom is not None and custom.get("sandbox_profile"):
+            return str(custom["sandbox_profile"])
+    return "agent"
+
+
+def sandbox_spawn(ctx: Any, profile: str | None = None) -> Any:
+    """Resolve the SandboxRunner for this tool call (host fallback when the
+    context carries no runner — tests, Ask-mode read tools)."""
+    lookup = getattr(ctx, "sandbox_runner", None)
+    if lookup is not None:
+        return lookup(profile or "agent")
+    from termx.sandbox import runner_for
+
+    return runner_for(profile or "agent")

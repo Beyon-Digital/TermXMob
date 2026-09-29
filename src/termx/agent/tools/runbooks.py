@@ -13,7 +13,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from termx.agent.tools.helpers import call_string
+from termx.agent.tools.helpers import call_string, sandbox_profile
 from termx.agent.tools.registry import (
     ToolContext,
     ToolOutcome,
@@ -63,7 +63,7 @@ async def _run_runbook(call: Any, ctx: ToolContext) -> ToolOutcome:
     runner = getattr(ctx.manager, "runbooks", None)
     if runner is None:
         return ToolOutcome(result={"error": "runbook runner unavailable"})
-    run = runner.start(runbook, cwd)
+    run = runner.start(runbook, cwd, profile=sandbox_profile(ctx))
     run_id = run["id"]
     while True:
         if ctx.cancel.is_set():
@@ -99,6 +99,26 @@ async def _run_runbook(call: Any, ctx: ToolContext) -> ToolOutcome:
         await asyncio.sleep(0.25)
 
 
+def _decide_runbook(call: Any, ctx: ToolContext):
+    base = make_always(
+        "Run runbook", lambda c: f"runbook {call_string(c, 'runbook_id')}"
+    )(call, ctx)
+    engine = getattr(ctx, "policy_engine", None)
+    if engine is None:
+        return base
+    from termx.agent.policies.fingerprint import runbook_fingerprint
+
+    runbook_id = call_string(call, "runbook_id")
+    return engine.decide_tool(
+        call,
+        ctx,
+        fingerprint=runbook_fingerprint(runbook_id),
+        display=f"runbook {runbook_id}",
+        matcher={"runbook_id": runbook_id},
+        base=base,
+    )
+
+
 def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
@@ -120,9 +140,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="always",
             execute=_run_runbook,
-            decide=make_always(
-                "Run runbook", lambda call: f"runbook {call_string(call, 'runbook_id')}"
-            ),
+            decide=_decide_runbook,
             expose_read_only=False,
         )
     )

@@ -13,6 +13,15 @@ class PolicyDecision:
     approval_required: bool
     reason: str
     consequence: str
+    # Filled by the policy engine (agent/policies/engine.py); left empty when a
+    # decider ran without the engine (tests, legacy callers).
+    intent: Any = None  # termx.agent.policies.models.PolicyIntent
+    matched_rule_id: str | None = None  # remembered rule that resolved this
+    auto_resolved: str | None = None  # "allow" | "deny" | "autonomous"
+    approval_kind: str = "action"  # "action" | "capability"
+    required_capabilities: tuple[str, ...] = ()
+    sandbox_profile: str | None = None
+    remember_options: tuple[str, ...] = ("task", "project", "custom_agent")
 
 
 _CONSEQUENTIAL: tuple[tuple[re.Pattern[str], str, str], ...] = (

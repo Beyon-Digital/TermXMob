@@ -296,6 +296,8 @@ class CustomAgentBody(BaseModel):
     model: str | None = Field(default=None, max_length=200)
     tools: list[str] = Field(default_factory=list, max_length=64)
     limits: dict[str, Any] = Field(default_factory=dict)
+    approval_mode: str = Field(default="standard", pattern=r"^(standard|remember|autonomous)$")
+    sandbox_profile: str = Field(default="agent", pattern=r"^(host|workspace|agent)$")
 
 
 class CustomAgentPatchBody(BaseModel):
@@ -306,10 +308,41 @@ class CustomAgentPatchBody(BaseModel):
     model: str | None = Field(default=None, max_length=200)
     tools: list[str] | None = Field(default=None, max_length=64)
     limits: dict[str, Any] | None = None
+    approval_mode: str | None = Field(default=None, pattern=r"^(standard|remember|autonomous)$")
+    sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace|agent)$")
 
 
 class AgentApprovalBody(BaseModel):
     decision: str = Field(pattern=r"^(approved|denied)$")
+    # v2: "once" or omitted = just this call; task/project/custom_agent
+    # persist a remembered policy rule for equivalent actions.
+    remember: str | None = Field(
+        default=None, pattern=r"^(once|task|project|custom_agent)$"
+    )
+
+
+class PolicyRuleBody(BaseModel):
+    effect: str = Field(pattern=r"^(allow|deny)$")
+    scope_type: str = Field(pattern=r"^(task|project|custom_agent|host)$")
+    scope_id: str | None = Field(default=None, max_length=128)
+    action_type: str = Field(default="tool", pattern=r"^(tool|capability|publication|computer)$")
+    tool: str = Field(min_length=1, max_length=80)
+    fingerprint: str = Field(min_length=1, max_length=128)
+    fingerprint_kind: str = Field(default="exact", pattern=r"^(exact|conservative)$")
+    matcher: dict[str, Any] = Field(default_factory=dict)
+    capabilities: list[str] = Field(default_factory=list, max_length=32)
+    sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace|agent)$")
+    display: str = Field(default="", max_length=2000)
+    task_id: str | None = Field(default=None, max_length=64)
+    project_id: str | None = Field(default=None, max_length=128)
+    expires_at: float | None = None
+
+
+class PolicyRulePatchBody(BaseModel):
+    effect: str | None = Field(default=None, pattern=r"^(allow|deny)$")
+    expires_at: float | None = None
+    display: str | None = Field(default=None, max_length=2000)
+    capabilities: list[str] | None = Field(default=None, max_length=32)
 
 
 class AgentSteerBody(BaseModel):
@@ -870,7 +903,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
-            return await state.agent.resolve_approval(task_id, approval_id, body.decision)
+            return await state.agent.resolve_approval(
+                task_id, approval_id, body.decision, remember=body.remember
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="approval not found") from exc
         except ValueError as exc:
@@ -1460,7 +1495,10 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         updates = {key: value for key, value in body.model_dump().items() if value is not None}
-        agent = state.agent_store.update_custom_agent(agent_id, **updates)
+        try:
+            agent = state.agent_store.update_custom_agent(agent_id, **updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if agent is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
         return {"agent": agent}
@@ -1477,6 +1515,118 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         if not state.agent_store.delete_custom_agent(agent_id):
             raise HTTPException(status_code=404, detail="custom agent not found")
         return {"deleted": agent_id}
+
+    @app.get("/api/agent/policies")
+    def list_agent_policies(
+        scope_type: str | None = Query(default=None),
+        scope_id: str | None = Query(default=None),
+        effect: str | None = Query(default=None),
+        include_revoked: bool = Query(default=False),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.agent.policies.models import rule_public
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-view")
+        rules = state.agent_store.list_policy_rules(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            effect=effect,
+            include_revoked=include_revoked,
+        )
+        return {"rules": [rule_public(rule) for rule in rules]}
+
+    @app.post("/api/agent/policies")
+    def create_agent_policy(
+        body: PolicyRuleBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.agent.policies.models import rule_public
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        try:
+            rule = state.agent_store.create_policy_rule(**body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"rule": rule_public(rule)}
+
+    @app.get("/api/agent/policies/effective")
+    def effective_agent_policies(
+        project_id: str | None = Query(default=None),
+        custom_agent_id: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.agent.policies.models import rule_public
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-view")
+        scopes: list[tuple[str, str]] = [("host", "")]
+        if custom_agent_id:
+            scopes.append(("custom_agent", custom_agent_id))
+        if project_id:
+            scopes.append(("project", project_id))
+        rules = state.agent_store.list_policy_rules(limit=1000)
+        matched = [
+            rule
+            for rule in rules
+            if rule["scope_type"] == "host"
+            or any(
+                rule["scope_type"] == scope_type and rule["scope_id"] == scope_id
+                for scope_type, scope_id in scopes
+            )
+        ]
+        custom = None
+        if custom_agent_id:
+            custom = state.agent_store.get_custom_agent(custom_agent_id)
+        from termx.sandbox import runner_for
+
+        profile = str((custom or {}).get("sandbox_profile") or "agent")
+        return {
+            "rules": [rule_public(rule) for rule in matched],
+            "approval_mode": str((custom or {}).get("approval_mode") or "standard"),
+            "sandbox_profile": profile,
+            "sandbox_capabilities": sorted(
+                runner_for(profile).capabilities().granted
+            ),
+        }
+
+    @app.patch("/api/agent/policies/{rule_id}")
+    def patch_agent_policy(
+        rule_id: str,
+        body: PolicyRulePatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.agent.policies.models import rule_public
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        try:
+            rule = state.agent_store.update_policy_rule(rule_id, **updates)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="policy rule not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"rule": rule_public(rule)}
+
+    @app.delete("/api/agent/policies/{rule_id}")
+    def revoke_agent_policy(
+        rule_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        try:
+            state.agent_store.revoke_policy_rule(rule_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="policy rule not found") from exc
+        return {"revoked": rule_id}
 
     @app.get("/api/preferences")
     def get_preferences(

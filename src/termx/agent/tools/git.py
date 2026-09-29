@@ -2,18 +2,24 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import shutil
-import signal
 from typing import Any
 
 from fastapi import HTTPException
 
 from termx import git_ops
+from termx.agent.policies.fingerprint import tool_key as _tool_key
 from termx.agent.policy import PolicyDecision, is_sensitive_path
 from termx.agent.providers import ProviderCall
-from termx.agent.tools.helpers import call_bool, call_string, denied_result, error_result
+from termx.agent.tools.helpers import (
+    call_bool,
+    call_string,
+    denied_result,
+    error_result,
+    sandbox_profile,
+    sandbox_spawn,
+)
 from termx.agent.tools.registry import (
     ToolContext,
     ToolOutcome,
@@ -56,22 +62,25 @@ async def _run_mutating(
     """Run a mutating ``git`` command so task cancellation kills its process group.
 
     ``asyncio.to_thread`` cannot interrupt the subprocess inside ``git_ops``,
-    so mutating actions run here where ``ctx.cancel`` terminates them.
+    so mutating actions run here where ``ctx.cancel`` terminates them — under
+    the task's sandbox profile, never a second host-shell path.
     """
     if shutil.which("git") is None:
         raise HTTPException(400, "Git is not installed on this host")
-    kwargs: dict[str, Any] = {
-        "stdout": asyncio.subprocess.PIPE,
-        "stderr": asyncio.subprocess.STDOUT,
-        "stdin": stdin,
-    }
-    if os.name == "nt":
-        import subprocess
+    from termx.sandbox import SpawnSpec
 
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        kwargs["start_new_session"] = True
-    process = await asyncio.create_subprocess_exec("git", "-C", ctx.cwd, *args, **kwargs)
+    profile = sandbox_profile(ctx)
+    spec = SpawnSpec(
+        profile=profile,
+        argv=("git", "-C", ctx.cwd, *args),
+        cwd=ctx.cwd,
+        workspace_root=ctx.cwd,
+        writable_roots=[ctx.cwd],
+        purpose=f"git_{args[0] if args else 'command'}",
+        stdin=stdin,
+    )
+    spawned = await sandbox_spawn(ctx, profile).spawn(spec)
+    process = spawned.process
     communicate = asyncio.create_task(process.communicate())
     cancel_wait = asyncio.create_task(ctx.cancel.wait())
     try:
@@ -79,10 +88,10 @@ async def _run_mutating(
             {communicate, cancel_wait}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
         )
         if cancel_wait in done and communicate not in done:
-            await _kill_process(process)
+            await spawned.terminate()
             raise asyncio.CancelledError
         if communicate not in done:
-            await _kill_process(process)
+            await spawned.terminate()
             raise HTTPException(504, "Git command timed out")
         output = communicate.result()[0]
     finally:
@@ -90,22 +99,6 @@ async def _run_mutating(
     if process.returncode != 0:
         detail = output.decode("utf-8", "replace").strip() or "git command failed"
         raise HTTPException(409, detail[:500])
-
-
-async def _kill_process(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is not None:
-        return
-    try:
-        if os.name == "nt":
-            process.terminate()
-        else:
-            os.killpg(process.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
-        pass
-    try:
-        await asyncio.wait_for(process.wait(), timeout=2.0)
-    except asyncio.TimeoutError:
-        pass
 
 
 async def _git_status(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
@@ -220,14 +213,108 @@ async def _git_branch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     return ToolOutcome(error_result(f"unsupported git_branch action: {action}"))
 
 
-def _decide_git_branch(call: ProviderCall, _ctx: ToolContext) -> PolicyDecision:
+def _engine_decide(
+    call: ProviderCall,
+    ctx: ToolContext,
+    base: PolicyDecision,
+    *,
+    fingerprint: str,
+    display: str,
+    matcher: dict[str, Any],
+    capabilities: tuple[str, ...] | None = None,
+) -> PolicyDecision:
+    engine = getattr(ctx, "policy_engine", None)
+    if engine is not None:
+        return engine.decide_tool(
+            call,
+            ctx,
+            fingerprint=fingerprint,
+            display=display,
+            matcher=matcher,
+            base=base,
+            capabilities=capabilities,
+        )
+    return base
+
+
+def _decide_git_stage(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    paths = call.arguments.get("paths")
+    key = "|".join(sorted(p for p in paths if isinstance(p, str))) if isinstance(paths, list) else ""
+    return _engine_decide(
+        call,
+        ctx,
+        decide_never(call, ctx),
+        fingerprint=_tool_key("git", "stage", key),
+        display=f"git stage {key}".strip(),
+        matcher={"action": "stage", "paths": paths if isinstance(paths, list) else []},
+    )
+
+
+def _decide_git_commit(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    base = make_always(
+        "Project mutation",
+        lambda c: f"Commits staged changes: {str(c.arguments.get('message') or '')[:200]}",
+    )(call, ctx)
+    return _engine_decide(
+        call,
+        ctx,
+        base,
+        fingerprint=_tool_key("git", "commit"),
+        display="git commit",
+        matcher={"action": "commit"},
+    )
+
+
+def _decide_git_branch(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
     action = str(call.arguments.get("action") or "list")
     if action == "switch":
         name = str(call.arguments.get("name") or "").strip()
         create = bool(call.arguments.get("create"))
         detail = f"Creates and switches to branch {name}" if create else f"Switches to branch {name}"
-        return PolicyDecision(False, True, "Project mutation", detail)
-    return decide_never(call, _ctx)
+        return _engine_decide(
+            call,
+            ctx,
+            PolicyDecision(False, True, "Project mutation", detail),
+            fingerprint=_tool_key("git", "branch", "switch", name, str(create)),
+            display=detail,
+            matcher={"action": "switch", "name": name, "create": create},
+        )
+    return decide_never(call, ctx)
+
+
+def _decide_git_fetch(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    return _engine_decide(
+        call,
+        ctx,
+        decide_never(call, ctx),
+        fingerprint=_tool_key("git", "fetch"),
+        display="git fetch",
+        matcher={"action": "fetch"},
+    )
+
+
+def _decide_git_pull(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    return _engine_decide(
+        call,
+        ctx,
+        decide_never(call, ctx),
+        fingerprint=_tool_key("git", "pull"),
+        display="git pull --ff-only",
+        matcher={"action": "pull"},
+    )
+
+
+def _decide_git_push(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    base = make_always("External publication", "Pushes the current branch to the configured remote.")(call, ctx)
+    return _engine_decide(
+        call,
+        ctx,
+        base,
+        fingerprint=_tool_key("git", "push"),
+        display="git push",
+        matcher={"action": "push"},
+        capabilities=("process.execute", "git.publish", "net.outbound:any"),
+    )
 
 
 async def _git_fetch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
@@ -313,7 +400,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="policy",
             execute=_git_stage,
-            decide=decide_never,
+            decide=_decide_git_stage,
             expose_read_only=False,
         )
     )
@@ -331,10 +418,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="always",
             execute=_git_commit,
-            decide=make_always(
-                "Project mutation",
-                lambda call: f"Commits staged changes: {str(call.arguments.get('message') or '')[:200]}",
-            ),
+            decide=_decide_git_commit,
             expose_read_only=False,
         )
     )
@@ -367,7 +451,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="never",
             execute=_git_fetch,
-            decide=decide_never,
+            decide=_decide_git_fetch,
             expose_read_only=False,
         )
     )
@@ -380,7 +464,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="never",
             execute=_git_pull,
-            decide=decide_never,
+            decide=_decide_git_pull,
             expose_read_only=False,
         )
     )
@@ -393,7 +477,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="always",
             execute=_git_push,
-            decide=make_always("External publication", "Pushes the current branch to the configured remote."),
+            decide=_decide_git_push,
             expose_read_only=False,
         )
     )

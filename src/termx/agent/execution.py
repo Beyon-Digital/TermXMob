@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,8 +43,13 @@ async def run_shell(
     *,
     timeout_s: float = 120,
     cancel: asyncio.Event | None = None,
+    runner: Any = None,
+    profile: str = "agent",
 ) -> ShellResult:
-    return await stream_shell(command, cwd, timeout_s=timeout_s, cancel=cancel, on_output=None)
+    return await stream_shell(
+        command, cwd, timeout_s=timeout_s, cancel=cancel, on_output=None,
+        runner=runner, profile=profile,
+    )
 
 
 async def stream_shell(
@@ -57,6 +60,9 @@ async def stream_shell(
     cancel: asyncio.Event | None = None,
     on_output: Any = None,
     chunk_size: int = 4096,
+    runner: Any = None,
+    profile: str = "agent",
+    workspace_root: str | None = None,
 ) -> ShellResult:
     """Run a shell command, streaming output chunks to ``on_output``.
 
@@ -67,19 +73,20 @@ async def stream_shell(
     root = Path(cwd).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("working directory is not a directory")
-    kwargs: dict[str, Any] = {
-        "cwd": str(root),
-        "stdout": asyncio.subprocess.PIPE,
-        "stderr": asyncio.subprocess.STDOUT,
-        "env": {key: value for key, value in os.environ.items() if not SENSITIVE_ENV.search(key)},
-    }
-    if os.name == "nt":
-        import subprocess
+    from termx.sandbox import SpawnSpec, runner_for
 
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        kwargs["start_new_session"] = True
-    process = await asyncio.create_subprocess_shell(command, **kwargs)
+    if runner is None:
+        runner = runner_for(profile)
+    spec = SpawnSpec(
+        profile=profile,
+        shell=command,
+        cwd=str(root),
+        workspace_root=workspace_root or str(root),
+        writable_roots=[workspace_root or str(root)],
+        purpose="run_shell",
+    )
+    spawned = await runner.spawn(spec)
+    process = spawned.process
     # Rolling tail: memory stays bounded no matter how much the process prints.
     tail = bytearray()
     dropped = 0
@@ -116,7 +123,7 @@ async def stream_shell(
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 timed_out = True
-                await _terminate(process)
+                await spawned.terminate()
                 break
             done, _ = await asyncio.wait(waiters, timeout=remaining, return_when=asyncio.FIRST_COMPLETED)
             if reader_open and reader in done:
@@ -124,7 +131,7 @@ async def stream_shell(
                 if reader.exception() is not None:
                     # Output delivery failed — stop the process promptly rather
                     # than letting it block on a full stdout pipe until timeout.
-                    await _terminate(process)
+                    await spawned.terminate()
                     break
                 # stdout drained early; keep waiting for exit/cancel/deadline.
                 continue
@@ -132,10 +139,10 @@ async def stream_shell(
                 break
             if cancelled is not None and cancelled in done:
                 was_cancelled = True
-                await _terminate(process)
+                await spawned.terminate()
                 break
             timed_out = True
-            await _terminate(process)
+            await spawned.terminate()
             break
         await reader
     finally:
@@ -157,28 +164,8 @@ async def stream_shell(
 
 
 async def _terminate(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is not None:
-        return
-    try:
-        if os.name == "nt":
-            process.terminate()
-        else:
-            os.killpg(process.pid, signal.SIGTERM)
-    except (OSError, ProcessLookupError):
-        pass
-    try:
-        await asyncio.wait_for(process.wait(), timeout=1.5)
-        return
-    except asyncio.TimeoutError:
-        pass
-    try:
-        if os.name == "nt":
-            process.kill()
-        else:
-            os.killpg(process.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
-        pass
-    try:
-        await process.wait()
-    except Exception:
-        pass
+    """Back-compat shim — process tree kill now lives on the sandbox runner's
+    spawned process handle; kept for callers/tests that imported it."""
+    from termx.sandbox.runner import _ProcessGroup
+
+    await _ProcessGroup(process).terminate()
