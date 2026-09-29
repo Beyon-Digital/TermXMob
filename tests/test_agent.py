@@ -2567,7 +2567,9 @@ def test_worktree_task_runs_in_isolated_checkout(tmp_path: Path, monkeypatch: py
         assert record is not None
         assert record["mode"] == "worktree"
         assert record["branch"].startswith("termx/task-")
-        assert record["base_repo"] == str(repo)
+        # git reports the base path with forward slashes on Windows —
+        # compare as paths, not raw strings.
+        assert Path(record["base_repo"]) == repo
         worktree_path = Path(record["worktree_path"])
         assert worktree_path != repo
         assert Path(task["cwd"]) == worktree_path
@@ -2876,16 +2878,21 @@ def test_ports_and_processes_endpoints(tmp_path: Path) -> None:
             assert client.get("/api/ports").status_code == 401
             assert client.get("/api/processes").status_code == 401
             ports = client.get("/api/ports", headers=headers).json()["ports"]
-            entry = next((e for e in ports if e["port"] == port), None)
-            assert entry is not None, ports
-            assert entry["is_http"] is True
-            assert entry["url"] == f"http://127.0.0.1:{port}"
-            assert entry["pid"] == os.getpid()  # in-proc listener is discoverable
             procs = client.get("/api/processes", headers=headers).json()["processes"]
-            pids = {p["pid"] for p in procs}
-            assert os.getpid() in pids
-            # never lists unrelated system processes
-            assert all(p["pid"] > 0 for p in procs)
+            if sys.platform == "win32":
+                # Discovery is truthfully gated off on Windows — endpoints
+                # degrade to empty lists rather than pretending to work.
+                assert ports == [] and procs == []
+            else:
+                entry = next((e for e in ports if e["port"] == port), None)
+                assert entry is not None, ports
+                assert entry["is_http"] is True
+                assert entry["url"] == f"http://127.0.0.1:{port}"
+                assert entry["pid"] == os.getpid()  # in-proc listener is discoverable
+                pids = {p["pid"] for p in procs}
+                assert os.getpid() in pids
+                # never lists unrelated system processes
+                assert all(p["pid"] > 0 for p in procs)
     finally:
         server.shutdown()
         server.server_close()
@@ -2914,6 +2921,11 @@ def test_preview_from_port(tmp_path: Path) -> None:
                 json={"port": port, "name": "dev server"},
                 headers=headers,
             )
+            if sys.platform == "win32":
+                # Port discovery is gated off on Windows, so no port is ever
+                # known and preview-from-port cannot resolve.
+                assert created.status_code == 404
+                return
             assert created.status_code == 200
             preview = created.json()["preview"]
             assert preview["name"] == "dev server"
@@ -3604,7 +3616,8 @@ def test_runbook_step_output_tail_truncated(tmp_path: Path) -> None:
             on_progress=emitted.append,
         )
         assert len(result["output"]) <= runbooks.MAX_STEP_OUTPUT
-        assert result["output"].endswith("abcdef\n")
+        # Child stdout translates \n -> \r\n on Windows.
+        assert result["output"].replace("\r\n", "\n").endswith("abcdef\n")
         assert len(emitted) >= 1
         assert all(e["status"] == "running" for e in emitted)
 
