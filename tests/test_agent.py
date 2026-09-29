@@ -3536,3 +3536,76 @@ def test_delete_task_preserves_kept_worktree(tmp_path: Path, monkeypatch: pytest
         assert Path(wt_path).exists()  # kept worktrees belong to the user
 
 
+def test_runbook_step_output_streams_and_stays_bounded(tmp_path: Path) -> None:
+    """Live step output publishes mid-run and memory/output stay bounded."""
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+    book = store.create_runbook(
+        name="chatty",
+        project_id=None,
+        steps=[
+            {
+                "kind": "shell",
+                "command": (
+                    "python3 -c \"import sys,time; "
+                    "sys.stdout.write('x'*100000); sys.stdout.flush(); "
+                    "time.sleep(0.4); sys.stdout.write('y'*100000)\""
+                ),
+                "confirm": False,
+                "parallel": False,
+            }
+        ],
+    )
+
+    async def run() -> None:
+        runner = runbooks.RunbookRunner(store)
+        live = runner.start({**book, "steps": book["steps"]}, cwd=str(tmp_path))
+        seen_partial = False
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            row = store.get_runbook_run(live["id"])
+            partial = (row or {}).get("step_results") or []
+            if partial and partial[-1].get("status") == "running" and partial[-1].get("output"):
+                seen_partial = True
+                break
+            if (row or {}).get("status") in {"completed", "failed", "cancelled"}:
+                break
+            await asyncio.sleep(0.05)
+        assert seen_partial, "no live step output was published during the run"
+        final = await _wait_run(store, live["id"], "completed")
+        step = final["step_results"][0]
+        assert step["status"] == "completed"
+        assert len(step["output"]) <= runbooks.MAX_STEP_OUTPUT
+        assert step["output"].endswith("y")  # tail keeps the most recent bytes
+        await runner.shutdown()
+
+    asyncio.run(run())
+
+
+def test_runbook_step_output_tail_truncated(tmp_path: Path) -> None:
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+
+    async def run() -> None:
+        runner = runbooks.RunbookRunner(store)
+        proc_out = "abcdef"
+        emitted: list[dict] = []
+        result = await runner._execute_step(
+            "run-x",
+            {
+                "kind": "shell",
+                "command": f"python3 -c \"print('{proc_out}'*20000)\"",
+            },
+            str(tmp_path),
+            on_progress=emitted.append,
+        )
+        assert len(result["output"]) <= runbooks.MAX_STEP_OUTPUT
+        assert result["output"].endswith("abcdef\n")
+        assert len(emitted) >= 1
+        assert all(e["status"] == "running" for e in emitted)
+
+    asyncio.run(run())

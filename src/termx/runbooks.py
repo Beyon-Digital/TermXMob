@@ -19,6 +19,7 @@ from typing import Any
 
 MAX_STEP_OUTPUT = 48 * 1024
 STEP_TIMEOUT_S = 900
+_STEP_OUTPUT_PUBLISH_BYTES = 64 * 1024
 
 
 def validate_steps(steps: Any) -> list[dict[str, Any]]:
@@ -121,7 +122,13 @@ class RunbookRunner:
             except ProcessLookupError:
                 pass
 
-    async def _execute_step(self, run_id: str, step: dict[str, Any], cwd: str) -> dict[str, Any]:
+    async def _execute_step(
+        self,
+        run_id: str,
+        step: dict[str, Any],
+        cwd: str,
+        on_progress: Any | None = None,
+    ) -> dict[str, Any]:
         started = time.monotonic()
         kwargs: dict[str, Any] = {}
         if sys.platform != "win32":
@@ -134,33 +141,52 @@ class RunbookRunner:
             **kwargs,
         )
         self._procs.setdefault(run_id, set()).add(proc)
-        output = b""
+        tail = bytearray()
+
+        def result(status: str, exit_code: int | None, output: str) -> dict[str, Any]:
+            return {
+                "command": step["command"],
+                "status": status,
+                "exit_code": exit_code,
+                "output": output,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            }
+
+        pending = 0
         try:
-            try:
-                chunks = await asyncio.wait_for(proc.communicate(), timeout=STEP_TIMEOUT_S)
-                output = chunks[0] or b""
-            except asyncio.TimeoutError:
-                self._kill_proc(proc)
-                return {
-                    "command": step["command"],
-                    "status": "failed",
-                    "exit_code": None,
-                    "output": "step timed out",
-                    "duration_ms": int((time.monotonic() - started) * 1000),
-                }
+            while True:
+                remaining = STEP_TIMEOUT_S - (time.monotonic() - started)
+                if remaining <= 0:
+                    self._kill_proc(proc)
+                    return result("failed", None, "step timed out")
+                try:
+                    chunk = await asyncio.wait_for(
+                        proc.stdout.read(8192), timeout=remaining
+                    )
+                except asyncio.TimeoutError:
+                    self._kill_proc(proc)
+                    return result("failed", None, "step timed out")
+                if not chunk:
+                    break
+                tail.extend(chunk)
+                if len(tail) > MAX_STEP_OUTPUT:
+                    del tail[: len(tail) - MAX_STEP_OUTPUT]
+                pending += len(chunk)
+                if on_progress is not None and pending >= _STEP_OUTPUT_PUBLISH_BYTES:
+                    pending = 0
+                    on_progress(
+                        result("running", None, bytes(tail).decode("utf-8", "replace"))
+                    )
+            await proc.wait()
         finally:
             procs = self._procs.get(run_id)
             if procs is not None:
                 procs.discard(proc)
-        if len(output) > MAX_STEP_OUTPUT:
-            output = output[-MAX_STEP_OUTPUT:]
-        return {
-            "command": step["command"],
-            "status": "completed" if proc.returncode == 0 else "failed",
-            "exit_code": proc.returncode,
-            "output": output.decode("utf-8", "replace"),
-            "duration_ms": int((time.monotonic() - started) * 1000),
-        }
+        return result(
+            "completed" if proc.returncode == 0 else "failed",
+            proc.returncode,
+            bytes(tail).decode("utf-8", "replace"),
+        )
 
     async def _execute(self, run_id: str, runbook: dict[str, Any], cwd: str) -> None:
         steps = runbook["steps"]
@@ -193,8 +219,33 @@ class RunbookRunner:
                         if (self._store.get_runbook_run(run_id) or {}).get("status") != "running":
                             status = "cancelled"
                             raise asyncio.CancelledError
+                live_group: dict[int, dict[str, Any]] = {}
+
+                def make_progress(member_idx: int):
+                    def _publish(result: dict[str, Any]) -> None:
+                        result["index"] = member_idx
+                        live_group[member_idx] = result
+                        self._store.update_runbook_run(
+                            run_id,
+                            current_step=member_idx,
+                            step_results=[
+                                *results,
+                                *sorted(
+                                    live_group.values(), key=lambda r: r["index"]
+                                ),
+                            ],
+                        )
+
+                    return _publish
+
                 batch = [
-                    self._execute_step(run_id, member, cwd) for member in group
+                    self._execute_step(
+                        run_id,
+                        member,
+                        cwd,
+                        on_progress=make_progress(index + group.index(member)),
+                    )
+                    for member in group
                 ]
                 group_results = await asyncio.gather(*batch)
                 for member, result in zip(group, group_results):
