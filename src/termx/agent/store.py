@@ -112,6 +112,7 @@ class AgentStore:
                 model TEXT NOT NULL,
                 status TEXT NOT NULL,
                 limits TEXT NOT NULL,
+                parent_id TEXT,
                 mode TEXT NOT NULL DEFAULT 'agent',
                 plan TEXT,
                 result TEXT,
@@ -182,6 +183,8 @@ class AgentStore:
             self._db.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'")
         if "metrics" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN metrics TEXT")
+        if "parent_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT")
         self._db.commit()
 
     def close(self) -> None:
@@ -300,6 +303,7 @@ class AgentStore:
         model: str,
         limits: dict[str, Any],
         mode: str = "agent",
+        parent_id: str | None = None,
     ) -> dict[str, Any]:
         now = time()
         task_id = uuid.uuid4().hex
@@ -307,10 +311,10 @@ class AgentStore:
             self._db.execute(
                 """
                 INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?)
+                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?)
                 """,
-                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, now, now),
+                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, parent_id, now, now),
             )
             self._db.commit()
         task = self.get_task(task_id)
@@ -329,6 +333,13 @@ class AgentStore:
             task["approvals"] = self.approvals(task_id)
             task["artifacts"] = self.artifacts(task_id)
         return task
+
+    def children(self, parent_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at", (parent_id,)
+            ).fetchall()
+        return [self._task(row) for row in rows]
 
     def list_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:
@@ -555,6 +566,7 @@ class AgentStore:
             "status": row["status"],
             "limits": _load_json(row["limits"], {}),
             "mode": (row["mode"] if "mode" in row.keys() else "agent") or "agent",
+            "parent_id": (row["parent_id"] if "parent_id" in row.keys() else None) or None,
             "plan": _load_json(row["plan"], None),
             "result": row["result"],
             "error": row["error"],

@@ -7,8 +7,9 @@ import mimetypes
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from time import monotonic
+from time import monotonic, time
 from typing import Any, TypeVar
 
 from termx.agent.computer import ComputerController
@@ -42,7 +43,13 @@ from termx.agent.tools import ToolContext, ToolOutcome, default_registry
 
 T = TypeVar("T")
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
-DEFAULT_LIMITS = {"max_steps": 24, "max_seconds": 900, "shell_timeout_s": 120}
+DEFAULT_LIMITS = {
+    "max_steps": 24,
+    "max_seconds": 900,
+    "shell_timeout_s": 120,
+    "max_parallel_subagents": 3,
+    "max_subagents_total": 8,
+}
 
 
 class AgentManager:
@@ -72,6 +79,7 @@ class AgentManager:
         self._http = ProviderHttpRuntime()
         self._metrics: dict[str, TaskMetrics] = {}
         self._context_engines: dict[str, ContextEngine] = {}
+        self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
@@ -189,6 +197,7 @@ class AgentManager:
         attachments: list[dict[str, Any]] | None = None,
         cancel: asyncio.Event | None = None,
         on_created: Callable[[str], None] | None = None,
+        parent_id: str | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -210,6 +219,7 @@ class AgentManager:
             model=chosen,
             limits=bounded,
             mode=mode,
+            parent_id=parent_id,
         )
         task_id = task["id"]
         if on_created is not None:
@@ -271,11 +281,14 @@ class AgentManager:
 
     async def resolve_approval(self, task_id: str, approval_id: str, decision: str) -> dict[str, Any]:
         task = self._task(task_id)
-        if task["status"] != "awaiting_approval":
-            raise ValueError("task is not awaiting approval")
         approval = self.store.get_approval(approval_id)
         if approval is None or approval["task_id"] != task_id:
             raise KeyError(approval_id)
+        escalation = "child_approval_id" in (self._pending_approval_calls.get(approval_id) or {})
+        if task["status"] != "awaiting_approval" and not (
+            escalation and approval["status"] == "pending"
+        ):
+            raise ValueError("task is not awaiting approval")
         if (
             decision != "denied"
             and approval["kind"] == "tool"
@@ -296,8 +309,11 @@ class AgentManager:
                 await self.resolve_approval(child_id, str(private_payload["child_approval_id"]), decision)
             except (KeyError, ValueError):
                 pass
-            self.store.update_task(task_id, status="running")
-            self._emit(task_id, "task.status", {"status": "running"})
+            # Async sub-agents let the parent finish while an escalation is open;
+            # only wake it back to running when it is still genuinely paused.
+            if self._task(task_id)["status"] == "awaiting_approval":
+                self.store.update_task(task_id, status="running")
+                self._emit(task_id, "task.status", {"status": "running"})
             return approval
         if decision == "denied":
             self._finish_state(task_id)
@@ -364,7 +380,15 @@ class AgentManager:
     async def close(self) -> None:
         for event in self._cancel.values():
             event.set()
-        workers = list(self._workers.values())
+        watchers = [
+            handle.watcher
+            for handles in self._subagents.values()
+            for handle in handles.values()
+            if handle.watcher is not None and not handle.watcher.done()
+        ]
+        for watcher in watchers:
+            watcher.cancel()
+        workers = list(self._workers.values()) + watchers
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
         await self._computer.release_all()
@@ -1057,6 +1081,54 @@ class AgentManager:
             "artifact": {"id": artifact["id"], "mime": artifact["mime"], "size": artifact["size"]},
         }
 
+    def _subagent_handles(self, task_id: str) -> dict[str, _SubagentHandle]:
+        """Live handle registry for one parent task.
+
+        Rebuilt lazily from the durable tasks table so handles survive a host
+        restart: terminal children come back already done, still-active ones
+        (re-driven by crash recovery) get a fresh relay watcher.
+        """
+        handles = self._subagents.setdefault(task_id, {})
+        try:
+            children = self.store.children(task_id)
+        except (KeyError, ValueError):
+            return handles
+        for child in children:
+            child_id = child["id"]
+            if child_id in handles:
+                continue
+            handle = _SubagentHandle(parent_id=task_id, child_id=child_id)
+            handles[child_id] = handle
+            if child["status"] in ACTIVE_STATUSES:
+                self._attach_watcher(task_id, handle, child)
+            else:
+                handle.status = child["status"]
+                handle.result = str(child.get("result") or child.get("error") or "")
+                handle.done.set()
+        return handles
+
+    def _attach_watcher(
+        self,
+        parent_id: str,
+        handle: _SubagentHandle,
+        child: dict[str, Any],
+    ) -> None:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+        self._subscribers[handle.child_id].add(queue)
+        handle.queue = queue
+        child_limits = child.get("limits") or {}
+        try:
+            max_seconds = float(child_limits.get("max_seconds") or _SUBAGENT_MAX_SECONDS)
+        except (TypeError, ValueError):
+            max_seconds = float(_SUBAGENT_MAX_SECONDS)
+        elapsed = max(0.0, time() - float(child.get("created_at") or time()))
+        handle.deadline = monotonic() + max(30.0, min(max_seconds, _SUBAGENT_MAX_SECONDS) - elapsed)
+        if handle.parent_cancel is None:
+            handle.parent_cancel = self._cancel.get(parent_id) or asyncio.Event()
+        handle.watcher = asyncio.create_task(
+            self._watch_child(parent_id, handle), name=f"termx-subagent-{handle.child_id[:8]}"
+        )
+
     async def _spawn_subagent(
         self,
         task_id: str,
@@ -1076,14 +1148,26 @@ class AgentManager:
                 f"{instructions}\n\nTask: {prompt}"
             )
         parent_limits = task["limits"]
-        deadline = monotonic() + min(parent_limits["max_seconds"], _SUBAGENT_MAX_SECONDS)
-        queues: list[asyncio.Queue[dict[str, Any]]] = []
+        handles = self._subagent_handles(task_id)
+        running = sum(1 for handle in handles.values() if not handle.done.is_set())
+        max_parallel = int(parent_limits.get("max_parallel_subagents") or DEFAULT_LIMITS["max_parallel_subagents"])
+        if running >= max_parallel:
+            return {
+                "ok": False,
+                "error": f"sub-agent parallel limit reached ({running}/{max_parallel} running)",
+                "hint": "call await_subagents to free a slot, or raise max_parallel_subagents",
+            }
+        max_total = int(parent_limits.get("max_subagents_total") or DEFAULT_LIMITS["max_subagents_total"])
+        if len(handles) >= max_total:
+            return {
+                "ok": False,
+                "error": f"sub-agent total limit reached ({len(handles)}/{max_total} spawned)",
+            }
 
-        def attach(child_id: str) -> None:
-            queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+        def attach(child_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
             self._subscribers[child_id].add(queue)
-            queues.append(queue)
 
+        child_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
         child = await self.create_task(
             prompt=child_prompt,
             cwd=task["cwd"],
@@ -1096,21 +1180,38 @@ class AgentManager:
             mode="ask" if str(call.arguments.get("mode") or "").strip().lower() == "ask" else "agent",
             model=str(task.get("model") or "") or None,
             cancel=cancel,
-            on_created=attach,
+            on_created=lambda child_id: attach(child_id, child_queue),
+            parent_id=task_id,
         )
         child_id = child["id"]
-        queue = queues[0]
+        handle = _SubagentHandle(
+            parent_id=task_id,
+            child_id=child_id,
+            call_id=call.call_id,
+            agent=agent,
+            queue=child_queue,
+            parent_cancel=cancel,
+        )
+        handle.deadline = monotonic() + min(
+            float(parent_limits["max_seconds"]), _SUBAGENT_MAX_SECONDS
+        )
+        handles[child_id] = handle
         if cancel.is_set():
-            self.unsubscribe(child_id, queue)
+            self.unsubscribe(child_id, child_queue)
             self.cancel(child_id)
+            handle.status = "cancelled"
+            handle.done.set()
             raise asyncio.CancelledError
+        self._emit(
+            task_id,
+            "subagent.started",
+            {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id},
+        )
         if child["status"] in {"completed", "failed", "cancelled"}:
-            self.unsubscribe(child_id, queue)
-            self._emit(
-                task_id,
-                "subagent.started",
-                {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id},
-            )
+            self.unsubscribe(child_id, child_queue)
+            handle.status = child["status"]
+            handle.result = str(child.get("error") or child.get("result") or "")
+            handle.done.set()
             self._emit(
                 task_id,
                 "subagent.finished",
@@ -1118,30 +1219,40 @@ class AgentManager:
                     "call_id": call.call_id,
                     "child_id": child_id,
                     "agent": agent,
-                    "status": child["status"],
-                    "result": str(child.get("error") or child.get("result") or ""),
+                    "status": handle.status,
+                    "result": handle.result,
                 },
             )
             return {
-                "ok": child["status"] == "completed",
-                "status": child["status"],
-                "result": str(child.get("error") or child.get("result") or "")[:4000],
+                "ok": handle.status == "completed",
+                "status": handle.status,
+                "result": handle.result[:4000],
                 "task_id": child_id,
             }
-        self._emit(
-            task_id,
-            "subagent.started",
-            {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id},
-        )
         # The parent's approved plan covers the delegation itself, so the child's
         # plan is approved on its behalf; its consequential tool checks are
         # escalated to the parent for the user to decide.
+        handle.watcher = asyncio.create_task(
+            self._watch_child(task_id, handle), name=f"termx-subagent-{child_id[:8]}"
+        )
         await self._auto_approve(child_id, kind="plan")
+        return {"ok": True, "status": "running", "task_id": child_id}
+
+    async def _watch_child(self, parent_id: str, handle: _SubagentHandle) -> None:
+        """Relay a child's events onto the parent's stream until it terminates.
+
+        Independent of any single tool call so fan-out children keep streaming
+        while the parent does other work; consequential child actions are still
+        escalated to the parent's approval queue.
+        """
+        child_id = handle.child_id
+        queue = handle.queue
+        assert queue is not None
         status = "failed"
         result = ""
         try:
             while True:
-                if cancel.is_set():
+                if handle.parent_cancel is not None and handle.parent_cancel.is_set():
                     self.cancel(child_id)
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=0.4)
@@ -1151,7 +1262,7 @@ class AgentManager:
                         status = current["status"]
                         result = str(current.get("result") or current.get("error") or "")
                         break
-                    if monotonic() >= deadline:
+                    if monotonic() >= handle.deadline:
                         self.cancel(child_id)
                     continue
                 event_type = event["type"]
@@ -1159,14 +1270,14 @@ class AgentManager:
                 if event_type == "approval.requested":
                     approval = payload.get("approval") or {}
                     if approval.get("kind") == "tool" and approval.get("id"):
-                        self._escalate_child_approval(task_id, child_id, agent, approval)
+                        self._escalate_child_approval(parent_id, child_id, handle.agent, approval)
                 self._emit(
-                    task_id,
+                    parent_id,
                     "subagent.event",
                     {
-                        "call_id": call.call_id,
+                        "call_id": handle.call_id,
                         "child_id": child_id,
-                        "agent": agent,
+                        "agent": handle.agent,
                         "type": event_type,
                         "payload": _slim_payload(payload),
                     },
@@ -1181,26 +1292,143 @@ class AgentManager:
                     break
         finally:
             self.unsubscribe(child_id, queue)
-            self._drop_pending_approvals(task_id, child_id=child_id)
-            if self._task(task_id)["status"] == "awaiting_approval":
-                self.store.update_task(task_id, status="running")
-                self._emit(task_id, "task.status", {"status": "running"})
+            self._drop_pending_approvals(parent_id, child_id=child_id)
+            handle.status = status
+            handle.result = result
+            if self._task(parent_id)["status"] == "awaiting_approval":
+                self.store.update_task(parent_id, status="running")
+                self._emit(parent_id, "task.status", {"status": "running"})
+            self._emit(
+                parent_id,
+                "subagent.finished",
+                {
+                    "call_id": handle.call_id,
+                    "child_id": child_id,
+                    "agent": handle.agent,
+                    "status": status,
+                    "result": result,
+                },
+            )
+            handle.done.set()
+
+    def _subagent_targets(
+        self,
+        task_id: str,
+        call: ProviderCall,
+    ) -> tuple[dict[str, _SubagentHandle], list[str]]:
+        """Resolve named children (task_id/task_ids args) against the parent's
+        handle registry; empty selection targets every child of this parent."""
+        handles = self._subagent_handles(task_id)
+        raw: list[str] = []
+        single = str(call.arguments.get("task_id") or "").strip()
+        if single:
+            raw.append(single)
+        listed = call.arguments.get("task_ids")
+        if isinstance(listed, list):
+            raw.extend(str(item).strip() for item in listed if str(item).strip())
+        if not raw:
+            return dict(handles), []
+        targets: dict[str, _SubagentHandle] = {}
+        missing: list[str] = []
+        for child_id in raw:
+            handle = handles.get(child_id)
+            if handle is None:
+                missing.append(child_id)
+            else:
+                targets[child_id] = handle
+        return targets, missing
+
+    @staticmethod
+    def _subagent_summary(handle: _SubagentHandle) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "child_id": handle.child_id,
+            "agent": handle.agent,
+            "status": handle.status,
+            "running": not handle.done.is_set(),
+        }
+        if handle.done.is_set():
+            entry["result"] = handle.result[:4000]
+        return entry
+
+    async def _await_subagents(
+        self,
+        task_id: str,
+        call: ProviderCall,
+        cancel: asyncio.Event,
+    ) -> dict[str, Any]:
+        targets, missing = self._subagent_targets(task_id, call)
+        raw_timeout = call.arguments.get("timeout_s")
+        try:
+            timeout_s = float(raw_timeout) if raw_timeout is not None else 300.0
+        except (TypeError, ValueError):
+            timeout_s = 300.0
+        timeout_s = min(600.0, max(0.0, timeout_s))
+        pending = [handle for handle in targets.values() if not handle.done.is_set()]
+        timed_out = False
+        if pending and timeout_s > 0:
+            try:
+                await _race_cancel(
+                    asyncio.wait_for(
+                        asyncio.gather(
+                            *(handle.done.wait() for handle in pending), return_exceptions=True
+                        ),
+                        timeout=timeout_s,
+                    ),
+                    cancel,
+                )
+            except asyncio.TimeoutError:
+                timed_out = True
+        elif pending:
+            timed_out = True
+        children = {
+            child_id: self._subagent_summary(handle) for child_id, handle in targets.items()
+        }
         self._emit(
             task_id,
-            "subagent.finished",
+            "subagent.awaited",
             {
                 "call_id": call.call_id,
-                "child_id": child_id,
-                "agent": agent,
-                "status": status,
-                "result": result,
+                "timed_out": timed_out,
+                "children": {child_id: entry["status"] for child_id, entry in children.items()},
             },
         )
         return {
-            "ok": status == "completed",
-            "status": status,
-            "result": result[:4000],
-            "task_id": child_id,
+            "ok": not missing and not timed_out,
+            "timed_out": timed_out,
+            "children": children,
+            "missing": missing,
+        }
+
+    def _subagent_statuses(self, task_id: str, call: ProviderCall) -> dict[str, Any]:
+        targets, missing = self._subagent_targets(task_id, call)
+        return {
+            "ok": not missing,
+            "children": {
+                child_id: self._subagent_summary(handle) for child_id, handle in targets.items()
+            },
+            "missing": missing,
+        }
+
+    def _cancel_subagent(self, task_id: str, call: ProviderCall) -> dict[str, Any]:
+        targets, missing = self._subagent_targets(task_id, call)
+        cancelled: list[str] = []
+        already_finished: list[str] = []
+        for child_id, handle in targets.items():
+            if handle.done.is_set():
+                already_finished.append(child_id)
+                continue
+            self.cancel(child_id)
+            cancelled.append(child_id)
+            self._emit(
+                task_id,
+                "subagent.cancelled",
+                {"call_id": call.call_id, "child_id": child_id, "agent": handle.agent},
+            )
+        return {
+            "ok": not missing,
+            "cancelled": cancelled,
+            "already_finished": already_finished,
+            "missing": missing,
         }
 
     def _escalate_child_approval(
@@ -1310,6 +1538,8 @@ class AgentManager:
             "max_steps": min(100, max(1, int(source.get("max_steps") or DEFAULT_LIMITS["max_steps"]))),
             "max_seconds": min(3600, max(30, int(source.get("max_seconds") or DEFAULT_LIMITS["max_seconds"]))),
             "shell_timeout_s": min(600, max(5, int(source.get("shell_timeout_s") or DEFAULT_LIMITS["shell_timeout_s"]))),
+            "max_parallel_subagents": min(8, max(1, int(source.get("max_parallel_subagents") or DEFAULT_LIMITS["max_parallel_subagents"]))),
+            "max_subagents_total": min(32, max(1, int(source.get("max_subagents_total") or DEFAULT_LIMITS["max_subagents_total"]))),
         }
 
     @staticmethod
@@ -1347,11 +1577,15 @@ class AgentManager:
             }
         return value
 
-    def _drop_pending_approvals(self, task_id: str, *, child_id: str | None = None) -> None:
+    def _drop_pending_approvals(
+        self, task_id: str, *, child_id: str | None = None, keep_escalations: bool = False
+    ) -> None:
         for approval_id, payload in list(self._pending_approval_calls.items()):
             if payload["task_id"] != task_id:
                 continue
             if child_id is not None and payload.get("child_id") != child_id:
+                continue
+            if keep_escalations and "child_approval_id" in payload:
                 continue
             self._pending_approval_calls.pop(approval_id, None)
 
@@ -1378,7 +1612,10 @@ class AgentManager:
         self._context_engines.pop(task_id, None)
         self._metrics.pop(task_id, None)
         self._steering.pop(task_id, None)
-        self._drop_pending_approvals(task_id)
+        # Escalated child approvals stay resolvable past a terminal parent — the
+        # child is still waiting on the user's decision and its watcher drops
+        # the entry when it finishes.
+        self._drop_pending_approvals(task_id, keep_escalations=True)
 
     async def _cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
@@ -1439,6 +1676,28 @@ def _snapshot_event(snapshot: dict[str, Any]) -> dict[str, Any]:
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _SHARE_MAX_BYTES = 16 * 1024 * 1024
 _SUBAGENT_MAX_SECONDS = 1800
+
+
+@dataclass
+class _SubagentHandle:
+    """Parent-side handle for an async child task (AG2-012).
+
+    The watcher keeps relaying sub-agent events and approval escalations while
+    the parent's own driver does other work; `done` is what await_subagents
+    waits on, and status/result hold the terminal outcome for status queries.
+    """
+
+    parent_id: str
+    child_id: str
+    call_id: str = ""
+    agent: str = "Sub-agent"
+    queue: asyncio.Queue[dict[str, Any]] | None = None
+    watcher: asyncio.Task | None = None
+    parent_cancel: asyncio.Event | None = None
+    deadline: float = 0.0
+    status: str = "running"
+    result: str = ""
+    done: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 async def _race_cancel(coroutine: Awaitable[T], cancel: asyncio.Event) -> T:

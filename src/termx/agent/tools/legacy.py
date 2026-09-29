@@ -82,9 +82,10 @@ def register(registry: ToolRegistry) -> None:
             name="spawn_subagent",
             description=(
                 "Delegate one bounded sub-task to a sub-agent running in the same project folder. "
-                "Use it to hand off well-scoped work (research a question, write a file, verify a "
-                "fix) while you coordinate. The sub-agent runs autonomously to completion and "
-                "returns its result; its steps appear nested under this call. Pass instructions "
+                "Returns immediately with the child's task_id — the sub-agent runs concurrently "
+                "while you keep working, so you can spawn several and coordinate them. Collect "
+                "results with await_subagents, inspect with subagent_status, stop with "
+                "cancel_subagent; its steps appear nested under this call. Pass instructions "
                 "to give it a role or rules to follow."
             ),
             parameters={

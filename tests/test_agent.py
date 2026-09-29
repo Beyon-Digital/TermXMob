@@ -321,6 +321,18 @@ async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout:
     raise AssertionError(f"task {task_id} did not reach {status}")
 
 
+async def wait_for_event(
+    store: AgentStore, task_id: str, event_type: str, timeout: float = 3.0
+) -> list[dict[str, Any]]:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        matched = [e for e in store.events(task_id) if e["type"] == event_type]
+        if matched:
+            return matched
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"task {task_id} never emitted {event_type}")
+
+
 async def wait_for_pending_approval(store: AgentStore, task_id: str, kind: str) -> tuple[dict[str, Any], dict[str, Any]]:
     deadline = asyncio.get_running_loop().time() + 3
     while asyncio.get_running_loop().time() < deadline:
@@ -577,8 +589,10 @@ def test_subagent_escalates_consequential_actions_to_parent(tmp_path: Path) -> N
         assert delegate["payload"]["title"] == "Delegate to a sub-agent"
         await manager.resolve_approval(parent["id"], delegate["id"], "approved")
 
-        paused, escalated = await wait_for_pending_approval(store, parent["id"], "tool")
-        assert paused["status"] == "awaiting_approval"
+        _, escalated = await wait_for_pending_approval(store, parent["id"], "tool")
+        # Async spawn lets the parent finish while a child escalation is still
+        # open; the escalation stays resolvable either way.
+        assert store.get_task(parent["id"])["status"] in {"awaiting_approval", "completed"}
         assert escalated["payload"]["title"] == "publisher: External publication"
         child_id = escalated["payload"]["child_id"]
         child = store.get_task(child_id, include_events=True)
@@ -587,10 +601,12 @@ def test_subagent_escalates_consequential_actions_to_parent(tmp_path: Path) -> N
 
         await manager.resolve_approval(parent["id"], escalated["id"], "denied")
         completed = await wait_for_status(store, parent["id"], "completed")
-        assert store.get_task(child_id)["status"] == "cancelled"
-        finished = next(e for e in completed["events"] if e["type"] == "subagent.finished")
+        await wait_for_status(store, child_id, "cancelled")
+        events = await wait_for_event(store, parent["id"], "subagent.finished")
+        finished = events[-1]
         assert finished["payload"]["status"] == "cancelled"
-        assert any(e["type"] == "subagent.event" and e["payload"]["type"] == "task.status" for e in completed["events"])
+        all_events = store.events(parent["id"])
+        assert any(e["type"] == "subagent.event" and e["payload"]["type"] == "task.status" for e in all_events)
         await manager.close()
         store.close()
 
@@ -618,6 +634,319 @@ def test_parent_cancel_interrupts_child_planning(tmp_path: Path) -> None:
         store.close()
 
     asyncio.run(run())
+
+
+class _FanOutAdapter(FakeAdapter):
+    """Routes scripted turns per-task by a substring of the task prompt.
+
+    routes maps a prompt substring to (script, per-turn delay). Parent and
+    children consume independent scripts, and a nonzero delay keeps a task
+    busy so fan-out/cancel paths are exercised deterministically.
+    """
+
+    def __init__(self, routes: dict[str, tuple[list[list[ProviderCall]], float]]) -> None:
+        super().__init__()
+        self.routes = {key: (list(script), delay) for key, (script, delay) in routes.items()}
+
+    async def turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+    ) -> ProviderTurn:
+        self.turns += 1
+        for key, (script, delay) in self.routes.items():
+            if key not in prompt:
+                continue
+            if delay:
+                await asyncio.sleep(delay)
+            if script:
+                calls = script.pop(0)
+                return ProviderTurn(
+                    response_id=f"response-{self.turns}",
+                    text="",
+                    calls=calls,
+                    usage={},
+                    output_items=[
+                        {
+                            "type": "function_call",
+                            "call_id": c.call_id,
+                            "name": c.name,
+                            "arguments": json.dumps(c.arguments),
+                        }
+                        for c in calls
+                    ],
+                )
+            return ProviderTurn(
+                response_id=f"response-{self.turns}",
+                text=f"{key} done.",
+                calls=[],
+                usage={},
+                output_items=[{"type": "message", "content": [{"type": "output_text", "text": "done"}]}],
+            )
+        raise AssertionError(f"no route scripted for prompt {prompt!r}")
+
+
+async def _approve_pending(manager: AgentManager, store: AgentStore, task_id: str) -> dict[str, Any]:
+    _, approval = await wait_for_pending_approval(store, task_id, "tool")
+    return await manager.resolve_approval(task_id, approval["id"], "approved")
+
+
+def test_spawn_subagent_returns_async_handle(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Coordinate": ([[_fn("s1", "spawn_subagent", task="child-a")]], 0.0),
+                "child-a": ([], 0.0),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(prompt="Coordinate", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        await _approve_pending(manager, store, parent["id"])
+
+        spawn_events = await wait_for_event(store, parent["id"], "tool.finished")
+        spawn_result = spawn_events[0]["payload"]["result"]
+        assert spawn_result["ok"] is True and spawn_result["status"] == "running"
+        child_id = spawn_result["task_id"]
+        assert store.get_task(child_id)["parent_id"] == parent["id"]
+
+        await wait_for_status(store, parent["id"], "completed")
+        await wait_for_status(store, child_id, "completed")
+        finished = (await wait_for_event(store, parent["id"], "subagent.finished"))[-1]
+        assert finished["payload"]["status"] == "completed"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_subagent_fanout_and_await_collects_results(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Coordinate": (
+                    [
+                        [
+                            _fn("s1", "spawn_subagent", task="child-a"),
+                            _fn("s2", "spawn_subagent", task="child-b"),
+                        ],
+                        [_fn("w1", "await_subagents")],
+                    ],
+                    0.0,
+                ),
+                "child-a": ([], 0.1),
+                "child-b": ([], 0.1),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(prompt="Coordinate", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        await _approve_pending(manager, store, parent["id"])
+        await _approve_pending(manager, store, parent["id"])
+
+        await wait_for_status(store, parent["id"], "completed")
+        children = [t for t in store.list_tasks() if t.get("parent_id") == parent["id"]]
+        assert len(children) == 2
+        for child in children:
+            assert child["status"] == "completed"
+
+        events = store.events(parent["id"])
+        started = [e for e in events if e["type"] == "subagent.started"]
+        finished = [e for e in events if e["type"] == "subagent.finished"]
+        assert len(started) == 2 and len(finished) == 2
+        # true fan-out: both children launched before either finished
+        first_finished_index = events.index(finished[0])
+        assert all(events.index(entry) < first_finished_index for entry in started)
+
+        awaited = next(
+            e for e in events
+            if e["type"] == "tool.finished" and e["payload"].get("call_id") == "w1"
+        )
+        result = awaited["payload"]["result"]
+        assert result["ok"] is True and result["timed_out"] is False
+        assert set(result["children"].keys()) == {c["id"] for c in children}
+        assert all(entry["status"] == "completed" for entry in result["children"].values())
+        assert any(e["type"] == "subagent.awaited" for e in events)
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_subagent_status_and_cancel(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Coordinate": (
+                    [
+                        [_fn("s1", "spawn_subagent", task="child-slow")],
+                        [_fn("q1", "subagent_status")],
+                        [_fn("x1", "cancel_subagent")],
+                    ],
+                    0.0,
+                ),
+                "child-slow": ([], 30.0),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(prompt="Coordinate", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        await _approve_pending(manager, store, parent["id"])
+
+        await wait_for_status(store, parent["id"], "completed")
+        events = store.events(parent["id"])
+        status_call = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "q1")
+        status_children = status_call["payload"]["result"]["children"]
+        child_id = next(iter(status_children))
+        assert status_children[child_id]["running"] is True
+
+        cancel_call = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "x1")
+        assert cancel_call["payload"]["result"]["cancelled"] == [child_id]
+        assert any(e["type"] == "subagent.cancelled" for e in events)
+
+        await wait_for_status(store, child_id, "cancelled")
+        finished = (await wait_for_event(store, parent["id"], "subagent.finished"))[-1]
+        assert finished["payload"]["status"] == "cancelled"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_subagent_parallel_limit_blocks_spawn(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Coordinate": (
+                    [
+                        [_fn("s1", "spawn_subagent", task="child-slow")],
+                        [_fn("s2", "spawn_subagent", task="child-extra")],
+                    ],
+                    0.0,
+                ),
+                "child-slow": ([], 30.0),
+                "child-extra": ([], 30.0),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(
+            prompt="Coordinate",
+            cwd=str(tmp_path),
+            provider_id="fake",
+            limits={"max_parallel_subagents": 1},
+        )
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        await _approve_pending(manager, store, parent["id"])
+        await _approve_pending(manager, store, parent["id"])
+
+        await wait_for_status(store, parent["id"], "completed")
+        events = store.events(parent["id"])
+        second = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "s2")
+        assert second["payload"]["result"]["ok"] is False
+        assert "parallel limit" in second["payload"]["result"]["error"]
+        children = [t for t in store.list_tasks() if t.get("parent_id") == parent["id"]]
+        assert len(children) == 1
+        manager.cancel(children[0]["id"])
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_subagent_total_limit_blocks_spawn(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Coordinate": (
+                    [
+                        [_fn("s1", "spawn_subagent", task="child-a")],
+                        [_fn("s2", "spawn_subagent", task="child-b")],
+                    ],
+                    0.0,
+                ),
+                "child-a": ([], 0.0),
+                "child-b": ([], 0.0),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(
+            prompt="Coordinate",
+            cwd=str(tmp_path),
+            provider_id="fake",
+            limits={"max_subagents_total": 1},
+        )
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        await _approve_pending(manager, store, parent["id"])
+        await _approve_pending(manager, store, parent["id"])
+
+        await wait_for_status(store, parent["id"], "completed")
+        events = store.events(parent["id"])
+        second = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "s2")
+        assert second["payload"]["result"]["ok"] is False
+        assert "total limit" in second["payload"]["result"]["error"]
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_await_subagents_timeout_reports_partial(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Coordinate": (
+                    [
+                        [_fn("s1", "spawn_subagent", task="child-slow")],
+                        [_fn("w1", "await_subagents", timeout_s=0)],
+                    ],
+                    0.0,
+                ),
+                "child-slow": ([], 30.0),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(prompt="Coordinate", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
+        await _approve_pending(manager, store, parent["id"])
+
+        await wait_for_status(store, parent["id"], "completed")
+        events = store.events(parent["id"])
+        awaited = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "w1")
+        result = awaited["payload"]["result"]
+        assert result["timed_out"] is True and result["ok"] is False
+        entry = next(iter(result["children"].values()))
+        assert entry["running"] is True and entry["status"] == "running"
+        children = [t for t in store.list_tasks() if t.get("parent_id") == parent["id"]]
+        manager.cancel(children[0]["id"])
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_subagent_handles_rebuilt_from_store(tmp_path: Path) -> None:
+    store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+    parent = store.create_task(
+        prompt="parent", cwd=str(tmp_path), provider_id="fake", model="m", limits={}
+    )
+    child = store.create_task(
+        prompt="child", cwd=str(tmp_path), provider_id="fake", model="m",
+        limits={}, parent_id=parent["id"],
+    )
+    store.update_task(child["id"], status="completed", result="all done")
+    manager = AgentManager(store, CredentialStore(memory={}), desktop=None, adapter_factory=lambda *_: FakeAdapter())
+    handles = manager._subagent_handles(parent["id"])
+    assert child["id"] in handles
+    handle = handles[child["id"]]
+    assert handle.done.is_set()
+    assert handle.status == "completed" and handle.result == "all done"
+    store.close()
 
 
 def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Path) -> None:
