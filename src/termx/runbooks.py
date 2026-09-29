@@ -56,17 +56,18 @@ class RunbookRunner:
         # Runs left 'running' by a dead host have ambiguous in-flight steps;
         # mark them failed rather than replaying. 'awaiting_confirmation' runs
         # parked BEFORE their step started can safely resume on confirm().
-        for run in store.list_runbook_runs(limit=200):
-            if run["status"] == "running":
-                store.update_runbook_run(
-                    run["id"],
-                    status="failed",
-                    finished_at=time.time(),
-                    error="Host restarted while the run was in-flight",
-                )
+        for run in store.running_runbook_runs():
+            store.update_runbook_run(
+                run["id"],
+                status="failed",
+                finished_at=time.time(),
+                error="Host restarted while the run was in-flight",
+            )
 
     def start(self, runbook: dict[str, Any], cwd: str) -> dict[str, Any]:
-        run = self._store.create_runbook_run(runbook["id"], cwd=cwd)
+        run = self._store.create_runbook_run(
+            runbook["id"], cwd=cwd, steps=runbook["steps"]
+        )
         run_id = run["id"]
         task = asyncio.create_task(self._execute(run_id, runbook, cwd))
         self._tasks[run_id] = task
@@ -89,7 +90,13 @@ class RunbookRunner:
                 # already satisfied by this confirm.
                 runbook = self._store.get_runbook(run["runbook_id"])
                 if runbook is not None:
-                    gated = int(run.get("current_step") or -1)
+                    # Resume from the run's immutable step snapshot — edits
+                    # made to the runbook while parked must not change what
+                    # the already-confirmed gate covers.
+                    snapshot = run.get("steps") or runbook["steps"]
+                    runbook = dict(runbook, steps=snapshot)
+                    current_step = run.get("current_step")
+                    gated = int(current_step) if current_step is not None else -1
                     task = asyncio.create_task(
                         self._execute(
                             run_id,

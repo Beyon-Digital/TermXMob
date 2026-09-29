@@ -47,13 +47,19 @@ async def _run_runbook(call: Any, ctx: ToolContext) -> ToolOutcome:
             )
         bound = str(Path(str(project.get("path") or "")).expanduser().resolve())
         if bound != str(Path(cwd).expanduser().resolve()):
-            return ToolOutcome(
-                result={
-                    "error": "runbook targets a different project than this task",
-                    "runbook_id": runbook_id,
-                    "project_id": project_id,
-                }
-            )
+            # Worktree tasks run inside an isolated checkout whose path differs
+            # from the registered project — a runbook bound to the task's
+            # recorded base repo is still within its boundary.
+            record = ctx.store.task_worktree(ctx.task_id)
+            base = (record or {}).get("base_repo")
+            if not base or str(Path(str(base)).expanduser().resolve()) != bound:
+                return ToolOutcome(
+                    result={
+                        "error": "runbook targets a different project than this task",
+                        "runbook_id": runbook_id,
+                        "project_id": project_id,
+                    }
+                )
     runner = getattr(ctx.manager, "runbooks", None)
     if runner is None:
         return ToolOutcome(result={"error": "runbook runner unavailable"})

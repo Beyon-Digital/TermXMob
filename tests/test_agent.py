@@ -3779,3 +3779,125 @@ def test_worktree_create_task_validation_failure_discards_checkout(tmp_path: Pat
     assert _git(repo, "branch", "--list", "termx/*") == ""
     assert _git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
     store.close()
+
+
+def test_runbook_first_step_confirm_resumes_after_restart(tmp_path: Path) -> None:
+    """A run parked at step 0 must not re-park: current_step=0 is a real index."""
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+    book = store.create_runbook(
+        name="first-gate", project_id=None,
+        steps=[
+            {"kind": "shell", "command": "echo gated0", "confirm": True, "parallel": False},
+            {"kind": "shell", "command": "echo after", "confirm": False, "parallel": False},
+        ],
+    )
+
+    async def run() -> None:
+        runner = runbooks.RunbookRunner(store)
+        live = runner.start(book, cwd=str(tmp_path))
+        parked = await _wait_run(store, live["id"], "awaiting_confirmation")
+        assert parked["current_step"] == 0
+        runner2 = runbooks.RunbookRunner(store)
+        runner2.confirm(live["id"])
+        final = await _wait_run(store, live["id"], "completed")
+        outputs = [s["output"].strip() for s in final["step_results"]]
+        assert outputs == ["gated0", "after"]
+        await runner2.shutdown()
+
+    asyncio.run(run())
+
+
+def test_runbook_dead_run_sweep_not_capped(tmp_path: Path) -> None:
+    """The restart sweep covers running rows older than the 200 newest runs."""
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+    book = store.create_runbook(
+        name="sweep", project_id=None,
+        steps=[{"kind": "shell", "command": "true", "confirm": False, "parallel": False}],
+    )
+    old = store.create_runbook_run(book["id"], cwd=str(tmp_path))
+    for _ in range(210):
+        newer = store.create_runbook_run(book["id"], cwd=str(tmp_path))
+        store.update_runbook_run(newer["id"], status="completed", finished_at=time.time())
+    runbooks.RunbookRunner(store)
+    assert store.get_runbook_run(old["id"])["status"] == "failed"
+
+
+def test_runbook_resume_uses_step_snapshot(tmp_path: Path) -> None:
+    """Restart resume replays the run's captured steps, not an edited runbook."""
+    import termx.runbooks as runbooks
+
+    state = _runbook_state(tmp_path)
+    store = state.agent_store
+    book = store.create_runbook(
+        name="edited", project_id=None,
+        steps=[{"kind": "shell", "command": "echo original", "confirm": True, "parallel": False}],
+    )
+
+    async def run() -> None:
+        runner = runbooks.RunbookRunner(store)
+        live = runner.start(book, cwd=str(tmp_path))
+        await _wait_run(store, live["id"], "awaiting_confirmation")
+        # Edit the runbook while parked — the resume must ignore this.
+        store.update_runbook(
+            book["id"],
+            steps=[{"kind": "shell", "command": "echo SWAPPED", "confirm": True, "parallel": False}],
+        )
+        runner2 = runbooks.RunbookRunner(store)
+        runner2.confirm(live["id"])
+        final = await _wait_run(store, live["id"], "completed")
+        assert final["step_results"][0]["output"].strip() == "original"
+        assert final["step_results"][0]["command"] == "echo original"
+        await runner2.shutdown()
+
+    asyncio.run(run())
+
+
+def test_runbook_tool_accepts_runbook_bound_to_worktree_base(tmp_path: Path) -> None:
+    """A worktree task may run a runbook bound to its base repo's project."""
+    from termx.agent.tools.runbooks import _run_runbook
+    from termx.agent.tools.registry import ToolContext
+
+    other = tmp_path / "registered-project"
+    other.mkdir()
+    wt = tmp_path / "isolated-worktree"
+    wt.mkdir()
+
+    async def run() -> None:
+        adapter = FakeAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        task = store.create_task(
+            prompt="t", cwd=str(wt), provider_id="fake", model="fake-model",
+            limits={}, mode="agent",
+        )
+        store.save_task_worktree(
+            task["id"], mode="worktree", base_repo=str(other), base_ref="",
+            worktree_path=str(wt), branch="termx/x",
+        )
+        runbook = store.create_runbook(
+            name="bound", project_id="p-reg",
+            steps=[{"kind": "shell", "command": "echo wt-ok", "confirm": False, "parallel": False}],
+        )
+
+        class PF:
+            def project(self, project_id):
+                return {"id": project_id, "path": str(other)}
+
+        ctx = ToolContext(
+            task_id=task["id"], cwd=str(wt), task=task, read_only=False,
+            cancel=asyncio.Event(), emit=lambda *_a, **_k: {},
+            store=store, manager=manager, project_files=PF(),
+        )
+        outcome = await _run_runbook(
+            _fn("rb-w", "run_runbook", runbook_id=runbook["id"]), ctx
+        )
+        assert outcome.result["status"] == "completed"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())

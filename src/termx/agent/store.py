@@ -246,6 +246,7 @@ class AgentStore:
                 cwd TEXT,
                 current_step INTEGER NOT NULL DEFAULT -1,
                 step_results TEXT NOT NULL DEFAULT '[]',
+                steps TEXT,
                 error TEXT,
                 started_at REAL NOT NULL,
                 finished_at REAL
@@ -275,6 +276,11 @@ class AgentStore:
         }
         if wt_columns and "base_branch" not in wt_columns:
             self._db.execute("ALTER TABLE task_worktrees ADD COLUMN base_branch TEXT")
+        rr_columns = {
+            row["name"] for row in self._db.execute("PRAGMA table_info(runbook_runs)")
+        }
+        if rr_columns and "steps" not in rr_columns:
+            self._db.execute("ALTER TABLE runbook_runs ADD COLUMN steps TEXT")
         self._db.commit()
 
     def close(self) -> None:
@@ -1307,13 +1313,23 @@ class AgentStore:
         return cursor.rowcount > 0
 
     def create_runbook_run(
-        self, runbook_id: str, *, cwd: str | None = None
+        self,
+        runbook_id: str,
+        *,
+        cwd: str | None = None,
+        steps: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         run_id = uuid.uuid4().hex[:12]
         with self._lock:
             self._db.execute(
-                "INSERT INTO runbook_runs (id, runbook_id, status, cwd, started_at) VALUES (?, ?, 'running', ?, ?)",
-                (run_id, runbook_id, cwd, time()),
+                "INSERT INTO runbook_runs (id, runbook_id, status, cwd, steps, started_at) VALUES (?, ?, 'running', ?, ?, ?)",
+                (
+                    run_id,
+                    runbook_id,
+                    cwd,
+                    json.dumps(steps) if steps is not None else None,
+                    time(),
+                ),
             )
             self._db.commit()
         return self.get_runbook_run(run_id)  # type: ignore[return-value]
@@ -1339,6 +1355,15 @@ class AgentStore:
                     "SELECT * FROM runbook_runs ORDER BY started_at DESC LIMIT ?",
                     (max(1, min(limit, 200)),),
                 ).fetchall()
+        return [self._runbook_run(row) for row in rows]
+
+    def running_runbook_runs(self) -> list[dict[str, Any]]:
+        """Every run still marked 'running' — uncapped; used by the runner's
+        restart sweep so old interrupted runs are never left executor-less."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM runbook_runs WHERE status = 'running' ORDER BY started_at"
+            ).fetchall()
         return [self._runbook_run(row) for row in rows]
 
     def update_runbook_run(self, run_id: str, **fields: Any) -> dict[str, Any] | None:
@@ -1379,6 +1404,7 @@ class AgentStore:
             "cwd": row["cwd"],
             "current_step": row["current_step"],
             "step_results": json.loads(row["step_results"] or "[]"),
+            "steps": json.loads(row["steps"]) if row["steps"] else None,
             "error": row["error"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
