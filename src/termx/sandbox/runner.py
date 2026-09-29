@@ -113,6 +113,11 @@ class SandboxRunner(Protocol):
         """
         ...
 
+    # Optional: ``spawn_argv(spec) -> list[str]`` resolves the fully wrapped
+    # command line for embedding under an external pty/session owner (the
+    # workspace terminal). Backends that cannot run inside a caller-owned pty
+    # simply omit it; callers must fail closed, never fall back to host.
+
     def capabilities(self) -> SandboxCapabilities:
         """Truthful capability/strength report — never advertise unenforced
         isolation. Machine snapshot and the policy engine both consume this."""

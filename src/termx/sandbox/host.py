@@ -64,6 +64,16 @@ class HostSandboxRunner:
             raise SandboxFailure("spawn_failed", str(exc)) from exc
         return StreamedProcess(process, spec, backend="host")
 
+    def spawn_argv(self, spec: SpawnSpec) -> list[str]:
+        """PTY embedding contract: host adds no wrapper — argv is already the
+        command the caller wants under the terminal's own spawn."""
+        spec.validate()
+        if spec.argv is not None:
+            return list(spec.argv)
+        if os.name == "nt":
+            return [os.environ.get("COMSPEC", "cmd.exe"), "/c", spec.shell or ""]
+        return ["/bin/sh", "-c", spec.shell or ""]
+
     def _default_env(self, profile: str) -> dict[str, str]:
         # host keeps the historical inherit-and-strip env for compatibility;
         # restricted profiles get the allowlist build — that is the only soft

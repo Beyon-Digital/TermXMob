@@ -135,6 +135,30 @@ class LinuxNamespaceRunner:
         )
 
     async def spawn(self, spec: SpawnSpec) -> StreamedProcess:
+        argv = self.spawn_argv(spec)
+        try:
+            # env={}: the bwrap launcher itself must not inherit host secrets —
+            # only the inner child (inside the ns, via --setenv) needs env.
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                env={},
+                stdin=spec.stdin,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
+        return StreamedProcess(process, spec, backend="linux-ns")
+
+    def spawn_argv(self, spec: SpawnSpec) -> list[str]:
+        """Resolved sandbox argv for embedding under an external pty/session.
+
+        The PTY layer (terminals.py) owns the controlling terminal and spawn;
+        this returns the fully wrapped bwrap+rlimits argv so the same kernel
+        isolation applies to interactive workspace terminals as to agent
+        spawns. Validation and env construction match ``spawn`` exactly.
+        """
         spec.validate()
         if spec.profile != self._profile:
             raise SandboxFailure(
@@ -152,21 +176,7 @@ class LinuxNamespaceRunner:
         env = spec.env or build_environment(
             spec.profile, home=str(home) if home else _EPHEMERAL_HOME, tmp_dir="/tmp"
         )
-        argv = self._argv(spec, env, home)
-        try:
-            # env={}: the bwrap launcher itself must not inherit host secrets —
-            # only the inner child (inside the ns, via --setenv) needs env.
-            process = await asyncio.create_subprocess_exec(
-                *argv,
-                env={},
-                stdin=spec.stdin,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                start_new_session=True,
-            )
-        except OSError as exc:
-            raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
-        return StreamedProcess(process, spec, backend="linux-ns")
+        return self._argv(spec, env, home)
 
     # -- internals ------------------------------------------------------
 
@@ -196,8 +206,14 @@ class LinuxNamespaceRunner:
             "--unshare-uts",
             "--unshare-cgroup",
             "--die-with-parent",
-            "--new-session",
         ]
+        # --new-session detaches the child into a fresh session — under an
+        # external pty the terminal layer must keep job control in the outer
+        # session (tcsetpgrp/ctrl-C), so interactive spawns skip it. The
+        # namespace tree still dies with --die-with-parent and the outer
+        # killpg covers cancellation.
+        if not spec.pty:
+            argv.append("--new-session")
         argv += ["--share-net"] if _net_granted(spec) else ["--unshare-net"]
         # Root filesystem: toolchain read-only, no host HOME, minimal /etc.
         argv += ["--ro-bind", "/usr", "/usr"]
