@@ -754,8 +754,8 @@ def test_subagent_fanout_and_await_collects_results(tmp_path: Path) -> None:
                     ],
                     0.0,
                 ),
-                "child-a": ([], 0.1),
-                "child-b": ([], 0.1),
+                "child-a": ([], 0.5),
+                "child-b": ([], 0.5),
             }
         )
         manager, store = build_manager(tmp_path, adapter)
