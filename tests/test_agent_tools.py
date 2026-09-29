@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 
 import pytest
@@ -415,6 +416,171 @@ def test_apply_patch_requires_hunks(env):
     assert outcome.result["ok"] is False
     assert "no hunks" in outcome.result["output"]
     assert (root / "a.py").read_text() == "print('one')\nprint('two')\n"
+
+
+def test_write_file_revision_sensitive(env):
+    root, make_ctx, _ = env
+    (root / ".env").write_text("A=1\n")
+    outcome = asyncio.run(
+        default_registry().get("write_file").execute(
+            _call("write_file", {"path": ".env", "content": "A=2", "expected_revision": "0"}),
+            make_ctx(),
+        )
+    )
+    assert outcome.result["ok"] is False and outcome.result["refused"] is True
+    assert (root / ".env").read_text() == "A=1\n"
+
+
+def test_list_files_hides_sensitive_and_symlinks(env):
+    root, make_ctx, _ = env
+    (root / "credentials.json").write_text("{}\n")
+    (root / "id_rsa").write_text("k\n")
+    target = tmp_external = root.parent / "outside.txt"
+    tmp_external.write_text("x\n")
+    (root / "link_out").symlink_to(target)
+    outcome = asyncio.run(
+        default_registry().get("list_files").execute(_call("list_files", {}), make_ctx())
+    )
+    paths = {e["path"] for e in outcome.result["entries"]}
+    assert "credentials.json" not in paths and "id_rsa" not in paths
+    assert "link_out" not in paths
+    assert "a.py" in paths
+
+
+def test_git_fetch_and_stage_guards(tmp_path):
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / ".env").write_text("A=1\n")
+    (repo / "ok.txt").write_text("x\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
+
+    files = ProjectFiles()
+    ctx = ToolContext(
+        task_id="t",
+        cwd=str(repo),
+        task={"limits": {}, "mode": "agent"},
+        read_only=True,
+        cancel=asyncio.Event(),
+        emit=lambda *_: None,
+        store=None,
+        manager=None,
+        project_files=files,
+        project_id=files.register(str(repo))["id"],
+    )
+    registry = default_registry()
+    fetch = asyncio.run(registry.get("git_fetch").execute(_call("git_fetch"), ctx))
+    assert fetch.result["ok"] is False and fetch.result["refused"] is True
+
+    ctx_rw = ToolContext(
+        task_id="t2", cwd=str(repo), task={"limits": {}, "mode": "agent"},
+        read_only=False, cancel=asyncio.Event(), emit=lambda *_: None,
+        store=None, manager=None, project_files=files,
+        project_id=ctx.project_id,
+    )
+    stage = asyncio.run(
+        registry.get("git_stage").execute(_call("git_stage", {"paths": [".env", "ok.txt"]}), ctx_rw)
+    )
+    assert stage.result["ok"] is False and stage.result["refused"] is True
+
+
+def test_apply_patch_deletes_file(env):
+    root, make_ctx, _ = env
+    (root / "dead.txt").write_text("gone\n")
+    outcome = asyncio.run(
+        default_registry().get("apply_patch").execute(
+            _call("apply_patch", {"patch": "--- a/dead.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n"}),
+            make_ctx(),
+        )
+    )
+    assert outcome.result["ok"] is True, outcome.result
+    assert not (root / "dead.txt").exists()
+
+
+def test_apply_patch_preserves_trailing_newline(env):
+    root, make_ctx, _ = env
+    (root / "nonl.txt").write_text("first\nsecond")  # no trailing newline
+    patch = "--- a/nonl.txt\n+++ b/nonl.txt\n@@ -1,2 +1,2 @@\n-first\n+FIRST\n second\n\\ No newline at end of file\n"
+    outcome = asyncio.run(
+        default_registry().get("apply_patch").execute(_call("apply_patch", {"patch": patch}), make_ctx())
+    )
+    assert outcome.result["ok"] is True, outcome.result
+    assert (root / "nonl.txt").read_text() == "FIRST\nsecond"
+
+
+def test_apply_patch_rollback_on_write_failure(env, monkeypatch):
+    root, make_ctx, _ = env
+    (root / "b.py").write_text("b1\n")
+    patch = "--- a/a.py\n+++ b/a.py\n@@ -1,2 +1,2 @@\n-print('one')\n+print('ONE')\n print('two')\n--- a/b.py\n+++ b/b.py\n@@ -1 +1 @@\n-b1\n+B1\n"
+    calls = {"n": 0}
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 4:  # 1st = a.py backup move, 2nd = a.py write, 3rd = b.py backup move, 4th = b.py write
+            raise OSError("disk full")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+    outcome = asyncio.run(
+        default_registry().get("apply_patch").execute(_call("apply_patch", {"patch": patch}), make_ctx())
+    )
+    assert outcome.result["ok"] is False
+    # a.py was already replaced — rollback must restore it.
+    assert (root / "a.py").read_text() == "print('one')\nprint('two')\n"
+    assert (root / "b.py").read_text() == "b1\n"
+
+
+def test_stream_shell_reader_failure_terminates(tmp_path):
+    from termx.agent.execution import stream_shell
+
+    def boom(_data: bytes) -> None:
+        raise RuntimeError("callback died")
+
+    async def run():
+        import time
+        start = time.monotonic()
+        try:
+            await stream_shell("yes x", str(tmp_path), timeout_s=120.0, on_output=boom)
+        except RuntimeError:
+            pass
+        assert time.monotonic() - start < 10.0  # process killed promptly, not timed out
+
+    asyncio.run(run())
+
+
+def test_provider_runtime_evict_retires_client():
+    from termx.agent.runtime import ProviderHttpRuntime
+
+    runtime = ProviderHttpRuntime()
+    client = runtime.client_for("p", timeout_s=5.0, headers={})
+    runtime.evict("p")  # no running loop — must not drop it unclosed
+    assert not client.is_closed
+    asyncio.run(runtime.aclose())
+    assert client.is_closed
+
+
+def test_slim_history_bounds_computer_screenshots(tmp_path):
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine(str(tmp_path), {"max_images_in_context": 2})
+    items = [
+        {
+            "type": "computer_call_output",
+            "call_id": f"c{i}",
+            "output": {"type": "computer_screenshot", "image_url": f"data:image/jpeg;base64,IMG{i}"},
+        }
+        for i in range(6)
+    ]
+    slim = engine.slim_history(items)
+    urls = [i["output"]["image_url"] for i in slim]
+    assert urls[-1].startswith("data:image/jpeg") and urls[-2].startswith("data:image/jpeg")
+    assert all(u.startswith("data:image/png") for u in urls[:-2])
 
 
 def test_run_check_ask_refusal(env):

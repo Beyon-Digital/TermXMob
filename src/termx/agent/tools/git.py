@@ -81,6 +81,9 @@ async def _git_stage(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     paths = call.arguments.get("paths")
     if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
         return ToolOutcome(error_result("git_stage requires 'paths': a list of project-relative paths"))
+    sensitive = [p for p in paths if is_sensitive_path(p)]
+    if sensitive:
+        return ToolOutcome(denied_result(sensitive[0]))
     unstage = call_bool(call, "unstage", False)
     try:
         status = await asyncio.to_thread(git_ops.stage, ctx.cwd, paths, not unstage)
@@ -137,6 +140,8 @@ def _decide_git_branch(call: ProviderCall, _ctx: ToolContext) -> PolicyDecision:
 
 
 async def _git_fetch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
+    if ctx.read_only:
+        return ToolOutcome(_read_only_result())
     try:
         status = await asyncio.to_thread(git_ops.fetch, ctx.cwd)
     except Exception as exc:

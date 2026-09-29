@@ -17,6 +17,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from termx.agent.context.manifest import _secret_name
 from termx.agent.policy import is_sensitive_path
 from termx.agent.providers import ProviderCall
 from termx.agent.tools.helpers import (
@@ -48,7 +49,7 @@ def _list_entries(root: Path, base: Path, pattern: str, recursive: bool, limit: 
         paths: list[Path] = []
         for current, dirnames, filenames in walker:
             current_path = Path(current)
-            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".") and not _secret_name(d)]
             for name in sorted(dirnames):
                 paths.append(current_path / name)
             for name in sorted(filenames):
@@ -63,10 +64,16 @@ def _list_entries(root: Path, base: Path, pattern: str, recursive: bool, limit: 
             rel = path.relative_to(root)
         except ValueError:
             continue
-        if any(part in _SKIP_DIRS or part.startswith(".") for part in rel.parts):
+        if any(part in _SKIP_DIRS or part.startswith(".") or _secret_name(part) for part in rel.parts):
             continue
         if pattern and not fnmatch.fnmatch(rel.as_posix(), pattern):
             continue
+        if path.is_symlink():
+            try:
+                if not path.resolve(strict=True).is_relative_to(root):
+                    continue
+            except OSError:
+                continue
         try:
             stat = path.stat()
         except OSError:
@@ -128,8 +135,8 @@ async def _read_file(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     text = document["content"]
     lines = text.splitlines(keepends=True)
     offset = max(call_int(call, "offset", 1), 1)
-    limit = call_int(call, "limit", _DEFAULT_READ_LIMIT)
-    max_chars = call_int(call, "max_chars", 50_000)
+    limit = min(max(call_int(call, "limit", _DEFAULT_READ_LIMIT), 1), 2_000)
+    max_chars = min(max(call_int(call, "max_chars", 50_000), 1), 200_000)
     sliced = "".join(lines[offset - 1 : offset - 1 + limit])[:max_chars]
     truncated = offset - 1 + limit < len(lines) or len("".join(lines[offset - 1 : offset - 1 + limit])) > max_chars
     return ToolOutcome(
@@ -155,14 +162,6 @@ async def _write_file(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(error_result("write_file requires 'path' and 'content'"))
     expected = call.arguments.get("expected_revision")
     try:
-        if expected is not None:
-            # Revision-checked save through ProjectFiles (atomic replace, mode preserved).
-            saved = await asyncio.to_thread(
-                ctx.project_files.save, ctx.project_id, rel, str(content), str(expected)
-            )
-            return ToolOutcome(
-                {"ok": True, "path": rel, "revision": saved["revision"], "size": saved["size"]}
-            )
         resolved = await asyncio.to_thread(
             ctx.project_files.resolve, ctx.project_id, rel, exists=False
         )
@@ -170,6 +169,17 @@ async def _write_file(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(http_error_result(exc))
     if is_sensitive_path(str(resolved)):
         return ToolOutcome(denied_result(rel))
+    if expected is not None:
+        try:
+            # Revision-checked save through ProjectFiles (atomic replace, mode preserved).
+            saved = await asyncio.to_thread(
+                ctx.project_files.save, ctx.project_id, rel, str(content), str(expected)
+            )
+        except HTTPException as exc:
+            return ToolOutcome(http_error_result(exc))
+        return ToolOutcome(
+            {"ok": True, "path": rel, "revision": saved["revision"], "size": saved["size"]}
+        )
     if resolved.exists():
         return ToolOutcome(
             error_result(
@@ -273,6 +283,30 @@ def _diff_summary(path: str, before: list[str], after: list[str]) -> dict[str, A
     return {"path": path, "added": plus, "removed": minus, "preview": diff[:_PATCH_PREVIEW_LINES]}
 
 
+def _trailing_newline(lines: list[str], existed: bool, had_nl: bool) -> bool:
+    """Final-file trailing-newline status, honoring `\\ No newline at end of file`.
+
+    The marker applies to the line immediately before it: after a '+' line the
+    new content lacks the newline; after a '-' line the old side lacked it (so
+    the new side keeps one); after context both sides lack it.
+    """
+    last_marker = -1
+    for index, line in enumerate(lines):
+        if line.startswith("\\"):
+            last_marker = index
+    if last_marker == -1:
+        return had_nl if existed else True
+    for index in range(last_marker - 1, -1, -1):
+        line = lines[index]
+        if line.startswith("+") and not line.startswith("+++"):
+            return False
+        if line.startswith("-") and not line.startswith("---"):
+            return True
+        if line.startswith(" "):
+            return False
+    return had_nl if existed else True
+
+
 async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if ctx.read_only:
         return ToolOutcome(denied_result("", "Task is running in read-only mode"))
@@ -289,7 +323,7 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if not sections:
         return ToolOutcome(error_result("invalid patch: no file sections found"))
     changed: list[dict[str, Any]] = []
-    writes: list[tuple[Path, list[str]]] = []
+    writes: list[tuple[Path, list[str] | None, bool]] = []
     try:
         for old_path, new_path, lines in sections:
             target = new_path or old_path
@@ -303,20 +337,34 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
             if is_sensitive_path(str(source_resolved)):
                 return ToolOutcome(denied_result(source_path))
             before: list[str] = []
-            if source_resolved.exists():
-                before = source_resolved.read_text("utf-8", errors="replace").splitlines()
-            elif old_path and not new_path:
+            had_nl = True
+            existed = source_resolved.exists()
+            if existed:
+                source_text = source_resolved.read_text("utf-8", errors="replace")
+                had_nl = source_text.endswith("\n") or not source_text
+                before = source_text.splitlines()
+            elif old_path:
                 raise ValueError(f"{source_path} does not exist")
             after, hunks = _apply_hunks(before, lines)
             if hunks == 0:
                 raise ValueError(f"{target}: patch section contains no hunks")
+            deleted = new_path is None
+            renamed = old_path is not None and new_path is not None and old_path != new_path
+            final_nl = _trailing_newline(lines, existed, had_nl)
             if not dry_run:
-                writes.append((resolved, after))
+                if deleted:
+                    writes.append((source_resolved, None, final_nl))
+                else:
+                    writes.append((resolved, after, final_nl))
+                    if renamed:
+                        writes.append((source_resolved, None, had_nl))
             changed.append(
                 {
                     **_diff_summary(target, before, after),
                     "hunks": hunks,
                     "created": not resolved.exists() and old_path is None,
+                    "deleted": deleted,
+                    "renamed_from": old_path if renamed else None,
                 }
             )
     except (ValueError, HTTPException, OSError) as exc:
@@ -343,17 +391,22 @@ async def _apply_patch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     )
 
 
-def _commit_patch_writes(writes: list[tuple[Path, list[str]]]) -> str | None:
-    """Apply all replacements atomically-ish: temp-file each write first, then
-    commit with os.replace and roll back completed replacements on failure."""
-    prepared: list[tuple[Path, Path]] = []
+def _commit_patch_writes(writes: list[tuple[Path, list[str] | None, bool]]) -> str | None:
+    """Apply writes/deletes atomically-ish: temp-file each write first, then
+    commit with os.replace and roll back completed replacements on failure.
+    ``after`` of None deletes ``resolved``; ``final_nl`` controls whether the
+    written content ends with a newline."""
+    prepared: list[tuple[Path, Path | None]] = []
     applied: list[tuple[Path, Path | None]] = []
     try:
-        for resolved, after in writes:
+        for resolved, after, final_nl in writes:
+            if after is None:
+                prepared.append((resolved, None))
+                continue
             resolved.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp_name = tempfile.mkstemp(dir=resolved.parent, prefix=".termx-patch-")
             with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-                handle.write("\n".join(after) + ("\n" if after else ""))
+                handle.write("\n".join(after) + ("\n" if final_nl and after else ""))
             tmp = Path(tmp_name)
             if resolved.exists():
                 os.chmod(tmp, stat.S_IMODE(resolved.stat().st_mode))
@@ -365,8 +418,11 @@ def _commit_patch_writes(writes: list[tuple[Path, list[str]]]) -> str | None:
                 os.close(fd)
                 backup = Path(backup_name)
                 os.replace(resolved, backup)
-            os.replace(tmp, resolved)
+            # Registered before the replace so a failed replace still rolls
+            # the original back into place.
             applied.append((resolved, backup))
+            if tmp is not None:
+                os.replace(tmp, resolved)
     except OSError as exc:
         for resolved, backup in reversed(applied):
             try:
@@ -379,7 +435,8 @@ def _commit_patch_writes(writes: list[tuple[Path, list[str]]]) -> str | None:
         return str(exc)
     finally:
         for _resolved, tmp in prepared:
-            tmp.unlink(missing_ok=True)
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
     for _resolved, backup in applied:
         if backup is not None:
             backup.unlink(missing_ok=True)

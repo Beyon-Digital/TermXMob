@@ -97,15 +97,34 @@ async def stream_shell(
     cancelled = asyncio.create_task(cancel.wait()) if cancel is not None else None
     timed_out = False
     was_cancelled = False
+    deadline = asyncio.get_running_loop().time() + max(1.0, timeout_s)
     try:
-        waiters: set[asyncio.Task[Any]] = {exited}
-        if cancelled is not None:
-            waiters.add(cancelled)
-        done, _ = await asyncio.wait(waiters, timeout=max(1.0, timeout_s), return_when=asyncio.FIRST_COMPLETED)
-        if exited not in done:
-            timed_out = cancelled not in done
-            was_cancelled = cancelled in done
+        while True:
+            waiters: set[asyncio.Task[Any]] = {exited, reader}
+            if cancelled is not None:
+                waiters.add(cancelled)
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                timed_out = True
+                await _terminate(process)
+                break
+            done, _ = await asyncio.wait(waiters, timeout=remaining, return_when=asyncio.FIRST_COMPLETED)
+            if reader in done and reader.exception() is not None:
+                # Output delivery failed — stop the process promptly rather
+                # than letting it block on a full stdout pipe until timeout.
+                await _terminate(process)
+                break
+            if exited in done:
+                break
+            if cancelled is not None and cancelled in done:
+                was_cancelled = True
+                await _terminate(process)
+                break
+            if reader in done:
+                continue  # stdout drained early; keep waiting for exit
+            timed_out = True
             await _terminate(process)
+            break
         await reader
     finally:
         if cancelled is not None:

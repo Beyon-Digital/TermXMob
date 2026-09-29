@@ -413,6 +413,9 @@ def test_consequential_tool_pauses_and_denial_cancels(tmp_path: Path) -> None:
         await manager.resolve_approval(task["id"], pending["id"], "denied")
         cancelled = await wait_for_status(store, task["id"], "cancelled")
         assert cancelled["error"] == "Approval denied"
+        assert task["id"] not in manager._context_engines
+        assert task["id"] not in manager._metrics
+        assert task["id"] not in manager._steering
         await manager.close()
         store.close()
 

@@ -256,6 +256,7 @@ class AgentManager:
             self._emit(task_id, "task.status", {"status": "running"})
             return approval
         if decision == "denied":
+            self._finish_state(task_id)
             self.store.update_task(task_id, status="cancelled", error="Approval denied")
             self._emit(task_id, "task.cancelled", {"message": "Approval denied"})
             return approval
@@ -276,9 +277,10 @@ class AgentManager:
             self.store.update_task(task_id, status="cancelling")
             self._emit(task_id, "task.status", {"status": "cancelling"})
         else:
+            # No live worker (e.g. paused on approval): finalize in-place.
+            self._finish_state(task_id)
             self.store.update_task(task_id, status="cancelled", error="Cancelled by user")
             self._emit(task_id, "task.cancelled", {"message": "Cancelled by user"})
-            self._drop_pending_approvals(task_id)
         return self._task(task_id)
 
     async def takeover(self, task_id: str) -> dict[str, Any]:
