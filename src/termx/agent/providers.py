@@ -144,6 +144,7 @@ class OpenAIResponsesAdapter:
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         payload = self._turn_payload(
             prompt=prompt,
@@ -153,6 +154,7 @@ class OpenAIResponsesAdapter:
             input_items=input_items,
             allow_computer=allow_computer,
             read_only=read_only,
+            allow_subagents=allow_subagents,
         )
         body = await self._post(payload)
         return self._turn_from_body(body)
@@ -171,6 +173,7 @@ class OpenAIResponsesAdapter:
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
         on_delta: Any = None,
         on_event: Any = None,
     ) -> ProviderTurn:
@@ -189,6 +192,7 @@ class OpenAIResponsesAdapter:
             input_items=input_items,
             allow_computer=allow_computer,
             read_only=read_only,
+            allow_subagents=allow_subagents,
         )
         payload["stream"] = True
         body = await self._post_stream(payload, on_delta=on_delta, on_event=on_event)
@@ -204,10 +208,11 @@ class OpenAIResponsesAdapter:
         input_items: list[dict[str, Any]] | None,
         allow_computer: bool,
         read_only: bool,
+        allow_subagents: bool = True,
     ) -> dict[str, Any]:
         tools: list[dict[str, Any]] = []
         if "functions" in self.capabilities or "shell" in self.capabilities:
-            tools.extend(self._function_tools(read_only))
+            tools.extend(self._function_tools(read_only, allow_subagents=allow_subagents))
         if allow_computer and "computer" in self.capabilities:
             tools.append({"type": "computer"} if self.native_computer else _computer_function_tool())
         payload: dict[str, Any] = {
@@ -321,11 +326,15 @@ class OpenAIResponsesAdapter:
         )
 
     @staticmethod
-    def _function_tools(read_only: bool) -> list[dict[str, Any]]:
+    def _function_tools(
+        read_only: bool, *, allow_subagents: bool = True
+    ) -> list[dict[str, Any]]:
         # Lazy import: the tools package annotates against this module.
         from termx.agent.tools import default_registry
 
-        return default_registry().provider_tools(read_only=read_only)
+        return default_registry().provider_tools(
+            read_only=read_only, allow_subagents=allow_subagents
+        )
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:

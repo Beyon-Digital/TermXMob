@@ -147,7 +147,13 @@ class ToolRegistry:
             return None
         return self._specs.get(call.name)
 
-    def provider_tools(self, *, read_only: bool = False) -> list[dict[str, Any]]:
+    _SUBAGENT_TOOLS = frozenset(
+        {"spawn_subagent", "await_subagents", "subagent_status", "cancel_subagent"}
+    )
+
+    def provider_tools(
+        self, *, read_only: bool = False, allow_subagents: bool = True
+    ) -> list[dict[str, Any]]:
         """Function-tool schemas for the provider payload (computer excluded —
         the adapter appends its native or function-shaped computer tool)."""
         tools: list[dict[str, Any]] = []
@@ -156,6 +162,8 @@ class ToolRegistry:
             if spec.mutability == "computer":
                 continue
             if read_only and not spec.expose_read_only:
+                continue
+            if not allow_subagents and name in self._SUBAGENT_TOOLS:
                 continue
             tools.append(spec.provider_schema(read_only=read_only))
         return tools

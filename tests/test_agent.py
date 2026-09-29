@@ -130,6 +130,7 @@ class FakeAdapter:
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.inputs.append(input_items)
         self.read_only_flags.append(read_only)
@@ -177,6 +178,7 @@ class ComputerAdapter(FakeAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.inputs.append(input_items)
         self.turns += 1
@@ -216,6 +218,7 @@ class ComputerFunctionAdapter(FakeAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.inputs.append(input_items)
         self.turns += 1
@@ -269,6 +272,7 @@ class SecretComputerAdapter(ComputerAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         if self.turns == 0:
             self.turns += 1
@@ -312,6 +316,7 @@ class BlockingProviderAdapter(FakeAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.started.set()
         await asyncio.sleep(30)
@@ -530,6 +535,7 @@ class ScriptedAdapter(FakeAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.inputs.append(input_items)
         self.read_only_flags.append(read_only)
@@ -665,6 +671,7 @@ class _FanOutAdapter(FakeAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.turns += 1
         for key, (script, delay) in self.routes.items():
@@ -1983,6 +1990,7 @@ class ComputerDedupAdapter(FakeAdapter):
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.inputs.append(input_items)
         self.turns += 1
@@ -3260,5 +3268,53 @@ def test_worktree_apply_conflict_rolls_back_merge(tmp_path: Path, monkeypatch: p
 
 def worktree_dirty_clean(repo: Path) -> bool:
     return not _git(repo, "status", "--porcelain").strip()
+
+
+def test_subagent_cannot_spawn_deeper(tmp_path: Path) -> None:
+    """Terminal-parent gate: a child task may not fan out (depth cap = 1)."""
+    async def run() -> None:
+        adapter = _FanOutAdapter(
+            {
+                "Parent": ([[_fn("s1", "spawn_subagent", task="child")]], 0.0),
+                "child": ([[_fn("s2", "spawn_subagent", task="grandchild")]], 0.0),
+            }
+        )
+        manager, store = build_manager(tmp_path, adapter)
+        parent = await manager.create_task(
+            prompt="Parent", cwd=str(tmp_path), provider_id="fake"
+        )
+        await manager.resolve_approval(
+            parent["id"], parent["approvals"][0]["id"], "approved"
+        )
+        await _approve_pending(manager, store, parent["id"])  # child's escalated plan
+        await wait_for_status(store, parent["id"], "completed")
+        children = [t for t in store.list_tasks() if t.get("parent_id") == parent["id"]]
+        assert len(children) == 1
+        child = children[0]
+        grandchildren = [t for t in store.list_tasks() if t.get("parent_id") == child["id"]]
+        assert grandchildren == []
+        finished = [
+            e for e in store.events(child["id"])
+            if e["type"] == "tool.finished" and e["payload"].get("call_id") == "s2"
+        ]
+        assert finished
+        assert finished[0]["payload"]["result"]["ok"] is False
+        assert "depth" in finished[0]["payload"]["result"]["error"]
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_provider_tools_hide_subagents_for_children() -> None:
+    from termx.agent.tools import default_registry
+
+    registry = default_registry()
+    all_names = {t["name"] for t in registry.provider_tools()}
+    assert {"spawn_subagent", "await_subagents", "subagent_status", "cancel_subagent"} <= all_names
+    child_names = {t["name"] for t in registry.provider_tools(allow_subagents=False)}
+    assert "spawn_subagent" not in child_names
+    assert "await_subagents" not in child_names
+    assert "list_files" in child_names  # other tools unaffected
 
 

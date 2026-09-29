@@ -71,6 +71,7 @@ class BenchAdapter:
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.turns += 1
         if self.turn_delay_s:

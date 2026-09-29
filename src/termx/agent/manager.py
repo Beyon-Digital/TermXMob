@@ -653,6 +653,8 @@ class AgentManager:
                         "input_items": history if history else None,
                         "allow_computer": (not read_only) and "computer" in provider["capabilities"],
                         "read_only": read_only,
+                        # Terminal-parent gate: children may not fan out further.
+                        "allow_subagents": task.get("parent_id") is None,
                     }
                     if stream_fn is not None:
                         self._emit(
@@ -1376,6 +1378,11 @@ class AgentManager:
         prompt = str(call.arguments.get("task") or "").strip()
         if not prompt:
             return {"ok": False, "error": "spawn_subagent requires a task"}
+        if task.get("parent_id"):
+            return {
+                "ok": False,
+                "error": "sub-agents cannot spawn sub-agents (max depth 1)",
+            }
         agent = str(call.arguments.get("agent") or "").strip() or "Sub-agent"
         instructions = str(call.arguments.get("instructions") or "").strip()
         child_prompt = prompt

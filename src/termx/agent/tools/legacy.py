@@ -140,7 +140,11 @@ def register(registry: ToolRegistry) -> None:
     )
 
 
-def _decide_spawn(call: ProviderCall, _ctx: ToolContext) -> PolicyDecision:
+def _decide_spawn(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    if ctx.task.get("parent_id"):
+        # Terminal-parent gate: no approval can lift the depth cap — refuse
+        # inline instead of escalating an approval that grants nothing.
+        return PolicyDecision(False, False, "Sub-agents cannot spawn sub-agents", "max depth 1")
     agent = str(call.arguments.get("agent") or "sub-agent")
     task_hint = str(call.arguments.get("task") or "").strip()
     detail = f'Hands the task off to the "{agent}" sub-agent.'
