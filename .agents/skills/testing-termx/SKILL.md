@@ -1,6 +1,6 @@
 ---
 name: testing-termx
-description: How to run the TermXMob FastAPI daemon and end-to-end test its web UIs — daemon startup, passcode/pairing flows, the bundled terminal UI, the Expo web UI, API/CORS/WebSocket auth probing, signal paths, and the webrtc capability flag.
+description: How to run the TermXMob FastAPI daemon and end-to-end test its web UIs — daemon startup, passcode/pairing flows, the bundled terminal UI, the Expo web UI, API/CORS/WebSocket auth probing, signal paths, the webrtc capability flag, and the execution-sandbox backends (linux-ns / windows-token).
 ---
 
 # Testing TermXMob (FastAPI daemon + web UIs)
@@ -20,6 +20,22 @@ TERMX_CONFIG_DIR="$HOME/.config/termx-dev" nohup uv run termx --host 127.0.0.1 -
 - The banner prints `local http://127.0.0.1:8787?k=test-only` plus a LAN URL and a QR code. Omit `--passcode` for a passcode-off daemon (`passcode off` in the banner).
 - Health check: `curl -s http://127.0.0.1:8787/api/health`.
 - Start extra instances on other ports (`--port 8797`) with env vars like `TERMX_CORS_ORIGINS` to test config variants side by side.
+
+### Windows host notes (Git Bash on the Windows box)
+
+- **PYTHONUTF8=1 is required** (or `PYTHONIOENCODING=utf-8`): on a cp1252 console the
+  startup banner's `qr_ascii` block characters raise `UnicodeEncodeError` inside
+  `print_banner`, which kills the whole `_serve` task — the daemon exits right
+  after binding. `PYTHONUTF8=1 uv run termx ...` is the workaround.
+- Git Bash mangles `/flag` args into paths: use `cmd //c "whoami /groups"` or
+  `whoami //groups`, not `whoami /groups`.
+- The venv python (`.venv/Scripts/python.exe`) is a Windows binary — it cannot read
+  Git Bash `/tmp`; pipe `curl | .venv/Scripts/python.exe -c ...` or use Windows paths.
+- `uv` is at `/c/Users/Administrator/.local/bin/uv`; repo is `C:\Users\Administrator\repos\TermXMob`.
+- Chrome-for-testing lives at `/c/devin/chrome/chrome-win64/chrome`; Edge is also installed.
+- `seclogon` (Secondary Logon service) must be RUNNING for the `windows` sandbox
+  backend probe (CreateProcessWithTokenW). `sc.exe query seclogon`.
+- Windows task/profile paths: pass `cwd` with forward slashes (`C:/Users/...`) in JSON bodies.
 
 ## Which UI to test
 
@@ -68,9 +84,51 @@ the prompt stays blocked for the full 60s. Restore default with `stty isig`.
 ## API probes worth reusing
 
 - Health: `curl -s http://127.0.0.1:8787/api/health` — unauthenticated minimal payload (no hostname/os/tunnel since the API-surface hardening).
-- Machine: `-H 'X-Termx-Passcode: test-only'` → full snapshot incl. hostname/os/tunnel.
+- Machine: `-H 'X-Termx-Passcode: test-only'` → full snapshot incl. hostname/os/tunnel and `capabilities.execution_sandbox` (per-profile sandbox report: backend, strength, granted/grantable, network_control, filesystem_isolation, identity_isolation, resource_limits).
 - Pair: `curl -X POST .../api/pair -H 'X-Termx-Passcode: test-only'` → `{token, scopes}`; verify the token works via `Authorization: Bearer <token>` on `/api/machine`.
 - CORS preflight: `curl -i -X OPTIONS .../api/health -H "Origin: <o>" -H "Access-Control-Request-Method: GET"` → allowed origins (localhost + private LAN by default; `TERMX_CORS_ORIGINS` overrides) get `200` + `access-control-allow-origin` echo; rejected get `400` and no ACAO.
+- The passcode is the admin credential → every scope (incl. `ai-settings`, `agent-run`).
+  Bearer tokens from /api/pair are least-privilege.
+
+## Execution sandbox end-to-end (linux-ns / windows-token)
+
+Restricted profiles `workspace`/`agent` resolve to a kernel backend when the
+platform probe succeeds (`/api/machine` → `capabilities.execution_sandbox.backend`
+reports `linux-ns`, `windows-token`, or `windows-user`; `host` means no sandbox
+selected — a silent `host` for agent/workspace is a regression).
+
+The only end-user path that spawns under a restricted profile is the **agent
+run_shell/run_check funnel** (interactive terminal sessions are host-profile via
+PTY; runbooks launched from the API run `host`; the agent-invoked runbook tool
+uses the task's sandbox profile). To exercise it:
+
+1. Provider key via env only — start the daemon with
+   `TERMX_AI_OPENROUTER_API_KEY=$OPEN_ROUTER` in its env (never the API body/files),
+   then `PUT /api/agent/providers/openrouter` with
+   `{id:"openrouter", kind:"openai-compatible", base_url:"https://openrouter.ai/api/v1",
+   model:"openrouter/free", capabilities:["shell"]}` — `secret_configured:true`.
+   OpenRouter serves the OpenAI **Responses** API (`/responses`) and free models do
+   emit `function_call` items.
+2. `POST /api/conversations {title,cwd,mode:"agent",provider_id}` then
+   `POST /api/agent/tasks {prompt:"Use the run_shell tool to run exactly: whoami /groups",
+   cwd, provider_id, mode:"agent", conversation_id}`.
+3. Expect TWO approval pauses (`status:"awaiting_approval"`): a `kind:"plan"` gate,
+   then a `kind:"tool"` gate. Approve each via
+   `POST /api/agent/tasks/{task_id}/approvals/{approval_id} {"decision":"approved"}`.
+   NOTE the policy engine treats any token starting with `/` as a path —
+   `whoami /groups` is gated as "Outside selected project" on every platform
+   (Windows `/`-flags always trip it).
+4. Poll `GET /api/agent/tasks/{task_id}` until `completed`; the `process.output`
+   events carry the streamed stdout.
+
+Platform-specific proof:
+- **windows-token**: child `whoami /groups` ends with
+  `Mandatory Label\Low Mandatory Level  Label  S-1-16-4096`; host shows
+  `High Mandatory Level  S-1-16-12288`. The FS boundary is `icacls
+  /setintegritylevel L` on workspace/writable roots — writes outside are
+  kernel-denied. `network_control:false` is honest (no unprivileged primitive).
+- **linux-ns**: probe via `id -u`/`cat /proc/self/uid_map` or blocked writes —
+  see test_sandbox suites for boundary proofs.
 
 ## WebSocket auth probing
 
@@ -88,7 +146,13 @@ the prompt stays blocked for the full 60s. Restore default with `stty isig`.
   then use `computer` target=browser `cdp_port=9222` for `query`/`inspect`/`act`. `browser_console` and the plain `browser` target refuse to work against it, but DOM inspect/act do.
 - macOS: resize the window with osascript (`set position/size of window 1`), don't rely on wmctrl.
 - JS `confirm()` dialogs (e.g. "Forget machine?") block browser input — dismiss them with a `key Return` action.
+- On the Windows box the managed browser IS available (computer tool); Chrome-for-testing
+  is at `/c/devin/chrome/chrome-win64/chrome`.
 
 ## Devin secrets needed
 
-- None for these flows (no tunnel, no AI provider; a throwaway `--passcode` is enough).
+- `OPEN_ROUTER` — only for agent/LLM-driven flows (execution-sandbox e2e, real
+  provider turns). Map to `TERMX_AI_OPENROUTER_API_KEY` in the daemon env;
+  use `openrouter/free` (or another free tool-calling model) — never persist it.
+- None for the UI/API/auth flows (no tunnel, no AI provider; a throwaway
+  `--passcode` is enough).
