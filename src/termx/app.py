@@ -470,7 +470,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         target, tunnel_url = _connect_target()
         return {
             "urls": http_urls(state.port),
@@ -486,7 +486,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> Response:
-        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         target, _tunnel = _connect_target()
         svg = qr_svg(connect_url(target, state.auth.passcode))
         return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})

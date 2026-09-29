@@ -289,3 +289,15 @@ def test_passcode_holds_every_v2_scope() -> None:
         assert client.get(path, headers=admin).status_code == 200, path
     body = client.get("/api/health").json()
     assert body["capabilities"]["device_scopes_v2"] is True
+
+
+def test_connect_pairing_surface_requires_admin() -> None:
+    """/api/connect exposes the raw passcode + QR — only host-admin may read it."""
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    admin = {"X-Termx-Passcode": "secret"}
+    token = client.post("/api/pair", headers=admin).json()["token"]
+    auth = {"X-Termx-Passcode": token}
+    assert client.get("/api/connect", headers=auth).status_code == 403
+    assert client.get("/api/connect/qr.svg", headers=auth).status_code == 403
+    body = client.get("/api/connect", headers=admin)
+    assert body.status_code == 200 and "passcode" in body.json()
