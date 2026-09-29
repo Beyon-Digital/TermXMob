@@ -401,8 +401,28 @@ tasks:
       - "test_agent.py: test_ports_and_processes_endpoints (live in-proc HTTP listener discovered w/ is_http+url+pid, Termx tree present), test_preview_from_port (404 unknown port, create + list round-trip)"
       - "uv run pytest tests -q -> 301 passed, 10 skipped"
     notes: Linux /proc impl; non-POSIX degrades to empty lists rather than fake data
-  - id: PROD-006 / SEC-001..002 / VRF-001
-    title: Runbooks, scopes v2, final verification
+  - id: PROD-006
+    title: Saved runbooks + run history
+    status: done
+    depends_on: [AG2-005]
+    owner: devin
+    write_scope:
+      - src/termx/runbooks.py (new: RunbookRunner — sequential steps, parallel groups, confirm gates, stop-on-failure, cancel/kill)
+      - src/termx/agent/store.py (runbooks + runbook_runs tables, CRUD)
+      - src/termx/agent/tools/runbooks.py (new: run_runbook agent tool, approval=always)
+      - src/termx/app.py (runbook CRUD + /run + run history + confirm/cancel)
+      - src/termx/machine.py (capabilities.runbooks)
+    acceptance:
+      - "runbook = {name, project_id?, steps:[{kind:shell,command,confirm?,parallel?}]}; validated; saved commands untouched"
+      - "runs: sequential, consecutive parallel:true steps batched, nonzero exit stops (stop-on-failure), confirm:true pauses at awaiting_confirmation until confirm"
+      - "cancel kills the process group; run history in runbook_runs + GET /api/runbook-runs"
+      - "agent tool run_runbook executes under approval=always and reports run state incl. awaiting_confirmation — never bypasses confirm gates"
+    evidence:
+      - "test_agent.py: test_runbooks_crud, test_runbook_sequential_run_and_history, test_runbook_stop_on_failure, test_runbook_confirm_gate, test_runbook_cancel_kills_process, test_runbook_parallel_steps, test_agent_run_runbook_tool"
+      - "uv run pytest tests -q -> 308 passed, 10 skipped"
+    notes: runs execute in the runbook's project root (or home); manager.close() cancels live runs
+  - id: SEC-001 / SEC-002 / VRF-001
+    title: Scopes v2 model + enforcement, final verification
     status: pending
     depends_on: [AG2-017, PROD-001]
     owner: unassigned

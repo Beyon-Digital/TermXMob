@@ -230,6 +230,25 @@ class AgentStore:
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS runbooks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                project_id TEXT,
+                steps TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS runbook_runs (
+                id TEXT PRIMARY KEY,
+                runbook_id TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
+                status TEXT NOT NULL,
+                cwd TEXT,
+                current_step INTEGER NOT NULL DEFAULT -1,
+                step_results TEXT NOT NULL DEFAULT '[]',
+                error TEXT,
+                started_at REAL NOT NULL,
+                finished_at REAL
+            );
             CREATE INDEX IF NOT EXISTS events_task_sequence ON events(task_id, sequence);
             CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS approvals_task ON approvals(task_id, created_at);
@@ -1216,6 +1235,148 @@ class AgentStore:
             )
             self._db.commit()
         return cursor.rowcount > 0
+
+    # Runbooks --------------------------------------------------------------
+
+    def create_runbook(
+        self,
+        *,
+        name: str,
+        steps: list[dict[str, Any]],
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        runbook_id = uuid.uuid4().hex[:12]
+        now = time()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO runbooks (id, name, project_id, steps, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (runbook_id, name, project_id, _json(steps), now, now),
+            )
+            self._db.commit()
+        return self.get_runbook(runbook_id)  # type: ignore[return-value]
+
+    def list_runbooks(self, project_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            if project_id:
+                rows = self._db.execute(
+                    "SELECT * FROM runbooks WHERE project_id = ? OR project_id IS NULL ORDER BY updated_at DESC",
+                    (project_id,),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM runbooks ORDER BY updated_at DESC"
+                ).fetchall()
+        return [self._runbook(row) for row in rows]
+
+    def get_runbook(self, runbook_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM runbooks WHERE id = ?", (runbook_id,)
+            ).fetchone()
+        return self._runbook(row) if row else None
+
+    def update_runbook(self, runbook_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"name", "project_id", "steps"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_runbook(runbook_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = [
+            _json(value) if key == "steps" else value for key, value in updates.items()
+        ]
+        with self._lock:
+            self._db.execute(
+                f"UPDATE runbooks SET {assignments}, updated_at = ? WHERE id = ?",
+                (*values, time(), runbook_id),
+            )
+            self._db.commit()
+        return self.get_runbook(runbook_id)
+
+    def delete_runbook(self, runbook_id: str) -> bool:
+        with self._lock:
+            cursor = self._db.execute(
+                "DELETE FROM runbooks WHERE id = ?", (runbook_id,)
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
+
+    def create_runbook_run(
+        self, runbook_id: str, *, cwd: str | None = None
+    ) -> dict[str, Any]:
+        run_id = uuid.uuid4().hex[:12]
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO runbook_runs (id, runbook_id, status, cwd, started_at) VALUES (?, ?, 'running', ?, ?)",
+                (run_id, runbook_id, cwd, time()),
+            )
+            self._db.commit()
+        return self.get_runbook_run(run_id)  # type: ignore[return-value]
+
+    def get_runbook_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM runbook_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return self._runbook_run(row) if row else None
+
+    def list_runbook_runs(
+        self, runbook_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            if runbook_id:
+                rows = self._db.execute(
+                    "SELECT * FROM runbook_runs WHERE runbook_id = ? ORDER BY started_at DESC LIMIT ?",
+                    (runbook_id, max(1, min(limit, 200))),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM runbook_runs ORDER BY started_at DESC LIMIT ?",
+                    (max(1, min(limit, 200)),),
+                ).fetchall()
+        return [self._runbook_run(row) for row in rows]
+
+    def update_runbook_run(self, run_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"status", "current_step", "step_results", "error", "finished_at", "cwd"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_runbook_run(run_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = [
+            _json(value) if key == "step_results" else value
+            for key, value in updates.items()
+        ]
+        with self._lock:
+            self._db.execute(
+                f"UPDATE runbook_runs SET {assignments} WHERE id = ?",
+                (*values, run_id),
+            )
+            self._db.commit()
+        return self.get_runbook_run(run_id)
+
+    @staticmethod
+    def _runbook(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "project_id": row["project_id"],
+            "steps": json.loads(row["steps"] or "[]"),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _runbook_run(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "runbook_id": row["runbook_id"],
+            "status": row["status"],
+            "cwd": row["cwd"],
+            "current_step": row["current_step"],
+            "step_results": json.loads(row["step_results"] or "[]"),
+            "error": row["error"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
 
     # Task worktrees -------------------------------------------------------
 

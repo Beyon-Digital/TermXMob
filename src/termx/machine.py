@@ -63,6 +63,7 @@ def machine_snapshot(
             "agent_worktrees": True,
             "activity": True,
             "process_discovery": True,
+            "runbooks": True,
             "editor": True,
             "editor_git": shutil.which("git") is not None,
             "editor_lsp": True,

@@ -2917,3 +2917,215 @@ def test_preview_from_port(tmp_path: Path) -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# PROD-006 — runbooks + run history
+
+
+def _runbook_state(tmp_path: Path) -> AppState:
+    state = AppState(
+        passcode="secret",
+        agent_store=AgentStore(tmp_path / "rb.sqlite3", tmp_path / "rb-artifacts"),
+        credentials=CredentialStore(memory={}),
+        adapter_factory=lambda _p, _k: FakeAdapter(),
+    )
+    state.agent._computer = FakeComputer()  # type: ignore[assignment]
+    return state
+
+
+async def _wait_run(store: AgentStore, run_id: str, status: str, timeout: float = 15.0) -> dict:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        run = store.get_runbook_run(run_id)
+        if run and run["status"] == status:
+            return run
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"run {run_id} never reached {status}: {run}")
+
+
+def test_runbooks_crud(tmp_path: Path) -> None:
+    state = _runbook_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        assert client.get("/api/runbooks").status_code == 401
+        assert client.post(
+            "/api/runbooks", json={"name": "x", "steps": []}, headers=headers
+        ).status_code == 422
+        bad = client.post(
+            "/api/runbooks",
+            json={"name": "x", "steps": [{"kind": "shell", "command": ""}]},
+            headers=headers,
+        )
+        assert bad.status_code == 400
+        created = client.post(
+            "/api/runbooks",
+            json={
+                "name": "dev stack",
+                "steps": [
+                    {"kind": "shell", "command": "echo one"},
+                    {"kind": "shell", "command": "echo two"},
+                ],
+            },
+            headers=headers,
+        ).json()["runbook"]
+        assert created["name"] == "dev stack"
+        assert len(created["steps"]) == 2
+        detail = client.get(f"/api/runbooks/{created['id']}", headers=headers).json()
+        assert detail["runbook"]["id"] == created["id"]
+        patched = client.patch(
+            f"/api/runbooks/{created['id']}", json={"name": "renamed"}, headers=headers
+        ).json()["runbook"]
+        assert patched["name"] == "renamed"
+        assert client.delete(f"/api/runbooks/{created['id']}", headers=headers).status_code == 200
+        assert client.get(f"/api/runbooks/{created['id']}", headers=headers).status_code == 404
+
+
+def test_runbook_sequential_run_and_history(tmp_path: Path) -> None:
+    state = _runbook_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        runbook = client.post(
+            "/api/runbooks",
+            json={
+                "name": "seq",
+                "steps": [
+                    {"kind": "shell", "command": "echo first"},
+                    {"kind": "shell", "command": "echo second"},
+                ],
+            },
+            headers=headers,
+        ).json()["runbook"]
+        run = client.post(
+            f"/api/runbooks/{runbook['id']}/run", headers=headers
+        ).json()["run"]
+        final = asyncio.run(_wait_run(state.agent_store, run["id"], "completed"))
+        assert [r["status"] for r in final["step_results"]] == ["completed", "completed"]
+        assert "first" in final["step_results"][0]["output"]
+        history = client.get(
+            f"/api/runbook-runs?runbook_id={runbook['id']}", headers=headers
+        ).json()["runs"]
+        assert history and history[0]["id"] == run["id"]
+
+
+def test_runbook_stop_on_failure(tmp_path: Path) -> None:
+    state = _runbook_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        runbook = client.post(
+            "/api/runbooks",
+            json={
+                "name": "fails",
+                "steps": [
+                    {"kind": "shell", "command": "exit 3"},
+                    {"kind": "shell", "command": "echo never"},
+                ],
+            },
+            headers=headers,
+        ).json()["runbook"]
+        run = client.post(
+            f"/api/runbooks/{runbook['id']}/run", headers=headers
+        ).json()["run"]
+        final = asyncio.run(_wait_run(state.agent_store, run["id"], "failed"))
+        assert len(final["step_results"]) == 1  # step 2 never ran
+        assert final["step_results"][0]["exit_code"] == 3
+        assert final["error"]
+
+
+def test_runbook_confirm_gate(tmp_path: Path) -> None:
+    state = _runbook_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        runbook = client.post(
+            "/api/runbooks",
+            json={
+                "name": "gated",
+                "steps": [
+                    {"kind": "shell", "command": "echo before"},
+                    {"kind": "shell", "command": "echo after", "confirm": True},
+                ],
+            },
+            headers=headers,
+        ).json()["runbook"]
+        run = client.post(
+            f"/api/runbooks/{runbook['id']}/run", headers=headers
+        ).json()["run"]
+        paused = asyncio.run(
+            _wait_run(state.agent_store, run["id"], "awaiting_confirmation")
+        )
+        assert len(paused["step_results"]) == 1
+        confirmed = client.post(
+            f"/api/runbook-runs/{run['id']}/confirm", headers=headers
+        ).json()["run"]
+        assert confirmed["status"] == "running"
+        final = asyncio.run(_wait_run(state.agent_store, run["id"], "completed"))
+        assert len(final["step_results"]) == 2
+
+
+def test_runbook_cancel_kills_process(tmp_path: Path) -> None:
+    state = _runbook_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        runbook = client.post(
+            "/api/runbooks",
+            json={
+                "name": "long",
+                "steps": [{"kind": "shell", "command": "sleep 30"}],
+            },
+            headers=headers,
+        ).json()["runbook"]
+        run = client.post(
+            f"/api/runbooks/{runbook['id']}/run", headers=headers
+        ).json()["run"]
+        asyncio.run(asyncio.sleep(0.3))  # let the step spawn
+        cancelled = client.post(
+            f"/api/runbook-runs/{run['id']}/cancel", headers=headers
+        ).json()["run"]
+        assert cancelled["status"] == "cancelled"
+
+
+def test_runbook_parallel_steps(tmp_path: Path) -> None:
+    state = _runbook_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        runbook = client.post(
+            "/api/runbooks",
+            json={
+                "name": "par",
+                "steps": [
+                    {"kind": "shell", "command": "echo a", "parallel": True},
+                    {"kind": "shell", "command": "echo b", "parallel": True},
+                ],
+            },
+            headers=headers,
+        ).json()["runbook"]
+        run = client.post(
+            f"/api/runbooks/{runbook['id']}/run", headers=headers
+        ).json()["run"]
+        final = asyncio.run(_wait_run(state.agent_store, run["id"], "completed"))
+        assert len(final["step_results"]) == 2
+
+
+def test_agent_run_runbook_tool(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = ScriptedAdapter([[ _fn("rb-1", "run_runbook", runbook_id="pending") ]])
+        manager, store = build_manager(tmp_path, adapter)
+        runbook = store.create_runbook(
+            name="agent called", steps=[{"kind": "shell", "command": "echo via-agent"}]
+        )
+        adapter.script = [[_fn("rb-1", "run_runbook", runbook_id=runbook["id"])]]
+        task = await manager.create_task(prompt="run it", cwd=str(tmp_path), provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        # tool call pauses for approval=always
+        _, approval = await wait_for_pending_approval(store, task["id"], "tool")
+        await manager.resolve_approval(task["id"], approval["id"], "approved")
+        await wait_for_status(store, task["id"], "completed")
+        events = store.events(task["id"])
+        finished = next(e for e in reversed(events) if e["type"] == "tool.finished")
+        assert finished["payload"]["result"]["status"] == "completed"
+        runs = store.list_runbook_runs(runbook["id"])
+        assert runs and runs[0]["status"] == "completed"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())

@@ -238,6 +238,18 @@ class PreviewFromPortBody(BaseModel):
     name: str = Field(default="", max_length=80)
 
 
+class RunbookBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    project_id: str | None = Field(default=None, max_length=80)
+    steps: list[dict[str, Any]] = Field(min_length=1, max_length=50)
+
+
+class RunbookPatchBody(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    project_id: str | None = Field(default=None, max_length=80)
+    steps: list[dict[str, Any]] | None = Field(default=None, min_length=1, max_length=50)
+
+
 class ConversationBody(BaseModel):
     title: str = Field(default="", max_length=300)
     project_id: str | None = Field(default=None, max_length=200)
@@ -1055,6 +1067,167 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         result = state.projects.add_preview(project_id, body.name, str(url))
         log_event("project_preview_from_port", project_id=project_id, port=body.port)
         return {"preview": result, "listener": match}
+
+    # ------------------------------------------------------------------
+    # Runbooks (PROD-006): named multi-step workflows + run history.
+
+    @app.get("/api/runbooks")
+    def list_runbooks(
+        project_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        return {"runbooks": state.agent_store.list_runbooks(project_id)}
+
+    @app.post("/api/runbooks")
+    def create_runbook(
+        body: RunbookBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.runbooks import validate_steps
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        if body.project_id:
+            state.projects.project(body.project_id)
+        try:
+            steps = validate_steps(body.steps)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        runbook = state.agent_store.create_runbook(
+            name=body.name.strip(), project_id=body.project_id, steps=steps
+        )
+        log_event("runbook_create", runbook_id=runbook["id"])
+        return {"runbook": runbook}
+
+    @app.get("/api/runbooks/{runbook_id}")
+    def get_runbook(
+        runbook_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        runbook = state.agent_store.get_runbook(runbook_id)
+        if runbook is None:
+            raise HTTPException(status_code=404, detail="runbook not found")
+        return {
+            "runbook": runbook,
+            "runs": state.agent_store.list_runbook_runs(runbook_id, limit=20),
+        }
+
+    @app.patch("/api/runbooks/{runbook_id}")
+    def update_runbook(
+        runbook_id: str,
+        body: RunbookPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.runbooks import validate_steps
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        if state.agent_store.get_runbook(runbook_id) is None:
+            raise HTTPException(status_code=404, detail="runbook not found")
+        updates: dict[str, Any] = {}
+        if body.name is not None:
+            if not body.name.strip():
+                raise HTTPException(status_code=400, detail="name is required")
+            updates["name"] = body.name.strip()
+        if body.project_id is not None:
+            state.projects.project(body.project_id)
+            updates["project_id"] = body.project_id
+        if body.steps is not None:
+            try:
+                updates["steps"] = validate_steps(body.steps)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        runbook = state.agent_store.update_runbook(runbook_id, **updates)
+        return {"runbook": runbook}
+
+    @app.delete("/api/runbooks/{runbook_id}")
+    def delete_runbook(
+        runbook_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        if not state.agent_store.delete_runbook(runbook_id):
+            raise HTTPException(status_code=404, detail="runbook not found")
+        return {"deleted": True}
+
+    @app.post("/api/runbooks/{runbook_id}/run")
+    async def run_runbook(
+        runbook_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        runbook = state.agent_store.get_runbook(runbook_id)
+        if runbook is None:
+            raise HTTPException(status_code=404, detail="runbook not found")
+        cwd = str(Path.home())
+        if runbook.get("project_id"):
+            cwd = str(state.projects.project(runbook["project_id"])["path"])
+        run = state.agent.runbooks.start(runbook, cwd)
+        log_event("runbook_run", runbook_id=runbook_id, run_id=run["id"])
+        return {"run": run}
+
+    @app.get("/api/runbook-runs")
+    def list_runbook_runs(
+        runbook_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        return {"runs": state.agent_store.list_runbook_runs(runbook_id)}
+
+    @app.get("/api/runbook-runs/{run_id}")
+    def get_runbook_run(
+        run_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        run = state.agent_store.get_runbook_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"run": run}
+
+    @app.post("/api/runbook-runs/{run_id}/confirm")
+    def confirm_runbook_run(
+        run_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        try:
+            run = state.agent.runbooks.confirm(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="run not found") from exc
+        return {"run": run}
+
+    @app.post("/api/runbook-runs/{run_id}/cancel")
+    async def cancel_runbook_run(
+        run_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "agent-control")
+        try:
+            run = await state.agent.runbooks.cancel(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="run not found") from exc
+        return {"run": run}
 
     @app.get("/api/agent/storage")
     def get_agent_storage(

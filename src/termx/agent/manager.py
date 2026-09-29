@@ -88,6 +88,9 @@ class AgentManager:
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
         self._observation = ObservationTracker()
+        from termx.runbooks import RunbookRunner
+
+        self.runbooks = RunbookRunner(self.store)
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
@@ -498,6 +501,7 @@ class AgentManager:
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
         await self._computer.release_all()
+        await self.runbooks.shutdown()
         await self._http.aclose()
         await asyncio.to_thread(self.store.prune)
 

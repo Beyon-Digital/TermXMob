@@ -532,3 +532,24 @@ Routes (any of agent-view|screen-view|terminal, both `?project_id=` filterable):
 `GET /api/ports`, `GET /api/processes`,
 `POST /api/projects/{id}/previews/from-port` (404 unless the port is a live
 listener; creates the preview from the probed URL). `capabilities.process_discovery`.
+
+## 22. Runbooks (PROD-006)
+
+`termx.runbooks.validate_steps` normalizes `{kind:"shell", command, confirm?,
+parallel?}`; `RunbookRunner` (one per AgentManager, `state.agent.runbooks`)
+executes a `runbook_runs` row per invocation:
+
+- sequential by default; consecutive `parallel:true` steps run via gather as
+  one batch; any nonzero exit ends the run `failed` (stop-on-failure);
+- `confirm:true` parks the run at `awaiting_confirmation` until
+  `confirm(run_id)` — the human gate applies to REST runs AND agent-invoked
+  runs alike;
+- cancel kills the step's process group (`preexec_fn=os.setsid`, 48KB output
+  tail, 900s/step timeout); `manager.close()` cancels live runs.
+
+REST: `GET/POST /api/runbooks`, `GET/PATCH/DELETE /api/runbooks/{id}`,
+`POST /{id}/run`, `GET /api/runbook-runs`, `POST /{run}/confirm|cancel`.
+Reads use the shared view scopes; create/edit/run/confirm/cancel need
+`agent-control`. Agent tool `run_runbook` (`approval="always"`, not exposed in
+Ask mode) polls the run to a terminal or confirmation state and reports
+step-level results. `capabilities.runbooks`.
