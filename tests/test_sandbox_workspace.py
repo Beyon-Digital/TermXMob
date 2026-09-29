@@ -50,7 +50,35 @@ def test_provision_status_shape() -> None:
     for check in status["checks"]:
         assert check["id"] and isinstance(check["ok"], bool)
         assert "detail" in check and "elevated" in check
+        assert isinstance(check["required"], bool)
     assert isinstance(status["helper"]["installed"], bool)
+    assert isinstance(status["ok"], bool)
+    assert isinstance(status["fully_provisioned"], bool)
+    assert isinstance(status["upgrades_pending"], list)
+
+
+def test_provision_ok_requires_all_required_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`ok` is only true when every primitive the backend needs passes —
+    a missing optional upgrade must not flip it either way."""
+    import termx.sandbox.provision as prov
+
+    checks = [
+        {"id": "a", "ok": True, "detail": "", "repair": None, "elevated": False, "required": True},
+        {"id": "b", "ok": False, "detail": "", "repair": "x", "elevated": True, "required": True},
+        {"id": "c", "ok": False, "detail": "", "repair": "y", "elevated": True, "required": False},
+    ]
+    monkeypatch.setattr(prov, "_linux_checks", lambda: checks)
+    monkeypatch.setattr(sys, "platform", "linux")
+    status = prov.provision_status()
+    assert status["ok"] is False  # a required primitive missing
+    assert status["fully_provisioned"] is False
+    assert status["upgrades_pending"] == ["c"]
+
+    checks[1]["ok"] = True
+    status = prov.provision_status()
+    assert status["ok"] is True  # required all pass; pending upgrade stays visible
+    assert status["fully_provisioned"] is False
+    assert status["upgrades_pending"] == ["c"]
 
 
 def test_helper_path_honors_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -101,6 +129,56 @@ def test_workspace_terminal_launch_wires_sandbox(tmp_path: Path) -> None:
     assert "sandbox-home" in joined
     ro_marks = [i for i, a in enumerate(argv) if a == "--ro-bind"]
     assert any("termx-shell" in argv[i + 1] for i in ro_marks)
+
+
+@linux_ns_skip
+def test_restricted_launch_fails_closed_on_host_backend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A restricted terminal must never silently resolve to the unrestricted
+    host backend — no kernel backend available = honest TerminalError."""
+    from termx.sandbox.host import HostSandboxRunner
+    from termx.sessions import Session
+    from termx.terminals import TerminalError
+
+    monkeypatch.setattr(
+        "termx.sandbox.runner_for",
+        lambda profile, **kw: HostSandboxRunner(profile=profile),
+    )
+    session = Session(
+        id="termhost",
+        title="ws",
+        created_at=time.time(),
+        cols=80,
+        rows=24,
+        argv=["/bin/bash"],
+        cwd=str(tmp_path),
+        shell="/bin/bash",
+        sandbox_profile="workspace",
+    )
+    with pytest.raises(TerminalError):
+        session._restricted_launch()
+
+
+@linux_ns_skip
+def test_agent_profile_terminal_gets_no_network(tmp_path: Path) -> None:
+    """Only the workspace profile grants ambient outbound network — an
+    `agent`-profile terminal (even if reached outside the API) stays
+    deny-by-default like every other agent spawn."""
+    from termx.sessions import Session
+
+    session = Session(
+        id="termagent",
+        title="ws",
+        created_at=time.time(),
+        cols=80,
+        rows=24,
+        argv=["/bin/bash"],
+        cwd=str(tmp_path),
+        shell="/bin/bash",
+        sandbox_profile="agent",
+    )
+    argv, _env = session._restricted_launch()
+    assert "--unshare-net" in argv
+    assert "--share-net" not in argv
 
 
 @linux_ns_skip
@@ -193,6 +271,42 @@ def test_runbook_run_workspace_profile(tmp_path: Path) -> None:
         assert run is not None and run["status"] == "completed", run
 
 
+def test_runbook_run_spawn_failure_marks_failed(tmp_path: Path) -> None:
+    """A step that can't even spawn (backend raises) must record the run
+    failed — never silently report completed."""
+    import asyncio
+
+    from termx.agent.store import AgentStore
+    from termx.runbooks import RunbookRunner
+    from termx.sandbox import SandboxCapabilities, SandboxFailure
+
+    class _Boom:
+        profile = "workspace"
+
+        def capabilities(self):  # noqa: ANN202 - test double
+            return SandboxCapabilities(backend="boom", profile="workspace")
+
+        async def spawn(self, spec):  # noqa: ANN001, ANN202 - test double
+            raise SandboxFailure("backend_unavailable", "nope")
+
+    store = AgentStore(tmp_path / "rb.sqlite3", tmp_path / "rb-artifacts")
+    runbook = store.create_runbook(
+        name="boom", steps=[{"kind": "shell", "command": "echo ok"}]
+    )
+    runner = RunbookRunner(store, runner_for=lambda _p, **_kw: _Boom())
+
+    async def go() -> dict:
+        run = runner.start(runbook, str(tmp_path), profile="workspace")
+        await asyncio.wait_for(runner._tasks[run["id"]], timeout=10)
+        return run
+
+    run = asyncio.run(go())
+    final = store.get_runbook_run(run["id"])
+    assert final is not None and final["status"] == "failed"
+    assert final["error"]
+    store.close()
+
+
 @linux_ns_skip
 def test_sessions_api_workspace_profile(tmp_path: Path) -> None:
     from fastapi.testclient import TestClient
@@ -203,6 +317,8 @@ def test_sessions_api_workspace_profile(tmp_path: Path) -> None:
     with TestClient(create_app(state, web_dir=None)) as client:
         bad = client.post("/api/sessions", json={"sandbox_profile": "nope"})
         assert bad.status_code == 422
+        agent = client.post("/api/sessions", json={"sandbox_profile": "agent"})
+        assert agent.status_code == 422  # interactive terminals are host|workspace
         created = client.post(
             "/api/sessions",
             json={"sandbox_profile": "workspace", "cwd": str(tmp_path)},

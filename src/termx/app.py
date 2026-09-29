@@ -104,9 +104,12 @@ class CreateSessionBody(BaseModel):
     title: str | None = None
     shell: str | None = None
     cwd: str | None = None
-    # host (default, legacy unrestricted) or a restricted profile — the
-    # session routes through runner_for(profile) and its pty spawn_argv.
-    sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace|agent)$")
+    # host (default, legacy unrestricted) or a restricted interactive
+    # profile — the session routes through runner_for(profile) and its pty
+    # spawn_argv. `agent` is intentionally excluded: an interactive terminal
+    # is the trusted human's shell (network permitted), while `agent` is
+    # deny-by-default and only reachable through task execution.
+    sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace)$")
 
 
 class WorkspaceSessionBody(BaseModel):

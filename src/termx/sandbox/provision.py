@@ -85,6 +85,7 @@ def _linux_checks() -> list[dict[str, Any]]:
             "detail": bwrap or "bubblewrap not installed",
             "repair": "install bubblewrap (e.g. apt install bubblewrap)",
             "elevated": True,
+            "required": True,
         },
         {
             "id": "linux-ns.userns",
@@ -99,6 +100,7 @@ def _linux_checks() -> list[dict[str, Any]]:
                 "(e.g. sysctl kernel.unprivileged_userns_clone=1)"
             ),
             "elevated": True,
+            "required": True,
         },
     ]
     return checks
@@ -113,6 +115,7 @@ def _darwin_checks() -> list[dict[str, Any]]:
             "detail": seatbelt or "sandbox-exec missing",
             "repair": "Seatbelt ships with macOS — reinstall the OS toolchain if absent",
             "elevated": False,
+            "required": True,
         },
         {
             "id": "macos.restricted-user",
@@ -127,6 +130,7 @@ def _darwin_checks() -> list[dict[str, Any]]:
                 f"(creates the {RESTRICTED_USER} non-login account)"
             ),
             "elevated": True,
+            "required": False,
         },
         {
             "id": "macos.helper",
@@ -136,8 +140,37 @@ def _darwin_checks() -> list[dict[str, Any]]:
             ),
             "repair": "install the signed sandbox helper via the desktop installer",
             "elevated": True,
+            "required": False,
         },
     ]
+
+
+_NETBLOCK_RULE = "TermxSandboxDenyOutbound"
+
+
+def _windows_netblock_installed() -> bool:
+    """Whether the WFAS outbound-deny rule for the helper child exists.
+
+    The provisioned upgrade installs a deny-all-outbound rule pinned to the
+    sandbox child binary; reporting ready on the helper exe alone would
+    claim network isolation nothing enforces.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        probe = subprocess.run(
+            [
+                "netsh", "advfirewall", "firewall", "show",
+                "rule", f"name={_NETBLOCK_RULE}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    # netsh prints the rule block when it exists and "No rules match" when not.
+    return probe.returncode == 0 and _NETBLOCK_RULE in (probe.stdout or "")
 
 
 def _windows_checks() -> list[dict[str, Any]]:
@@ -148,6 +181,7 @@ def _windows_checks() -> list[dict[str, Any]]:
             "detail": "restricted token + Job Object primitives available (no install needed)",
             "repair": None,
             "elevated": False,
+            "required": True,
         },
         {
             "id": "windows.restricted-user",
@@ -162,17 +196,20 @@ def _windows_checks() -> list[dict[str, Any]]:
                 f"(creates the {RESTRICTED_USER} local account + ACL seed)"
             ),
             "elevated": True,
+            "required": False,
         },
         {
             "id": "windows.netblock",
-            "ok": helper_installed(),
+            "ok": _windows_netblock_installed(),
             "detail": (
-                "helper/firewall rule provisioned" if helper_installed() else
+                "WFAS outbound-deny rule present for the helper child exe"
+                if _windows_netblock_installed() else
                 "outbound network cannot be denied without a WFAS rule for "
                 "a dedicated child binary"
             ),
             "repair": "elevated install adds the WFAS deny rule for the helper child exe",
             "elevated": True,
+            "required": False,
         },
     ]
 
@@ -203,7 +240,19 @@ def provision_status() -> dict[str, Any]:
             _restricted_user_exists() if platform in {"darwin", "win32"} else False
         ),
         "checks": checks,
-        "ok": any(check["ok"] for check in checks if check["id"].split(".")[0] != "platform"),
+        # `ok` = every *required* primitive for kernel sandboxing passes.
+        # Provisioned upgrades (restricted identity, helper, WFAS rules)
+        # widen what the backend can enforce but are not the boundary
+        # itself — they live under `fully_provisioned`/`upgrades_pending`.
+        "ok": all(
+            check["ok"] for check in checks if check.get("required", True)
+        ),
+        "fully_provisioned": all(check["ok"] for check in checks),
+        "upgrades_pending": [
+            check["id"]
+            for check in checks
+            if not check["ok"] and not check.get("required", True)
+        ],
     }
 
 

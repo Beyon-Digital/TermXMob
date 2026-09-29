@@ -233,16 +233,28 @@ class Session:
             read_only_roots=(str(integration),),
             env=env,
             # An interactive workspace terminal is the human's own project
-            # shell: network is permitted (dev tools need it), unlike the
-            # agent profile's deny-by-default policy.
-            network="outbound",
-            granted_capabilities=("net.outbound:any",),
+            # shell: network is permitted (dev tools need it). Any other
+            # restricted profile stays deny-by-default — grants only come
+            # from remembered capability rules, never from session params.
+            network=(
+                "outbound" if self.sandbox_profile == "workspace" else "none"
+            ),
+            granted_capabilities=(
+                ("net.outbound:any",) if self.sandbox_profile == "workspace" else ()
+            ),
             pty=True,
             purpose="terminal",
             task_id=f"term-{self.id}",
             home=str(home),
         )
         runner = runner_for(self.sandbox_profile)
+        if runner.capabilities().backend == "host":
+            # A restricted terminal must never silently resolve to the
+            # unrestricted backend — unavailable sandbox = honest failure.
+            raise TerminalError(
+                "no kernel sandbox backend available for "
+                f"profile {self.sandbox_profile!r} — see provisioning status"
+            )
         spawn_argv = getattr(runner, "spawn_argv", None)
         if spawn_argv is None:
             raise TerminalError(
