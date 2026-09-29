@@ -12,7 +12,18 @@ from termx.agent.policy import redact
 
 
 class ProviderError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after_s: float | None = None,
+        network: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after_s = retry_after_s
+        self.network = network
 
 
 @dataclass(frozen=True)
@@ -134,6 +145,66 @@ class OpenAIResponsesAdapter:
         allow_computer: bool = False,
         read_only: bool = False,
     ) -> ProviderTurn:
+        payload = self._turn_payload(
+            prompt=prompt,
+            cwd=cwd,
+            manifest=manifest,
+            previous_response_id=previous_response_id,
+            input_items=input_items,
+            allow_computer=allow_computer,
+            read_only=read_only,
+        )
+        body = await self._post(payload)
+        return self._turn_from_body(body)
+
+    # Streaming turn -------------------------------------------------
+
+    supports_streaming = True
+
+    async def stream_turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+        on_delta: Any = None,
+        on_event: Any = None,
+    ) -> ProviderTurn:
+        """Streaming variant of ``turn`` using the Responses SSE stream.
+
+        Emits ``response.output_text.delta`` fragments through ``on_delta``
+        and forwards ``response.function_call_arguments.delta`` events to
+        ``on_event`` (incremental tool-call assembly is only surfaced — the
+        authoritative calls still arrive in the terminal ``response`` object).
+        """
+        payload = self._turn_payload(
+            prompt=prompt,
+            cwd=cwd,
+            manifest=manifest,
+            previous_response_id=previous_response_id,
+            input_items=input_items,
+            allow_computer=allow_computer,
+            read_only=read_only,
+        )
+        payload["stream"] = True
+        body = await self._post_stream(payload, on_delta=on_delta, on_event=on_event)
+        return self._turn_from_body(body)
+
+    def _turn_payload(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None,
+        input_items: list[dict[str, Any]] | None,
+        allow_computer: bool,
+        read_only: bool,
+    ) -> dict[str, Any]:
         tools: list[dict[str, Any]] = []
         if "functions" in self.capabilities or "shell" in self.capabilities:
             tools.extend(self._function_tools(read_only))
@@ -175,7 +246,10 @@ class OpenAIResponsesAdapter:
             ]
         else:
             payload["input"] = _task_input(prompt, cwd, manifest)
-        body = await self._post(payload)
+        return payload
+
+    @staticmethod
+    def _turn_from_body(body: dict[str, Any]) -> ProviderTurn:
         calls: list[ProviderCall] = []
         for item in body.get("output") or []:
             if not isinstance(item, dict):
@@ -253,9 +327,13 @@ class OpenAIResponsesAdapter:
                 ) as client:
                     response = await client.post(self.url, json=payload)
         except httpx.RequestError as exc:
-            raise ProviderError(f"Could not reach provider: {exc}") from exc
+            raise ProviderError(f"Could not reach provider: {exc}", network=True) from exc
         if response.is_error:
-            raise ProviderError(_provider_http_error(response.status_code, response.text[:1000]))
+            raise ProviderError(
+                _provider_http_error(response.status_code, response.text[:1000]),
+                status_code=response.status_code,
+                retry_after_s=_retry_after(response.headers),
+            )
         try:
             body = response.json()
         except ValueError as exc:
@@ -268,6 +346,96 @@ class OpenAIResponsesAdapter:
             raise ProviderError(str(message or "Provider request failed"))
         return body
 
+    async def _post_stream(
+        self,
+        payload: dict[str, Any],
+        *,
+        on_delta: Any = None,
+        on_event: Any = None,
+    ) -> dict[str, Any]:
+        """POST with ``stream: true`` and consume the SSE event feed.
+
+        Returns the terminal ``response`` object, shaped like a normal
+        ``/responses`` body so the existing output parsing applies. Only
+        delta text and event *types* leave this function — never raw headers.
+        """
+        try:
+            if self.client is not None:
+                body = await self._stream_with(self.client, payload, on_delta, on_event)
+            else:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_s,
+                    headers=self.request_headers(),
+                    follow_redirects=True,
+                ) as client:
+                    body = await self._stream_with(client, payload, on_delta, on_event)
+        except httpx.RequestError as exc:
+            raise ProviderError(f"Could not reach provider: {exc}", network=True) from exc
+        return body
+
+    async def _stream_with(
+        self,
+        client: httpx.AsyncClient,
+        payload: dict[str, Any],
+        on_delta: Any,
+        on_event: Any,
+    ) -> dict[str, Any]:
+        final: dict[str, Any] | None = None
+        async with client.stream("POST", self.url, json=payload) as response:
+            if response.is_error:
+                detail = await response.aread()
+                raise ProviderError(
+                    _provider_http_error(response.status_code, detail[:1000].decode("utf-8", "replace")),
+                    status_code=response.status_code,
+                    retry_after_s=_retry_after(response.headers),
+                )
+            event_type = ""
+            async for raw_line in response.aiter_lines():
+                line = raw_line.strip()
+                if not line:
+                    event_type = ""
+                    continue
+                if line.startswith("event:"):
+                    event_type = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                kind = str(event.get("type") or event_type)
+                if kind == "response.output_text.delta":
+                    delta = str(event.get("delta") or "")
+                    if delta and on_delta is not None:
+                        on_delta(delta)
+                elif kind in {
+                    "response.function_call_arguments.delta",
+                    "response.custom_tool_call_input.delta",
+                }:
+                    if on_event is not None:
+                        on_event(kind, {key: value for key, value in event.items() if key != "type"})
+                elif kind in {"response.completed", "response.incomplete", "response.failed"}:
+                    candidate = event.get("response")
+                    if isinstance(candidate, dict):
+                        final = candidate
+                elif kind == "error":
+                    error = event.get("error")
+                    message = error.get("message") if isinstance(error, dict) else str(error)
+                    raise ProviderError(str(message or "Provider stream failed"))
+        if final is None:
+            raise ProviderError("Provider stream ended without a completion event")
+        if final.get("error"):
+            error = final["error"]
+            message = error.get("message") if isinstance(error, dict) else str(error)
+            raise ProviderError(str(message or "Provider request failed"))
+        return final
+
 
 def _redact_value(value: Any) -> Any:
     if isinstance(value, str):
@@ -277,6 +445,16 @@ def _redact_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _redact_value(item) for key, item in value.items()}
     return value
+
+
+def _retry_after(headers: httpx.Headers) -> float | None:
+    value = headers.get("retry-after")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return None
 
 
 def _provider_http_error(status: int, detail: str) -> str:

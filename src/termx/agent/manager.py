@@ -13,6 +13,7 @@ from termx.agent.computer import ComputerController
 from termx.agent.context import ContextEngine
 from termx.agent.context.engine import estimate_tokens
 from termx.agent.metrics import TaskMetrics
+from termx.agent.retry import retrying
 from termx.agent.policy import (
     PolicyDecision,
     evaluate_computer,
@@ -413,17 +414,70 @@ class AgentManager:
                     )
                 read_only = task.get("mode") == "ask"
                 turn_started = monotonic()
-                turn = await self._provider_turn(
-                    adapter,
-                    cancel,
-                    prompt=task["prompt"],
-                    cwd=task["cwd"],
-                    manifest=manifest,
-                    input_items=history if history else None,
-                    allow_computer=(not read_only) and "computer" in provider["capabilities"],
-                    read_only=read_only,
+                first_token: list[float] = []
+
+                def _on_delta(delta: str) -> None:
+                    if not first_token:
+                        first_token.append(monotonic())
+                    self._emit(task_id, "assistant.delta", {"text": delta})
+
+                def _on_stream_event(kind: str, data: dict[str, Any]) -> None:
+                    self._emit(
+                        task_id,
+                        "provider.tool_call.delta",
+                        {
+                            "event": kind,
+                            "call_id": str(data.get("call_id") or data.get("item_id") or ""),
+                            "delta": str(data.get("delta") or "")[:200],
+                        },
+                    )
+
+                stream_fn = (
+                    getattr(adapter, "stream_turn", None)
+                    if getattr(adapter, "supports_streaming", False)
+                    else None
                 )
-                metrics.record_provider(int((monotonic() - turn_started) * 1000), turn.usage)
+
+                def _request() -> Any:
+                    kwargs: dict[str, Any] = {
+                        "prompt": task["prompt"],
+                        "cwd": task["cwd"],
+                        "manifest": manifest,
+                        "input_items": history if history else None,
+                        "allow_computer": (not read_only) and "computer" in provider["capabilities"],
+                        "read_only": read_only,
+                    }
+                    if stream_fn is not None:
+                        return stream_fn(**kwargs, on_delta=_on_delta, on_event=_on_stream_event)
+                    return adapter.turn(**kwargs)
+
+                def _emit_retry(event_type: str, payload: dict[str, Any]) -> None:
+                    if event_type in {"provider.retry", "provider.rate_limited"}:
+                        metrics.record_provider_retry(
+                            rate_limited=event_type == "provider.rate_limited"
+                        )
+                    self._emit(task_id, event_type, payload)
+
+                if stream_fn is not None:
+                    self._emit(task_id, "provider.stream.started", {"model": provider["model"]})
+                turn = await _race_cancel(
+                    retrying(_request, emit=_emit_retry, cancel=cancel),
+                    cancel,
+                )
+                stream_ms = int((monotonic() - turn_started) * 1000)
+                metrics.record_provider(stream_ms, turn.usage)
+                if stream_fn is not None:
+                    first_ms = int((first_token[0] - turn_started) * 1000) if first_token else None
+                    metrics.record_provider_stream(first_ms, stream_ms)
+                    self._emit(
+                        task_id,
+                        "provider.stream.completed",
+                        {
+                            "response_id": turn.response_id,
+                            "first_token_ms": first_ms,
+                            "stream_ms": stream_ms,
+                        },
+                    )
                 if cancel.is_set():
                     await self._cancelled(task_id)
                     return

@@ -901,3 +901,160 @@ def test_context_checkpoint_store_roundtrip(tmp_path):
     updated = store.update_checkpoint(cp["id"], side_effect_state="committed")
     assert updated["side_effect_state"] == "committed"
     assert store.checkpoints(task["id"], kind="context")
+
+
+def _sse(lines: list[str]) -> bytes:
+    return "".join(f"data: {line}\n\n" for line in lines).encode()
+
+
+def test_stream_turn_parses_sse():
+    import httpx
+    from termx.agent.providers import OpenAIResponsesAdapter
+
+    final_body = {
+        "id": "resp-1",
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "hi there"}]}],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+    import json as _json
+    payload = _sse([
+        _json.dumps({"type": "response.output_text.delta", "delta": "hi "}),
+        _json.dumps({"type": "response.output_text.delta", "delta": "there"}),
+        _json.dumps({"type": "response.completed", "response": final_body}),
+        "[DONE]",
+    ])
+
+    def handler(request):
+        assert request.content and b'"stream": true' in request.content or b'"stream":true' in request.content.replace(b" ", b"")
+        return httpx.Response(200, content=payload,
+                              headers={"content-type": "text/event-stream"})
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = OpenAIResponsesAdapter(
+            base_url="https://x.test", model="m", api_key="k",
+            capabilities=["functions"], client=client,
+        )
+        deltas: list[str] = []
+        turn = await adapter.stream_turn(
+            prompt="p", cwd="/tmp", manifest={}, on_delta=deltas.append,
+        )
+        return deltas, turn
+
+    deltas, turn = asyncio.run(run())
+    assert deltas == ["hi ", "there"]
+    assert turn.response_id == "resp-1"
+    assert turn.text == "hi there"
+    assert turn.usage["output_tokens"] == 2
+
+
+def test_stream_turn_error_status_raises():
+    import httpx
+    from termx.agent.providers import OpenAIResponsesAdapter, ProviderError
+
+    def handler(request):
+        return httpx.Response(503, content=b"down",
+                              headers={"retry-after": "2"})
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = OpenAIResponsesAdapter(
+            base_url="https://x.test", model="m", api_key="k",
+            capabilities=[], client=client,
+        )
+        try:
+            await adapter.stream_turn(prompt="p", cwd="/tmp", manifest={})
+        except ProviderError as exc:
+            return exc
+
+    exc = asyncio.run(run())
+    assert exc.status_code == 503 and exc.retry_after_s == 2.0
+
+
+def test_retry_classification():
+    import httpx
+    from termx.agent.providers import ProviderError
+    from termx.agent.retry import classify
+
+    assert classify(ProviderError("x", status_code=500)).kind == "retryable"
+    assert classify(ProviderError("x", status_code=408)).kind == "retryable"
+    assert classify(ProviderError("x", status_code=429, retry_after_s=3)).kind == "rate_limited"
+    assert classify(ProviderError("x", status_code=401)).kind == "non_retryable"
+    assert classify(ProviderError("x", status_code=400)).kind == "non_retryable"
+    assert classify(ProviderError("x", network=True)).kind == "retryable"
+    assert classify(ProviderError("bad json")).kind == "non_retryable"
+    assert classify(httpx.ConnectError("nope")).kind == "retryable"
+
+
+def test_retrying_retries_and_emits():
+    from termx.agent.providers import ProviderError
+    from termx.agent.retry import retrying
+
+    events: list[tuple[str, dict]] = []
+    attempts = 0
+
+    async def factory():
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise ProviderError("boom", status_code=500)
+        return "ok"
+
+    async def run():
+        import termx.agent.retry as retry_mod
+        monkey = retry_mod._sleep
+        retry_mod._sleep = lambda d, c: asyncio.sleep(0)
+        try:
+            return await retrying(factory, emit=lambda t, p: events.append((t, p)))
+        finally:
+            retry_mod._sleep = monkey
+
+    assert asyncio.run(run()) == "ok"
+    assert attempts == 3
+    kinds = [name for name, _ in events]
+    assert kinds == ["provider.retry", "provider.retry"]
+    assert events[0][1]["reason_class"] == "retryable"
+    assert events[0][1]["status_code"] == 500
+
+
+def test_retrying_no_retry_on_401():
+    from termx.agent.providers import ProviderError
+    from termx.agent.retry import retrying
+
+    events: list[str] = []
+    attempts = 0
+
+    async def factory():
+        nonlocal attempts
+        attempts += 1
+        raise ProviderError("nope", status_code=401)
+
+    async def run():
+        try:
+            await retrying(factory, emit=lambda t, p: events.append(t))
+        except ProviderError:
+            return
+
+    asyncio.run(run())
+    assert attempts == 1
+    assert events == ["provider.failed"]
+
+
+def test_retrying_cancel_during_backoff():
+    from termx.agent.providers import ProviderError
+    from termx.agent.retry import retrying
+
+    cancel = asyncio.Event()
+
+    async def factory():
+        cancel.set()
+        raise ProviderError("boom", status_code=500)
+
+    async def run():
+        try:
+            await retrying(factory, cancel=cancel)
+            return "survived"
+        except asyncio.CancelledError:
+            return "cancelled"
+
+    assert asyncio.run(run()) == "cancelled"

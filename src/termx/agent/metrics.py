@@ -10,6 +10,11 @@ class TaskMetrics:
             "provider_calls": 0,
             "provider_ms": 0,
             "provider_first_ms": None,
+            "provider_first_token_ms": None,
+            "provider_stream_ms": 0,
+            "provider_output_tokens": 0,
+            "provider_retries": 0,
+            "provider_rate_limited": 0,
             "tool_ms": {},
             "tool_calls": {},
             "shell_ms": 0,
@@ -39,6 +44,20 @@ class TaskMetrics:
                     self._data[target] += int(usage.get(key) or 0)
                 except (TypeError, ValueError):
                     pass
+            try:
+                self._data["provider_output_tokens"] += int(usage.get("output_tokens") or 0)
+            except (TypeError, ValueError):
+                pass
+
+    def record_provider_stream(self, first_token_ms: int | None, stream_ms: int) -> None:
+        if self._data["provider_first_token_ms"] is None and first_token_ms is not None:
+            self._data["provider_first_token_ms"] = int(first_token_ms)
+        self._data["provider_stream_ms"] += int(stream_ms)
+
+    def record_provider_retry(self, *, rate_limited: bool = False) -> None:
+        self._data["provider_retries"] += 1
+        if rate_limited:
+            self._data["provider_rate_limited"] += 1
 
     def record_tool(self, name: str, duration_ms: int) -> None:
         tool_ms = self._data["tool_ms"]
