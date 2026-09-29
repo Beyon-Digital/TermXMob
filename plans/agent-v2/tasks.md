@@ -2,10 +2,10 @@
 
 ## Resume checkpoint
 - Updated: 2026-09-29
-- Current phase: Phase 2 complete (AG2-008/010/011/017); PR #16 open (ready for review); review-round hardening pass applied
-- Next ready tasks: Phase 3+ scope (async subagent handles, fan-out, observation v2, product features)
+- Current phase: Phase 3 complete (AG2-012/013 async subagent handles + fan-out); PR #16 open (ready for review)
+- Next ready tasks: Phase 4 (AG2-015 Observation v2, AG2-016 computer actions), then PROD/SEC/VRF scope
 - Active owners: devin-session
-- Last verified command: `uv run pytest tests -q` — 269 passed, 10 skipped, ~27s
+- Last verified command: `uv run pytest tests -q` — 276 passed, 10 skipped, ~27s
 - Last inspected surface: `src/termx/agent/**`, `project_files`, `git_ops`, `app.py` agent routes
 - Blockers: none
 - Resume instruction: continue the ledger below top-down; keep tests green.
@@ -228,22 +228,38 @@ tasks:
     notes: Phase 2
   - id: AG2-012
     title: Convert subagents to asynchronous child handles
-    status: pending
+    status: done
     depends_on: [AG2-006]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
-    notes: Phase 3 — spawn returns immediately; await_subagents/status/cancel
+    owner: devin
+    write_scope:
+      - src/termx/agent/manager.py (_SubagentHandle, _watch_child, _subagent_handles, _spawn_subagent async)
+      - src/termx/agent/tools/subagents.py (await_subagents / subagent_status / cancel_subagent specs)
+      - src/termx/agent/store.py (tasks.parent_id column + children())
+    acceptance:
+      - "spawn_subagent returns {ok,status:running,task_id} immediately; child runs concurrently"
+      - "await_subagents waits all/named children w/ timeout -> per-child status+result; subagent_status read-only; cancel_subagent stops named children"
+      - "child escalation approvals stay resolvable after parent reaches a terminal state"
+      - "handles rebuild from durable parent_id linkage after restart"
+    evidence:
+      - "uv run pytest tests -q -> 276 passed, 10 skipped (e410e97)"
+      - "test_agent.py: test_spawn_subagent_returns_async_handle, test_subagent_fanout_and_await_collects_results (2 children started before either finished), test_subagent_status_and_cancel, test_await_subagents_timeout_reports_partial, test_subagent_handles_rebuilt_from_store, escalation test proves post-terminal resolvability"
+      - "old-DB migration check: parent_id column added additively; children() query verified"
+    notes: Phase 3 — per-child watcher relays events/escalations independent of the parent's drive; subagent.started/event/finished/awaited/cancelled events on the parent stream
   - id: AG2-013
     title: Concurrent fan-out/fan-in subagent orchestration
-    status: pending
+    status: done
     depends_on: [AG2-012]
-    owner: unassigned
-    write_scope: []
-    acceptance: []
-    evidence: []
-    notes: Phase 3 — max_parallel_subagents 3 / total 8 defaults
+    owner: devin
+    write_scope:
+      - src/termx/agent/manager.py (_limits + parallel/total spawn guards)
+      - src/termx/agent/tools/legacy.py (spawn description teaches fan-out vocabulary)
+    acceptance:
+      - "max_parallel_subagents=3 (clamp 1-8) and max_subagents_total=8 (clamp 1-32) in task limits; spawn refuses with actionable error when exhausted"
+      - "multiple children run truly concurrently; await fans results back in"
+    evidence:
+      - "test_agent.py: test_subagent_parallel_limit_blocks_spawn (running>=1 -> second spawn ok:False 'parallel limit'), test_subagent_total_limit_blocks_spawn (total>=1 -> ok:False 'total limit'), fanout test asserts both subagent.started precede the first subagent.finished"
+      - "uv run pytest tests -q -> 276 passed, 10 skipped (e410e97)"
+    notes: Phase 3 — children inherit cwd/provider/model/limits; consequential child actions still escalate to the parent/user (no scope widening)
   - id: AG2-015
     title: Implement Computer Observation v2
     status: pending

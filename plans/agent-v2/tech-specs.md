@@ -353,3 +353,55 @@ and persists the `kind="context"` checkpoint row:
 - Never compacts: pending approvals, unpaired calls, the latest
   `max_history_events` tail, items needed by `function_call`→`output`,
   `computer_call`→`output`, `custom_tool_call`→`output` pairing.
+
+# Phase 3 — async sub-agent orchestration (AG2-012/013)
+
+## 15. Sub-agent handles (`_SubagentHandle` + `tools/subagents.py`)
+
+`spawn_subagent` used to block the parent's driver inside `_spawn_subagent`
+until the child terminated. It is now a first-class durable handle:
+
+- `spawn_subagent` creates the child task (`tasks.parent_id`, additive
+  column) and returns `{ok, status: "running", task_id}` immediately. A
+  per-child watcher task (`_watch_child`) keeps relaying `subagent.event`
+  payloads and escalating consequential child approvals onto the parent's
+  stream — independent of any single tool call, so the parent's drive
+  continues to the next turn while children run.
+- `_SubagentHandle(parent_id, child_id, call_id, agent, queue, watcher,
+  parent_cancel, deadline, status, result, done)` lives in
+  `manager._subagents[parent_id][child_id]`; `done` is what `await`
+  waits on, `status`/`result` hold the terminal outcome.
+- Watchers replicate the old inline loop exactly: parent-cancel
+  propagation, terminal detection by event (`task.completed`/`failed`/
+  `cancelled`) or status poll, `handle.deadline` cancel past
+  `min(max_seconds, _SUBAGENT_MAX_SECONDS)`, `subagent.finished` emit,
+  unsubscribe + `_drop_pending_approvals(parent, child_id=)` on exit,
+  and restoring a genuinely-paused parent to `running`.
+- Rebuild: `manager._subagent_handles(task_id)` reconciles the registry
+  against `store.children(parent_id)` on every access — so after a host
+  restart the linkage is recovered from the durable `parent_id` column:
+  terminal children come back `done` with their stored status/result,
+  still-active ones (re-driven by Phase 2 recovery) get a fresh relay
+  watcher whose `parent_cancel` binds to the parent's live cancel event.
+- New tools (`mutability`): `await_subagents` (read; `task_id`/`task_ids`
+  selection, `timeout_s` 0-600 default 300, cancel-aware via
+  `_race_cancel`; emits `subagent.awaited` and returns per-child
+  `{agent,status,running,result?}` plus `timed_out`/`missing`),
+  `subagent_status` (read, no waiting), `cancel_subagent` (write —
+  checkpointed side effect — emits `subagent.cancelled`). All are
+  agent-mode only (`expose_read_only=False`).
+- Escalation hardening for async parents: a child's escalated approval
+  remains resolvable after the parent reaches a terminal state —
+  `resolve_approval` accepts a pending child-escalation approval on a
+  non-`awaiting_approval` parent, `_finish_state` keeps child-escalation
+  entries in `_pending_approval_calls` (the child's watcher drops them
+  on exit), and the resolution path only restores `status=running` when
+  the parent is genuinely paused (never resurrects a completed task).
+- Limits (per-parent, in task `limits`, clamped in `_limits`):
+  `max_parallel_subagents` default 3 (1-8) — spawn refuses when running
+  children hit the cap with a hint to `await_subagents` first;
+  `max_subagents_total` default 8 (1-32) — refuses when total spawned
+  hits the cap. Children inherit cwd/project boundary, provider, model,
+  reduced limits, and the parent's cancel event; they do not inherit any
+  approval to expand scope — consequential actions still escalate.
+- `manager.close()` cancels live watchers alongside workers.
