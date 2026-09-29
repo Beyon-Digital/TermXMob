@@ -206,6 +206,54 @@ class ContextEngine:
         self._snapshot = None
         self._snapshot_at = 0.0
 
+    def plan_compaction(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        git_state: dict[str, Any] | None = None,
+        keep_recent: int = 40,
+    ) -> dict[str, Any] | None:
+        """Plan a context compaction checkpoint, or ``None`` if not yet needed.
+
+        Returns ``{"history": [...], "payload": {...}, "dropped": int}`` where
+        ``history`` is the compacted transcript (leading user item + injected
+        checkpoint summary item + retained tail) and ``payload`` is the
+        deterministic summary to persist as a ``checkpoints(kind="context")``
+        row. Never severed: a call and its ``*_call_output`` either stay
+        together in the retained tail or are both summarized; unresolved
+        calls are recorded in ``pending_work`` (described, not re-injected —
+        a bare call item without its output would not be API-valid).
+        """
+        limit = int(self._limits["max_context_estimate_tokens"])
+        estimated = estimate_tokens(items)
+        if estimated < int(limit * 0.75) or len(items) <= keep_recent:
+            return None
+        head: list[dict[str, Any]] = []
+        body = list(items)
+        if body and isinstance(body[0], dict) and body[0].get("role") == "user":
+            head, body = body[:1], body[1:]
+        split = max(0, len(body) - keep_recent)
+        # Slide the boundary left past leading outputs so no retained item is
+        # an orphan whose call was compacted away.
+        while split > 0 and str(body[split].get("type") or "").endswith("call_output"):
+            split -= 1
+        compacted, retained = body[:split], list(body[split:])
+        if not compacted:
+            return None
+        unresolved = _unresolved_call_ids(compacted)
+        summary = _compaction_summary(compacted, retained, unresolved, git_state)
+        checkpoint_item = {
+            "type": "context_checkpoint",
+            "summary": summary,
+            "compacted_items": len(compacted),
+        }
+        return {
+            "history": head + [checkpoint_item] + retained,
+            "payload": summary,
+            "history_cursor": len(items) - len(retained),
+            "dropped": len(compacted),
+        }
+
     def slim_history(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Bound transcript size without breaking call/output pairing.
 
@@ -281,3 +329,128 @@ class ContextEngine:
             content[part_index] = {"type": "input_text", "text": "[image omitted by context budget]"}
             slimmed[index] = {**item, "content": content}
         return slimmed
+
+
+def estimate_tokens(items: list[dict[str, Any]]) -> int:
+    """Rough transcript cost in tokens (chars/4 over the JSON encoding)."""
+    try:
+        return len(json.dumps(items, default=str)) // 4
+    except (TypeError, ValueError):
+        return 0
+
+
+_CALL_ITEM_TYPES = {"function_call", "computer_call", "custom_tool_call"}
+
+
+def _call_item_id(item: dict[str, Any]) -> str:
+    return str(item.get("call_id") or item.get("id") or "")
+
+
+def _unresolved_call_ids(items: list[dict[str, Any]]) -> set[str]:
+    """Call ids present as call items but never answered by a *_call_output."""
+    outputs: set[str] = set()
+    calls: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or "")
+        if kind in _CALL_ITEM_TYPES:
+            call_id = _call_item_id(item)
+            if call_id:
+                calls.add(call_id)
+        elif kind.endswith("call_output"):
+            call_id = str(item.get("call_id") or "")
+            if call_id:
+                outputs.add(call_id)
+    return calls - outputs
+
+
+def _item_text(item: dict[str, Any]) -> str:
+    """Best-effort short text for an item (assistant/user/output)."""
+    for key in ("text", "output", "content"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    content = item.get("content")
+    if isinstance(content, list):
+        parts = [
+            str(part.get("text") or "")
+            for part in content
+            if isinstance(part, dict) and part.get("text")
+        ]
+        if parts:
+            return " ".join(parts).strip()
+    return ""
+
+
+def _compaction_summary(
+    compacted: list[dict[str, Any]],
+    retained: list[dict[str, Any]],
+    unresolved: set[str],
+    git_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Deterministic structured summary of the compacted history region."""
+    import time
+
+    steps: list[str] = []
+    files: list[str] = []
+    errors: list[str] = []
+    pending: list[str] = []
+    last_assistant = ""
+    last_user = ""
+    outputs_by_call: dict[str, str] = {}
+    for item in compacted:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or "")
+        if kind.endswith("call_output"):
+            call_id = str(item.get("call_id") or "")
+            text = _item_text(item)
+            if call_id and text:
+                outputs_by_call[call_id] = text[:400]
+            if text and ("error" in text.lower() or "failed" in text.lower()):
+                errors.append(text[:200])
+            continue
+        if kind in _CALL_ITEM_TYPES:
+            call_id = _call_item_id(item)
+            name = str(item.get("name") or "computer")
+            args = item.get("arguments") or item.get("input") or {}
+            if isinstance(args, dict):
+                for key in ("path", "file", "command"):
+                    value = args.get(key)
+                    if isinstance(value, str) and value and value not in files:
+                        files.append(value)
+            outcome = outputs_by_call.get(call_id)
+            status = "pending" if call_id in unresolved else ("ok" if outcome is None else "done")
+            line = f"{name}({json.dumps(args, default=str)[:80]}) -> {status}"
+            steps.append(line)
+            if call_id in unresolved:
+                pending.append(line)
+            continue
+        role = str(item.get("role") or "")
+        text = _item_text(item)
+        if role == "assistant" and text:
+            last_assistant = text[:400]
+        elif role == "user" and text:
+            last_user = text[:400]
+    if last_assistant:
+        pending.append(f"last_assistant: {last_assistant}")
+    if last_user:
+        pending.append(f"last_user: {last_user}")
+    return {
+        "summary": (
+            f"Compacted {len(compacted)} earlier transcript items: "
+            f"{len(steps)} tool calls, {len(errors)} error outputs; "
+            f"retained {len(retained)} recent items verbatim."
+        ),
+        "completed_steps": steps[-15:],
+        "important_files": files[-20:],
+        "decisions": [],
+        "pending_work": pending[-10:],
+        "errors": errors[-8:],
+        "git_state": git_state or {},
+        "approvals": [],
+        "artifacts": [],
+        "last_safe_execution_checkpoint": None,
+        "created_at": time.time(),
+    }

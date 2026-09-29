@@ -826,3 +826,78 @@ def test_provider_tools_read_only_filtering():
     assert {"read_file", "list_files", "search_project", "run_shell", "share_file"} <= ask_names
     assert {"write_file", "apply_patch", "git_stage", "spawn_subagent"} <= agent_names
     assert "write_file" not in ask_names and "spawn_subagent" not in ask_names
+
+
+def _fake_transcript(turns: int, big: str) -> list[dict]:
+    items = [{"role": "user", "content": "do the task"}]
+    for i in range(turns):
+        items.append({"type": "function_call", "call_id": f"c{i}", "name": "read_file",
+                      "arguments": {"path": f"src/file{i}.py"}})
+        items.append({"type": "function_call_output", "call_id": f"c{i}", "output": big})
+    return items
+
+
+def test_plan_compaction_below_threshold():
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine("/tmp", limits={"max_context_estimate_tokens": 10**9})
+    history = _fake_transcript(5, "x" * 1000)
+    assert engine.plan_compaction(history) is None
+
+
+def test_plan_compaction_preserves_pairs_and_bounds():
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine("/tmp", limits={"max_context_estimate_tokens": 2000})
+    history = _fake_transcript(40, "y" * 400)
+    plan = engine.plan_compaction(history, git_state={"branch": "main"})
+    assert plan is not None
+    compacted_history = plan["history"]
+    assert compacted_history[0]["role"] == "user"
+    assert compacted_history[1]["type"] == "context_checkpoint"
+    # No retained item is an orphaned *_call_output.
+    assert not str(compacted_history[2].get("type") or "").endswith("call_output")
+    call_ids = {
+        str(i.get("call_id")) for i in compacted_history
+        if i.get("type") in {"function_call", "computer_call", "custom_tool_call"}
+    }
+    out_ids = {
+        str(i.get("call_id")) for i in compacted_history
+        if str(i.get("type") or "").endswith("call_output")
+    }
+    assert call_ids == out_ids  # pairs stay together or are both summarized
+    payload = plan["payload"]
+    assert payload["git_state"]["branch"] == "main"
+    assert payload["completed_steps"]
+    assert any("file" in f for f in payload["important_files"])
+    assert len(compacted_history) < len(history)
+
+
+def test_plan_compaction_records_unresolved_calls():
+    from termx.agent.context import ContextEngine
+
+    engine = ContextEngine("/tmp", limits={"max_context_estimate_tokens": 2000})
+    history = _fake_transcript(40, "z" * 400)
+    # Drop an early output so its call lands in the compacted region
+    # without a matching output (simulates a mid-turn crash).
+    del history[4]
+    plan = engine.plan_compaction(history)
+    assert plan is not None
+    assert plan["payload"]["pending_work"]
+
+
+def test_context_checkpoint_store_roundtrip(tmp_path):
+    store = AgentStore(path=tmp_path / "db.sqlite3", artifact_dir=tmp_path / "art")
+    task = store.create_task(
+        prompt="p", cwd="/tmp", provider_id="x", model="m", limits={},
+    )
+    cp = store.create_checkpoint(
+        task["id"], kind="context", history_cursor=12, plan_step=3,
+        payload={"summary": "s"}, side_effect_state="none",
+    )
+    assert cp["kind"] == "context"
+    latest = store.latest_checkpoint(task["id"], kind="context")
+    assert latest and latest["id"] == cp["id"]
+    updated = store.update_checkpoint(cp["id"], side_effect_state="committed")
+    assert updated["side_effect_state"] == "committed"
+    assert store.checkpoints(task["id"], kind="context")

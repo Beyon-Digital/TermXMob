@@ -186,3 +186,141 @@ class ProviderHttpRuntime:
 
 `agent_tools_v2: true`, `agent_context_v2: true`, `agent_streaming: false`
 (streaming lands in Phase 2), `agent_parallel_tools: true`.
+
+# Phase 2 — execution/recovery layer (AG2-008/010/011/017)
+
+## 11. Checkpoints (`agent/checkpoint.py` + `store.checkpoints` table)
+
+One durable table carries both checkpoint kinds — `kind` column is
+`"execution"` (AG2-011/017) or `"context"` (AG2-008):
+
+```sql
+CREATE TABLE IF NOT EXISTS checkpoints (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  kind TEXT NOT NULL,                 -- execution | context
+  history_cursor INTEGER NOT NULL DEFAULT 0,
+  plan_step INTEGER NOT NULL DEFAULT 0,
+  pending_call_id TEXT,
+  side_effect_state TEXT NOT NULL DEFAULT 'none',
+                                    -- none|prepared|running|completed_uncommitted|committed
+  payload TEXT NOT NULL DEFAULT '{}', -- resume payload or context summary
+  result TEXT,                        -- stored tool result (completed_uncommitted)
+  resumable INTEGER NOT NULL DEFAULT 1,
+  reason TEXT,
+  provider_turn_id TEXT,
+  created_at REAL NOT NULL
+)
+```
+
+Add additive migration mirroring the `tasks.metrics` precedent (try/except
+`ALTER`— CREATE TABLE IF NOT EXISTS is itself additive). Store methods:
+`create_checkpoint(task_id, kind, **fields)`, `update_checkpoint(id, **changes)`,
+`latest_checkpoint(task_id, kind=None)`, `checkpoints(task_id, kind=None)`.
+
+## 12. Safe resume state machine (AG2-011/017)
+
+Execution checkpoints are written only in the **serial** path of
+`_run_calls` and only for calls whose spec `mutability != "read"`
+(parallel batches admit only `parallel_safe` reads, so side effects are
+always serial). The checkpoint's `payload` mirrors the approval
+private-payload shape — `{call, remaining_calls, history, step,
+started_at, task_id}` — so recovery reuses the `_resume_approved`
+driving pattern:
+
+```
+prepared ──invoke begins──> running ──outcome lands──> completed_uncommitted
+(result row written, tool.finished event emitted) ──> committed
+(history items appended + event ledger durable)
+```
+
+- `prepared` at dispatch; `running` set immediately before `execute`;
+- `completed_uncommitted` + `result={finished, output_items}` written
+  **after the side effect completes but before** the result is fed to
+  history; `committed` after emit + history extend.
+- Startup recovery: `__init__` scans ACTIVE tasks (today: all → failed).
+  With a resumable latest execution checkpoint the task goes to
+  `recovering`/`recovery_confirmation_required` and is not failed:
+  - `prepared` → resume safely (side effect never started) → status
+    `recovering` then drive from payload; emit `task.recovery.started`,
+    `task.recovery.resumed`, `execution.checkpoint`.
+  - `committed` → resume from the task's `runtime` (history already
+    committed) → drive.
+  - `completed_uncommitted` + stored `result` → resume **without
+    re-executing**: append stored `output_items` to payload history,
+    re-emit `tool.finished`, mark checkpoint `committed`, drive
+    `remaining_calls`.
+  - `running` / `unknown` → `recovery_confirmation_required`; emit
+    `task.recovery.blocked`. Confirming calls `recover_task(confirm=True)`
+    which re-drives from `prepared` semantics (documented as accepting
+    possible double-effect) — never automatic.
+  - `resumable=0` → failed with `reason`.
+- New statuses (additive): `recovering`,
+  `recovery_confirmation_required` — both in `ACTIVE_STATUSES` so
+  cancel/takeover still apply; `resumed` is transient (task returns to
+  `running` once driving) and is emitted as `task.recovery.resumed`.
+- `AgentManager.recover_task(task_id, confirm=False)` + additive route
+  `POST /api/agent/tasks/{task_id}/recover` (`{"confirm": bool}`).
+  Events: `execution.checkpoint`, `task.recovery.started`,
+  `task.recovery.resumed`, `task.recovery.blocked`.
+
+## 13. Provider streaming + bounded retry (AG2-010)
+
+- Optional adapter capability: `supports_streaming=True` +
+  `stream_turn(**same kwargs, on_delta) -> ProviderTurn`. Manager calls
+  it when present; otherwise falls back to `turn()` — fakes and the
+  non-streaming providers unchanged.
+- `OpenAIResponsesAdapter.stream_turn` posts the same payload with
+  `stream: true` via `client.stream()`, parses SSE `data:` lines
+  (`response.output_text.delta` → progressive text;
+  `response.completed`/`response.incomplete` → final body parsed by the
+  existing `turn()` output pipeline). `function_call` argument deltas
+  need no incremental assembly on this API — complete call items arrive
+  in the terminal event; still emits `provider.tool_call.delta`
+  placeholders only if the API supplies call deltas (kept additive).
+- Manager emits: `provider.stream.started`, `assistant.delta {text}`,
+  `provider.stream.completed {response_id, first_token_ms, stream_ms}`;
+  final `assistant.message` still emitted (unchanged contract).
+  Cancellation: the stream task sits inside `_race_cancel` — a cancel
+  closes the in-flight response.
+- Retry (`agent/retry.py`): `classify(exc) ->
+  {kind: retryable|rate_limited|non_retryable, status_code?, retry_after_s?}`
+  (network errors, 408, 5xx → retryable; 429 + 5xx-with-Retry-After →
+  rate_limited honors Retry-After capped at 30s; 400/401/403/404/422
+  → non_retryable). `ProviderError` gains `status_code`. `retrying(fn,
+  emit, cancel)` → ≤3 attempts, exponential backoff 0.5s→8s +20% jitter,
+  cancellation-aware sleeping. Events: `provider.retry {attempt,
+  max_attempts, reason_class, status_code, delay_ms}`,
+  `provider.rate_limited`, `provider.failed`. Never retries after a
+  dispatched tool side effect (retry wraps only the provider call).
+- `ProviderHttpRuntime` is untouched; no secrets/Authorization headers
+  enter events — payloads carry classes + status codes only.
+- Metrics: `record_provider_stream(first_token_ms, stream_ms)` and
+  `provider_output_tokens` surfaced in `tasks.metrics`.
+
+## 14. Context compaction checkpoints (AG2-008)
+
+`ContextEngine.maybe_compact(history, *, emit, checkpoint_fn) ->
+history` runs before each provider turn after `slim_history`:
+
+- Trigger: `estimate_tokens(history) >= 0.75 * max_context_estimate_tokens`.
+- Split point: find the newest index `i` where `history[i:]` contains no
+  orphaned call → `*_call_output` needs never severed; everything `< i`
+  is compacted into a deterministic structured summary —
+  `{summary, completed_steps, important_files, decisions, pending_work,
+  git_state, approvals, artifacts, last_safe_execution_checkpoint,
+  created_at}` — built from the transcript itself (tool.finished error
+  lines, file paths in call args, last user instruction, current plan
+  step) plus the live `project_snapshot().git_state`; no model call in
+  v1 (deterministic + cheap; a provider-assisted summarizer can slot
+  behind the same function later).
+- The summary is injected as one leading item
+  `{type: "context_checkpoint", summary: ...}` after the original user
+  prompt item, so the transcript stays bounded while a resumable record
+  persists in `checkpoints(kind="context")`.
+- Events: `context.compaction.started {estimated_tokens, items}`,
+  `context.compaction.completed {checkpoint_id, retained, dropped}`,
+  `context.checkpoint {checkpoint_id}`.
+- Never compacts: pending approvals, unpaired calls, the latest
+  `max_history_events` tail, items needed by `function_call`→`output`,
+  `computer_call`→`output`, `custom_tool_call`→`output` pairing.

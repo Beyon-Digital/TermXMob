@@ -23,8 +23,21 @@ def configured_models(model: str) -> list[str]:
     return found
 
 
-ACTIVE_STATUSES = frozenset({"planning", "awaiting_approval", "running", "paused", "cancelling"})
+ACTIVE_STATUSES = frozenset({
+    "planning",
+    "awaiting_approval",
+    "running",
+    "paused",
+    "cancelling",
+    "recovering",
+    "recovery_confirmation_required",
+})
 TASK_STATUSES = frozenset({*ACTIVE_STATUSES, "cancelled", "failed", "completed"})
+
+CHECKPOINT_SIDE_EFFECT_STATES = frozenset(
+    {"none", "prepared", "running", "completed_uncommitted", "committed"}
+)
+CHECKPOINT_KINDS = frozenset({"execution", "context"})
 TASK_FIELDS = frozenset(
     {
         "status",
@@ -142,9 +155,25 @@ class AgentStore:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                history_cursor INTEGER NOT NULL DEFAULT 0,
+                plan_step INTEGER NOT NULL DEFAULT 0,
+                pending_call_id TEXT,
+                side_effect_state TEXT NOT NULL DEFAULT 'none',
+                payload TEXT NOT NULL DEFAULT '{}',
+                result TEXT,
+                resumable INTEGER NOT NULL DEFAULT 1,
+                reason TEXT,
+                provider_turn_id TEXT,
+                created_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS events_task_sequence ON events(task_id, sequence);
             CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS approvals_task ON approvals(task_id, created_at);
+            CREATE INDEX IF NOT EXISTS checkpoints_task ON checkpoints(task_id, kind, created_at);
             """
         )
         # Additive migration for databases created before the Chat mode column.
@@ -376,6 +405,144 @@ class AgentStore:
             }
             for row in rows
         ]
+
+    # Checkpoints ---------------------------------------------------------
+
+    def create_checkpoint(
+        self,
+        task_id: str,
+        *,
+        kind: str,
+        history_cursor: int = 0,
+        plan_step: int = 0,
+        pending_call_id: str | None = None,
+        side_effect_state: str = "none",
+        payload: dict[str, Any] | None = None,
+        result: dict[str, Any] | None = None,
+        resumable: bool = True,
+        reason: str | None = None,
+        provider_turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        if kind not in CHECKPOINT_KINDS:
+            raise ValueError(f"invalid checkpoint kind: {kind}")
+        if side_effect_state not in CHECKPOINT_SIDE_EFFECT_STATES:
+            raise ValueError(f"invalid side_effect_state: {side_effect_state}")
+        checkpoint_id = uuid.uuid4().hex
+        created = time()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO checkpoints (id, task_id, kind, history_cursor, plan_step,"
+                " pending_call_id, side_effect_state, payload, result, resumable,"
+                " reason, provider_turn_id, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    checkpoint_id,
+                    task_id,
+                    kind,
+                    int(history_cursor),
+                    int(plan_step),
+                    pending_call_id,
+                    side_effect_state,
+                    _json(payload or {}),
+                    _json(result) if result is not None else None,
+                    1 if resumable else 0,
+                    reason,
+                    provider_turn_id,
+                    created,
+                ),
+            )
+            self._db.commit()
+        checkpoint = self.get_checkpoint(checkpoint_id)
+        if checkpoint is None:  # pragma: no cover
+            raise KeyError(checkpoint_id)
+        return checkpoint
+
+    def update_checkpoint(self, checkpoint_id: str, **changes: Any) -> dict[str, Any]:
+        allowed = {
+            "history_cursor",
+            "plan_step",
+            "pending_call_id",
+            "side_effect_state",
+            "payload",
+            "result",
+            "resumable",
+            "reason",
+            "provider_turn_id",
+        }
+        invalid = set(changes) - allowed
+        if invalid:
+            raise ValueError(f"invalid checkpoint fields: {', '.join(sorted(invalid))}")
+        state = changes.get("side_effect_state")
+        if state is not None and state not in CHECKPOINT_SIDE_EFFECT_STATES:
+            raise ValueError(f"invalid side_effect_state: {state}")
+        encoded: dict[str, Any] = {}
+        for key, value in changes.items():
+            if key in {"payload", "result"}:
+                encoded[key] = _json(value) if value is not None else None
+            elif key == "resumable":
+                encoded[key] = 1 if value else 0
+            else:
+                encoded[key] = value
+        assignments = ", ".join(f"{key} = ?" for key in encoded)
+        with self._lock:
+            cursor = self._db.execute(
+                f"UPDATE checkpoints SET {assignments} WHERE id = ?",
+                (*encoded.values(), checkpoint_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(checkpoint_id)
+            self._db.commit()
+        checkpoint = self.get_checkpoint(checkpoint_id)
+        if checkpoint is None:  # pragma: no cover
+            raise KeyError(checkpoint_id)
+        return checkpoint
+
+    def get_checkpoint(self, checkpoint_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM checkpoints WHERE id = ?", (checkpoint_id,)
+            ).fetchone()
+        return self._checkpoint(row) if row is not None else None
+
+    def checkpoints(self, task_id: str, kind: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM checkpoints WHERE task_id = ?"
+        args: list[Any] = [task_id]
+        if kind is not None:
+            query += " AND kind = ?"
+            args.append(kind)
+        query += " ORDER BY created_at, rowid"
+        with self._lock:
+            rows = self._db.execute(query, args).fetchall()
+        return [self._checkpoint(row) for row in rows]
+
+    def latest_checkpoint(self, task_id: str, kind: str | None = None) -> dict[str, Any] | None:
+        query = "SELECT * FROM checkpoints WHERE task_id = ?"
+        args: list[Any] = [task_id]
+        if kind is not None:
+            query += " AND kind = ?"
+            args.append(kind)
+        query += " ORDER BY created_at DESC, rowid DESC LIMIT 1"
+        with self._lock:
+            row = self._db.execute(query, args).fetchone()
+        return self._checkpoint(row) if row is not None else None
+
+    @staticmethod
+    def _checkpoint(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "task_id": row["task_id"],
+            "kind": row["kind"],
+            "history_cursor": row["history_cursor"],
+            "plan_step": row["plan_step"],
+            "pending_call_id": row["pending_call_id"],
+            "side_effect_state": row["side_effect_state"],
+            "payload": _load_json(row["payload"], {}),
+            "result": _load_json(row["result"], None),
+            "resumable": bool(row["resumable"]),
+            "reason": row["reason"],
+            "provider_turn_id": row["provider_turn_id"],
+            "created_at": row["created_at"],
+        }
 
     @staticmethod
     def _task(row: sqlite3.Row) -> dict[str, Any]:

@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 
 from termx.agent.computer import ComputerController
 from termx.agent.context import ContextEngine
+from termx.agent.context.engine import estimate_tokens
 from termx.agent.metrics import TaskMetrics
 from termx.agent.policy import (
     PolicyDecision,
@@ -365,6 +366,51 @@ class AgentManager:
                 adapter = self._adapter(provider)
                 manifest = await engine.snapshot()
                 history = engine.slim_history(history)
+                compaction = engine.plan_compaction(
+                    history, git_state=manifest.get("git") if isinstance(manifest, dict) else None
+                )
+                if compaction is not None:
+                    self._emit(
+                        task_id,
+                        "context.compaction.started",
+                        {"estimated_tokens": estimate_tokens(history), "items": len(history)},
+                    )
+                    payload = dict(compaction["payload"])
+                    payload["approvals"] = [
+                        {"id": approval["id"], "kind": approval["kind"], "status": approval["status"]}
+                        for approval in self.store.approvals(task_id)
+                        if approval.get("status") == "pending"
+                    ]
+                    payload["artifacts"] = [
+                        {"id": artifact["id"], "kind": artifact["kind"], "mime": artifact["mime"]}
+                        for artifact in self.store.artifacts(task_id)
+                    ][:20]
+                    last_safe = self.store.latest_checkpoint(task_id, kind="execution")
+                    payload["last_safe_execution_checkpoint"] = (
+                        last_safe["id"] if last_safe else None
+                    )
+                    checkpoint = self.store.create_checkpoint(
+                        task_id,
+                        kind="context",
+                        history_cursor=int(compaction["history_cursor"]),
+                        plan_step=step,
+                        payload=payload,
+                    )
+                    history = compaction["history"]
+                    for item in history:
+                        if isinstance(item, dict) and item.get("type") == "context_checkpoint":
+                            item["checkpoint_id"] = checkpoint["id"]
+                            break
+                    self._emit(task_id, "context.checkpoint", {"checkpoint_id": checkpoint["id"]})
+                    self._emit(
+                        task_id,
+                        "context.compaction.completed",
+                        {
+                            "checkpoint_id": checkpoint["id"],
+                            "retained": len(history),
+                            "dropped": compaction["dropped"],
+                        },
+                    )
                 read_only = task.get("mode") == "ask"
                 turn_started = monotonic()
                 turn = await self._provider_turn(
