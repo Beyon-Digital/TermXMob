@@ -114,19 +114,41 @@ def test_fingerprint_compound_commands_are_exact(tmp_path):
         assert kind == "exact", cmd
 
 
-def test_fingerprint_hierarchical_programs_bind_subcommand(tmp_path):
+def test_fingerprint_binds_full_argv(tmp_path):
+    """Non-interpreter commands bind the whole argv: extra operands, changed
+    targets, or new flags all produce a different intent — a remembered
+    approval can never silently cover a broader command."""
     push, kind = fingerprint_command("git push origin main", str(tmp_path))
-    push_again, _ = fingerprint_command("git push origin main --force-with-lease", str(tmp_path))
     fetch, _ = fingerprint_command("git fetch origin", str(tmp_path))
     assert kind == "conservative"
-    # Flag variants of the same subcommand match; a different subcommand doesn't.
-    assert push == push_again
     assert push != fetch
+    variants = (
+        "git push origin main --force-with-lease",  # added flag
+        "git push upstream main",                   # different remote
+        "git push origin",                          # missing branch
+    )
+    for command in variants:
+        other, _ = fingerprint_command(command, str(tmp_path))
+        assert other != push, command
 
 
-def test_fingerprint_generic_binds_first_target(tmp_path):
+def test_fingerprint_generic_rejects_extra_operands(tmp_path):
+    """Review regression: remembered `rm -rf build/` must not cover
+    `rm -rf build/ other/` — all non-flag operands are bound."""
     a, _ = fingerprint_command("rm -rf build/", str(tmp_path))
     b, _ = fingerprint_command("rm -rf dist/", str(tmp_path))
+    extra, _ = fingerprint_command("rm -rf build/ other/", str(tmp_path))
+    dropped_flag, _ = fingerprint_command("rm build/", str(tmp_path))
+    same, _ = fingerprint_command('rm -rf "build/"', str(tmp_path))
+    assert a != b
+    assert a != extra
+    assert a != dropped_flag
+    assert a == same  # quoting normalizes away
+
+
+def test_fingerprint_docker_run_binds_image(tmp_path):
+    a, _ = fingerprint_command("docker run alpine", str(tmp_path))
+    b, _ = fingerprint_command("docker run ubuntu", str(tmp_path))
     assert a != b
 
 
@@ -266,12 +288,24 @@ def test_capability_rules_scoped(store):
     )
     _rule(
         store, fingerprint="cap", action_type="capability",
-        capabilities=["docker.socket"], scope_type="task", scope_id="task-5",
+        capabilities=["fs.workspace.write"], scope_type="task", scope_id="task-5",
     )
     got = store.capability_rules(scopes=[("project", "proj-1")])
     assert [r["capabilities"] for r in got] == [["net.outbound:any"]]
     got = store.capability_rules(scopes=[("task", "task-5")])
-    assert [r["capabilities"] for r in got] == [["docker.socket"]]
+    assert [r["capabilities"] for r in got] == [["fs.workspace.write"]]
+
+
+def test_capability_rule_validation(store):
+    """Capability rules must name grantable powers — an empty list or an
+    ungrantable capability is a store-level error, not a silent grant."""
+    with pytest.raises(ValueError, match="non-empty"):
+        _rule(store, action_type="capability", capabilities=[])
+    with pytest.raises(ValueError, match="ungrantable"):
+        _rule(
+            store, action_type="capability",
+            capabilities=["docker.socket"], scope_type="project", scope_id="proj-1",
+        )
 
 
 def test_custom_agent_mode_columns(store):
@@ -309,8 +343,8 @@ def test_task_custom_agent_id(store):
 # ---------------------------------------------------------------------------
 
 
-def _engine(store, envelope=None):
-    return PolicyEngine(store, envelope=envelope)
+def _engine(store, envelope=None, grantable=None):
+    return PolicyEngine(store, envelope=envelope, grantable=grantable)
 
 
 def test_remembered_allow_auto_resolves(store, tmp_path):
@@ -412,6 +446,9 @@ _RESTRICTED_ENVELOPE = frozenset(
         "fs.workspace:any",
     }
 )
+# Same restricted envelope, but the backend can additionally provide outbound
+# network when a capability rule grants it.
+_GRANTABLE = frozenset({*_RESTRICTED_ENVELOPE, "net.outbound:any"})
 
 
 def test_missing_grantable_capability_asks_separately(store, tmp_path):
@@ -440,7 +477,13 @@ def test_remembered_allow_cannot_punch_through_missing_capability(store, tmp_pat
 
 
 def test_remembered_capability_fills_gap_then_execution_rule_applies(store, tmp_path):
-    engine = _engine(store, envelope=lambda _p: _RESTRICTED_ENVELOPE)
+    # The backend advertises net.outbound as grantable — a remembered
+    # capability grant can then fill the envelope gap.
+    engine = _engine(
+        store,
+        envelope=lambda _p: _RESTRICTED_ENVELOPE,
+        grantable=lambda _p: _GRANTABLE,
+    )
     ctx = _ctx(tmp_path)
     fp, _ = fingerprint_command("curl https://example.com/x", str(tmp_path))
     _rule(
@@ -466,7 +509,11 @@ def test_ungrantable_capability_is_hard_deny_not_ask(store, tmp_path):
 def test_capability_ask_does_not_imply_execution_approval(store, tmp_path):
     """Granting `net.outbound` does not silently approve the command that
     needed it — the action itself still has to pass policy."""
-    engine = _engine(store, envelope=lambda _p: _RESTRICTED_ENVELOPE)
+    engine = _engine(
+        store,
+        envelope=lambda _p: _RESTRICTED_ENVELOPE,
+        grantable=lambda _p: _GRANTABLE,
+    )
     ctx = _ctx(tmp_path)
     _rule(
         store, fingerprint="cap", action_type="capability",
@@ -477,6 +524,24 @@ def test_capability_ask_does_not_imply_execution_approval(store, tmp_path):
     assert decision.approval_required is True
     assert decision.approval_kind == "action"
     assert decision.auto_resolved is None
+
+
+def test_remembered_capability_cannot_invent_grants(store, tmp_path):
+    """Review regression: a stored capability rule only counts when the
+    backend advertises the capability as grantable — a manually written rule
+    can never conjure powers the runner lacks."""
+    # No `grantable` override: it defaults to the envelope, which lacks
+    # net.outbound — so the stored rule must not fill the gap.
+    engine = _engine(store, envelope=lambda _p: _RESTRICTED_ENVELOPE)
+    ctx = _ctx(tmp_path)
+    _rule(
+        store, fingerprint="cap", action_type="capability",
+        capabilities=["net.outbound:any"], scope_type="project", scope_id="proj-1",
+    )
+    decision = _shell_decision(engine, "curl https://example.com/x", ctx)
+    assert decision.approval_kind == "capability"
+    assert decision.approval_required is True
+    assert decision.auto_resolved != "allow"
 
 
 # ---------------------------------------------------------------------------
@@ -607,6 +672,42 @@ def test_capability_resolution_writes_capability_rule(store, tmp_path):
     assert rule["capabilities"] == ["net.outbound:any"]
 
 
+def test_capability_resolution_rejects_ungrantable_or_unprovidable(store, tmp_path):
+    """A capability approval may only persist powers the profile's backend
+    can actually provide — never the ungrantable set, never off-grantable."""
+    engine = _engine(store)  # default envelope/grantable is *:any
+    intent = PolicyIntent(
+        action_type="tool", tool="run_shell", fingerprint="fp-cap",
+        fingerprint_kind="exact", display="docker run alpine", cwd=str(tmp_path),
+        project_id="proj-1", task_id="task-1",
+        required_capabilities=("docker.socket",),
+    )
+    with pytest.raises(ValueError, match="docker.socket"):
+        engine.record_resolution(
+            intent, decision="approved", remember="project",
+            project_id="proj-1", source_approval_id="a1", approval_kind="capability",
+        )
+
+    # Grantable-but-not-granted capabilities can be remembered on a backend
+    # that advertises them; they still can't on one that doesn't.
+    restricted = _engine(
+        store,
+        envelope=lambda _p: _RESTRICTED_ENVELOPE,
+        grantable=lambda _p: _RESTRICTED_ENVELOPE,
+    )
+    net = PolicyIntent(
+        action_type="tool", tool="run_shell", fingerprint="fp-cap",
+        fingerprint_kind="exact", display="curl https://x", cwd=str(tmp_path),
+        project_id="proj-1", task_id="task-1",
+        required_capabilities=("net.outbound:any",),
+    )
+    with pytest.raises(ValueError, match="net.outbound"):
+        restricted.record_resolution(
+            net, decision="approved", remember="project",
+            project_id="proj-1", source_approval_id="a1", approval_kind="capability",
+        )
+
+
 # ---------------------------------------------------------------------------
 # rule_public — API payload shape.
 # ---------------------------------------------------------------------------
@@ -619,3 +720,35 @@ def test_rule_public_strips_internal_columns(store):
         assert key not in public
     assert public["matcher"] == {"command": "pnpm install"}
     assert public["source_approval_id"] is None  # audit linkage is public-safe
+
+
+def test_rule_public_redacts_display_and_matcher(store):
+    """API-created rules can embed secrets in display/matcher — the public
+    view must redact them on the way out."""
+    rule = _rule(
+        store,
+        display="curl -H 'Authorization: Bearer sk-abc123def456ghi789'",
+        matcher={"command": "token=AKIAIOSFODNN7EXAMPLE"},
+    )
+    public = rule_public(rule)
+    assert "sk-abc123def456ghi789" not in public["display"]
+    assert "AKIAIOSFODNN7EXAMPLE" not in str(public["matcher"])
+
+
+def test_autonomous_never_auto_approves_subagent_delegation(store, tmp_path):
+    """Review regression: autonomous mode must not self-approve spawning
+    sub-agents — delegation is a blocked risk class; a remembered rule
+    remains the only silent path."""
+    agent = store.create_custom_agent(name="auto", approval_mode="autonomous")
+    engine = _engine(store)
+    ctx = _ctx(tmp_path, custom_agent_id=agent["id"])
+    ctx.policy_engine = engine  # duck-typed ToolContext surface
+    call = ProviderCall(
+        type="function", call_id="c1", name="spawn_subagent",
+        arguments={"task": "do stuff", "agent": "publisher"},
+    )
+    from termx.agent.tools.legacy import _decide_spawn
+
+    decision = _decide_spawn(call, ctx)
+    assert decision.auto_resolved != "autonomous"
+    assert decision.approval_required is True

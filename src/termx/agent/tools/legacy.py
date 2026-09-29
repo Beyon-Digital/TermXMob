@@ -158,6 +158,9 @@ def _decide_spawn(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
             matcher={"agent": agent},
             base=base,
             capabilities=("process.execute", "process.children"),
+            # Delegating is itself consequential: autonomous mode never
+            # self-approves spawning new sub-agents (a remembered rule still can).
+            risk="delegation",
         )
     return base
 

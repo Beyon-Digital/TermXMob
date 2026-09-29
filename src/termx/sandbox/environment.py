@@ -97,6 +97,30 @@ def _allowed(name: str) -> bool:
     return name in _ENV_ALLOW_EXACT or name.startswith(_ENV_ALLOW_PREFIX)
 
 
+def _strip_url_credentials(value: str) -> str:
+    """Remove userinfo from URL values (proxy/index settings).
+
+    Allowed config variables are copied verbatim — but a value like
+    ``http://user:pass@proxy:8080`` carries credentials, which restricted
+    profiles must not receive. Strips the authority's userinfo; leaves
+    non-URL values untouched.
+    """
+    if "://" not in value:
+        return value
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    host = parts.hostname or ""
+    if not host:
+        return value
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
 def build_environment(
     profile: str,
     *,
@@ -117,7 +141,7 @@ def build_environment(
     base = os.environ if base is None else base
     extra = set(extra_allow)
     env = {
-        name: value
+        name: _strip_url_credentials(value)
         for name, value in base.items()
         if not _denied(name) and (_allowed(name) or name in extra)
     }

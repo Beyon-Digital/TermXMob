@@ -112,7 +112,7 @@ _REASON_RISK = {
 # Risk classes that `autonomous` mode may never auto-approve (publication and
 # external submits stay explicit; privilege/credential/sensitive too).
 AUTONOMOUS_BLOCKED_RISKS = frozenset(
-    {"privilege", "sensitive", "publication", "external", "outside_root"}
+    {"privilege", "sensitive", "publication", "external", "outside_root", "delegation"}
 )
 # Capabilities remembered allow rules may never imply by side effect.
 UNGRANTABLE_CAPABILITIES = frozenset(

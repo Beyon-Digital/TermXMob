@@ -92,7 +92,18 @@ class PolicyIntent:
 
 
 def rule_public(rule: dict[str, Any]) -> dict[str, Any]:
-    """Store-row → API-safe policy rule view (no raw command text)."""
+    """Store-row → API-safe policy rule view.
+
+    ``display``/``matcher`` go through the shared redactor: engine-created
+    rules are already redacted, but API-created rows could embed secrets the
+    listing endpoint must not echo back.
+    """
+    from termx.agent.policy import redact
+
+    matcher = {
+        str(k): (redact(str(v)) if isinstance(v, str) else v)
+        for k, v in dict(rule["matcher"] or {}).items()
+    }
     return {
         "id": rule["id"],
         "version": rule["version"],
@@ -103,13 +114,13 @@ def rule_public(rule: dict[str, Any]) -> dict[str, Any]:
         "tool": rule["tool"],
         "fingerprint": rule["fingerprint"],
         "fingerprint_kind": rule["fingerprint_kind"],
-        "matcher": rule["matcher"],
+        "matcher": matcher,
         "capabilities": rule["capabilities"],
         "sandbox_profile": rule["sandbox_profile"],
         "source_approval_id": rule["source_approval_id"],
         "task_id": rule["task_id"],
         "project_id": rule["project_id"],
-        "display": rule["display"],
+        "display": redact(str(rule["display"] or "")),
         "created_at": rule["created_at"],
         "updated_at": rule["updated_at"],
         "last_used_at": rule["last_used_at"],

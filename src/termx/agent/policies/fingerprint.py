@@ -34,18 +34,6 @@ _INTERPRETERS = frozenset(
 # Flags that make an interpreter run inline code / a module instead of a
 # script file — these commands can only ever be matched exactly.
 _INTERPRETER_INLINE_FLAGS = frozenset({"-c", "-e", "-m", "--eval", "-r"})
-# Programs whose first two bare-word arguments form a semantic subcommand
-# (`git remote add`, `npm config set`, `gh pr create` …).
-_HIERARCHICAL_PROGRAMS = frozenset(
-    {
-        "git", "docker", "podman", "kubectl", "helm",
-        "gh", "glab", "flyctl", "fly",
-        "systemctl", "launchctl", "brew", "apt", "apt-get", "dpkg",
-        "npm", "pnpm", "yarn", "pip", "pip3", "pipx", "uvx",
-        "cargo", "rustup", "go", "gem", "bundle", "composer", "dotnet", "nuget",
-        "terraform", "ansible", "aws", "gcloud", "az",
-    }
-)
 _SCRIPT_EXTS = frozenset(
     {
         ".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts",
@@ -101,15 +89,11 @@ def _fingerprint_simple(argv: list[str], cwd: str) -> tuple[str, str]:
             return _digest("interp", program, script, *rest), "conservative"
         # inline code / REPL / flag-only invocations match the command exactly
         return _digest("sh", program, *args), "exact"
-    if program in _HIERARCHICAL_PROGRAMS:
-        words = [a for a in args if not a.startswith("-")]
-        key = [program, *words[:2]]
-        return _digest("cmd", *key), "conservative"
-    # Generic: program + first non-flag argument binds the subcommand/target;
-    # `pnpm test` matches across flag variants, `rm build/` never matches
-    # `rm other/`, `curl <host>` stays per-destination.
-    target = next((a for a in args if not a.startswith("-")), "")
-    return _digest("cmd", program, target), "conservative"
+    # Everything else binds the full argv (env-assignments stripped, quoting
+    # normalized): `rm -rf build/` never authorizes `rm -rf build/ other/`,
+    # `docker run img1` never authorizes `docker run img2`, and flag changes
+    # re-ask — slightly-more-asks is the safe side of remembered approvals.
+    return _digest("cmd", program, *args), "conservative"
 
 
 def fingerprint_command(command: str, cwd: str) -> tuple[str, str]:

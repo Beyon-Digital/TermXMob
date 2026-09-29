@@ -96,6 +96,7 @@ class AgentManager:
         self._policy_engine = PolicyEngine(
             self.store,
             envelope=lambda profile: runner_for(profile).capabilities().granted,
+            grantable=lambda profile: runner_for(profile).capabilities().grantable,
         )
         from termx.runbooks import RunbookRunner
 

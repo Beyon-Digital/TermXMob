@@ -115,6 +115,22 @@ def test_effective_policies_reports_truthful_sandbox(client, auth):
     assert len(body["rules"]) == 1  # only the host-scope rule matches
 
 
+def test_effective_policies_hides_expired_rules(client, auth):
+    """Expired rules stay visible in the ordinary list for audit but must not
+    appear in the effective view — matching already ignores them."""
+    import time
+
+    rule = client.post(
+        "/api/agent/policies",
+        json=_rule_body(expires_at=time.time() - 5),
+        headers=auth,
+    ).json()["rule"]
+    listed = client.get("/api/agent/policies", headers=auth)
+    assert any(r["id"] == rule["id"] for r in listed.json()["rules"])  # audit keeps it
+    eff = client.get("/api/agent/policies/effective?project_id=proj-1", headers=auth)
+    assert not [r for r in eff.json()["rules"] if r["id"] == rule["id"]]
+
+
 def test_custom_agent_approval_mode_validation(client, auth):
     bad = client.post(
         "/api/custom-agents",

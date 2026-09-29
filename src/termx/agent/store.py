@@ -1358,6 +1358,16 @@ class AgentStore:
             raise ValueError("invalid fingerprint_kind")
         if scope_type != "host" and not scope_id:
             raise ValueError("non-host rules require scope_id")
+        if action_type == "capability":
+            # A capability rule must name capabilities — and can never name the
+            # ungrantable set, which no sandbox backend may provide.
+            from termx.agent.policies.defaults import UNGRANTABLE_CAPABILITIES
+
+            if not capabilities:
+                raise ValueError("capability rules require a non-empty capabilities list")
+            bad = [c for c in capabilities if c in UNGRANTABLE_CAPABILITIES]
+            if bad:
+                raise ValueError(f"capabilities are ungrantable: {', '.join(bad)}")
         rule_id = uuid.uuid4().hex[:16]
         now = time()
         with self._lock:

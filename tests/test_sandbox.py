@@ -200,6 +200,24 @@ def test_build_environment_keeps_safe_toolchain_vars_and_proxies():
     assert "TERMX_AI_X" not in env
 
 
+def test_build_environment_strips_url_credentials():
+    """Review regression: allowed proxy/index vars may carry
+    ``user:pass@host`` — the credentials must never cross into the sandbox."""
+    env = build_environment(
+        "agent",
+        base={
+            "PATH": "/usr/bin",
+            "HTTPS_PROXY": "http://alice:s3cret@proxy.corp:3128",
+            "PIP_INDEX_URL": "https://u:tok@pypi.internal/simple/",
+            "http_proxy": "socks5://u:p@gw:1080",
+        },
+    )
+    assert env["HTTPS_PROXY"] == "http://proxy.corp:3128"
+    assert env["PIP_INDEX_URL"] == "https://pypi.internal/simple/"
+    assert env["http_proxy"] == "socks5://gw:1080"
+    assert "s3cret" not in env["HTTPS_PROXY"] and "tok" not in env["PIP_INDEX_URL"]
+
+
 def test_build_environment_extra_allow_still_cannot_leak_denied_names():
     env = build_environment(
         "agent",

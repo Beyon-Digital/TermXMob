@@ -56,11 +56,17 @@ class PolicyEngine:
         store: Any,
         *,
         envelope: Callable[[str], frozenset[str]] | None = None,
+        grantable: Callable[[str], frozenset[str]] | None = None,
     ) -> None:
         self._store = store
         # profile -> capabilities the sandbox backend currently provides.
         # Default is the host backend: unrestricted (truthful, not "secure").
         self._envelope = envelope or (lambda _profile: frozenset({"*:any"}))
+        # profile -> capabilities the backend can *additionally* provide when a
+        # remembered capability rule grants them. Defaults to the envelope
+        # itself: a backend that can't dynamically extend grants makes stored
+        # capability rules unable to invent powers the runner lacks.
+        self._grantable = grantable or self._envelope
 
     # -- decider entry points (wired into ToolSpec.decide) -------------------
 
@@ -90,13 +96,14 @@ class PolicyEngine:
         matcher: dict[str, Any],
         base: "PolicyDecision",
         capabilities: tuple[str, ...] | None = None,
+        risk: str | None = None,
     ) -> "PolicyDecision":
         intent = fp.tool_intent(call, ctx, fingerprint=fingerprint, display=display, matcher=matcher)
         intent = self._enrich(
             intent,
             ctx,
             capabilities=capabilities or tool_capabilities(call.name or ""),
-            risk=intent_risk(intent, base.reason if base.approval_required else None),
+            risk=risk or intent_risk(intent, base.reason if base.approval_required else None),
         )
         return self.evaluate(intent, base, ctx)
 
@@ -160,9 +167,9 @@ class PolicyEngine:
                     sandbox_profile=intent.sandbox_profile,
                 )
             remembered_caps = self._remembered_capabilities(
+                intent,
                 project_id=project_id,
                 custom_agent_id=custom_agent_id,
-                task_id=intent.task_id,
             )
             still_missing = [c for c in missing if c not in remembered_caps]
             if still_missing:
@@ -272,6 +279,19 @@ class PolicyEngine:
             return None
         if remember not in REMEMBER_SCOPES:
             return None
+        if approval_kind == "capability":
+            # Capability rules may only name capabilities this profile's backend
+            # can actually provide — a rule must never invent powers.
+            grantable = self._grantable(intent.sandbox_profile)
+            bad = [
+                c
+                for c in intent.required_capabilities
+                if c in UNGRANTABLE_CAPABILITIES or not _covers(grantable, c)
+            ]
+            if bad:
+                raise ValueError(
+                    f"capability rule cannot grant {', '.join(bad)} on profile {intent.sandbox_profile}"
+                )
         scope_id = {
             "task": intent.task_id,
             "project": project_id,
@@ -318,23 +338,27 @@ class PolicyEngine:
 
     def _remembered_capabilities(
         self,
+        intent: PolicyIntent,
         *,
         project_id: str,
         custom_agent_id: str | None,
-        task_id: str,
     ) -> set[str]:
         scopes: list[tuple[str, str]] = [("host", "")]
-        if task_id:
-            scopes.append(("task", task_id))
+        if intent.task_id:
+            scopes.append(("task", intent.task_id))
         if custom_agent_id:
             scopes.append(("custom_agent", custom_agent_id))
         if project_id:
             scopes.append(("project", project_id))
-        granted: set[str] = set()
+        remembered: set[str] = set()
         for rule in self._store.capability_rules(scopes=scopes):
             if rule["effect"] == "allow":
-                granted.update(rule["capabilities"])
-        return granted
+                remembered.update(rule["capabilities"])
+        # A remembered capability grant only counts where this profile's backend
+        # can actually provide it — stored rules cannot invent powers the
+        # runner does not advertise as grantable.
+        grantable = self._grantable(intent.sandbox_profile)
+        return {c for c in remembered if _covers(grantable, c)}
 
     def _custom_agent(self, agent_id: str | None) -> dict[str, Any] | None:
         if not agent_id:

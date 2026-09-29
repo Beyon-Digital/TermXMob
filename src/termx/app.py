@@ -1570,13 +1570,19 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         if project_id:
             scopes.append(("project", project_id))
         rules = state.agent_store.list_policy_rules(limit=1000)
+        now = time()
         matched = [
             rule
             for rule in rules
-            if rule["scope_type"] == "host"
-            or any(
-                rule["scope_type"] == scope_type and rule["scope_id"] == scope_id
-                for scope_type, scope_id in scopes
+            # "Effective" mirrors matching semantics: expired rules stay in the
+            # ordinary list for audit but never apply here.
+            if (rule["expires_at"] is None or rule["expires_at"] > now)
+            and (
+                rule["scope_type"] == "host"
+                or any(
+                    rule["scope_type"] == scope_type and rule["scope_id"] == scope_id
+                    for scope_type, scope_id in scopes
+                )
             )
         ]
         custom = None
