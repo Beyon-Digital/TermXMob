@@ -83,13 +83,14 @@ class AppState:
         self.desktop = DesktopManager(self.store, rtc=self.rtc)
         self.agent_store = agent_store or AgentStore()
         self.credentials = credentials or CredentialStore()
+        self.projects = ProjectFiles()
         self.agent = AgentManager(
             self.agent_store,
             self.credentials,
             self.desktop,
             adapter_factory=adapter_factory,
+            project_files=self.projects,
         )
-        self.projects = ProjectFiles()
         self.port = port
         self.request_shutdown = None
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import mimetypes
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -11,13 +10,11 @@ from time import monotonic
 from typing import Any, TypeVar
 
 from termx.agent.computer import ComputerController
-from termx.agent.context import workspace_manifest
-from termx.agent.execution import run_shell
+from termx.agent.context import ContextEngine
+from termx.agent.metrics import TaskMetrics
 from termx.agent.policy import (
     PolicyDecision,
     evaluate_computer,
-    evaluate_shell,
-    is_mutating_shell,
     is_sensitive_path,
     redact,
 )
@@ -28,8 +25,11 @@ from termx.agent.providers import (
     ProviderError,
     ProviderTurn,
 )
+from termx.agent.runtime import ProviderHttpRuntime
+from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
+from termx.agent.tools import ToolContext, ToolOutcome, default_registry
 
 T = TypeVar("T")
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
@@ -46,6 +46,7 @@ class AgentManager:
         desktop: Any,
         *,
         adapter_factory: AdapterFactory | None = None,
+        project_files: Any = None,
     ) -> None:
         self.store = store
         self.credentials = credentials
@@ -57,6 +58,13 @@ class AgentManager:
         self._steering: dict[str, list[str]] = defaultdict(list)
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
         self._computer = ComputerController()
+        self._tools = default_registry()
+        self._scheduler = CallScheduler(self._tools)
+        self._http = ProviderHttpRuntime()
+        self._metrics: dict[str, TaskMetrics] = {}
+        self._context_engines: dict[str, ContextEngine] = {}
+        self._project_files = project_files
+        self._project_ids: dict[str, str] = {}
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
                 self.store.update_task(
@@ -97,6 +105,9 @@ class AgentManager:
         if api_key:
             self.credentials.set(provider_id, api_key)
             configured = True
+        # Config or key changed: drop the pooled client so the next adapter
+        # does not reuse a stale base URL or credential.
+        self._http.evict(provider_id)
         provider = self.store.put_provider(
             provider_id,
             kind=kind,
@@ -117,6 +128,7 @@ class AgentManager:
         deleted = self.store.delete_provider(provider_id)
         if deleted:
             self.credentials.delete(provider_id)
+            self._http.evict(provider_id)
         return deleted
 
     # Task lifecycle --------------------------------------------------
@@ -166,7 +178,11 @@ class AgentManager:
             self._emit(task_id, "user.media", {"artifacts": uploads})
         self._emit(task_id, "task.created", {"task": task})
         try:
-            manifest = await asyncio.to_thread(workspace_manifest, str(root))
+            engine = ContextEngine(str(root))
+            manifest = await engine.snapshot()
+            self._context_engines[task_id] = engine
+            self._metrics[task_id] = TaskMetrics()
+            self._emit(task_id, "context.snapshot", {"snapshot": _snapshot_event(manifest)})
             upload_ids = [item["id"] for item in uploads]
             if mode == "ask":
                 # Ask mode is read-only and low-risk, so it starts immediately
@@ -177,6 +193,7 @@ class AgentManager:
                 self._launch(task_id, self._drive(task_id))
                 return self.store.get_task(task_id, include_events=True) or task
             planning = adapter.plan(prompt, str(root), manifest)
+            plan_started = monotonic()
             if cancel is None:
                 plan, response_id = await planning
             else:
@@ -185,6 +202,7 @@ class AgentManager:
                 except asyncio.CancelledError:
                     self._mark_cancelled(task_id)
                     return self.store.get_task(task_id, include_events=True) or task
+            self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
             history = [self._upload_message(task_id, upload_ids)] if upload_ids else []
             runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
             task = self.store.update_task(
@@ -221,6 +239,9 @@ class AgentManager:
         ):
             raise ValueError("approved tool request is no longer available")
         approval = self.store.resolve_approval(approval_id, decision)
+        metrics = self._metrics.get(task_id)
+        if metrics is not None and approval.get("resolved_at") and approval.get("created_at"):
+            metrics.record_approval_wait(int((approval["resolved_at"] - approval["created_at"]) * 1000))
         self._emit(task_id, "approval.resolved", {"approval": approval})
         private_payload = self._pending_approval_calls.pop(approval_id, None)
         if private_payload is not None and "child_approval_id" in private_payload:
@@ -301,6 +322,7 @@ class AgentManager:
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
         await self._computer.release_all()
+        await self._http.aclose()
         await asyncio.to_thread(self.store.prune)
 
     # Execution -------------------------------------------------------
@@ -319,6 +341,8 @@ class AgentManager:
         step = int(step if step is not None else runtime.get("step") or 0)
         started_at = started_at or float(runtime.get("started_at") or monotonic())
         cancel = self._cancel.setdefault(task_id, asyncio.Event())
+        engine = self._context_engines.setdefault(task_id, ContextEngine(task["cwd"]))
+        metrics = self._metrics.setdefault(task_id, TaskMetrics(task.get("metrics")))
         self.store.update_task(task_id, status="running")
         self._emit(task_id, "task.status", {"status": "running"})
         try:
@@ -338,8 +362,10 @@ class AgentManager:
                 provider = dict(self._provider(task["provider_id"]))
                 provider["model"] = str(task.get("model") or _resolve_model(provider, None))
                 adapter = self._adapter(provider)
-                manifest = runtime.get("manifest") or await asyncio.to_thread(workspace_manifest, task["cwd"])
+                manifest = await engine.snapshot()
+                history = engine.slim_history(history)
                 read_only = task.get("mode") == "ask"
+                turn_started = monotonic()
                 turn = await self._provider_turn(
                     adapter,
                     cancel,
@@ -350,6 +376,7 @@ class AgentManager:
                     allow_computer=(not read_only) and "computer" in provider["capabilities"],
                     read_only=read_only,
                 )
+                metrics.record_provider(int((monotonic() - turn_started) * 1000), turn.usage)
                 if cancel.is_set():
                     await self._cancelled(task_id)
                     return
@@ -361,7 +388,9 @@ class AgentManager:
                 history.extend(turn.output_items)
                 if not turn.calls:
                     result = turn.text or "Task completed."
-                    self.store.update_task(task_id, status="completed", result=result, runtime={})
+                    snapshot = metrics.snapshot()
+                    self.store.update_task(task_id, status="completed", result=result, runtime={}, metrics=snapshot)
+                    self._emit(task_id, "task.metrics", {"metrics": snapshot})
                     self._emit(task_id, "task.completed", {"result": result})
                     return
                 paused, history, step = await self._run_calls(
@@ -384,6 +413,10 @@ class AgentManager:
                 self._fail(task_id, exc)
         finally:
             self._cancel.pop(task_id, None)
+            ended = self.store.get_task(task_id)
+            if ended is not None and ended["status"] not in ACTIVE_STATUSES:
+                self._context_engines.pop(task_id, None)
+                self._metrics.pop(task_id, None)
 
     async def _run_calls(
         self,
@@ -397,18 +430,54 @@ class AgentManager:
     ) -> tuple[bool, list[dict[str, Any]], int]:
         task = self._task(task_id)
         read_only = task.get("mode") == "ask"
-        for index, call in enumerate(calls):
-            if read_only and call.type == "function" and call.name in {"run_shell", "share_file"}:
-                # Read-only Ask mode never enters the approval flow: mutating
-                # commands are refused inline so the model can adjust, and
-                # share_file is bounded to non-sensitive project files.
-                output = await self._execute_call(task_id, call)
-                history.extend(output if isinstance(output, list) else [output])
-                step += 1
+        ctx = self._tool_context(task_id, task)
+        groups = self._scheduler.schedule(calls, ctx)
+        index = 0
+        for group in groups:
+            if len(group) > 1:
+                # A parallel-safe batch: registered read tools that never need
+                # approval, run concurrently. Output order stays call order.
+                self._emit(task_id, "tool.batch", {"calls": [entry.call.public() for entry in group]})
+                for entry in group:
+                    self._emit(task_id, "tool.started", {"call": entry.call.public()})
+                results = await asyncio.gather(
+                    *(self._invoke_tool(entry, ctx) for entry in group),
+                    return_exceptions=True,
+                )
+                first_error: BaseException | None = None
+                for entry, outcome in zip(group, results):
+                    if isinstance(outcome, BaseException):
+                        if first_error is None:
+                            first_error = outcome
+                        continue
+                    self._emit(task_id, "tool.finished", outcome.finished_payload(entry.call))
+                    history.extend(outcome.output_items(entry.call))
+                    if outcome.cancelled and first_error is None:
+                        first_error = asyncio.CancelledError()
+                    step += 1
+                    index += 1
+                if first_error is not None:
+                    raise first_error
                 continue
-            if read_only and call.type == "computer":
-                raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
-            decision = self._decision(call, task["cwd"])
+            entry = group[0]
+            call = entry.call
+            if read_only:
+                if call.type == "computer":
+                    raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
+                if entry.spec is not None and entry.spec.expose_read_only:
+                    # Read-only Ask mode never enters the approval flow: mutating
+                    # commands are refused inline so the model can adjust, and
+                    # share_file is bounded to non-sensitive project files.
+                    self._emit(task_id, "tool.started", {"call": call.public()})
+                    outcome = await self._invoke_tool(entry, ctx)
+                    self._emit(task_id, "tool.finished", outcome.finished_payload(call))
+                    history.extend(outcome.output_items(call))
+                    if outcome.cancelled:
+                        raise asyncio.CancelledError
+                    step += 1
+                    index += 1
+                    continue
+            decision = entry.decision
             if decision.approval_required and not (approved_first and index == 0):
                 public_payload = {
                     "title": decision.reason,
@@ -431,10 +500,16 @@ class AgentManager:
                 self.store.update_task(task_id, status="awaiting_approval")
                 self._emit(task_id, "approval.requested", {"approval": approval})
                 self._emit(task_id, "task.status", {"status": "awaiting_approval"})
+                self._persist_metrics(task_id)
                 return True, history, step
-            output = await self._execute_call(task_id, call)
-            history.extend(output if isinstance(output, list) else [output])
+            self._emit(task_id, "tool.started", {"call": call.public()})
+            outcome = await self._invoke_tool(entry, ctx)
+            self._emit(task_id, "tool.finished", outcome.finished_payload(call))
+            history.extend(outcome.output_items(call))
+            if outcome.cancelled:
+                raise asyncio.CancelledError
             step += 1
+            index += 1
         return False, history, step
 
     async def _resume_approved(self, task_id: str, payload: dict[str, Any]) -> None:
@@ -459,111 +534,111 @@ class AgentManager:
         except Exception as exc:
             self._fail(task_id, exc)
 
-    async def _execute_call(
+    async def _invoke_tool(self, entry: Any, ctx: ToolContext) -> ToolOutcome:
+        call = entry.call
+        if ctx.cancel.is_set():
+            raise asyncio.CancelledError
+        if entry.spec is None:
+            raise ValueError(f"unsupported provider tool: {call.name or call.type}")
+        started = monotonic()
+        outcome = await entry.spec.execute(call, ctx)
+        metrics = ctx.metrics
+        if metrics is not None:
+            metrics.record_tool(call.name or call.type, int((monotonic() - started) * 1000))
+        if entry.spec.mutability != "read" and not (outcome.result or {}).get("refused"):
+            engine = self._context_engines.get(ctx.task_id)
+            if engine is not None:
+                engine.note_mutation()
+        return outcome
+
+    def _tool_context(self, task_id: str, task: dict[str, Any]) -> ToolContext:
+        return ToolContext(
+            task_id=task_id,
+            cwd=task["cwd"],
+            task=task,
+            read_only=task.get("mode") == "ask",
+            cancel=self._cancel.setdefault(task_id, asyncio.Event()),
+            emit=lambda event_type, payload: self._emit(task_id, event_type, payload),
+            store=self.store,
+            manager=self,
+            project_files=self._files_service(),
+            project_id=self._project_id(task["cwd"]),
+            metrics=self._metrics.get(task_id),
+        )
+
+    def _files_service(self) -> Any:
+        if self._project_files is None:
+            from termx.project_files import ProjectFiles
+
+            self._project_files = ProjectFiles()
+        return self._project_files
+
+    def _project_id(self, cwd: str) -> str:
+        project_id = self._project_ids.get(cwd)
+        if project_id is None:
+            project_id = str(self._files_service().register(cwd)["id"])
+            self._project_ids[cwd] = project_id
+        return project_id
+
+    async def _execute_computer(
         self,
         task_id: str,
         call: ProviderCall,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
-        task = self._task(task_id)
-        cancel = self._cancel.setdefault(task_id, asyncio.Event())
-        if cancel.is_set():
-            raise asyncio.CancelledError
-        self._emit(task_id, "tool.started", {"call": call.public()})
-        if call.type == "function" and call.name == "run_shell":
-            command = str(call.arguments.get("command") or "")
-            if not command:
-                raise ValueError("provider requested an empty shell command")
-            if task.get("mode") == "ask" and is_mutating_shell(command):
-                # Ask mode is read-only: surface the refusal as a tool result so the
-                # model can adjust rather than failing the whole conversation turn.
-                refusal = {
-                    "ok": False,
-                    "exit_code": None,
-                    "output": "Refused: Ask mode is read-only. Switch to Agent mode to change files or reach the network.",
-                    "refused": True,
-                }
-                self._emit(task_id, "tool.finished", {"call_id": call.call_id, "result": refusal})
-                return {
+        cancel: asyncio.Event,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        screenshot = await self._computer.execute(call.actions, cancel=cancel)
+        artifact = await asyncio.to_thread(
+            self.store.save_artifact, task_id, "screenshot", "image/jpeg", screenshot
+        )
+        metrics = self._metrics.get(task_id)
+        if metrics is not None:
+            metrics.record_screenshot(len(screenshot))
+        self._emit(task_id, "computer.screenshot", {"artifact": artifact})
+        image = base64.b64encode(screenshot).decode("ascii")
+        if call.name == "use_computer":
+            return artifact, [
+                {
                     "type": "function_call_output",
                     "call_id": call.call_id,
-                    "output": json.dumps(refusal, ensure_ascii=False),
-                }
-            timeout = min(
-                float(task["limits"]["shell_timeout_s"]),
-                max(1.0, float(call.arguments.get("timeout_s") or task["limits"]["shell_timeout_s"])),
-            )
-            result = await run_shell(command, task["cwd"], timeout_s=timeout, cancel=cancel)
-            public = result.public()
-            self._emit(task_id, "tool.finished", {"call_id": call.call_id, "result": public})
-            if result.cancelled:
-                raise asyncio.CancelledError
-            return {
-                "type": "function_call_output",
-                "call_id": call.call_id,
-                "output": json.dumps(public, ensure_ascii=False),
-            }
-        if call.type == "function" and call.name == "share_file":
-            result = await self._share_file(task_id, task, call)
-            self._emit(task_id, "tool.finished", {"call_id": call.call_id, "name": call.name, "result": result})
-            return {
-                "type": "function_call_output",
-                "call_id": call.call_id,
-                "output": json.dumps(result, ensure_ascii=False),
-            }
-        if call.type == "function" and call.name == "spawn_subagent":
-            if task.get("mode") == "ask":
-                refusal = {
-                    "ok": False,
-                    "refused": True,
-                    "output": "Refused: Ask mode cannot spawn sub-agents. Switch to Agent mode.",
-                }
-                self._emit(task_id, "tool.finished", {"call_id": call.call_id, "name": call.name, "result": refusal})
-                return {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": json.dumps(refusal, ensure_ascii=False),
-                }
-            result = await self._spawn_subagent(task_id, task, call, cancel)
-            self._emit(task_id, "tool.finished", {"call_id": call.call_id, "name": call.name, "result": result})
-            return {
-                "type": "function_call_output",
-                "call_id": call.call_id,
-                "output": json.dumps(result, ensure_ascii=False),
-            }
-        if call.type == "computer":
-            screenshot = await self._computer.execute(call.actions, cancel=cancel)
-            artifact = self.store.save_artifact(task_id, "screenshot", "image/jpeg", screenshot)
-            self._emit(task_id, "computer.screenshot", {"artifact": artifact})
-            self._emit(task_id, "tool.finished", {"call_id": call.call_id, "artifact": artifact})
-            image = base64.b64encode(screenshot).decode("ascii")
-            if call.name == "use_computer":
-                return [
-                    {
-                        "type": "function_call_output",
-                        "call_id": call.call_id,
-                        "output": "Computer action completed.",
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": "Inspect the screenshot and continue the approved task.",
-                            },
-                            {
-                                "type": "input_image",
-                                "image_url": f"data:image/jpeg;base64,{image}",
-                            },
-                        ],
-                    },
-                ]
-            return {
+                    "output": "Computer action completed.",
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "Inspect the screenshot and continue the approved task.",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/jpeg;base64,{image}",
+                        },
+                    ],
+                },
+            ]
+        return artifact, [
+            {
                 "type": "computer_call_output",
                 "call_id": call.call_id,
                 "output": {"type": "computer_screenshot", "image_url": f"data:image/jpeg;base64,{image}"},
                 "acknowledged_safety_checks": call.safety_checks,
             }
-        raise ValueError(f"unsupported provider tool: {call.name or call.type}")
+        ]
+
+    @staticmethod
+    def _decide_computer(call: ProviderCall) -> PolicyDecision:
+        if call.safety_checks:
+            detail = "; ".join(
+                str(item.get("message") or item.get("code") or "Provider flagged this action")
+                for item in call.safety_checks
+            )
+            return PolicyDecision(
+                True,
+                True,
+                "Provider safety check",
+                detail[:500],
+            )
+        return evaluate_computer(call.actions)
 
     # Helpers ---------------------------------------------------------
 
@@ -837,15 +912,20 @@ class AgentManager:
         key = self.credentials.get(provider["id"]) or ""
         return self._adapter_factory(provider, key)
 
-    @staticmethod
-    def _default_adapter(provider: dict[str, Any], key: str) -> ProviderAdapter:
-        return OpenAIResponsesAdapter(
+    def _default_adapter(self, provider: dict[str, Any], key: str) -> ProviderAdapter:
+        adapter = OpenAIResponsesAdapter(
             base_url=provider["base_url"],
             model=provider["model"],
             api_key=key,
             capabilities=provider["capabilities"],
             native_computer=provider["kind"] == "openai",
         )
+        adapter.client = self._http.client_for(
+            provider["id"],
+            timeout_s=adapter.timeout_s,
+            headers=adapter.request_headers(),
+        )
+        return adapter
 
     def _task(self, task_id: str) -> dict[str, Any]:
         task = self.store.get_task(task_id)
@@ -872,36 +952,6 @@ class AgentManager:
             actions=value.get("actions") if isinstance(value.get("actions"), list) else [],
             safety_checks=value.get("safety_checks") if isinstance(value.get("safety_checks"), list) else [],
         )
-
-    @staticmethod
-    def _decision(call: ProviderCall, cwd: str) -> PolicyDecision:
-        if call.type == "function" and call.name == "run_shell":
-            return evaluate_shell(str(call.arguments.get("command") or ""), cwd)
-        if call.type == "computer":
-            if call.safety_checks:
-                detail = "; ".join(
-                    str(item.get("message") or item.get("code") or "Provider flagged this action")
-                    for item in call.safety_checks
-                )
-                return PolicyDecision(
-                    True,
-                    True,
-                    "Provider safety check",
-                    detail[:500],
-                )
-            return evaluate_computer(call.actions)
-        if call.type == "function" and call.name == "spawn_subagent":
-            agent = str(call.arguments.get("agent") or "sub-agent")
-            task_hint = str(call.arguments.get("task") or "").strip()
-            detail = f'Hands the task off to the "{agent}" sub-agent.'
-            if task_hint:
-                detail = f"{detail} Task: {task_hint[:200]}"
-            return PolicyDecision(False, True, "Delegate to a sub-agent", detail)
-        if call.type == "function" and call.name == "share_file":
-            path = str(call.arguments.get("path") or "").strip()
-            detail = f"Attaches {path} to the chat." if path else "Attaches a project file to the chat."
-            return PolicyDecision(False, True, "Share a file", detail)
-        return PolicyDecision(False, True, "Unknown tool", "Runs an unsupported tool request")
 
     @staticmethod
     def _call_payload(call: ProviderCall) -> dict[str, Any]:
@@ -935,6 +985,15 @@ class AgentManager:
                 continue
             self._pending_approval_calls.pop(approval_id, None)
 
+    def _persist_metrics(self, task_id: str) -> None:
+        metrics = self._metrics.get(task_id)
+        if metrics is None:
+            return
+        try:
+            self.store.update_task(task_id, metrics=metrics.snapshot())
+        except (KeyError, ValueError):
+            pass
+
     async def _cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
             return
@@ -944,6 +1003,7 @@ class AgentManager:
     def _mark_cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
             return
+        self._persist_metrics(task_id)
         self.store.update_task(task_id, status="cancelled", error="Cancelled by user")
         self._emit(task_id, "task.cancelled", {"message": "Cancelled by user"})
 
@@ -978,8 +1038,16 @@ class AgentManager:
             message = str(exc)
         else:
             message = "Agent run failed"
+        self._persist_metrics(task_id)
         self.store.update_task(task_id, status="failed", error=message)
         self._emit(task_id, "task.failed", {"message": message})
+
+
+def _snapshot_event(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Slim snapshot summary for the durable event log (omits the file list)."""
+    event = {key: value for key, value in snapshot.items() if key != "files"}
+    event["file_count"] = len(snapshot.get("files") or [])
+    return event
 
 
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}

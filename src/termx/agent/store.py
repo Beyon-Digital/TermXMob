@@ -33,6 +33,7 @@ TASK_FIELDS = frozenset(
         "error",
         "previous_response_id",
         "runtime",
+        "metrics",
         "updated_at",
     }
 )
@@ -104,6 +105,7 @@ class AgentStore:
                 error TEXT,
                 previous_response_id TEXT,
                 runtime TEXT,
+                metrics TEXT,
                 next_sequence INTEGER NOT NULL DEFAULT 1,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
@@ -149,6 +151,8 @@ class AgentStore:
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tasks)")}
         if "mode" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'")
+        if "metrics" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN metrics TEXT")
         self._db.commit()
 
     def close(self) -> None:
@@ -313,7 +317,7 @@ class AgentStore:
         changes.setdefault("updated_at", time())
         encoded: dict[str, Any] = {}
         for key, value in changes.items():
-            encoded[key] = _json(value) if key in {"plan", "runtime"} and value is not None else value
+            encoded[key] = _json(value) if key in {"plan", "runtime", "metrics"} and value is not None else value
         assignments = ", ".join(f"{key} = ?" for key in encoded)
         with self._lock:
             cursor = self._db.execute(
@@ -389,6 +393,7 @@ class AgentStore:
             "error": row["error"],
             "previous_response_id": row["previous_response_id"],
             "runtime": _load_json(row["runtime"], {}),
+            "metrics": _load_json(row["metrics"], {}) if "metrics" in row.keys() else {},
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

@@ -46,6 +46,24 @@ async def run_shell(
     timeout_s: float = 120,
     cancel: asyncio.Event | None = None,
 ) -> ShellResult:
+    return await stream_shell(command, cwd, timeout_s=timeout_s, cancel=cancel, on_output=None)
+
+
+async def stream_shell(
+    command: str,
+    cwd: str,
+    *,
+    timeout_s: float = 120,
+    cancel: asyncio.Event | None = None,
+    on_output: Any = None,
+    chunk_size: int = 4096,
+) -> ShellResult:
+    """Run a shell command, streaming output chunks to ``on_output``.
+
+    ``on_output`` is a synchronous callable receiving each decoded chunk as it
+    arrives (before process exit). The returned ShellResult carries the full
+    (possibly truncated) output exactly like run_shell.
+    """
     root = Path(cwd).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("working directory is not a directory")
@@ -62,26 +80,38 @@ async def run_shell(
     else:
         kwargs["start_new_session"] = True
     process = await asyncio.create_subprocess_shell(command, **kwargs)
-    communicate = asyncio.create_task(process.communicate())
+    chunks: list[bytes] = []
+
+    async def pump() -> None:
+        assert process.stdout is not None
+        while True:
+            data = await process.stdout.read(chunk_size)
+            if not data:
+                return
+            chunks.append(data)
+            if on_output is not None:
+                on_output(data)
+
+    reader = asyncio.create_task(pump())
+    exited = asyncio.create_task(process.wait())
     cancelled = asyncio.create_task(cancel.wait()) if cancel is not None else None
     timed_out = False
     was_cancelled = False
     try:
-        waiters: set[asyncio.Task[Any]] = {communicate}
+        waiters: set[asyncio.Task[Any]] = {exited}
         if cancelled is not None:
             waiters.add(cancelled)
         done, _ = await asyncio.wait(waiters, timeout=max(1.0, timeout_s), return_when=asyncio.FIRST_COMPLETED)
-        if communicate in done:
-            output, _ = communicate.result()
-        else:
+        if exited not in done:
             timed_out = cancelled not in done
             was_cancelled = cancelled in done
             await _terminate(process)
-            output, _ = await communicate
+        await reader
     finally:
         if cancelled is not None:
             cancelled.cancel()
-    raw = output or b""
+        exited.cancel()
+    raw = b"".join(chunks)
     truncated = len(raw) > OUTPUT_LIMIT
     if truncated:
         raw = raw[-OUTPUT_LIMIT:]

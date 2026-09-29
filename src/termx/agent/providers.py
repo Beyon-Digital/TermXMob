@@ -70,6 +70,7 @@ class OpenAIResponsesAdapter:
         capabilities: list[str],
         native_computer: bool = True,
         timeout_s: float = 90,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         base = base_url.rstrip("/")
         self.url = base if base.endswith("/responses") else f"{base}/responses"
@@ -78,6 +79,18 @@ class OpenAIResponsesAdapter:
         self.capabilities = set(capabilities)
         self.native_computer = native_computer
         self.timeout_s = timeout_s
+        # Injected pooled client (Agent HTTP runtime); None builds an ephemeral
+        # client per request, which keeps direct adapter tests unchanged.
+        self.client = client
+
+    def request_headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "termx-agent/1",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     async def test(self) -> str:
         body = await self._post(
@@ -123,98 +136,7 @@ class OpenAIResponsesAdapter:
     ) -> ProviderTurn:
         tools: list[dict[str, Any]] = []
         if "functions" in self.capabilities or "shell" in self.capabilities:
-            tools.append(
-                {
-                    "type": "function",
-                    "name": "run_shell",
-                    "description": (
-                        "Run one read-only shell command in the approved project folder to inspect files "
-                        "and answer the question. Do not modify files or reach the network."
-                        if read_only
-                        else "Run one shell command in the approved project folder. Use it to inspect files, "
-                        "edit with repository-native tools, and verify work. Consequential commands pause for approval."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "command": {"type": "string"},
-                            "purpose": {"type": "string"},
-                            "timeout_s": {"type": "number", "minimum": 1, "maximum": 600},
-                        },
-                        "required": ["command", "purpose"],
-                        "additionalProperties": False,
-                    },
-                }
-            )
-            tools.append(
-                {
-                    "type": "function",
-                    "name": "share_file",
-                    "description": (
-                        "Share a file from the project folder with the user as a chat attachment: "
-                        "screenshots, images, reports, generated media, or any file the user should see. "
-                        "The file is read and attached to the conversation."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "description": "File path inside the project folder (absolute or relative).",
-                            },
-                            "caption": {
-                                "type": "string",
-                                "description": "Optional one-line caption shown with the attachment.",
-                            },
-                        },
-                        "required": ["path"],
-                        "additionalProperties": False,
-                    },
-                }
-            )
-            if not read_only:
-                tools.append(
-                    {
-                        "type": "function",
-                        "name": "spawn_subagent",
-                        "description": (
-                            "Delegate one bounded sub-task to a sub-agent running in the same project folder. "
-                            "Use it to hand off well-scoped work (research a question, write a file, verify a "
-                            "fix) while you coordinate. The sub-agent runs autonomously to completion and "
-                            "returns its result; its steps appear nested under this call. Pass instructions "
-                            "to give it a role or rules to follow."
-                        ),
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "task": {
-                                    "type": "string",
-                                    "description": "The concrete task to hand off.",
-                                },
-                                "agent": {
-                                    "type": "string",
-                                    "description": "Short label for the sub-agent's role, e.g. 'code reviewer'.",
-                                },
-                                "instructions": {
-                                    "type": "string",
-                                    "description": "Optional rules or persona for the sub-agent to follow.",
-                                },
-                                "mode": {
-                                    "type": "string",
-                                    "enum": ["agent", "ask"],
-                                    "description": (
-                                        "Autonomy level: 'agent' (default) runs with full tools; "
-                                        "'ask' runs read-only — it may inspect and report but cannot "
-                                        "modify files, use the desktop, or spawn further sub-agents. "
-                                        "Pre-configured delegates advertise their mode; pass it through unchanged."
-                                    ),
-                                },
-                            },
-                            "required": ["task"],
-                            "additionalProperties": False,
-                        },
-                    }
-                )
+            tools.extend(self._function_tools(read_only))
         if allow_computer and "computer" in self.capabilities:
             tools.append({"type": "computer"} if self.native_computer else _computer_function_tool())
         payload: dict[str, Any] = {
@@ -312,20 +234,24 @@ class OpenAIResponsesAdapter:
             output_items=[item for item in (body.get("output") or []) if isinstance(item, dict)],
         )
 
+    @staticmethod
+    def _function_tools(read_only: bool) -> list[dict[str, Any]]:
+        # Lazy import: the tools package annotates against this module.
+        from termx.agent.tools import default_registry
+
+        return default_registry().provider_tools(read_only=read_only)
+
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "termx-agent/1",
-        }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
         try:
-            async with httpx.AsyncClient(
-                timeout=self.timeout_s,
-                headers=headers,
-                follow_redirects=True,
-            ) as client:
-                response = await client.post(self.url, json=payload)
+            if self.client is not None:
+                response = await self.client.post(self.url, json=payload)
+            else:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_s,
+                    headers=self.request_headers(),
+                    follow_redirects=True,
+                ) as client:
+                    response = await client.post(self.url, json=payload)
         except httpx.RequestError as exc:
             raise ProviderError(f"Could not reach provider: {exc}") from exc
         if response.is_error:
@@ -442,10 +368,34 @@ def _task_input(prompt: str, cwd: str, manifest: dict[str, Any]) -> str:
     listing = "\n".join(f"- {item}" for item in files[:500])
     omitted = int(manifest.get("omitted") or 0)
     suffix = f"\n- {omitted} additional or protected entries omitted" if omitted else ""
-    return (
+    text = (
         f"Task:\n{prompt}\n\nApproved project folder:\n{cwd}\n\n"
         f"Visible project manifest:\n{listing or '- Empty project'}{suffix}"
     )
+    if manifest.get("kind") == "project_snapshot":
+        lines = []
+        if manifest.get("name"):
+            lines.append(f"- name: {manifest['name']}")
+        git = manifest.get("git")
+        if isinstance(git, dict) and git.get("branch"):
+            lines.append(
+                f"- git: branch {git['branch']}, {git.get('changed', 0)} changed, {git.get('staged', 0)} staged"
+            )
+        languages = manifest.get("languages")
+        if isinstance(languages, dict) and languages:
+            lines.append("- languages: " + ", ".join(f"{key} {count}" for key, count in languages.items()))
+        commands = manifest.get("commands")
+        if isinstance(commands, list) and commands:
+            lines.append("- check commands: " + "; ".join(str(command) for command in commands))
+        manifests = manifest.get("manifests")
+        if isinstance(manifests, list) and manifests:
+            lines.append("- manifests: " + ", ".join(str(item) for item in manifests))
+        recent = manifest.get("recent")
+        if isinstance(recent, list) and recent:
+            lines.append("- recently modified: " + ", ".join(str(item) for item in recent[:12]))
+        if lines:
+            text += "\n\nProject snapshot:\n" + "\n".join(lines)
+    return text
 
 
 def _output_text(body: dict[str, Any]) -> str:
