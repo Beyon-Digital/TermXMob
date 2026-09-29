@@ -479,3 +479,27 @@ tasks:
       - "OPEN_ROUTER=... uv run python scripts/agent_smoke_agent_mode.py -> status completed, tools write_file x2 + run_check"
     notes: verification-pass discipline preserved; all handoff phases through SEC-002 landed
 ```
+  - id: HARDEN-001
+    title: Final hardening pass (security + platform + wiring)
+    status: done
+    depends_on: [VRF-001]
+    owner: devin
+    write_scope:
+      - src/termx/app.py (connect host-admin, task body/execution wiring, delete+prune plumbing, supported flags)
+      - src/termx/agent/{manager,observation,worktrees,store,providers,runbooks,processes,machine}.py, tools/{registry,legacy}.py
+      - tests/test_agent.py, tests/test_api.py, tests/bench_agent.py, .github/workflows/ci.yml
+    acceptance:
+      - "machine-view -> raw passcode -> host-admin closed: /api/connect + /api/connect/qr.svg now host-admin only"
+      - "worktree apply is branch-safe + conflict-transactional: base_branch recorded, drifted/detached base refused, failed merge aborted, worktree kept for retry, task.worktree.conflict event"
+      - "terminal-parent subagent escalation closed: children get no subagent schemas, decide returns inline refusal, _spawn_subagent runtime-gates (max depth 1)"
+      - "computer observation dedup keyed per (task scope, display, region); first frame per stream changed=True; previous_id never crosses tasks"
+      - "conversations/custom agents actually wired: conversation turns seed task history; custom agent instructions/limits/provider+model defaults applied; conversation-linked custom agent resolved; provider_id optional when resolvable"
+      - "process discovery truthful: supported() linux+darwin(lsof/ps), windows gated off; capabilities.process_discovery + API supported flag"
+      - "orphan worktrees removed on task delete and storage prune (active records only; kept worktrees preserved)"
+      - "runbook step output streams (>=64KB throttled publish) and is memory-bounded (48KB rolling tail, per-chunk timeout budget)"
+      - "macOS CI on PRs for platform-specific backend paths"
+    evidence:
+      - "uv run pytest tests -q -> 335 passed, 10 skipped"
+      - "commits: 71363c5 connect | be5173b worktree | 1495dfa subagents | 6c0f550 observation | 8ce1750 conversations | bdfe60d discovery | b179a02 orphans | 7ea21d7 runbooks | a94ad0c macOS CI"
+      - "tests: connect admin (test_api), worktree drift/conflict-rollback, subagent depth+schema-hiding, observation scoping, custom-agent+conversation-seed+404s, darwin parsers+platform gating, orphan delete/kept-preserved, runbook streaming+tail"
+    notes: pushes to upstream/devin/1790641481-agent-v2-phase1 (PR #16)

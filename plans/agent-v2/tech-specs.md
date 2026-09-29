@@ -397,6 +397,14 @@ until the child terminated. It is now a first-class durable handle:
   entries in `_pending_approval_calls` (the child's watcher drops them
   on exit), and the resolution path only restores `status=running` when
   the parent is genuinely paused (never resurrects a completed task).
+- Depth cap 1: children cannot spawn their own sub-agents. The four
+  `_SUBAGENT_TOOLS` are filtered out of `provider_tools` for tasks with a
+  `parent_id` (`allow_subagents=False` threaded through turn/stream_turn/
+  plan payloads AND task kwargs), `_decide_spawn` returns an inline
+  `PolicyDecision(False)` for parents-of-parents, and `_spawn_subagent`
+  re-checks `task["parent_id"]` at execute time — schema, policy, and
+  runtime all refuse, closing the terminal-parent escalation vector.
+
 - Limits (per-parent, in task `limits`, clamped in `_limits`):
   `max_parallel_subagents` default 3 (1-8) — spawn refuses when running
   children hit the cap with a hint to `await_subagents` first;
@@ -419,9 +427,11 @@ until the child terminated. It is now a first-class durable handle:
   grayscale → 64-bit fingerprint, Hamming ≤10 = unchanged) and falls back
   to a truncated SHA-256 exact hash where Pillow is absent — honest dedup
   on every host, stronger dedup where the image codec exists.
-- `ObservationTracker` is one per `AgentManager` (the screen is a shared
-  resource): records the last frame identity + `control_owner`, and marks
-  each new observation `changed` accordingly.
+- `ObservationTracker` is one per `AgentManager` but dedup is keyed per
+  stream — `(task scope, display_id, region)` — so `changed`/`previous_id`
+  compare a frame only against the same task's same display+region (first
+  frame of every stream reports `changed`); `control_owner` stays global
+  because the physical screen is one shared resource.
 - `scale_for_model(frame, max_px=TERMX_MODEL_IMAGE_MAX_PX∥1568)` downscales
   the model-bound copy only — the artifact store keeps the full frame.
   `crop_region(frame, region)` crops a region post-capture; both return
@@ -472,7 +482,8 @@ mode `AgentManager.create_task` rejects Ask mode and non-git projects, provision
 touched), and runs the whole task with `cwd` inside the worktree — the normal
 project-boundary machinery then confines every tool to the isolated checkout. A
 `task_worktrees` row (task_id PK → tasks CASCADE, mode, base_repo, base_ref,
-worktree_path, branch, head_sha, status active|applied|kept|discarded) persists the
+worktree_path, branch, head_sha, **base_branch** (checkout branch at creation —
+new column via PRAGMA-guarded ALTER), status active|applied|kept|discarded) persists the
 link; `task.worktree.created` fires on creation and `task.worktree.final` (via
 `_finalize_worktree`, called on the completed path and every `_finish_state`
 transition) captures the terminal head SHA.
@@ -485,13 +496,21 @@ Resolution is explicit, never silent:
 - `POST /api/agent/tasks/{id}/worktree` (agent-control) — `action` in
   `apply|keep|discard`, `confirm` bool. `apply` auto-commits outstanding worktree
   changes (author `termx-agent`), `merge --no-ff` into the base repo, removes the
-  worktree and deletes the branch → `task.worktree.applied`. `keep` marks the row
+  worktree and deletes the branch → `task.worktree.applied`. Apply is branch-safe
+  and conflict-transactional: it refuses when the base checkout drifted off
+  `base_branch` or is detached (would silently merge into the wrong line), and on
+  merge failure runs `git merge --abort`, leaves the base clean + the worktree
+  alive for retry/discard, emits `task.worktree.conflict`, and raises 409
+  `WorktreeApplyConflict` instead of a half-merged state. `keep` marks the row
   `kept` and leaves the checkout/branch in place → `task.worktree.kept`. `discard`
   removes the worktree (`--force`) and deletes the branch → `task.worktree.discarded`;
   uncommitted changes without `confirm` return **409**
   `{requires_confirm:true, dirty:[...]}` so the client can surface a confirmation
   (VRF "never delete a worktree containing unknown user changes"). Resolutions are
   one-way; repeating a terminal action returns the stored record.
+- Orphans: `AgentManager.delete_task` / `prune_storage` best-effort remove the
+  worktree dir + `termx/task-*` branch for records still `active` when the task
+  row goes away (`kept` worktrees are the user's and are never touched).
 - Capability: `machine.capabilities.agent_worktrees`.
 
 ## 20. Activity Center (PROD-004)
@@ -518,9 +537,14 @@ the snapshot every 2s — no cross-manager event plumbing. `capabilities.activit
 
 ## 21. Port + process discovery (PROD-005)
 
-`termx.processes` (Linux `/proc` only — non-POSIX returns empty):
+`termx.processes` — Linux reads `/proc`; macOS runs the same discovery via
+`lsof`/`ps`; Windows is gated off. `supported()` reports capability truth and
+feeds `capabilities.process_discovery` + the `supported` field on
+`/api/ports` + `/api/processes` responses (empty list + `supported:false`
+instead of silent empty):
 
-- `_proc_net_listeners()` parses `tcp`/`tcp6` LISTEN rows → address/port/inode.
+- `_proc_net_listeners()` parses `tcp`/`tcp6` LISTEN rows → address/port/inode
+  (darwin: `_darwin_listeners()` parses `lsof -nP -iTCP -sTCP:LISTEN`).
 - `listeners()` joins socket inodes to PIDs by scanning `/proc/<pid>/fd`
   (permitted only), enriches with comm/cmdline/cwd, and runs a bounded
   (250 ms) HTTP probe on loopback/wildcard listeners → `is_http` + `url`.
@@ -544,8 +568,12 @@ executes a `runbook_runs` row per invocation:
 - `confirm:true` parks the run at `awaiting_confirmation` until
   `confirm(run_id)` — the human gate applies to REST runs AND agent-invoked
   runs alike;
-- cancel kills the step's process group (`preexec_fn=os.setsid`, 48KB output
-  tail, 900s/step timeout); `manager.close()` cancels live runs.
+- step output streams: stdout is read in 8KB chunks into a 48KB rolling tail
+  (bounded memory — `communicate()` never buffers a full step), published to
+  `step_results` as a `status:"running"` row every >=64KB, so live output is
+  visible mid-step; the step's total wall clock still obeys the 900s budget.
+- cancel kills the step's process group (`preexec_fn=os.setsid`, 900s/step
+  timeout); `manager.close()` cancels live runs.
 
 REST: `GET/POST /api/runbooks`, `GET/PATCH/DELETE /api/runbooks/{id}`,
 `POST /{id}/run`, `GET /api/runbook-runs`, `POST /{run}/confirm|cancel`.
@@ -578,7 +606,28 @@ explicit scope list. A stored record with a missing/malformed scope list floors
 at `machine-view` (never broadens).
 
 Enforcement: every `/api/*` route uses `_require_scope` (except open
-`/api/health`, `/api/connect`, `/api/pair` and static `/_/`, `/` assets). WS
+`/api/health`, `/api/pair` and static `/_/`, `/` assets). The pairing
+surface itself — `/api/connect` (raw passcode + `?`QR view) and
+`/api/connect/qr.svg` — requires `host-admin`, so a `machine-view` token can
+no longer read the raw passcode and mint a host-admin token from it. WS
 sockets gate per-scope: pty → `terminal-control`, lsp → `files-read`, desktop →
 `desktop-view`, activity → `machine-view`, agent events → `agent-view`.
 Sensitive-path denial stays inline (4xx), never an approval.
+
+## 24. Conversations + custom agents (PROD-001/002) — execution wiring
+
+`conversations` / `conversation_turns` / `conversation_context_refs` /
+`custom_agents` are host-persisted and wired into `AgentManager.create_task`:
+
+- `conversation_id` seeds the task's initial history with a
+  `{"type":"conversation_context"}` user-message item listing the last 12 prior
+  turns (prompt, mode, linked task status, truncated result) — durable
+  carry-over between tasks in one thread. `provider_id`/`model` resolve
+  explicit > conversation > custom-agent.
+- `custom_agent_id` (or the conversation's linked agent) wraps the prompt with
+  the agent's `instructions`, merges its `limits` as defaults under the
+  request's, and fills `provider_id`/`model` when the request omits them
+  (`AgentTaskBody.provider_id` is optional; the route 400s only when no source
+  resolves). Unknown ids 404 in the route, `ValueError` in the manager.
+- `POST /api/agent/tasks` still appends a `conversation_turns` row with the
+  new `task_id` link — read and write paths both live.
