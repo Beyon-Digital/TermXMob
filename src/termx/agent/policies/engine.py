@@ -167,7 +167,8 @@ class PolicyEngine:
                     sandbox_profile=intent.sandbox_profile,
                 )
             remembered_caps = self._remembered_capabilities(
-                intent,
+                intent.sandbox_profile,
+                task_id=intent.task_id,
                 project_id=project_id,
                 custom_agent_id=custom_agent_id,
             )
@@ -338,14 +339,15 @@ class PolicyEngine:
 
     def _remembered_capabilities(
         self,
-        intent: PolicyIntent,
+        profile: str,
         *,
+        task_id: str | None,
         project_id: str,
         custom_agent_id: str | None,
     ) -> set[str]:
         scopes: list[tuple[str, str]] = [("host", "")]
-        if intent.task_id:
-            scopes.append(("task", intent.task_id))
+        if task_id:
+            scopes.append(("task", task_id))
         if custom_agent_id:
             scopes.append(("custom_agent", custom_agent_id))
         if project_id:
@@ -357,8 +359,35 @@ class PolicyEngine:
         # A remembered capability grant only counts where this profile's backend
         # can actually provide it — stored rules cannot invent powers the
         # runner does not advertise as grantable.
-        grantable = self._grantable(intent.sandbox_profile)
+        grantable = self._grantable(profile)
         return {c for c in remembered if _covers(grantable, c)}
+
+    def capability_grant_set(
+        self,
+        profile: str,
+        *,
+        task_id: str | None = None,
+        project_id: str = "",
+        custom_agent_id: str | None = None,
+    ) -> frozenset[str]:
+        """Capability grants a spawn under ``profile`` may realize right now:
+        remembered allow-capability rules ∩ the backend's grantable set.
+        Spawn-time mechanisms (e.g. linux-ns ``--share-net``) read this.
+        """
+        return frozenset(
+            self._remembered_capabilities(
+                profile,
+                task_id=task_id,
+                project_id=project_id,
+                custom_agent_id=custom_agent_id,
+            )
+        )
+
+    def grantable_for(self, profile: str) -> frozenset[str]:
+        return self._grantable(profile)
+
+    def grantable_covers(self, profile: str, capability: str) -> bool:
+        return _covers(self._grantable(profile), capability)
 
     def _custom_agent(self, agent_id: str | None) -> dict[str, Any] | None:
         if not agent_id:

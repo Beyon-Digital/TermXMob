@@ -63,7 +63,13 @@ async def _run_runbook(call: Any, ctx: ToolContext) -> ToolOutcome:
     runner = getattr(ctx.manager, "runbooks", None)
     if runner is None:
         return ToolOutcome(result={"error": "runbook runner unavailable"})
-    run = runner.start(runbook, cwd, profile=sandbox_profile(ctx))
+    run = runner.start(
+        runbook,
+        cwd,
+        profile=sandbox_profile(ctx),
+        task_id=str(ctx.task_id),
+        project_id=str(getattr(ctx, "project_id", "") or "") or None,
+    )
     run_id = run["id"]
     while True:
         if ctx.cancel.is_set():

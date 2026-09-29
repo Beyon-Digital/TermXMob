@@ -48,17 +48,27 @@ def validate_steps(steps: Any) -> list[dict[str, Any]]:
 class RunbookRunner:
     """Executes runbook steps as subprocesses and records history in the store."""
 
-    def __init__(self, store: Any, *, runner_for: Any | None = None) -> None:
+    def __init__(
+        self,
+        store: Any,
+        *,
+        runner_for: Any | None = None,
+        policy_engine: Any | None = None,
+        project_id_for: Any | None = None,
+    ) -> None:
         self._store = store
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._procs: dict[str, set[asyncio.subprocess.Process]] = {}
         self._profiles: dict[str, str] = {}
+        self._grant_ctx: dict[str, tuple[str | None, str | None]] = {}
         self._confirm_events: dict[str, asyncio.Event] = {}
         if runner_for is None:
             from termx.sandbox import runner_for as _default
 
             runner_for = _default
         self._runner_for = runner_for
+        self._policy_engine = policy_engine
+        self._project_id_for = project_id_for
         # Runs left 'running' by a dead host have ambiguous in-flight steps;
         # mark them failed rather than replaying. 'awaiting_confirmation' runs
         # parked BEFORE their step started can safely resume on confirm().
@@ -70,15 +80,29 @@ class RunbookRunner:
                 error="Host restarted while the run was in-flight",
             )
 
-    def start(self, runbook: dict[str, Any], cwd: str, *, profile: str = "host") -> dict[str, Any]:
+    def start(
+        self,
+        runbook: dict[str, Any],
+        cwd: str,
+        *,
+        profile: str = "host",
+        task_id: str | None = None,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
         run = self._store.create_runbook_run(
             runbook["id"], cwd=cwd, steps=runbook["steps"]
         )
         run_id = run["id"]
         self._profiles[run_id] = profile
+        self._grant_ctx[run_id] = (task_id, project_id)
         task = asyncio.create_task(self._execute(run_id, runbook, cwd, profile=profile))
         self._tasks[run_id] = task
-        task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
+        task.add_done_callback(
+            lambda _t, rid=run_id: (
+                self._tasks.pop(rid, None),
+                self._grant_ctx.pop(rid, None),
+            )
+        )
         return run
 
     def confirm(self, run_id: str) -> dict[str, Any]:
@@ -184,12 +208,16 @@ class RunbookRunner:
         started = time.monotonic()
         from termx.sandbox import SpawnSpec
 
+        grants, network = self._step_grants(run_id, cwd, profile)
         spec = SpawnSpec(
             profile=profile,
             shell=step["command"],
             cwd=cwd or None,
             workspace_root=cwd or None,
             writable_roots=[cwd] if cwd else [],
+            network=network,
+            granted_capabilities=sorted(grants),
+            task_id=(self._grant_ctx.get(run_id) or (None, None))[0],
             purpose="runbook_step",
         )
         proc = (await self._runner_for(profile).spawn(spec)).process
@@ -240,6 +268,37 @@ class RunbookRunner:
             proc.returncode,
             bytes(tail).decode("utf-8", "replace"),
         )
+
+    def _step_grants(
+        self, run_id: str, cwd: str, profile: str
+    ) -> tuple[frozenset[str], str]:
+        """Effective capability grants + network mode for a step spawn.
+
+        Remembered capability rules apply to runbook steps too — a runbook
+        executed under a restricted profile gets exactly the grants the
+        policy engine resolves, never more.
+        """
+        if self._policy_engine is None or profile == "host":
+            return frozenset(), "none" if profile != "host" else "outbound"
+        task_id, project_id = self._grant_ctx.get(run_id, (None, None))
+        if project_id is None and self._project_id_for is not None and cwd:
+            try:
+                project_id = self._project_id_for(cwd)
+            except Exception:
+                project_id = None
+        try:
+            grants = self._policy_engine.capability_grant_set(
+                profile,
+                task_id=task_id,
+                project_id=project_id or "",
+                custom_agent_id=None,
+            )
+        except Exception:
+            grants = frozenset()
+        network = "outbound" if any(
+            c.startswith("net.outbound") for c in grants
+        ) else "none"
+        return frozenset(grants), network
 
     async def _execute(
         self,

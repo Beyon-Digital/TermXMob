@@ -11,6 +11,8 @@ from termx.agent.tools.helpers import (
     call_int,
     call_string,
     error_result,
+    sandbox_grants,
+    sandbox_network,
     sandbox_profile,
     sandbox_spawn,
 )
@@ -89,6 +91,9 @@ async def _streamed_process(
         runner=sandbox_spawn(ctx, profile),
         profile=profile,
         workspace_root=ctx.cwd,
+        network=sandbox_network(ctx, profile, call.call_id),
+        granted_capabilities=sorted(sandbox_grants(ctx, profile, call.call_id)),
+        task_id=str(getattr(ctx, "task_id", "") or "") or None,
     )
     tail = redactor.flush()
     if tail and emitted < STREAM_EVENT_LIMIT:

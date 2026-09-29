@@ -14,6 +14,8 @@ from termx.agent.policy import PolicyDecision, is_sensitive_path
 from termx.agent.providers import ProviderCall
 from termx.agent.tools.helpers import (
     call_bool,
+    sandbox_grants,
+    sandbox_network,
     call_string,
     denied_result,
     error_result,
@@ -57,7 +59,7 @@ def _sanitize_status(status: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _run_mutating(
-    ctx: ToolContext, *args: str, timeout: int = 120, stdin: Any = None
+    call: ProviderCall, ctx: ToolContext, *args: str, timeout: int = 120, stdin: Any = None
 ) -> None:
     """Run a mutating ``git`` command so task cancellation kills its process group.
 
@@ -76,6 +78,9 @@ async def _run_mutating(
         cwd=ctx.cwd,
         workspace_root=ctx.cwd,
         writable_roots=[ctx.cwd],
+        network=sandbox_network(ctx, profile, call.call_id),
+        granted_capabilities=sorted(sandbox_grants(ctx, profile, call.call_id)),
+        task_id=str(getattr(ctx, "task_id", "") or "") or None,
         purpose=f"git_{args[0] if args else 'command'}",
         stdin=stdin,
     )
@@ -168,7 +173,7 @@ async def _git_stage(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         if protected:
             return ToolOutcome(denied_result(protected[0]))
         args = (["restore", "--staged", "--"] if unstage else ["add", "--"]) + paths
-        await _run_mutating(ctx, *args)
+        await _run_mutating(call, ctx, *args)
         status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
@@ -182,7 +187,7 @@ async def _git_commit(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if not message:
         return ToolOutcome(error_result("git_commit requires 'message'"))
     try:
-        await _run_mutating(ctx, "commit", "-m", message)
+        await _run_mutating(call, ctx, "commit", "-m", message)
         status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
@@ -205,7 +210,7 @@ async def _git_branch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
             return ToolOutcome(error_result("git_branch switch requires 'name'"))
         try:
             args = ("switch", "-c", name) if call_bool(call, "create", False) else ("switch", name)
-            await _run_mutating(ctx, *args)
+            await _run_mutating(call, ctx, *args)
             status = await asyncio.to_thread(git_ops.status, ctx.cwd)
         except Exception as exc:
             return ToolOutcome(_git_error(exc))
@@ -321,7 +326,7 @@ async def _git_fetch(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if ctx.read_only:
         return ToolOutcome(_read_only_result())
     try:
-        await _run_mutating(ctx, "fetch", "--prune", timeout=90)
+        await _run_mutating(call, ctx, "fetch", "--prune", timeout=90)
         status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
@@ -333,7 +338,7 @@ async def _git_pull(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(_read_only_result())
     try:
         # Fast-forward only, matching git_ops.pull.
-        await _run_mutating(ctx, "pull", "--ff-only")
+        await _run_mutating(call, ctx, "pull", "--ff-only")
         status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))
@@ -344,7 +349,7 @@ async def _git_push(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
     if ctx.read_only:
         return ToolOutcome(_read_only_result())
     try:
-        await _run_mutating(ctx, "push")
+        await _run_mutating(call, ctx, "push")
         status = await asyncio.to_thread(git_ops.status, ctx.cwd)
     except Exception as exc:
         return ToolOutcome(_git_error(exc))

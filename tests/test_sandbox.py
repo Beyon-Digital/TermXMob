@@ -124,7 +124,7 @@ def test_capabilities_cover_wildcards():
 
 
 def test_host_backend_reports_no_isolation():
-    runner = runner_for("agent")
+    runner = runner_for("agent", backend="host")
     caps = runner.capabilities()
     assert caps.backend == "host"
     assert caps.strength == "none"
@@ -138,9 +138,26 @@ def test_host_backend_reports_no_isolation():
 
 def test_runner_for_profiles():
     for profile in EXECUTION_PROFILES:
-        assert runner_for(profile).profile == profile
+        assert runner_for(profile, backend="host").profile == profile
     with pytest.raises(SandboxFailure):
-        runner_for("root")
+        runner_for("root", backend="host")
+
+
+def test_runner_for_default_backend_selection(monkeypatch):
+    """Auto selection: host profile → host; restricted profiles → linux-ns
+    when namespaces are available, host otherwise. An explicit bad backend
+    raises instead of downgrading."""
+    from termx.sandbox import linux_ns_available
+
+    assert runner_for("host").capabilities().backend == "host"
+    expected = "linux-ns" if linux_ns_available() else "host"
+    assert runner_for("agent").capabilities().backend == expected
+    monkeypatch.setenv("TERMX_SANDBOX_BACKEND", "host")
+    assert runner_for("agent").capabilities().backend == "host"
+    monkeypatch.setenv("TERMX_SANDBOX_BACKEND", "bogus")
+    with pytest.raises(SandboxFailure) as err:
+        runner_for("agent")
+    assert err.value.reason == "invalid_backend"
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +431,7 @@ def test_agent_profile_env_scrubs_process_env(tmp_path, monkeypatch):
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "ak-fake")
 
     async def run():
-        runner = runner_for("agent")
+        runner = runner_for("agent", backend="host")
         spawned = await runner.spawn(
             SpawnSpec(
                 profile="agent",
