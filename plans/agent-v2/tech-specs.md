@@ -49,9 +49,16 @@ class ToolSpec:
 - `write_file {path, content, expected_revision}` → 409-style conflict
   result `{ok: False, conflict: True, current_revision}` when the revision
   mismatches; atomic temp+replace preserving mode.
-- `apply_patch {patch}` → rejects absolute/`..` paths, `git apply --check`
-  dry-run then `git apply`; returns `{ok, changed:[paths], summary}`.
-  Not a repo → still works (working-tree apply); git missing → `ok:false`.
+- `apply_patch {patch, dry_run?}` → custom unified-diff parser (NOT
+  `git apply`): each `---/+++` section resolves inside the project with
+  sensitive paths refused inline; hunks match within a bounded ±10-line
+  window and must be unique (stale/ambiguous → error). Supports
+  `+++ /dev/null` deletes and `a/`→`b/` renames, `\ No newline at end of
+  file`, and preserves the source's CRLF/LF convention. All sections
+  validate before any write; commits are temp-file + `os.replace` with
+  rollback on failure. Returns `{ok, dry_run, changed_paths, changes:[
+  {path, added, removed, hunks, created, deleted, renamed_from}]}`. Works
+  without git installed (pure working-tree apply).
 
 ## 3. Search (`tools/search.py`)
 
@@ -65,8 +72,14 @@ class ToolSpec:
 - `git_status {}`, `git_diff {path?, staged?, range?}`, `git_stage
   {paths, unstage?}`, `git_commit {message}`, `git_branch {name?, create?,
   switch?}`, `git_fetch {}`, `git_pull {}`, `git_push {}`.
-- All run `git -C <cwd>` via the existing `git_ops` helpers in a thread;
-  mutating ops are `mutability="write"`, `parallel_safe=False`.
+- Read ops (`status`, `diff`, `branches`) run via `git_ops` in a thread;
+  mutating ops run through `_run_mutating` (`create_subprocess_exec`,
+  own process group, `ctx.cancel`-aware kill, timeout) since
+  `asyncio.to_thread` cannot interrupt a git subprocess.
+  Status payloads are sanitized (`_sanitize_status` drops sensitive
+  filenames); `git_stage` expands directory args via porcelain status and
+  refuses if any affected path is sensitive.
+  Mutating ops are `mutability="write"`, `parallel_safe=False`.
 - Approvals: `git_push` → `approval="always"` (external publication);
   fetch/pull are `"policy"` and evaluate to no-approval (matches today's
   shell policy which does not gate them).
@@ -144,15 +157,21 @@ class ToolSpec:
 class ProviderHttpRuntime:
     def client_for(self, key: str, *, timeout_s: float,
                    headers: dict[str,str]) -> httpx.AsyncClient
+    def evict(self, key: str) -> None   # deferred close, see below
     async def aclose(self) -> None
 ```
 
-- One client per provider id (base_url + auth header bound at creation);
-  `limits=httpx.Limits(max_connections=10, max_keepalive_connections=4)`.
+- One client per provider id (timeout + auth header bound at creation).
 - `OpenAIResponsesAdapter(client=None)` — injected client ⇒ reuse, never
   close it; `None` ⇒ current per-call client (keeps unit tests valid).
 - Manager `_default_adapter` passes the pooled client; `close()` calls
-  `runtime.aclose()`. Deleting a provider evicts its client.
+  `runtime.aclose()`.
+- Provider save/delete calls `evict(provider_id)`: the client moves to a
+  `_retired` set and is closed after a grace period (`_EVICT_GRACE_S`,
+  300 s) when an event loop is running — an in-flight turn finishes on the
+  old client rather than erroring mid-request. With no loop (synchronous
+  save) the retired client is held for `aclose()`. Pending close tasks are
+  tracked and cancelled on shutdown.
 
 ## 9. Metrics (`agent/metrics.py`)
 

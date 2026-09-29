@@ -26,8 +26,12 @@ runner → scheduler → context engine → provider runtime → metrics.
    bound to the existing manager implementations — identical behavior.
 2. **`agent/tools/filesystem.py`** — `list_files`, `read_file` (line ranges,
    size guard, binary detection, sha256 revision), `write_file`
-   (expected-revision atomic write preserving mode), `apply_patch`
-   (`git apply --check` then apply; patch paths must stay in project).
+   (expected-revision atomic write preserving mode, `O_EXCL` create for new
+   files), `apply_patch` (custom bounded unified-diff parser — per-section
+   sensitive-path refusal, `dry_run`, `/dev/null` deletes, `a/`→`b/` renames,
+   `\\ No newline at end of file`, CRLF preservation, ±10-line unique hunk
+   matching, all-validate-then-write with temp-file+os.replace and rollback
+   on failure).
    Boundary enforcement shared via `tools/paths.py`: resolved path must be
    inside task cwd; sensitive names refused.
 3. **`agent/tools/search.py`** — `search_project` (filename + content modes,

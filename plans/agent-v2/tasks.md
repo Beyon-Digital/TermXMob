@@ -65,7 +65,7 @@ tasks:
       - Boundary + sensitive-path refusal covered by tests
       - Revision-guarded write conflicts return conflict result
     evidence:
-      - "tools/filesystem.py: list_files/read_file(offset+limit+max_chars)/write_file(expected_revision)/apply_patch(dry_run, unified diff, per-file sensitive deny, all-validate-then-write)"
+      - "tools/filesystem.py: list_files/read_file(offset+limit+max_chars)/write_file(expected_revision|O_EXCL create)/apply_patch(custom bounded unified-diff: dry_run, delete/rename, CRLF preserve, ±10-line unique match, temp+os.replace rollback, per-file sensitive deny)"
       - "tools/search.py: search_project over ProjectFiles.search"
       - "tests/test_agent_tools.py: read pagination/missing/sensitive, list, write create+conflict+read_only+sensitive, patch dry/apply/sensitive, search"
       - "uv run pytest tests/test_agent_tools.py -q -> 17 passed"
@@ -138,9 +138,9 @@ tasks:
     write_scope: [src/termx/agent/runtime.py, src/termx/agent/providers.py, src/termx/agent/manager.py]
     acceptance:
       - One AsyncClient per provider id, reused across turns
-      - Closed on AgentManager.close; deletion evicts
+      - Evicted clients retire (300s deferred close with a running loop; in-flight turns finish), never eager-close
     evidence:
-      - "runtime.py ProviderHttpRuntime: client_for(provider_id) pooled AsyncClient; save_provider/delete_provider evict; close() aclose()s all"
+      - "runtime.py ProviderHttpRuntime: client_for(provider_id) pooled AsyncClient; evict() retires to deferred close; aclose() drains live+retired and cancels pending"
       - "providers.py adapter accepts injected client (ephemeral fallback preserved for direct tests)"
       - "tests/test_agent_tools.py::test_http_runtime"
   - id: AG2-014
@@ -168,7 +168,7 @@ tasks:
       - Old-DB migration path verified
       - Full pytest suite green; openrouter smoke if env key present
     evidence:
-      - "uv run pytest tests -q -> 218 passed, 10 skipped, 24.4s"
+      - "uv run pytest tests -q -> 246 passed, 10 skipped, 25.34s (includes Devin Review rounds 1-3 regression coverage)"
       - "uv run python scripts/agent_bench.py --out plans/agent-v2/benchmarks/phase1.json --label phase1 -> structured scenario now completes (was unsupported-provider-tool failure), tool.batch emitted, process.* streaming events present"
       - "old-schema DB migration verified: AgentStore on a tasks table without metrics column -> ALTER applied, get_task returns metrics:{} , update persists"
       - "scripts/agent_smoke.py against OpenRouter (openrouter/free): task completed via list_files+read_file only; metrics persisted; no secrets in events"
