@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import mimetypes
+import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -11,9 +13,13 @@ from typing import Any, TypeVar
 
 from termx.agent.computer import ComputerController
 from termx.agent.context import ContextEngine
-from termx.agent.context.engine import estimate_tokens
+from termx.agent.context.engine import (
+    checkpoint_message,
+    checkpoint_message_payload,
+    estimate_tokens,
+)
 from termx.agent.metrics import TaskMetrics
-from termx.agent.retry import retrying
+from termx.agent.retry import classify, retrying
 from termx.agent.policy import (
     PolicyDecision,
     evaluate_computer,
@@ -403,7 +409,9 @@ class AgentManager:
                 provider["model"] = str(task.get("model") or _resolve_model(provider, None))
                 adapter = self._adapter(provider)
                 manifest = await engine.snapshot()
-                history = engine.slim_history(history)
+                # Compaction runs BEFORE slim_history: the compactor must see
+                # the un-trimmed transcript or older history would be dropped
+                # permanently before it could be summarized durably.
                 compaction = engine.plan_compaction(
                     history, git_state=manifest.get("git") if isinstance(manifest, dict) else None
                 )
@@ -435,9 +443,14 @@ class AgentManager:
                         payload=payload,
                     )
                     history = compaction["history"]
+                    # Re-serialize the injected message with the real
+                    # checkpoint id (its content stays a plain user message).
                     for item in history:
-                        if isinstance(item, dict) and item.get("type") == "context_checkpoint":
-                            item["checkpoint_id"] = checkpoint["id"]
+                        body = checkpoint_message_payload(item)
+                        if body is not None:
+                            item["content"] = checkpoint_message(
+                                body["summary"], body["compacted_items"], checkpoint["id"]
+                            )["content"]
                             break
                     self._emit(task_id, "context.checkpoint", {"checkpoint_id": checkpoint["id"]})
                     self._emit(
@@ -449,14 +462,21 @@ class AgentManager:
                             "dropped": compaction["dropped"],
                         },
                     )
+                history = engine.slim_history(history)
                 read_only = task.get("mode") == "ask"
                 turn_started = monotonic()
                 first_token: list[float] = []
+                stream_id = uuid.uuid4().hex[:12]
+                attempt_no = [0]
 
                 def _on_delta(delta: str) -> None:
                     if not first_token:
                         first_token.append(monotonic())
-                    self._emit(task_id, "assistant.delta", {"text": delta})
+                    self._emit(
+                        task_id,
+                        "assistant.delta",
+                        {"text": delta, "stream_id": stream_id, "attempt": attempt_no[0]},
+                    )
 
                 def _on_stream_event(kind: str, data: dict[str, Any]) -> None:
                     self._emit(
@@ -464,6 +484,8 @@ class AgentManager:
                         "provider.tool_call.delta",
                         {
                             "event": kind,
+                            "stream_id": stream_id,
+                            "attempt": attempt_no[0],
                             "call_id": str(data.get("call_id") or data.get("item_id") or ""),
                             "delta": str(data.get("delta") or "")[:200],
                         },
@@ -475,7 +497,8 @@ class AgentManager:
                     else None
                 )
 
-                def _request() -> Any:
+                async def _request() -> Any:
+                    attempt_no[0] += 1
                     kwargs: dict[str, Any] = {
                         "prompt": task["prompt"],
                         "cwd": task["cwd"],
@@ -485,8 +508,35 @@ class AgentManager:
                         "read_only": read_only,
                     }
                     if stream_fn is not None:
-                        return stream_fn(**kwargs, on_delta=_on_delta, on_event=_on_stream_event)
-                    return adapter.turn(**kwargs)
+                        self._emit(
+                            task_id,
+                            "provider.stream.started",
+                            {
+                                "model": provider["model"],
+                                "stream_id": stream_id,
+                                "attempt": attempt_no[0],
+                            },
+                        )
+                        try:
+                            return await stream_fn(
+                                **kwargs, on_delta=_on_delta, on_event=_on_stream_event
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            # Abandoned stream attempts are recorded so the UI
+                            # can discard partial text from this attempt.
+                            self._emit(
+                                task_id,
+                                "provider.stream.aborted",
+                                {
+                                    "stream_id": stream_id,
+                                    "attempt": attempt_no[0],
+                                    "reason_class": classify(exc).kind,
+                                },
+                            )
+                            raise
+                    return await adapter.turn(**kwargs)
 
                 def _emit_retry(event_type: str, payload: dict[str, Any]) -> None:
                     if event_type in {"provider.retry", "provider.rate_limited"}:
@@ -495,10 +545,15 @@ class AgentManager:
                         )
                     self._emit(task_id, event_type, payload)
 
-                if stream_fn is not None:
-                    self._emit(task_id, "provider.stream.started", {"model": provider["model"]})
                 turn = await _race_cancel(
-                    retrying(_request, emit=_emit_retry, cancel=cancel),
+                    retrying(
+                        _request,
+                        emit=_emit_retry,
+                        cancel=cancel,
+                        # Once a delta is visible, transparently restarting the
+                        # stream would duplicate text in replay — fail instead.
+                        may_retry=lambda: not first_token,
+                    ),
                     cancel,
                 )
                 stream_ms = int((monotonic() - turn_started) * 1000)
@@ -511,6 +566,8 @@ class AgentManager:
                         "provider.stream.completed",
                         {
                             "response_id": turn.response_id,
+                            "stream_id": stream_id,
+                            "attempts": attempt_no[0],
                             "first_token_ms": first_ms,
                             "stream_ms": stream_ms,
                         },
@@ -674,7 +731,6 @@ class AgentManager:
                 checkpoint = self.store.update_checkpoint(
                     checkpoint["id"], side_effect_state="running"
                 )
-                self._emit_checkpoint(task_id, checkpoint)
             self._emit(task_id, "tool.started", {"call": call.public()})
             outcome = await self._invoke_tool(entry, ctx)
             if checkpoint is not None:
@@ -686,14 +742,14 @@ class AgentManager:
                         "output_items": outcome.output_items(call),
                     },
                 )
-                self._emit_checkpoint(task_id, checkpoint)
             self._emit(task_id, "tool.finished", outcome.finished_payload(call))
             history.extend(outcome.output_items(call))
             if checkpoint is not None:
-                payload = dict(checkpoint["payload"])
-                payload["history"] = history
+                # History is not rewritten into the payload at commit — the
+                # pre-call snapshot plus the stored result reconstructs it —
+                # so each call writes one history blob, not two.
                 checkpoint = self.store.update_checkpoint(
-                    checkpoint["id"], side_effect_state="committed", payload=payload
+                    checkpoint["id"], side_effect_state="committed"
                 )
                 self._emit_checkpoint(task_id, checkpoint)
             if outcome.cancelled:
@@ -765,22 +821,36 @@ class AgentManager:
                 "task.recovery.resumed",
                 {"checkpoint_id": checkpoint["id"], "decision": decision},
             )
-            if state == "completed_uncommitted":
-                # The side effect finished before the crash and its result was
-                # stored durably — reuse it instead of re-executing.
+            if state in {"completed_uncommitted", "committed"}:
+                # The side effect completed durably — reuse the stored result
+                # instead of re-executing. History is the pre-call snapshot
+                # plus the stored output items (call-id dedupe covers rows
+                # whose payload already carried committed history).
                 result = checkpoint["result"] or {}
-                history.extend(result.get("output_items") or [])
-                finished = result.get("finished")
-                if isinstance(finished, dict) and not self._finished_already_recorded(
-                    task_id, checkpoint["pending_call_id"]
-                ):
-                    self._emit(task_id, "tool.finished", finished)
-                payload["history"] = history
-                self.store.update_checkpoint(
-                    checkpoint["id"], side_effect_state="committed", payload=payload
+                outputs = [
+                    item
+                    for item in (result.get("output_items") or [])
+                    if isinstance(item, dict)
+                ]
+                recorded_outputs = {
+                    str(item.get("call_id") or "")
+                    for item in history
+                    if isinstance(item, dict)
+                    and str(item.get("type") or "").endswith("call_output")
+                }
+                history.extend(
+                    item for item in outputs
+                    if str(item.get("call_id") or "") not in recorded_outputs
                 )
-                calls = remaining
-            elif state == "committed":
+                if state == "completed_uncommitted":
+                    finished = result.get("finished")
+                    if isinstance(finished, dict) and not self._finished_already_recorded(
+                        task_id, checkpoint["pending_call_id"]
+                    ):
+                        self._emit(task_id, "tool.finished", finished)
+                    self.store.update_checkpoint(
+                        checkpoint["id"], side_effect_state="committed"
+                    )
                 calls = remaining
             else:
                 # prepared (or confirmed ambiguous): re-execute the call — for

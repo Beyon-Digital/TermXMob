@@ -1,11 +1,11 @@
 # Execution graph: agent-v2
 
 ## Resume checkpoint
-- Updated: 2026-09-28
-- Current phase: Phase 1 complete; PR #16 open (draft); Devin Review rounds 1-3 addressed (38/38 threads resolved; fixes 2aab7d4, d09eec2, f2993dc)
-- Next ready tasks: Phase 2 scope (provider streaming/retry, compaction, async subagents, observation v2)
+- Updated: 2026-09-29
+- Current phase: Phase 2 complete (AG2-008/010/011/017); PR #16 open (ready for review); review-round hardening pass applied
+- Next ready tasks: Phase 3+ scope (async subagent handles, fan-out, observation v2, product features)
 - Active owners: devin-session
-- Last verified command: `uv run pytest tests -q` — 246 passed, 10 skipped, 27.40s
+- Last verified command: `uv run pytest tests -q` — 269 passed, 10 skipped, ~27s
 - Last inspected surface: `src/termx/agent/**`, `project_files`, `git_ops`, `app.py` agent routes
 - Blockers: none
 - Resume instruction: continue the ledger below top-down; keep tests green.

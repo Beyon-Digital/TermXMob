@@ -84,14 +84,18 @@ async def retrying(
     emit: Callable[[str, dict[str, Any]], None] | None = None,
     cancel: asyncio.Event | None = None,
     max_attempts: int = MAX_ATTEMPTS,
+    may_retry: Callable[[], bool] | None = None,
 ) -> T:
     """Run ``factory`` with bounded retry/backoff, emitting retry events.
 
     ``factory`` is re-invoked per attempt; the callable itself must be free of
-    side effects other than the provider request. Events:
+    side effects other than the provider request. ``may_retry`` is consulted
+    after each failure — returning False suppresses the retry (e.g. a stream
+    that already emitted visible deltas must not be replayed transparently).
+    Events:
     ``provider.retry {attempt, max_attempts, reason_class, status_code?, delay_ms}``,
     ``provider.rate_limited {status_code, delay_ms}``,
-    ``provider.failed {reason_class, status_code?}``.
+    ``provider.failed {reason_class, status_code?, retry_suppressed?}``.
     """
     cancel = cancel or asyncio.Event()
     attempt = 0
@@ -103,16 +107,17 @@ async def retrying(
             raise
         except Exception as exc:
             classification = classify(exc)
-            if classification.kind == "non_retryable" or attempt >= max_attempts:
+            suppressed = may_retry is not None and not may_retry()
+            if classification.kind == "non_retryable" or attempt >= max_attempts or suppressed:
                 if emit is not None:
-                    emit(
-                        "provider.failed",
-                        {
-                            "reason_class": classification.kind,
-                            "status_code": classification.status_code,
-                            "attempt": attempt,
-                        },
-                    )
+                    payload = {
+                        "reason_class": classification.kind,
+                        "status_code": classification.status_code,
+                        "attempt": attempt,
+                    }
+                    if suppressed:
+                        payload["retry_suppressed"] = True
+                    emit("provider.failed", payload)
                 raise
             delay_s = _delay_s(attempt, classification)
             if emit is not None:

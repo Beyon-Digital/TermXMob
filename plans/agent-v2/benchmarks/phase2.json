@@ -1,7 +1,7 @@
 {
-  "elapsed_s": 0.54,
-  "generated_at": "2026-09-29T16:23:15Z",
-  "label": "phase2",
+  "elapsed_s": 0.51,
+  "generated_at": "2026-09-29T17:12:05Z",
+  "label": "phase2-fixes",
   "scenarios": {
     "ask_simple": {
       "approvals": 0,
@@ -22,22 +22,22 @@
       "provider_turns": 1,
       "status": "completed",
       "tool_calls": 0,
-      "wall_ms": 10.32
+      "wall_ms": 9.78
     },
     "check_command": {
       "approvals": 1,
       "artifacts": 0,
       "error": null,
-      "event_count": 25,
+      "event_count": 24,
       "events": {
         "approval.requested": 1,
         "approval.resolved": 1,
         "assistant.message": 1,
         "context.snapshot": 1,
-        "execution.checkpoint": 4,
+        "execution.checkpoint": 2,
         "plan.ready": 1,
         "process.exited": 1,
-        "process.output": 5,
+        "process.output": 6,
         "process.started": 1,
         "provider.usage": 2,
         "task.completed": 1,
@@ -48,25 +48,25 @@
         "tool.started": 1
       },
       "ok": true,
-      "process_events": 7,
+      "process_events": 8,
       "provider_turns": 2,
       "status": "completed",
       "tool": "run_check",
       "tool_calls": 1,
-      "wall_ms": 18.7
+      "wall_ms": 15.81
     },
     "computer_loop": {
       "approvals": 1,
       "artifacts": 3,
       "error": null,
-      "event_count": 35,
+      "event_count": 29,
       "events": {
         "approval.requested": 1,
         "approval.resolved": 1,
         "assistant.message": 1,
         "computer.screenshot": 3,
         "context.snapshot": 1,
-        "execution.checkpoint": 12,
+        "execution.checkpoint": 6,
         "plan.ready": 1,
         "provider.usage": 4,
         "task.completed": 1,
@@ -81,19 +81,19 @@
       "provider_turns": 4,
       "status": "completed",
       "tool_calls": 3,
-      "wall_ms": 29.13
+      "wall_ms": 21.91
     },
     "file_inspection_shell": {
       "approvals": 1,
       "artifacts": 0,
       "error": null,
-      "event_count": 112,
+      "event_count": 92,
       "events": {
         "approval.requested": 1,
         "approval.resolved": 1,
         "assistant.message": 1,
         "context.snapshot": 1,
-        "execution.checkpoint": 40,
+        "execution.checkpoint": 20,
         "plan.ready": 1,
         "process.exited": 10,
         "process.output": 20,
@@ -111,7 +111,7 @@
       "provider_turns": 2,
       "status": "completed",
       "tool_calls": 10,
-      "wall_ms": 66.2
+      "wall_ms": 58.36
     },
     "file_inspection_structured": {
       "approvals": 1,
@@ -138,22 +138,22 @@
       "provider_turns": 2,
       "status": "completed",
       "tool_calls": 10,
-      "wall_ms": 23.2
+      "wall_ms": 18.72
     },
     "subagents_two": {
       "approvals": 3,
       "artifacts": 0,
       "error": null,
-      "event_count": 81,
+      "event_count": 73,
       "events": {
         "approval.requested": 3,
         "approval.resolved": 3,
         "assistant.message": 1,
         "context.snapshot": 1,
-        "execution.checkpoint": 8,
+        "execution.checkpoint": 4,
         "plan.ready": 1,
         "provider.usage": 2,
-        "subagent.event": 42,
+        "subagent.event": 38,
         "subagent.finished": 2,
         "subagent.started": 2,
         "task.completed": 1,
@@ -168,7 +168,7 @@
       "provider_turns": 6,
       "status": "completed",
       "tool_calls": 2,
-      "wall_ms": 360.18
+      "wall_ms": 359.57
     }
   }
 }

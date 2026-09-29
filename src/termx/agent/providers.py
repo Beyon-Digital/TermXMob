@@ -250,6 +250,18 @@ class OpenAIResponsesAdapter:
 
     @staticmethod
     def _turn_from_body(body: dict[str, Any]) -> ProviderTurn:
+        status = str(body.get("status") or "")
+        if status == "incomplete":
+            details = body.get("incomplete_details")
+            reason = (
+                str(details.get("reason"))
+                if isinstance(details, dict) and details.get("reason")
+                else "unknown"
+            )
+            # An incomplete response is not a completed turn — surfacing it
+            # as a structured failure instead of silently treating partial
+            # output as success.
+            raise ProviderError(f"Provider response incomplete (reason={reason})")
         calls: list[ProviderCall] = []
         for item in body.get("output") or []:
             if not isinstance(item, dict):

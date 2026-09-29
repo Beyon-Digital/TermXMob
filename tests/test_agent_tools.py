@@ -846,7 +846,7 @@ def test_plan_compaction_below_threshold():
 
 
 def test_plan_compaction_preserves_pairs_and_bounds():
-    from termx.agent.context import ContextEngine
+    from termx.agent.context import ContextEngine, checkpoint_message_payload
 
     engine = ContextEngine("/tmp", limits={"max_context_estimate_tokens": 2000})
     history = _fake_transcript(40, "y" * 400)
@@ -854,7 +854,11 @@ def test_plan_compaction_preserves_pairs_and_bounds():
     assert plan is not None
     compacted_history = plan["history"]
     assert compacted_history[0]["role"] == "user"
-    assert compacted_history[1]["type"] == "context_checkpoint"
+    # The summary travels as a plain user message (valid Responses input).
+    summary_item = checkpoint_message_payload(compacted_history[1])
+    assert summary_item is not None
+    assert summary_item["summary"]["completed_steps"]
+    assert summary_item["compacted_items"] > 0
     # No retained item is an orphaned *_call_output.
     assert not str(compacted_history[2].get("type") or "").endswith("call_output")
     call_ids = {
@@ -1058,3 +1062,125 @@ def test_retrying_cancel_during_backoff():
             return "cancelled"
 
     assert asyncio.run(run()) == "cancelled"
+
+
+def test_stream_turn_incomplete_raises():
+    import httpx
+    from termx.agent.providers import OpenAIResponsesAdapter, ProviderError
+
+    import json as _json
+    payload = _sse([
+        _json.dumps({"type": "response.output_text.delta", "delta": "partial "}),
+        _json.dumps({
+            "type": "response.incomplete",
+            "response": {
+                "id": "resp-9", "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "output": [{"type": "message",
+                            "content": [{"type": "output_text", "text": "partial "}]}],
+            },
+        }),
+        "[DONE]",
+    ])
+
+    def handler(request):
+        return httpx.Response(200, content=payload,
+                              headers={"content-type": "text/event-stream"})
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = OpenAIResponsesAdapter(
+            base_url="https://x.test", model="m", api_key="k",
+            capabilities=["functions"], client=client,
+        )
+        try:
+            await adapter.stream_turn(prompt="p", cwd="/tmp", manifest={})
+        except ProviderError as exc:
+            return exc
+
+    exc = asyncio.run(run())
+    assert exc is not None
+    assert "incomplete" in str(exc).lower()
+    assert "max_output_tokens" in str(exc)
+
+
+def test_turn_incomplete_body_raises():
+    import httpx
+    from termx.agent.providers import OpenAIResponsesAdapter, ProviderError
+
+    def handler(request):
+        return httpx.Response(200, json={
+            "id": "resp-2", "status": "incomplete",
+            "incomplete_details": {"reason": "content_filter"},
+            "output": [{"type": "message",
+                        "content": [{"type": "output_text", "text": "cut off"}]}],
+        })
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = OpenAIResponsesAdapter(
+            base_url="https://x.test", model="m", api_key="k",
+            capabilities=[], client=client,
+        )
+        try:
+            await adapter.turn(prompt="p", cwd="/tmp", manifest={})
+        except ProviderError as exc:
+            return exc
+
+    exc = asyncio.run(run())
+    assert exc is not None
+    assert "incomplete" in str(exc).lower()
+    assert "content_filter" in str(exc)
+
+
+def test_checkpoint_message_roundtrip():
+    from termx.agent.context import checkpoint_message, checkpoint_message_payload
+
+    summary = {"summary": "compact 5 items", "completed_steps": ["read_file -> done"],
+               "pending_work": [], "git_state": {"branch": "main"}}
+    item = checkpoint_message(summary, 5, "cp-1")
+    # Plain Responses-API message shape — no custom top-level type.
+    assert item["role"] == "user"
+    assert isinstance(item["content"], str)
+    assert "type" not in item
+    body = checkpoint_message_payload(item)
+    assert body is not None
+    assert body["type"] == "context_checkpoint"
+    assert body["checkpoint_id"] == "cp-1"
+    assert body["summary"]["completed_steps"] == ["read_file -> done"]
+    assert body["compacted_items"] == 5
+    # Non-checkpoint user messages and malformed JSON parse to None.
+    assert checkpoint_message_payload({"role": "user", "content": "hello"}) is None
+    assert checkpoint_message_payload({"role": "user", "content": "{bad json"}) is None
+    assert checkpoint_message_payload({"type": "function_call_output", "call_id": "x"}) is None
+
+
+def test_retrying_may_retry_suppresses_attempts():
+    from termx.agent.providers import ProviderError
+    from termx.agent.retry import retrying
+
+    events: list[tuple[str, dict]] = []
+    attempts = 0
+
+    async def factory():
+        nonlocal attempts
+        attempts += 1
+        raise ProviderError("boom", network=True)
+
+    async def run():
+        try:
+            await retrying(
+                factory,
+                emit=lambda t, p: events.append((t, p)),
+                may_retry=lambda: False,
+            )
+        except ProviderError:
+            pass
+
+    asyncio.run(run())
+    assert attempts == 1  # visible-output suppression stops the retry
+    assert events == [
+        ("provider.failed",
+         {"reason_class": "retryable", "status_code": None, "attempt": 1,
+          "retry_suppressed": True})
+    ]

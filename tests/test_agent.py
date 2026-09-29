@@ -1480,12 +1480,14 @@ def test_execution_checkpoint_events_during_normal_run(tmp_path: Path) -> None:
         assert len(checkpoints) == 1  # one side-effecting run_shell call
         assert checkpoints[0]["side_effect_state"] == "committed"
         assert checkpoints[0]["provider_turn_id"] == "response-1"
+        # Events fire only at the prepared/committed boundaries; the row
+        # still records every transition for crash classification.
         states = [
             e["payload"]["side_effect_state"]
             for e in store.events(task["id"])
             if e["type"] == "execution.checkpoint"
         ]
-        assert states == ["prepared", "running", "completed_uncommitted", "committed"]
+        assert states == ["prepared", "committed"]
         await manager.close()
         store.close()
 
@@ -1527,6 +1529,101 @@ def test_recovery_completed_uncommitted_dedupes_finished_event(tmp_path: Path) -
         assert len(finished) == 1
         cp = store.checkpoints(task["id"], kind="execution")[-1]
         assert cp["side_effect_state"] == "committed"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+class _FlakyStreamAdapter:
+    """Streams a delta then dies — retrying would duplicate visible text."""
+
+    def __init__(self) -> None:
+        self.supports_streaming = True
+        self.calls = 0
+
+    async def test(self) -> str:
+        return "OK"
+
+    async def plan(self, prompt: str, cwd: str, manifest: dict[str, Any]):
+        return (
+            {"summary": prompt, "steps": ["Inspect", "Change", "Verify"],
+             "tools": ["shell"], "risks": []},
+            "plan-response",
+        )
+
+    async def stream_turn(self, **kwargs):
+        self.calls += 1
+        on_delta = kwargs.get("on_delta")
+        if on_delta:
+            on_delta("partial visible text ")
+        raise ProviderError("connection reset", network=True)
+
+    async def turn(self, **kwargs):  # pragma: no cover - streaming path only
+        raise AssertionError("turn() should not be called for streaming adapters")
+
+
+def test_stream_retry_suppressed_after_visible_delta(tmp_path: Path) -> None:
+    async def run() -> None:
+        adapter = _FlakyStreamAdapter()
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Stream something", cwd=str(tmp_path),
+                                       provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        failed = await wait_for_status(store, task["id"], "failed", timeout=10.0)
+        assert "connection reset" in (failed.get("error") or "")
+        assert adapter.calls == 1  # no silent replay of a visible stream
+        events = store.events(task["id"])
+        types = [e["type"] for e in events]
+        assert "provider.stream.started" in types
+        assert "provider.stream.aborted" in types
+        assert "provider.retry" not in types
+        aborted = next(e for e in events if e["type"] == "provider.stream.aborted")
+        assert aborted["payload"]["stream_id"]
+        assert aborted["payload"]["attempt"] == 1
+        assert aborted["payload"]["reason_class"] == "retryable"
+        delta = next(e for e in events if e["type"] == "assistant.delta")
+        assert delta["payload"]["text"] == "partial visible text "
+        assert delta["payload"]["stream_id"] == aborted["payload"]["stream_id"]
+        assert delta["payload"]["attempt"] == 1
+        failed_event = next(e for e in events if e["type"] == "provider.failed")
+        assert failed_event["payload"].get("retry_suppressed") is True
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_stream_retry_allowed_before_first_delta(tmp_path: Path) -> None:
+    async def run() -> None:
+        class EarlyFail(_FlakyStreamAdapter):
+            async def stream_turn(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ProviderError("connection reset", network=True)
+                on_delta = kwargs.get("on_delta")
+                if on_delta:
+                    on_delta("hello")
+                return ProviderTurn(response_id="resp-x", text="hello", calls=[], usage={},
+                                    output_items=[{"type": "message",
+                                                   "content": [{"type": "output_text",
+                                                                "text": "hello"}]}])
+
+        adapter = EarlyFail()
+        manager, store = build_manager(tmp_path, adapter)
+        task = await manager.create_task(prompt="Stream something", cwd=str(tmp_path),
+                                       provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        await wait_for_status(store, task["id"], "completed", timeout=10.0)
+        assert adapter.calls == 2  # pre-delta failure retried once, then succeeded
+        events = store.events(task["id"])
+        types = [e["type"] for e in events]
+        assert "provider.retry" in types
+        assert "provider.stream.aborted" in types
+        deltas = [e["payload"] for e in events if e["type"] == "assistant.delta"]
+        assert len(deltas) == 1 and deltas[0]["attempt"] == 2
+        started = [e["payload"] for e in events if e["type"] == "provider.stream.started"]
+        assert [s["attempt"] for s in started] == [1, 2]
         await manager.close()
         store.close()
 

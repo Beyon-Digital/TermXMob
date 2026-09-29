@@ -242,13 +242,8 @@ class ContextEngine:
             return None
         unresolved = _unresolved_call_ids(compacted)
         summary = _compaction_summary(compacted, retained, unresolved, git_state)
-        checkpoint_item = {
-            "type": "context_checkpoint",
-            "summary": summary,
-            "compacted_items": len(compacted),
-        }
         return {
-            "history": head + [checkpoint_item] + retained,
+            "history": head + [checkpoint_message(summary, len(compacted))] + retained,
             "payload": summary,
             "history_cursor": len(items) - len(retained),
             "dropped": len(compacted),
@@ -337,6 +332,45 @@ def estimate_tokens(items: list[dict[str, Any]]) -> int:
         return len(json.dumps(items, default=str)) // 4
     except (TypeError, ValueError):
         return 0
+
+
+CONTEXT_CHECKPOINT_TYPE = "context_checkpoint"
+
+
+def checkpoint_message(
+    summary: dict[str, Any],
+    compacted_items: int,
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Serialize a compaction summary as a normal user message item.
+
+    The injected transcript entry must be a plain Responses-API input
+    message — a custom ``type`` would be rejected by strict provider
+    endpoints — so the structured payload travels inside ``content``
+    as a JSON document tagged with ``CONTEXT_CHECKPOINT_TYPE``.
+    """
+    body = {
+        "type": CONTEXT_CHECKPOINT_TYPE,
+        "checkpoint_id": checkpoint_id,
+        "summary": summary,
+        "compacted_items": compacted_items,
+    }
+    return {"role": "user", "content": json.dumps(body, sort_keys=True)}
+
+
+def checkpoint_message_payload(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Parse a serialized compaction message back into its payload dict."""
+    if not isinstance(item, dict):
+        return None
+    if item.get("role") != "user" or not isinstance(item.get("content"), str):
+        return None
+    try:
+        body = json.loads(item["content"])
+    except (TypeError, ValueError):
+        return None
+    if isinstance(body, dict) and body.get("type") == CONTEXT_CHECKPOINT_TYPE:
+        return body
+    return None
 
 
 _CALL_ITEM_TYPES = {"function_call", "computer_call", "custom_tool_call"}

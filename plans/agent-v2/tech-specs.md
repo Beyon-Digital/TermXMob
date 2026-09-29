@@ -237,16 +237,22 @@ prepared ──invoke begins──> running ──outcome lands──> completed
 - `prepared` at dispatch; `running` set immediately before `execute`;
 - `completed_uncommitted` + `result={finished, output_items}` written
   **after the side effect completes but before** the result is fed to
-  history; `committed` after emit + history extend.
+  history; `committed` after emit + history extend. `committed` does NOT
+  rewrite `payload["history"]` — resume reconstructs post-call history
+  from the pre-call snapshot plus the stored `result.output_items`
+  (call-id dedupe), so each call writes one history blob.
+- `execution.checkpoint` events emit only at the `prepared` and
+  `committed` boundaries (2 events per call); intermediate transitions
+  remain in the durable row for crash classification.
 - Startup recovery: `__init__` scans ACTIVE tasks (today: all → failed).
   With a resumable latest execution checkpoint the task goes to
   `recovering`/`recovery_confirmation_required` and is not failed:
   - `prepared` → resume safely (side effect never started) → status
     `recovering` then drive from payload; emit `task.recovery.started`,
     `task.recovery.resumed`, `execution.checkpoint`.
-  - `committed` → resume from the checkpoint `payload` (the committed
-    history was written back into the payload at commit time) → drive
-    `remaining_calls`.
+  - `committed` → resume from the checkpoint `payload` history plus the
+    stored `result.output_items` (history is not rewritten at commit) →
+    drive `remaining_calls`.
   - `completed_uncommitted` + stored `result` → resume **without
     re-executing**: append stored `output_items` to payload history,
     re-emit `tool.finished` only if it is not already in the event log
@@ -280,9 +286,22 @@ prepared ──invoke begins──> running ──outcome lands──> completed
   need no incremental assembly on this API — complete call items arrive
   in the terminal event; still emits `provider.tool_call.delta`
   placeholders only if the API supplies call deltas (kept additive).
-- Manager emits: `provider.stream.started`, `assistant.delta {text}`,
-  `provider.stream.completed {response_id, first_token_ms, stream_ms}`;
-  final `assistant.message` still emitted (unchanged contract).
+- Manager emits per logical turn a `stream_id` + per-request `attempt`:
+  `provider.stream.started {model, stream_id, attempt}` (emitted per
+  attempt), `assistant.delta {text, stream_id, attempt}`,
+  `provider.tool_call.delta {stream_id, attempt, ...}`,
+  `provider.stream.aborted {stream_id, attempt, reason_class}` on every
+  abandoned attempt, `provider.stream.completed {response_id, stream_id,
+  attempts, first_token_ms, stream_ms}`; final `assistant.message` still
+  emitted (unchanged contract).
+- Retry is suppressed once a delta is visible (`may_retry=not
+  first_token`): restarting a visible stream would duplicate text in
+  replay, so the attempt fails instead (`provider.failed
+  {retry_suppressed: true}`). Pre-delta failures still retry normally.
+- `response.incomplete` (and non-streaming `status:"incomplete"`) is a
+  structured failure — `_turn_from_body` raises `ProviderError` naming
+  `incomplete_details.reason`; partial output is never treated as a
+  completed turn.
   Cancellation: the stream task sits inside `_race_cancel` — a cancel
   closes the in-flight response.
 - Retry (`agent/retry.py`): `classify(exc) ->
@@ -319,10 +338,15 @@ and persists the `kind="context"` checkpoint row:
   step) plus the live `project_snapshot().git_state`; no model call in
   v1 (deterministic + cheap; a provider-assisted summarizer can slot
   behind the same function later).
-- The summary is injected as one leading item
-  `{type: "context_checkpoint", summary: ...}` after the original user
-  prompt item, so the transcript stays bounded while a resumable record
-  persists in `checkpoints(kind="context")`.
+- The summary is injected after the original user prompt item as a
+  plain user message — `{"role": "user", "content": <json>}` where the
+  JSON body carries `{type: "context_checkpoint", checkpoint_id,
+  summary, compacted_items}`. A custom item `type` would be rejected by
+  strict Responses-API endpoints; `checkpoint_message()`/
+  `checkpoint_message_payload()` serialize/parse it.
+- Ordering: `plan_compaction` runs BEFORE `slim_history` in `_drive`, so
+  nothing is destructively trimmed before the compactor can summarize it;
+  the slimmed budget then applies to the compacted transcript.
 - Events: `context.compaction.started {estimated_tokens, items}`,
   `context.compaction.completed {checkpoint_id, retained, dropped}`,
   `context.checkpoint {checkpoint_id}`.
