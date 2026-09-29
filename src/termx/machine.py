@@ -64,6 +64,7 @@ def machine_snapshot(
             "activity": True,
             "process_discovery": True,
             "runbooks": True,
+            "device_scopes_v2": True,
             "editor": True,
             "editor_git": shutil.which("git") is not None,
             "editor_lsp": True,

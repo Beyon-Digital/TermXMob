@@ -195,3 +195,97 @@ def test_directories_and_fs_roundtrip(tmp_path) -> None:
     assert session.json()["cwd"] == str(nested.resolve())
     assert client.delete(f"/api/directories/{item['id']}").status_code == 200
     client.delete(f"/api/sessions/{session.json()['id']}")
+
+
+def test_pair_accepts_device_name_scopes_and_expiry() -> None:
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    res = client.post(
+        "/api/pair",
+        headers={"X-Termx-Passcode": "secret"},
+        json={"device_name": "pixel", "scopes": ["files-read"], "expires_in_s": 3600},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["scopes"] == ["files-read"]
+    assert body["expires_at"] is not None
+    devices = client.get("/api/devices", headers={"X-Termx-Passcode": "secret"}).json()["devices"]
+    assert devices[0]["device_name"] == "pixel"
+    assert devices[0]["scopes"] == ["files-read"]
+
+
+def test_pair_default_scopes_exclude_host_admin() -> None:
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    res = client.post("/api/pair", headers={"X-Termx-Passcode": "secret"})
+    scopes = res.json()["scopes"]
+    assert "host-admin" not in scopes
+    assert "files-read" in scopes and "terminal-control" in scopes
+    assert res.json()["expires_at"] is None
+
+
+def test_scope_enforcement_matrix() -> None:
+    """A narrowly-scoped token gets 403 outside its scope; passcode gets all."""
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    token = client.post(
+        "/api/pair",
+        headers={"X-Termx-Passcode": "secret"},
+        json={"scopes": ["files-read", "machine-view"]},
+    ).json()["token"]
+    auth = {"X-Termx-Passcode": token}
+    assert client.get("/api/projects", headers=auth).status_code == 200
+    assert client.get("/api/activity", headers=auth).status_code == 200
+    assert client.get("/api/sessions", headers=auth).status_code == 403
+    assert client.get("/api/displays", headers=auth).status_code == 403
+    assert client.get("/api/devices", headers=auth).status_code == 403
+    assert client.get("/api/tunnels", headers=auth).status_code == 403
+    assert client.post("/api/sessions", headers=auth, json={}).status_code == 403
+    # Bad/unknown credentials still 401.
+    assert client.get("/api/projects", headers={"X-Termx-Passcode": "bad"}).status_code == 401
+    admin = {"X-Termx-Passcode": "secret"}
+    assert client.get("/api/sessions", headers=admin).status_code == 200
+    assert client.get("/api/devices", headers=admin).status_code == 200
+    assert client.get("/api/displays", headers=admin).status_code == 200
+
+
+def test_device_scopes_endpoint_grants_admin_explicitly() -> None:
+    """Explicit re-scope is the documented path to host-admin for old devices."""
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    admin = {"X-Termx-Passcode": "secret"}
+    token = client.post(
+        "/api/pair", headers=admin, json={"scopes": ["files-read"]}
+    ).json()["token"]
+    auth = {"X-Termx-Passcode": token}
+    assert client.get("/api/devices", headers=auth).status_code == 403
+
+    device_id = client.get("/api/devices", headers=admin).json()["devices"][0]["id"]
+    # The device cannot escalate itself.
+    res = client.post(
+        f"/api/devices/{device_id}/scopes", headers=auth, json={"scopes": ["host-admin"]}
+    )
+    assert res.status_code == 403
+    # Admin grants host-admin explicitly.
+    res = client.post(
+        f"/api/devices/{device_id}/scopes",
+        headers=admin,
+        json={"scopes": ["host-admin", "files-read"]},
+    )
+    assert res.status_code == 200
+    assert res.json()["device"]["scopes"] == ["host-admin", "files-read"]
+    assert client.get("/api/devices", headers=auth).status_code == 200
+    assert client.get("/api/audit", headers=auth).status_code == 200
+    assert (
+        client.post(
+            f"/api/devices/nope/scopes", headers=admin, json={"scopes": ["files-read"]}
+        ).status_code
+        == 404
+    )
+
+
+def test_passcode_holds_every_v2_scope() -> None:
+    """Passcode keeps administrative recovery behavior under scopes v2."""
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    admin = {"X-Termx-Passcode": "secret"}
+    for path in ("/api/sessions", "/api/projects", "/api/devices", "/api/audit",
+                 "/api/displays", "/api/tunnels", "/api/machine", "/api/activity"):
+        assert client.get(path, headers=admin).status_code == 200, path
+    body = client.get("/api/health").json()
+    assert body["capabilities"]["device_scopes_v2"] is True

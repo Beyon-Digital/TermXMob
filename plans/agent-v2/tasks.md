@@ -421,11 +421,48 @@ tasks:
       - "test_agent.py: test_runbooks_crud, test_runbook_sequential_run_and_history, test_runbook_stop_on_failure, test_runbook_confirm_gate, test_runbook_cancel_kills_process, test_runbook_parallel_steps, test_agent_run_runbook_tool"
       - "uv run pytest tests -q -> 308 passed, 10 skipped"
     notes: runs execute in the runbook's project root (or home); manager.close() cancels live runs
-  - id: SEC-001 / SEC-002 / VRF-001
-    title: Scopes v2 model + enforcement, final verification
+  - id: SEC-001
+    title: Device scopes v2 model + legacy migration
+    status: done
+    depends_on: [PROD-001]
+    owner: devin
+    write_scope:
+      - src/termx/tokens.py (SCOPES v2 set, LEGACY_SCOPE_MAP, TokenStore device fields)
+      - src/termx/app.py (/api/pair body, POST /api/devices/{id}/scopes)
+      - src/termx/machine.py (capabilities.device_scopes_v2)
+    acceptance:
+      - "15 v2 scopes: machine-view terminal-view terminal-control files-read files-write git-read git-write desktop-view desktop-control network-manage agent-view agent-run agent-control ai-settings host-admin"
+      - "token record carries device_name, created_at, last_seen, expires_at, scopes, legacy flag; expiry enforced at check()"
+      - "v1 scopes map to exact v2 equivalents; migrated tokens gain machine-view only; host-admin NEVER granted by migration or default pair"
+      - "explicit re-pair path: POST /api/devices/{id}/scopes (host-admin only) + /api/pair body {device_name, scopes, expires_in_s}"
+      - "passcode auth grants all 15 scopes (admin recovery preserved)"
+    evidence:
+      - "test_tokens.py: migration (v1 store -> v2 scopes, legacy flag, no host-admin), expiry, last_seen, update_scopes/update_device, legacy-name mapping at issue()"
+      - "test_api.py: pair body, default scopes exclude host-admin, enforcement matrix, devices/{id}/scopes grant, passcode all-scope sweep"
+      - "uv run pytest tests -q -> 319 passed, 10 skipped"
+    notes: malformed/absent scope lists on stored records floor at machine-view, never default-broaden
+  - id: SEC-002
+    title: Scope enforcement across host APIs
+    status: done
+    depends_on: [SEC-001]
+    owner: devin
+    write_scope:
+      - src/termx/app.py (118 _require_scope call sites + per-WS allows gates; 0 unscoped routes remain)
+    acceptance:
+      - "machine-view: connect/notify/permissions-read/machine/activity/ports/processes/preferences-read/commands-read/runbooks-read/workspace-read/directories-read"
+      - "terminal-view/control: sessions CRUD + pty WS; files-read/write: fs + project tree/file/upload/download/search/previews/lsp WS; git-read/write: all project git ops"
+      - "desktop-view/control: displays + desktop WS + rtc; network-manage: tunnels + forwards; host-admin: devices/audit/update/shutdown/permissions-request/config writes"
+      - "agent routes unchanged (already agent-view/run/control + ai-settings); runbook mutations terminal-control; sensitive path denial unchanged (inline 4xx, never approval)"
+      - "WS sockets enforce scope: pty=terminal-control lsp=files-read desktop=desktop-view activity=machine-view agent-events=agent-view"
+    evidence:
+      - "scripted sweep: 0 remaining _require callers; route audit prints only unguarded static SPA fallback"
+      - "test_api.py::test_scope_enforcement_matrix (403s cross-scope, 200s in-scope, 401 bad token)"
+      - "uv run pytest tests -q -> 319 passed, 10 skipped"
+  - id: VRF-001
+    title: Final verification pass
     status: pending
-    depends_on: [AG2-017, PROD-001]
-    owner: unassigned
+    depends_on: [SEC-002]
+    owner: devin
     write_scope: []
     acceptance: []
     evidence: []

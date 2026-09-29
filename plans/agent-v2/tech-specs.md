@@ -553,3 +553,32 @@ Reads use the shared view scopes; create/edit/run/confirm/cancel need
 `agent-control`. Agent tool `run_runbook` (`approval="always"`, not exposed in
 Ask mode) polls the run to a terminal or confirmation state and reports
 step-level results. `capabilities.runbooks`.
+
+## 23. Device scopes v2 (SEC-001 / SEC-002)
+
+`SCOPES` (15): `machine-view`, `terminal-view`, `terminal-control`, `files-read`,
+`files-write`, `git-read`, `git-write`, `desktop-view`, `desktop-control`,
+`network-manage`, `agent-view`, `agent-run`, `agent-control`, `ai-settings`,
+`host-admin`. `DEFAULT_DEVICE_SCOPES` = all except `host-admin` (granted to a
+bare `/api/pair`); the passcode still maps to all 15 for admin recovery.
+
+Token records now carry `device_name`, `created_at`, `last_seen`, `expires_at`,
+`legacy` alongside `id/hash/scopes`; `check()` enforces expiry and throttles
+`last_seen` persistence (60s). `POST /api/devices/{id}/scopes` is the explicit
+re-scope/re-pair path (host-admin only).
+
+Migration (`_normalize_scopes` + `LEGACY_SCOPE_MAP`): each v1 scope maps to its
+exact v2 equivalent (`terminal` → terminal-view/control + files-* + git-*;
+`screen-*` → desktop-*; `tunnel-admin` → network-manage; `settings-admin` →
+ai-settings; agent-*/ai-settings identity). Migrated tokens additionally get
+`machine-view` because any v1 credential could already reach read-only host
+endpoints; `legacy: true` flags them in `list_public`. `host-admin` is never
+granted implicitly — only via explicit `update_scopes` or re-pair with an
+explicit scope list. A stored record with a missing/malformed scope list floors
+at `machine-view` (never broadens).
+
+Enforcement: every `/api/*` route uses `_require_scope` (except open
+`/api/health`, `/api/connect`, `/api/pair` and static `/_/`, `/` assets). WS
+sockets gate per-scope: pty → `terminal-control`, lsp → `files-read`, desktop →
+`desktop-view`, activity → `machine-view`, agent events → `agent-view`.
+Sensitive-path denial stays inline (4xx), never an approval.
