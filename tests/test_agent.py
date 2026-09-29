@@ -2343,3 +2343,150 @@ def test_paste_text_secret_scanned_like_type() -> None:
         [{"type": "paste_text", "text": "password=super-secret-123"}]
     )
     assert decision.approval_required is True
+
+
+# ---------------------------------------------------------------------------
+# PROD-001 / PROD-002 — host-persisted conversations + custom agents
+
+
+def _conversation_state(tmp_path: Path) -> AppState:
+    adapter = FakeAdapter()
+    store = AgentStore(tmp_path / "api.sqlite3", tmp_path / "api-artifacts")
+    credentials = CredentialStore(memory={})
+    state = AppState(
+        passcode="secret",
+        agent_store=store,
+        credentials=credentials,
+        adapter_factory=lambda _provider, _key: adapter,
+    )
+    return state
+
+
+def test_conversations_crud_and_turns(tmp_path: Path) -> None:
+    state = _conversation_state(tmp_path)
+    with TestClient(create_app(state, web_dir=None)) as client:
+        headers = {"x-termx-passcode": "secret"}
+        assert client.get("/api/conversations").status_code == 401
+        created = client.post(
+            "/api/conversations",
+            json={"title": "Thread A", "cwd": "/tmp", "mode": "agent", "pinned": True},
+            headers=headers,
+        ).json()["conversation"]
+        assert created["title"] == "Thread A"
+        assert created["pinned"] is True and created["draft"] is False
+        listed = client.get("/api/conversations", headers=headers).json()["conversations"]
+        assert [c["id"] for c in listed] == [created["id"]]
+        turn = client.post(
+            f"/api/conversations/{created['id']}/turns",
+            json={
+                "prompt": "fix the bug",
+                "task_id": "task-1",
+                "context_refs": [{"ref": "src/a.py", "start_line": 3}],
+                "attachment_refs": [{"ref": "shot.png"}],
+            },
+            headers=headers,
+        ).json()["turn"]
+        assert turn["sequence"] == 1 and turn["task_id"] == "task-1"
+        assert turn["context_refs"][0]["meta"] == {"start_line": 3}
+        assert turn["attachment_refs"][0]["ref"] == "shot.png"
+        fetched = client.get(
+            f"/api/conversations/{created['id']}", headers=headers
+        ).json()["conversation"]
+        assert fetched["turns"][0]["prompt"] == "fix the bug"
+        patched = client.patch(
+            f"/api/conversations/{created['id']}",
+            json={"archived": True, "title": "Renamed"},
+            headers=headers,
+        ).json()["conversation"]
+        assert patched["archived"] is True and patched["title"] == "Renamed"
+        assert client.get("/api/conversations", headers=headers).json()["conversations"] == []
+        assert client.get(
+            "/api/conversations?archived=all", headers=headers
+        ).json()["conversations"][0]["id"] == created["id"]
+        client.delete(f"/api/conversations/{created['id']}", headers=headers)
+        assert client.get(f"/api/conversations/{created['id']}", headers=headers).status_code == 404
+
+
+def test_conversation_turn_links_task_creation(tmp_path: Path) -> None:
+    adapter = FakeAdapter()
+    store = AgentStore(tmp_path / "api.sqlite3", tmp_path / "api-artifacts")
+    credentials = CredentialStore(memory={})
+    state = AppState(
+        passcode="secret",
+        agent_store=store,
+        credentials=credentials,
+        adapter_factory=lambda _provider, _key: adapter,
+    )
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        conv = client.post(
+            "/api/conversations", json={"title": "T"}, headers=headers
+        ).json()["conversation"]
+        missing = client.post(
+            "/api/agent/tasks",
+            json={
+                "prompt": "do it",
+                "cwd": str(tmp_path),
+                "provider_id": "missing-conv-test",
+                "conversation_id": "nope",
+            },
+            headers=headers,
+        )
+        assert missing.status_code == 404
+        state.agent.save_provider(
+            provider_id="fake",
+            kind="openai-compatible",
+            name="Fake",
+            base_url="http://127.0.0.1:9/v1",
+            model="m",
+            capabilities=["shell"],
+        )
+        task = client.post(
+            "/api/agent/tasks",
+            json={
+                "prompt": "do it",
+                "cwd": str(tmp_path),
+                "provider_id": "fake",
+                "conversation_id": conv["id"],
+            },
+            headers=headers,
+        ).json()
+        convo = client.get(
+            f"/api/conversations/{conv['id']}", headers=headers
+        ).json()["conversation"]
+        assert convo["turns"][0]["task_id"] == task["id"]
+        assert convo["turns"][0]["prompt"] == "do it"
+
+
+def test_custom_agents_crud(tmp_path: Path) -> None:
+    state = _conversation_state(tmp_path)
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        assert client.get("/api/custom-agents").status_code == 401
+        agent = client.post(
+            "/api/custom-agents",
+            json={
+                "name": "Reviewer",
+                "instructions": "review every diff",
+                "tools": ["git_status", "git_diff"],
+                "limits": {"max_steps": 10},
+            },
+            headers=headers,
+        ).json()["agent"]
+        assert agent["name"] == "Reviewer"
+        assert agent["tools"] == ["git_status", "git_diff"]
+        assert agent["limits"] == {"max_steps": 10}
+        patched = client.patch(
+            f"/api/custom-agents/{agent['id']}",
+            json={"description": "code reviewer"},
+            headers=headers,
+        ).json()["agent"]
+        assert patched["description"] == "code reviewer"
+        listed = client.get("/api/custom-agents", headers=headers).json()["agents"]
+        assert listed[0]["id"] == agent["id"]
+        client.delete(f"/api/custom-agents/{agent['id']}", headers=headers)
+        assert client.get("/api/custom-agents", headers=headers).json()["agents"] == []
+        assert (
+            client.post("/api/custom-agents", json={"name": "  "}, headers=headers).status_code
+            in {400, 422}
+        )

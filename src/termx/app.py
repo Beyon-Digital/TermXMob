@@ -11,6 +11,7 @@ import uuid
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -223,6 +224,63 @@ class AgentTaskBody(BaseModel):
     attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
     limits: dict[str, int] | None = None
     mode: str = Field(default="agent", pattern=r"^(ask|agent)$")
+    conversation_id: str | None = Field(default=None, max_length=80)
+
+
+class ConversationBody(BaseModel):
+    title: str = Field(default="", max_length=300)
+    project_id: str | None = Field(default=None, max_length=200)
+    cwd: str | None = Field(default=None, max_length=4000)
+    mode: str = Field(default="ask", pattern=r"^(ask|agent)$")
+    custom_agent_id: str | None = Field(default=None, max_length=80)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    pinned: bool = False
+    archived: bool = False
+    draft: bool = False
+
+
+class ConversationPatchBody(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    project_id: str | None = Field(default=None, max_length=200)
+    cwd: str | None = Field(default=None, max_length=4000)
+    mode: str | None = Field(default=None, pattern=r"^(ask|agent)$")
+    custom_agent_id: str | None = Field(default=None, max_length=80)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    pinned: bool | None = None
+    archived: bool | None = None
+    draft: bool | None = None
+
+
+class ConversationTurnBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=20_000)
+    task_id: str | None = Field(default=None, max_length=80)
+    mode: str | None = Field(default=None, pattern=r"^(ask|agent)$")
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    context_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+    attachment_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+
+
+class CustomAgentBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    instructions: str = Field(default="", max_length=20_000)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    tools: list[str] = Field(default_factory=list, max_length=64)
+    limits: dict[str, Any] = Field(default_factory=dict)
+
+
+class CustomAgentPatchBody(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    instructions: str | None = Field(default=None, max_length=20_000)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    tools: list[str] | None = Field(default=None, max_length=64)
+    limits: dict[str, Any] | None = None
 
 
 class AgentApprovalBody(BaseModel):
@@ -641,6 +699,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-run")
+        if body.conversation_id and state.agent_store.get_conversation(body.conversation_id) is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
         try:
             task = await state.agent.create_task(
                 prompt=body.prompt,
@@ -655,6 +715,16 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=404, detail="provider not found") from exc
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if body.conversation_id:
+            state.agent_store.add_conversation_turn(
+                body.conversation_id,
+                prompt=body.prompt,
+                task_id=task["id"],
+                mode=body.mode,
+                provider_id=body.provider_id,
+                model=body.model,
+                attachment_refs=[{"ref": item.name} for item in body.attachments],
+            )
         log_event("agent_task_create", task_id=task["id"], provider_id=body.provider_id)
         return task
 
@@ -829,6 +899,157 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         )
         removed = state.agent_store.prune(retention_days=body.retention_days, max_bytes=body.max_bytes)
         return {"removed": removed, "storage": state.agent_store.storage_status(retention_days=body.retention_days, max_bytes=body.max_bytes)}
+
+    # Host-persisted conversations (PROD-001) -------------------------------
+
+    @app.get("/api/conversations")
+    def list_conversations(
+        archived: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        flag: bool | None = False
+        if archived in {"1", "true", "all"}:
+            flag = None if archived == "all" else True
+        return {"conversations": state.agent_store.list_conversations(archived=flag)}
+
+    @app.post("/api/conversations")
+    def create_conversation(
+        body: ConversationBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        return {"conversation": state.agent_store.create_conversation(**body.model_dump())}
+
+    @app.get("/api/conversations/{conversation_id}")
+    def get_conversation(
+        conversation_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        conversation = state.agent_store.get_conversation(conversation_id, include_turns=True)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"conversation": conversation}
+
+    @app.patch("/api/conversations/{conversation_id}")
+    def patch_conversation(
+        conversation_id: str,
+        body: ConversationPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        conversation = state.agent_store.update_conversation(conversation_id, **updates)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"conversation": conversation}
+
+    @app.delete("/api/conversations/{conversation_id}")
+    def delete_conversation(
+        conversation_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        if not state.agent_store.delete_conversation(conversation_id):
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"deleted": conversation_id}
+
+    @app.post("/api/conversations/{conversation_id}/turns")
+    def add_conversation_turn(
+        conversation_id: str,
+        body: ConversationTurnBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            turn = state.agent_store.add_conversation_turn(
+                conversation_id,
+                prompt=body.prompt,
+                task_id=body.task_id,
+                mode=body.mode,
+                provider_id=body.provider_id,
+                model=body.model,
+                context_refs=body.context_refs,
+                attachment_refs=body.attachment_refs,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="conversation not found") from exc
+        return {"turn": turn}
+
+    # Host-persisted custom agents (PROD-002) -------------------------------
+
+    @app.get("/api/custom-agents")
+    def list_custom_agents(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        return {"agents": state.agent_store.list_custom_agents()}
+
+    @app.post("/api/custom-agents")
+    def create_custom_agent(
+        body: CustomAgentBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            agent = state.agent_store.create_custom_agent(**body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"agent": agent}
+
+    @app.patch("/api/custom-agents/{agent_id}")
+    def patch_custom_agent(
+        agent_id: str,
+        body: CustomAgentPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        agent = state.agent_store.update_custom_agent(agent_id, **updates)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        return {"agent": agent}
+
+    @app.delete("/api/custom-agents/{agent_id}")
+    def delete_custom_agent(
+        agent_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        if not state.agent_store.delete_custom_agent(agent_id):
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        return {"deleted": agent_id}
 
     @app.get("/api/preferences")
     def get_preferences(

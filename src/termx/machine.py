@@ -58,6 +58,8 @@ def machine_snapshot(
             "agent_recovery": True,
             "agent_subagents": True,
             "computer_observation_v2": True,
+            "conversations": True,
+            "custom_agents": True,
             "editor": True,
             "editor_git": shutil.which("git") is not None,
             "editor_lsp": True,

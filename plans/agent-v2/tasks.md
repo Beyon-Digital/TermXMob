@@ -310,10 +310,43 @@ tasks:
       - "uv run pytest tests -q -> 262 passed, 10 skipped (1771901)"
       - "test_agent.py crash-boundary tests: prepared(1 write), running(confirm gate, 0 writes until confirmed), completed_uncommitted(0 writes, 1 tool.finished), committed(0 writes), events order prepared>running>completed_uncommitted>committed"
     notes: Phase 2/6 prerequisite
-  - id: PROD-001..006 / SEC-001..002 / VRF-001
-    title: Host conversations, custom agents, worktrees, activity, ports, runbooks, scopes v2, final verification
+  - id: PROD-001
+    title: Persist conversations on host
+    status: done
+    depends_on: []
+    owner: devin
+    write_scope:
+      - src/termx/agent/store.py (conversations + conversation_turns + conversation_context_refs tables, CRUD + add_conversation_turn)
+      - src/termx/app.py (GET/POST/PATCH/DELETE /api/conversations, POST /{id}/turns, AgentTaskBody.conversation_id auto-links a turn)
+      - src/termx/machine.py (capabilities.conversations)
+    acceptance:
+      - "conversations carry id/title/project_id/cwd/pinned/archived/draft/mode/custom_agent_id/provider_id/model + timestamps; list defaults to non-archived (archived=1|all filters)"
+      - "turns carry sequence/task_id/prompt/mode/provider/model + context_refs & attachment_refs rows; cascade delete with conversation"
+      - "POST /api/agent/tasks with conversation_id validates existence first (404) then appends a turn with task_id/prompt/attachments"
+    evidence:
+      - "test_agent.py: test_conversations_crud_and_turns (401 gate, CRUD, refs split, archived filter, cascade delete), test_conversation_turn_links_task_creation (404 bad id, auto-turn on create)"
+      - "uv run pytest tests -q -> 291 passed, 10 skipped"
+    notes: scopes use current model — agent-view reads / agent-control writes; SEC-002 retargets to scopes v2
+  - id: PROD-002
+    title: Persist reusable custom agents on host
+    status: done
+    depends_on: [PROD-001]
+    owner: devin
+    write_scope:
+      - src/termx/agent/store.py (custom_agents table + CRUD)
+      - src/termx/app.py (GET/POST/PATCH/DELETE /api/custom-agents)
+      - src/termx/machine.py (capabilities.custom_agents)
+    acceptance:
+      - "custom agents carry name/description/instructions/provider_id/model/tools[]/limits{} + timestamps; name required"
+      - "full CRUD via REST, 404 on missing id, auth required"
+    evidence:
+      - "test_agent.py: test_custom_agents_crud (401 gate, create/list/patch/delete, tools+limits round-trip, blank name rejected)"
+      - "uv run pytest tests -q -> 291 passed, 10 skipped"
+    notes: ""
+  - id: PROD-003..006 / SEC-001..002 / VRF-001
+    title: Worktrees, activity, ports, runbooks, scopes v2, final verification
     status: pending
-    depends_on: [AG2-017]
+    depends_on: [AG2-017, PROD-001]
     owner: unassigned
     write_scope: []
     acceptance: []

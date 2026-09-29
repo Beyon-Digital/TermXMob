@@ -171,10 +171,63 @@ class AgentStore:
                 provider_turn_id TEXT,
                 created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                project_id TEXT,
+                cwd TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                draft INTEGER NOT NULL DEFAULT 0,
+                mode TEXT NOT NULL DEFAULT 'ask',
+                custom_agent_id TEXT,
+                provider_id TEXT,
+                model TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS conversation_turns (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                sequence INTEGER NOT NULL,
+                task_id TEXT,
+                prompt TEXT NOT NULL DEFAULT '',
+                mode TEXT,
+                provider_id TEXT,
+                model TEXT,
+                created_at REAL NOT NULL,
+                UNIQUE(conversation_id, sequence)
+            );
+            CREATE TABLE IF NOT EXISTS conversation_context_refs (
+                id TEXT PRIMARY KEY,
+                turn_id TEXT NOT NULL REFERENCES conversation_turns(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                ref TEXT NOT NULL,
+                meta TEXT NOT NULL DEFAULT '{}',
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS custom_agents (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                instructions TEXT NOT NULL DEFAULT '',
+                provider_id TEXT,
+                model TEXT,
+                tools TEXT NOT NULL DEFAULT '[]',
+                limits TEXT NOT NULL DEFAULT '{}',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS events_task_sequence ON events(task_id, sequence);
             CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS approvals_task ON approvals(task_id, created_at);
             CREATE INDEX IF NOT EXISTS checkpoints_task ON checkpoints(task_id, kind, created_at);
+            CREATE INDEX IF NOT EXISTS conversation_turns_conversation
+                ON conversation_turns(conversation_id, sequence);
+            CREATE INDEX IF NOT EXISTS conversation_refs_turn
+                ON conversation_context_refs(turn_id);
+            CREATE INDEX IF NOT EXISTS conversations_updated
+                ON conversations(archived, pinned DESC, updated_at DESC);
             """
         )
         # Additive migration for databases created before the Chat mode column.
@@ -706,6 +759,72 @@ class AgentStore:
             item["path"] = row["path"]
         return item
 
+    @staticmethod
+    def _conversation(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "project_id": row["project_id"],
+            "cwd": row["cwd"],
+            "pinned": bool(row["pinned"]),
+            "archived": bool(row["archived"]),
+            "draft": bool(row["draft"]),
+            "mode": row["mode"],
+            "custom_agent_id": row["custom_agent_id"],
+            "provider_id": row["provider_id"],
+            "model": row["model"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _turn(row: sqlite3.Row, ref_rows: list[sqlite3.Row]) -> dict[str, Any]:
+        context_refs = []
+        attachment_refs = []
+        for ref in ref_rows:
+            try:
+                meta = json.loads(ref["meta"] or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            item = {"id": ref["id"], "ref": ref["ref"], "meta": meta}
+            (attachment_refs if ref["kind"] == "attachment" else context_refs).append(item)
+        return {
+            "id": row["id"],
+            "conversation_id": row["conversation_id"],
+            "sequence": row["sequence"],
+            "task_id": row["task_id"],
+            "prompt": row["prompt"],
+            "mode": row["mode"],
+            "provider_id": row["provider_id"],
+            "model": row["model"],
+            "context_refs": context_refs,
+            "attachment_refs": attachment_refs,
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _custom_agent(row: sqlite3.Row) -> dict[str, Any]:
+        try:
+            tools = json.loads(row["tools"] or "[]")
+        except json.JSONDecodeError:
+            tools = []
+        try:
+            limits = json.loads(row["limits"] or "{}")
+        except json.JSONDecodeError:
+            limits = {}
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "description": row["description"],
+            "instructions": row["instructions"],
+            "provider_id": row["provider_id"],
+            "model": row["model"],
+            "tools": tools,
+            "limits": limits,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
     def export_task(self, task_id: str) -> dict[str, Any] | None:
         return self.get_task(task_id, include_events=True)
 
@@ -803,3 +922,285 @@ class AgentStore:
             if self.delete_task(task["id"]):
                 removed.append(task["id"])
         return removed
+
+    # Conversations -------------------------------------------------------
+
+    def create_conversation(
+        self,
+        *,
+        title: str = "",
+        project_id: str | None = None,
+        cwd: str | None = None,
+        mode: str = "ask",
+        custom_agent_id: str | None = None,
+        provider_id: str | None = None,
+        model: str | None = None,
+        pinned: bool = False,
+        archived: bool = False,
+        draft: bool = False,
+    ) -> dict[str, Any]:
+        now = time()
+        conversation_id = uuid.uuid4().hex[:16]
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO conversations
+                    (id, title, project_id, cwd, pinned, archived, draft, mode,
+                     custom_agent_id, provider_id, model, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    title,
+                    project_id,
+                    cwd,
+                    int(pinned),
+                    int(archived),
+                    int(draft),
+                    mode,
+                    custom_agent_id,
+                    provider_id,
+                    model,
+                    now,
+                    now,
+                ),
+            )
+            self._db.commit()
+        return self.get_conversation(conversation_id)  # type: ignore[return-value]
+
+    def list_conversations(
+        self, *, archived: bool | None = False, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 500))
+        query = "SELECT * FROM conversations"
+        params: list[Any] = []
+        if archived is not None:
+            query += " WHERE archived = ?"
+            params.append(int(archived))
+        query += " ORDER BY pinned DESC, updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._db.execute(query, params).fetchall()
+        return [self._conversation(row) for row in rows]
+
+    def get_conversation(
+        self, conversation_id: str, *, include_turns: bool = False
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            conversation = self._conversation(row)
+            if include_turns:
+                turn_rows = self._db.execute(
+                    "SELECT * FROM conversation_turns WHERE conversation_id = ? ORDER BY sequence",
+                    (conversation_id,),
+                ).fetchall()
+                turns = []
+                for turn_row in turn_rows:
+                    ref_rows = self._db.execute(
+                        "SELECT * FROM conversation_context_refs WHERE turn_id = ? ORDER BY created_at",
+                        (turn_row["id"],),
+                    ).fetchall()
+                    turns.append(self._turn(turn_row, ref_rows))
+                conversation["turns"] = turns
+        return conversation
+
+    def update_conversation(
+        self, conversation_id: str, **fields: Any
+    ) -> dict[str, Any] | None:
+        allowed = {
+            "title",
+            "project_id",
+            "cwd",
+            "mode",
+            "custom_agent_id",
+            "provider_id",
+            "model",
+            "pinned",
+            "archived",
+            "draft",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_conversation(conversation_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = [
+            int(value) if key in {"pinned", "archived", "draft"} else value
+            for key, value in updates.items()
+        ]
+        params.append(time())
+        params.append(conversation_id)
+        with self._lock:
+            self._db.execute(
+                f"UPDATE conversations SET {assignments}, updated_at = ? WHERE id = ?",
+                params,
+            )
+            self._db.commit()
+        return self.get_conversation(conversation_id)
+
+    def delete_conversation(self, conversation_id: str) -> bool:
+        with self._lock:
+            cursor = self._db.execute(
+                "DELETE FROM conversations WHERE id = ?", (conversation_id,)
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
+
+    def add_conversation_turn(
+        self,
+        conversation_id: str,
+        *,
+        prompt: str,
+        task_id: str | None = None,
+        mode: str | None = None,
+        provider_id: str | None = None,
+        model: str | None = None,
+        context_refs: list[dict[str, Any]] | None = None,
+        attachment_refs: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        if self.get_conversation(conversation_id) is None:
+            raise KeyError(conversation_id)
+        now = time()
+        turn_id = uuid.uuid4().hex[:16]
+        with self._lock:
+            row = self._db.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_turns WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()
+            sequence = int(row["next"] if row else 1)
+            self._db.execute(
+                """
+                INSERT INTO conversation_turns
+                    (id, conversation_id, sequence, task_id, prompt, mode,
+                     provider_id, model, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    turn_id,
+                    conversation_id,
+                    sequence,
+                    task_id,
+                    prompt,
+                    mode,
+                    provider_id,
+                    model,
+                    now,
+                ),
+            )
+            for kind, refs in (("context", context_refs or []), ("attachment", attachment_refs or [])):
+                for ref in refs:
+                    ref_id = uuid.uuid4().hex[:16]
+                    target = ref.get("ref") or ref.get("path") or ref.get("id")
+                    if not target:
+                        continue
+                    meta = {key: value for key, value in ref.items() if key not in {"ref", "path", "id", "kind"}}
+                    self._db.execute(
+                        """
+                        INSERT INTO conversation_context_refs
+                            (id, turn_id, kind, ref, meta, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (ref_id, turn_id, kind, str(target), json.dumps(meta), now),
+                    )
+            self._db.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                (now, conversation_id),
+            )
+            self._db.commit()
+        conversation = self.get_conversation(conversation_id, include_turns=True)
+        return next(turn for turn in conversation["turns"] if turn["id"] == turn_id)  # type: ignore[index]
+
+    # Custom agents -------------------------------------------------------
+
+    def create_custom_agent(
+        self,
+        *,
+        name: str,
+        description: str = "",
+        instructions: str = "",
+        provider_id: str | None = None,
+        model: str | None = None,
+        tools: list[str] | None = None,
+        limits: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("custom agent name is required")
+        now = time()
+        agent_id = uuid.uuid4().hex[:16]
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO custom_agents
+                    (id, name, description, instructions, provider_id, model,
+                     tools, limits, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    agent_id,
+                    name,
+                    description,
+                    instructions,
+                    provider_id,
+                    model,
+                    json.dumps(list(tools or [])),
+                    json.dumps(dict(limits or {})),
+                    now,
+                    now,
+                ),
+            )
+            self._db.commit()
+        return self.get_custom_agent(agent_id)  # type: ignore[return-value]
+
+    def list_custom_agents(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM custom_agents ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._custom_agent(row) for row in rows]
+
+    def get_custom_agent(self, agent_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM custom_agents WHERE id = ?", (agent_id,)
+            ).fetchone()
+        return self._custom_agent(row) if row else None
+
+    def update_custom_agent(self, agent_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {
+            "name",
+            "description",
+            "instructions",
+            "provider_id",
+            "model",
+            "tools",
+            "limits",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_custom_agent(agent_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = [
+            json.dumps(value) if key in {"tools", "limits"} else value
+            for key, value in updates.items()
+        ]
+        params.append(time())
+        params.append(agent_id)
+        with self._lock:
+            self._db.execute(
+                f"UPDATE custom_agents SET {assignments}, updated_at = ? WHERE id = ?",
+                params,
+            )
+            self._db.commit()
+        return self.get_custom_agent(agent_id)
+
+    def delete_custom_agent(self, agent_id: str) -> bool:
+        with self._lock:
+            cursor = self._db.execute(
+                "DELETE FROM custom_agents WHERE id = ?", (agent_id,)
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
