@@ -27,6 +27,7 @@ from termx.agent.providers import (
     ProviderError,
     ProviderTurn,
 )
+from termx.agent.recovery import public_checkpoint, recovery_decision
 from termx.agent.runtime import ProviderHttpRuntime
 from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
@@ -68,16 +69,52 @@ class AgentManager:
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
-                self.store.update_task(
-                    task["id"],
-                    status="failed",
-                    error="The Termx host stopped before this task completed.",
-                )
-                self.store.append_event(
-                    task["id"],
-                    "task.failed",
-                    {"message": "The Termx host stopped before this task completed."},
-                )
+                checkpoint = self.store.latest_checkpoint(task["id"], kind="execution")
+                decision = recovery_decision(checkpoint)
+                if decision in {"resume_safe", "resume_committed", "resume_reuse"}:
+                    self.store.update_task(task["id"], status="recovering")
+                    self.store.append_event(
+                        task["id"],
+                        "task.recovery.started",
+                        {
+                            "checkpoint_id": checkpoint["id"],
+                            "decision": decision,
+                            "side_effect_state": checkpoint["side_effect_state"],
+                        },
+                    )
+                elif decision == "confirm_required":
+                    self.store.update_task(task["id"], status="recovery_confirmation_required")
+                    self.store.append_event(
+                        task["id"],
+                        "task.recovery.started",
+                        {
+                            "checkpoint_id": checkpoint["id"] if checkpoint else None,
+                            "decision": decision,
+                            "side_effect_state": checkpoint["side_effect_state"] if checkpoint else None,
+                        },
+                    )
+                    self.store.append_event(
+                        task["id"],
+                        "task.recovery.blocked",
+                        {
+                            "message": (
+                                "A side-effecting tool call may have been in flight when the host "
+                                "stopped. Confirming recovery may replay it."
+                            ),
+                            "checkpoint_id": checkpoint["id"] if checkpoint else None,
+                        },
+                    )
+                else:
+                    self.store.update_task(
+                        task["id"],
+                        status="failed",
+                        error="The Termx host stopped before this task completed.",
+                    )
+                    self.store.append_event(
+                        task["id"],
+                        "task.failed",
+                        {"message": "The Termx host stopped before this task completed."},
+                    )
 
     # Provider configuration -----------------------------------------
 
@@ -500,6 +537,7 @@ class AgentManager:
                     history,
                     step,
                     started_at,
+                    turn_id=turn.response_id,
                 )
                 if paused:
                     return
@@ -528,6 +566,7 @@ class AgentManager:
         started_at: float,
         *,
         approved_first: bool = False,
+        turn_id: str | None = None,
     ) -> tuple[bool, list[dict[str, Any]], int]:
         task = self._task(task_id)
         read_only = task.get("mode") == "ask"
@@ -603,15 +642,177 @@ class AgentManager:
                 self._emit(task_id, "task.status", {"status": "awaiting_approval"})
                 self._persist_metrics(task_id)
                 return True, history, step
+            checkpoint: dict[str, Any] | None = None
+            if (
+                not read_only
+                and entry.spec is not None
+                and entry.spec.mutability != "read"
+            ):
+                # Side-effecting call: checkpoint prepared -> running ->
+                # completed_uncommitted -> committed around execution so a host
+                # restart can resume without replaying an ambiguous effect.
+                checkpoint = self.store.create_checkpoint(
+                    task_id,
+                    kind="execution",
+                    history_cursor=len(history),
+                    plan_step=step,
+                    pending_call_id=call.call_id,
+                    side_effect_state="prepared",
+                    provider_turn_id=turn_id,
+                    payload={
+                        "task_id": task_id,
+                        "call": self._call_payload(call),
+                        "remaining_calls": [
+                            self._call_payload(item) for item in calls[index + 1 :]
+                        ],
+                        "history": history,
+                        "step": step,
+                        "started_at": started_at,
+                    },
+                )
+                self._emit_checkpoint(task_id, checkpoint)
+                checkpoint = self.store.update_checkpoint(
+                    checkpoint["id"], side_effect_state="running"
+                )
+                self._emit_checkpoint(task_id, checkpoint)
             self._emit(task_id, "tool.started", {"call": call.public()})
             outcome = await self._invoke_tool(entry, ctx)
+            if checkpoint is not None:
+                checkpoint = self.store.update_checkpoint(
+                    checkpoint["id"],
+                    side_effect_state="completed_uncommitted",
+                    result={
+                        "finished": outcome.finished_payload(call),
+                        "output_items": outcome.output_items(call),
+                    },
+                )
+                self._emit_checkpoint(task_id, checkpoint)
             self._emit(task_id, "tool.finished", outcome.finished_payload(call))
             history.extend(outcome.output_items(call))
+            if checkpoint is not None:
+                payload = dict(checkpoint["payload"])
+                payload["history"] = history
+                checkpoint = self.store.update_checkpoint(
+                    checkpoint["id"], side_effect_state="committed", payload=payload
+                )
+                self._emit_checkpoint(task_id, checkpoint)
             if outcome.cancelled:
                 raise asyncio.CancelledError
             step += 1
             index += 1
         return False, history, step
+
+    def _emit_checkpoint(self, task_id: str, checkpoint: dict[str, Any]) -> None:
+        self._emit(task_id, "execution.checkpoint", public_checkpoint(checkpoint))
+
+    # Crash-safe resume --------------------------------------------------
+
+    def pending_recoveries(self) -> list[str]:
+        """Task ids marked ``recovering`` at startup, awaiting a resume drive."""
+        return [
+            task["id"]
+            for task in self.store.list_tasks(limit=500)
+            if task["status"] == "recovering"
+        ]
+
+    async def recover_task(self, task_id: str, *, confirm: bool = False) -> dict[str, Any]:
+        """Resume a task left in ``recovering``/``recovery_confirmation_required``.
+
+        Safe decisions (prepared/committed/completed_uncommitted) resume
+        immediately; ``running``/ambiguous checkpoints require ``confirm=True``
+        and then re-execute from ``prepared`` semantics — a documented risk of
+        a repeated side effect, never taken automatically.
+        """
+        task = self._task(task_id)
+        if task["status"] not in {"recovering", "recovery_confirmation_required"}:
+            raise ValueError("task is not awaiting recovery")
+        checkpoint = self.store.latest_checkpoint(task_id, kind="execution")
+        decision = recovery_decision(checkpoint)
+        if decision == "not_resumable":
+            raise ValueError("task has no resumable checkpoint")
+        if decision == "confirm_required" and not confirm:
+            self.store.update_task(task_id, status="recovery_confirmation_required")
+            self._emit(
+                task_id,
+                "task.recovery.blocked",
+                {
+                    "message": "A side effect may already have run; confirm to resume anyway.",
+                    "checkpoint_id": checkpoint["id"] if checkpoint else None,
+                },
+            )
+            self._emit(task_id, "task.status", {"status": "recovery_confirmation_required"})
+            return self._task(task_id)
+        self.store.update_task(task_id, status="recovering")
+        self._emit(task_id, "task.status", {"status": "recovering"})
+        self._launch(task_id, self._resume_execution(task_id, checkpoint, decision))
+        return self._task(task_id)
+
+    async def _resume_execution(
+        self,
+        task_id: str,
+        checkpoint: dict[str, Any],
+        decision: str,
+    ) -> None:
+        try:
+            payload = dict(checkpoint["payload"])
+            history = list(payload.get("history") or [])
+            step = int(payload.get("step") or 0)
+            started_at = float(payload.get("started_at") or monotonic())
+            remaining = [self._call(item) for item in payload.get("remaining_calls") or []]
+            state = checkpoint["side_effect_state"]
+            self._emit(
+                task_id,
+                "task.recovery.resumed",
+                {"checkpoint_id": checkpoint["id"], "decision": decision},
+            )
+            if state == "completed_uncommitted":
+                # The side effect finished before the crash and its result was
+                # stored durably — reuse it instead of re-executing.
+                result = checkpoint["result"] or {}
+                history.extend(result.get("output_items") or [])
+                finished = result.get("finished")
+                if isinstance(finished, dict) and not self._finished_already_recorded(
+                    task_id, checkpoint["pending_call_id"]
+                ):
+                    self._emit(task_id, "tool.finished", finished)
+                payload["history"] = history
+                self.store.update_checkpoint(
+                    checkpoint["id"], side_effect_state="committed", payload=payload
+                )
+                calls = remaining
+            elif state == "committed":
+                calls = remaining
+            else:
+                # prepared (or confirmed ambiguous): re-execute the call — for
+                # prepared it never started; a confirmed ``running`` accepts a
+                # possible repeated side effect.
+                calls = [self._call(payload["call"]), *remaining]
+            self.store.update_task(task_id, status="running")
+            self._emit(task_id, "task.status", {"status": "running"})
+            paused, history, step = await self._run_calls(
+                task_id,
+                calls,
+                history,
+                step,
+                started_at,
+                approved_first=state in {"prepared", "running"},
+            )
+            if not paused:
+                await self._drive(task_id, history=history, step=step, started_at=started_at)
+        except asyncio.CancelledError:
+            await self._cancelled(task_id)
+        except Exception as exc:
+            self._fail(task_id, exc)
+
+    def _finished_already_recorded(self, task_id: str, call_id: str | None) -> bool:
+        if not call_id:
+            return False
+        for event in self.store.events(task_id):
+            if event["type"] != "tool.finished":
+                continue
+            if (event.get("payload") or {}).get("call_id") == call_id:
+                return True
+        return False
 
     async def _resume_approved(self, task_id: str, payload: dict[str, Any]) -> None:
         try:

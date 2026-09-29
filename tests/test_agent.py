@@ -1230,3 +1230,304 @@ def test_selected_model_and_image_attachment(tmp_path: Path) -> None:
         store.close()
 
     asyncio.run(run())
+
+
+def _write_call(path: str, content: str = "v1") -> dict[str, Any]:
+    return {
+        "type": "function",
+        "call_id": "call-write-1",
+        "name": "write_file",
+        "arguments": {"path": path, "content": content, "expected_revision": None},
+        "actions": [],
+        "safety_checks": [],
+    }
+
+
+def _execution_checkpoint(store: AgentStore, task_id: str, cwd: str, *, state: str,
+                          result: dict[str, Any] | None = None,
+                          history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    call = _write_call("recovered.txt")
+    payload = {
+        "task_id": task_id,
+        "call": call,
+        "remaining_calls": [],
+        "history": history if history is not None else [{"role": "user", "content": "resume me"}],
+        "step": 0,
+        "started_at": 0.0,
+    }
+    return store.create_checkpoint(
+        task_id,
+        kind="execution",
+        history_cursor=len(payload["history"]),
+        plan_step=0,
+        pending_call_id=call["call_id"],
+        side_effect_state=state,
+        payload=payload,
+        result=result,
+        provider_turn_id="resp-1",
+    )
+
+
+def _crashed_task(store: AgentStore, tmp_path: Path) -> dict[str, Any]:
+    task = store.create_task(
+        prompt="resume me", cwd=str(tmp_path), provider_id="fake", model="fake-model",
+        limits={"max_steps": 24, "max_seconds": 900, "shell_timeout_s": 120}, mode="agent",
+    )
+    store.update_task(
+        task["id"], status="running",
+        runtime={"history": [{"role": "user", "content": "resume me"}], "step": 0, "started_at": 0.0},
+    )
+    return task
+
+
+def test_recovery_prepared_reexecutes_once(tmp_path: Path) -> None:
+    async def run() -> None:
+        store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+        credentials = CredentialStore(memory={})
+        store.put_provider("fake", kind="openai-compatible", name="Fake",
+                           base_url="http://x/v1", model="m", capabilities=["shell"],
+                           secret_configured=True)
+        task = _crashed_task(store, tmp_path)
+        _execution_checkpoint(store, task["id"], str(tmp_path), state="prepared")
+
+        writes: list[str] = []
+        adapter = FakeAdapter()
+        manager = AgentManager(store, credentials, desktop=None,
+                               adapter_factory=lambda _p, _k: adapter)
+        spec = manager._tools.get("write_file")
+        assert spec is not None
+        original = spec.execute
+        async def counting(call, ctx):
+            writes.append(str(call.arguments.get("path")))
+            return await original(call, ctx)
+        import dataclasses
+        manager._tools.register(dataclasses.replace(spec, execute=counting))
+        try:
+            assert manager._task(task["id"])["status"] == "recovering"
+            assert manager.pending_recoveries() == [task["id"]]
+            await manager.recover_task(task["id"])
+            await wait_for_status(store, task["id"], "completed", timeout=10.0)
+            assert writes == ["recovered.txt"]
+            assert (tmp_path / "recovered.txt").read_text() == "v1"
+            types = [e["type"] for e in store.events(task["id"])]
+            assert "task.recovery.started" in types
+            assert "task.recovery.resumed" in types
+            assert "execution.checkpoint" in types
+            cp = store.get_checkpoint(_execution_checkpoint  # noqa: keep reference
+                                      and store.checkpoints(task["id"], kind="execution")[-1]["id"])
+            assert cp["side_effect_state"] in {"committed", "completed_uncommitted", "running"}
+        finally:
+            manager._tools.register(spec)
+            await manager.close()
+            store.close()
+
+    asyncio.run(run())
+
+
+def test_recovery_running_requires_confirmation(tmp_path: Path) -> None:
+    async def run() -> None:
+        store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+        credentials = CredentialStore(memory={})
+        store.put_provider("fake", kind="openai-compatible", name="Fake",
+                           base_url="http://x/v1", model="m", capabilities=["shell"],
+                           secret_configured=True)
+        task = _crashed_task(store, tmp_path)
+        _execution_checkpoint(store, task["id"], str(tmp_path), state="running")
+
+        adapter = FakeAdapter()
+        manager = AgentManager(store, credentials, desktop=None,
+                               adapter_factory=lambda _p, _k: adapter)
+        writes: list[str] = []
+        spec = manager._tools.get("write_file")
+        assert spec is not None
+        original = spec.execute
+        async def counting(call, ctx):
+            writes.append(str(call.arguments.get("path")))
+            return await original(call, ctx)
+        import dataclasses
+        manager._tools.register(dataclasses.replace(spec, execute=counting))
+        try:
+            current = manager._task(task["id"])
+            assert current["status"] == "recovery_confirmation_required"
+            blocked = await manager.recover_task(task["id"])
+            assert blocked["status"] == "recovery_confirmation_required"
+            assert writes == []  # nothing replayed without confirmation
+            types = [e["type"] for e in store.events(task["id"])]
+            assert "task.recovery.blocked" in types
+            # Explicit confirmation resumes and re-executes (documented risk).
+            await manager.recover_task(task["id"], confirm=True)
+            await wait_for_status(store, task["id"], "completed", timeout=10.0)
+            assert writes == ["recovered.txt"]
+        finally:
+            manager._tools.register(spec)
+            await manager.close()
+            store.close()
+
+    asyncio.run(run())
+
+
+def test_recovery_completed_uncommitted_reuses_result(tmp_path: Path) -> None:
+    async def run() -> None:
+        store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+        credentials = CredentialStore(memory={})
+        store.put_provider("fake", kind="openai-compatible", name="Fake",
+                           base_url="http://x/v1", model="m", capabilities=["shell"],
+                           secret_configured=True)
+        task = _crashed_task(store, tmp_path)
+        stored = {
+            "finished": {"call": {"call_id": "call-write-1", "name": "write_file"},
+                         "result": {"ok": True, "path": "recovered.txt"}},
+            "output_items": [
+                {"type": "function_call_output", "call_id": "call-write-1",
+                 "output": json.dumps({"ok": True, "path": "recovered.txt"})}
+            ],
+        }
+        _execution_checkpoint(store, task["id"], str(tmp_path),
+                              state="completed_uncommitted", result=stored)
+
+        adapter = FakeAdapter()
+        manager = AgentManager(store, credentials, desktop=None,
+                               adapter_factory=lambda _p, _k: adapter)
+        writes: list[str] = []
+        spec = manager._tools.get("write_file")
+        assert spec is not None
+        original = spec.execute
+        async def counting(call, ctx):
+            writes.append(str(call.arguments.get("path")))
+            return await original(call, ctx)
+        import dataclasses
+        manager._tools.register(dataclasses.replace(spec, execute=counting))
+        try:
+            await manager.recover_task(task["id"])
+            await wait_for_status(store, task["id"], "completed", timeout=10.0)
+            assert writes == []  # stored result reused — no re-execution
+            assert not (tmp_path / "recovered.txt").exists()
+            cp = store.checkpoints(task["id"], kind="execution")[-1]
+            assert cp["side_effect_state"] == "committed"
+        finally:
+            manager._tools.register(spec)
+            await manager.close()
+            store.close()
+
+    asyncio.run(run())
+
+
+def test_recovery_committed_continues_without_replay(tmp_path: Path) -> None:
+    async def run() -> None:
+        store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+        credentials = CredentialStore(memory={})
+        store.put_provider("fake", kind="openai-compatible", name="Fake",
+                           base_url="http://x/v1", model="m", capabilities=["shell"],
+                           secret_configured=True)
+        task = _crashed_task(store, tmp_path)
+        history = [
+            {"role": "user", "content": "resume me"},
+            {"type": "function_call", "call_id": "call-write-1", "name": "write_file",
+             "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "call-write-1",
+             "output": json.dumps({"ok": True})},
+        ]
+        _execution_checkpoint(store, task["id"], str(tmp_path), state="committed",
+                              history=history)
+
+        adapter = FakeAdapter()
+        manager = AgentManager(store, credentials, desktop=None,
+                               adapter_factory=lambda _p, _k: adapter)
+        writes: list[str] = []
+        spec = manager._tools.get("write_file")
+        assert spec is not None
+        original = spec.execute
+        async def counting(call, ctx):
+            writes.append(str(call.arguments.get("path")))
+            return await original(call, ctx)
+        import dataclasses
+        manager._tools.register(dataclasses.replace(spec, execute=counting))
+        try:
+            await manager.recover_task(task["id"])
+            await wait_for_status(store, task["id"], "completed", timeout=10.0)
+            assert writes == []  # committed side effects are never replayed
+        finally:
+            manager._tools.register(spec)
+            await manager.close()
+            store.close()
+
+    asyncio.run(run())
+
+
+def test_restart_fails_task_without_checkpoint(tmp_path: Path) -> None:
+    store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+    credentials = CredentialStore(memory={})
+    store.put_provider("fake", kind="openai-compatible", name="Fake",
+                       base_url="http://x/v1", model="m", capabilities=["shell"],
+                       secret_configured=True)
+    task = _crashed_task(store, tmp_path)
+    adapter = FakeAdapter()
+    manager = AgentManager(store, credentials, desktop=None,
+                           adapter_factory=lambda _p, _k: adapter)
+    current = manager._task(task["id"])
+    assert current["status"] == "failed"
+    assert current["error"] == "The Termx host stopped before this task completed."
+
+
+def test_execution_checkpoint_events_during_normal_run(tmp_path: Path) -> None:
+    async def run() -> None:
+        manager, store = build_manager(tmp_path, FakeAdapter())
+        task = await manager.create_task(prompt="Check the project", cwd=str(tmp_path),
+                                         provider_id="fake")
+        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
+        await wait_for_status(store, task["id"], "completed")
+        checkpoints = store.checkpoints(task["id"], kind="execution")
+        assert len(checkpoints) == 1  # one side-effecting run_shell call
+        assert checkpoints[0]["side_effect_state"] == "committed"
+        assert checkpoints[0]["provider_turn_id"] == "response-1"
+        states = [
+            e["payload"]["side_effect_state"]
+            for e in store.events(task["id"])
+            if e["type"] == "execution.checkpoint"
+        ]
+        assert states == ["prepared", "running", "completed_uncommitted", "committed"]
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())
+
+
+def test_recovery_completed_uncommitted_dedupes_finished_event(tmp_path: Path) -> None:
+    async def run() -> None:
+        store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+        credentials = CredentialStore(memory={})
+        store.put_provider("fake", kind="openai-compatible", name="Fake",
+                           base_url="http://x/v1", model="m", capabilities=["shell"],
+                           secret_configured=True)
+        task = _crashed_task(store, tmp_path)
+        stored = {
+            "finished": {"call_id": "call-write-1",
+                         "result": {"ok": True, "path": "recovered.txt"}},
+            "output_items": [
+                {"type": "function_call_output", "call_id": "call-write-1",
+                 "output": json.dumps({"ok": True, "path": "recovered.txt"})}
+            ],
+        }
+        _execution_checkpoint(store, task["id"], str(tmp_path),
+                              state="completed_uncommitted", result=stored)
+        # Crash happened after tool.finished was recorded but before the
+        # checkpoint reached committed — resume must not re-emit it.
+        store.append_event(task["id"], "tool.finished", stored["finished"])
+
+        adapter = FakeAdapter()
+        manager = AgentManager(store, credentials, desktop=None,
+                               adapter_factory=lambda _p, _k: adapter)
+        await manager.recover_task(task["id"])
+        await wait_for_status(store, task["id"], "completed", timeout=10.0)
+        finished = [
+            e for e in store.events(task["id"])
+            if e["type"] == "tool.finished"
+            and e["payload"].get("call_id") == "call-write-1"
+        ]
+        assert len(finished) == 1
+        cp = store.checkpoints(task["id"], kind="execution")[-1]
+        assert cp["side_effect_state"] == "committed"
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())

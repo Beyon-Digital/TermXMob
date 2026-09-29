@@ -233,6 +233,10 @@ class AgentSteerBody(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+class RecoverTaskBody(BaseModel):
+    confirm: bool = False
+
+
 class AgentRetentionBody(BaseModel):
     retention_days: int = Field(default=30, ge=1, le=3650)
     max_bytes: int = Field(default=500_000_000, ge=1_000_000, le=100_000_000_000)
@@ -308,6 +312,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         state.forwards.start_auto()
+        for task_id in state.agent.pending_recoveries():
+            asyncio.create_task(state.agent.recover_task(task_id))
         yield
         state.forwards.stop_all()
         await shutdown_state(state)
@@ -731,6 +737,23 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             return state.agent.cancel(task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="task not found") from exc
+
+    @app.post("/api/agent/tasks/{task_id}/recover")
+    async def recover_agent_task(
+        task_id: str,
+        body: RecoverTaskBody | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            return await state.agent.recover_task(task_id, confirm=bool(body and body.confirm))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/agent/tasks/{task_id}/takeover")
     async def takeover_agent_task(
