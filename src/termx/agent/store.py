@@ -23,8 +23,21 @@ def configured_models(model: str) -> list[str]:
     return found
 
 
-ACTIVE_STATUSES = frozenset({"planning", "awaiting_approval", "running", "paused", "cancelling"})
+ACTIVE_STATUSES = frozenset({
+    "planning",
+    "awaiting_approval",
+    "running",
+    "paused",
+    "cancelling",
+    "recovering",
+    "recovery_confirmation_required",
+})
 TASK_STATUSES = frozenset({*ACTIVE_STATUSES, "cancelled", "failed", "completed"})
+
+CHECKPOINT_SIDE_EFFECT_STATES = frozenset(
+    {"none", "prepared", "running", "completed_uncommitted", "committed"}
+)
+CHECKPOINT_KINDS = frozenset({"execution", "context"})
 TASK_FIELDS = frozenset(
     {
         "status",
@@ -33,6 +46,7 @@ TASK_FIELDS = frozenset(
         "error",
         "previous_response_id",
         "runtime",
+        "metrics",
         "updated_at",
     }
 )
@@ -98,12 +112,14 @@ class AgentStore:
                 model TEXT NOT NULL,
                 status TEXT NOT NULL,
                 limits TEXT NOT NULL,
+                parent_id TEXT,
                 mode TEXT NOT NULL DEFAULT 'agent',
                 plan TEXT,
                 result TEXT,
                 error TEXT,
                 previous_response_id TEXT,
                 runtime TEXT,
+                metrics TEXT,
                 next_sequence INTEGER NOT NULL DEFAULT 1,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
@@ -140,15 +156,131 @@ class AgentStore:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                history_cursor INTEGER NOT NULL DEFAULT 0,
+                plan_step INTEGER NOT NULL DEFAULT 0,
+                pending_call_id TEXT,
+                side_effect_state TEXT NOT NULL DEFAULT 'none',
+                payload TEXT NOT NULL DEFAULT '{}',
+                result TEXT,
+                resumable INTEGER NOT NULL DEFAULT 1,
+                reason TEXT,
+                provider_turn_id TEXT,
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                project_id TEXT,
+                cwd TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                draft INTEGER NOT NULL DEFAULT 0,
+                mode TEXT NOT NULL DEFAULT 'ask',
+                custom_agent_id TEXT,
+                provider_id TEXT,
+                model TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS conversation_turns (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                sequence INTEGER NOT NULL,
+                task_id TEXT,
+                prompt TEXT NOT NULL DEFAULT '',
+                mode TEXT,
+                provider_id TEXT,
+                model TEXT,
+                created_at REAL NOT NULL,
+                UNIQUE(conversation_id, sequence)
+            );
+            CREATE TABLE IF NOT EXISTS conversation_context_refs (
+                id TEXT PRIMARY KEY,
+                turn_id TEXT NOT NULL REFERENCES conversation_turns(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                ref TEXT NOT NULL,
+                meta TEXT NOT NULL DEFAULT '{}',
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS custom_agents (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                instructions TEXT NOT NULL DEFAULT '',
+                provider_id TEXT,
+                model TEXT,
+                tools TEXT NOT NULL DEFAULT '[]',
+                limits TEXT NOT NULL DEFAULT '{}',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS task_worktrees (
+                task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+                mode TEXT NOT NULL DEFAULT 'worktree',
+                base_repo TEXT NOT NULL,
+                base_ref TEXT NOT NULL DEFAULT '',
+                base_branch TEXT,
+                worktree_path TEXT,
+                branch TEXT,
+                head_sha TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS runbooks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                project_id TEXT,
+                steps TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS runbook_runs (
+                id TEXT PRIMARY KEY,
+                runbook_id TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
+                status TEXT NOT NULL,
+                cwd TEXT,
+                current_step INTEGER NOT NULL DEFAULT -1,
+                step_results TEXT NOT NULL DEFAULT '[]',
+                steps TEXT,
+                error TEXT,
+                started_at REAL NOT NULL,
+                finished_at REAL
+            );
             CREATE INDEX IF NOT EXISTS events_task_sequence ON events(task_id, sequence);
             CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS approvals_task ON approvals(task_id, created_at);
+            CREATE INDEX IF NOT EXISTS checkpoints_task ON checkpoints(task_id, kind, created_at);
+            CREATE INDEX IF NOT EXISTS conversation_turns_conversation
+                ON conversation_turns(conversation_id, sequence);
+            CREATE INDEX IF NOT EXISTS conversation_refs_turn
+                ON conversation_context_refs(turn_id);
+            CREATE INDEX IF NOT EXISTS conversations_updated
+                ON conversations(archived, pinned DESC, updated_at DESC);
             """
         )
         # Additive migration for databases created before the Chat mode column.
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tasks)")}
         if "mode" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'")
+        if "metrics" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN metrics TEXT")
+        if "parent_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT")
+        wt_columns = {
+            row["name"] for row in self._db.execute("PRAGMA table_info(task_worktrees)")
+        }
+        if wt_columns and "base_branch" not in wt_columns:
+            self._db.execute("ALTER TABLE task_worktrees ADD COLUMN base_branch TEXT")
+        rr_columns = {
+            row["name"] for row in self._db.execute("PRAGMA table_info(runbook_runs)")
+        }
+        if rr_columns and "steps" not in rr_columns:
+            self._db.execute("ALTER TABLE runbook_runs ADD COLUMN steps TEXT")
         self._db.commit()
 
     def close(self) -> None:
@@ -267,6 +399,7 @@ class AgentStore:
         model: str,
         limits: dict[str, Any],
         mode: str = "agent",
+        parent_id: str | None = None,
     ) -> dict[str, Any]:
         now = time()
         task_id = uuid.uuid4().hex
@@ -274,10 +407,10 @@ class AgentStore:
             self._db.execute(
                 """
                 INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?)
+                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?)
                 """,
-                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, now, now),
+                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, parent_id, now, now),
             )
             self._db.commit()
         task = self.get_task(task_id)
@@ -297,6 +430,13 @@ class AgentStore:
             task["artifacts"] = self.artifacts(task_id)
         return task
 
+    def children(self, parent_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at", (parent_id,)
+            ).fetchall()
+        return [self._task(row) for row in rows]
+
     def list_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._db.execute(
@@ -313,7 +453,7 @@ class AgentStore:
         changes.setdefault("updated_at", time())
         encoded: dict[str, Any] = {}
         for key, value in changes.items():
-            encoded[key] = _json(value) if key in {"plan", "runtime"} and value is not None else value
+            encoded[key] = _json(value) if key in {"plan", "runtime", "metrics"} and value is not None else value
         assignments = ", ".join(f"{key} = ?" for key in encoded)
         with self._lock:
             cursor = self._db.execute(
@@ -373,6 +513,144 @@ class AgentStore:
             for row in rows
         ]
 
+    # Checkpoints ---------------------------------------------------------
+
+    def create_checkpoint(
+        self,
+        task_id: str,
+        *,
+        kind: str,
+        history_cursor: int = 0,
+        plan_step: int = 0,
+        pending_call_id: str | None = None,
+        side_effect_state: str = "none",
+        payload: dict[str, Any] | None = None,
+        result: dict[str, Any] | None = None,
+        resumable: bool = True,
+        reason: str | None = None,
+        provider_turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        if kind not in CHECKPOINT_KINDS:
+            raise ValueError(f"invalid checkpoint kind: {kind}")
+        if side_effect_state not in CHECKPOINT_SIDE_EFFECT_STATES:
+            raise ValueError(f"invalid side_effect_state: {side_effect_state}")
+        checkpoint_id = uuid.uuid4().hex
+        created = time()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO checkpoints (id, task_id, kind, history_cursor, plan_step,"
+                " pending_call_id, side_effect_state, payload, result, resumable,"
+                " reason, provider_turn_id, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    checkpoint_id,
+                    task_id,
+                    kind,
+                    int(history_cursor),
+                    int(plan_step),
+                    pending_call_id,
+                    side_effect_state,
+                    _json(payload or {}),
+                    _json(result) if result is not None else None,
+                    1 if resumable else 0,
+                    reason,
+                    provider_turn_id,
+                    created,
+                ),
+            )
+            self._db.commit()
+        checkpoint = self.get_checkpoint(checkpoint_id)
+        if checkpoint is None:  # pragma: no cover
+            raise KeyError(checkpoint_id)
+        return checkpoint
+
+    def update_checkpoint(self, checkpoint_id: str, **changes: Any) -> dict[str, Any]:
+        allowed = {
+            "history_cursor",
+            "plan_step",
+            "pending_call_id",
+            "side_effect_state",
+            "payload",
+            "result",
+            "resumable",
+            "reason",
+            "provider_turn_id",
+        }
+        invalid = set(changes) - allowed
+        if invalid:
+            raise ValueError(f"invalid checkpoint fields: {', '.join(sorted(invalid))}")
+        state = changes.get("side_effect_state")
+        if state is not None and state not in CHECKPOINT_SIDE_EFFECT_STATES:
+            raise ValueError(f"invalid side_effect_state: {state}")
+        encoded: dict[str, Any] = {}
+        for key, value in changes.items():
+            if key in {"payload", "result"}:
+                encoded[key] = _json(value) if value is not None else None
+            elif key == "resumable":
+                encoded[key] = 1 if value else 0
+            else:
+                encoded[key] = value
+        assignments = ", ".join(f"{key} = ?" for key in encoded)
+        with self._lock:
+            cursor = self._db.execute(
+                f"UPDATE checkpoints SET {assignments} WHERE id = ?",
+                (*encoded.values(), checkpoint_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(checkpoint_id)
+            self._db.commit()
+        checkpoint = self.get_checkpoint(checkpoint_id)
+        if checkpoint is None:  # pragma: no cover
+            raise KeyError(checkpoint_id)
+        return checkpoint
+
+    def get_checkpoint(self, checkpoint_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM checkpoints WHERE id = ?", (checkpoint_id,)
+            ).fetchone()
+        return self._checkpoint(row) if row is not None else None
+
+    def checkpoints(self, task_id: str, kind: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM checkpoints WHERE task_id = ?"
+        args: list[Any] = [task_id]
+        if kind is not None:
+            query += " AND kind = ?"
+            args.append(kind)
+        query += " ORDER BY created_at, rowid"
+        with self._lock:
+            rows = self._db.execute(query, args).fetchall()
+        return [self._checkpoint(row) for row in rows]
+
+    def latest_checkpoint(self, task_id: str, kind: str | None = None) -> dict[str, Any] | None:
+        query = "SELECT * FROM checkpoints WHERE task_id = ?"
+        args: list[Any] = [task_id]
+        if kind is not None:
+            query += " AND kind = ?"
+            args.append(kind)
+        query += " ORDER BY created_at DESC, rowid DESC LIMIT 1"
+        with self._lock:
+            row = self._db.execute(query, args).fetchone()
+        return self._checkpoint(row) if row is not None else None
+
+    @staticmethod
+    def _checkpoint(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "task_id": row["task_id"],
+            "kind": row["kind"],
+            "history_cursor": row["history_cursor"],
+            "plan_step": row["plan_step"],
+            "pending_call_id": row["pending_call_id"],
+            "side_effect_state": row["side_effect_state"],
+            "payload": _load_json(row["payload"], {}),
+            "result": _load_json(row["result"], None),
+            "resumable": bool(row["resumable"]),
+            "reason": row["reason"],
+            "provider_turn_id": row["provider_turn_id"],
+            "created_at": row["created_at"],
+        }
+
     @staticmethod
     def _task(row: sqlite3.Row) -> dict[str, Any]:
         return {
@@ -384,11 +662,13 @@ class AgentStore:
             "status": row["status"],
             "limits": _load_json(row["limits"], {}),
             "mode": (row["mode"] if "mode" in row.keys() else "agent") or "agent",
+            "parent_id": (row["parent_id"] if "parent_id" in row.keys() else None) or None,
             "plan": _load_json(row["plan"], None),
             "result": row["result"],
             "error": row["error"],
             "previous_response_id": row["previous_response_id"],
             "runtime": _load_json(row["runtime"], {}),
+            "metrics": _load_json(row["metrics"], {}) if "metrics" in row.keys() else {},
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -522,6 +802,72 @@ class AgentStore:
             item["path"] = row["path"]
         return item
 
+    @staticmethod
+    def _conversation(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "project_id": row["project_id"],
+            "cwd": row["cwd"],
+            "pinned": bool(row["pinned"]),
+            "archived": bool(row["archived"]),
+            "draft": bool(row["draft"]),
+            "mode": row["mode"],
+            "custom_agent_id": row["custom_agent_id"],
+            "provider_id": row["provider_id"],
+            "model": row["model"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _turn(row: sqlite3.Row, ref_rows: list[sqlite3.Row]) -> dict[str, Any]:
+        context_refs = []
+        attachment_refs = []
+        for ref in ref_rows:
+            try:
+                meta = json.loads(ref["meta"] or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            item = {"id": ref["id"], "ref": ref["ref"], "meta": meta}
+            (attachment_refs if ref["kind"] == "attachment" else context_refs).append(item)
+        return {
+            "id": row["id"],
+            "conversation_id": row["conversation_id"],
+            "sequence": row["sequence"],
+            "task_id": row["task_id"],
+            "prompt": row["prompt"],
+            "mode": row["mode"],
+            "provider_id": row["provider_id"],
+            "model": row["model"],
+            "context_refs": context_refs,
+            "attachment_refs": attachment_refs,
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _custom_agent(row: sqlite3.Row) -> dict[str, Any]:
+        try:
+            tools = json.loads(row["tools"] or "[]")
+        except json.JSONDecodeError:
+            tools = []
+        try:
+            limits = json.loads(row["limits"] or "{}")
+        except json.JSONDecodeError:
+            limits = {}
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "description": row["description"],
+            "instructions": row["instructions"],
+            "provider_id": row["provider_id"],
+            "model": row["model"],
+            "tools": tools,
+            "limits": limits,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
     def export_task(self, task_id: str) -> dict[str, Any] | None:
         return self.get_task(task_id, include_events=True)
 
@@ -619,3 +965,514 @@ class AgentStore:
             if self.delete_task(task["id"]):
                 removed.append(task["id"])
         return removed
+
+    # Conversations -------------------------------------------------------
+
+    def create_conversation(
+        self,
+        *,
+        title: str = "",
+        project_id: str | None = None,
+        cwd: str | None = None,
+        mode: str = "ask",
+        custom_agent_id: str | None = None,
+        provider_id: str | None = None,
+        model: str | None = None,
+        pinned: bool = False,
+        archived: bool = False,
+        draft: bool = False,
+    ) -> dict[str, Any]:
+        now = time()
+        conversation_id = uuid.uuid4().hex[:16]
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO conversations
+                    (id, title, project_id, cwd, pinned, archived, draft, mode,
+                     custom_agent_id, provider_id, model, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    title,
+                    project_id,
+                    cwd,
+                    int(pinned),
+                    int(archived),
+                    int(draft),
+                    mode,
+                    custom_agent_id,
+                    provider_id,
+                    model,
+                    now,
+                    now,
+                ),
+            )
+            self._db.commit()
+        return self.get_conversation(conversation_id)  # type: ignore[return-value]
+
+    def list_conversations(
+        self, *, archived: bool | None = False, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 500))
+        query = "SELECT * FROM conversations"
+        params: list[Any] = []
+        if archived is not None:
+            query += " WHERE archived = ?"
+            params.append(int(archived))
+        query += " ORDER BY pinned DESC, updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._db.execute(query, params).fetchall()
+        return [self._conversation(row) for row in rows]
+
+    def get_conversation(
+        self, conversation_id: str, *, include_turns: bool = False
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            conversation = self._conversation(row)
+            if include_turns:
+                turn_rows = self._db.execute(
+                    "SELECT * FROM conversation_turns WHERE conversation_id = ? ORDER BY sequence",
+                    (conversation_id,),
+                ).fetchall()
+                turns = []
+                for turn_row in turn_rows:
+                    ref_rows = self._db.execute(
+                        "SELECT * FROM conversation_context_refs WHERE turn_id = ? ORDER BY created_at",
+                        (turn_row["id"],),
+                    ).fetchall()
+                    turns.append(self._turn(turn_row, ref_rows))
+                conversation["turns"] = turns
+        return conversation
+
+    def update_conversation(
+        self, conversation_id: str, **fields: Any
+    ) -> dict[str, Any] | None:
+        allowed = {
+            "title",
+            "project_id",
+            "cwd",
+            "mode",
+            "custom_agent_id",
+            "provider_id",
+            "model",
+            "pinned",
+            "archived",
+            "draft",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_conversation(conversation_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = [
+            int(value) if key in {"pinned", "archived", "draft"} else value
+            for key, value in updates.items()
+        ]
+        params.append(time())
+        params.append(conversation_id)
+        with self._lock:
+            self._db.execute(
+                f"UPDATE conversations SET {assignments}, updated_at = ? WHERE id = ?",
+                params,
+            )
+            self._db.commit()
+        return self.get_conversation(conversation_id)
+
+    def delete_conversation(self, conversation_id: str) -> bool:
+        with self._lock:
+            cursor = self._db.execute(
+                "DELETE FROM conversations WHERE id = ?", (conversation_id,)
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
+
+    def add_conversation_turn(
+        self,
+        conversation_id: str,
+        *,
+        prompt: str,
+        task_id: str | None = None,
+        mode: str | None = None,
+        provider_id: str | None = None,
+        model: str | None = None,
+        context_refs: list[dict[str, Any]] | None = None,
+        attachment_refs: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        if self.get_conversation(conversation_id) is None:
+            raise KeyError(conversation_id)
+        now = time()
+        turn_id = uuid.uuid4().hex[:16]
+        with self._lock:
+            row = self._db.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_turns WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()
+            sequence = int(row["next"] if row else 1)
+            self._db.execute(
+                """
+                INSERT INTO conversation_turns
+                    (id, conversation_id, sequence, task_id, prompt, mode,
+                     provider_id, model, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    turn_id,
+                    conversation_id,
+                    sequence,
+                    task_id,
+                    prompt,
+                    mode,
+                    provider_id,
+                    model,
+                    now,
+                ),
+            )
+            for kind, refs in (("context", context_refs or []), ("attachment", attachment_refs or [])):
+                for ref in refs:
+                    ref_id = uuid.uuid4().hex[:16]
+                    target = ref.get("ref") or ref.get("path") or ref.get("id")
+                    if not target:
+                        continue
+                    meta = {key: value for key, value in ref.items() if key not in {"ref", "path", "id", "kind"}}
+                    self._db.execute(
+                        """
+                        INSERT INTO conversation_context_refs
+                            (id, turn_id, kind, ref, meta, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (ref_id, turn_id, kind, str(target), json.dumps(meta), now),
+                    )
+            self._db.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                (now, conversation_id),
+            )
+            self._db.commit()
+        conversation = self.get_conversation(conversation_id, include_turns=True)
+        return next(turn for turn in conversation["turns"] if turn["id"] == turn_id)  # type: ignore[index]
+
+    # Custom agents -------------------------------------------------------
+
+    def create_custom_agent(
+        self,
+        *,
+        name: str,
+        description: str = "",
+        instructions: str = "",
+        provider_id: str | None = None,
+        model: str | None = None,
+        tools: list[str] | None = None,
+        limits: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("custom agent name is required")
+        now = time()
+        agent_id = uuid.uuid4().hex[:16]
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO custom_agents
+                    (id, name, description, instructions, provider_id, model,
+                     tools, limits, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    agent_id,
+                    name,
+                    description,
+                    instructions,
+                    provider_id,
+                    model,
+                    json.dumps(list(tools or [])),
+                    json.dumps(dict(limits or {})),
+                    now,
+                    now,
+                ),
+            )
+            self._db.commit()
+        return self.get_custom_agent(agent_id)  # type: ignore[return-value]
+
+    def list_custom_agents(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM custom_agents ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._custom_agent(row) for row in rows]
+
+    def get_custom_agent(self, agent_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM custom_agents WHERE id = ?", (agent_id,)
+            ).fetchone()
+        return self._custom_agent(row) if row else None
+
+    def update_custom_agent(self, agent_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {
+            "name",
+            "description",
+            "instructions",
+            "provider_id",
+            "model",
+            "tools",
+            "limits",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_custom_agent(agent_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = [
+            json.dumps(value) if key in {"tools", "limits"} else value
+            for key, value in updates.items()
+        ]
+        params.append(time())
+        params.append(agent_id)
+        with self._lock:
+            self._db.execute(
+                f"UPDATE custom_agents SET {assignments}, updated_at = ? WHERE id = ?",
+                params,
+            )
+            self._db.commit()
+        return self.get_custom_agent(agent_id)
+
+    def delete_custom_agent(self, agent_id: str) -> bool:
+        with self._lock:
+            cursor = self._db.execute(
+                "DELETE FROM custom_agents WHERE id = ?", (agent_id,)
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
+
+    # Runbooks --------------------------------------------------------------
+
+    def create_runbook(
+        self,
+        *,
+        name: str,
+        steps: list[dict[str, Any]],
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        runbook_id = uuid.uuid4().hex[:12]
+        now = time()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO runbooks (id, name, project_id, steps, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (runbook_id, name, project_id, _json(steps), now, now),
+            )
+            self._db.commit()
+        return self.get_runbook(runbook_id)  # type: ignore[return-value]
+
+    def list_runbooks(self, project_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            if project_id:
+                rows = self._db.execute(
+                    "SELECT * FROM runbooks WHERE project_id = ? OR project_id IS NULL ORDER BY updated_at DESC",
+                    (project_id,),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM runbooks ORDER BY updated_at DESC"
+                ).fetchall()
+        return [self._runbook(row) for row in rows]
+
+    def get_runbook(self, runbook_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM runbooks WHERE id = ?", (runbook_id,)
+            ).fetchone()
+        return self._runbook(row) if row else None
+
+    def update_runbook(self, runbook_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"name", "project_id", "steps"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_runbook(runbook_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = [
+            _json(value) if key == "steps" else value for key, value in updates.items()
+        ]
+        with self._lock:
+            self._db.execute(
+                f"UPDATE runbooks SET {assignments}, updated_at = ? WHERE id = ?",
+                (*values, time(), runbook_id),
+            )
+            self._db.commit()
+        return self.get_runbook(runbook_id)
+
+    def delete_runbook(self, runbook_id: str) -> bool:
+        with self._lock:
+            cursor = self._db.execute(
+                "DELETE FROM runbooks WHERE id = ?", (runbook_id,)
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
+
+    def create_runbook_run(
+        self,
+        runbook_id: str,
+        *,
+        cwd: str | None = None,
+        steps: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        run_id = uuid.uuid4().hex[:12]
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO runbook_runs (id, runbook_id, status, cwd, steps, started_at) VALUES (?, ?, 'running', ?, ?, ?)",
+                (
+                    run_id,
+                    runbook_id,
+                    cwd,
+                    json.dumps(steps) if steps is not None else None,
+                    time(),
+                ),
+            )
+            self._db.commit()
+        return self.get_runbook_run(run_id)  # type: ignore[return-value]
+
+    def get_runbook_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM runbook_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return self._runbook_run(row) if row else None
+
+    def list_runbook_runs(
+        self, runbook_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            if runbook_id:
+                rows = self._db.execute(
+                    "SELECT * FROM runbook_runs WHERE runbook_id = ? ORDER BY started_at DESC LIMIT ?",
+                    (runbook_id, max(1, min(limit, 200))),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM runbook_runs ORDER BY started_at DESC LIMIT ?",
+                    (max(1, min(limit, 200)),),
+                ).fetchall()
+        return [self._runbook_run(row) for row in rows]
+
+    def running_runbook_runs(self) -> list[dict[str, Any]]:
+        """Every run still marked 'running' — uncapped; used by the runner's
+        restart sweep so old interrupted runs are never left executor-less."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM runbook_runs WHERE status = 'running' ORDER BY started_at"
+            ).fetchall()
+        return [self._runbook_run(row) for row in rows]
+
+    def update_runbook_run(self, run_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"status", "current_step", "step_results", "error", "finished_at", "cwd"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_runbook_run(run_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = [
+            _json(value) if key == "step_results" else value
+            for key, value in updates.items()
+        ]
+        with self._lock:
+            self._db.execute(
+                f"UPDATE runbook_runs SET {assignments} WHERE id = ?",
+                (*values, run_id),
+            )
+            self._db.commit()
+        return self.get_runbook_run(run_id)
+
+    @staticmethod
+    def _runbook(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "project_id": row["project_id"],
+            "steps": json.loads(row["steps"] or "[]"),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _runbook_run(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "runbook_id": row["runbook_id"],
+            "status": row["status"],
+            "cwd": row["cwd"],
+            "current_step": row["current_step"],
+            "step_results": json.loads(row["step_results"] or "[]"),
+            "steps": json.loads(row["steps"]) if row["steps"] else None,
+            "error": row["error"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
+
+    # Task worktrees -------------------------------------------------------
+
+    def save_task_worktree(
+        self,
+        task_id: str,
+        *,
+        mode: str,
+        base_repo: str,
+        base_ref: str = "",
+        base_branch: str | None = None,
+        worktree_path: str | None = None,
+        branch: str | None = None,
+        status: str = "active",
+    ) -> dict[str, Any]:
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO task_worktrees
+                    (task_id, mode, base_repo, base_ref, base_branch,
+                     worktree_path, branch, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, mode, base_repo, base_ref, base_branch, worktree_path,
+                 branch, status, now, now),
+            )
+            self._db.commit()
+        return self.task_worktree(task_id)  # type: ignore[return-value]
+
+    def task_worktree(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM task_worktrees WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return self._worktree(row) if row else None
+
+    def update_task_worktree(self, task_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"worktree_path", "branch", "head_sha", "status", "base_branch"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.task_worktree(task_id)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = list(updates.values()) + [time(), task_id]
+        with self._lock:
+            self._db.execute(
+                f"UPDATE task_worktrees SET {assignments}, updated_at = ? WHERE task_id = ?",
+                params,
+            )
+            self._db.commit()
+        return self.task_worktree(task_id)
+
+    @staticmethod
+    def _worktree(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "task_id": row["task_id"],
+            "mode": row["mode"],
+            "base_repo": row["base_repo"],
+            "base_ref": row["base_ref"],
+            "base_branch": row["base_branch"],
+            "worktree_path": row["worktree_path"],
+            "branch": row["branch"],
+            "head_sha": row["head_sha"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }

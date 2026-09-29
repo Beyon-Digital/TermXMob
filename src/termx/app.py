@@ -11,6 +11,8 @@ import uuid
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import time
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -83,13 +85,14 @@ class AppState:
         self.desktop = DesktopManager(self.store, rtc=self.rtc)
         self.agent_store = agent_store or AgentStore()
         self.credentials = credentials or CredentialStore()
+        self.projects = ProjectFiles()
         self.agent = AgentManager(
             self.agent_store,
             self.credentials,
             self.desktop,
             adapter_factory=adapter_factory,
+            project_files=self.projects,
         )
-        self.projects = ProjectFiles()
         self.port = port
         self.request_shutdown = None
 
@@ -217,11 +220,92 @@ class AgentImageBody(BaseModel):
 class AgentTaskBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     cwd: str = Field(min_length=1, max_length=4000)
-    provider_id: str = Field(min_length=1, max_length=80)
+    provider_id: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=200)
     attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
     limits: dict[str, int] | None = None
     mode: str = Field(default="agent", pattern=r"^(ask|agent)$")
+    execution_mode: str | None = Field(default=None, pattern=r"^(direct|worktree)$")
+    conversation_id: str | None = Field(default=None, max_length=80)
+    custom_agent_id: str | None = Field(default=None, max_length=80)
+
+
+class WorktreeActionBody(BaseModel):
+    action: str = Field(pattern=r"^(apply|keep|discard)$")
+    confirm: bool = False
+
+
+class PreviewFromPortBody(BaseModel):
+    port: int = Field(ge=1, le=65535)
+    name: str = Field(default="", max_length=80)
+
+
+class RunbookBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    project_id: str | None = Field(default=None, max_length=80)
+    steps: list[dict[str, Any]] = Field(min_length=1, max_length=50)
+
+
+class RunbookPatchBody(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    project_id: str | None = Field(default=None, max_length=80)
+    steps: list[dict[str, Any]] | None = Field(default=None, min_length=1, max_length=50)
+
+
+class ConversationBody(BaseModel):
+    title: str = Field(default="", max_length=300)
+    project_id: str | None = Field(default=None, max_length=200)
+    cwd: str | None = Field(default=None, max_length=4000)
+    mode: str = Field(default="ask", pattern=r"^(ask|agent)$")
+    custom_agent_id: str | None = Field(default=None, max_length=80)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    pinned: bool = False
+    archived: bool = False
+    draft: bool = False
+
+
+class ConversationPatchBody(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    project_id: str | None = Field(default=None, max_length=200)
+    cwd: str | None = Field(default=None, max_length=4000)
+    mode: str | None = Field(default=None, pattern=r"^(ask|agent)$")
+    custom_agent_id: str | None = Field(default=None, max_length=80)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    pinned: bool | None = None
+    archived: bool | None = None
+    draft: bool | None = None
+
+
+class ConversationTurnBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=20_000)
+    task_id: str | None = Field(default=None, max_length=80)
+    mode: str | None = Field(default=None, pattern=r"^(ask|agent)$")
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    context_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+    attachment_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+
+
+class CustomAgentBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    instructions: str = Field(default="", max_length=20_000)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    tools: list[str] = Field(default_factory=list, max_length=64)
+    limits: dict[str, Any] = Field(default_factory=dict)
+
+
+class CustomAgentPatchBody(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    instructions: str | None = Field(default=None, max_length=20_000)
+    provider_id: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=200)
+    tools: list[str] | None = Field(default=None, max_length=64)
+    limits: dict[str, Any] | None = None
 
 
 class AgentApprovalBody(BaseModel):
@@ -230,6 +314,10 @@ class AgentApprovalBody(BaseModel):
 
 class AgentSteerBody(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
+
+class RecoverTaskBody(BaseModel):
+    confirm: bool = False
 
 
 class AgentRetentionBody(BaseModel):
@@ -279,6 +367,16 @@ class GitStageBody(BaseModel):
     stage: bool = True
 
 
+class PairBody(BaseModel):
+    device_name: str = Field(default="", max_length=80)
+    scopes: list[str] | None = Field(default=None, max_length=20)
+    expires_in_s: int | None = Field(default=None, ge=60, le=60 * 60 * 24 * 365)
+
+
+class DeviceScopesBody(BaseModel):
+    scopes: list[str] = Field(min_length=0, max_length=20)
+
+
 class GitBranchBody(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     create: bool = False
@@ -289,16 +387,18 @@ class PreviewBody(BaseModel):
     url: str = Field(min_length=1, max_length=2000)
 
 
-def _require(state: AppState, provided: str | None) -> None:
-    if not state.auth.check(provided):
-        raise HTTPException(status_code=401, detail="invalid passcode")
-
-
 def _require_scope(state: AppState, provided: str | None, scope: str) -> None:
     if not state.auth.check(provided):
         raise HTTPException(status_code=401, detail="invalid passcode")
     if not state.auth.allows(provided, scope):
         raise HTTPException(status_code=403, detail=f"missing scope: {scope}")
+
+
+def _require_any_scope(state: AppState, provided: str | None, scopes: tuple[str, ...]) -> None:
+    if not state.auth.check(provided):
+        raise HTTPException(status_code=401, detail="invalid passcode")
+    if not any(state.auth.allows(provided, scope) for scope in scopes):
+        raise HTTPException(status_code=403, detail=f"missing scope: {'|'.join(scopes)}")
 
 
 def create_app(state: AppState | None = None, web_dir: Path | None = None) -> FastAPI:
@@ -307,6 +407,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         state.forwards.start_auto()
+        for task_id in state.agent.pending_recoveries():
+            asyncio.create_task(state.agent.recover_task(task_id))
         yield
         state.forwards.stop_all()
         await shutdown_state(state)
@@ -369,7 +471,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         target, tunnel_url = _connect_target()
         return {
             "urls": http_urls(state.port),
@@ -385,7 +487,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> Response:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         target, _tunnel = _connect_target()
         svg = qr_svg(connect_url(target, state.auth.passcode))
         return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
@@ -397,7 +499,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         notify.notify(body.title, body.body, kind="info", url=body.url)
         return {"ok": True}
 
@@ -407,7 +509,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         return permission_snapshot()
 
     @app.post("/api/permissions/request")
@@ -417,7 +519,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         which = body.which if body is not None else ["screen_recording", "accessibility"]
         from termx.desktop import broker as desktop_broker
 
@@ -438,7 +540,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         from termx import __version__
         from termx.update import check_for_update
 
@@ -450,7 +552,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         from termx import __version__
         from termx.update import check_for_update, desktop_managed
 
@@ -473,7 +575,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         if os.environ.get("TERMX_DESKTOP") != "1":
             raise HTTPException(status_code=404, detail="not found")
         client = request.client.host if request.client is not None else ""
@@ -488,6 +590,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     @app.post("/api/pair")
     def pair(
+        body: PairBody | None = None,
         x_termx_passcode: str | None = Header(default=None),
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
@@ -495,9 +598,14 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         if state.auth.passcode is not None and not hmac.compare_digest(secret or "", state.auth.passcode):
             raise HTTPException(status_code=401, detail="invalid passcode")
-        token = state.tokens.issue()
-        log_event("pair", scopes=list(SCOPES))
-        return {"token": token, "scopes": list(SCOPES)}
+        body = body or PairBody()
+        expires_at = time() + body.expires_in_s if body.expires_in_s else None
+        token = state.tokens.issue(
+            body.scopes, device_name=body.device_name, expires_at=expires_at
+        )
+        scopes = state.tokens.check(token) or []
+        log_event("pair", device_name=body.device_name, scopes=scopes)
+        return {"token": token, "scopes": scopes, "expires_at": expires_at}
 
     @app.get("/api/devices")
     def list_devices(
@@ -505,7 +613,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         return {"devices": state.tokens.list_public()}
 
     @app.delete("/api/devices/{device_id}")
@@ -515,11 +623,27 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         if not state.tokens.revoke(device_id):
             raise HTTPException(status_code=404, detail="device not found")
         log_event("device_revoke", device_id=device_id)
         return {"ok": True}
+
+    @app.post("/api/devices/{device_id}/scopes")
+    def set_device_scopes(
+        device_id: str,
+        body: DeviceScopesBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        """Explicit admin re-scope — the v1 token migration/re-pair path."""
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
+        device = state.tokens.update_scopes(device_id, body.scopes)
+        if device is None:
+            raise HTTPException(status_code=404, detail="device not found")
+        log_event("device_scopes", device_id=device_id, scopes=device["scopes"])
+        return {"device": device}
 
     @app.get("/api/audit")
     def get_audit(
@@ -527,7 +651,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         return {"events": read_events(100)}
 
     @app.get("/api/machine")
@@ -536,7 +660,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         return machine_snapshot(
             state.store, state.tunnels.status_public(), webrtc=state.rtc.available()
         )
@@ -634,20 +758,72 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-run")
+        conversation = (
+            state.agent_store.get_conversation(body.conversation_id)
+            if body.conversation_id
+            else None
+        )
+        if body.conversation_id and conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        custom_agent_id = body.custom_agent_id or (
+            str(conversation.get("custom_agent_id"))
+            if conversation and conversation.get("custom_agent_id")
+            else None
+        )
+        custom_agent = (
+            state.agent_store.get_custom_agent(custom_agent_id)
+            if custom_agent_id
+            else None
+        )
+        if custom_agent_id and custom_agent is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        provider_id = body.provider_id or (
+            str(conversation.get("provider_id"))
+            if conversation and conversation.get("provider_id")
+            else None
+        ) or (
+            str(custom_agent.get("provider_id"))
+            if custom_agent and custom_agent.get("provider_id")
+            else None
+        )
+        model = body.model or (
+            str(conversation.get("model"))
+            if conversation and conversation.get("model")
+            else None
+        ) or (
+            str(custom_agent.get("model"))
+            if custom_agent and custom_agent.get("model")
+            else None
+        )
+        if not provider_id:
+            raise HTTPException(status_code=400, detail="provider_id is required")
         try:
             task = await state.agent.create_task(
                 prompt=body.prompt,
                 cwd=body.cwd,
-                provider_id=body.provider_id,
+                provider_id=provider_id,
                 limits=body.limits,
                 mode=body.mode,
-                model=body.model,
+                model=model,
                 attachments=[{"name": item.name, "mime": item.mime, "data": item.data} for item in body.attachments],
+                execution_mode=body.execution_mode,
+                conversation_id=body.conversation_id or None,
+                custom_agent_id=custom_agent_id,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if body.conversation_id:
+            state.agent_store.add_conversation_turn(
+                body.conversation_id,
+                prompt=body.prompt,
+                task_id=task["id"],
+                mode=body.mode,
+                provider_id=body.provider_id,
+                model=body.model,
+                attachment_refs=[{"ref": item.name} for item in body.attachments],
+            )
         log_event("agent_task_create", task_id=task["id"], provider_id=body.provider_id)
         return task
 
@@ -675,7 +851,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
-            deleted = state.agent_store.delete_task(task_id)
+            deleted = state.agent.delete_task(task_id)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         if not deleted:
@@ -731,6 +907,23 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="task not found") from exc
 
+    @app.post("/api/agent/tasks/{task_id}/recover")
+    async def recover_agent_task(
+        task_id: str,
+        body: RecoverTaskBody | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            return await state.agent.recover_task(task_id, confirm=bool(body and body.confirm))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.post("/api/agent/tasks/{task_id}/takeover")
     async def takeover_agent_task(
         task_id: str,
@@ -779,6 +972,334 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         suffix = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}.get(artifact["mime"], "bin")
         return FileResponse(artifact["path"], media_type=artifact["mime"], filename=f"{artifact_id}.{suffix}")
 
+    @app.get("/api/agent/tasks/{task_id}/worktree")
+    def get_task_worktree(
+        task_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        try:
+            return {"worktree": state.agent.task_worktree(task_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+
+    @app.post("/api/agent/tasks/{task_id}/worktree")
+    def resolve_task_worktree(
+        task_id: str,
+        body: WorktreeActionBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        from termx.agent.worktrees import WorktreeConfirmRequired
+
+        try:
+            worktree = state.agent.resolve_worktree(
+                task_id, body.action, confirm=body.confirm
+            )
+        except WorktreeConfirmRequired as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "worktree has uncommitted changes — confirm to discard",
+                    "requires_confirm": True,
+                    "dirty": exc.dirty,
+                },
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        log_event("agent_worktree", task_id=task_id, action=body.action)
+        return {"worktree": worktree}
+
+    # ------------------------------------------------------------------
+    # Activity Center (PROD-004): normalized Termx-owned activity.
+
+    @app.get("/api/activity")
+    def get_activity(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.activity import activity_snapshot
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        return activity_snapshot(state)
+
+    @app.websocket("/api/activity/events")
+    async def activity_events_socket(websocket: WebSocket, k: str | None = None) -> None:
+        from termx.activity import activity_snapshot
+
+        token = extract_passcode(
+            websocket.headers.get("x-termx-passcode"),
+            websocket.headers.get("authorization"),
+            k,
+        )
+        if not state.auth.check(token):
+            await websocket.close(code=4401)
+            return
+        if not state.auth.allows(token, "machine-view"):
+            await websocket.close(code=4403)
+            return
+        await websocket.accept()
+        last: dict[str, dict[str, object]] = {}
+        try:
+            while True:
+                snapshot = activity_snapshot(state)
+                current = {item["id"]: item for item in snapshot["activity"]}
+                for item_id, item in current.items():
+                    previous = last.get(item_id)
+                    if previous != item:
+                        await websocket.send_json({"type": "activity.upsert", "activity": item})
+                for item_id in last.keys() - current.keys():
+                    await websocket.send_json({"type": "activity.remove", "id": item_id})
+                last = current
+                await asyncio.sleep(2.0)
+        except WebSocketDisconnect:
+            pass
+
+    # ------------------------------------------------------------------
+    # Port + process discovery (PROD-005).
+
+    @app.get("/api/ports")
+    def get_ports(
+        project_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.activity import _project_for
+        from termx.processes import listeners
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        try:
+            projects = state.projects.projects()
+        except Exception:
+            projects = []
+        from termx.processes import supported
+
+        ports = listeners()
+        for entry in ports:
+            entry["project_id"] = _project_for(projects, entry.get("cwd"))
+        if project_id:
+            ports = [entry for entry in ports if entry["project_id"] == project_id]
+        return {"ports": ports, "supported": supported()}
+
+    @app.get("/api/processes")
+    def get_processes(
+        project_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.activity import _project_for
+        from termx.processes import termx_processes
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        try:
+            projects = state.projects.projects()
+        except Exception:
+            projects = []
+        roots = [str(project["path"]) for project in projects if project.get("path")]
+        from termx.processes import supported
+
+        procs = termx_processes(roots)
+        for proc in procs:
+            proc["project_id"] = _project_for(projects, proc.get("cwd"))
+        if project_id:
+            procs = [proc for proc in procs if proc["project_id"] == project_id]
+        return {"processes": procs, "supported": supported()}
+
+    @app.post("/api/projects/{project_id}/previews/from-port")
+    def preview_from_port(
+        project_id: str,
+        body: PreviewFromPortBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.processes import listeners
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
+        match = next(
+            (entry for entry in listeners() if entry["port"] == body.port), None
+        )
+        if match is None:
+            raise HTTPException(status_code=404, detail="no listening process on that port")
+        url = match.get("url") or f"http://127.0.0.1:{body.port}"
+        result = state.projects.add_preview(project_id, body.name, str(url))
+        log_event("project_preview_from_port", project_id=project_id, port=body.port)
+        return {"preview": result, "listener": match}
+
+    # ------------------------------------------------------------------
+    # Runbooks (PROD-006): named multi-step workflows + run history.
+
+    @app.get("/api/runbooks")
+    def list_runbooks(
+        project_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        return {"runbooks": state.agent_store.list_runbooks(project_id)}
+
+    @app.post("/api/runbooks")
+    def create_runbook(
+        body: RunbookBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.runbooks import validate_steps
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
+        if body.project_id:
+            state.projects.project(body.project_id)
+        try:
+            steps = validate_steps(body.steps)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        runbook = state.agent_store.create_runbook(
+            name=body.name.strip(), project_id=body.project_id, steps=steps
+        )
+        log_event("runbook_create", runbook_id=runbook["id"])
+        return {"runbook": runbook}
+
+    @app.get("/api/runbooks/{runbook_id}")
+    def get_runbook(
+        runbook_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        runbook = state.agent_store.get_runbook(runbook_id)
+        if runbook is None:
+            raise HTTPException(status_code=404, detail="runbook not found")
+        return {
+            "runbook": runbook,
+            "runs": state.agent_store.list_runbook_runs(runbook_id, limit=20),
+        }
+
+    @app.patch("/api/runbooks/{runbook_id}")
+    def update_runbook(
+        runbook_id: str,
+        body: RunbookPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.runbooks import validate_steps
+
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
+        if state.agent_store.get_runbook(runbook_id) is None:
+            raise HTTPException(status_code=404, detail="runbook not found")
+        updates: dict[str, Any] = {}
+        if body.name is not None:
+            if not body.name.strip():
+                raise HTTPException(status_code=400, detail="name is required")
+            updates["name"] = body.name.strip()
+        if body.project_id is not None:
+            state.projects.project(body.project_id)
+            updates["project_id"] = body.project_id
+        if body.steps is not None:
+            try:
+                updates["steps"] = validate_steps(body.steps)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        runbook = state.agent_store.update_runbook(runbook_id, **updates)
+        return {"runbook": runbook}
+
+    @app.delete("/api/runbooks/{runbook_id}")
+    def delete_runbook(
+        runbook_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
+        if not state.agent_store.delete_runbook(runbook_id):
+            raise HTTPException(status_code=404, detail="runbook not found")
+        return {"deleted": True}
+
+    @app.post("/api/runbooks/{runbook_id}/run")
+    async def run_runbook(
+        runbook_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
+        runbook = state.agent_store.get_runbook(runbook_id)
+        if runbook is None:
+            raise HTTPException(status_code=404, detail="runbook not found")
+        cwd = str(Path.home())
+        if runbook.get("project_id"):
+            cwd = str(state.projects.project(runbook["project_id"])["path"])
+        run = state.agent.runbooks.start(runbook, cwd)
+        log_event("runbook_run", runbook_id=runbook_id, run_id=run["id"])
+        return {"run": run}
+
+    @app.get("/api/runbook-runs")
+    def list_runbook_runs(
+        runbook_id: str | None = None,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        return {"runs": state.agent_store.list_runbook_runs(runbook_id)}
+
+    @app.get("/api/runbook-runs/{run_id}")
+    def get_runbook_run(
+        run_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        run = state.agent_store.get_runbook_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"run": run}
+
+    @app.post("/api/runbook-runs/{run_id}/confirm")
+    def confirm_runbook_run(
+        run_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
+        try:
+            run = state.agent.runbooks.confirm(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="run not found") from exc
+        return {"run": run}
+
+    @app.post("/api/runbook-runs/{run_id}/cancel")
+    async def cancel_runbook_run(
+        run_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
+        try:
+            run = await state.agent.runbooks.cancel(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="run not found") from exc
+        return {"run": run}
+
     @app.get("/api/agent/storage")
     def get_agent_storage(
         x_termx_passcode: str | None = Header(default=None),
@@ -803,8 +1324,159 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             retention_days=body.retention_days,
             max_bytes=body.max_bytes,
         )
-        removed = state.agent_store.prune(retention_days=body.retention_days, max_bytes=body.max_bytes)
+        removed = state.agent.prune_storage(retention_days=body.retention_days, max_bytes=body.max_bytes)
         return {"removed": removed, "storage": state.agent_store.storage_status(retention_days=body.retention_days, max_bytes=body.max_bytes)}
+
+    # Host-persisted conversations (PROD-001) -------------------------------
+
+    @app.get("/api/conversations")
+    def list_conversations(
+        archived: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        flag: bool | None = False
+        if archived in {"1", "true", "all"}:
+            flag = None if archived == "all" else True
+        return {"conversations": state.agent_store.list_conversations(archived=flag)}
+
+    @app.post("/api/conversations")
+    def create_conversation(
+        body: ConversationBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        return {"conversation": state.agent_store.create_conversation(**body.model_dump())}
+
+    @app.get("/api/conversations/{conversation_id}")
+    def get_conversation(
+        conversation_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        conversation = state.agent_store.get_conversation(conversation_id, include_turns=True)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"conversation": conversation}
+
+    @app.patch("/api/conversations/{conversation_id}")
+    def patch_conversation(
+        conversation_id: str,
+        body: ConversationPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        conversation = state.agent_store.update_conversation(conversation_id, **updates)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"conversation": conversation}
+
+    @app.delete("/api/conversations/{conversation_id}")
+    def delete_conversation(
+        conversation_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        if not state.agent_store.delete_conversation(conversation_id):
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"deleted": conversation_id}
+
+    @app.post("/api/conversations/{conversation_id}/turns")
+    def add_conversation_turn(
+        conversation_id: str,
+        body: ConversationTurnBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            turn = state.agent_store.add_conversation_turn(
+                conversation_id,
+                prompt=body.prompt,
+                task_id=body.task_id,
+                mode=body.mode,
+                provider_id=body.provider_id,
+                model=body.model,
+                context_refs=body.context_refs,
+                attachment_refs=body.attachment_refs,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="conversation not found") from exc
+        return {"turn": turn}
+
+    # Host-persisted custom agents (PROD-002) -------------------------------
+
+    @app.get("/api/custom-agents")
+    def list_custom_agents(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        return {"agents": state.agent_store.list_custom_agents()}
+
+    @app.post("/api/custom-agents")
+    def create_custom_agent(
+        body: CustomAgentBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            agent = state.agent_store.create_custom_agent(**body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"agent": agent}
+
+    @app.patch("/api/custom-agents/{agent_id}")
+    def patch_custom_agent(
+        agent_id: str,
+        body: CustomAgentPatchBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        agent = state.agent_store.update_custom_agent(agent_id, **updates)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        return {"agent": agent}
+
+    @app.delete("/api/custom-agents/{agent_id}")
+    def delete_custom_agent(
+        agent_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        if not state.agent_store.delete_custom_agent(agent_id):
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        return {"deleted": agent_id}
 
     @app.get("/api/preferences")
     def get_preferences(
@@ -812,7 +1484,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         prefs = state.store.get().terminal
         return {"shell": prefs.shell, "cwd": prefs.cwd, "shells": machine_snapshot(state.store)["shells"]}
 
@@ -823,7 +1495,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         try:
             prefs = state.store.update_terminal(shell=body.shell, cwd=body.cwd)
         except ValueError as exc:
@@ -836,7 +1508,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         return {"commands": [item.public() for item in state.store.list_commands()]}
 
     @app.post("/api/commands")
@@ -846,7 +1518,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         try:
             item = state.store.add_command(body.name, body.command, body.confirm)
         except ValueError as exc:
@@ -862,7 +1534,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         try:
             item = state.store.patch_command(command_id, body.name, body.command, body.confirm)
         except ValueError as exc:
@@ -878,7 +1550,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         if not state.store.delete_command(command_id):
             raise HTTPException(status_code=404, detail="command not found")
         log_event("command_delete", command_id=command_id)
@@ -891,7 +1563,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         items = state.store.reorder_commands(body.order)
         return {"commands": [item.public() for item in items]}
 
@@ -903,7 +1575,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         try:
             return list_dir_entries(path, include_files=bool(files))
         except ValueError as exc:
@@ -916,7 +1588,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> FileResponse:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         try:
             resolved = Path(path).expanduser().resolve(strict=True)
         except OSError as exc:
@@ -935,7 +1607,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         name = Path(unquote(x_termx_name or "")).name.strip()
         if not name or name in {".", ".."}:
             raise HTTPException(status_code=400, detail="file name required")
@@ -977,7 +1649,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         return {"projects": state.projects.projects()}
 
     @app.post("/api/projects")
@@ -987,7 +1659,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         try:
             project = state.projects.register(body.path, body.name)
         except (ValueError, OSError) as exc:
@@ -1003,7 +1675,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         return state.projects.update_project(project_id, body.name)
 
     @app.delete("/api/projects/{project_id}")
@@ -1013,7 +1685,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         state.projects.forget(project_id)
         return {"ok": True}
 
@@ -1027,7 +1699,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         return state.projects.listing(project_id, path, offset, limit)
 
     @app.get("/api/projects/{project_id}/file")
@@ -1038,7 +1710,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         return state.projects.read(project_id, path)
 
     @app.put("/api/projects/{project_id}/file")
@@ -1049,7 +1721,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         result = state.projects.save(project_id, body.path, body.content, body.revision)
         log_event("project_file_save", project_id=project_id, path=body.path, size=result.get("size"))
         return result
@@ -1062,7 +1734,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> FileResponse:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         target = state.projects.resolve(project_id, path)
         if not target.is_file():
             raise HTTPException(status_code=404, detail="not a file")
@@ -1078,7 +1750,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         name = Path(unquote(x_termx_name or "")).name.strip()
         if not name or name in {".", ".."}:
             raise HTTPException(status_code=400, detail="file name required")
@@ -1117,7 +1789,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
         result = state.projects.mutate(project_id, body.action, body.path, body.destination, body.revision)
         log_event("project_file_action", project_id=project_id, action=body.action, path=body.path)
         return result
@@ -1130,7 +1802,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         return state.projects.search(project_id, body.query, content=body.content, case_sensitive=body.case_sensitive)
 
     # Git ------------------------------------------------------------
@@ -1144,7 +1816,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-read")
         return git_ops.status(_project_root(project_id))
 
     @app.get("/api/projects/{project_id}/git/diff")
@@ -1156,7 +1828,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-read")
         return git_ops.diff(_project_root(project_id), path, staged=bool(staged))
 
     @app.post("/api/projects/{project_id}/git/stage")
@@ -1167,7 +1839,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-write")
         return git_ops.stage(_project_root(project_id), body.paths, body.stage)
 
     @app.post("/api/projects/{project_id}/git/hunk")
@@ -1178,7 +1850,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-write")
         return git_ops.stage_hunk(_project_root(project_id), body.patch, body.stage)
 
     @app.post("/api/projects/{project_id}/git/commit")
@@ -1189,7 +1861,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-write")
         result = git_ops.commit(_project_root(project_id), body.message)
         log_event("git_commit", project_id=project_id)
         return result
@@ -1201,7 +1873,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-read")
         return git_ops.branches(_project_root(project_id))
 
     @app.post("/api/projects/{project_id}/git/branch")
@@ -1212,7 +1884,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-write")
         result = git_ops.switch_branch(_project_root(project_id), body.name, body.create)
         log_event("git_branch", project_id=project_id, create=body.create)
         return result
@@ -1225,7 +1897,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "git-write")
         root = _project_root(project_id)
         if operation == "fetch":
             return git_ops.fetch(root)
@@ -1243,7 +1915,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         return {"previews": state.projects.previews(project_id)}
 
     @app.post("/api/projects/{project_id}/previews")
@@ -1254,7 +1926,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         result = state.projects.add_preview(project_id, body.name, body.url)
         log_event("project_preview_create", project_id=project_id)
         return result
@@ -1267,7 +1939,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
         state.projects.delete_preview(project_id, preview_id)
         return {"ok": True}
 
@@ -1278,7 +1950,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
         state.projects.project(project_id)
         return {"servers": lsp.server_snapshot()}
 
@@ -1288,7 +1960,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         prefs = state.store.get().terminal
         return {
             "cwd": prefs.cwd,
@@ -1302,7 +1974,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         try:
             item = state.store.add_directory(body.name, body.path)
         except ValueError as exc:
@@ -1317,7 +1989,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         if not state.store.delete_directory(directory_id):
             raise HTTPException(status_code=404, detail="directory not found")
         log_event("directory_delete", directory_id=directory_id)
@@ -1330,7 +2002,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         try:
             item = state.store.use_directory(directory_id)
         except KeyError:
@@ -1346,7 +2018,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         return state.tunnels.runtime()
 
     @app.post("/api/tunnels/profiles")
@@ -1356,7 +2028,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         if body.provider not in {"cloudflare", "ngrok", "tailscale"}:
             raise HTTPException(status_code=400, detail="unknown provider")
         profile = state.store.add_profile(body.provider, body.name, body.kind, body.extra)
@@ -1369,7 +2041,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         if not state.store.delete_profile(profile_id):
             raise HTTPException(status_code=404, detail="profile not found")
         return {"ok": True}
@@ -1381,7 +2053,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         body = body or TunnelStartBody()
         profile = None
         if body.profile_id:
@@ -1412,7 +2084,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         status = await state.tunnels.stop()
         log_event("tunnel_stop", state=status.state)
         return status.public()
@@ -1423,7 +2095,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         status = await state.tunnels.restart()
         if status.state == "error":
             notify.notify("Tunnel failed", status.detail or "tunnel failed", kind="error")
@@ -1439,7 +2111,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "desktop-view")
         return {
             **state.desktop.snapshot(),
             "virtual_display_reason": virtual_display_reason(),
@@ -1452,7 +2124,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "desktop-control")
         try:
             created = create_virtual_display(body.width, body.height, body.dpr, body.refresh_hz)
         except VirtualDisplayError as exc:
@@ -1467,7 +2139,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "desktop-control")
         try:
             destroy_virtual_display(display_id)
         except VirtualDisplayError as exc:
@@ -1482,7 +2154,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "desktop-view")
         session_id = body.session_id or uuid.uuid4().hex[:12]
         try:
             return state.rtc.handle_offer(session_id, body.offer)
@@ -1496,7 +2168,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "desktop-view")
         state.rtc.add_ice(body.session_id, body.candidate)
         return {"ok": True}
 
@@ -1506,7 +2178,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
         workspace = state.store.get_workspace()
         return {
             "sessions": [item.public() for item in workspace.sessions],
@@ -1520,7 +2192,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         saved = state.store.save_workspace(
             [WorkspaceSession(title=item.title, shell=item.shell, cwd=item.cwd) for item in body.sessions]
         )
@@ -1532,7 +2204,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         # Return host-owned live sessions unchanged. Replaying persisted specs
         # on every new client connection duplicated PTYs and then compounded
         # the duplicates when the client saved its next workspace snapshot.
@@ -1576,7 +2248,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         return {
             "rules": [rule.public() for rule in state.store.list_rules()],
             "statuses": state.forwards.statuses(),
@@ -1589,7 +2261,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         try:
             rule = state.store.add_rule(
                 name=body.name,
@@ -1614,7 +2286,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         rule = state.store.patch_rule(rule_id, auto_start=body.auto_start, name=body.name)
         if rule is None:
             raise HTTPException(status_code=404, detail="rule not found")
@@ -1627,7 +2299,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         state.forwards.stop(rule_id)
         if not state.store.delete_rule(rule_id):
             raise HTTPException(status_code=404, detail="rule not found")
@@ -1641,7 +2313,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         rule = state.store.get_rule(rule_id)
         if rule is None:
             raise HTTPException(status_code=404, detail="rule not found")
@@ -1656,7 +2328,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "network-manage")
         if state.store.get_rule(rule_id) is None:
             raise HTTPException(status_code=404, detail="rule not found")
         state.forwards.stop(rule_id)
@@ -1669,7 +2341,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-view")
         return {"sessions": [s.snapshot() for s in state.sessions.list()]}
 
     @app.post("/api/sessions")
@@ -1679,7 +2351,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
         body = body or CreateSessionBody()
         prefs = state.store.get().terminal
         try:
@@ -1705,7 +2377,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
         session = state.sessions.rename(session_id, body.title)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -1718,7 +2390,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
     ) -> dict[str, bool]:
-        _require(state, provided(x_termx_passcode, authorization, k))
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "terminal-control")
         if not state.sessions.kill(session_id):
             raise HTTPException(status_code=404, detail="session not found")
         return {"ok": True}
@@ -1735,6 +2407,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         token = extract_passcode(header_k, authorization, k)
         if not state.auth.check(token):
             await websocket.close(code=4401)
+            return
+        if not state.auth.allows(token, "files-read"):
+            await websocket.close(code=4403)
             return
         try:
             root = state.projects.project(project_id)["path"]
@@ -1754,6 +2429,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         token = extract_passcode(header_k, authorization, k)
         if not state.auth.check(token):
             await websocket.close(code=4401)
+            return
+        if not state.auth.allows(token, "terminal-control"):
+            await websocket.close(code=4403)
             return
         session = state.sessions.get(session_id)
         if session is None or session.exited:
@@ -1845,6 +2523,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         token = extract_passcode(header_k, authorization, k)
         if not state.auth.check(token):
             await websocket.close(code=4401)
+            return
+        if not state.auth.allows(token, "desktop-view"):
+            await websocket.close(code=4403)
             return
         await state.desktop.attach(websocket)
 

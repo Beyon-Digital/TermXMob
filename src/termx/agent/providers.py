@@ -12,7 +12,18 @@ from termx.agent.policy import redact
 
 
 class ProviderError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after_s: float | None = None,
+        network: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after_s = retry_after_s
+        self.network = network
 
 
 @dataclass(frozen=True)
@@ -70,6 +81,7 @@ class OpenAIResponsesAdapter:
         capabilities: list[str],
         native_computer: bool = True,
         timeout_s: float = 90,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         base = base_url.rstrip("/")
         self.url = base if base.endswith("/responses") else f"{base}/responses"
@@ -78,6 +90,18 @@ class OpenAIResponsesAdapter:
         self.capabilities = set(capabilities)
         self.native_computer = native_computer
         self.timeout_s = timeout_s
+        # Injected pooled client (Agent HTTP runtime); None builds an ephemeral
+        # client per request, which keeps direct adapter tests unchanged.
+        self.client = client
+
+    def request_headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "termx-agent/1",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     async def test(self) -> str:
         body = await self._post(
@@ -120,101 +144,75 @@ class OpenAIResponsesAdapter:
         input_items: list[dict[str, Any]] | None = None,
         allow_computer: bool = False,
         read_only: bool = False,
+        allow_subagents: bool = True,
     ) -> ProviderTurn:
+        payload = self._turn_payload(
+            prompt=prompt,
+            cwd=cwd,
+            manifest=manifest,
+            previous_response_id=previous_response_id,
+            input_items=input_items,
+            allow_computer=allow_computer,
+            read_only=read_only,
+            allow_subagents=allow_subagents,
+        )
+        body = await self._post(payload)
+        return self._turn_from_body(body)
+
+    # Streaming turn -------------------------------------------------
+
+    supports_streaming = True
+
+    async def stream_turn(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None = None,
+        input_items: list[dict[str, Any]] | None = None,
+        allow_computer: bool = False,
+        read_only: bool = False,
+        allow_subagents: bool = True,
+        on_delta: Any = None,
+        on_event: Any = None,
+    ) -> ProviderTurn:
+        """Streaming variant of ``turn`` using the Responses SSE stream.
+
+        Emits ``response.output_text.delta`` fragments through ``on_delta``
+        and forwards ``response.function_call_arguments.delta`` events to
+        ``on_event`` (incremental tool-call assembly is only surfaced — the
+        authoritative calls still arrive in the terminal ``response`` object).
+        """
+        payload = self._turn_payload(
+            prompt=prompt,
+            cwd=cwd,
+            manifest=manifest,
+            previous_response_id=previous_response_id,
+            input_items=input_items,
+            allow_computer=allow_computer,
+            read_only=read_only,
+            allow_subagents=allow_subagents,
+        )
+        payload["stream"] = True
+        body = await self._post_stream(payload, on_delta=on_delta, on_event=on_event)
+        return self._turn_from_body(body)
+
+    def _turn_payload(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        manifest: dict[str, Any],
+        previous_response_id: str | None,
+        input_items: list[dict[str, Any]] | None,
+        allow_computer: bool,
+        read_only: bool,
+        allow_subagents: bool = True,
+    ) -> dict[str, Any]:
         tools: list[dict[str, Any]] = []
         if "functions" in self.capabilities or "shell" in self.capabilities:
-            tools.append(
-                {
-                    "type": "function",
-                    "name": "run_shell",
-                    "description": (
-                        "Run one read-only shell command in the approved project folder to inspect files "
-                        "and answer the question. Do not modify files or reach the network."
-                        if read_only
-                        else "Run one shell command in the approved project folder. Use it to inspect files, "
-                        "edit with repository-native tools, and verify work. Consequential commands pause for approval."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "command": {"type": "string"},
-                            "purpose": {"type": "string"},
-                            "timeout_s": {"type": "number", "minimum": 1, "maximum": 600},
-                        },
-                        "required": ["command", "purpose"],
-                        "additionalProperties": False,
-                    },
-                }
-            )
-            tools.append(
-                {
-                    "type": "function",
-                    "name": "share_file",
-                    "description": (
-                        "Share a file from the project folder with the user as a chat attachment: "
-                        "screenshots, images, reports, generated media, or any file the user should see. "
-                        "The file is read and attached to the conversation."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "description": "File path inside the project folder (absolute or relative).",
-                            },
-                            "caption": {
-                                "type": "string",
-                                "description": "Optional one-line caption shown with the attachment.",
-                            },
-                        },
-                        "required": ["path"],
-                        "additionalProperties": False,
-                    },
-                }
-            )
-            if not read_only:
-                tools.append(
-                    {
-                        "type": "function",
-                        "name": "spawn_subagent",
-                        "description": (
-                            "Delegate one bounded sub-task to a sub-agent running in the same project folder. "
-                            "Use it to hand off well-scoped work (research a question, write a file, verify a "
-                            "fix) while you coordinate. The sub-agent runs autonomously to completion and "
-                            "returns its result; its steps appear nested under this call. Pass instructions "
-                            "to give it a role or rules to follow."
-                        ),
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "task": {
-                                    "type": "string",
-                                    "description": "The concrete task to hand off.",
-                                },
-                                "agent": {
-                                    "type": "string",
-                                    "description": "Short label for the sub-agent's role, e.g. 'code reviewer'.",
-                                },
-                                "instructions": {
-                                    "type": "string",
-                                    "description": "Optional rules or persona for the sub-agent to follow.",
-                                },
-                                "mode": {
-                                    "type": "string",
-                                    "enum": ["agent", "ask"],
-                                    "description": (
-                                        "Autonomy level: 'agent' (default) runs with full tools; "
-                                        "'ask' runs read-only — it may inspect and report but cannot "
-                                        "modify files, use the desktop, or spawn further sub-agents. "
-                                        "Pre-configured delegates advertise their mode; pass it through unchanged."
-                                    ),
-                                },
-                            },
-                            "required": ["task"],
-                            "additionalProperties": False,
-                        },
-                    }
-                )
+            tools.extend(self._function_tools(read_only, allow_subagents=allow_subagents))
         if allow_computer and "computer" in self.capabilities:
             tools.append({"type": "computer"} if self.native_computer else _computer_function_tool())
         payload: dict[str, Any] = {
@@ -253,7 +251,22 @@ class OpenAIResponsesAdapter:
             ]
         else:
             payload["input"] = _task_input(prompt, cwd, manifest)
-        body = await self._post(payload)
+        return payload
+
+    @staticmethod
+    def _turn_from_body(body: dict[str, Any]) -> ProviderTurn:
+        status = str(body.get("status") or "")
+        if status == "incomplete":
+            details = body.get("incomplete_details")
+            reason = (
+                str(details.get("reason"))
+                if isinstance(details, dict) and details.get("reason")
+                else "unknown"
+            )
+            # An incomplete response is not a completed turn — surfacing it
+            # as a structured failure instead of silently treating partial
+            # output as success.
+            raise ProviderError(f"Provider response incomplete (reason={reason})")
         calls: list[ProviderCall] = []
         for item in body.get("output") or []:
             if not isinstance(item, dict):
@@ -312,24 +325,36 @@ class OpenAIResponsesAdapter:
             output_items=[item for item in (body.get("output") or []) if isinstance(item, dict)],
         )
 
+    @staticmethod
+    def _function_tools(
+        read_only: bool, *, allow_subagents: bool = True
+    ) -> list[dict[str, Any]]:
+        # Lazy import: the tools package annotates against this module.
+        from termx.agent.tools import default_registry
+
+        return default_registry().provider_tools(
+            read_only=read_only, allow_subagents=allow_subagents
+        )
+
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "termx-agent/1",
-        }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
         try:
-            async with httpx.AsyncClient(
-                timeout=self.timeout_s,
-                headers=headers,
-                follow_redirects=True,
-            ) as client:
-                response = await client.post(self.url, json=payload)
+            if self.client is not None:
+                response = await self.client.post(self.url, json=payload)
+            else:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_s,
+                    headers=self.request_headers(),
+                    follow_redirects=True,
+                ) as client:
+                    response = await client.post(self.url, json=payload)
         except httpx.RequestError as exc:
-            raise ProviderError(f"Could not reach provider: {exc}") from exc
+            raise ProviderError(f"Could not reach provider: {exc}", network=True) from exc
         if response.is_error:
-            raise ProviderError(_provider_http_error(response.status_code, response.text[:1000]))
+            raise ProviderError(
+                _provider_http_error(response.status_code, response.text[:1000]),
+                status_code=response.status_code,
+                retry_after_s=_retry_after(response.headers),
+            )
         try:
             body = response.json()
         except ValueError as exc:
@@ -342,6 +367,96 @@ class OpenAIResponsesAdapter:
             raise ProviderError(str(message or "Provider request failed"))
         return body
 
+    async def _post_stream(
+        self,
+        payload: dict[str, Any],
+        *,
+        on_delta: Any = None,
+        on_event: Any = None,
+    ) -> dict[str, Any]:
+        """POST with ``stream: true`` and consume the SSE event feed.
+
+        Returns the terminal ``response`` object, shaped like a normal
+        ``/responses`` body so the existing output parsing applies. Only
+        delta text and event *types* leave this function — never raw headers.
+        """
+        try:
+            if self.client is not None:
+                body = await self._stream_with(self.client, payload, on_delta, on_event)
+            else:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_s,
+                    headers=self.request_headers(),
+                    follow_redirects=True,
+                ) as client:
+                    body = await self._stream_with(client, payload, on_delta, on_event)
+        except httpx.RequestError as exc:
+            raise ProviderError(f"Could not reach provider: {exc}", network=True) from exc
+        return body
+
+    async def _stream_with(
+        self,
+        client: httpx.AsyncClient,
+        payload: dict[str, Any],
+        on_delta: Any,
+        on_event: Any,
+    ) -> dict[str, Any]:
+        final: dict[str, Any] | None = None
+        async with client.stream("POST", self.url, json=payload) as response:
+            if response.is_error:
+                detail = await response.aread()
+                raise ProviderError(
+                    _provider_http_error(response.status_code, detail[:1000].decode("utf-8", "replace")),
+                    status_code=response.status_code,
+                    retry_after_s=_retry_after(response.headers),
+                )
+            event_type = ""
+            async for raw_line in response.aiter_lines():
+                line = raw_line.strip()
+                if not line:
+                    event_type = ""
+                    continue
+                if line.startswith("event:"):
+                    event_type = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                kind = str(event.get("type") or event_type)
+                if kind == "response.output_text.delta":
+                    delta = str(event.get("delta") or "")
+                    if delta and on_delta is not None:
+                        on_delta(delta)
+                elif kind in {
+                    "response.function_call_arguments.delta",
+                    "response.custom_tool_call_input.delta",
+                }:
+                    if on_event is not None:
+                        on_event(kind, {key: value for key, value in event.items() if key != "type"})
+                elif kind in {"response.completed", "response.incomplete", "response.failed"}:
+                    candidate = event.get("response")
+                    if isinstance(candidate, dict):
+                        final = candidate
+                elif kind == "error":
+                    error = event.get("error")
+                    message = error.get("message") if isinstance(error, dict) else str(error)
+                    raise ProviderError(str(message or "Provider stream failed"))
+        if final is None:
+            raise ProviderError("Provider stream ended without a completion event")
+        if final.get("error"):
+            error = final["error"]
+            message = error.get("message") if isinstance(error, dict) else str(error)
+            raise ProviderError(str(message or "Provider request failed"))
+        return final
+
 
 def _redact_value(value: Any) -> Any:
     if isinstance(value, str):
@@ -351,6 +466,16 @@ def _redact_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _redact_value(item) for key, item in value.items()}
     return value
+
+
+def _retry_after(headers: httpx.Headers) -> float | None:
+    value = headers.get("retry-after")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return None
 
 
 def _provider_http_error(status: int, detail: str) -> str:
@@ -375,8 +500,12 @@ def _computer_function_tool() -> dict[str, Any]:
         "type": "function",
         "name": "use_computer",
         "description": (
-            "Observe and control the paired desktop. Start with a screenshot action, then use small action "
-            "batches and inspect the returned screenshot before continuing."
+            "Observe and control the paired desktop. Start with a screenshot action (optionally with a "
+            "region), then use small action batches and inspect the returned screenshot before continuing. "
+            "Prefer paste_text over type for long text — it is faster where native paste is available; type "
+            "remains the fallback. mouse_down/mouse_up and key_down/key_up give explicit press control; "
+            "release_all clears held inputs. set_display switches the target display. When the screen is "
+            "unchanged the result says so instead of attaching another screenshot."
         ),
         "parameters": {
             "type": "object",
@@ -400,6 +529,13 @@ def _computer_function_tool() -> dict[str, Any]:
                                     "scroll",
                                     "type",
                                     "keypress",
+                                    "paste_text",
+                                    "mouse_down",
+                                    "mouse_up",
+                                    "key_down",
+                                    "key_up",
+                                    "release_all",
+                                    "set_display",
                                 ],
                             },
                             "x": {"type": "number"},
@@ -410,6 +546,19 @@ def _computer_function_tool() -> dict[str, Any]:
                             "keys": {
                                 "type": "array",
                                 "items": {"type": "string"},
+                            },
+                            "key": {"type": "string"},
+                            "display_id": {"type": "string"},
+                            "region": {
+                                "type": "object",
+                                "properties": {
+                                    "x": {"type": "number"},
+                                    "y": {"type": "number"},
+                                    "width": {"type": "number"},
+                                    "height": {"type": "number"},
+                                },
+                                "required": ["x", "y", "width", "height"],
+                                "additionalProperties": False,
                             },
                             "path": {
                                 "type": "array",
@@ -442,10 +591,34 @@ def _task_input(prompt: str, cwd: str, manifest: dict[str, Any]) -> str:
     listing = "\n".join(f"- {item}" for item in files[:500])
     omitted = int(manifest.get("omitted") or 0)
     suffix = f"\n- {omitted} additional or protected entries omitted" if omitted else ""
-    return (
+    text = (
         f"Task:\n{prompt}\n\nApproved project folder:\n{cwd}\n\n"
         f"Visible project manifest:\n{listing or '- Empty project'}{suffix}"
     )
+    if manifest.get("kind") == "project_snapshot":
+        lines = []
+        if manifest.get("name"):
+            lines.append(f"- name: {manifest['name']}")
+        git = manifest.get("git")
+        if isinstance(git, dict) and git.get("branch"):
+            lines.append(
+                f"- git: branch {git['branch']}, {git.get('changed', 0)} changed, {git.get('staged', 0)} staged"
+            )
+        languages = manifest.get("languages")
+        if isinstance(languages, dict) and languages:
+            lines.append("- languages: " + ", ".join(f"{key} {count}" for key, count in languages.items()))
+        commands = manifest.get("commands")
+        if isinstance(commands, list) and commands:
+            lines.append("- check commands: " + "; ".join(str(command) for command in commands))
+        manifests = manifest.get("manifests")
+        if isinstance(manifests, list) and manifests:
+            lines.append("- manifests: " + ", ".join(str(item) for item in manifests))
+        recent = manifest.get("recent")
+        if isinstance(recent, list) and recent:
+            lines.append("- recently modified: " + ", ".join(str(item) for item in recent[:12]))
+        if lines:
+            text += "\n\nProject snapshot:\n" + "\n".join(lines)
+    return text
 
 
 def _output_text(body: dict[str, Any]) -> str:

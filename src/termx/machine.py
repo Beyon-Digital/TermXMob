@@ -11,6 +11,15 @@ from termx.config import ConfigStore, available_shells
 from termx.desktop.capabilities import probe_desktop
 
 
+def _process_discovery_supported() -> bool:
+    from termx.processes import supported
+
+    try:
+        return supported()
+    except Exception:
+        return False
+
+
 def hostname() -> str:
     return socket.gethostname()
 
@@ -51,6 +60,20 @@ def machine_snapshot(
             "agent": True,
             "agent_shell": True,
             "agent_computer": desktop.remote_screen,
+            "agent_tools_v2": True,
+            "agent_context_v2": True,
+            "agent_parallel_tools": True,
+            "agent_streaming": True,
+            "agent_recovery": True,
+            "agent_subagents": True,
+            "computer_observation_v2": True,
+            "conversations": True,
+            "custom_agents": True,
+            "agent_worktrees": True,
+            "activity": True,
+            "process_discovery": _process_discovery_supported(),
+            "runbooks": True,
+            "device_scopes_v2": True,
             "editor": True,
             "editor_git": shutil.which("git") is not None,
             "editor_lsp": True,

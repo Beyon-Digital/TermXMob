@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import Any
 
 from termx.desktop.capture import grab_jpeg, list_displays, pointer_target
-from termx.desktop.input import apply_event
+from termx.desktop.input import apply_event, clipboard_get, clipboard_set
 
 MAX_ACTIONS = 12
 
@@ -146,6 +147,58 @@ class ComputerController:
                     raise asyncio.CancelledError
                 await asyncio.to_thread(apply_event, {"type": "text", "data": character})
             return
+        if kind == "paste_text":
+            text = str(action.get("text") or "")
+            if not text:
+                return
+            if not await self._paste_text(text):
+                # Clipboard/native paste unavailable on this backend — the
+                # per-character path remains the safe fallback.
+                for character in text:
+                    if cancel is not None and cancel.is_set():
+                        raise asyncio.CancelledError
+                    await asyncio.to_thread(apply_event, {"type": "text", "data": character})
+            return
+        if kind in {"mouse_down", "mouse_up"}:
+            await asyncio.to_thread(
+                apply_event,
+                {
+                    "type": "pointer",
+                    "action": "down" if kind == "mouse_down" else "up",
+                    "x": float(action.get("x") or 0) / max(width, 1),
+                    "y": float(action.get("y") or 0) / max(height, 1),
+                    "button": _button(action.get("button")),
+                },
+                target,
+            )
+            return
+        if kind in {"key_down", "key_up"}:
+            keys = action.get("keys") or action.get("key") or []
+            if isinstance(keys, str):
+                keys = [keys]
+            normalized = [_key_name(key) for key in keys if str(key).strip()]
+            modifiers = [key for key in normalized if key in _MODIFIERS]
+            regular = [key for key in normalized if key not in _MODIFIERS]
+            for key in regular or modifiers:
+                await asyncio.to_thread(
+                    apply_event,
+                    {
+                        "type": "key",
+                        "key": key,
+                        "action": "down" if kind == "key_down" else "up",
+                        "modifiers": modifiers,
+                    },
+                )
+            return
+        if kind == "release_all":
+            await self.release_all()
+            return
+        if kind == "set_display":
+            display_id = str(action.get("display_id") or "").strip()
+            if not display_id:
+                raise ValueError("set_display requires a display_id")
+            self.display_id = display_id
+            return
         if kind == "keypress":
             keys = action.get("keys") or []
             if isinstance(keys, str):
@@ -168,6 +221,26 @@ class ComputerController:
                 )
             return
         raise ValueError(f"unsupported computer action: {kind}")
+
+    async def _paste_text(self, text: str) -> bool:
+        """Paste via the native clipboard bridge; False when unsupported.
+
+        Verified by reading the clipboard back — clipboard_set is a no-op on
+        hosts with no clipboard command, so a mismatch means fall back to
+        per-character typing.
+        """
+        try:
+            await asyncio.to_thread(clipboard_set, text)
+            if await asyncio.to_thread(clipboard_get) != text:
+                return False
+            modifier = "meta" if sys.platform == "darwin" else "control"
+            await asyncio.to_thread(
+                apply_event,
+                {"type": "key", "key": "v", "action": "tap", "modifiers": [modifier]},
+            )
+            return True
+        except Exception:
+            return False
 
 
 def _button(value: Any) -> int:
