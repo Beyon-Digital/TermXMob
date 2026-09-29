@@ -364,8 +364,27 @@ tasks:
       - "test_agent.py: test_worktree_task_runs_in_isolated_checkout (cwd redirect, branch+README, events), test_worktree_apply_merges_into_base (file lands in base, branch deleted), test_worktree_discard_requires_confirm (409 gate + confirm), test_worktree_keep_marks_without_merging, test_worktree_mode_validation (non-git/ask/invalid/direct), test_worktree_rest_endpoints (404, active view, 409, confirmed discard)"
       - "uv run pytest tests -q -> 297 passed, 10 skipped"
     notes: worktrees live under TERMX_CONFIG_DIR so the base checkout is never touched; agent boundary = worktree path itself
-  - id: PROD-004..006 / SEC-001..002 / VRF-001
-    title: Activity, ports, runbooks, scopes v2, final verification
+  - id: PROD-004
+    title: Activity Center aggregation API
+    status: done
+    depends_on: [AG2-014]
+    owner: devin
+    write_scope:
+      - src/termx/activity.py (new: normalized Termx-owned snapshot over agent tasks, PTY sessions, previews, tunnels, forwards, virtual displays, desktop viewers)
+      - src/termx/app.py (GET /api/activity, WS /api/activity/events, _require_any_scope)
+      - src/termx/desktop/session.py (viewer_count in snapshot)
+      - src/termx/machine.py (capabilities.activity)
+    acceptance:
+      - "every record is {id,kind,project_id,title,state,started_at,updated_at,actions[]}; kinds agent|terminal|preview|tunnel|forward|desktop"
+      - "project_id resolved by longest registered-project root prefix on task cwd / session live_cwd"
+      - "only Termx-owned surfaces; no arbitrary host processes"
+      - "GET gated by any of agent-view|screen-view|terminal; WS closes 4401/4403 and streams activity.upsert/activity.remove diffs every 2s"
+    evidence:
+      - "test_agent.py: test_activity_endpoint_and_snapshot (401 gate, normalized keys, agent/terminal project matching, preview url), test_activity_ws_pushes_changes (preview upsert observed live)"
+      - "uv run pytest tests -q -> 299 passed, 10 skipped"
+    notes: WS is a poll-diff every 2s — no cross-manager event plumbing needed; tick-free updated_at keeps diffs quiet
+  - id: PROD-005..006 / SEC-001..002 / VRF-001
+    title: Ports, runbooks, scopes v2, final verification
     status: pending
     depends_on: [AG2-017, PROD-001]
     owner: unassigned

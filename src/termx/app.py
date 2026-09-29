@@ -370,6 +370,13 @@ def _require_scope(state: AppState, provided: str | None, scope: str) -> None:
         raise HTTPException(status_code=403, detail=f"missing scope: {scope}")
 
 
+def _require_any_scope(state: AppState, provided: str | None, scopes: tuple[str, ...]) -> None:
+    if not state.auth.check(provided):
+        raise HTTPException(status_code=401, detail="invalid passcode")
+    if not any(state.auth.allows(provided, scope) for scope in scopes):
+        raise HTTPException(status_code=403, detail=f"missing scope: {'|'.join(scopes)}")
+
+
 def create_app(state: AppState | None = None, web_dir: Path | None = None) -> FastAPI:
     state = state or AppState()
 
@@ -927,6 +934,53 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         log_event("agent_worktree", task_id=task_id, action=body.action)
         return {"worktree": worktree}
+
+    # ------------------------------------------------------------------
+    # Activity Center (PROD-004): normalized Termx-owned activity.
+    ACTIVITY_SCOPES = ("agent-view", "screen-view", "terminal")
+
+    @app.get("/api/activity")
+    def get_activity(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        from termx.activity import activity_snapshot
+
+        _require_any_scope(state, provided(x_termx_passcode, authorization, k), ACTIVITY_SCOPES)
+        return activity_snapshot(state)
+
+    @app.websocket("/api/activity/events")
+    async def activity_events_socket(websocket: WebSocket, k: str | None = None) -> None:
+        from termx.activity import activity_snapshot
+
+        token = extract_passcode(
+            websocket.headers.get("x-termx-passcode"),
+            websocket.headers.get("authorization"),
+            k,
+        )
+        if not state.auth.check(token):
+            await websocket.close(code=4401)
+            return
+        if not any(state.auth.allows(token, scope) for scope in ACTIVITY_SCOPES):
+            await websocket.close(code=4403)
+            return
+        await websocket.accept()
+        last: dict[str, dict[str, object]] = {}
+        try:
+            while True:
+                snapshot = activity_snapshot(state)
+                current = {item["id"]: item for item in snapshot["activity"]}
+                for item_id, item in current.items():
+                    previous = last.get(item_id)
+                    if previous != item:
+                        await websocket.send_json({"type": "activity.upsert", "activity": item})
+                for item_id in last.keys() - current.keys():
+                    await websocket.send_json({"type": "activity.remove", "id": item_id})
+                last = current
+                await asyncio.sleep(2.0)
+        except WebSocketDisconnect:
+            pass
 
     @app.get("/api/agent/storage")
     def get_agent_storage(

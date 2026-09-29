@@ -5,6 +5,7 @@ import base64
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -2755,3 +2756,82 @@ def test_worktree_rest_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         )
         assert confirmed.status_code == 200
         assert confirmed.json()["worktree"]["status"] == "discarded"
+
+
+# ---------------------------------------------------------------------------
+# PROD-004 — Activity Center
+
+
+def test_activity_endpoint_and_snapshot(tmp_path: Path) -> None:
+    adapter = FakeAdapter()
+    store = AgentStore(tmp_path / "act.sqlite3", tmp_path / "act-artifacts")
+    state = AppState(
+        passcode="secret",
+        agent_store=store,
+        credentials=CredentialStore(memory={}),
+        adapter_factory=lambda _provider, _key: adapter,
+    )
+    state.agent._computer = FakeComputer()  # type: ignore[assignment]
+    headers = {"x-termx-passcode": "secret"}
+
+    with TestClient(create_app(state, web_dir=None)) as client:
+        assert client.get("/api/activity").status_code == 401
+        project = state.projects.register(str(tmp_path), "demo")
+        state.projects.add_preview(project["id"], "dev", "http://127.0.0.1:3000")
+        session = state.sessions.create(title="build shell", cwd=str(tmp_path))
+        state.agent.save_provider(
+            provider_id="fake",
+            kind="openai-compatible",
+            name="Fake",
+            base_url="http://127.0.0.1:9/v1",
+            model="m",
+            capabilities=["shell"],
+        )
+        task = client.post(
+            "/api/agent/tasks",
+            json={"prompt": "check it", "cwd": str(tmp_path), "provider_id": "fake"},
+            headers=headers,
+        ).json()
+
+        activity = client.get("/api/activity", headers=headers).json()["activity"]
+        by_kind = {}
+        for item in activity:
+            assert set(item) >= {
+                "id", "kind", "project_id", "title", "state",
+                "started_at", "updated_at", "actions",
+            }
+            by_kind.setdefault(item["kind"], []).append(item)
+        agent_item = next(i for i in by_kind["agent"] if i["id"] == f"agent:{task['id']}")
+        assert agent_item["project_id"] == project["id"]
+        assert "stop" in agent_item["actions"]
+        term_item = next(i for i in by_kind["terminal"] if i["id"] == f"terminal:{session.id}")
+        assert term_item["state"] == "running"
+        assert term_item["project_id"] == project["id"]
+        prev_item = by_kind["preview"][0]
+        assert prev_item["url"] == "http://127.0.0.1:3000"
+        state.sessions.kill(session.id)
+
+
+def test_activity_ws_pushes_changes(tmp_path: Path) -> None:
+    state = AppState(
+        passcode="secret",
+        agent_store=AgentStore(tmp_path / "ws.sqlite3", tmp_path / "ws-artifacts"),
+        credentials=CredentialStore(memory={}),
+        adapter_factory=lambda _p, _k: FakeAdapter(),
+    )
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        with client.websocket_connect("/api/activity/events?k=secret") as ws:
+            project = state.projects.register(str(tmp_path), "demo")
+            state.projects.add_preview(project["id"], "dev", "http://127.0.0.1:8000")
+            deadline = time.time() + 8
+            seen: dict[str, dict] = {}
+            while time.time() < deadline:
+                msg = ws.receive_json()
+                if msg["type"] == "activity.upsert":
+                    seen[msg["activity"]["id"]] = msg["activity"]
+                if any(key.startswith("preview:") for key in seen):
+                    break
+            assert any(key.startswith("preview:") for key in seen), seen
+        # stale terminal rows don't leak into a second snapshot
+        assert client.get("/api/activity", headers=headers).status_code == 200

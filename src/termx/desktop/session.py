@@ -172,6 +172,7 @@ class DesktopManager:
             "selected_display": selected,
             "view_only": self.view_only,
             "permissions": permission_snapshot(),
+            "viewer_count": len(self._active),
             "fps": int(round(self._fps)),
             "target_fps": self._target_fps,
             "last_capture_ms": self._last_capture_ms,

@@ -493,3 +493,25 @@ Resolution is explicit, never silent:
   (VRF "never delete a worktree containing unknown user changes"). Resolutions are
   one-way; repeating a terminal action returns the stored record.
 - Capability: `machine.capabilities.agent_worktrees`.
+
+## 20. Activity Center (PROD-004)
+
+`termx.activity.activity_snapshot(state)` normalizes Termx-owned activity into
+`{id, kind, project_id, title, state, started_at, updated_at, actions[]}`:
+
+- **agent** — `agent_store.list_tasks(200)`; `stop`/`cancel` actions only while
+  the task is in an ACTIVE state; `project_id` via longest project-root prefix
+  on the task cwd (worktree cwds still resolve through the repo path when the
+  worktree sits under a registered root, else None).
+- **terminal** — live `SessionManager` sessions; `updated_at` tracks last PTY
+  output; `state` = running|exited.
+- **preview** — per-project saved previews (state `active`; `delete` action).
+- **tunnel** — active `TunnelManager.status_public()` only.
+- **forward** — running `ForwardManager.statuses()` joined with config rules.
+- **desktop** — virtual displays (with owner) plus a viewer-count record when
+  `DesktopManager._active` is non-empty (exposed as `viewer_count` in snapshot).
+
+Endpoints: `GET /api/activity` gated by `_require_any_scope(agent-view |
+screen-view | terminal)`; `WS /api/activity/events` (same auth, closes 4401 /
+4403) streams `activity.upsert` / `activity.remove` diffs computed by re-running
+the snapshot every 2s — no cross-manager event plumbing. `capabilities.activity`.

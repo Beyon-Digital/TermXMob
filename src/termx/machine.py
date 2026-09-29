@@ -61,6 +61,7 @@ def machine_snapshot(
             "conversations": True,
             "custom_agents": True,
             "agent_worktrees": True,
+            "activity": True,
             "editor": True,
             "editor_git": shutil.which("git") is not None,
             "editor_lsp": True,
