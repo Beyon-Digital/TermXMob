@@ -3925,3 +3925,18 @@ def test_windows_flags_not_read_as_outside_paths(tmp_path: Path, monkeypatch: py
     # ~ and parent traversal still gate on Windows.
     assert evaluate_shell("type ~\\secret.txt", str(tmp_path)).approval_required is True
     assert evaluate_shell("type ..\\up.txt", str(tmp_path)).approval_required is True
+
+
+def test_windows_unquoted_drive_paths_are_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """shlex(posix=True) strips `C:\\a\\b.txt` to `C:ab.txt` — raw extraction
+    must still surface drive/UNC paths so they can be gated."""
+    import termx.agent.policy as policy
+
+    monkeypatch.setattr(policy, "_WINDOWS", True)
+    candidates = policy._windows_candidates(
+        'type C:\\Users\\alice\\secrets.txt & echo done'
+    )
+    assert candidates == ["C:\\Users\\alice\\secrets.txt"]
+    candidates = policy._windows_candidates('type "C:\\a b\\x.txt" \\\\srv\\share')
+    assert candidates == ["C:\\a b\\x.txt", "\\\\srv\\share"]
+    assert policy._windows_candidates("whoami /groups") == []
