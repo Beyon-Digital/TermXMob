@@ -554,3 +554,54 @@ def test_git_commondir_config_and_hooks_read_only(tmp_path):
     # Config reads still work.
     _, out = asyncio.run(_run(runner, _spec(wt, "git config user.email")))
     assert "t@t" in out
+
+
+def test_git_commondir_packed_refs_writable(tmp_path):
+    """packed-refs must stay writable (fetch --prune rewrites it) while
+    worktrees/ and this gitdir's pointer files stay ro."""
+    import subprocess
+
+    base = tmp_path / "base3"
+    base.mkdir()
+    for args in (
+        ["git", "-C", str(base), "init", "-b", "main"],
+        ["git", "-C", str(base), "config", "user.email", "t@t"],
+        ["git", "-C", str(base), "config", "user.name", "t"],
+        ["git", "-C", str(base), "commit", "--allow-empty", "-m", "init"],
+        ["git", "-C", str(base), "worktree", "add", "-b", "wt3", str(tmp_path / "wt3")],
+    ):
+        subprocess.run(args, check=True, capture_output=True)
+    wt = tmp_path / "wt3"
+    # Move a ref into packed-refs host-side so the sandbox must rewrite it.
+    subprocess.run(
+        ["git", "-C", str(base), "pack-refs", "--all"], check=True, capture_output=True
+    )
+    common = (base / ".git").resolve()
+    packed = common / "packed-refs"
+    assert packed.is_file()
+    runner = _runner(tmp_path)
+    # Ref deletion rewrites packed-refs (+ lock file in the commondir root).
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                wt,
+                "git update-ref -d refs/heads/main && echo PRUNED || echo FAILED",
+            ),
+        )
+    )
+    assert "PRUNED" in out, out
+    # Other worktrees' metadata stays ro.
+    _, out = asyncio.run(
+        _run(runner, _spec(wt, f"touch {common}/worktrees/x 2>/dev/null && echo W || echo D"))
+    )
+    assert "D" in out and "W" not in out
+    # The gitdir's commondir pointer file stays ro.
+    gitdir = common / "worktrees" / "wt3"
+    _, out = asyncio.run(
+        _run(
+            runner,
+            _spec(wt, f"echo x >> {gitdir}/commondir 2>/dev/null && echo W || echo D"),
+        )
+    )
+    assert "D" in out and "W" not in out

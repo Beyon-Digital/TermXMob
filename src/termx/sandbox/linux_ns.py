@@ -33,6 +33,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -78,6 +79,19 @@ _EPHEMERAL_HOME = "/tmp/termx-home"
 # 0600 under the 0700 state dir and swept once consumed.
 _ENVFILE_NS = "/tmp/termx-env"
 _ENVFILE_MAX_AGE_S = 120
+# How long after spawn the host-side env file may linger (bwrap's mount
+# phase is <1s; 15s leaves headroom for a busy launcher).
+_ENVFILE_UNLINK_S = 15
+# Env keys that are code-execution vectors when set, never data: an inner
+# shell honoring them would run a script it can read inside the sandbox.
+_ENV_DENYLIST = frozenset({"ENV", "BASH_ENV", "SHELLOPTS", "PS4", "CDPATH"})
+
+
+def _unlink_quiet(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass
 
 # prlimit defaults for every restricted spawn (per-tree bounds; pids counts
 # the real uid so it is kept generous enough to avoid false failures).
@@ -191,7 +205,15 @@ class LinuxNamespaceRunner:
         # still point at the mounted private dirs.
         env["HOME"] = str(home) if home else _EPHEMERAL_HOME
         env["TMPDIR"] = "/tmp"
-        return self._argv(spec, env, home)
+        envfile = self._env_file(env)
+        # bwrap reads the file during its mount phase; drop the 0600 host
+        # copy soon after, whichever caller (spawn or the pty layer's
+        # spawn_argv) performs the actual exec. The age sweep stays as
+        # the crash path.
+        timer = threading.Timer(_ENVFILE_UNLINK_S, _unlink_quiet, args=(envfile,))
+        timer.daemon = True
+        timer.start()
+        return self._argv(spec, env, home, envfile)
 
     def _env_file(self, env: dict[str, str]) -> Path:
         envdir = self._state_dir / "env"
@@ -202,6 +224,8 @@ class LinuxNamespaceRunner:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             for key, value in env.items():
+                if key in _ENV_DENYLIST:
+                    continue
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
                     continue
                 fh.write(f"{key}={shlex.quote(value)}\n")
@@ -238,7 +262,9 @@ class LinuxNamespaceRunner:
             return self._state_dir / "home" / _safe_name(spec.task_id)
         return None
 
-    def _argv(self, spec: SpawnSpec, env: dict[str, str], home: Path | None) -> list[str]:
+    def _argv(
+        self, spec: SpawnSpec, env: dict[str, str], home: Path | None, envfile: Path
+    ) -> list[str]:
         argv = [_BWRAP or "bwrap"]
         argv += [
             "--unshare-user",
@@ -287,31 +313,26 @@ class LinuxNamespaceRunner:
             # Ephemeral HOME inside the per-ns tmpfs — nothing persists to a
             # shared dir, so an unrelated earlier run's files can't leak in.
             # --chmod makes it writable by the in-ns uid on bwrap/tmpfs
-            # combos where the fresh dir lands root-owned.
-            argv += ["--dir", _EPHEMERAL_HOME, "--chmod", "0777", _EPHEMERAL_HOME]
+            # combos where the fresh dir lands root-owned. 0700 since the
+            # dir is created for the mapped uid — no need for world write.
+            argv += ["--dir", _EPHEMERAL_HOME, "--chmod", "0700", _EPHEMERAL_HOME]
             seen.add(_EPHEMERAL_HOME)
-        envfile = self._env_file(env)
         argv += ["--ro-bind", str(envfile), _ENVFILE_NS]
         seen.add(_ENVFILE_NS)
         workspace = str(Path(spec.workspace_root).resolve())
         argv += ["--bind", workspace, workspace]
         seen.add(workspace)
         # Linked-git-worktree metadata: the worktree's `.git` file points at
-        # <base>/.git/worktrees/<name>. The shared commondir mounts ro —
-        # commits still work (objects/refs/logs plus the worktree gitdir
-        # bind rw below) but `git config`, hooks, and packed-refs cannot be
-        # rewritten from inside the sandbox.
-        git_ro, git_rw = _git_mounts(Path(workspace))
-        for ro_dir in git_ro:
-            resolved = str(ro_dir)
+        # <base>/.git/worktrees/<name>. The shared commondir mounts rw
+        # (packed-refs + lock files need it) with ro overlays for config,
+        # hooks, other worktrees' dirs, and this gitdir's pointer files —
+        # the sandbox cannot retarget hooks or rewrite repo config (which
+        # would run host-side outside the sandbox).
+        for git_path, mode in _git_mounts(Path(workspace)):
+            resolved = str(git_path)
             if resolved not in seen:
                 seen.add(resolved)
-                argv += ["--ro-bind", resolved, resolved]
-        for rw_dir in git_rw:
-            resolved = str(rw_dir)
-            if resolved not in seen:
-                seen.add(resolved)
-                argv += ["--bind", resolved, resolved]
+                argv += [mode, resolved, resolved]
         for root in spec.writable_roots:
             resolved = str(Path(root).resolve())
             if resolved not in seen:
@@ -360,20 +381,20 @@ def _safe_name(value: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in value)[:80] or "agent"
 
 
-def _git_mounts(workspace: Path) -> tuple[list[Path], list[Path]]:
-    """(read-only, read-write) git metadata for a linked worktree.
+def _git_mounts(workspace: Path) -> list[tuple[Path, str]]:
+    """Ordered (path, bwrap bind flag) ops for a linked worktree's git metadata.
 
     A worktree's `.git` is a text file (`gitdir: <abs>`) pointing into the
     base repository's `.git/worktrees/<name>`; that dir's `commondir` in
-    turn points at the shared object store. The commondir mounts
-    read-only, then the pieces a commit needs mount rw over it: the
-    worktree gitdir (index/HEAD/FETCH_HEAD), objects, refs, and logs.
-    `config`, `hooks`, and `packed-refs` stay ro — the sandbox cannot
-    retarget hooks or rewrite repo config (which would run host-side
-    outside the sandbox).
+    turn points at the shared object store. The commondir mounts rw —
+    ref maintenance (fetch --prune on packed-refs, lock files) needs the
+    directory writable — with ro overlays for what must never change:
+    `config` and `hooks` (a retargeted hook executes host-side, outside
+    the sandbox), `worktrees/` (other tasks' metadata), and inside the
+    rw gitdir the `config.worktree`/`commondir`/`gitdir` pointer files.
     """
     dotgit = workspace / ".git"
-    empty: tuple[list[Path], list[Path]] = ([], [])
+    empty: list[tuple[Path, str]] = []
     if not dotgit.is_file():
         return empty
     try:
@@ -394,7 +415,7 @@ def _git_mounts(workspace: Path) -> tuple[list[Path], list[Path]]:
         if not commondir_file.is_file():
             # Standalone gitdir (e.g. submodule-less main worktree): the
             # repo IS the checkout — no shared state to protect.
-            return [], [gitdir]
+            return [(gitdir, "--bind")]
         common = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
         if not common:
             return empty
@@ -404,19 +425,22 @@ def _git_mounts(workspace: Path) -> tuple[list[Path], list[Path]]:
         common_path = common_path.resolve(strict=False)
         if not common_path.is_dir():
             return empty
-        rw = [gitdir]
-        for sub in ("objects", "refs", "logs"):
+        # Mount order matters — later binds shadow earlier ones:
+        #   1. common rw base   (refs/objects/packed-refs + lock files)
+        #   2. ro overlays      (config, hooks, other worktrees' dirs)
+        #   3. gitdir rw        (this worktree's index/HEAD/FETCH_HEAD)
+        #   4. ro pointer files (config.worktree, commondir, gitdir)
+        ops: list[tuple[Path, str]] = [(common_path, "--bind")]
+        for sub in ("config", "hooks", "worktrees"):
             child = common_path / sub
-            if not child.is_dir():
-                # logs/ is created lazily by git — a missing dir under the
-                # ro parent would be EROFS and abort commits, so create it
-                # host-side up front. Harmless, standard layout.
-                try:
-                    child.mkdir(parents=True, exist_ok=True)
-                except OSError:
-                    continue
-            rw.append(child)
-        return [common_path], rw
+            if child.exists():
+                ops.append((child, "--ro-bind"))
+        ops.append((gitdir, "--bind"))
+        for pointer in ("config.worktree", "commondir", "gitdir"):
+            child = gitdir / pointer
+            if child.exists():
+                ops.append((child, "--ro-bind"))
+        return ops
     except OSError:
         return empty
 
