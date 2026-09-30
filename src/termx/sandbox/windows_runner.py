@@ -41,12 +41,19 @@ Honesty notes (also surfaced through ``capabilities()``):
   open higher-integrity processes for write access, but it can still read
   what the user's DACL allows. A stronger **dedicated restricted user** mode
   activates automatically when a ``termx-sandbox`` local account exists and
-  credentials were provisioned (``%ProgramData%\\termx\\sandbox-user.cred``,
-  a DPAPI machine-scope blob holding the generated password — e.g. written
-  by an elevated ``termx sandbox provision`` step): the child then runs via
-  ``CreateProcessWithLogonW`` as that user, gets DACL grants instead of
-  integrity labels, and reports ``identity_isolation=True``,
-  ``strength='restricted-user'``.
+  its credential both exists and verifies (``LogonUser`` probe at runner
+  construction; creds in ``%ProgramData%\\termx\\sandbox-user.cred``, a
+  DPAPI machine-scope blob holding the generated password — e.g. written
+  by an elevated ``termx sandbox provision`` step): the shim then logs that
+  user on (``LogonUser`` INTERACTIVE) and applies the *same*
+  restricted-token pipeline — privileges stripped, low integrity, job
+  object — so the child is a low-IL ``termx-sandbox``. Write denial is then
+  two independent layers (mandatory no-write-up *and* foreign-identity
+  DACL), and the backend reports ``identity_isolation=True``,
+  ``strength='restricted-user'``. Spawning an other-user token via
+  ``CreateProcessWithTokenW`` requires the host to hold
+  ``SE_IMPERSONATE_NAME`` (services / elevated hosts do; a standard-user
+  host may not) — a failure raises ``spawn_failed``, never downgrades.
 * ``strength='kernel'`` in token mode: the enforced boundary is kernel
   security machinery (mandatory integrity labels + job objects), not a
   wrapper script. ``'restricted-user'`` is reserved for the separate-user
@@ -54,20 +61,15 @@ Honesty notes (also surfaced through ``capabilities()``):
 
 Residual boundaries worth stating plainly:
 
-* The writable domain is **per-principal, not per-spawn**. Low-integrity
-  labels persist on disk, so every low-IL task under this account shares one
-  writable domain: a later task's child can write a *previous* task's
-  labeled workspace even when that path is absent from its own
-  ``writable_roots``. The boundary enforced here is sandboxed-domain vs.
-  host filesystem, not task vs. task — Windows has no per-process ACL
-  principal short of a distinct token identity, so cross-task file
-  isolation is not provided by this backend.
-* ``windows-user`` mode trades the integrity boundary for an identity
-  boundary: ``CreateProcessWithLogonW`` cannot carry a pre-built restricted
-  token, so the child runs at *medium* IL as ``termx-sandbox``. Its write
-  boundary is DACL-only — host-owned objects are denied (the dominant
-  leak), but anything world-writable (e.g. ``%PUBLIC%``) remains writable
-  outside approved roots. The dedicated user's home/tmp live under
+* The writable domain is **per-principal within a runner's lifetime**.
+  Low-integrity labels and (user-mode) DACL grants are refcounted per spawn
+  and restored when the last holder's shim exits — files a child created
+  keep their low label until that restore walks the tree. If the runner
+  itself dies between a spawn's exit and the restore (SIGKILL, power
+  loss), labels/grants on that task's roots stay on disk: a later low-IL
+  task could then write them without owning them — stale residue, not a
+  live-boundary gap.
+* The dedicated user's home/tmp live under
   ``%ProgramData%\\termx\\sandbox-state`` so ancestor traversal works
   without grants inside the host's private profile tree.
 """
@@ -79,6 +81,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -205,7 +208,7 @@ def _sandbox_user_provisioned() -> bool:
         return False
     try:
         from termx.sandbox import _win_shim as shim
-        return shim.sandbox_user_credentials() is not None
+        return shim.probe_sandbox_user()
     except (ImportError, RuntimeError, OSError):
         return False
 
@@ -226,7 +229,14 @@ class WindowsSandboxRunner:
         self._profile = profile
         base = Path(state_dir) if state_dir is not None else _default_state_dir()
         self._state_dir = base / "sandbox"
-        self._labeled: "set[str]" = set()
+        # Filesystem-boundary bookkeeping: path -> live spawn refs, and the
+        # icacls ops applied on the first ref so the last release can undo
+        # exactly them. Serialised by _label_lock so a release's restore
+        # cannot interleave with another spawn's apply on the same path.
+        self._label_refs: "dict[str, int]" = {}
+        self._label_ops: "dict[str, tuple[str, ...]]" = {}
+        self._label_lock = threading.Lock()
+        self._release_tasks: "set[asyncio.Task]" = set()
         # Dedicated restricted user (stronger identity boundary) when the
         # admin-provisioned account + DPAPI credential exist.
         self._user_mode = _sandbox_user_provisioned()
@@ -271,7 +281,7 @@ class WindowsSandboxRunner:
         env = self._os_env(env)
 
         try:
-            self._apply_fs_boundary(spec, home, tmp)
+            held = self._apply_fs_boundary(spec, home, tmp)
         except OSError as exc:
             raise SandboxFailure(
                 "boundary_setup", f"windows sandbox: filesystem boundary failed: {exc}"
@@ -305,7 +315,11 @@ class WindowsSandboxRunner:
                 req_path.unlink()
             except OSError:
                 pass
+            self._drop_held(held)
             raise SandboxFailure("spawn_failed", f"windows sandbox spawn failed: {exc}") from exc
+        task = asyncio.create_task(self._release_after(process, held))
+        self._release_tasks.add(task)
+        task.add_done_callback(self._release_tasks.discard)
         return StreamedProcess(process, spec, backend=self._backend_name)
 
     # -- internals ------------------------------------------------------
@@ -373,32 +387,92 @@ class WindowsSandboxRunner:
             job["job_time_100ns"] = int(eff.cpu_s * 10_000_000)
         return job
 
-    def _apply_fs_boundary(self, spec: SpawnSpec, home: Path, tmp: Path) -> None:
-        """Make approved roots reachable by the restricted child — once each.
+    def _apply_fs_boundary(
+        self, spec: SpawnSpec, home: Path, tmp: Path
+    ) -> "list[str]":
+        """Make approved roots reachable by the restricted child.
 
-        Token mode: relabel writable roots low-integrity so the low-IL child
-        can write there while the rest of the filesystem stays medium and
-        write-denied. Read-only roots need no grant (readable by default,
-        write-denied by mandatory no-write-up).
+        Writable roots are relabeled low-integrity in BOTH modes (the child
+        is always a low-IL token — dedicated-user mode strips privileges and
+        forces low IL on the LogonUser token too), so mandatory no-write-up
+        denies every write outside the approved set. User mode additionally
+        needs DACL grants: the foreign ``termx-sandbox`` identity has no
+        default rights on the host user's objects.
 
-        User mode: DACL-grant the sandbox user's SID writable access on
-        writable roots and read access on read-only roots; everything the
-        host user owns stays DACL-protected from the foreign identity.
+        Each path is refcounted: the first live spawn applies the boundary,
+        the last release restores it (medium IL, grants removed) so a stale
+        low label can never widen a later task's write domain. Returns the
+        keys this spawn holds refs on.
         """
         writable = [Path(p).resolve() for p in (spec.workspace_root, *spec.writable_roots)]
         writable += [home, tmp]
         ro = [Path(p).resolve() for p in spec.read_only_roots]
-        for path in dict.fromkeys(writable + ro):
-            key = str(path)
-            if key in self._labeled:
-                continue
-            if self._user_mode:
-                access = "F" if path in writable else "R"
-                self._icacls([key, "/grant", f"{_SANDBOX_USER}:(OI)(CI)({access})", "/T"])
-            else:
-                if path in writable:
-                    self._icacls([key, "/setintegritylevel", "(OI)(CI)L", "/T"])
-            self._labeled.add(key)
+        held: list[str] = []
+        try:
+            with self._label_lock:
+                for path in dict.fromkeys(writable + ro):
+                    key = str(path)
+                    kind = "w" if path in writable else "r"
+                    self._label_refs[key] = self._label_refs.get(key, 0) + 1
+                    held.append(key)
+                    if self._label_refs[key] > 1:
+                        continue
+                    ops: list[str] = []
+                    if self._user_mode:
+                        access = "F" if kind == "w" else "R"
+                        self._icacls(
+                            [key, "/grant", f"{_SANDBOX_USER}:(OI)(CI)({access})", "/T"]
+                        )
+                        ops.append("grant")
+                    if kind == "w":
+                        self._icacls(
+                            [key, "/setintegritylevel", "(OI)(CI)L", "/T"]
+                        )
+                        ops.append("il")
+                    self._label_ops[key] = tuple(ops)
+        except Exception:
+            with self._label_lock:
+                for key in held:
+                    if self._label_refs.get(key, 0) <= 1:
+                        self._label_refs.pop(key, None)
+                        self._label_ops.pop(key, None)
+                    else:
+                        self._label_refs[key] -= 1
+            raise
+        return held
+
+    async def _release_after(self, process, held: "list[str]") -> None:
+        """Restore the fs boundary once the shim exits (normal or killed)."""
+        try:
+            await process.wait()
+        finally:
+            await asyncio.to_thread(self._drop_held, held)
+
+    def _drop_held(self, held: "list[str]") -> None:
+        """Decrement refs; on the last drop undo the labels/grants applied."""
+        restore: list[list[str]] = []
+        with self._label_lock:
+            for key in held:
+                refs = self._label_refs.get(key, 0)
+                if refs <= 1:
+                    self._label_refs.pop(key, None)
+                    ops = self._label_ops.pop(key, ())
+                    if "il" in ops:
+                        restore.append(
+                            [key, "/setintegritylevel", "(OI)(CI)M", "/T"]
+                        )
+                    if "grant" in ops:
+                        restore.append([key, "/remove:g", _SANDBOX_USER, "/T"])
+                else:
+                    self._label_refs[key] = refs - 1
+        for args in restore:
+            try:
+                self._icacls(args)
+            except OSError:
+                # Path gone or already reset — a failed restore leaves a
+                # stale label on an existing tree; it widens writes for
+                # later low-IL tasks on that path only (documented residual).
+                pass
 
     @staticmethod
     def _icacls(args: list[str]) -> None:

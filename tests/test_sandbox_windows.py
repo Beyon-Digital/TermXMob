@@ -185,13 +185,14 @@ def test_cannot_tamper_with_unrelated_host_process(tmp_path):
     check denies VM_WRITE/CREATE_THREAD/DUP_HANDLE/SET_INFO, i.e. the whole
     memory-tamper and injection surface.
 
-    Documented limit: PROCESS_TERMINATE is NOT in the integrity write-up
-    mask on Windows, so a same-user low-IL process can still kill its
-    siblings — inherent to single-identity mode; only the provisioned
-    dedicated-user mode closes that."""
+    PROCESS_TERMINATE is NOT in the integrity write-up mask on Windows, so
+    in token mode (same identity) a low-IL child can still kill its host
+    siblings — inherent to single-identity mode. User mode (a different
+    account) closes that too, and is asserted when provisioned."""
     ws = tmp_path / "ws"
     ws.mkdir()
     runner = _runner(tmp_path)
+    user_mode = runner.capabilities().backend == "windows-user"
     host_pid = os.getpid()
     script = (
         "import ctypes,sys,ctypes.wintypes as wt;"
@@ -199,7 +200,7 @@ def test_cannot_tamper_with_unrelated_host_process(tmp_path):
         "k.OpenProcess.restype=wt.HANDLE;k.OpenProcess.argtypes=[wt.DWORD,wt.BOOL,wt.DWORD];"
         "pid=int(sys.argv[1]);"
         "checks=[(0x20,'VM_WRITE'),(0x2,'CREATE_THREAD'),(0x400,'DUP_HANDLE'),"
-        "(0x40,'SET_INFO'),(0x800,'SUSPEND_RESUME'),(0x8,'VM_OPERATION')];"
+        "(0x40,'SET_INFO'),(0x800,'SUSPEND_RESUME'),(0x8,'VM_OPERATION'),(0x1,'TERMINATE')];"
         "[print(n,'OK' if k.OpenProcess(m,False,pid) else 'DENIED') for m,n in checks]"
     )
     spec = SpawnSpec(
@@ -210,8 +211,11 @@ def test_cannot_tamper_with_unrelated_host_process(tmp_path):
         writable_roots=[str(ws)],
     )
     _, out = asyncio.run(_run(runner, spec))
-    for right in ("VM_WRITE", "CREATE_THREAD", "DUP_HANDLE", "SET_INFO",
-                  "SUSPEND_RESUME", "VM_OPERATION"):
+    denied = {"VM_WRITE", "CREATE_THREAD", "DUP_HANDLE", "SET_INFO",
+              "SUSPEND_RESUME", "VM_OPERATION"}
+    if user_mode:
+        denied.add("TERMINATE")  # different account: no kill rights on host procs
+    for right in denied:
         assert f"{right} DENIED" in out, right
         assert f"{right} OK" not in out
 
@@ -469,6 +473,59 @@ def test_run_shell_path_runs_sandboxed(tmp_path):
         )
     )
     assert "Low Mandatory Level" in result.output
+
+
+def test_user_mode_runs_as_restricted_identity(tmp_path):
+    """Dedicated-user mode: the child is the termx-sandbox account at Low
+    Mandatory Level — identity AND integrity boundaries both real."""
+    runner = _runner(tmp_path)
+    caps = runner.capabilities()
+    if caps.backend != "windows-user":
+        pytest.skip("termx-sandbox account not provisioned on this host")
+    assert caps.strength == "restricted-user"
+    assert caps.identity_isolation
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    _, out = asyncio.run(
+        _run(runner, _spec(
+            ws, 'whoami & whoami /groups | findstr /c:"Mandatory Label"')))
+    assert "termx-sandbox" in out
+    assert "Low Mandatory Level" in out
+
+
+def test_workspace_labels_restored_after_spawn(tmp_path):
+    """A spawn's low-IL label + DACL grant must be revoked when the last
+    holder exits — otherwise a later low-IL task under the same principal
+    could write a workspace that was never in its SpawnSpec."""
+    ws_a = tmp_path / "ws-a"
+    ws_a.mkdir()
+    ws_b = tmp_path / "ws-b"
+    ws_b.mkdir()
+    runner = _runner(tmp_path)
+
+    async def run_once(spec):
+        spawned = await runner.spawn(spec)
+        out = await asyncio.wait_for(spawned.process.stdout.read(), timeout=45)
+        await asyncio.wait_for(spawned.wait(), timeout=15)
+        return out.decode("utf-8", "replace")
+
+    async def go():
+        out_a = await run_once(_spec(ws_a, "echo seed > a.txt & echo A_OK"))
+        assert "A_OK" in out_a
+        # The release is fire-and-forget on the runner's loop: it must
+        # finish its icacls restore before the next spawn is a fair test.
+        for _ in range(600):
+            if not runner._release_tasks:
+                break
+            await asyncio.sleep(0.05)
+        assert not runner._release_tasks, "label restore never ran"
+        return await run_once(_spec(
+            ws_b,
+            f'echo x > "{ws_a}\\intruder.txt" 2>nul && echo WROTE || echo DENIED'))
+
+    out_b = asyncio.run(go())
+    assert "DENIED" in out_b and "WROTE" not in out_b
+    assert not (ws_a / "intruder.txt").exists()
 
 
 def test_spawn_grants_combines_remembered_and_one_shot(tmp_path):
