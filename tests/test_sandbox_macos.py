@@ -342,16 +342,11 @@ def test_xcode_shim_runs_but_prefs_stay_closed(tmp_path):
     runner = _runner(tmp_path)
     rc, out = asyncio.run(_run(runner, _spec(ws, "/usr/bin/python3 -c 'print(1)'")))
     assert rc == 0 and "1" in out
-    rc, _ = asyncio.run(
-        _run(
-            runner,
-            _spec(
-                ws,
-                "cat /Library/Preferences/SystemConfiguration/preferences.plist",
-            ),
-        )
-    )
-    assert rc != 0
+    prefs = "/Library/Preferences/SystemConfiguration/preferences.plist"
+    if not Path(prefs).is_file():
+        pytest.skip(f"{prefs} does not exist on this host")
+    rc, out = asyncio.run(_run(runner, _spec(ws, f"cat {prefs}")))
+    assert rc != 0 and "Operation not permitted" in out
 
 
 @requires_seatbelt
