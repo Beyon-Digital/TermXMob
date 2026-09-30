@@ -240,7 +240,30 @@ def test_remember_relayed_through_escalated_child(tmp_path: Path) -> None:
         await manager.resolve_approval(parent["id"], parent["approvals"][0]["id"], "approved")
         _, delegate = await wait_for_pending_approval(store, parent["id"], "tool")
         await manager.resolve_approval(parent["id"], delegate["id"], "approved")
-        _, escalated = await wait_for_pending_approval(store, parent["id"], "tool")
+        # The child's consequential call escalates to the parent as a pending
+        # approval carrying child_id — filter for it explicitly: the parent's
+        # own next scripted call can also be pending and its payload lacks
+        # child_id, so an unfiltered wait races on ordering.
+        escalated = None
+        deadline = asyncio.get_running_loop().time() + 3
+        while asyncio.get_running_loop().time() < deadline:
+            current = store.get_task(parent["id"], include_events=True)
+            if current:
+                candidate = next(
+                    (
+                        item
+                        for item in current["approvals"]
+                        if item["status"] == "pending"
+                        and item["kind"] == "tool"
+                        and "child_id" in (item["payload"] or {})
+                    ),
+                    None,
+                )
+                if candidate is not None:
+                    escalated = candidate
+                    break
+            await asyncio.sleep(0.02)
+        assert escalated is not None, "escalated child approval never reached the parent"
         child_id = escalated["payload"]["child_id"]
         # remember=project on the parent-escalated approval writes the rule.
         await manager.resolve_approval(

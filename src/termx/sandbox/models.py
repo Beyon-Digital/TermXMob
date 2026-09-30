@@ -71,6 +71,10 @@ class SpawnSpec:
     purpose: str = ""  # audit label e.g. "run_shell" / "runbook:deploy"
     task_id: str | None = None
     project_id: str | None = None
+    # Optional caller-chosen private HOME — mounted inside the sandbox and
+    # exported as HOME. Backends derive one from task_id/profile when unset;
+    # spawns with neither get an ephemeral (non-persistent) HOME.
+    home: str | None = None
     stdin: "object | None" = None  # asyncio.subprocess stdin target, if any
 
     def validate(self) -> None:

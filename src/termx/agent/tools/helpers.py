@@ -105,9 +105,12 @@ def sandbox_grants(ctx: Any, profile: str, call_id: str = "") -> frozenset[str]:
         return frozenset()
 
 
-def sandbox_network(ctx: Any, profile: str, call_id: str = "") -> str:
-    """Spawn network mode implied by this call's effective capability grants."""
-    grants = sandbox_grants(ctx, profile, call_id)
+def sandbox_network(grants: frozenset[str] | set[str]) -> str:
+    """Spawn network mode implied by an already-resolved grant set.
+
+    Grants must be resolved exactly once per spawn — ``sandbox_grants``
+    consumes one-shot capability grants, so deriving network from a second
+    lookup would see an empty set and silently re-isolate the network."""
     if any(c.startswith("net.outbound") for c in grants):
         return "outbound"
     return "none"

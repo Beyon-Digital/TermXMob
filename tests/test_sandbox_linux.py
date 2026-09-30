@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import threading
 import time
 from pathlib import Path
 
@@ -330,7 +331,10 @@ def test_env_is_clean_and_home_private(tmp_path):
     )
     home_line = [l for l in out.splitlines() if l.startswith("HOME=")][0]
     home = home_line.split("=", 1)[1]
-    assert "/sandbox/home/" in home or home.startswith(str(tmp_path))
+    # Private HOME: task-scoped state dir, caller-pinned dir, or the
+    # per-namespace ephemeral dir — never the real host HOME.
+    assert home != str(Path.home())
+    assert "/sandbox/home/" in home or home.startswith(str(tmp_path)) or home == "/tmp/termx-home"
     assert "TERM=" in out
 
 
@@ -395,3 +399,233 @@ def test_run_shell_path_runs_sandboxed(tmp_path):
         run_shell("id -u", str(ws), runner=runner, profile="agent")
     )
     assert "65534" in result.output
+
+
+def test_taskless_spawn_gets_ephemeral_home(tmp_path):
+    """Two task-less spawns must not share HOME state — leftovers from an
+    unrelated earlier run can never leak into a later one."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    marker = ws / "marker"  # workspace files are out of scope; HOME is the test
+    rc, _ = asyncio.run(
+        _run(runner, _spec(ws, 'mkdir -p "$HOME" && touch "$HOME/leak"'))
+    )
+    assert rc == 0
+    rc, out = asyncio.run(_run(runner, _spec(ws, 'test -e "$HOME/leak" || echo ABSENT')))
+    assert rc == 0
+    assert "ABSENT" in out
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="git worktree as root mask test")
+def test_git_worktree_metadata_writable_but_base_checkout_hidden(tmp_path):
+    """Agent worktrees are the writable project root — git needs the
+    worktree's linked metadata (index/refs/objects) rw while the base
+    checkout's working files stay unmounted."""
+    import subprocess
+
+    base = tmp_path / "base"
+    base.mkdir()
+    subprocess.run(
+        ["git", "-C", str(base), "init", "-b", "main"],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(base), "config", "user.email", "t@t"],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(base), "config", "user.name", "t"],
+        check=True, capture_output=True,
+    )
+    secret = base / "host-secret.txt"
+    secret.write_text("do-not-read")
+    subprocess.run(
+        ["git", "-C", str(base), "commit", "--allow-empty", "-m", "init"],
+        check=True, capture_output=True,
+    )
+    wt = tmp_path / "wt"
+    subprocess.run(
+        ["git", "-C", str(base), "worktree", "add", "-b", "wt-branch", str(wt)],
+        check=True, capture_output=True,
+    )
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                wt,
+                "git status --porcelain >/dev/null && "
+                "git commit --allow-empty -m wt && "
+                "echo GIT_OK",
+            ),
+        )
+    )
+    assert "GIT_OK" in out
+    # The base checkout file tree itself is not mounted — traversal to it
+    # fails (the worktree gitdir bind is the only host .git surface).
+    rc, out = asyncio.run(
+        _run(runner, _spec(wt, f"cat {base}/host-secret.txt || echo HIDDEN"))
+    )
+    assert "HIDDEN" in out
+
+
+def test_ephemeral_home_writable(tmp_path):
+    """A task-less spawn's ephemeral HOME must accept writes from the
+    in-ns uid — package caches and tools storing under $HOME depend on it."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(
+        _run(runner, _spec(ws, 'touch "$HOME/cache" && echo WRITABLE || echo DENIED'))
+    )
+    assert "WRITABLE" in out and "DENIED" not in out
+
+
+def test_custom_env_still_gets_mounted_home(tmp_path):
+    """spec.env overrides the built env but HOME/TMPDIR are the mount
+    contract — they must point at the mounted private dirs regardless."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(ws, 'echo "H=$HOME T=$TMPDIR F=$MY_FLAG"', env={"MY_FLAG": "yes"}),
+        )
+    )
+    assert "F=yes" in out
+    assert "H=/tmp/termx-home" in out
+    assert "T=/tmp" in out
+
+
+def test_env_values_not_on_argv(tmp_path):
+    """Secret-bearing env must not appear in the launcher's argv — host
+    /proc/<pid>/cmdline is world-readable."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    marker = "S3CR3T-MARKER-9f8e7d"
+    spawned = asyncio.run(
+        runner.spawn(_spec(ws, "sleep 5", env={"KEEP_SECRET": marker}))
+    )
+    try:
+        cmdline = Path(f"/proc/{spawned.process.pid}/cmdline").read_bytes()
+        assert marker.encode() not in cmdline, "env value leaked into bwrap argv"
+        assert b"--setenv" not in cmdline
+    finally:
+        spawned.process.kill()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="git worktree as root mask test")
+def test_git_commondir_config_and_hooks_read_only(tmp_path):
+    """The shared commondir mounts ro except objects/refs/logs: commits in
+    the worktree work, but `git config` writes and hook retargeting fail."""
+    import subprocess
+
+    base = tmp_path / "base2"
+    base.mkdir()
+    for args in (
+        ["git", "-C", str(base), "init", "-b", "main"],
+        ["git", "-C", str(base), "config", "user.email", "t@t"],
+        ["git", "-C", str(base), "config", "user.name", "t"],
+        ["git", "-C", str(base), "commit", "--allow-empty", "-m", "init"],
+        ["git", "-C", str(base), "worktree", "add", "-b", "wt2", str(tmp_path / "wt2")],
+    ):
+        subprocess.run(args, check=True, capture_output=True)
+    wt = tmp_path / "wt2"
+    runner = _runner(tmp_path)
+    # Commits still work: objects + refs + logs + the worktree gitdir are rw.
+    rc, out = asyncio.run(
+        _run(runner, _spec(wt, "git commit --allow-empty -m c && echo COMMIT_OK"))
+    )
+    assert "COMMIT_OK" in out, out
+    # Config writes (core.hooksPath retarget → host-side code exec) are EROFS.
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                wt,
+                "git config core.hooksPath /tmp/hooks 2>/dev/null && echo WROTE || echo DENIED",
+            ),
+        )
+    )
+    assert "DENIED" in out and "WROTE" not in out
+    # Config reads still work.
+    _, out = asyncio.run(_run(runner, _spec(wt, "git config user.email")))
+    assert "t@t" in out
+
+
+def test_git_commondir_packed_refs_writable(tmp_path):
+    """packed-refs must stay writable (fetch --prune rewrites it) while
+    worktrees/ and this gitdir's pointer files stay ro."""
+    import subprocess
+
+    base = tmp_path / "base3"
+    base.mkdir()
+    for args in (
+        ["git", "-C", str(base), "init", "-b", "main"],
+        ["git", "-C", str(base), "config", "user.email", "t@t"],
+        ["git", "-C", str(base), "config", "user.name", "t"],
+        ["git", "-C", str(base), "commit", "--allow-empty", "-m", "init"],
+        ["git", "-C", str(base), "worktree", "add", "-b", "wt3", str(tmp_path / "wt3")],
+    ):
+        subprocess.run(args, check=True, capture_output=True)
+    wt = tmp_path / "wt3"
+    # Move a ref into packed-refs host-side so the sandbox must rewrite it.
+    subprocess.run(
+        ["git", "-C", str(base), "pack-refs", "--all"], check=True, capture_output=True
+    )
+    common = (base / ".git").resolve()
+    packed = common / "packed-refs"
+    assert packed.is_file()
+    runner = _runner(tmp_path)
+    # Ref deletion rewrites packed-refs (+ lock file in the commondir root).
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                wt,
+                "git update-ref -d refs/heads/main && echo PRUNED || echo FAILED",
+            ),
+        )
+    )
+    assert "PRUNED" in out, out
+    # Other worktrees' metadata stays ro.
+    _, out = asyncio.run(
+        _run(runner, _spec(wt, f"touch {common}/worktrees/x 2>/dev/null && echo W || echo D"))
+    )
+    assert "D" in out and "W" not in out
+    # The gitdir's commondir pointer file stays ro.
+    gitdir = common / "worktrees" / "wt3"
+    _, out = asyncio.run(
+        _run(
+            runner,
+            _spec(wt, f"echo x >> {gitdir}/commondir 2>/dev/null && echo W || echo D"),
+        )
+    )
+    assert "D" in out and "W" not in out
+
+
+def test_env_sweeper_shared_across_runner_instances(tmp_path):
+    """Fresh runners (one per launch, e.g. runbook steps) share a single
+    sweeper thread per env directory — no per-runner thread leak."""
+    from termx.sandbox import linux_ns
+
+    envdir = tmp_path / "state" / "sandbox" / "env"
+    before = len([t for t in threading.enumerate() if t.name == "termx-env-sweep"])
+    runners = [_runner(tmp_path) for _ in range(3)]
+    for r in runners:
+        r._env_file({"FOO": "bar"})
+    after = len([t for t in threading.enumerate() if t.name == "termx-env-sweep"])
+    assert after - before == 1
+    assert str(envdir) in linux_ns._sweepers
+
+
+def test_env_file_denied_keys_stripped(tmp_path):
+    runner = _runner(tmp_path)
+    path = runner._env_file({"KEEP": "1", "ENV": "/tmp/evil", "BASH_ENV": "/tmp/evil"})
+    text = path.read_text()
+    assert "KEEP" in text and "ENV=" not in text.replace("KEEPENV", "")
+    assert "BASH_ENV" not in text

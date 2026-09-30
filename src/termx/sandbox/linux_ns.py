@@ -27,9 +27,15 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import time
+import uuid
 from pathlib import Path
 
 from termx.sandbox.environment import build_environment
@@ -63,6 +69,77 @@ _GRANTABLE = frozenset(
 # TLS once net.outbound is granted). Guarded by existence — distros differ.
 _ETC_FILES = ("resolv.conf", "hosts", "nsswitch.conf", "passwd", "group")
 _ETC_DIRS = ("ssl", "pki", "ca-certificates")
+
+# Task-less spawns get an ephemeral HOME inside the per-ns tmpfs — it dies
+# with the namespace and can never expose an unrelated run's leftovers.
+_EPHEMERAL_HOME = "/tmp/termx-home"
+
+# Child env is delivered through a sourced file, never `--setenv` argv —
+# argv is world-readable via /proc/<pid>/cmdline, while the envfile is
+# 0600 under the 0700 state dir and swept once consumed.
+_ENVFILE_NS = "/tmp/termx-env"
+_ENVFILE_MAX_AGE_S = 120
+# How often the background sweeper runs (files expire by age, not by a
+# per-spawn timer — a timer can't tell a mounted bind from a stalled one).
+_ENVFILE_SWEEP_S = 30
+# Env keys that are code-execution vectors when set, never data: an inner
+# shell honoring them would run a script it can read inside the sandbox.
+_ENV_DENYLIST = frozenset({"ENV", "BASH_ENV", "SHELLOPTS", "PS4", "CDPATH"})
+
+# One daemon sweeper per env directory per process — runner instances are
+# created per launch (runner_for), so a per-runner thread would leak.
+_sweepers: set[str] = set()
+_sweepers_lock = threading.Lock()
+
+
+def _ensure_sweeper(envdir: Path) -> None:
+    """Recurring daemon sweep of expired env files for this directory.
+
+    A per-spawn timer can't know when bwrap's mount phase finished, so
+    files expire only by age: bwrap's mount phase is <1s in practice, and
+    a launcher stalled past the ~2min expiry window fails visibly rather
+    than silently losing env. One thread per directory across all runner
+    instances; daemon, so it exits with the process.
+    """
+    key = str(envdir)
+    with _sweepers_lock:
+        if key in _sweepers:
+            return
+        _sweepers.add(key)
+
+        def loop() -> None:
+            while True:
+                time.sleep(_ENVFILE_SWEEP_S)
+                LinuxNamespaceRunner._sweep_env_files(envdir)
+
+        threading.Thread(target=loop, daemon=True, name="termx-env-sweep").start()
+
+
+async def _unlink_when_mounted(pid: int, envfile: Path) -> None:
+    """Delete the env file once its bind is confirmed in the child's ns.
+
+    /proc/<pid>/mountinfo exposing the env path proves bwrap's mount
+    phase finished — the host copy is then dead weight (credentials
+    linger ~1s instead of the full age window). If the child dies
+    first, the file is useless; if the mount never lands within the
+    cap, the age sweep still owns cleanup.
+    """
+    mountinfo = Path(f"/proc/{pid}/mountinfo")
+    for _ in range(90):
+        try:
+            text = mountinfo.read_text(encoding="utf-8", errors="replace")
+        except (OSError, FileNotFoundError):
+            break  # process gone — file is dead either way
+        if _ENVFILE_NS in text:
+            break
+        await asyncio.sleep(0.5)
+    else:
+        return
+    try:
+        envfile.unlink()
+    except OSError:
+        pass
+
 
 # prlimit defaults for every restricted spawn (per-tree bounds; pids counts
 # the real uid so it is kept generous enough to avoid false failures).
@@ -143,14 +220,23 @@ class LinuxNamespaceRunner:
                 "loopback-only networking is not enforceable by linux-ns",
             )
         home = self._sandbox_home(spec)
-        home.mkdir(parents=True, exist_ok=True)
-        env = spec.env or build_environment(
-            spec.profile, home=str(home), tmp_dir="/tmp"
+        if home is not None:
+            home.mkdir(parents=True, exist_ok=True)
+        env = dict(spec.env) if spec.env else build_environment(
+            spec.profile, home=str(home) if home else _EPHEMERAL_HOME, tmp_dir="/tmp"
         )
-        argv = self._argv(spec, env, home)
+        # HOME/TMPDIR are part of the mount contract — a custom env must
+        # still point at the mounted private dirs.
+        env["HOME"] = str(home) if home else _EPHEMERAL_HOME
+        env["TMPDIR"] = "/tmp"
+        envfile = self._env_file(env)
+        argv = self._argv(spec, env, home, envfile)
         try:
+            # env={}: the bwrap launcher itself must not inherit host secrets —
+            # only the inner child (inside the ns, via --setenv) needs env.
             process = await asyncio.create_subprocess_exec(
                 *argv,
+                env={},
                 stdin=spec.stdin,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
@@ -158,15 +244,65 @@ class LinuxNamespaceRunner:
             )
         except OSError as exc:
             raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
+        # Drop the credential-bearing envfile as soon as the bind is
+        # confirmed inside the child's mount ns (the age sweep stays as
+        # the bound for stalled or argv-embedded launches).
+        asyncio.get_running_loop().create_task(
+            _unlink_when_mounted(process.pid, envfile)
+        )
         return StreamedProcess(process, spec, backend="linux-ns")
+
+    def _env_file(self, env: dict[str, str]) -> Path:
+        envdir = self._state_dir / "env"
+        envdir.mkdir(parents=True, exist_ok=True)
+        envdir.chmod(0o700)
+        self._sweep_env_files(envdir)
+        path = envdir / f"{uuid.uuid4().hex}.env"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            for key, value in env.items():
+                if key in _ENV_DENYLIST:
+                    continue
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                    continue
+                fh.write(f"{key}={shlex.quote(value)}\n")
+        _ensure_sweeper(envdir)
+        return path
+
+    @staticmethod
+    def _sweep_env_files(envdir: Path) -> None:
+        # By the time a file is old its child has sourced it (the preamble
+        # runs at exec); stale leftovers would only linger on a crashed
+        # spawn, so age-sweeping loses nothing live.
+        cutoff = time.time() - _ENVFILE_MAX_AGE_S
+        try:
+            for entry in envdir.iterdir():
+                try:
+                    if entry.is_file() and entry.stat().st_mtime < cutoff:
+                        entry.unlink()
+                except OSError:
+                    continue
+        except OSError:
+            pass
 
     # -- internals ------------------------------------------------------
 
-    def _sandbox_home(self, spec: SpawnSpec) -> Path:
-        scope = spec.task_id or self._profile
-        return self._state_dir / "home" / _safe_name(scope)
+    def _sandbox_home(self, spec: SpawnSpec) -> Path | None:
+        """Persistent private HOME path, or None for an ephemeral one.
 
-    def _argv(self, spec: SpawnSpec, env: dict[str, str], home: Path) -> list[str]:
+        Task-scoped (or caller-pinned) homes persist on disk; task-less
+        spawns get a fresh dir inside the per-ns tmpfs so files from an
+        unrelated earlier run can never leak into this one.
+        """
+        if spec.home:
+            return Path(spec.home)
+        if spec.task_id:
+            return self._state_dir / "home" / _safe_name(spec.task_id)
+        return None
+
+    def _argv(
+        self, spec: SpawnSpec, env: dict[str, str], home: Path | None, envfile: Path
+    ) -> list[str]:
         argv = [_BWRAP or "bwrap"]
         argv += [
             "--unshare-user",
@@ -201,10 +337,36 @@ class LinuxNamespaceRunner:
             if src.is_dir():
                 argv += ["--ro-bind", str(src), f"/etc/{name}"]
         argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
-        argv += ["--bind", str(home), str(home)]
+        seen: set[str] = set()
+        if home is not None:
+            argv += ["--bind", str(home), str(home)]
+            seen.add(str(home))
+        else:
+            # Ephemeral HOME inside the per-ns tmpfs — nothing persists to a
+            # shared dir, so an unrelated earlier run's files can't leak in.
+            # --chmod makes it writable by the in-ns uid. 0777 on purpose:
+            # bwrap may create --dir during mount setup as ns-root, and on
+            # those versions 0700 would deny the child entirely — this is a
+            # per-ns tmpfs seen only by this task's own uid, so the wide
+            # mode costs nothing.
+            argv += ["--dir", _EPHEMERAL_HOME, "--chmod", "0777", _EPHEMERAL_HOME]
+            seen.add(_EPHEMERAL_HOME)
+        argv += ["--ro-bind", str(envfile), _ENVFILE_NS]
+        seen.add(_ENVFILE_NS)
         workspace = str(Path(spec.workspace_root).resolve())
         argv += ["--bind", workspace, workspace]
-        seen = {workspace, str(home)}
+        seen.add(workspace)
+        # Linked-git-worktree metadata: the worktree's `.git` file points at
+        # <base>/.git/worktrees/<name>. The shared commondir mounts rw
+        # (packed-refs + lock files need it) with ro overlays for config,
+        # hooks, other worktrees' dirs, and this gitdir's pointer files —
+        # the sandbox cannot retarget hooks or rewrite repo config (which
+        # would run host-side outside the sandbox).
+        for git_path, mode in _git_mounts(Path(workspace)):
+            resolved = str(git_path)
+            if resolved not in seen:
+                seen.add(resolved)
+                argv += [mode, resolved, resolved]
         for root in spec.writable_roots:
             resolved = str(Path(root).resolve())
             if resolved not in seen:
@@ -217,10 +379,18 @@ class LinuxNamespaceRunner:
                 argv += ["--ro-bind", resolved, resolved]
         argv += ["--chdir", spec.cwd or workspace]
         argv.append("--clearenv")
-        for key, value in env.items():
-            argv += ["--setenv", key, value]
         argv.append("--")
         cmd = list(spec.argv) if spec.argv is not None else ["/bin/sh", "-c", spec.shell or ""]
+        # Env arrives via the ro-bound file: the preamble sources it then
+        # execs, so values never appear in argv (world-readable cmdline).
+        # (An in-ns umount here is dead code — bwrap drops CAP_SYS_ADMIN.)
+        cmd = [
+            "/bin/sh",
+            "-c",
+            f'set -a; . "{_ENVFILE_NS}"; set +a; exec "$@"',
+            "sh",
+            *cmd,
+        ]
         limits = spec.limits if spec.limits != ResourceLimits() else _DEFAULT_LIMITS
         argv += self._limit_argv(limits, spec) + cmd
         return argv
@@ -244,6 +414,70 @@ class LinuxNamespaceRunner:
 
 def _safe_name(value: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in value)[:80] or "agent"
+
+
+def _git_mounts(workspace: Path) -> list[tuple[Path, str]]:
+    """Ordered (path, bwrap bind flag) ops for a linked worktree's git metadata.
+
+    A worktree's `.git` is a text file (`gitdir: <abs>`) pointing into the
+    base repository's `.git/worktrees/<name>`; that dir's `commondir` in
+    turn points at the shared object store. The commondir mounts rw —
+    ref maintenance (fetch --prune on packed-refs, lock files) needs the
+    directory writable — with ro overlays for what must never change:
+    `config` and `hooks` (a retargeted hook executes host-side, outside
+    the sandbox), `worktrees/` (other tasks' metadata), and inside the
+    rw gitdir the `config.worktree`/`commondir`/`gitdir` pointer files.
+    """
+    dotgit = workspace / ".git"
+    empty: list[tuple[Path, str]] = []
+    if not dotgit.is_file():
+        return empty
+    try:
+        text = dotgit.read_text(encoding="utf-8", errors="replace").strip()
+        target = next(
+            (ln.split(":", 1)[1].strip() for ln in text.splitlines() if ln.startswith("gitdir:")),
+            "",
+        )
+        if not target:
+            return empty
+        gitdir = Path(target)
+        if not gitdir.is_absolute():
+            gitdir = workspace / gitdir
+        gitdir = gitdir.resolve(strict=False)
+        if not gitdir.is_dir():
+            return empty
+        commondir_file = gitdir / "commondir"
+        if not commondir_file.is_file():
+            # Standalone gitdir (e.g. submodule-less main worktree): the
+            # repo IS the checkout — no shared state to protect.
+            return [(gitdir, "--bind")]
+        common = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
+        if not common:
+            return empty
+        common_path = Path(common)
+        if not common_path.is_absolute():
+            common_path = gitdir / common_path
+        common_path = common_path.resolve(strict=False)
+        if not common_path.is_dir():
+            return empty
+        # Mount order matters — later binds shadow earlier ones:
+        #   1. common rw base   (refs/objects/packed-refs + lock files)
+        #   2. ro overlays      (config, hooks, other worktrees' dirs)
+        #   3. gitdir rw        (this worktree's index/HEAD/FETCH_HEAD)
+        #   4. ro pointer files (config.worktree, commondir, gitdir)
+        ops: list[tuple[Path, str]] = [(common_path, "--bind")]
+        for sub in ("config", "hooks", "worktrees"):
+            child = common_path / sub
+            if child.exists():
+                ops.append((child, "--ro-bind"))
+        ops.append((gitdir, "--bind"))
+        for pointer in ("config.worktree", "commondir", "gitdir"):
+            child = gitdir / pointer
+            if child.exists():
+                ops.append((child, "--ro-bind"))
+        return ops
+    except OSError:
+        return empty
 
 
 def _default_state_dir() -> Path:
