@@ -42,6 +42,8 @@ class ToolContext:
     project_files: Any = None  # termx.project_files.ProjectFiles
     project_id: str = ""
     metrics: Any = None  # termx.agent.metrics.TaskMetrics
+    policy_engine: Any = None  # termx.agent.policies.engine.PolicyEngine
+    sandbox_runner: Any = None  # Callable[[str], SandboxRunner] — profile lookup
 
 
 @dataclass

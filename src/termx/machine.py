@@ -74,11 +74,26 @@ def machine_snapshot(
             "process_discovery": _process_discovery_supported(),
             "runbooks": True,
             "device_scopes_v2": True,
+            "remembered_approvals": True,
+            "policy_engine_v2": True,
             "editor": True,
             "editor_git": shutil.which("git") is not None,
             "editor_lsp": True,
             "editor_previews": True,
             "providers": providers,
+            # Truthful sandbox report: only the host backend exists until the
+            # platform isolation work lands — strength "none" and no real
+            # network/filesystem/identity controls are claimed. Restricted
+            # profiles get the clean-environment soft layer only.
+            "execution_sandbox": {
+                "backend": "host",
+                "strength": "none",
+                "profiles": {"host": "unrestricted", "workspace": "env", "agent": "env"},
+                "network_control": False,
+                "filesystem_isolation": False,
+                "identity_isolation": False,
+                "resource_limits": False,
+            },
         },
         "tunnel": tunnel_status,
         "user": os.environ.get("USER") or os.environ.get("LOGNAME") or "",

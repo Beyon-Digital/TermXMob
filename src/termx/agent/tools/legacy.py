@@ -67,14 +67,7 @@ def register(registry: ToolRegistry) -> None:
             parallel_safe=False,
             approval="always",
             execute=_share_file,
-            decide=make_always(
-                "Share a file",
-                lambda call: (
-                    f"Attaches {str(call.arguments.get('path') or '').strip()} to the chat."
-                    if str(call.arguments.get("path") or "").strip()
-                    else "Attaches a project file to the chat."
-                ),
-            ),
+            decide=_decide_share_file,
         )
     )
     registry.register(
@@ -150,4 +143,47 @@ def _decide_spawn(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
     detail = f'Hands the task off to the "{agent}" sub-agent.'
     if task_hint:
         detail = f"{detail} Task: {task_hint[:200]}"
-    return PolicyDecision(False, True, "Delegate to a sub-agent", detail)
+    base = PolicyDecision(False, True, "Delegate to a sub-agent", detail)
+    engine = getattr(ctx, "policy_engine", None)
+    if engine is not None:
+        # Delegation remembers on the delegate's label — "always allow the
+        # 'publisher' sub-agent in this project", not on free-text task bodies.
+        from termx.agent.policies.fingerprint import tool_key
+
+        return engine.decide_tool(
+            call,
+            ctx,
+            fingerprint=tool_key("spawn_subagent", agent),
+            display=f"sub-agent {agent}",
+            matcher={"agent": agent},
+            base=base,
+            capabilities=("process.execute", "process.children"),
+            # Delegating is itself consequential: autonomous mode never
+            # self-approves spawning new sub-agents (a remembered rule still can).
+            risk="delegation",
+        )
+    return base
+
+
+def _decide_share_file(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    path = str(call.arguments.get("path") or "").strip()
+    base = make_always(
+        "Share a file",
+        f"Attaches {path} to the chat." if path else "Attaches a project file to the chat.",
+    )(call, ctx)
+    engine = getattr(ctx, "policy_engine", None)
+    if engine is not None and path:
+        # Remembering binds the exact file path — sharing one file never
+        # pre-approves attaching others.
+        from termx.agent.policies.fingerprint import tool_key
+
+        return engine.decide_tool(
+            call,
+            ctx,
+            fingerprint=tool_key("share_file", path),
+            display=f"share {path}",
+            matcher={"path": path},
+            base=base,
+            capabilities=("fs.workspace.read",),
+        )
+    return base

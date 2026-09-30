@@ -251,6 +251,32 @@ class AgentStore:
                 started_at REAL NOT NULL,
                 finished_at REAL
             );
+            CREATE TABLE IF NOT EXISTS policy_rules (
+                id TEXT PRIMARY KEY,
+                version INTEGER NOT NULL DEFAULT 1,
+                effect TEXT NOT NULL CHECK(effect IN ('allow','deny')),
+                scope_type TEXT NOT NULL CHECK(scope_type IN ('task','project','custom_agent','host')),
+                scope_id TEXT,
+                action_type TEXT NOT NULL DEFAULT 'tool'
+                    CHECK(action_type IN ('tool','capability','publication','computer')),
+                tool TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                fingerprint_kind TEXT NOT NULL DEFAULT 'exact'
+                    CHECK(fingerprint_kind IN ('exact','conservative')),
+                matcher_json TEXT NOT NULL DEFAULT '{}',
+                capabilities_json TEXT NOT NULL DEFAULT '[]',
+                sandbox_profile TEXT,
+                source_approval_id TEXT,
+                task_id TEXT,
+                project_id TEXT,
+                display TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                last_used_at REAL,
+                expires_at REAL,
+                times_used INTEGER NOT NULL DEFAULT 0,
+                revoked_at REAL
+            );
             CREATE INDEX IF NOT EXISTS events_task_sequence ON events(task_id, sequence);
             CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS approvals_task ON approvals(task_id, created_at);
@@ -261,6 +287,10 @@ class AgentStore:
                 ON conversation_context_refs(turn_id);
             CREATE INDEX IF NOT EXISTS conversations_updated
                 ON conversations(archived, pinned DESC, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS policy_rules_fingerprint
+                ON policy_rules(fingerprint, action_type);
+            CREATE INDEX IF NOT EXISTS policy_rules_scope
+                ON policy_rules(scope_type, scope_id);
             """
         )
         # Additive migration for databases created before the Chat mode column.
@@ -271,6 +301,19 @@ class AgentStore:
             self._db.execute("ALTER TABLE tasks ADD COLUMN metrics TEXT")
         if "parent_id" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT")
+        if "custom_agent_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN custom_agent_id TEXT")
+        ca_columns = {
+            row["name"] for row in self._db.execute("PRAGMA table_info(custom_agents)")
+        }
+        if ca_columns and "approval_mode" not in ca_columns:
+            self._db.execute(
+                "ALTER TABLE custom_agents ADD COLUMN approval_mode TEXT NOT NULL DEFAULT 'standard'"
+            )
+        if ca_columns and "sandbox_profile" not in ca_columns:
+            self._db.execute(
+                "ALTER TABLE custom_agents ADD COLUMN sandbox_profile TEXT NOT NULL DEFAULT 'agent'"
+            )
         wt_columns = {
             row["name"] for row in self._db.execute("PRAGMA table_info(task_worktrees)")
         }
@@ -400,6 +443,7 @@ class AgentStore:
         limits: dict[str, Any],
         mode: str = "agent",
         parent_id: str | None = None,
+        custom_agent_id: str | None = None,
     ) -> dict[str, Any]:
         now = time()
         task_id = uuid.uuid4().hex
@@ -407,10 +451,10 @@ class AgentStore:
             self._db.execute(
                 """
                 INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?)
+                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, parent_id, now, now),
+                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, parent_id, custom_agent_id, now, now),
             )
             self._db.commit()
         task = self.get_task(task_id)
@@ -663,6 +707,10 @@ class AgentStore:
             "limits": _load_json(row["limits"], {}),
             "mode": (row["mode"] if "mode" in row.keys() else "agent") or "agent",
             "parent_id": (row["parent_id"] if "parent_id" in row.keys() else None) or None,
+            "custom_agent_id": (
+                row["custom_agent_id"] if "custom_agent_id" in row.keys() else None
+            )
+            or None,
             "plan": _load_json(row["plan"], None),
             "result": row["result"],
             "error": row["error"],
@@ -864,6 +912,14 @@ class AgentStore:
             "model": row["model"],
             "tools": tools,
             "limits": limits,
+            "approval_mode": (
+                row["approval_mode"] if "approval_mode" in row.keys() else None
+            )
+            or "standard",
+            "sandbox_profile": (
+                row["sandbox_profile"] if "sandbox_profile" in row.keys() else None
+            )
+            or "agent",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -1168,10 +1224,16 @@ class AgentStore:
         model: str | None = None,
         tools: list[str] | None = None,
         limits: dict[str, Any] | None = None,
+        approval_mode: str = "standard",
+        sandbox_profile: str = "agent",
     ) -> dict[str, Any]:
         name = name.strip()
         if not name:
             raise ValueError("custom agent name is required")
+        if approval_mode not in {"standard", "remember", "autonomous"}:
+            raise ValueError("approval_mode must be standard, remember or autonomous")
+        if sandbox_profile not in {"host", "workspace", "agent"}:
+            raise ValueError("sandbox_profile must be host, workspace or agent")
         now = time()
         agent_id = uuid.uuid4().hex[:16]
         with self._lock:
@@ -1179,8 +1241,9 @@ class AgentStore:
                 """
                 INSERT INTO custom_agents
                     (id, name, description, instructions, provider_id, model,
-                     tools, limits, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     tools, limits, approval_mode, sandbox_profile,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     agent_id,
@@ -1191,6 +1254,8 @@ class AgentStore:
                     model,
                     json.dumps(list(tools or [])),
                     json.dumps(dict(limits or {})),
+                    approval_mode,
+                    sandbox_profile,
                     now,
                     now,
                 ),
@@ -1221,10 +1286,24 @@ class AgentStore:
             "model",
             "tools",
             "limits",
+            "approval_mode",
+            "sandbox_profile",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return self.get_custom_agent(agent_id)
+        if "approval_mode" in updates and updates["approval_mode"] not in {
+            "standard",
+            "remember",
+            "autonomous",
+        }:
+            raise ValueError("approval_mode must be standard, remember or autonomous")
+        if "sandbox_profile" in updates and updates["sandbox_profile"] not in {
+            "host",
+            "workspace",
+            "agent",
+        }:
+            raise ValueError("sandbox_profile must be host, workspace or agent")
         assignments = ", ".join(f"{key} = ?" for key in updates)
         params = [
             json.dumps(value) if key in {"tools", "limits"} else value
@@ -1247,6 +1326,274 @@ class AgentStore:
             )
             self._db.commit()
         return cursor.rowcount > 0
+
+    # Policy rules ------------------------------------------------------
+
+    def create_policy_rule(
+        self,
+        *,
+        effect: str,
+        scope_type: str,
+        scope_id: str | None,
+        action_type: str,
+        tool: str,
+        fingerprint: str,
+        fingerprint_kind: str = "exact",
+        matcher: dict[str, Any] | None = None,
+        capabilities: list[str] | None = None,
+        sandbox_profile: str | None = None,
+        source_approval_id: str | None = None,
+        task_id: str | None = None,
+        project_id: str | None = None,
+        display: str = "",
+        expires_at: float | None = None,
+    ) -> dict[str, Any]:
+        if effect not in {"allow", "deny"}:
+            raise ValueError("effect must be allow or deny")
+        if scope_type not in {"task", "project", "custom_agent", "host"}:
+            raise ValueError("invalid scope_type")
+        if action_type not in {"tool", "capability", "publication", "computer"}:
+            raise ValueError("invalid action_type")
+        if fingerprint_kind not in {"exact", "conservative"}:
+            raise ValueError("invalid fingerprint_kind")
+        if scope_type != "host" and not scope_id:
+            raise ValueError("non-host rules require scope_id")
+        if action_type == "capability":
+            # A capability rule must name capabilities — and can never name the
+            # ungrantable set, which no sandbox backend may provide.
+            from termx.agent.policies.defaults import UNGRANTABLE_CAPABILITIES
+
+            if not capabilities:
+                raise ValueError("capability rules require a non-empty capabilities list")
+            bad = [c for c in capabilities if c in UNGRANTABLE_CAPABILITIES]
+            if bad:
+                raise ValueError(f"capabilities are ungrantable: {', '.join(bad)}")
+        rule_id = uuid.uuid4().hex[:16]
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO policy_rules
+                    (id, effect, scope_type, scope_id, action_type, tool,
+                     fingerprint, fingerprint_kind, matcher_json, capabilities_json,
+                     sandbox_profile, source_approval_id, task_id, project_id,
+                     display, created_at, updated_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    rule_id,
+                    effect,
+                    scope_type,
+                    scope_id,
+                    action_type,
+                    tool,
+                    fingerprint,
+                    fingerprint_kind,
+                    _json(dict(matcher or {})),
+                    _json(sorted(set(capabilities or []))),
+                    sandbox_profile,
+                    source_approval_id,
+                    task_id,
+                    project_id,
+                    display,
+                    now,
+                    now,
+                    expires_at,
+                ),
+            )
+            self._db.commit()
+        rule = self.get_policy_rule(rule_id)
+        if rule is None:  # pragma: no cover
+            raise RuntimeError("policy rule was not created")
+        return rule
+
+    def get_policy_rule(self, rule_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM policy_rules WHERE id = ?", (rule_id,)
+            ).fetchone()
+        return self._policy_rule(row) if row else None
+
+    def list_policy_rules(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        effect: str | None = None,
+        include_revoked: bool = False,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scope_type is not None:
+            clauses.append("scope_type = ?")
+            params.append(scope_type)
+        if scope_id is not None:
+            clauses.append("scope_id = ?")
+            params.append(scope_id)
+        if effect is not None:
+            clauses.append("effect = ?")
+            params.append(effect)
+        if not include_revoked:
+            clauses.append("revoked_at IS NULL")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT * FROM policy_rules {where} ORDER BY updated_at DESC LIMIT ?",
+                (*params, max(1, min(limit, 1000))),
+            ).fetchall()
+        return [self._policy_rule(row) for row in rows]
+
+    def matching_policy_rules(
+        self,
+        *,
+        fingerprint: str,
+        action_type: str = "tool",
+        scopes: list[tuple[str, str]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Active (non-revoked, non-expired) rules whose fingerprint matches and
+        whose (scope_type, scope_id) is one of ``scopes`` — or whose scope is
+        ``host`` (global). Task-scope rules only reach this point for their own
+        task, so they die with the task."""
+        params: list[Any] = [fingerprint, action_type, time()]
+        scope_clause = "scope_type = 'host'"
+        if scopes:
+            scope_clause = "(scope_type = 'host' OR ({}) )".format(
+                " OR ".join("(scope_type = ? AND scope_id = ?)" for _ in scopes)
+            )
+            for scope_type, scope_id in scopes:
+                params.extend([scope_type, scope_id])
+        with self._lock:
+            rows = self._db.execute(
+                f"""
+                SELECT * FROM policy_rules
+                WHERE fingerprint = ? AND action_type = ? AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > ?) AND {scope_clause}
+                """,
+                params,
+            ).fetchall()
+        return [self._policy_rule(row) for row in rows]
+
+    def capability_rules(
+        self, *, scopes: list[tuple[str, str]]
+    ) -> list[dict[str, Any]]:
+        """Active capability rules in the given scopes (fingerprint-agnostic —
+        capability rules match on their capability list, not command shape)."""
+        params: list[Any] = [time()]
+        scope_clause = "(scope_type = 'host' OR ({}))".format(
+            " OR ".join("(scope_type = ? AND scope_id = ?)" for _ in scopes)
+        )
+        for scope_type, scope_id in scopes:
+            params.extend([scope_type, scope_id])
+        with self._lock:
+            rows = self._db.execute(
+                f"""
+                SELECT * FROM policy_rules
+                WHERE action_type = 'capability' AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > ?) AND {scope_clause}
+                """,
+                params,
+            ).fetchall()
+        return [self._policy_rule(row) for row in rows]
+
+    def update_policy_rule(self, rule_id: str, **changes: Any) -> dict[str, Any]:
+        allowed = {"effect", "expires_at", "matcher", "capabilities", "display"}
+        encoded: dict[str, Any] = {}
+        for key, value in changes.items():
+            if key not in allowed:
+                raise ValueError(f"invalid policy field: {key}")
+            if key == "effect" and value not in {"allow", "deny"}:
+                raise ValueError("effect must be allow or deny")
+            if key == "capabilities":
+                encoded["capabilities_json"] = _json(sorted(set(value or [])))
+                continue
+            encoded[key] = _json(value) if key == "matcher" else value
+        if "matcher" in encoded:
+            encoded["matcher_json"] = encoded.pop("matcher")
+        encoded["updated_at"] = time()
+        assignments = ", ".join(f"{key} = ?" for key in encoded)
+        with self._lock:
+            cursor = self._db.execute(
+                f"UPDATE policy_rules SET {assignments} WHERE id = ? AND revoked_at IS NULL",
+                (*encoded.values(), rule_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(rule_id)
+            self._db.commit()
+        rule = self.get_policy_rule(rule_id)
+        if rule is None:  # pragma: no cover
+            raise KeyError(rule_id)
+        return rule
+
+    def expire_task_policy_rules(self, task_id: str) -> int:
+        """Expire every task-scoped rule for a task — called at terminal state
+        so scoped trust can never outlive its task."""
+        now = time()
+        with self._lock:
+            cursor = self._db.execute(
+                """
+                UPDATE policy_rules SET expires_at = ?, updated_at = ?
+                WHERE scope_type = 'task' AND scope_id = ?
+                  AND revoked_at IS NULL AND expires_at IS NULL
+                """,
+                (now, now, task_id),
+            )
+            self._db.commit()
+        return cursor.rowcount
+
+    def touch_policy_rule(self, rule_id: str) -> None:
+        with self._lock:
+            self._db.execute(
+                """
+                UPDATE policy_rules
+                SET last_used_at = ?, times_used = times_used + 1
+                WHERE id = ?
+                """,
+                (time(), rule_id),
+            )
+            self._db.commit()
+
+    def revoke_policy_rule(self, rule_id: str) -> dict[str, Any]:
+        now = time()
+        with self._lock:
+            cursor = self._db.execute(
+                "UPDATE policy_rules SET revoked_at = ?, updated_at = ? WHERE id = ? AND revoked_at IS NULL",
+                (now, now, rule_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(rule_id)
+            self._db.commit()
+        rule = self.get_policy_rule(rule_id)
+        if rule is None:  # pragma: no cover
+            raise KeyError(rule_id)
+        return rule
+
+    @staticmethod
+    def _policy_rule(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "version": row["version"],
+            "effect": row["effect"],
+            "scope_type": row["scope_type"],
+            "scope_id": row["scope_id"],
+            "action_type": row["action_type"],
+            "tool": row["tool"],
+            "fingerprint": row["fingerprint"],
+            "fingerprint_kind": row["fingerprint_kind"],
+            "matcher": _load_json(row["matcher_json"], {}),
+            "capabilities": _load_json(row["capabilities_json"], []),
+            "sandbox_profile": row["sandbox_profile"],
+            "source_approval_id": row["source_approval_id"],
+            "task_id": row["task_id"],
+            "project_id": row["project_id"],
+            "display": row["display"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "last_used_at": row["last_used_at"],
+            "expires_at": row["expires_at"],
+            "times_used": row["times_used"],
+            "revoked_at": row["revoked_at"],
+        }
 
     # Runbooks --------------------------------------------------------------
 

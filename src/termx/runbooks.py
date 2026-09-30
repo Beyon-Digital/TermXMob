@@ -48,11 +48,17 @@ def validate_steps(steps: Any) -> list[dict[str, Any]]:
 class RunbookRunner:
     """Executes runbook steps as subprocesses and records history in the store."""
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: Any, *, runner_for: Any | None = None) -> None:
         self._store = store
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._procs: dict[str, set[asyncio.subprocess.Process]] = {}
+        self._profiles: dict[str, str] = {}
         self._confirm_events: dict[str, asyncio.Event] = {}
+        if runner_for is None:
+            from termx.sandbox import runner_for as _default
+
+            runner_for = _default
+        self._runner_for = runner_for
         # Runs left 'running' by a dead host have ambiguous in-flight steps;
         # mark them failed rather than replaying. 'awaiting_confirmation' runs
         # parked BEFORE their step started can safely resume on confirm().
@@ -64,12 +70,13 @@ class RunbookRunner:
                 error="Host restarted while the run was in-flight",
             )
 
-    def start(self, runbook: dict[str, Any], cwd: str) -> dict[str, Any]:
+    def start(self, runbook: dict[str, Any], cwd: str, *, profile: str = "host") -> dict[str, Any]:
         run = self._store.create_runbook_run(
             runbook["id"], cwd=cwd, steps=runbook["steps"]
         )
         run_id = run["id"]
-        task = asyncio.create_task(self._execute(run_id, runbook, cwd))
+        self._profiles[run_id] = profile
+        task = asyncio.create_task(self._execute(run_id, runbook, cwd, profile=profile))
         self._tasks[run_id] = task
         task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
         return run
@@ -107,6 +114,7 @@ class RunbookRunner:
                                 "step_results": list(run.get("step_results") or []),
                                 "skip_confirm_at": gated,
                             },
+                            profile=self._profiles.get(run_id, "host"),
                         )
                     )
                     self._tasks[run_id] = task
@@ -170,18 +178,21 @@ class RunbookRunner:
         step: dict[str, Any],
         cwd: str,
         on_progress: Any | None = None,
+        *,
+        profile: str = "host",
     ) -> dict[str, Any]:
         started = time.monotonic()
-        kwargs: dict[str, Any] = {}
-        if sys.platform != "win32":
-            kwargs["preexec_fn"] = os.setsid
-        proc = await asyncio.create_subprocess_shell(
-            step["command"],
+        from termx.sandbox import SpawnSpec
+
+        spec = SpawnSpec(
+            profile=profile,
+            shell=step["command"],
             cwd=cwd or None,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            **kwargs,
+            workspace_root=cwd or None,
+            writable_roots=[cwd] if cwd else [],
+            purpose="runbook_step",
         )
+        proc = (await self._runner_for(profile).spawn(spec)).process
         self._procs.setdefault(run_id, set()).add(proc)
         tail = bytearray()
 
@@ -236,6 +247,8 @@ class RunbookRunner:
         runbook: dict[str, Any],
         cwd: str,
         resume: dict[str, Any] | None = None,
+        *,
+        profile: str = "host",
     ) -> None:
         steps = runbook["steps"]
         results: list[dict[str, Any]] = list(
@@ -298,6 +311,7 @@ class RunbookRunner:
                         member,
                         cwd,
                         on_progress=make_progress(index + group.index(member)),
+                        profile=profile,
                     )
                     for member in group
                 ]
@@ -321,6 +335,7 @@ class RunbookRunner:
         finally:
             self._confirm_events.pop(run_id, None)
             self._procs.pop(run_id, None)
+            self._profiles.pop(run_id, None)
             self._store.update_runbook_run(
                 run_id,
                 status=status if status != "cancelled" else "cancelled",
