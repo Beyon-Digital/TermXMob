@@ -138,7 +138,16 @@ _GRANTABLE = frozenset(
 # with both spellings since seatbelt filters match the lookup path.
 _SYSTEM_READ_ROOTS = (
     "/System",
-    "/Library",
+    # /Library is narrowed to toolchain content — a blanket grant exposed
+    # host databases and per-machine app data (e.g. /Library/Application
+    # Support) outside approved roots.
+    "/Library/Developer",
+    "/Library/Frameworks",
+    "/Library/Fonts",
+    "/Library/Perl",
+    "/Library/Python",
+    "/Library/Ruby",
+    "/Library/Java",
     "/usr",
     "/bin",
     "/sbin",
@@ -622,6 +631,13 @@ class MacOSRunner:
         tmp_dir = self._sandbox_tmp(spec)
         home.mkdir(parents=True, exist_ok=True)
         tmp_dir.mkdir(parents=True, exist_ok=True)
+        if self._helper:
+            # The helper spawns as `termx-sandbox` — our-uid 0700 dirs are
+            # unwritable to it. Grant an ACL entry so the restricted user
+            # can use HOME/TMPDIR without opening the dirs to every local
+            # account (the helper also chowns per protocol contract).
+            self._grant_restricted_acl(home)
+            self._grant_restricted_acl(tmp_dir)
         env = spec.env or build_environment(
             spec.profile, home=str(home), tmp_dir=str(tmp_dir)
         )
@@ -631,6 +647,23 @@ class MacOSRunner:
         return await self._spawn_seatbelt(spec, env, home, tmp_dir)
 
     # -- seatbelt -------------------------------------------------------
+
+    @staticmethod
+    def _grant_restricted_acl(path: Path) -> None:
+        """Best-effort `chmod +a` grant for the restricted helper user."""
+        try:
+            subprocess.run(
+                [
+                    "chmod",
+                    "+a",
+                    f"{_HELPER_USER} allow read,write,execute,delete,append",
+                    str(path),
+                ],
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     async def _spawn_seatbelt(
         self, spec: SpawnSpec, env: dict[str, str], home: Path, tmp_dir: Path
