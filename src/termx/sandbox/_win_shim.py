@@ -456,6 +456,7 @@ def canary_spawn(token: int) -> int:
     if last_exc is not None:
         raise last_exc
     resumed = False
+    job = 0
     try:
         job = _kernel32.CreateJobObjectW(None, None)
         if not job:
@@ -478,9 +479,10 @@ def canary_spawn(token: int) -> int:
         _kernel32.WaitForSingleObject(pi.hProcess, 15000)
         code = wt.DWORD()
         _kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(code))
-        _kernel32.CloseHandle(job)
         return code.value
     finally:
+        if job:
+            _kernel32.CloseHandle(job)
         if not resumed:
             # A failed setup must not strand the suspended canary process.
             _kernel32.TerminateProcess(pi.hProcess, 1)
@@ -917,8 +919,10 @@ def run(request_path: str) -> int:
         job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info),
         ctypes.sizeof(info),
     ):
+        _kernel32.CloseHandle(job)
         raise _fail_spawn("SetInformationJobObject failed: " + str(_last_error()))
     if not _kernel32.AssignProcessToJobObject(job, pi.hProcess):
+        _kernel32.CloseHandle(job)
         raise _fail_spawn("AssignProcessToJobObject failed: " + str(_last_error()))
 
     _kernel32.ResumeThread(pi.hThread)

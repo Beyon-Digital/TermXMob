@@ -530,8 +530,11 @@ def test_workspace_labels_restored_after_spawn(tmp_path):
 
 def test_exit_then_spawn_same_workspace_stays_writable(tmp_path):
     """A last-release restore must serialize with a new spawn's apply on the
-    same path — the queued medium-IL reset cannot land after the fresh
-    low-IL apply and leave the live task unable to write."""
+    same path — with both provably queued behind the shared lock, the
+    medium-IL reset cannot clobber the fresh low-IL apply and leave the
+    live task unable to write."""
+    import termx.sandbox.windows_runner as wr
+
     ws = tmp_path / "ws"
     ws.mkdir()
     runner = _runner(tmp_path)
@@ -543,15 +546,72 @@ def test_exit_then_spawn_same_workspace_stays_writable(tmp_path):
         return out.decode("utf-8", "replace")
 
     async def go():
-        await run_once(_spec(ws, "echo seed > a.txt & echo A_OK"))
-        # Spawn B immediately — A's release restore may still be in flight;
-        # B's apply must still win the ordering either way.
-        out_b = await run_once(_spec(ws, "echo live > b.txt 2>nul && echo B_OK || echo B_DENIED"))
+        spawned_a = await runner.spawn(_spec(ws, "echo seed > a.txt & echo A_OK"))
+        out_a = await asyncio.wait_for(spawned_a.process.stdout.read(), timeout=45)
+        assert b"A_OK" in out_a
+        # Hold the label lock while A exits: its release task's restore is
+        # then provably queued, and B's apply queues behind it too — the
+        # overlap is exercised regardless of wakeup order.
+        await asyncio.to_thread(wr._LABEL_LOCK.acquire)
+        try:
+            await asyncio.wait_for(spawned_a.wait(), timeout=15)
+            await asyncio.sleep(0.5)  # let A's restore reach the lock
+            b = asyncio.ensure_future(run_once(
+                _spec(ws, "echo live > b.txt 2>nul && echo B_OK || echo B_DENIED")))
+            await asyncio.sleep(0.5)  # let B's apply reach the lock
+        finally:
+            await asyncio.to_thread(wr._LABEL_LOCK.release)
+        out_b = await asyncio.wait_for(b, timeout=60)
         for _ in range(600):
             if not runner._release_tasks:
                 break
             await asyncio.sleep(0.05)
         return out_b
+
+    out_b = asyncio.run(go())
+    assert "B_OK" in out_b and "B_DENIED" not in out_b
+    assert (ws / "b.txt").read_text().strip().startswith("live")
+
+
+def test_readonly_holder_does_not_block_writable_spawn(tmp_path):
+    """A path held as a read-only root must not starve a later spawn that
+    needs the same path writable — the writable ref applies the low-IL
+    label (and user-mode grant) its read-only sibling never needed."""
+    ws = tmp_path / "shared"
+    ws.mkdir()
+    ws_other = tmp_path / "other"
+    ws_other.mkdir()
+    runner = _runner(tmp_path)
+
+    async def go():
+        # Runner A holds `ws` read-only only (and stays alive holding it):
+        # no label, no writable grant on that path.
+        spawned_a = await runner.spawn(SpawnSpec(
+            profile="agent",
+            shell="echo A_OK & ping -n 30 127.0.0.1 >nul",
+            cwd=str(ws_other),
+            workspace_root=str(ws_other),
+            read_only_roots=[str(ws)],
+        ))
+        try:
+            out_a = await asyncio.wait_for(
+                spawned_a.process.stdout.readline(), timeout=45)
+            assert b"A_OK" in out_a
+            # B then uses the same path as its writable workspace — its
+            # apply must upgrade the boundary, not see the r-ref and skip.
+            spawned_b = await runner.spawn(_spec(
+                ws, "echo live > b.txt 2>nul && echo B_OK || echo B_DENIED"))
+            out_b = await asyncio.wait_for(
+                spawned_b.process.stdout.read(), timeout=45)
+            await asyncio.wait_for(spawned_b.wait(), timeout=15)
+            return out_b.decode("utf-8", "replace")
+        finally:
+            await spawned_a.terminate()
+            await asyncio.wait_for(spawned_a.wait(), timeout=15)
+            for _ in range(600):
+                if not runner._release_tasks:
+                    break
+                await asyncio.sleep(0.05)
 
     out_b = asyncio.run(go())
     assert "B_OK" in out_b and "B_DENIED" not in out_b

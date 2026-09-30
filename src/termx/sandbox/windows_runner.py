@@ -113,15 +113,18 @@ _OS_ENV = ("SystemRoot", "windir", "ComSpec", "PATHEXT", "OS", "PROCESSOR_ARCHIT
 _SANDBOX_USER = "termx-sandbox"
 
 # Filesystem-boundary bookkeeping, shared across every runner instance in
-# this process: path -> live spawn refs, and the icacls ops applied on the
-# first ref so the last release can undo exactly them. Apply and restore
-# both run their icacls calls under this one lock, so a queued last-release
-# restore can never land after a fresh low-IL apply on the same path.
-# (Cross-process runners can't be coordinated unprivileged — documented
-# limitation; the refcount only covers in-process concurrency.)
+# this process: per path, the live spawn refs — each recording whether it
+# needs write access and whether it runs as the dedicated sandbox user —
+# and the icacls ops currently applied. Apply and release both recompute
+# the required op set under this one lock, so a queued last-release restore
+# can never land after a fresh apply on the same path, a read-only holder
+# never blocks a writable ref's low-IL label, and a token-mode hold never
+# hides a user-mode ref's DACL grant. (Cross-process runners can't be
+# coordinated unprivileged — documented limitation; the bookkeeping only
+# covers in-process concurrency.)
 _LABEL_LOCK = threading.Lock()
-_LABEL_REFS: "dict[str, int]" = {}
-_LABEL_OPS: "dict[str, tuple[str, ...]]" = {}
+_LABEL_HELD: "dict[str, list[tuple[str, bool]]]" = {}
+_LABEL_OPS: "dict[str, set[str]]" = {}
 
 
 def windows_backend_available() -> bool:
@@ -164,6 +167,7 @@ def _canary_spawn(shim, token: int) -> int:
 
 
 _user_available: "bool | None" = None
+_USER_PROBE_LOCK = threading.Lock()
 
 
 def _sandbox_user_provisioned() -> bool:
@@ -176,19 +180,26 @@ def _sandbox_user_provisioned() -> bool:
     the shim — it never enters a request file. The probe ends in a real
     canary spawn under the restricted user token, so a host without
     SE_IMPERSONATE_NAME/SE_ASSIGNPRIMARYTOKEN never selects a mode whose
-    spawn paths all fail. Probed once per process.
+    spawn paths all fail. Probed once per process; the probe is serialized
+    and its result published only after completion, so a runner constructed
+    mid-probe waits for the verified answer instead of latching a
+    pessimistic default and diverging from its peers' identity mode.
     """
     global _user_available
     if _user_available is not None:
         return _user_available
-    _user_available = False
-    if sys.platform != "win32":
-        return _user_available
-    try:
-        from termx.sandbox import _win_shim as shim
-        _user_available = shim.probe_sandbox_user()
-    except (ImportError, RuntimeError, OSError):
-        pass
+    with _USER_PROBE_LOCK:
+        if _user_available is not None:
+            return _user_available
+        result = False
+        if sys.platform == "win32":
+            try:
+                from termx.sandbox import _win_shim as shim
+
+                result = shim.probe_sandbox_user()
+            except (ImportError, RuntimeError, OSError):
+                pass
+        _user_available = result
     return _user_available
 
 
@@ -253,7 +264,11 @@ class WindowsSandboxRunner:
         env = self._os_env(env)
 
         try:
-            held = self._apply_fs_boundary(spec, home, tmp)
+            # icacls recursion can take seconds on a large tree — keep it
+            # off the event loop.
+            held = await asyncio.to_thread(
+                self._apply_fs_boundary, spec, home, tmp
+            )
         except OSError as exc:
             raise SandboxFailure(
                 "boundary_setup", f"windows sandbox: filesystem boundary failed: {exc}"
@@ -287,7 +302,7 @@ class WindowsSandboxRunner:
                 req_path.unlink()
             except OSError:
                 pass
-            self._drop_held(held)
+            await asyncio.to_thread(self._drop_held, held)
             raise SandboxFailure("spawn_failed", f"windows sandbox spawn failed: {exc}") from exc
         task = asyncio.create_task(self._release_after(process, held))
         self._release_tasks.add(task)
@@ -363,7 +378,7 @@ class WindowsSandboxRunner:
 
     def _apply_fs_boundary(
         self, spec: SpawnSpec, home: Path, tmp: Path
-    ) -> "list[str]":
+    ) -> "list[tuple[str, str, bool]]":
         """Make approved roots reachable by the restricted child.
 
         Writable roots are relabeled low-integrity in BOTH modes (the child
@@ -373,15 +388,17 @@ class WindowsSandboxRunner:
         needs DACL grants: the foreign ``termx-sandbox`` identity has no
         default rights on the host user's objects.
 
-        Each path is refcounted: the first live spawn applies the boundary,
-        the last release restores it (medium IL, grants removed) so a stale
-        low label can never widen a later task's write domain. Returns the
-        keys this spawn holds refs on.
+        Each ref records (kind, user_mode); the ops a path carries are
+        recomputed from its live refs, so a read-only holder never blocks
+        a later writable ref's label and a token-mode hold never hides a
+        user-mode ref's grant. The last release restores everything
+        (medium IL, grants removed) so a stale low label can never widen a
+        later task's write domain. Returns this spawn's held refs.
         """
         writable = [Path(p).resolve() for p in (spec.workspace_root, *spec.writable_roots)]
         writable += [home, tmp]
         ro = [Path(p).resolve() for p in spec.read_only_roots]
-        held: list[str] = []
+        held: list[tuple[str, str, bool]] = []
         try:
             # The icacls calls stay inside the lock: a queued restore cannot
             # land after a fresh apply on the same path and clobber it.
@@ -389,33 +406,76 @@ class WindowsSandboxRunner:
                 for path in dict.fromkeys(writable + ro):
                     key = str(path)
                     kind = "w" if path in writable else "r"
-                    _LABEL_REFS[key] = _LABEL_REFS.get(key, 0) + 1
-                    held.append(key)
-                    if _LABEL_REFS[key] > 1:
-                        continue
-                    ops: list[str] = []
-                    if self._user_mode:
-                        access = "F" if kind == "w" else "R"
-                        self._icacls(
-                            [key, "/grant", f"{_SANDBOX_USER}:(OI)(CI)({access})", "/T"]
-                        )
-                        ops.append("grant")
-                    if kind == "w":
-                        self._icacls(
-                            [key, "/setintegritylevel", "(OI)(CI)L", "/T"]
-                        )
-                        ops.append("il")
-                    _LABEL_OPS[key] = tuple(ops)
+                    _LABEL_HELD.setdefault(key, []).append((kind, self._user_mode))
+                    held.append((key, kind, self._user_mode))
+                    self._reconcile_locked(key)
         except Exception:
             with _LABEL_LOCK:
-                for key in held:
-                    if _LABEL_REFS.get(key, 0) <= 1:
-                        _LABEL_REFS.pop(key, None)
+                for key, kind, umode in held:
+                    entries = _LABEL_HELD.get(key)
+                    if not entries:
+                        continue
+                    try:
+                        entries.remove((kind, umode))
+                    except ValueError:
+                        continue
+                    try:
+                        self._reconcile_locked(key)
+                    except OSError:
+                        pass
+                    if not entries:
+                        _LABEL_HELD.pop(key, None)
                         _LABEL_OPS.pop(key, None)
-                    else:
-                        _LABEL_REFS[key] -= 1
             raise
         return held
+
+    @staticmethod
+    def _needed_ops(entries: "list[tuple[str, bool]]") -> "set[str]":
+        """Ops a path's live refs require: the low-IL label while any
+        writable ref lives, and a ``termx-sandbox`` DACL grant — full while
+        any writable *user-mode* ref lives, read-only otherwise — while any
+        dedicated-user ref lives."""
+        ops: set[str] = set()
+        if any(kind == "w" for kind, _ in entries):
+            ops.add("il")
+        if any(user for _, user in entries):
+            ops.add(
+                "grantF"
+                if any(kind == "w" and user for kind, user in entries)
+                else "grantR"
+            )
+        return ops
+
+    def _reconcile_locked(self, key: str) -> None:
+        """Drive a path's applied ops to the set its live refs require.
+
+        Caller must hold ``_LABEL_LOCK``. icacls ``/grant`` replaces the
+        trustee's ACE, so a grant upgrade/downgrade is one call; grant
+        removal and the medium-IL restore run only when no live ref needs
+        them.
+        """
+        applied = _LABEL_OPS.setdefault(key, set())
+        needed = self._needed_ops(_LABEL_HELD.get(key, []))
+        want_grant = needed & {"grantF", "grantR"}
+        if want_grant != (applied & {"grantF", "grantR"}):
+            if want_grant:
+                access = "F" if "grantF" in want_grant else "R"
+                self._icacls(
+                    [key, "/grant", f"{_SANDBOX_USER}:(OI)(CI)({access})", "/T"]
+                )
+            else:
+                self._icacls([key, "/remove:g", _SANDBOX_USER, "/T"])
+            applied.difference_update({"grantF", "grantR"})
+            applied.update(want_grant)
+        if ("il" in needed) != ("il" in applied):
+            self._icacls(
+                [key, "/setintegritylevel",
+                 "(OI)(CI)L" if "il" in needed else "(OI)(CI)M", "/T"]
+            )
+            if "il" in needed:
+                applied.add("il")
+            else:
+                applied.discard("il")
 
     async def _release_after(self, process, held: "list[str]") -> None:
         """Restore the fs boundary once the shim exits (normal or killed)."""
@@ -424,38 +484,35 @@ class WindowsSandboxRunner:
         finally:
             await asyncio.to_thread(self._drop_held, held)
 
-    def _drop_held(self, held: "list[str]") -> None:
-        """Decrement refs; on the last drop undo the labels/grants applied.
+    def _drop_held(self, held: "list[tuple[str, str, bool]]") -> None:
+        """Release this spawn's refs and recompute each path's op set.
 
-        The restore icacls runs inside the shared lock — a last-release
-        reset can therefore never interleave with a new spawn's apply on
-        the same path (which would clobber the fresh low label back to
-        medium underneath a live task).
+        A last release restores everything; a writable→read-only
+        transition restores just the medium label (low-IL readers can
+        still read medium objects); a user→token transition removes just
+        the DACL grant. Runs inside the shared lock so a queued restore
+        can never interleave with a fresh apply on the same path.
         """
         with _LABEL_LOCK:
-            for key in held:
-                refs = _LABEL_REFS.get(key, 0)
-                if refs > 1:
-                    _LABEL_REFS[key] = refs - 1
+            for key, kind, umode in held:
+                entries = _LABEL_HELD.get(key)
+                if not entries:
                     continue
-                _LABEL_REFS.pop(key, None)
-                ops = _LABEL_OPS.pop(key, ())
-                restore: "list[list[str]]" = []
-                if "il" in ops:
-                    restore.append(
-                        [key, "/setintegritylevel", "(OI)(CI)M", "/T"]
-                    )
-                if "grant" in ops:
-                    restore.append([key, "/remove:g", _SANDBOX_USER, "/T"])
-                for args in restore:
-                    try:
-                        self._icacls(args)
-                    except OSError:
-                        # Path gone or already reset — a failed restore
-                        # leaves a stale label on an existing tree; it
-                        # widens writes for later low-IL tasks on that
-                        # path only (documented residual).
-                        pass
+                try:
+                    entries.remove((kind, umode))
+                except ValueError:
+                    continue
+                try:
+                    self._reconcile_locked(key)
+                except OSError:
+                    # Path gone or already reset — a failed restore leaves
+                    # a stale label on an existing tree; it widens writes
+                    # for later low-IL tasks on that path only (documented
+                    # residual).
+                    pass
+                if not entries:
+                    _LABEL_HELD.pop(key, None)
+                    _LABEL_OPS.pop(key, None)
 
     @staticmethod
     def _icacls(args: list[str]) -> None:
