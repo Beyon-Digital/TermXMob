@@ -2479,6 +2479,51 @@ def test_conversation_turn_links_task_creation(tmp_path: Path) -> None:
         assert convo["turns"][0]["prompt"] == "do it"
 
 
+def test_task_records_display_turn_fields(tmp_path: Path) -> None:
+    """A composed agent prompt must not leak into the stored turn: the turn
+    keeps the user's original text plus structured context refs."""
+    adapter = FakeAdapter()
+    store = AgentStore(tmp_path / "api.sqlite3", tmp_path / "api-artifacts")
+    credentials = CredentialStore(memory={})
+    state = AppState(
+        passcode="secret",
+        agent_store=store,
+        credentials=credentials,
+        adapter_factory=lambda _provider, _key: adapter,
+    )
+    headers = {"x-termx-passcode": "secret"}
+    with TestClient(create_app(state, web_dir=None)) as client:
+        conv = client.post(
+            "/api/conversations", json={"title": "T"}, headers=headers
+        ).json()["conversation"]
+        state.agent.save_provider(
+            provider_id="fake",
+            kind="openai-compatible",
+            name="Fake",
+            base_url="http://127.0.0.1:9/v1",
+            model="m",
+            capabilities=["shell"],
+        )
+        task = client.post(
+            "/api/agent/tasks",
+            json={
+                "prompt": "instructions preface\n\nSummarize this\n\n--- a.py lines 1-2 ---\nx = 1",
+                "cwd": str(tmp_path),
+                "provider_id": "fake",
+                "conversation_id": conv["id"],
+                "turn_prompt": "Summarize this",
+                "context_refs": [{"ref": "a.py", "meta": {"path": "a.py", "start": 1, "end": 2}}],
+            },
+            headers=headers,
+        ).json()
+        turn = client.get(
+            f"/api/conversations/{conv['id']}", headers=headers
+        ).json()["conversation"]["turns"][0]
+        assert turn["task_id"] == task["id"]
+        assert turn["prompt"] == "Summarize this"
+        assert turn["context_refs"][0]["ref"] == "a.py"
+
+
 def test_custom_agents_crud(tmp_path: Path) -> None:
     state = _conversation_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
