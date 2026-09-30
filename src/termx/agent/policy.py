@@ -131,7 +131,7 @@ def evaluate_computer(actions: list[dict[str, Any]]) -> PolicyDecision:
     return PolicyDecision(True, False, "Within approved task", "Controls the selected desktop")
 
 
-_WIN_PATH_SHAPE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|~[\\/])")
+_WIN_PATH_SHAPE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|~(?:[\\/]|$))")
 _WIN_TOKEN = re.compile(r'"([^"]+)"|\'([^\']+)\'|([^\s"\';&|<>]+)')
 
 
