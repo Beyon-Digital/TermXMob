@@ -7,7 +7,7 @@ import mimetypes
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import monotonic, time
 from typing import Any, TypeVar
@@ -502,6 +502,16 @@ class AgentManager:
             )
             return
         intent = PolicyIntent.from_record(intent_record)
+        approval_kind = str((private_payload or {}).get("approval_kind") or "action")
+        if approval_kind == "capability":
+            # The intent carries the tool call's full capability requirement;
+            # the approval only elevated the decision's still-missing set,
+            # stored on the payload. Persist just those — the baseline caps
+            # aren't grantable and would be rejected by rule validation.
+            asked = (private_payload or {}).get("required_capabilities") or []
+            intent = replace(
+                intent, required_capabilities=tuple(str(c) for c in asked)
+            )
         try:
             rule = self._policy_engine.record_resolution(
                 intent,
@@ -509,7 +519,7 @@ class AgentManager:
                 remember=remember,
                 project_id=self._project_id(task["cwd"]),
                 source_approval_id=approval["id"],
-                approval_kind=str((private_payload or {}).get("approval_kind") or "action"),
+                approval_kind=approval_kind,
             )
         except (ValueError, KeyError) as exc:
             self._emit(
