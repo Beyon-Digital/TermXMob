@@ -528,6 +528,36 @@ def test_workspace_labels_restored_after_spawn(tmp_path):
     assert not (ws_a / "intruder.txt").exists()
 
 
+def test_exit_then_spawn_same_workspace_stays_writable(tmp_path):
+    """A last-release restore must serialize with a new spawn's apply on the
+    same path — the queued medium-IL reset cannot land after the fresh
+    low-IL apply and leave the live task unable to write."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+
+    async def run_once(spec):
+        spawned = await runner.spawn(spec)
+        out = await asyncio.wait_for(spawned.process.stdout.read(), timeout=45)
+        await asyncio.wait_for(spawned.wait(), timeout=15)
+        return out.decode("utf-8", "replace")
+
+    async def go():
+        await run_once(_spec(ws, "echo seed > a.txt & echo A_OK"))
+        # Spawn B immediately — A's release restore may still be in flight;
+        # B's apply must still win the ordering either way.
+        out_b = await run_once(_spec(ws, "echo live > b.txt 2>nul && echo B_OK || echo B_DENIED"))
+        for _ in range(600):
+            if not runner._release_tasks:
+                break
+            await asyncio.sleep(0.05)
+        return out_b
+
+    out_b = asyncio.run(go())
+    assert "B_OK" in out_b and "B_DENIED" not in out_b
+    assert (ws / "b.txt").read_text().strip().startswith("live")
+
+
 def test_spawn_grants_combines_remembered_and_one_shot(tmp_path):
     """Manager.spawn_grants: remembered capability rules ∪ one-shot
     capability approvals — the spawn-time capability negotiation."""

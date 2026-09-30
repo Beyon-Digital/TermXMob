@@ -112,6 +112,17 @@ _OS_ENV = ("SystemRoot", "windir", "ComSpec", "PATHEXT", "OS", "PROCESSOR_ARCHIT
 
 _SANDBOX_USER = "termx-sandbox"
 
+# Filesystem-boundary bookkeeping, shared across every runner instance in
+# this process: path -> live spawn refs, and the icacls ops applied on the
+# first ref so the last release can undo exactly them. Apply and restore
+# both run their icacls calls under this one lock, so a queued last-release
+# restore can never land after a fresh low-IL apply on the same path.
+# (Cross-process runners can't be coordinated unprivileged — documented
+# limitation; the refcount only covers in-process concurrency.)
+_LABEL_LOCK = threading.Lock()
+_LABEL_REFS: "dict[str, int]" = {}
+_LABEL_OPS: "dict[str, tuple[str, ...]]" = {}
+
 
 def windows_backend_available() -> bool:
     """True when the restricted-token + job primitives actually work here.
@@ -149,68 +160,36 @@ def _canary_spawn(shim, token: int) -> int:
     limit + assign, resume — so ``windows_backend_available()`` is true only
     when a real sandboxed spawn can complete end to end.
     """
-    import ctypes
-    import ctypes.wintypes as wt
+    return shim.canary_spawn(token)
 
-    si = shim._STARTUPINFO()
-    si.cb = ctypes.sizeof(si)
-    pi = shim._PROCESS_INFORMATION()
-    cmd = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe") + " /c exit 0"
-    if not shim._advapi32.CreateProcessWithTokenW(
-        token, shim._LOGON_WITH_PROFILE, None, cmd,
-        shim._CREATE_SUSPENDED | shim._CREATE_UNICODE_ENVIRONMENT, None, None,
-        ctypes.byref(si), ctypes.byref(pi),
-    ):
-        raise shim._last_error()
-    resumed = False
-    try:
-        job = shim._kernel32.CreateJobObjectW(None, None)
-        if not job:
-            raise shim._last_error()
-        info = shim._JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-        info.BasicLimitInformation.LimitFlags = (
-            shim._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            | shim._JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-        )
-        info.BasicLimitInformation.ActiveProcessLimit = 8
-        if not shim._kernel32.SetInformationJobObject(
-            job, shim._JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
-            ctypes.byref(info), ctypes.sizeof(info),
-        ):
-            raise shim._last_error()
-        if not shim._kernel32.AssignProcessToJobObject(job, pi.hProcess):
-            raise shim._last_error()
-        shim._kernel32.ResumeThread(pi.hThread)
-        resumed = True
-        shim._kernel32.WaitForSingleObject(pi.hProcess, 15000)
-        code = wt.DWORD()
-        shim._kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(code))
-        shim._kernel32.CloseHandle(job)
-        return code.value
-    finally:
-        if not resumed:
-            # A failed setup must not strand the suspended canary process.
-            shim._kernel32.TerminateProcess(pi.hProcess, 1)
-        shim._kernel32.CloseHandle(pi.hProcess)
-        shim._kernel32.CloseHandle(pi.hThread)
+
+_user_available: "bool | None" = None
 
 
 def _sandbox_user_provisioned() -> bool:
-    """Dedicated restricted user present and credentialed.
+    """Dedicated restricted user present, credentialed, and launchable.
 
     Contract: local account ``termx-sandbox`` exists AND
     ``%ProgramData%\\termx\\sandbox-user.cred`` holds a DPAPI machine-scope
     blob of its generated password (UTF-8), written by an install-time
     elevated ``termx sandbox provision`` step. The password is loaded inside
-    the shim — it never enters a request file.
+    the shim — it never enters a request file. The probe ends in a real
+    canary spawn under the restricted user token, so a host without
+    SE_IMPERSONATE_NAME/SE_ASSIGNPRIMARYTOKEN never selects a mode whose
+    spawn paths all fail. Probed once per process.
     """
+    global _user_available
+    if _user_available is not None:
+        return _user_available
+    _user_available = False
     if sys.platform != "win32":
-        return False
+        return _user_available
     try:
         from termx.sandbox import _win_shim as shim
-        return shim.probe_sandbox_user()
+        _user_available = shim.probe_sandbox_user()
     except (ImportError, RuntimeError, OSError):
-        return False
+        pass
+    return _user_available
 
 
 class WindowsSandboxRunner:
@@ -229,13 +208,6 @@ class WindowsSandboxRunner:
         self._profile = profile
         base = Path(state_dir) if state_dir is not None else _default_state_dir()
         self._state_dir = base / "sandbox"
-        # Filesystem-boundary bookkeeping: path -> live spawn refs, and the
-        # icacls ops applied on the first ref so the last release can undo
-        # exactly them. Serialised by _label_lock so a release's restore
-        # cannot interleave with another spawn's apply on the same path.
-        self._label_refs: "dict[str, int]" = {}
-        self._label_ops: "dict[str, tuple[str, ...]]" = {}
-        self._label_lock = threading.Lock()
         self._release_tasks: "set[asyncio.Task]" = set()
         # Dedicated restricted user (stronger identity boundary) when the
         # admin-provisioned account + DPAPI credential exist.
@@ -409,13 +381,15 @@ class WindowsSandboxRunner:
         ro = [Path(p).resolve() for p in spec.read_only_roots]
         held: list[str] = []
         try:
-            with self._label_lock:
+            # The icacls calls stay inside the lock: a queued restore cannot
+            # land after a fresh apply on the same path and clobber it.
+            with _LABEL_LOCK:
                 for path in dict.fromkeys(writable + ro):
                     key = str(path)
                     kind = "w" if path in writable else "r"
-                    self._label_refs[key] = self._label_refs.get(key, 0) + 1
+                    _LABEL_REFS[key] = _LABEL_REFS.get(key, 0) + 1
                     held.append(key)
-                    if self._label_refs[key] > 1:
+                    if _LABEL_REFS[key] > 1:
                         continue
                     ops: list[str] = []
                     if self._user_mode:
@@ -429,15 +403,15 @@ class WindowsSandboxRunner:
                             [key, "/setintegritylevel", "(OI)(CI)L", "/T"]
                         )
                         ops.append("il")
-                    self._label_ops[key] = tuple(ops)
+                    _LABEL_OPS[key] = tuple(ops)
         except Exception:
-            with self._label_lock:
+            with _LABEL_LOCK:
                 for key in held:
-                    if self._label_refs.get(key, 0) <= 1:
-                        self._label_refs.pop(key, None)
-                        self._label_ops.pop(key, None)
+                    if _LABEL_REFS.get(key, 0) <= 1:
+                        _LABEL_REFS.pop(key, None)
+                        _LABEL_OPS.pop(key, None)
                     else:
-                        self._label_refs[key] -= 1
+                        _LABEL_REFS[key] -= 1
             raise
         return held
 
@@ -449,30 +423,37 @@ class WindowsSandboxRunner:
             await asyncio.to_thread(self._drop_held, held)
 
     def _drop_held(self, held: "list[str]") -> None:
-        """Decrement refs; on the last drop undo the labels/grants applied."""
-        restore: list[list[str]] = []
-        with self._label_lock:
+        """Decrement refs; on the last drop undo the labels/grants applied.
+
+        The restore icacls runs inside the shared lock — a last-release
+        reset can therefore never interleave with a new spawn's apply on
+        the same path (which would clobber the fresh low label back to
+        medium underneath a live task).
+        """
+        with _LABEL_LOCK:
             for key in held:
-                refs = self._label_refs.get(key, 0)
-                if refs <= 1:
-                    self._label_refs.pop(key, None)
-                    ops = self._label_ops.pop(key, ())
-                    if "il" in ops:
-                        restore.append(
-                            [key, "/setintegritylevel", "(OI)(CI)M", "/T"]
-                        )
-                    if "grant" in ops:
-                        restore.append([key, "/remove:g", _SANDBOX_USER, "/T"])
-                else:
-                    self._label_refs[key] = refs - 1
-        for args in restore:
-            try:
-                self._icacls(args)
-            except OSError:
-                # Path gone or already reset — a failed restore leaves a
-                # stale label on an existing tree; it widens writes for
-                # later low-IL tasks on that path only (documented residual).
-                pass
+                refs = _LABEL_REFS.get(key, 0)
+                if refs > 1:
+                    _LABEL_REFS[key] = refs - 1
+                    continue
+                _LABEL_REFS.pop(key, None)
+                ops = _LABEL_OPS.pop(key, ())
+                restore: "list[list[str]]" = []
+                if "il" in ops:
+                    restore.append(
+                        [key, "/setintegritylevel", "(OI)(CI)M", "/T"]
+                    )
+                if "grant" in ops:
+                    restore.append([key, "/remove:g", _SANDBOX_USER, "/T"])
+                for args in restore:
+                    try:
+                        self._icacls(args)
+                    except OSError:
+                        # Path gone or already reset — a failed restore
+                        # leaves a stale label on an existing tree; it
+                        # widens writes for later low-IL tasks on that
+                        # path only (documented residual).
+                        pass
 
     @staticmethod
     def _icacls(args: list[str]) -> None:

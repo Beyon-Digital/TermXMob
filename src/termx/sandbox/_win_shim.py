@@ -310,7 +310,11 @@ def build_restricted_token(
             l for l in _token_privilege_luids(dup)
             if not (l.LowPart == keep.LowPart and l.HighPart == keep.HighPart)
         ]
-        arr = (_LUID * len(delete))(*delete) if delete else None
+        # PrivilegesToDelete takes LUID_AND_ATTRIBUTES[] (12-byte entries),
+        # not bare LUIDs — an 8-byte stride misreads the whole list.
+        arr = (_LUID_AND_ATTRIBUTES * len(delete))()
+        for i, luid in enumerate(delete):
+            arr[i].Luid = luid
         if not _advapi32.CreateRestrictedToken(
             dup, 0, 0, None, len(delete), arr, 0, None,
             ctypes.byref(restricted),
@@ -418,14 +422,85 @@ def logon_user_token(creds: dict) -> int:
     return token.value
 
 
+def canary_spawn(token: int) -> int:
+    """Spawn ``cmd /c exit 0`` under ``token`` through the run() spawn chain.
+
+    Used by availability probes: proves the host can actually launch a
+    process under this token (CreateProcessWithTokenW, with the
+    CreateProcessAsUserW privileged fallback) and confine it in a Job
+    Object — rather than assuming a well-formed token implies a working
+    spawn. Returns the child exit code; raises OSError when no launch path
+    works.
+    """
+    si = _STARTUPINFO()
+    si.cb = ctypes.sizeof(si)
+    pi = _PROCESS_INFORMATION()
+    cmd = (
+        str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe")
+        + " /c exit 0"
+    )
+    flags = _CREATE_SUSPENDED | _CREATE_UNICODE_ENVIRONMENT
+    last_exc: "OSError | None" = None
+    if not _advapi32.CreateProcessWithTokenW(
+        token, 0, None, cmd, flags, None, None,
+        ctypes.byref(si), ctypes.byref(pi),
+    ):
+        last_exc = _last_error()
+        if not _advapi32.CreateProcessAsUserW(
+            token, None, cmd, None, None, False, flags, None, None,
+            ctypes.byref(si), ctypes.byref(pi),
+        ):
+            last_exc = _last_error()
+        else:
+            last_exc = None
+    if last_exc is not None:
+        raise last_exc
+    resumed = False
+    try:
+        job = _kernel32.CreateJobObjectW(None, None)
+        if not job:
+            raise _last_error()
+        info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = (
+            _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | _JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        )
+        info.BasicLimitInformation.ActiveProcessLimit = 8
+        if not _kernel32.SetInformationJobObject(
+            job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(info), ctypes.sizeof(info),
+        ):
+            raise _last_error()
+        if not _kernel32.AssignProcessToJobObject(job, pi.hProcess):
+            raise _last_error()
+        _kernel32.ResumeThread(pi.hThread)
+        resumed = True
+        _kernel32.WaitForSingleObject(pi.hProcess, 15000)
+        code = wt.DWORD()
+        _kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(code))
+        _kernel32.CloseHandle(job)
+        return code.value
+    finally:
+        if not resumed:
+            # A failed setup must not strand the suspended canary process.
+            _kernel32.TerminateProcess(pi.hProcess, 1)
+        _kernel32.CloseHandle(pi.hProcess)
+        _kernel32.CloseHandle(pi.hThread)
+
+
 def probe_sandbox_user() -> bool:
     """True when provisioned creds exist AND actually produce a logon token
-    AND the account can see the interactive window station/desktop.
+    AND the account can see the interactive window station/desktop AND a
+    real canary spawns under the restricted user token.
 
     A child spawned as a foreign user hangs during process init when it has
     no rights on ``winsta0``/``default`` (verified on Server 2022), so the
     provisioning contract includes the window-station/desktop grant; check
-    it here so user mode is never advertised into a hung spawn.
+    it here so user mode is never advertised into a hung spawn. The canary
+    matters on hosts without SE_IMPERSONATE_NAME (a standard-user account):
+    CreateProcessWithTokenW would fail there and CreateProcessAsUserW wants
+    SE_ASSIGNPRIMARYTOKEN, so without the canary the runner would pick a
+    mode in which nothing can start.
     """
     creds = sandbox_user_credentials()
     if creds is None:
@@ -434,12 +509,26 @@ def probe_sandbox_user() -> bool:
         handle = logon_user_token(creds)
     except OSError:
         return False
-    _kernel32.CloseHandle(handle)
     try:
         sid = _account_sid(_SANDBOX_USER)
-        return _winsta_desktop_granted(sid)
+        if not _winsta_desktop_granted(sid):
+            _kernel32.CloseHandle(handle)
+            return False
     except OSError:
+        _kernel32.CloseHandle(handle)
         return False
+    try:
+        token = build_restricted_token(handle, keep_traverse_privilege=True)
+    except OSError:
+        _kernel32.CloseHandle(handle)
+        return False
+    _kernel32.CloseHandle(handle)
+    try:
+        ok = canary_spawn(token) == 0
+    except OSError:
+        ok = False
+    _kernel32.CloseHandle(token)
+    return ok
 
 
 # -- provisioning helpers --------------------------------------------------
