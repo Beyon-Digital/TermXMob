@@ -239,6 +239,74 @@ def test_network_flag_without_grant_still_denied(tmp_path):
 
 
 @requires_seatbelt
+def test_one_shot_capability_grant_reaches_spawn(tmp_path):
+    """Regression: an "Allow once" net.outbound approval must reach the
+    SpawnSpec — resolving grants separately for `network` and
+    `granted_capabilities` used to pop the one-shot twice, silently
+    re-denying the spawn (approval granted, kernel still denied)."""
+    import socket as sk
+    import threading
+    from types import SimpleNamespace
+
+    from termx.agent.manager import AgentManager
+    from termx.agent.secrets import CredentialStore
+    from termx.agent.store import AgentStore
+    from termx.agent.tools.helpers import sandbox_grants, sandbox_network
+
+    store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+    try:
+        manager = AgentManager(store, CredentialStore(memory={}), desktop=None)
+        task = store.create_task(
+            prompt="t", cwd=str(tmp_path), provider_id="p", model="m", limits={}
+        )
+        manager._one_shot_capability_grants[(task["id"], "c1")] = {
+            "net.outbound:any"
+        }
+        ctx = SimpleNamespace(task_id=task["id"], manager=manager)
+
+        # Same resolution order as tools/shell.py: grants resolved once, the
+        # network flag derived from the same read.
+        grants = sandbox_grants(ctx, "agent", "c1")
+        network = sandbox_network(grants)
+    finally:
+        store.close()
+
+    assert network == "outbound"
+    assert "net.outbound:any" in grants
+
+    listener = sk.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    accepted: list[bytes] = []
+
+    def serve() -> None:
+        try:
+            conn, _ = listener.accept()
+            accepted.append(conn.recv(16))
+            conn.close()
+        except OSError:
+            pass
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    spec = _spec(
+        ws,
+        f"printf 'PING' | nc -w 2 127.0.0.1 {port} && echo SENT",
+        network=network,
+        granted_capabilities=tuple(sorted(grants)),
+    )
+    _, out = asyncio.run(_run(runner, spec))
+    thread.join(timeout=5)
+    listener.close()
+    assert "SENT" in out
+    assert accepted == [b"PING"]
+
+
+@requires_seatbelt
 def test_cpu_limit_enforced(tmp_path):
     """ulimit -t inside the seatbelt preamble must kill a busy loop via
     SIGXCPU. (memory_bytes is not enforceable on macOS — documented gap.)"""
