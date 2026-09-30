@@ -142,9 +142,12 @@ _GRANTABLE = frozenset(
 # with both spellings since seatbelt filters match the lookup path.
 _SYSTEM_READ_ROOTS = (
     "/System",
-    # /Library is narrowed to toolchain content — a blanket grant exposed
-    # host databases and per-machine app data (e.g. /Library/Application
-    # Support) outside approved roots.
+    # /Library is narrowed to toolchain/Apple-OS content — a blanket grant
+    # exposed host databases and per-machine app data (e.g. /Library/
+    # Application Support) outside approved roots. /Library/Apple holds
+    # Apple's own system content, including the firmlinked PrivateFrameworks
+    # (CoreDevice, MobileDevice) the /usr/bin developer shims dlopen.
+    "/Library/Apple",
     "/Library/Developer",
     "/Library/Frameworks",
     "/Library/Fonts",
@@ -161,6 +164,13 @@ _SYSTEM_READ_ROOTS = (
     "/etc",
     "/private/etc",
     "/cores",
+)
+_SYSTEM_READ_LITERALS = (
+    # /usr/bin developer shims (python3, xcodebuild, ...) read the Xcode
+    # license plist before resolving a toolchain. Literal-granting just
+    # that plist keeps the rest of /Library/Preferences closed.
+    "/Library/Preferences/com.apple.dt.Xcode.plist",
+    "/Library/Preferences/com.apple.dt.XcodeHelper.plist",
 )
 _SYSTEM_EXEC_ROOTS = ("/usr", "/bin", "/sbin", "/opt", "/Applications", "/System")
 _DEV_WRITE = ('/dev/null', '/dev/tty', '/dev/ptmx', '/dev/dtracehelper')
@@ -185,13 +195,19 @@ def _helper_path() -> Path | None:
     if not (path.is_file() and os.access(path, os.X_OK)):
         return None
     # Self-attestation is only meaningful from a tamper-proof binary: the
-    # well-known helper must be root-owned and not group/other-writable,
-    # or any local process could claim the restricted-user identity.
+    # well-known helper AND every ancestor directory must be root-owned and
+    # not group/other-writable, or any local process could rename a parent
+    # and substitute a self-attesting binary.
     try:
-        stat_result = path.stat()
+        cur = path.resolve()
+        while True:
+            stat_result = cur.stat()
+            if stat_result.st_uid != 0 or (stat_result.st_mode & 0o022):
+                return None
+            if cur.parent == cur:
+                break
+            cur = cur.parent
     except OSError:
-        return None
-    if stat_result.st_uid != 0 or (stat_result.st_mode & 0o022):
         return None
     return path
 
@@ -342,7 +358,9 @@ def _seatbelt_profile(spec: SpawnSpec, home: Path, tmp_dir: Path) -> str:
         # filenames aren't enumerable where data reads are denied.
         "(allow file-read-metadata)",
         '(allow file-read* (literal "/"))',
-        f"(allow file-read* {_subpaths(read_all)})",
+        f"(allow file-read* {_subpaths(read_all)} "
+        + " ".join(f'(literal "{p}")' for p in _SYSTEM_READ_LITERALS)
+        + ")",
         f"(allow file-write* {_subpaths(write_roots)})",
         "(allow file-write* "
         + " ".join(f'(literal "{p}")' for p in _DEV_WRITE)

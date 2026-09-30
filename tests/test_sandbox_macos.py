@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import subprocess
 import stat
 import sys
 import textwrap
@@ -322,6 +323,35 @@ def test_cpu_limit_enforced(tmp_path):
     )
     rc, out = asyncio.run(_run(runner, spec))
     assert rc == -signal.SIGXCPU or "Cputime limit exceeded" in out
+
+
+@requires_seatbelt
+def test_xcode_shim_runs_but_prefs_stay_closed(tmp_path):
+    """The /usr/bin developer shims resolve inside the sandbox (Apple
+    firmlinked frameworks + the Xcode license plist are readable) while
+    the rest of /Library/Preferences stays denied."""
+    if (
+        subprocess.run(
+            ["/usr/bin/python3", "-c", "print(1)"], capture_output=True
+        ).returncode
+        != 0
+    ):
+        pytest.skip("host /usr/bin/python3 shim is not functional")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(_run(runner, _spec(ws, "/usr/bin/python3 -c 'print(1)'")))
+    assert rc == 0 and "1" in out
+    rc, _ = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                ws,
+                "cat /Library/Preferences/SystemConfiguration/preferences.plist",
+            ),
+        )
+    )
+    assert rc != 0
 
 
 @requires_seatbelt
