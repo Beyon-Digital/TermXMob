@@ -127,6 +127,17 @@ Platform-specific proof:
   `High Mandatory Level  S-1-16-12288`. The FS boundary is `icacls
   /setintegritylevel L` on workspace/writable roots — writes outside are
   kernel-denied. `network_control:false` is honest (no unprivileged primitive).
+- **windows-user** (provisioned `termx-sandbox` account — `/api/machine`
+  reports `backend:"windows-user"`, `strength:"restricted-user"`,
+  `identity_isolation:true`): strongest single proof is `whoami` →
+  `devinbox\termx-sandbox` (token mode would read the host user) plus
+  `whoami /groups` → Low Mandatory Level and NO `BUILTIN\Administrators`.
+  Write inside workspace exits 0 — the file is owned by `DEVINBOX\termx-sandbox`
+  (DACL grant), write outside → `Access is denied.` exit 1.
+  Stale csrss-owned `cmd.exe 0xc0000142` dialogs may litter the VM desktop
+  after provisioning/session recycle — they are NOT spawned by the sandbox:
+  attribute them by watching hwnd churn while a direct `runner_for("agent")`
+  spawn runs clean, rather than dismissing them.
 - **linux-ns**: probe via `id -u`/`cat /proc/self/uid_map` or blocked writes —
   see test_sandbox suites for boundary proofs.
 
