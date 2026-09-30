@@ -468,3 +468,89 @@ def test_git_worktree_metadata_writable_but_base_checkout_hidden(tmp_path):
         _run(runner, _spec(wt, f"cat {base}/host-secret.txt || echo HIDDEN"))
     )
     assert "HIDDEN" in out
+
+
+def test_ephemeral_home_writable(tmp_path):
+    """A task-less spawn's ephemeral HOME must accept writes from the
+    in-ns uid — package caches and tools storing under $HOME depend on it."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(
+        _run(runner, _spec(ws, 'touch "$HOME/cache" && echo WRITABLE || echo DENIED'))
+    )
+    assert "WRITABLE" in out and "DENIED" not in out
+
+
+def test_custom_env_still_gets_mounted_home(tmp_path):
+    """spec.env overrides the built env but HOME/TMPDIR are the mount
+    contract — they must point at the mounted private dirs regardless."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(ws, 'echo "H=$HOME T=$TMPDIR F=$MY_FLAG"', env={"MY_FLAG": "yes"}),
+        )
+    )
+    assert "F=yes" in out
+    assert "H=/tmp/termx-home" in out
+    assert "T=/tmp" in out
+
+
+def test_env_values_not_on_argv(tmp_path):
+    """Secret-bearing env must not appear in the launcher's argv — host
+    /proc/<pid>/cmdline is world-readable."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    marker = "S3CR3T-MARKER-9f8e7d"
+    spawned = asyncio.run(
+        runner.spawn(_spec(ws, "sleep 5", env={"KEEP_SECRET": marker}))
+    )
+    try:
+        cmdline = Path(f"/proc/{spawned.process.pid}/cmdline").read_bytes()
+        assert marker.encode() not in cmdline, "env value leaked into bwrap argv"
+        assert b"--setenv" not in cmdline
+    finally:
+        spawned.process.kill()
+        asyncio.run(asyncio.sleep(0))  # let the loop settle
+
+
+def test_git_commondir_config_and_hooks_read_only(tmp_path):
+    """The shared commondir mounts ro except objects/refs/logs: commits in
+    the worktree work, but `git config` writes and hook retargeting fail."""
+    import subprocess
+
+    base = tmp_path / "base2"
+    base.mkdir()
+    for args in (
+        ["git", "-C", str(base), "init", "-b", "main"],
+        ["git", "-C", str(base), "config", "user.email", "t@t"],
+        ["git", "-C", str(base), "config", "user.name", "t"],
+        ["git", "-C", str(base), "commit", "--allow-empty", "-m", "init"],
+        ["git", "-C", str(base), "worktree", "add", "-b", "wt2", str(tmp_path / "wt2")],
+    ):
+        subprocess.run(args, check=True, capture_output=True)
+    wt = tmp_path / "wt2"
+    runner = _runner(tmp_path)
+    # Commits still work: objects + refs + logs + the worktree gitdir are rw.
+    rc, out = asyncio.run(
+        _run(runner, _spec(wt, "git commit --allow-empty -m c && echo COMMIT_OK"))
+    )
+    assert "COMMIT_OK" in out, out
+    # Config writes (core.hooksPath retarget → host-side code exec) are EROFS.
+    rc, out = asyncio.run(
+        _run(
+            runner,
+            _spec(
+                wt,
+                "git config core.hooksPath /tmp/hooks 2>/dev/null && echo WROTE || echo DENIED",
+            ),
+        )
+    )
+    assert "DENIED" in out and "WROTE" not in out
+    # Config reads still work.
+    _, out = asyncio.run(_run(runner, _spec(wt, "git config user.email")))
+    assert "t@t" in out

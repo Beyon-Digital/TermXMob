@@ -27,9 +27,14 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 
 from termx.sandbox.environment import build_environment
@@ -67,6 +72,12 @@ _ETC_DIRS = ("ssl", "pki", "ca-certificates")
 # Task-less spawns get an ephemeral HOME inside the per-ns tmpfs — it dies
 # with the namespace and can never expose an unrelated run's leftovers.
 _EPHEMERAL_HOME = "/tmp/termx-home"
+
+# Child env is delivered through a sourced file, never `--setenv` argv —
+# argv is world-readable via /proc/<pid>/cmdline, while the envfile is
+# 0600 under the 0700 state dir and swept once consumed.
+_ENVFILE_NS = "/tmp/termx-env"
+_ENVFILE_MAX_AGE_S = 120
 
 # prlimit defaults for every restricted spawn (per-tree bounds; pids counts
 # the real uid so it is kept generous enough to avoid false failures).
@@ -173,10 +184,44 @@ class LinuxNamespaceRunner:
         home = self._sandbox_home(spec)
         if home is not None:
             home.mkdir(parents=True, exist_ok=True)
-        env = spec.env or build_environment(
+        env = dict(spec.env) if spec.env else build_environment(
             spec.profile, home=str(home) if home else _EPHEMERAL_HOME, tmp_dir="/tmp"
         )
+        # HOME/TMPDIR are part of the mount contract — a custom env must
+        # still point at the mounted private dirs.
+        env["HOME"] = str(home) if home else _EPHEMERAL_HOME
+        env["TMPDIR"] = "/tmp"
         return self._argv(spec, env, home)
+
+    def _env_file(self, env: dict[str, str]) -> Path:
+        envdir = self._state_dir / "env"
+        envdir.mkdir(parents=True, exist_ok=True)
+        envdir.chmod(0o700)
+        self._sweep_env_files(envdir)
+        path = envdir / f"{uuid.uuid4().hex}.env"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            for key, value in env.items():
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                    continue
+                fh.write(f"{key}={shlex.quote(value)}\n")
+        return path
+
+    @staticmethod
+    def _sweep_env_files(envdir: Path) -> None:
+        # By the time a file is old its child has sourced it (the preamble
+        # runs at exec); stale leftovers would only linger on a crashed
+        # spawn, so age-sweeping loses nothing live.
+        cutoff = time.time() - _ENVFILE_MAX_AGE_S
+        try:
+            for entry in envdir.iterdir():
+                try:
+                    if entry.is_file() and entry.stat().st_mtime < cutoff:
+                        entry.unlink()
+                except OSError:
+                    continue
+        except OSError:
+            pass
 
     # -- internals ------------------------------------------------------
 
@@ -241,17 +286,29 @@ class LinuxNamespaceRunner:
         else:
             # Ephemeral HOME inside the per-ns tmpfs — nothing persists to a
             # shared dir, so an unrelated earlier run's files can't leak in.
-            argv += ["--dir", _EPHEMERAL_HOME]
+            # --chmod makes it writable by the in-ns uid on bwrap/tmpfs
+            # combos where the fresh dir lands root-owned.
+            argv += ["--dir", _EPHEMERAL_HOME, "--chmod", "0777", _EPHEMERAL_HOME]
             seen.add(_EPHEMERAL_HOME)
+        envfile = self._env_file(env)
+        argv += ["--ro-bind", str(envfile), _ENVFILE_NS]
+        seen.add(_ENVFILE_NS)
         workspace = str(Path(spec.workspace_root).resolve())
         argv += ["--bind", workspace, workspace]
         seen.add(workspace)
         # Linked-git-worktree metadata: the worktree's `.git` file points at
-        # <base>/.git/worktrees/<name>; git needs that dir (rw — index/refs)
-        # and its commondir object store (rw — new objects). The base
-        # checkout's *files* stay unmounted entirely.
-        for meta in _git_metadata_roots(Path(workspace)):
-            resolved = str(meta)
+        # <base>/.git/worktrees/<name>. The shared commondir mounts ro —
+        # commits still work (objects/refs/logs plus the worktree gitdir
+        # bind rw below) but `git config`, hooks, and packed-refs cannot be
+        # rewritten from inside the sandbox.
+        git_ro, git_rw = _git_mounts(Path(workspace))
+        for ro_dir in git_ro:
+            resolved = str(ro_dir)
+            if resolved not in seen:
+                seen.add(resolved)
+                argv += ["--ro-bind", resolved, resolved]
+        for rw_dir in git_rw:
+            resolved = str(rw_dir)
             if resolved not in seen:
                 seen.add(resolved)
                 argv += ["--bind", resolved, resolved]
@@ -267,10 +324,17 @@ class LinuxNamespaceRunner:
                 argv += ["--ro-bind", resolved, resolved]
         argv += ["--chdir", spec.cwd or workspace]
         argv.append("--clearenv")
-        for key, value in env.items():
-            argv += ["--setenv", key, value]
         argv.append("--")
         cmd = list(spec.argv) if spec.argv is not None else ["/bin/sh", "-c", spec.shell or ""]
+        # Env arrives via the ro-bound file: the preamble sources it then
+        # execs, so values never appear in argv (world-readable cmdline).
+        cmd = [
+            "/bin/sh",
+            "-c",
+            f'set -a; . "{_ENVFILE_NS}"; set +a; exec "$@"',
+            "sh",
+            *cmd,
+        ]
         limits = spec.limits if spec.limits != ResourceLimits() else _DEFAULT_LIMITS
         argv += self._limit_argv(limits, spec) + cmd
         return argv
@@ -296,18 +360,22 @@ def _safe_name(value: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in value)[:80] or "agent"
 
 
-def _git_metadata_roots(workspace: Path) -> list[Path]:
-    """Git metadata a linked worktree needs beyond the workspace bind.
+def _git_mounts(workspace: Path) -> tuple[list[Path], list[Path]]:
+    """(read-only, read-write) git metadata for a linked worktree.
 
     A worktree's `.git` is a text file (`gitdir: <abs>`) pointing into the
     base repository's `.git/worktrees/<name>`; that dir's `commondir` in
-    turn points at the shared object store. Both are bound rw — git refuses
-    to operate otherwise — while the base checkout's working files stay
-    unmounted entirely.
+    turn points at the shared object store. The commondir mounts
+    read-only, then the pieces a commit needs mount rw over it: the
+    worktree gitdir (index/HEAD/FETCH_HEAD), objects, refs, and logs.
+    `config`, `hooks`, and `packed-refs` stay ro — the sandbox cannot
+    retarget hooks or rewrite repo config (which would run host-side
+    outside the sandbox).
     """
     dotgit = workspace / ".git"
+    empty: tuple[list[Path], list[Path]] = ([], [])
     if not dotgit.is_file():
-        return []
+        return empty
     try:
         text = dotgit.read_text(encoding="utf-8", errors="replace").strip()
         target = next(
@@ -315,27 +383,42 @@ def _git_metadata_roots(workspace: Path) -> list[Path]:
             "",
         )
         if not target:
-            return []
+            return empty
         gitdir = Path(target)
         if not gitdir.is_absolute():
             gitdir = workspace / gitdir
         gitdir = gitdir.resolve(strict=False)
         if not gitdir.is_dir():
-            return []
-        roots = [gitdir]
+            return empty
         commondir_file = gitdir / "commondir"
-        if commondir_file.is_file():
-            common = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
-            if common:
-                common_path = Path(common)
-                if not common_path.is_absolute():
-                    common_path = gitdir / common_path
-                resolved = common_path.resolve(strict=False)
-                if resolved.is_dir() and resolved not in roots:
-                    roots.append(resolved)
-        return roots
+        if not commondir_file.is_file():
+            # Standalone gitdir (e.g. submodule-less main worktree): the
+            # repo IS the checkout — no shared state to protect.
+            return [], [gitdir]
+        common = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
+        if not common:
+            return empty
+        common_path = Path(common)
+        if not common_path.is_absolute():
+            common_path = gitdir / common_path
+        common_path = common_path.resolve(strict=False)
+        if not common_path.is_dir():
+            return empty
+        rw = [gitdir]
+        for sub in ("objects", "refs", "logs"):
+            child = common_path / sub
+            if not child.is_dir():
+                # logs/ is created lazily by git — a missing dir under the
+                # ro parent would be EROFS and abort commits, so create it
+                # host-side up front. Harmless, standard layout.
+                try:
+                    child.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    continue
+            rw.append(child)
+        return [common_path], rw
     except OSError:
-        return []
+        return empty
 
 
 def _default_state_dir() -> Path:
