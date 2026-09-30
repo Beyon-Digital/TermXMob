@@ -235,6 +235,12 @@ class AgentTaskBody(BaseModel):
     execution_mode: str | None = Field(default=None, pattern=r"^(direct|worktree)$")
     conversation_id: str | None = Field(default=None, max_length=80)
     custom_agent_id: str | None = Field(default=None, max_length=80)
+    # Conversation-turn metadata: `prompt` is the agent's full input (it can
+    # carry instructions + expanded file context), while `turn_prompt` is the
+    # user-facing text stored on the turn so other devices render the actual
+    # message. `context_refs` are the structured references behind it.
+    turn_prompt: str | None = Field(default=None, max_length=20_000)
+    context_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
 
 
 class WorktreeActionBody(BaseModel):
@@ -864,11 +870,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         if body.conversation_id:
             state.agent_store.add_conversation_turn(
                 body.conversation_id,
-                prompt=body.prompt,
+                prompt=body.turn_prompt or body.prompt,
                 task_id=task["id"],
                 mode=body.mode,
                 provider_id=body.provider_id,
                 model=body.model,
+                context_refs=body.context_refs,
                 attachment_refs=[{"ref": item.name} for item in body.attachments],
             )
         log_event("agent_task_create", task_id=task["id"], provider_id=body.provider_id)

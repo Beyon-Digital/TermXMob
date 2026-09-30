@@ -1195,7 +1195,14 @@ class AgentStore:
                     target = ref.get("ref") or ref.get("path") or ref.get("id")
                     if not target:
                         continue
-                    meta = {key: value for key, value in ref.items() if key not in {"ref", "path", "id", "kind"}}
+                    # Clients send either a flat ref ({ref, cwd, start}) or a
+                    # structured one ({ref, meta: {cwd, start}}) — fold an
+                    # incoming meta object into the stored metadata instead of
+                    # nesting it under a literal "meta" key.
+                    meta = {key: value for key, value in ref.items() if key not in {"ref", "path", "id", "kind", "meta"}}
+                    inner = ref.get("meta")
+                    if isinstance(inner, dict):
+                        meta = {**inner, **meta}
                     self._db.execute(
                         """
                         INSERT INTO conversation_context_refs
