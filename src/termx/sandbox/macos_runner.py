@@ -31,12 +31,15 @@ Two modes, selected at runner construction (never silently downgraded):
     A privileged helper binary — shipped by the Tauri packaging (PR C) —
     executes spawns under a restricted non-login macOS user account
     (``termx-sandbox``) so the DAC uid boundary adds real identity isolation.
-    The helper is located via ``$TERMX_SANDBOX_HELPER`` or the well-known path
-    ``~/Library/Application Support/termx/sandbox-helper``. Detection is a
-    live probe: the runner sends ``{"op": "status"}`` and trusts the helper's
-    attestation (``user`` must be ``termx-sandbox``, and the helper must apply
-    the seatbelt profile it is handed — ``seatbelt: true`` in the reply) so
-    defense-in-depth applies on top of the uid boundary.
+    The helper is located via ``$TERMX_SANDBOX_HELPER`` (a developer seam —
+    anything able to set env on the daemon is already host-level) or the
+    well-known path ``/Library/Application Support/termx/sandbox-helper``.
+    The well-known path is only trusted when the binary is **root-owned and
+    not group/other-writable**: a user-writable file could attest
+    ``termx-sandbox`` + ``seatbelt`` without enforcing either boundary.
+    Detection is then a live probe: the runner sends ``{"op": "status"}``
+    and requires ``user == termx-sandbox`` and ``seatbelt: true`` in the
+    reply so defense-in-depth applies on top of the uid boundary.
 
 Helper protocol — JSON Lines over the helper's stdin/stdout. One helper
 invocation per runner handles a spawn session; implementers may also run it
@@ -108,9 +111,10 @@ from termx.sandbox.runner import StreamedProcess
 
 _SANDBOX_EXEC = shutil.which("sandbox-exec")
 _HELPER_ENV = "TERMX_SANDBOX_HELPER"
-_HELPER_DEFAULT = (
-    Path.home() / "Library" / "Application Support" / "termx" / "sandbox-helper"
-)
+# System-wide install location (signed pkg / install-repair lifecycle), NOT
+# ~/Library: a helper under the user's home can always be rewritten by the
+# very user it claims to drop below.
+_HELPER_DEFAULT = Path("/Library/Application Support/termx/sandbox-helper")
 _HELPER_USER = "termx-sandbox"
 # Helper protocol contract: a single output frame carries at most this many
 # bytes of raw child output (the client reads frames with a 2x headroom).
@@ -170,11 +174,26 @@ _helper_probe: "dict[str, Any] | None" = None
 
 def _helper_path() -> Path | None:
     override = os.environ.get(_HELPER_ENV, "").strip()
-    candidates = [Path(override)] if override else [_HELPER_DEFAULT]
-    for path in candidates:
+    if override:
+        # Developer seam: trusted by definition — a party that can set env
+        # on the daemon already controls the host side of the boundary.
+        path = Path(override)
         if path.is_file() and os.access(path, os.X_OK):
             return path
-    return None
+        return None
+    path = _HELPER_DEFAULT
+    if not (path.is_file() and os.access(path, os.X_OK)):
+        return None
+    # Self-attestation is only meaningful from a tamper-proof binary: the
+    # well-known helper must be root-owned and not group/other-writable,
+    # or any local process could claim the restricted-user identity.
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+    if stat_result.st_uid != 0 or (stat_result.st_mode & 0o022):
+        return None
+    return path
 
 
 def _probe_helper() -> dict[str, Any] | None:
