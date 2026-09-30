@@ -319,6 +319,8 @@ class WindowsSandboxRunner:
         return out
 
     def _sandbox_home(self, spec: SpawnSpec) -> Path:
+        if spec.home:
+            return Path(spec.home)
         scope = spec.task_id or self._profile
         return self._mode_state_root() / "home" / _safe_name(scope)
 
