@@ -216,6 +216,27 @@ def test_cannot_tamper_with_unrelated_host_process(tmp_path):
         assert f"{right} OK" not in out
 
 
+def test_large_output_fully_delivered(tmp_path):
+    """A child that writes a big tail then exits must lose nothing — the shim
+    drains its pipes to EOF, not a fixed timeout."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    runner = _runner(tmp_path)
+    nbytes = 2_000_000
+    spec = SpawnSpec(
+        profile="agent",
+        argv=(
+            sys.executable, "-c",
+            f"import sys;sys.stdout.write('x'*{nbytes})",
+        ),
+        cwd=str(ws),
+        workspace_root=str(ws),
+        writable_roots=[str(ws)],
+    )
+    _, out = asyncio.run(_run(runner, spec))
+    assert len(out.strip()) == nbytes
+
+
 def test_argv_spawn_and_exit_code_relay(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()

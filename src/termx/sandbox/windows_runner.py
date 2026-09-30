@@ -51,6 +51,25 @@ Honesty notes (also surfaced through ``capabilities()``):
   security machinery (mandatory integrity labels + job objects), not a
   wrapper script. ``'restricted-user'`` is reserved for the separate-user
   mode, matching the strength enum's identity semantics.
+
+Residual boundaries worth stating plainly:
+
+* The writable domain is **per-principal, not per-spawn**. Low-integrity
+  labels persist on disk, so every low-IL task under this account shares one
+  writable domain: a later task's child can write a *previous* task's
+  labeled workspace even when that path is absent from its own
+  ``writable_roots``. The boundary enforced here is sandboxed-domain vs.
+  host filesystem, not task vs. task — Windows has no per-process ACL
+  principal short of a distinct token identity, so cross-task file
+  isolation is not provided by this backend.
+* ``windows-user`` mode trades the integrity boundary for an identity
+  boundary: ``CreateProcessWithLogonW`` cannot carry a pre-built restricted
+  token, so the child runs at *medium* IL as ``termx-sandbox``. Its write
+  boundary is DACL-only — host-owned objects are denied (the dominant
+  leak), but anything world-writable (e.g. ``%PUBLIC%``) remains writable
+  outside approved roots. The dedicated user's home/tmp live under
+  ``%ProgramData%\\termx\\sandbox-state`` so ancestor traversal works
+  without grants inside the host's private profile tree.
 """
 from __future__ import annotations
 
@@ -120,7 +139,13 @@ def windows_backend_available() -> bool:
 
 
 def _canary_spawn(shim, token: int) -> int:
-    """Spawn ``cmd /c exit 0`` under the restricted token; return exit code."""
+    """Spawn ``cmd /c exit 0`` under the restricted token inside a Job Object.
+
+    Exercises the whole unprivileged primitive chain the backend needs —
+    token build, ``CreateProcessWithTokenW`` suspended spawn, job create +
+    limit + assign, resume — so ``windows_backend_available()`` is true only
+    when a real sandboxed spawn can complete end to end.
+    """
     import ctypes
     import ctypes.wintypes as wt
 
@@ -129,16 +154,42 @@ def _canary_spawn(shim, token: int) -> int:
     pi = shim._PROCESS_INFORMATION()
     cmd = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe") + " /c exit 0"
     if not shim._advapi32.CreateProcessWithTokenW(
-        token, 0x1, None, cmd, 0x00000400, None, None,
+        token, shim._LOGON_WITH_PROFILE, None, cmd,
+        shim._CREATE_SUSPENDED | shim._CREATE_UNICODE_ENVIRONMENT, None, None,
         ctypes.byref(si), ctypes.byref(pi),
     ):
         raise shim._last_error()
-    shim._kernel32.WaitForSingleObject(pi.hProcess, 15000)
-    code = wt.DWORD()
-    shim._kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(code))
-    shim._kernel32.CloseHandle(pi.hProcess)
-    shim._kernel32.CloseHandle(pi.hThread)
-    return code.value
+    resumed = False
+    try:
+        job = shim._kernel32.CreateJobObjectW(None, None)
+        if not job:
+            raise shim._last_error()
+        info = shim._JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = (
+            shim._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | shim._JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        )
+        info.BasicLimitInformation.ActiveProcessLimit = 8
+        if not shim._kernel32.SetInformationJobObject(
+            job, shim._JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(info), ctypes.sizeof(info),
+        ):
+            raise shim._last_error()
+        if not shim._kernel32.AssignProcessToJobObject(job, pi.hProcess):
+            raise shim._last_error()
+        shim._kernel32.ResumeThread(pi.hThread)
+        resumed = True
+        shim._kernel32.WaitForSingleObject(pi.hProcess, 15000)
+        code = wt.DWORD()
+        shim._kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(code))
+        shim._kernel32.CloseHandle(job)
+        return code.value
+    finally:
+        if not resumed:
+            # A failed setup must not strand the suspended canary process.
+            shim._kernel32.TerminateProcess(pi.hProcess, 1)
+        shim._kernel32.CloseHandle(pi.hProcess)
+        shim._kernel32.CloseHandle(pi.hThread)
 
 
 def _sandbox_user_provisioned() -> bool:
@@ -283,11 +334,24 @@ class WindowsSandboxRunner:
 
     def _sandbox_home(self, spec: SpawnSpec) -> Path:
         scope = spec.task_id or self._profile
-        return self._state_dir / "home" / _safe_name(scope)
+        return self._mode_state_root() / "home" / _safe_name(scope)
 
     def _sandbox_tmp(self, spec: SpawnSpec) -> Path:
         scope = spec.task_id or self._profile
-        return self._state_dir / "tmp" / _safe_name(scope)
+        return self._mode_state_root() / "tmp" / _safe_name(scope)
+
+    def _mode_state_root(self) -> Path:
+        if self._user_mode:
+            # %ProgramData% is traversable by a foreign account: the dedicated
+            # user's USERPROFILE/TEMP equivalents must not live under the host
+            # user's private state tree, where ancestor DACLs would deny the
+            # child access to its own home/tmp even with leaf grants.
+            return (
+                Path(os.environ.get("ProgramData", r"C:\ProgramData"))
+                / "termx"
+                / "sandbox-state"
+            )
+        return self._state_dir
 
     def _command_line(self, spec: SpawnSpec) -> str:
         if spec.argv is not None:
@@ -295,7 +359,7 @@ class WindowsSandboxRunner:
         comspec = os.environ.get("ComSpec") or str(
             Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe"
         )
-        return f"{comspec} /c {spec.shell}"
+        return f'"{comspec}" /c {spec.shell}'
 
     def _job_limits(self, limits: ResourceLimits) -> dict:
         eff = limits if limits != ResourceLimits() else _DEFAULT_LIMITS

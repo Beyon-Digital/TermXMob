@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 
 if sys.platform != "win32":  # pragma: no cover - module is win32-only
@@ -73,6 +74,11 @@ _kernel32.SetInformationJobObject.argtypes = [wt.HANDLE, ctypes.c_int, wt.LPVOID
 _kernel32.SetInformationJobObject.restype = wt.BOOL
 _kernel32.TerminateJobObject.argtypes = [wt.HANDLE, wt.UINT]
 _kernel32.TerminateJobObject.restype = wt.BOOL
+_kernel32.TerminateProcess.argtypes = [wt.HANDLE, wt.UINT]
+_kernel32.TerminateProcess.restype = wt.BOOL
+_kernel32.QueryInformationJobObject.argtypes = [
+    wt.HANDLE, ctypes.c_int, wt.LPVOID, wt.DWORD, wt.LPVOID]
+_kernel32.QueryInformationJobObject.restype = wt.BOOL
 
 _advapi32.OpenProcessToken.argtypes = [wt.HANDLE, wt.DWORD, _LPHANDLE]
 _advapi32.OpenProcessToken.restype = wt.BOOL
@@ -118,6 +124,7 @@ _INFINITE = 0xFFFFFFFF
 _WAIT_TIMEOUT = 0x102
 
 _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+_JOB_OBJECT_BASIC_PROCESS_ID_LIST = 3
 _JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 _JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
 _JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
@@ -187,6 +194,25 @@ class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
         ("PeakProcessMemoryUsed", ctypes.c_size_t),
         ("PeakJobMemoryUsed", ctypes.c_size_t),
     ]
+
+
+class _JOBOBJECT_BASIC_PROCESS_ID_LIST(ctypes.Structure):
+    _fields_ = [
+        ("NumberOfAssignedProcesses", wt.DWORD),
+        ("NumberOfProcessIdsInList", wt.DWORD),
+        ("ProcessIdList", ctypes.c_size_t * 64),
+    ]
+
+
+def _job_process_count(job: int) -> int:
+    """Live process count in the job (0 also when the query fails)."""
+    info = _JOBOBJECT_BASIC_PROCESS_ID_LIST()
+    if not _kernel32.QueryInformationJobObject(
+        job, _JOB_OBJECT_BASIC_PROCESS_ID_LIST, ctypes.byref(info),
+        ctypes.sizeof(info), None,
+    ):
+        return 0
+    return info.NumberOfAssignedProcesses
 
 
 def _last_error() -> OSError:
@@ -396,6 +422,17 @@ def run(request_path: str) -> int:
             spawned = True
         else:
             last_exc = _last_error()
+            # bInheritHandles must stay TRUE or the STARTF_USESTDHANDLES
+            # handles never reach the child (verified: FALSE yields empty
+            # stdio). Bound what TRUE sweeps in: our own std handles are the
+            # only other inheritable handles — mark them non-inheritable so
+            # the child receives exactly the three pipe ends it was given.
+            for _h in (
+                _kernel32.GetStdHandle(_STD_INPUT),
+                _kernel32.GetStdHandle(_STD_OUTPUT),
+                _kernel32.GetStdHandle(_STD_ERROR),
+            ):
+                _kernel32.SetHandleInformation(_h, _HANDLE_FLAG_INHERIT, 0)
             if _advapi32.CreateProcessAsUserW(
                 token, None, cmdline, None, None, True, flags, env_ptr, cwd,
                 ctypes.byref(si), ctypes.byref(pi),
@@ -409,9 +446,19 @@ def run(request_path: str) -> int:
     for h in (in_rd, out_wr, err_wr):
         _kernel32.CloseHandle(h)
 
+    # From here on a failure must reap the suspended child itself — it is not
+    # in the job yet, so no job-close path would kill it, and it holds the
+    # stdio pipe ends that keep the parent's readers waiting for EOF.
+    def _fail_spawn(msg: str) -> "SystemExit":
+        _kernel32.TerminateProcess(pi.hProcess, 1)
+        _kernel32.WaitForSingleObject(pi.hProcess, 5000)
+        for h in (pi.hProcess, pi.hThread):
+            _kernel32.CloseHandle(h)
+        return SystemExit(f"sandbox shim: {msg}")
+
     job = _kernel32.CreateJobObjectW(None, None)
     if not job:
-        raise SystemExit("sandbox shim: CreateJobObject failed: " + str(_last_error()))
+        raise _fail_spawn("CreateJobObject failed: " + str(_last_error()))
     job_req = req.get("job") or {}
     info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
     info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -431,9 +478,9 @@ def run(request_path: str) -> int:
         job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info),
         ctypes.sizeof(info),
     ):
-        raise SystemExit("sandbox shim: SetInformationJobObject failed: " + str(_last_error()))
+        raise _fail_spawn("SetInformationJobObject failed: " + str(_last_error()))
     if not _kernel32.AssignProcessToJobObject(job, pi.hProcess):
-        raise SystemExit("sandbox shim: AssignProcessToJobObject failed: " + str(_last_error()))
+        raise _fail_spawn("AssignProcessToJobObject failed: " + str(_last_error()))
 
     _kernel32.ResumeThread(pi.hThread)
 
@@ -452,10 +499,21 @@ def run(request_path: str) -> int:
     code = wt.DWORD()
     _kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(code))
 
-    # Drain remaining output: pumps end on pipe EOF; a descendant holding the
-    # pipe past the leader's exit must not wedge the shim forever.
-    for t in pumps[:2]:
-        t.join(timeout=10)
+    # Drain remaining output. Descendants may still hold the stdio pipes past
+    # the leader's exit — give them a bounded grace period, then once every
+    # writer is gone the pipes hit EOF and the pumps drain the buffered tail
+    # completely (an output tail must never be cut off early). If a stray
+    # descendant keeps a pipe open past the grace period, fall back to a
+    # bounded join so the shim cannot wedge on it.
+    deadline = time.monotonic() + 5.0
+    while _job_process_count(job) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if _job_process_count(job):
+        for t in pumps[:2]:
+            t.join(timeout=10)
+    else:
+        for t in pumps[:2]:
+            t.join()
     # in_wr is owned by the stdin pump (it closes to propagate EOF).
     for h in (out_rd, err_rd, pi.hProcess, pi.hThread):
         _kernel32.CloseHandle(h)
