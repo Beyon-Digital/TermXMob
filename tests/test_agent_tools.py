@@ -734,11 +734,13 @@ def test_run_mutating_cancel_kills_process(tmp_path):
         store=None, manager=None, project_files=None, project_id="p",
     )
 
+    call = _call("git", {})
+
     # `git daemon` runs until killed: cancellation must terminate the process
     # group, not just abandon the waiting task.
     async def run():
         task = asyncio.create_task(
-            _run_mutating(ctx, "daemon", "--listen=127.0.0.1", "--port=0", "--export-all")
+            _run_mutating(call, ctx, "daemon", "--listen=127.0.0.1", "--port=0", "--export-all")
         )
         await asyncio.sleep(0.3)
         ctx.cancel.set()

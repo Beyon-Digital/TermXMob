@@ -87,3 +87,30 @@ def sandbox_spawn(ctx: Any, profile: str | None = None) -> Any:
     from termx.sandbox import runner_for
 
     return runner_for(profile or "agent")
+
+
+def sandbox_grants(ctx: Any, profile: str, call_id: str = "") -> frozenset[str]:
+    """Capability grants effective for this call's spawn: remembered
+    capability rules ∪ one-shot capability approvals, intersected with what
+    the backend can grant. Never raises — missing context means no grants."""
+    manager = getattr(ctx, "manager", None)
+    fn = getattr(manager, "spawn_grants", None)
+    if fn is None:
+        return frozenset()
+    try:
+        return frozenset(
+            fn(str(getattr(ctx, "task_id", "") or ""), call_id, profile or "agent")
+        )
+    except Exception:
+        return frozenset()
+
+
+def sandbox_network(grants: frozenset[str] | set[str]) -> str:
+    """Spawn network mode implied by an already-resolved grant set.
+
+    Grants must be resolved exactly once per spawn — ``sandbox_grants``
+    consumes one-shot capability grants, so deriving network from a second
+    lookup would see an empty set and silently re-isolate the network."""
+    if any(c.startswith("net.outbound") for c in grants):
+        return "outbound"
+    return "none"

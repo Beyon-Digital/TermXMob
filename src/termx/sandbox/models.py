@@ -59,12 +59,22 @@ class SpawnSpec:
     env: dict[str, str] = field(default_factory=dict)
     writable_roots: tuple[str, ...] = ()
     read_only_roots: tuple[str, ...] = ()
-    network: str = "outbound"  # "none" | "localhost" | "outbound"
+    # Restricted profiles deny by default; callers must set "outbound" AND
+    # carry a granted net.outbound capability before a backend shares net.
+    network: str = "none"  # "none" | "localhost" | "outbound"
+    # Capability grants effective for this one spawn (remembered rules ∪
+    # one-shot approvals). The backend intersects them with what it can
+    # physically provide — they never widen its advertised grantable set.
+    granted_capabilities: tuple[str, ...] = ()
     limits: ResourceLimits = field(default_factory=ResourceLimits)
     pty: bool = False
     purpose: str = ""  # audit label e.g. "run_shell" / "runbook:deploy"
     task_id: str | None = None
     project_id: str | None = None
+    # Optional caller-chosen private HOME — mounted inside the sandbox and
+    # exported as HOME. Backends derive one from task_id/profile when unset;
+    # spawns with neither get an ephemeral (non-persistent) HOME.
+    home: str | None = None
     stdin: "object | None" = None  # asyncio.subprocess stdin target, if any
 
     def validate(self) -> None:

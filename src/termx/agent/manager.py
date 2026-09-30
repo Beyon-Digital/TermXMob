@@ -70,6 +70,7 @@ class AgentManager:
         *,
         adapter_factory: AdapterFactory | None = None,
         project_files: Any = None,
+        runner_for: Any = None,
     ) -> None:
         self.store = store
         self.credentials = credentials
@@ -89,18 +90,27 @@ class AgentManager:
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
         self._observation = ObservationTracker()
         from termx.agent.policies.engine import PolicyEngine
-        from termx.sandbox import runner_for
+        from termx.sandbox import runner_for as default_runner_for
 
         self._sandbox_runners: dict[str, Any] = {}
-        self._runner_for = runner_for
+        self._runner_for = runner_for or default_runner_for
+        # One-shot capability grants recorded when a capability approval is
+        # approved without a remember scope — keyed (task_id, call_id) so the
+        # approved spawn can realize the grant without a durable rule.
+        self._one_shot_capability_grants: dict[tuple[str, str], set[str]] = {}
         self._policy_engine = PolicyEngine(
             self.store,
-            envelope=lambda profile: runner_for(profile).capabilities().granted,
-            grantable=lambda profile: runner_for(profile).capabilities().grantable,
+            envelope=lambda profile: self._sandbox_runner(profile).capabilities().granted,
+            grantable=lambda profile: self._sandbox_runner(profile).capabilities().grantable,
         )
         from termx.runbooks import RunbookRunner
 
-        self.runbooks = RunbookRunner(self.store)
+        self.runbooks = RunbookRunner(
+            self.store,
+            runner_for=self._sandbox_runner,
+            policy_engine=self._policy_engine,
+            project_id_for=self._project_id,
+        )
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
             if task["status"] in ACTIVE_STATUSES:
@@ -452,6 +462,18 @@ class AgentManager:
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
             assert private_payload is not None
+            if private_payload.get("approval_kind") == "capability" and not remember:
+                # One-shot capability grant: the approved spawn may realize
+                # the capability for this call only — no durable rule exists.
+                call_id = str((private_payload.get("call") or {}).get("call_id") or "")
+                profile = str(private_payload.get("sandbox_profile") or "agent")
+                caps = {
+                    c
+                    for c in private_payload.get("required_capabilities") or []
+                    if self._policy_engine.grantable_covers(profile, str(c))
+                }
+                if call_id and caps:
+                    self._one_shot_capability_grants[(task_id, call_id)] = caps
             self._launch(task_id, self._resume_approved(task_id, private_payload))
         return approval
 
@@ -1357,9 +1379,27 @@ class AgentManager:
     def _sandbox_runner(self, profile: str = "agent") -> Any:
         runner = self._sandbox_runners.get(profile)
         if runner is None:
-            runner = self._runner_for(profile)
+            runner = self._runner_for(profile, state_dir=self.store.path.parent)
             self._sandbox_runners[profile] = runner
         return runner
+
+    def spawn_grants(
+        self, task_id: str, call_id: str, profile: str
+    ) -> frozenset[str]:
+        """Capability grants effective for this call's spawn: remembered
+        rules (∩ backend grantable) ∪ one-shot capability approvals."""
+        task = self.store.get_task(task_id) or {}
+        try:
+            remembered = self._policy_engine.capability_grant_set(
+                profile,
+                task_id=task_id or None,
+                project_id=self._project_id(task["cwd"]) if task.get("cwd") else "",
+                custom_agent_id=task.get("custom_agent_id"),
+            )
+        except Exception:
+            remembered = frozenset()
+        one_shot = self._one_shot_capability_grants.pop((task_id, call_id), set())
+        return frozenset(remembered) | frozenset(one_shot)
 
     def _files_service(self) -> Any:
         if self._project_files is None:

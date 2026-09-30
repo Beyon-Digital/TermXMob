@@ -361,9 +361,20 @@ async def wait_for_pending_approval(store: AgentStore, task_id: str, kind: str) 
 
 
 def build_manager(tmp_path: Path, adapter: FakeAdapter) -> tuple[AgentManager, AgentStore]:
+    from termx.sandbox.host import HostSandboxRunner
+
     store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
     credentials = CredentialStore(memory={})
-    manager = AgentManager(store, credentials, desktop=None, adapter_factory=lambda _provider, _key: adapter)
+    # Pin the host backend: these tests assert policy semantics against the
+    # unrestricted envelope and must not depend on the machine's namespace
+    # support (linux-ns would change capability-ask behavior on Linux).
+    manager = AgentManager(
+        store,
+        credentials,
+        desktop=None,
+        adapter_factory=lambda _provider, _key: adapter,
+        runner_for=lambda profile, **kw: HostSandboxRunner(profile=profile),
+    )
     manager._computer = FakeComputer()  # type: ignore[assignment]
     manager.save_provider(
         provider_id="fake",

@@ -11,6 +11,42 @@ from termx.config import ConfigStore, available_shells
 from termx.desktop.capabilities import probe_desktop
 
 
+def _execution_sandbox() -> dict[str, Any]:
+    """Report what each profile's selected backend actually enforces.
+
+    Never claims isolation the runner does not provide — a host fallback
+    reports strength "none"; linux-ns reports "kernel" with its real controls.
+    """
+    from termx.sandbox import runner_for
+
+    profiles: dict[str, Any] = {}
+    try:
+        for profile in ("host", "workspace", "agent"):
+            caps = runner_for(profile).capabilities().public()
+            caps["profile"] = profile
+            profiles[profile] = caps
+        restricted = profiles.get("agent") or {}
+        return {
+            "backend": restricted.get("backend", "host"),
+            "strength": restricted.get("strength", "none"),
+            "profiles": profiles,
+            "network_control": bool(restricted.get("network_control")),
+            "filesystem_isolation": bool(restricted.get("filesystem_isolation")),
+            "identity_isolation": bool(restricted.get("identity_isolation")),
+            "resource_limits": bool(restricted.get("resource_limits")),
+        }
+    except Exception:
+        return {
+            "backend": "unknown",
+            "strength": "none",
+            "profiles": {},
+            "network_control": False,
+            "filesystem_isolation": False,
+            "identity_isolation": False,
+            "resource_limits": False,
+        }
+
+
 def _process_discovery_supported() -> bool:
     from termx.processes import supported
 
@@ -81,19 +117,9 @@ def machine_snapshot(
             "editor_lsp": True,
             "editor_previews": True,
             "providers": providers,
-            # Truthful sandbox report: only the host backend exists until the
-            # platform isolation work lands — strength "none" and no real
-            # network/filesystem/identity controls are claimed. Restricted
-            # profiles get the clean-environment soft layer only.
-            "execution_sandbox": {
-                "backend": "host",
-                "strength": "none",
-                "profiles": {"host": "unrestricted", "workspace": "env", "agent": "env"},
-                "network_control": False,
-                "filesystem_isolation": False,
-                "identity_isolation": False,
-                "resource_limits": False,
-            },
+            # Truthful per-profile sandbox report — whatever the runner
+            # actually selected advertises, nothing more.
+            "execution_sandbox": _execution_sandbox(),
         },
         "tunnel": tunnel_status,
         "user": os.environ.get("USER") or os.environ.get("LOGNAME") or "",

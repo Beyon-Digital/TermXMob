@@ -109,9 +109,12 @@ def test_effective_policies_reports_truthful_sandbox(client, auth):
     body = eff.json()
     assert body["approval_mode"] == "autonomous"
     assert body["sandbox_profile"] == "workspace"
-    # Host backend truthfully reports the unrestricted envelope — never
-    # claimed isolation that doesn't exist.
-    assert body["sandbox_capabilities"] == ["*:any"]
+    # The endpoint reports the selected backend's real envelope — host's
+    # unrestricted "*:any" or linux-ns's restricted set — never invented.
+    from termx.sandbox import runner_for
+
+    expected = sorted(runner_for("workspace").capabilities().granted)
+    assert body["sandbox_capabilities"] == expected
     assert len(body["rules"]) == 1  # only the host-scope rule matches
 
 
@@ -177,10 +180,18 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
     assert caps["remembered_approvals"] is True
     assert caps["policy_engine_v2"] is True
     sandbox = caps["execution_sandbox"]
-    # Truthful PR A state: host backend only, no kernel isolation claimed.
-    assert sandbox["backend"] == "host"
-    assert sandbox["strength"] == "none"
-    assert sandbox["network_control"] is False
-    assert sandbox["filesystem_isolation"] is False
-    assert sandbox["identity_isolation"] is False
-    assert sandbox["resource_limits"] is False
+    # Truthful report: the snapshot mirrors whatever the runner selected for
+    # this machine — host ("none") where namespaces are unavailable, linux-ns
+    # ("kernel") where they are — and never invents controls.
+    from termx.sandbox import linux_ns_available, runner_for
+
+    expected_backend = "linux-ns" if linux_ns_available() else "host"
+    assert sandbox["backend"] == expected_backend
+    agent_caps = runner_for("agent").capabilities()
+    assert sandbox["strength"] == agent_caps.strength
+    assert sandbox["network_control"] == agent_caps.network_control
+    assert sandbox["filesystem_isolation"] == agent_caps.filesystem_isolation
+    assert sandbox["identity_isolation"] == agent_caps.identity_isolation
+    assert sandbox["resource_limits"] == agent_caps.resource_limits
+    assert set(sandbox["profiles"]) == {"host", "workspace", "agent"}
+    assert sandbox["profiles"]["host"]["backend"] == "host"

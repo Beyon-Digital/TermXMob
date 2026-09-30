@@ -10,11 +10,18 @@ classified into one execution profile:
 
 ``SandboxRunner`` is the single spawn surface; platform backends live behind
 it so ``manager.py``/tool code stays platform-neutral. The ``host`` backend
-ships in this package as an explicit compatibility runner — it does not hide
-behind "no sandbox": ``capabilities()`` truthfully reports unrestricted
-authority so policy and the machine snapshot never pretend otherwise.
+is the explicit compatibility runner — it does not hide behind "no sandbox":
+``capabilities()`` truthfully reports unrestricted authority. On Linux with
+bubblewrap + unprivileged user namespaces, restricted profiles resolve to the
+kernel-enforcing ``linux-ns`` backend; everywhere else they stay on ``host``
+and report so. ``TERMX_SANDBOX_BACKEND`` (``auto``|``host``|``linux-ns``)
+overrides selection for debugging — never silently.
 """
 from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
 
 from termx.sandbox.environment import build_environment, host_environment
 from termx.sandbox.host import HostSandboxRunner
@@ -30,6 +37,7 @@ from termx.sandbox.runner import SandboxRunner
 
 __all__ = [
     "HostSandboxRunner",
+    "LinuxNamespaceRunner",
     "ResourceLimits",
     "SandboxCapabilities",
     "SandboxFailure",
@@ -39,16 +47,46 @@ __all__ = [
     "SpawnSpec",
     "build_environment",
     "host_environment",
+    "linux_ns_available",
     "runner_for",
 ]
 
+_HOST_BACKEND = "host"
+_LINUX_NS_BACKEND = "linux-ns"
 
-def runner_for(profile: str = "agent") -> SandboxRunner:
-    """Return the default runner for an execution profile.
 
-    Only the ``host`` backend exists so far; every profile resolves to it and
-    reports truthful (unrestricted) capabilities. Strong backends (Linux
-    namespaces, macOS restricted user, Windows token+job) plug in here without
-    call-site changes.
+from termx.sandbox.linux_ns import LinuxNamespaceRunner, linux_ns_available
+
+
+def _default_backend(profile: str) -> str:
+    """Pick the strongest available backend for a profile — truthful, never
+    silently downgraded per-spawn (a failed spawn raises, no fallback)."""
+    if profile == "host":
+        return _HOST_BACKEND
+    override = os.environ.get("TERMX_SANDBOX_BACKEND", "").strip().lower()
+    if override:
+        return override
+    if linux_ns_available():
+        return _LINUX_NS_BACKEND
+    return _HOST_BACKEND
+
+
+def runner_for(
+    profile: str = "agent",
+    *,
+    backend: str | None = None,
+    state_dir: "str | Path | None" = None,
+) -> SandboxRunner:
+    """Return a runner for an execution profile.
+
+    ``backend``/``TERMX_SANDBOX_BACKEND`` select explicitly; the default is
+    ``host`` for the host profile and the best available restricted backend
+    (Linux: ``linux-ns``) otherwise. An unavailable requested backend raises —
+    restricted work never silently degrades to unsandboxed execution.
     """
-    return HostSandboxRunner(profile=profile)
+    backend = backend or _default_backend(profile)
+    if backend == _LINUX_NS_BACKEND:
+        return LinuxNamespaceRunner(profile=profile, state_dir=state_dir)
+    if backend == _HOST_BACKEND:
+        return HostSandboxRunner(profile=profile)
+    raise SandboxFailure("invalid_backend", f"unknown sandbox backend {backend!r}")

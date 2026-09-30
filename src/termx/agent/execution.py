@@ -45,10 +45,16 @@ async def run_shell(
     cancel: asyncio.Event | None = None,
     runner: Any = None,
     profile: str = "agent",
+    network: str = "none",
+    granted_capabilities: "tuple[str, ...] | list[str] | None" = None,
+    task_id: str | None = None,
+    read_only_roots: "list[str] | None" = None,
 ) -> ShellResult:
     return await stream_shell(
         command, cwd, timeout_s=timeout_s, cancel=cancel, on_output=None,
-        runner=runner, profile=profile,
+        runner=runner, profile=profile, network=network,
+        granted_capabilities=granted_capabilities, task_id=task_id,
+        read_only_roots=read_only_roots,
     )
 
 
@@ -63,6 +69,10 @@ async def stream_shell(
     runner: Any = None,
     profile: str = "agent",
     workspace_root: str | None = None,
+    network: str = "none",
+    granted_capabilities: "tuple[str, ...] | list[str] | None" = None,
+    task_id: str | None = None,
+    read_only_roots: "list[str] | None" = None,
 ) -> ShellResult:
     """Run a shell command, streaming output chunks to ``on_output``.
 
@@ -83,6 +93,10 @@ async def stream_shell(
         cwd=str(root),
         workspace_root=workspace_root or str(root),
         writable_roots=[workspace_root or str(root)],
+        read_only_roots=list(read_only_roots or ()),
+        network=network,
+        granted_capabilities=tuple(granted_capabilities or ()),
+        task_id=task_id,
         purpose="run_shell",
     )
     spawned = await runner.spawn(spec)
