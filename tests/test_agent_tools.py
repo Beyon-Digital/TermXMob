@@ -25,7 +25,9 @@ def _call(name: str, arguments: dict | None = None, *, call_id: str = "c1") -> P
 def env(tmp_path):
     root = tmp_path / "project"
     root.mkdir()
-    (root / "a.py").write_text("print('one')\nprint('two')\n", encoding="utf-8")
+    # Written as bytes so the fixture is identical on Windows (no \r\n
+    # translation) — read_file must return the file verbatim.
+    (root / "a.py").write_bytes(b"print('one')\nprint('two')\n")
     (root / "b.txt").write_text("hello world\n", encoding="utf-8")
     (root / ".env").write_text("TOKEN=secret\n", encoding="utf-8")
     (root / "sub").mkdir()
@@ -586,9 +588,10 @@ def test_slim_history_bounds_computer_screenshots(tmp_path):
 def test_stream_shell_bounds_output_memory(tmp_path):
     from termx.agent.execution import OUTPUT_LIMIT, stream_shell
 
+    # Double quotes only — single-quote quoting does not exist under cmd.exe.
     result = asyncio.run(
         stream_shell(
-            "python3 -c 'import sys; sys.stdout.write(\"x\" * 3_000_000)'",
+            'python3 -c "import sys; sys.stdout.write(chr(120) * 3000000)"',
             str(tmp_path),
             timeout_s=60.0,
         )
@@ -600,7 +603,15 @@ def test_stream_shell_bounds_output_memory(tmp_path):
 def test_stream_shell_early_stdout_eof_not_timeout(tmp_path):
     from termx.agent.execution import stream_shell
 
-    result = asyncio.run(stream_shell("exec 1>&-; sleep 0.2", str(tmp_path), timeout_s=10.0))
+    # Closing fd 1 works on POSIX and Windows alike; `exec 1>&-` does not
+    # exist under cmd.exe.
+    result = asyncio.run(
+        stream_shell(
+            'python3 -c "import os,time;os.close(1);time.sleep(0.2)"',
+            str(tmp_path),
+            timeout_s=10.0,
+        )
+    )
     assert result.timed_out is False
     assert result.exit_code == 0
 
