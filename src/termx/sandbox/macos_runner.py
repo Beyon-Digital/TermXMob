@@ -669,7 +669,11 @@ class MacOSRunner:
             "workspace_root": spec.workspace_root,
             "writable_roots": list(spec.writable_roots),
             "read_only_roots": list(spec.read_only_roots),
-            "network": spec.network,
+            # Effective, not requested: an "outbound" spec without a granted
+            # net.outbound capability must still read "none" to the helper —
+            # the seatbelt profile denies it either way, but the field must
+            # never license the helper to configure access itself.
+            "network": "outbound" if _net_granted(spec) else "none",
             # The client created these under its own state dir — the helper
             # must chown/provision them for the restricted user (contract).
             "home_dir": str(home),
