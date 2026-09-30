@@ -315,7 +315,9 @@ def test_cpu_limit_enforced(tmp_path):
     runner = _runner(tmp_path)
     spec = _spec(
         ws,
-        "exec /usr/bin/python3 -c \"while True: pass\"",
+        # /bin/sh busy loop — /usr/bin/python3 is the Xcode shim, which
+        # needs /Library/Preferences (license plist) readable to resolve.
+        "while :; do :; done",
         limits=ResourceLimits(cpu_s=1),
     )
     rc, out = asyncio.run(_run(runner, spec))
