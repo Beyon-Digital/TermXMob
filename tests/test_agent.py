@@ -2512,7 +2512,7 @@ def test_task_records_display_turn_fields(tmp_path: Path) -> None:
                 "provider_id": "fake",
                 "conversation_id": conv["id"],
                 "turn_prompt": "Summarize this",
-                "context_refs": [{"ref": "a.py", "meta": {"path": "a.py", "start": 1, "end": 2}}],
+                "context_refs": [{"ref": "a.py", "meta": {"path": "a.py", "cwd": "/w", "start": 1, "end": 2}}],
             },
             headers=headers,
         ).json()
@@ -2522,6 +2522,12 @@ def test_task_records_display_turn_fields(tmp_path: Path) -> None:
         assert turn["task_id"] == task["id"]
         assert turn["prompt"] == "Summarize this"
         assert turn["context_refs"][0]["ref"] == "a.py"
+        # Structured refs round-trip: meta contents surface at the top level so
+        # syncing clients read meta.start/meta.end/meta.cwd directly.
+        ref_meta = turn["context_refs"][0]["meta"]
+        assert ref_meta["start"] == 1
+        assert ref_meta["end"] == 2
+        assert ref_meta["cwd"] == "/w"
 
 
 def test_custom_agents_crud(tmp_path: Path) -> None:
