@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import threading
 import time
 from pathlib import Path
 
@@ -605,3 +606,26 @@ def test_git_commondir_packed_refs_writable(tmp_path):
         )
     )
     assert "D" in out and "W" not in out
+
+
+def test_env_sweeper_shared_across_runner_instances(tmp_path):
+    """Fresh runners (one per launch, e.g. runbook steps) share a single
+    sweeper thread per env directory — no per-runner thread leak."""
+    from termx.sandbox import linux_ns
+
+    envdir = tmp_path / "state" / "sandbox" / "env"
+    before = len([t for t in threading.enumerate() if t.name == "termx-env-sweep"])
+    runners = [_runner(tmp_path) for _ in range(3)]
+    for r in runners:
+        r._env_file({"FOO": "bar"})
+    after = len([t for t in threading.enumerate() if t.name == "termx-env-sweep"])
+    assert after - before == 1
+    assert str(envdir) in linux_ns._sweepers
+
+
+def test_env_file_denied_keys_stripped(tmp_path):
+    runner = _runner(tmp_path)
+    path = runner._env_file({"KEEP": "1", "ENV": "/tmp/evil", "BASH_ENV": "/tmp/evil"})
+    text = path.read_text()
+    assert "KEEP" in text and "ENV=" not in text.replace("KEEPENV", "")
+    assert "BASH_ENV" not in text
