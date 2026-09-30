@@ -383,6 +383,7 @@ class LinuxNamespaceRunner:
         cmd = list(spec.argv) if spec.argv is not None else ["/bin/sh", "-c", spec.shell or ""]
         # Env arrives via the ro-bound file: the preamble sources it then
         # execs, so values never appear in argv (world-readable cmdline).
+        # (An in-ns umount here is dead code — bwrap drops CAP_SYS_ADMIN.)
         cmd = [
             "/bin/sh",
             "-c",
