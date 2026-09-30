@@ -182,13 +182,21 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
     sandbox = caps["execution_sandbox"]
     # Truthful report: the snapshot mirrors whatever the runner selected for
     # this machine — host ("none") where no restricted backend probes OK,
-    # linux-ns ("kernel") on linux, windows-token/user on win32 — and never
-    # invents controls.
+    # linux-ns on linux, macos-seatbelt/helper on darwin, windows-token/user
+    # on win32 — and never invents controls.
     import sys
 
-    from termx.sandbox import linux_ns_available, runner_for
+    from termx.sandbox import (
+        linux_ns_available,
+        macos_backend_available,
+        runner_for,
+    )
 
-    if sys.platform == "win32":
+    if sys.platform == "darwin" and macos_backend_available():
+        from termx.sandbox.macos_runner import macos_helper_available
+
+        expected_backend = "macos-helper" if macos_helper_available() else "macos-seatbelt"
+    elif sys.platform == "win32":
         from termx.sandbox.windows_runner import windows_backend_available
 
         expected_backend = (
@@ -196,8 +204,10 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
             if windows_backend_available()
             else "host"
         )
+    elif linux_ns_available():
+        expected_backend = "linux-ns"
     else:
-        expected_backend = "linux-ns" if linux_ns_available() else "host"
+        expected_backend = "host"
     assert sandbox["backend"] == expected_backend
     agent_caps = runner_for("agent").capabilities()
     assert sandbox["strength"] == agent_caps.strength

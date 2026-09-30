@@ -2578,7 +2578,9 @@ def test_worktree_task_runs_in_isolated_checkout(tmp_path: Path, monkeypatch: py
         assert record is not None
         assert record["mode"] == "worktree"
         assert record["branch"].startswith("termx/task-")
-        assert record["base_repo"] == str(repo)
+        # git reports the base path with forward slashes on Windows —
+        # compare as paths, not raw strings.
+        assert Path(record["base_repo"]) == repo
         worktree_path = Path(record["worktree_path"])
         assert worktree_path != repo
         assert Path(task["cwd"]) == worktree_path
@@ -2887,16 +2889,21 @@ def test_ports_and_processes_endpoints(tmp_path: Path) -> None:
             assert client.get("/api/ports").status_code == 401
             assert client.get("/api/processes").status_code == 401
             ports = client.get("/api/ports", headers=headers).json()["ports"]
-            entry = next((e for e in ports if e["port"] == port), None)
-            assert entry is not None, ports
-            assert entry["is_http"] is True
-            assert entry["url"] == f"http://127.0.0.1:{port}"
-            assert entry["pid"] == os.getpid()  # in-proc listener is discoverable
             procs = client.get("/api/processes", headers=headers).json()["processes"]
-            pids = {p["pid"] for p in procs}
-            assert os.getpid() in pids
-            # never lists unrelated system processes
-            assert all(p["pid"] > 0 for p in procs)
+            if sys.platform == "win32":
+                # Discovery is truthfully gated off on Windows — endpoints
+                # degrade to empty lists rather than pretending to work.
+                assert ports == [] and procs == []
+            else:
+                entry = next((e for e in ports if e["port"] == port), None)
+                assert entry is not None, ports
+                assert entry["is_http"] is True
+                assert entry["url"] == f"http://127.0.0.1:{port}"
+                assert entry["pid"] == os.getpid()  # in-proc listener is discoverable
+                pids = {p["pid"] for p in procs}
+                assert os.getpid() in pids
+                # never lists unrelated system processes
+                assert all(p["pid"] > 0 for p in procs)
     finally:
         server.shutdown()
         server.server_close()
@@ -2925,6 +2932,11 @@ def test_preview_from_port(tmp_path: Path) -> None:
                 json={"port": port, "name": "dev server"},
                 headers=headers,
             )
+            if sys.platform == "win32":
+                # Port discovery is gated off on Windows, so no port is ever
+                # known and preview-from-port cannot resolve.
+                assert created.status_code == 404
+                return
             assert created.status_code == 200
             preview = created.json()["preview"]
             assert preview["name"] == "dev server"
@@ -3615,7 +3627,8 @@ def test_runbook_step_output_tail_truncated(tmp_path: Path) -> None:
             on_progress=emitted.append,
         )
         assert len(result["output"]) <= runbooks.MAX_STEP_OUTPUT
-        assert result["output"].endswith("abcdef\n")
+        # Child stdout translates \n -> \r\n on Windows.
+        assert result["output"].replace("\r\n", "\n").endswith("abcdef\n")
         assert len(emitted) >= 1
         assert all(e["status"] == "running" for e in emitted)
 
@@ -3912,3 +3925,31 @@ def test_runbook_tool_accepts_runbook_bound_to_worktree_base(tmp_path: Path) -> 
         store.close()
 
     asyncio.run(run())
+
+
+def test_windows_flags_not_read_as_outside_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On Windows `foo /flag` is a flag, not a path — commands like
+    `whoami /groups` must not trip the outside-project gate."""
+    import termx.agent.policy as policy
+
+    monkeypatch.setattr(policy, "_WINDOWS", True)
+    assert evaluate_shell("whoami /groups", str(tmp_path)).approval_required is False
+    assert evaluate_shell("net user /add", str(tmp_path)).approval_required is False
+    # ~ and parent traversal still gate on Windows.
+    assert evaluate_shell("type ~\\secret.txt", str(tmp_path)).approval_required is True
+    assert evaluate_shell("type ..\\up.txt", str(tmp_path)).approval_required is True
+
+
+def test_windows_unquoted_drive_paths_are_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """shlex(posix=True) strips `C:\\a\\b.txt` to `C:ab.txt` — raw extraction
+    must still surface drive/UNC paths so they can be gated."""
+    import termx.agent.policy as policy
+
+    monkeypatch.setattr(policy, "_WINDOWS", True)
+    candidates = policy._windows_candidates(
+        'type C:\\Users\\alice\\secrets.txt & echo done'
+    )
+    assert candidates == ["C:\\Users\\alice\\secrets.txt"]
+    candidates = policy._windows_candidates('type "C:\\a b\\x.txt" \\\\srv\\share')
+    assert candidates == ["C:\\a b\\x.txt", "\\\\srv\\share"]
+    assert policy._windows_candidates("whoami /groups") == []

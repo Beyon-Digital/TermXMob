@@ -208,6 +208,39 @@ class LinuxNamespaceRunner:
         )
 
     async def spawn(self, spec: SpawnSpec) -> StreamedProcess:
+        argv, envfile = self._argv_and_envfile(spec)
+        try:
+            # env={}: the bwrap launcher itself must not inherit host secrets —
+            # only the inner child (inside the ns, via --setenv) needs env.
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                env={},
+                stdin=spec.stdin,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
+        # Drop the credential-bearing envfile as soon as the bind is
+        # confirmed inside the child's mount ns (the age sweep stays as
+        # the bound for stalled or argv-embedded launches).
+        asyncio.get_running_loop().create_task(
+            _unlink_when_mounted(process.pid, envfile)
+        )
+        return StreamedProcess(process, spec, backend="linux-ns")
+
+    def spawn_argv(self, spec: SpawnSpec) -> list[str]:
+        """Resolved sandbox argv for embedding under an external pty/session.
+
+        The PTY layer (terminals.py) owns the controlling terminal and spawn;
+        this returns the fully wrapped bwrap+rlimits argv so the same kernel
+        isolation applies to interactive workspace terminals as to agent
+        spawns. Validation and env construction match ``spawn`` exactly.
+        """
+        return self._argv_and_envfile(spec)[0]
+
+    def _argv_and_envfile(self, spec: SpawnSpec) -> tuple[list[str], Path]:
         spec.validate()
         if spec.profile != self._profile:
             raise SandboxFailure(
@@ -230,27 +263,11 @@ class LinuxNamespaceRunner:
         env["HOME"] = str(home) if home else _EPHEMERAL_HOME
         env["TMPDIR"] = "/tmp"
         envfile = self._env_file(env)
-        argv = self._argv(spec, env, home, envfile)
-        try:
-            # env={}: the bwrap launcher itself must not inherit host secrets —
-            # only the inner child (inside the ns, via --setenv) needs env.
-            process = await asyncio.create_subprocess_exec(
-                *argv,
-                env={},
-                stdin=spec.stdin,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                start_new_session=True,
-            )
-        except OSError as exc:
-            raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
-        # Drop the credential-bearing envfile as soon as the bind is
-        # confirmed inside the child's mount ns (the age sweep stays as
-        # the bound for stalled or argv-embedded launches).
-        asyncio.get_running_loop().create_task(
-            _unlink_when_mounted(process.pid, envfile)
-        )
-        return StreamedProcess(process, spec, backend="linux-ns")
+        # bwrap reads the file during its mount phase; the daemon sweeper
+        # (started inside _env_file) expires it by age — a stalled launch
+        # keeps its bind source for ~2min, and the pty spawn_argv path
+        # gets the same lifecycle without a timer tied to our exec.
+        return self._argv(spec, env, home, envfile), envfile
 
     def _env_file(self, env: dict[str, str]) -> Path:
         envdir = self._state_dir / "env"
@@ -315,8 +332,14 @@ class LinuxNamespaceRunner:
             "--unshare-uts",
             "--unshare-cgroup",
             "--die-with-parent",
-            "--new-session",
         ]
+        # --new-session detaches the child into a fresh session — under an
+        # external pty the terminal layer must keep job control in the outer
+        # session (tcsetpgrp/ctrl-C), so interactive spawns skip it. The
+        # namespace tree still dies with --die-with-parent and the outer
+        # killpg covers cancellation.
+        if not spec.pty:
+            argv.append("--new-session")
         argv += ["--share-net"] if _net_granted(spec) else ["--unshare-net"]
         # Root filesystem: toolchain read-only, no host HOME, minimal /etc.
         argv += ["--ro-bind", "/usr", "/usr"]

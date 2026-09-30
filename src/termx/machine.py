@@ -34,6 +34,10 @@ def _execution_sandbox() -> dict[str, Any]:
             "filesystem_isolation": bool(restricted.get("filesystem_isolation")),
             "identity_isolation": bool(restricted.get("identity_isolation")),
             "resource_limits": bool(restricted.get("resource_limits")),
+            # Install/repair lifecycle: which sandbox primitives work on this
+            # machine and which provisioned upgrades (restricted identity,
+            # signed helper, net block) are still pending, with repair hints.
+            "provisioning": _sandbox_provisioning(),
         }
     except Exception:
         return {
@@ -44,7 +48,17 @@ def _execution_sandbox() -> dict[str, Any]:
             "filesystem_isolation": False,
             "identity_isolation": False,
             "resource_limits": False,
+            "provisioning": _sandbox_provisioning(),
         }
+
+
+def _sandbox_provisioning() -> dict[str, Any]:
+    from termx.sandbox.provision import provision_status
+
+    try:
+        return provision_status()
+    except Exception:
+        return {"platform": sys.platform, "checks": [], "ok": False}
 
 
 def _process_discovery_supported() -> bool:
