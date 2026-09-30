@@ -86,6 +86,61 @@ _ENVFILE_SWEEP_S = 30
 # shell honoring them would run a script it can read inside the sandbox.
 _ENV_DENYLIST = frozenset({"ENV", "BASH_ENV", "SHELLOPTS", "PS4", "CDPATH"})
 
+# One daemon sweeper per env directory per process — runner instances are
+# created per launch (runner_for), so a per-runner thread would leak.
+_sweepers: set[str] = set()
+_sweepers_lock = threading.Lock()
+
+
+def _ensure_sweeper(envdir: Path) -> None:
+    """Recurring daemon sweep of expired env files for this directory.
+
+    A per-spawn timer can't know when bwrap's mount phase finished, so
+    files expire only by age: bwrap's mount phase is <1s in practice, and
+    a launcher stalled past the ~2min expiry window fails visibly rather
+    than silently losing env. One thread per directory across all runner
+    instances; daemon, so it exits with the process.
+    """
+    key = str(envdir)
+    with _sweepers_lock:
+        if key in _sweepers:
+            return
+        _sweepers.add(key)
+
+        def loop() -> None:
+            while True:
+                time.sleep(_ENVFILE_SWEEP_S)
+                LinuxNamespaceRunner._sweep_env_files(envdir)
+
+        threading.Thread(target=loop, daemon=True, name="termx-env-sweep").start()
+
+
+async def _unlink_when_mounted(pid: int, envfile: Path) -> None:
+    """Delete the env file once its bind is confirmed in the child's ns.
+
+    /proc/<pid>/mountinfo exposing the env path proves bwrap's mount
+    phase finished — the host copy is then dead weight (credentials
+    linger ~1s instead of the full age window). If the child dies
+    first, the file is useless; if the mount never lands within the
+    cap, the age sweep still owns cleanup.
+    """
+    mountinfo = Path(f"/proc/{pid}/mountinfo")
+    for _ in range(90):
+        try:
+            text = mountinfo.read_text(encoding="utf-8", errors="replace")
+        except (OSError, FileNotFoundError):
+            break  # process gone — file is dead either way
+        if _ENVFILE_NS in text:
+            break
+        await asyncio.sleep(0.5)
+    else:
+        return
+    try:
+        envfile.unlink()
+    except OSError:
+        pass
+
+
 # prlimit defaults for every restricted spawn (per-tree bounds; pids counts
 # the real uid so it is kept generous enough to avoid false failures).
 _DEFAULT_LIMITS = ResourceLimits(pids=1024, memory_bytes=8 << 30)
@@ -133,7 +188,6 @@ class LinuxNamespaceRunner:
         self._profile = profile
         base = Path(state_dir) if state_dir is not None else _default_state_dir()
         self._state_dir = base / "sandbox"
-        self._sweeper_started = False
 
     @property
     def profile(self) -> str:
@@ -190,6 +244,12 @@ class LinuxNamespaceRunner:
             )
         except OSError as exc:
             raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
+        # Drop the credential-bearing envfile as soon as the bind is
+        # confirmed inside the child's mount ns (the age sweep stays as
+        # the bound for stalled or argv-embedded launches).
+        asyncio.get_running_loop().create_task(
+            _unlink_when_mounted(process.pid, envfile)
+        )
         return StreamedProcess(process, spec, backend="linux-ns")
 
     def _env_file(self, env: dict[str, str]) -> Path:
@@ -206,31 +266,8 @@ class LinuxNamespaceRunner:
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
                     continue
                 fh.write(f"{key}={shlex.quote(value)}\n")
-        self._start_sweeper(envdir)
+        _ensure_sweeper(envdir)
         return path
-
-    def _start_sweeper(self, envdir: Path) -> None:
-        """Recurring daemon sweep of expired env files.
-
-        A per-spawn timer can't know when bwrap's mount phase finished,
-        so files expire only by age: bwrap's mount phase is <1s in
-        practice, and a launcher stalled past the ~2min expiry window
-        fails visibly rather than silently losing env. This bounds the
-        residual lifetime of credential-bearing files (~<=150s) with no
-        readiness coupling and works for the pty spawn_argv path too.
-        """
-        if self._sweeper_started:
-            return
-        self._sweeper_started = True
-
-        def loop() -> None:
-            while True:
-                time.sleep(_ENVFILE_SWEEP_S)
-                self._sweep_env_files(envdir)
-
-        threading.Thread(
-            target=loop, daemon=True, name="termx-env-sweep"
-        ).start()
 
     @staticmethod
     def _sweep_env_files(envdir: Path) -> None:
