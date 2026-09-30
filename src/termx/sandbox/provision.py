@@ -41,7 +41,10 @@ def helper_path() -> Path | None:
     if override:
         return Path(override)
     if sys.platform == "darwin":
-        return Path.home() / "Library/Application Support/termx/sandbox-helper"
+        # System-wide install location — a helper under ~/Library can be
+        # rewritten by the same user it claims to drop below, so identity
+        # attestation from it would be meaningless. Mirrors macos_runner.
+        return Path("/Library/Application Support/termx/sandbox-helper")
     if sys.platform == "win32":
         program_data = os.environ.get("ProgramData", r"C:\ProgramData")
         return Path(program_data) / "termx" / "sandbox-helper.exe"
@@ -52,7 +55,19 @@ def helper_path() -> Path | None:
 
 def helper_installed() -> bool:
     path = helper_path()
-    return bool(path is not None and path.is_file() and os.access(path, os.X_OK))
+    if path is None or not (path.is_file() and os.access(path, os.X_OK)):
+        return False
+    if sys.platform == "darwin" and not os.environ.get(HELPER_ENV):
+        # The macOS broker confers restricted-user identity — only trust a
+        # root-owned binary no one else can rewrite (same rule as
+        # macos_runner._helper_path; env override is a trusted dev seam).
+        try:
+            stat_result = path.stat()
+        except OSError:
+            return False
+        if stat_result.st_uid != 0 or (stat_result.st_mode & 0o022):
+            return False
+    return True
 
 
 def _restricted_user_exists() -> bool:
