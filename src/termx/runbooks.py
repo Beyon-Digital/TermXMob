@@ -324,16 +324,16 @@ class RunbookRunner:
             while index < len(steps):
                 step = steps[index]
                 group = [step]
-                if step["parallel"]:
+                if step.get("parallel"):
                     while (
                         index + len(group) < len(steps)
-                        and steps[index + len(group)]["parallel"]
-                        and not steps[index + len(group)]["confirm"]
+                        and steps[index + len(group)].get("parallel")
+                        and not steps[index + len(group)].get("confirm")
                     ):
                         group.append(steps[index + len(group)])
                 for member in group:
                     if (
-                        member["confirm"]
+                        member.get("confirm")
                         and index + group.index(member) != skip_confirm_at
                     ):
                         self._store.update_runbook_run(
@@ -394,6 +394,11 @@ class RunbookRunner:
             status = "cancelled"
             error = error or "Cancelled by user"
             raise
+        except Exception as exc:
+            # A step that could not even spawn (sandbox construction, argv
+            # resolution) must fail the run — never report completed.
+            status = "failed"
+            error = error or f"run aborted: {exc}"
         finally:
             self._confirm_events.pop(run_id, None)
             self._procs.pop(run_id, None)

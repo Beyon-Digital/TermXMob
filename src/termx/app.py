@@ -45,6 +45,7 @@ from termx.net import connect_url, http_urls, qr_svg
 from termx.project_files import ProjectFiles
 from termx import git_ops, lsp
 from termx.sessions import DEFAULT_COLS, DEFAULT_ROWS, SessionManager, default_argv
+from termx.terminals import TerminalError
 from termx.tokens import SCOPES, TokenStore
 from termx.tunnels import TunnelManager
 
@@ -103,6 +104,12 @@ class CreateSessionBody(BaseModel):
     title: str | None = None
     shell: str | None = None
     cwd: str | None = None
+    # host (default, legacy unrestricted) or a restricted interactive
+    # profile — the session routes through runner_for(profile) and its pty
+    # spawn_argv. `agent` is intentionally excluded: an interactive terminal
+    # is the trusted human's shell (network permitted), while `agent` is
+    # deny-by-default and only reachable through task execution.
+    sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace)$")
 
 
 class WorkspaceSessionBody(BaseModel):
@@ -250,6 +257,13 @@ class RunbookPatchBody(BaseModel):
     name: str | None = Field(default=None, max_length=120)
     project_id: str | None = Field(default=None, max_length=80)
     steps: list[dict[str, Any]] | None = Field(default=None, min_length=1, max_length=50)
+
+
+class RunbookRunBody(BaseModel):
+    # Execution profile for a human-invoked runbook run. "host" keeps the
+    # legacy unrestricted behavior; "workspace" runs each step inside the
+    # restricted backend (net still governed by remembered grants).
+    profile: str = Field(default="host", pattern=r"^(host|workspace)$")
 
 
 class ConversationBody(BaseModel):
@@ -1269,6 +1283,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     @app.post("/api/runbooks/{runbook_id}/run")
     async def run_runbook(
         runbook_id: str,
+        body: RunbookRunBody | None = None,
         x_termx_passcode: str | None = Header(default=None),
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
@@ -1280,8 +1295,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         cwd = str(Path.home())
         if runbook.get("project_id"):
             cwd = str(state.projects.project(runbook["project_id"])["path"])
-        run = state.agent.runbooks.start(runbook, cwd)
-        log_event("runbook_run", runbook_id=runbook_id, run_id=run["id"])
+        profile = (body.profile if body else "host") or "host"
+        run = state.agent.runbooks.start(
+            runbook, cwd, profile=profile, project_id=runbook.get("project_id")
+        )
+        log_event("runbook_run", runbook_id=runbook_id, run_id=run["id"], profile=profile)
         return {"run": run}
 
     @app.get("/api/runbook-runs")
@@ -2515,14 +2533,18 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             cwd = validate_cwd(body.cwd or prefs.cwd)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        session = state.sessions.create(
-            cols=body.cols,
-            rows=body.rows,
-            title=body.title,
-            argv=default_argv(shell),
-            cwd=cwd,
-            shell=shell,
-        )
+        try:
+            session = state.sessions.create(
+                cols=body.cols,
+                rows=body.rows,
+                title=body.title,
+                argv=default_argv(shell),
+                cwd=cwd,
+                shell=shell,
+                sandbox_profile=body.sandbox_profile,
+            )
+        except TerminalError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return session.snapshot()
 
     @app.patch("/api/sessions/{session_id}")

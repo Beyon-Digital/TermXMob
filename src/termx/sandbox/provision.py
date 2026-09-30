@@ -1,0 +1,274 @@
+"""Installation/repair lifecycle for restricted sandbox backends.
+
+Restricted execution has two layers:
+
+* primitives the OS already provides (Linux unprivileged userns + bwrap,
+  macOS Seatbelt, Windows restricted tokens + Job Objects) — each probed
+  here so the machine snapshot can report them truthfully; and
+* provisioned upgrades that need a one-time elevated install (a dedicated
+  ``termx-sandbox`` OS identity, a signed privileged helper, Windows
+  firewall rules for a dedicated child binary) — reported as pending with
+  concrete repair steps rather than silently skipped.
+
+Nothing here performs privileged operations. ``provision_status`` is a
+read-only audit; each check carries a ``repair`` hint the installer/CLI or
+a human can act on. A missing provisioned upgrade never degrades the
+kernel boundary — backends advertise exactly what they enforce.
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+# The privileged helper is opt-in and environment-overridable (also used by
+# the platform backends for detection — keep this name stable).
+HELPER_ENV = "TERMX_SANDBOX_HELPER"
+RESTRICTED_USER = "termx-sandbox"
+
+
+def helper_path() -> Path | None:
+    """Well-known signed helper location (env override first).
+
+    The helper is a small validated broker shipped with the desktop build —
+    it accepts structured spawn/lifecycle requests and never an arbitrary
+    shell. Absence only means the *identity* upgrade is unavailable.
+    """
+    override = os.environ.get(HELPER_ENV)
+    if override:
+        return Path(override)
+    if sys.platform == "darwin":
+        # System-wide install location — a helper under ~/Library can be
+        # rewritten by the same user it claims to drop below, so identity
+        # attestation from it would be meaningless. Mirrors macos_runner.
+        return Path("/Library/Application Support/termx/sandbox-helper")
+    if sys.platform == "win32":
+        program_data = os.environ.get("ProgramData", r"C:\ProgramData")
+        return Path(program_data) / "termx" / "sandbox-helper.exe"
+    if sys.platform.startswith("linux"):
+        return Path.home() / ".local" / "share" / "termx" / "sandbox-helper"
+    return None
+
+
+def helper_installed() -> bool:
+    path = helper_path()
+    if path is None or not (path.is_file() and os.access(path, os.X_OK)):
+        return False
+    if sys.platform == "darwin" and not os.environ.get(HELPER_ENV):
+        # The macOS broker confers restricted-user identity — only trust a
+        # root-owned binary no one else can rewrite (same rule as
+        # macos_runner._helper_path; env override is a trusted dev seam).
+        try:
+            stat_result = path.stat()
+        except OSError:
+            return False
+        if stat_result.st_uid != 0 or (stat_result.st_mode & 0o022):
+            return False
+    return True
+
+
+def _restricted_user_exists() -> bool:
+    """Whether the dedicated non-login ``termx-sandbox`` identity exists."""
+    if sys.platform == "darwin":
+        probe = subprocess.run(
+            ["dscl", ".", "-read", f"/Users/{RESTRICTED_USER}"],
+            capture_output=True,
+            timeout=5,
+        )
+        return probe.returncode == 0
+    if sys.platform == "win32":
+        probe = subprocess.run(
+            ["net", "user", RESTRICTED_USER],
+            capture_output=True,
+            timeout=5,
+        )
+        return probe.returncode == 0
+    return False
+
+
+def _linux_checks() -> list[dict[str, Any]]:
+    from termx.sandbox.linux_ns import linux_ns_available
+
+    bwrap = shutil.which("bwrap")
+    checks = [
+        {
+            "id": "linux-ns.bwrap",
+            "ok": bwrap is not None,
+            "detail": bwrap or "bubblewrap not installed",
+            "repair": "install bubblewrap (e.g. apt install bubblewrap)",
+            "elevated": True,
+            "required": True,
+        },
+        {
+            "id": "linux-ns.userns",
+            "ok": linux_ns_available() if bwrap else False,
+            "detail": (
+                "unprivileged user namespaces + bwrap functional"
+                if linux_ns_available()
+                else "userns probe failed — restricted spawns cannot start"
+            ),
+            "repair": (
+                "enable unprivileged user namespaces "
+                "(e.g. sysctl kernel.unprivileged_userns_clone=1)"
+            ),
+            "elevated": True,
+            "required": True,
+        },
+    ]
+    return checks
+
+
+def _darwin_checks() -> list[dict[str, Any]]:
+    seatbelt = shutil.which("sandbox-exec")
+    return [
+        {
+            "id": "macos.seatbelt",
+            "ok": seatbelt is not None,
+            "detail": seatbelt or "sandbox-exec missing",
+            "repair": "Seatbelt ships with macOS — reinstall the OS toolchain if absent",
+            "elevated": False,
+            "required": True,
+        },
+        {
+            "id": "macos.restricted-user",
+            "ok": _restricted_user_exists(),
+            "detail": (
+                f"dedicated {RESTRICTED_USER} identity exists"
+                if _restricted_user_exists()
+                else "no separate identity — same-user seatbelt only"
+            ),
+            "repair": (
+                "run `termx sandbox provision` from the elevated installer "
+                f"(creates the {RESTRICTED_USER} non-login account)"
+            ),
+            "elevated": True,
+            "required": False,
+        },
+        {
+            "id": "macos.helper",
+            "ok": helper_installed(),
+            "detail": (
+                f"helper at {helper_path()}" if helper_installed() else "helper not installed"
+            ),
+            "repair": "install the signed sandbox helper via the desktop installer",
+            "elevated": True,
+            "required": False,
+        },
+    ]
+
+
+_NETBLOCK_RULE = "TermxSandboxDenyOutbound"
+
+
+def _windows_netblock_installed() -> bool:
+    """Whether the WFAS outbound-deny rule for the helper child exists.
+
+    The provisioned upgrade installs a deny-all-outbound rule pinned to the
+    sandbox child binary; reporting ready on the helper exe alone would
+    claim network isolation nothing enforces.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        probe = subprocess.run(
+            [
+                "netsh", "advfirewall", "firewall", "show",
+                "rule", f"name={_NETBLOCK_RULE}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    # netsh prints the rule block when it exists and "No rules match" when not.
+    return probe.returncode == 0 and _NETBLOCK_RULE in (probe.stdout or "")
+
+
+def _windows_checks() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "windows.token-job",
+            "ok": True,
+            "detail": "restricted token + Job Object primitives available (no install needed)",
+            "repair": None,
+            "elevated": False,
+            "required": True,
+        },
+        {
+            "id": "windows.restricted-user",
+            "ok": _restricted_user_exists(),
+            "detail": (
+                f"dedicated {RESTRICTED_USER} account exists"
+                if _restricted_user_exists()
+                else "no separate identity — same-user integrity level only"
+            ),
+            "repair": (
+                "run `termx sandbox provision` elevated "
+                f"(creates the {RESTRICTED_USER} local account + ACL seed)"
+            ),
+            "elevated": True,
+            "required": False,
+        },
+        {
+            "id": "windows.netblock",
+            "ok": _windows_netblock_installed(),
+            "detail": (
+                "WFAS outbound-deny rule present for the helper child exe"
+                if _windows_netblock_installed() else
+                "outbound network cannot be denied without a WFAS rule for "
+                "a dedicated child binary"
+            ),
+            "repair": "elevated install adds the WFAS deny rule for the helper child exe",
+            "elevated": True,
+            "required": False,
+        },
+    ]
+
+
+def provision_status() -> dict[str, Any]:
+    """Read-only provisioning audit for the current platform."""
+    platform = sys.platform
+    if platform.startswith("linux"):
+        checks = _linux_checks()
+    elif platform == "darwin":
+        checks = _darwin_checks()
+    elif platform == "win32":
+        checks = _windows_checks()
+    else:
+        checks = [
+            {
+                "id": "platform.unknown",
+                "ok": False,
+                "detail": f"no restricted backend for {platform} — host profile only",
+                "repair": None,
+                "elevated": False,
+            }
+        ]
+    return {
+        "platform": platform,
+        "helper": {"installed": helper_installed(), "path": str(helper_path() or "")},
+        "restricted_user": (
+            _restricted_user_exists() if platform in {"darwin", "win32"} else False
+        ),
+        "checks": checks,
+        # `ok` = every *required* primitive for kernel sandboxing passes.
+        # Provisioned upgrades (restricted identity, helper, WFAS rules)
+        # widen what the backend can enforce but are not the boundary
+        # itself — they live under `fully_provisioned`/`upgrades_pending`.
+        "ok": all(
+            check["ok"] for check in checks if check.get("required", True)
+        ),
+        "fully_provisioned": all(check["ok"] for check in checks),
+        "upgrades_pending": [
+            check["id"]
+            for check in checks
+            if not check["ok"] and not check.get("required", True)
+        ],
+    }
+
+
+__all__ = ["HELPER_ENV", "RESTRICTED_USER", "helper_installed", "helper_path", "provision_status"]

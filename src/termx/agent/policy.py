@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+_WINDOWS = os.name == "nt"
 
 
 @dataclass(frozen=True)
@@ -128,23 +131,48 @@ def evaluate_computer(actions: list[dict[str, Any]]) -> PolicyDecision:
     return PolicyDecision(True, False, "Within approved task", "Controls the selected desktop")
 
 
+_WIN_PATH_SHAPE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|~(?:[\\/]|$))")
+_WIN_TOKEN = re.compile(r'"([^"]+)"|\'([^\']+)\'|([^\s"\';&|<>]+)')
+
+
+def _windows_candidates(command: str) -> list[str]:
+    """Path candidates from a cmd/PowerShell command line.
+
+    shlex(posix=True) eats the backslashes in ``C:\\a\\b.txt`` so Windows
+    tokens are extracted raw: quoted strings plus bare tokens that start
+    with a drive, UNC, or ~ root. ``foo /flag`` tokens never match the
+    shape and stay ignored.
+    """
+    out: list[str] = []
+    for match in _WIN_TOKEN.finditer(command):
+        token = match.group(1) or match.group(2) or match.group(3) or ""
+        if token and _WIN_PATH_SHAPE.match(token):
+            out.append(token)
+    return out
+
+
 def _outside_paths(command: str, root: Path) -> list[str]:
-    try:
-        tokens = shlex.split(command, posix=True)
-    except ValueError:
-        return []
+    if _WINDOWS:
+        candidates = _windows_candidates(command)
+    else:
+        try:
+            tokens = shlex.split(command, posix=True)
+        except ValueError:
+            return []
+        candidates = [
+            stripped
+            for token in tokens
+            if (stripped := token.strip("'\"")).startswith(("/", "~"))
+        ]
     outside: list[str] = []
-    for token in tokens:
-        candidate = token.strip("'\"")
-        if not candidate.startswith(("/", "~")):
-            continue
+    for candidate in candidates:
         # System executable and pseudo paths used as commands are not file targets.
         if candidate.startswith(("/usr/bin/", "/bin/", "/opt/homebrew/bin/", "/dev/null")):
             continue
-        path = Path(candidate).expanduser()
         try:
+            path = Path(candidate).expanduser()
             resolved = path.resolve(strict=False)
             resolved.relative_to(root)
-        except (OSError, ValueError):
-            outside.append(str(path))
+        except (OSError, ValueError, RuntimeError):
+            outside.append(str(Path(candidate)))
     return outside

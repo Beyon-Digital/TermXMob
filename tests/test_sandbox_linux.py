@@ -516,9 +516,9 @@ def test_env_values_not_on_argv(tmp_path):
         assert b"--setenv" not in cmdline
     finally:
         spawned.process.kill()
+        asyncio.run(asyncio.sleep(0))  # let the loop settle
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="git worktree as root mask test")
 def test_git_commondir_config_and_hooks_read_only(tmp_path):
     """The shared commondir mounts ro except objects/refs/logs: commits in
     the worktree work, but `git config` writes and hook retargeting fail."""

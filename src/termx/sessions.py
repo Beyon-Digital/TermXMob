@@ -168,6 +168,7 @@ class Session:
     argv: list[str]
     cwd: str = field(default_factory=lambda: str(Path.home()))
     shell: str = field(default_factory=default_shell)
+    sandbox_profile: str = "host"
     master_fd: int = -1
     proc: object | None = None
     replay: ReplayBuffer = field(default_factory=ReplayBuffer)
@@ -187,10 +188,13 @@ class Session:
     _activity_task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
-        env = os.environ.copy()
-        env.setdefault("TERM", "xterm-256color")
-        env.setdefault("COLORTERM", "truecolor")
-        argv = with_shell_integration(self.argv, env)
+        if self.sandbox_profile != "host":
+            argv, env = self._restricted_launch()
+        else:
+            env = os.environ.copy()
+            env.setdefault("TERM", "xterm-256color")
+            env.setdefault("COLORTERM", "truecolor")
+            argv = with_shell_integration(self.argv, env)
         try:
             terminal = spawn_terminal(argv, self.cwd, env, self.rows, self.cols)
         except TerminalError:
@@ -200,6 +204,66 @@ class Session:
         self.proc = getattr(terminal, "proc", None)
         self._reader = threading.Thread(target=self._read_loop, name=f"pty-{self.id}", daemon=True)
         self._reader.start()
+
+    def _restricted_launch(self) -> tuple[list[str], dict[str, str]]:
+        """Route this terminal through the sandbox backend for its profile.
+
+        The terminal layer keeps owning the pty; the backend's ``spawn_argv``
+        resolves the wrapped command line so a workspace terminal gets the
+        same kernel isolation as agent spawns. Fails closed — a backend with
+        no pty story raises TerminalError instead of spawning unsandboxed.
+        """
+        from termx.sandbox import SpawnSpec, runner_for
+        from termx.sandbox.environment import build_environment, sandbox_home
+        from termx.config import config_dir
+
+        home = sandbox_home(config_dir(), f"term-{self.id}")
+        env = build_environment(self.sandbox_profile, home=str(home), tmp_dir="/tmp")
+        env.setdefault("COLORTERM", "truecolor")
+        argv = with_shell_integration(list(self.argv), env)
+        # OSC-7 rc files live under a private tmp dir — mount them read-only
+        # inside the sandbox so bash/zsh integration keeps working.
+        integration = shell_integration_dir()
+        spec = SpawnSpec(
+            profile=self.sandbox_profile,
+            argv=tuple(argv),
+            cwd=self.cwd,
+            workspace_root=self.cwd,
+            writable_roots=(self.cwd,),
+            read_only_roots=(str(integration),),
+            env=env,
+            # An interactive workspace terminal is the human's own project
+            # shell: network is permitted (dev tools need it). Any other
+            # restricted profile stays deny-by-default — grants only come
+            # from remembered capability rules, never from session params.
+            network=(
+                "outbound" if self.sandbox_profile == "workspace" else "none"
+            ),
+            granted_capabilities=(
+                ("net.outbound:any",) if self.sandbox_profile == "workspace" else ()
+            ),
+            pty=True,
+            purpose="terminal",
+            task_id=f"term-{self.id}",
+            home=str(home),
+        )
+        runner = runner_for(self.sandbox_profile)
+        if runner.capabilities().backend == "host":
+            # A restricted terminal must never silently resolve to the
+            # unrestricted backend — unavailable sandbox = honest failure.
+            raise TerminalError(
+                "no kernel sandbox backend available for "
+                f"profile {self.sandbox_profile!r} — see provisioning status"
+            )
+        spawn_argv = getattr(runner, "spawn_argv", None)
+        if spawn_argv is None:
+            raise TerminalError(
+                f"sandbox backend {runner.capabilities().backend} cannot spawn pty terminals"
+            )
+        try:
+            return spawn_argv(spec), env
+        except Exception as exc:
+            raise TerminalError(f"sandbox spawn rejected: {exc}") from exc
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -419,6 +483,7 @@ class SessionManager:
         argv: list[str] | None = None,
         cwd: str | None = None,
         shell: str | None = None,
+        sandbox_profile: str | None = None,
     ) -> Session:
         self._seq += 1
         sid = uuid.uuid4().hex[:12]
@@ -434,6 +499,7 @@ class SessionManager:
             argv=cmd,
             cwd=cwd or str(Path.home()),
             shell=sh,
+            sandbox_profile=sandbox_profile or "host",
         )
         session.start()
         try:
