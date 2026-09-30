@@ -124,7 +124,7 @@ _INFINITE = 0xFFFFFFFF
 _WAIT_TIMEOUT = 0x102
 
 _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
-_JOB_OBJECT_BASIC_PROCESS_ID_LIST = 3
+_JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION = 1
 _JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 _JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
 _JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
@@ -196,23 +196,33 @@ class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
     ]
 
 
-class _JOBOBJECT_BASIC_PROCESS_ID_LIST(ctypes.Structure):
+class _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
     _fields_ = [
-        ("NumberOfAssignedProcesses", wt.DWORD),
-        ("NumberOfProcessIdsInList", wt.DWORD),
-        ("ProcessIdList", ctypes.c_size_t * 64),
+        ("TotalUserTime", ctypes.c_int64),
+        ("TotalKernelTime", ctypes.c_int64),
+        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+        ("TotalPageFaultCount", wt.DWORD),
+        ("TotalProcesses", wt.DWORD),
+        ("ActiveProcesses", wt.DWORD),
+        ("TotalTerminatedProcesses", wt.DWORD),
     ]
 
 
 def _job_process_count(job: int) -> int:
-    """Live process count in the job (0 also when the query fails)."""
-    info = _JOBOBJECT_BASIC_PROCESS_ID_LIST()
+    """Live process count in the job, or -1 when the query fails.
+
+    Uses the fixed-size basic-accounting query — the process-ID list variant
+    fails outright once the job holds more IDs than the buffer holds, and
+    a caller must never read that failure as "no live writers".
+    """
+    info = _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
     if not _kernel32.QueryInformationJobObject(
-        job, _JOB_OBJECT_BASIC_PROCESS_ID_LIST, ctypes.byref(info),
+        job, _JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION, ctypes.byref(info),
         ctypes.sizeof(info), None,
     ):
-        return 0
-    return info.NumberOfAssignedProcesses
+        return -1
+    return info.ActiveProcesses
 
 
 def _last_error() -> OSError:
@@ -501,19 +511,20 @@ def run(request_path: str) -> int:
 
     # Drain remaining output. Descendants may still hold the stdio pipes past
     # the leader's exit — give them a bounded grace period, then once every
-    # writer is gone the pipes hit EOF and the pumps drain the buffered tail
-    # completely (an output tail must never be cut off early). If a stray
-    # descendant keeps a pipe open past the grace period, fall back to a
-    # bounded join so the shim cannot wedge on it.
+    # writer is *proven* gone the pipes hit EOF and the pumps drain the
+    # buffered tail completely (an output tail must never be cut off early).
+    # If a stray descendant keeps a pipe open past the grace period — or the
+    # job-count query can't prove emptiness — fall back to a bounded join so
+    # the shim cannot wedge on it.
     deadline = time.monotonic() + 5.0
-    while _job_process_count(job) and time.monotonic() < deadline:
+    while _job_process_count(job) > 0 and time.monotonic() < deadline:
         time.sleep(0.05)
-    if _job_process_count(job):
-        for t in pumps[:2]:
-            t.join(timeout=10)
-    else:
+    if _job_process_count(job) == 0:
         for t in pumps[:2]:
             t.join()
+    else:
+        for t in pumps[:2]:
+            t.join(timeout=10)
     # in_wr is owned by the stdin pump (it closes to propagate EOF).
     for h in (out_rd, err_rd, pi.hProcess, pi.hThread):
         _kernel32.CloseHandle(h)
