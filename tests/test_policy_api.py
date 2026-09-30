@@ -181,8 +181,9 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
     assert caps["policy_engine_v2"] is True
     sandbox = caps["execution_sandbox"]
     # Truthful report: the snapshot mirrors whatever the runner selected for
-    # this machine — host ("none") where no kernel backend is available,
-    # linux-ns/macos ("kernel") where one is — and never invents controls.
+    # this machine — host ("none") where no restricted backend probes OK,
+    # linux-ns on linux, macos-seatbelt/helper on darwin, windows-token/user
+    # on win32 — and never invents controls.
     import sys
 
     from termx.sandbox import (
@@ -190,10 +191,19 @@ def test_machine_snapshot_reports_execution_sandbox(client, auth):
         macos_backend_available,
         runner_for,
     )
-    from termx.sandbox.macos_runner import macos_helper_available
 
     if sys.platform == "darwin" and macos_backend_available():
+        from termx.sandbox.macos_runner import macos_helper_available
+
         expected_backend = "macos-helper" if macos_helper_available() else "macos-seatbelt"
+    elif sys.platform == "win32":
+        from termx.sandbox.windows_runner import windows_backend_available
+
+        expected_backend = (
+            runner_for("agent", backend="windows").capabilities().backend
+            if windows_backend_available()
+            else "host"
+        )
     elif linux_ns_available():
         expected_backend = "linux-ns"
     else:
