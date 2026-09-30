@@ -33,6 +33,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -78,19 +79,12 @@ _EPHEMERAL_HOME = "/tmp/termx-home"
 # 0600 under the 0700 state dir and swept once consumed.
 _ENVFILE_NS = "/tmp/termx-env"
 _ENVFILE_MAX_AGE_S = 120
-# How long after spawn the host-side env file may linger (bwrap's mount
-# phase is <1s; 15s leaves headroom for a busy launcher).
-_ENVFILE_UNLINK_S = 15
+# How often the background sweeper runs (files expire by age, not by a
+# per-spawn timer — a timer can't tell a mounted bind from a stalled one).
+_ENVFILE_SWEEP_S = 30
 # Env keys that are code-execution vectors when set, never data: an inner
 # shell honoring them would run a script it can read inside the sandbox.
 _ENV_DENYLIST = frozenset({"ENV", "BASH_ENV", "SHELLOPTS", "PS4", "CDPATH"})
-
-
-def _unlink_quiet(path: Path) -> None:
-    try:
-        path.unlink()
-    except OSError:
-        pass
 
 # prlimit defaults for every restricted spawn (per-tree bounds; pids counts
 # the real uid so it is kept generous enough to avoid false failures).
@@ -139,6 +133,7 @@ class LinuxNamespaceRunner:
         self._profile = profile
         base = Path(state_dir) if state_dir is not None else _default_state_dir()
         self._state_dir = base / "sandbox"
+        self._sweeper_started = False
 
     @property
     def profile(self) -> str:
@@ -195,11 +190,6 @@ class LinuxNamespaceRunner:
             )
         except OSError as exc:
             raise SandboxFailure("spawn_failed", f"linux-ns spawn failed: {exc}") from exc
-        # The bind is baked once bwrap finishes its mount phase; the 0600
-        # host copy of the env file needn't linger until the next sweep.
-        asyncio.get_running_loop().call_later(
-            _ENVFILE_UNLINK_S, _unlink_quiet, envfile
-        )
         return StreamedProcess(process, spec, backend="linux-ns")
 
     def _env_file(self, env: dict[str, str]) -> Path:
@@ -216,7 +206,31 @@ class LinuxNamespaceRunner:
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
                     continue
                 fh.write(f"{key}={shlex.quote(value)}\n")
+        self._start_sweeper(envdir)
         return path
+
+    def _start_sweeper(self, envdir: Path) -> None:
+        """Recurring daemon sweep of expired env files.
+
+        A per-spawn timer can't know when bwrap's mount phase finished,
+        so files expire only by age: bwrap's mount phase is <1s in
+        practice, and a launcher stalled past the ~2min expiry window
+        fails visibly rather than silently losing env. This bounds the
+        residual lifetime of credential-bearing files (~<=150s) with no
+        readiness coupling and works for the pty spawn_argv path too.
+        """
+        if self._sweeper_started:
+            return
+        self._sweeper_started = True
+
+        def loop() -> None:
+            while True:
+                time.sleep(_ENVFILE_SWEEP_S)
+                self._sweep_env_files(envdir)
+
+        threading.Thread(
+            target=loop, daemon=True, name="termx-env-sweep"
+        ).start()
 
     @staticmethod
     def _sweep_env_files(envdir: Path) -> None:
@@ -293,10 +307,12 @@ class LinuxNamespaceRunner:
         else:
             # Ephemeral HOME inside the per-ns tmpfs — nothing persists to a
             # shared dir, so an unrelated earlier run's files can't leak in.
-            # --chmod makes it writable by the in-ns uid on bwrap/tmpfs
-            # combos where the fresh dir lands root-owned. 0700 since the
-            # dir is created for the mapped uid — no need for world write.
-            argv += ["--dir", _EPHEMERAL_HOME, "--chmod", "0700", _EPHEMERAL_HOME]
+            # --chmod makes it writable by the in-ns uid. 0777 on purpose:
+            # bwrap may create --dir during mount setup as ns-root, and on
+            # those versions 0700 would deny the child entirely — this is a
+            # per-ns tmpfs seen only by this task's own uid, so the wide
+            # mode costs nothing.
+            argv += ["--dir", _EPHEMERAL_HOME, "--chmod", "0777", _EPHEMERAL_HOME]
             seen.add(_EPHEMERAL_HOME)
         argv += ["--ro-bind", str(envfile), _ENVFILE_NS]
         seen.add(_ENVFILE_NS)
