@@ -48,6 +48,7 @@ as a persistent broker (the protocol is identical):
     -> {"op": "spawn", "argv": [...], "shell": <str|null>, "cwd": <str>,
          "env": {...}, "workspace_root": <str>, "writable_roots": [...],
          "read_only_roots": [...], "network": "none"|"outbound",
+         "home_dir": <str>, "tmp_dir": <str>,
          "limits": {"cpu_s": …, "memory_bytes": …, "pids": …, "wall_s": …,
                     "output_bytes": …},
          "seatbelt": "<generated seatbelt profile text>",
@@ -61,11 +62,26 @@ as a persistent broker (the protocol is identical):
     -> {"op": "terminate", "pid": N}
     <- {"op": "terminate", "ok": true, "pid": N}   then the exit frame above.
 
-The helper MUST apply the supplied seatbelt profile around the child
-(sandbox_init/exec) in addition to dropping to the restricted user, MUST
-redirect the child's stdout/stderr into ``output`` frames, and MUST kill the
-child's whole process group on ``terminate``. Its stdout is a protocol-only
-channel; diagnostics belong on stderr.
+Helper obligations (the client cannot enforce these — they are the contract
+the privileged binary must meet):
+
+- Apply the supplied seatbelt profile around the child (sandbox_init/exec)
+  in addition to dropping to the restricted user, so the kernel boundary
+  holds even if the uid boundary is configured wrongly.
+- Provision ``home_dir``/``tmp_dir`` owned by the restricted user before
+  spawn: the client creates them under the daemon state dir, which a
+  different uid cannot write. The helper must likewise give the restricted
+  user access to ``workspace_root``/``writable_roots`` (chown or ACL),
+  never widening access beyond the approved roots.
+- Bound every ``output`` frame to ``_MAX_FRAME_BYTES`` of raw data so one
+  frame never exceeds the client's line buffer.
+- Kill the child's whole process group on ``terminate``, AND reap all its
+  spawned children when the session ends: when the helper's stdin reaches
+  EOF or the helper itself exits/dies, every child it started must die
+  too (e.g. kill-on-close process group or a reaper). The daemon cannot
+  signal a different-uid child, so a helper that exits without reaping
+  orphans the sandboxed tree.
+- Keep stdout protocol-only; diagnostics belong on stderr.
 """
 from __future__ import annotations
 
@@ -96,6 +112,9 @@ _HELPER_DEFAULT = (
     Path.home() / "Library" / "Application Support" / "termx" / "sandbox-helper"
 )
 _HELPER_USER = "termx-sandbox"
+# Helper protocol contract: a single output frame carries at most this many
+# bytes of raw child output (the client reads frames with a 2x headroom).
+_MAX_FRAME_BYTES = 1 << 21  # 2 MiB
 
 # Same capability vocabulary as linux-ns: every restricted spawn may execute
 # processes/children inside the workspace; network publish-class capabilities
@@ -128,7 +147,6 @@ _SYSTEM_READ_ROOTS = (
     "/Applications",
     "/etc",
     "/private/etc",
-    "/private/var/db",
     "/cores",
 )
 _SYSTEM_EXEC_ROOTS = ("/usr", "/bin", "/sbin", "/opt", "/Applications", "/System")
@@ -290,8 +308,10 @@ def _seatbelt_profile(spec: SpawnSpec, home: Path, tmp_dir: Path) -> str:
         # start at all; same-uid lookups do not cross an identity boundary.
         "(allow mach-lookup)",
         "(allow ipc-posix-shm)",
-        # stat/readdir metadata is harmless and required for getcwd/PATH
-        # traversal; data reads below are what actually carry content.
+        # stat() on arbitrary paths is leaked by design (needed for getcwd
+        # and PATH traversal through unreadable ancestors). Metadata !=
+        # content: file-read-data and directory listing stay confined, so
+        # filenames aren't enumerable where data reads are denied.
         "(allow file-read-metadata)",
         '(allow file-read* (literal "/"))',
         f"(allow file-read* {_subpaths(read_all)})",
@@ -376,6 +396,35 @@ class _HelperChild:
     async def wait(self) -> int:
         await self._exited.wait()
         return self.returncode if self.returncode is not None else -1
+
+    async def communicate(self, input: bytes | None = None) -> tuple[bytes, bytes]:
+        """asyncio-subprocess shape: stdout/stderr are one merged channel, so
+        stderr is always empty. The helper owns the child's stdin — input is
+        accepted for interface parity but unsupported."""
+        data = await self.stdout.read()
+        await self.wait()
+        return data, b""
+
+    def _request_stop(self) -> None:
+        """Best-effort terminate op over the helper channel. Callers reach
+        for ``.process.kill()`` after a killpg fails cross-uid — the only
+        kill that can work here goes over the wire, synchronously."""
+        if self.returncode is not None:
+            return
+        try:
+            if self._helper.stdin is not None:
+                self._helper.stdin.write(
+                    json.dumps({"op": "terminate", "pid": self.pid}).encode()
+                    + b"\n"
+                )
+        except (OSError, AttributeError):
+            pass
+
+    def kill(self) -> None:
+        self._request_stop()
+
+    def terminate(self) -> None:
+        self._request_stop()
 
 
 class _HelperProcess:
@@ -621,6 +670,10 @@ class MacOSRunner:
             "writable_roots": list(spec.writable_roots),
             "read_only_roots": list(spec.read_only_roots),
             "network": spec.network,
+            # The client created these under its own state dir — the helper
+            # must chown/provision them for the restricted user (contract).
+            "home_dir": str(home),
+            "tmp_dir": str(tmp_dir),
             "limits": _helper_limits(spec),
             # The generated seatbelt profile is sent verbatim so the helper
             # wraps it around the child — kernel boundary + uid boundary.
@@ -634,6 +687,10 @@ class MacOSRunner:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
+                # Protocol frames are JSON lines carrying base64 output
+                # chunks; _MAX_FRAME_BYTES is the helper-side contract cap,
+                # the reader limit leaves headroom for framing overhead.
+                limit=_MAX_FRAME_BYTES * 2,
                 start_new_session=True,
             )
         except OSError as exc:
