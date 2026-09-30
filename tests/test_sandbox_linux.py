@@ -418,7 +418,10 @@ def test_taskless_spawn_gets_ephemeral_home(tmp_path):
     assert not marker.exists()
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="git worktree as root mask test")
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="git worktree as root mask test",
+)
 def test_git_worktree_metadata_writable_but_base_checkout_hidden(tmp_path):
     """Agent worktrees are the writable project root — git needs the
     worktree's linked metadata (index/refs/objects) rw while the base
