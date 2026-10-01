@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_notification::NotificationExt;
@@ -274,6 +276,127 @@ pub fn error_dialog(app: &AppHandle, title: &str, message: &str) {
         .show(|_| {});
 }
 
+/// First-run onboarding (macOS): Welcome → Screen Recording → Accessibility →
+/// Launch at Login → Machine ready → QR/pairing link. Each step is a native
+/// dialog so permission prompts stay attributed to Termx.app in TCC; the
+/// final step opens the pairing window.
+#[cfg(target_os = "macos")]
+fn onboarding_welcome(app: AppHandle) {
+    app.dialog()
+        .message(
+            "Termx turns this machine into a workspace you can reach from your phone — chats, files, terminals, previews, and the desktop itself.\n\nSetup takes about a minute: two macOS permissions, then a QR code to pair.",
+        )
+        .title("Welcome to Termx")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Get started".to_string(),
+            "Skip setup".to_string(),
+        ))
+        .show(move |proceed| {
+            if proceed {
+                onboarding_screen_recording(&app);
+            } else {
+                // Skipping still completes first run — the pairing window opens
+                // so the machine is reachable without a nagging wizard.
+                config::set_onboarded(&app);
+                open_connect_window(&app);
+            }
+        });
+}
+
+#[cfg(target_os = "macos")]
+fn onboarding_screen_recording(app: &AppHandle) {
+    if crate::permissions::status().screen_recording {
+        onboarding_accessibility(app);
+        return;
+    }
+    let handle = app.clone();
+    app.dialog()
+        .message(
+            "Screen Recording lets Termx mirror this display to your phone.\n\nChoose Grant to approve Termx in the macOS prompt. If the prompt was already dismissed, enable Termx under System Settings → Privacy & Security → Screen Recording.",
+        )
+        .title("Termx — Screen Recording")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Grant Screen Recording".to_string(),
+            "Not now".to_string(),
+        ))
+        .show(move |grant| {
+            if grant {
+                let prompt = handle.clone();
+                let _ = prompt.run_on_main_thread(move || {
+                    crate::permissions::request_screen_recording();
+                });
+                if !crate::permissions::status().screen_recording {
+                    open_permission_settings(&handle);
+                }
+            }
+            onboarding_accessibility(&handle);
+        });
+}
+
+#[cfg(target_os = "macos")]
+fn onboarding_accessibility(app: &AppHandle) {
+    if crate::permissions::status().accessibility {
+        onboarding_autostart(app);
+        return;
+    }
+    let handle = app.clone();
+    app.dialog()
+        .message(
+            "Accessibility lets Termx send pointer and keyboard input when you control this machine.\n\nChoose Grant to approve Termx in the macOS prompt, or add Termx under System Settings → Privacy & Security → Accessibility.",
+        )
+        .title("Termx — Accessibility")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Grant Accessibility".to_string(),
+            "Not now".to_string(),
+        ))
+        .show(move |grant| {
+            if grant {
+                let prompt = handle.clone();
+                let _ = prompt.run_on_main_thread(move || {
+                    crate::permissions::request_accessibility();
+                });
+                if !crate::permissions::status().accessibility {
+                    open_accessibility_settings(&handle);
+                }
+            }
+            onboarding_autostart(&handle);
+        });
+}
+
+#[cfg(target_os = "macos")]
+fn onboarding_autostart(app: &AppHandle) {
+    let handle = app.clone();
+    app.dialog()
+        .message("Start Termx automatically when you log in?\n\nYou can change this later under Termx → Launch at Login.")
+        .title("Termx — Launch at Login")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Enable".to_string(),
+            "Not now".to_string(),
+        ))
+        .show(move |enable| {
+            if enable {
+                match handle.autolaunch().enable() {
+                    Ok(()) => crate::menu::sync_autostart(&handle),
+                    Err(error) => notify(&handle, "Termx", &format!("Could not enable launch at login: {error}")),
+                }
+            }
+            onboarding_ready(&handle);
+        });
+}
+
+#[cfg(target_os = "macos")]
+fn onboarding_ready(app: &AppHandle) {
+    config::set_onboarded(app);
+    let handle = app.clone();
+    app.dialog()
+        .message("This machine is ready.\n\nScan the QR code or copy the link to connect your phone.")
+        .title("Termx — Machine ready")
+        .buttons(MessageDialogButtons::OkCustom("Show QR & link".to_string()))
+        .show(move |_| {
+            open_connect_window(&handle);
+        });
+}
+
 #[cfg(target_os = "macos")]
 pub fn first_run_onboarding(app: &AppHandle, onboarded: bool) {
     if onboarded {
@@ -292,7 +415,8 @@ pub fn first_run_onboarding(app: &AppHandle, onboarded: bool) {
             }
             std::thread::sleep(std::time::Duration::from_millis(250));
         }
-        permission_dialog(&handle);
+        let app_handle = handle.clone();
+        let _ = handle.run_on_main_thread(move || onboarding_welcome(app_handle));
     });
 }
 
