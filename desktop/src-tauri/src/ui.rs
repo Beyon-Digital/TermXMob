@@ -424,11 +424,12 @@ fn open_permission_settings_when_settled(app: &AppHandle, screen_recording: bool
                 return;
             }
         }
+        let handle_for_closure = handle.clone();
         let _ = handle.run_on_main_thread(move || {
             if screen_recording {
-                open_permission_settings(&handle);
+                open_permission_settings(&handle_for_closure);
             } else {
-                open_accessibility_settings(&handle);
+                open_accessibility_settings(&handle_for_closure);
             }
         });
     });
