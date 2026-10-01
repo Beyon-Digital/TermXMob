@@ -25,6 +25,8 @@ use std::thread;
 
 #[cfg(target_os = "macos")]
 use serde_json::{json, Value};
+#[cfg(target_os = "macos")]
+use tauri_plugin_autostart::ManagerExt;
 
 static SOCKET_PATH: OnceLock<String> = OnceLock::new();
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
@@ -131,6 +133,29 @@ fn handle_request(stream: &mut UnixStream, request: &Value) -> std::io::Result<b
                     "shell_pid": std::process::id(),
                 }),
             )?;
+        }
+        "autostart" => {
+            // Launch at Login lives in the shell (LaunchAgent). Report the
+            // current state, and apply a new one when "enabled" is sent.
+            let Some(app) = APP_HANDLE.get() else {
+                write_json(stream, json!({"ok": false, "error": "shell unavailable"}))?;
+                return Ok(true);
+            };
+            let autolaunch = app.autolaunch();
+            if let Some(enabled) = request.get("enabled").and_then(Value::as_bool) {
+                let result = if enabled {
+                    autolaunch.enable()
+                } else {
+                    autolaunch.disable()
+                };
+                if let Err(error) = result {
+                    write_json(stream, json!({"ok": false, "error": error.to_string()}))?;
+                    return Ok(true);
+                }
+                crate::menu::sync_autostart(app);
+            }
+            let enabled = autolaunch.is_enabled().unwrap_or(false);
+            write_json(stream, json!({"ok": true, "enabled": enabled}))?;
         }
         "request" => {
             let which = request.get("which").and_then(Value::as_str).unwrap_or("");

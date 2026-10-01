@@ -89,6 +89,20 @@ def test_health_includes_capabilities() -> None:
     assert "cloudflare" in body["capabilities"]["providers"]
 
 
+def test_launch_at_login_unmanaged() -> None:
+    """Without a desktop shell the host cannot manage launch-at-login."""
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    res = client.get("/api/launch-at-login", headers={"X-Termx-Passcode": "secret"})
+    assert res.status_code == 200
+    assert res.json() == {"managed": False, "enabled": None}
+    res = client.put(
+        "/api/launch-at-login",
+        headers={"X-Termx-Passcode": "secret"},
+        json={"enabled": True},
+    )
+    assert res.status_code == 503
+
+
 def test_health_does_not_fingerprint_host() -> None:
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
     body = client.get("/api/health").json()

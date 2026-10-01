@@ -144,6 +144,32 @@ def request_permission(which: str) -> dict[str, Any] | None:
     return result
 
 
+def autostart() -> dict[str, Any] | None:
+    """Launch-at-login state as the shell sees it (desktop hosts only)."""
+    if not available():
+        return None
+    try:
+        result = _call({"op": "autostart"})
+    except BrokerError:
+        return None
+    if not isinstance(result, dict) or not result.get("ok"):
+        return None
+    return result
+
+
+def set_autostart(enabled: bool) -> dict[str, Any] | None:
+    """Ask the shell to toggle launch-at-login and report the new state."""
+    if not available():
+        return None
+    try:
+        result = _call({"op": "autostart", "enabled": bool(enabled)})
+    except BrokerError:
+        return None
+    if not isinstance(result, dict) or not result.get("ok"):
+        return None
+    return result
+
+
 def capture_frame(
     display: str | None,
     width: int = 0,
