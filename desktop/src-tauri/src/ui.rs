@@ -118,7 +118,7 @@ pub fn open_connect_window(app: &AppHandle) {
         return;
     }
     let builder = WebviewWindowBuilder::new(app, "connect", WebviewUrl::External(url.parse().unwrap()))
-        .title("Termx — Connect")
+        .title("Termx — Machine Status")
         .inner_size(440.0, 760.0)
         .min_inner_size(360.0, 520.0)
         .resizable(true);

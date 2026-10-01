@@ -208,6 +208,10 @@ class PermissionsBody(BaseModel):
     which: list[str] | None = None
 
 
+class LaunchAtLoginBody(BaseModel):
+    enabled: bool
+
+
 class AgentProviderBody(BaseModel):
     id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
     kind: str = Field(default="openai", max_length=40)
@@ -586,6 +590,39 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
                     notify.permission(item)
         log_event("permissions_request", which=",".join(which))
         return request_permissions(which)
+
+    @app.get("/api/launch-at-login")
+    def get_launch_at_login(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "machine-view")
+        from termx.desktop import broker as desktop_broker
+
+        info = desktop_broker.autostart()
+        if info is None:
+            return {"managed": False, "enabled": None}
+        return {"managed": True, "enabled": bool(info.get("enabled"))}
+
+    @app.put("/api/launch-at-login")
+    def put_launch_at_login(
+        body: LaunchAtLoginBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
+        from termx.desktop import broker as desktop_broker
+
+        info = desktop_broker.set_autostart(body.enabled)
+        if info is None:
+            raise HTTPException(
+                status_code=503,
+                detail="launch at login is managed by the Termx app on this machine",
+            )
+        log_event("launch_at_login", enabled=body.enabled)
+        return {"managed": True, "enabled": bool(info.get("enabled"))}
 
     @app.get("/api/update/check")
     def get_update(

@@ -5,108 +5,324 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Termx — Machine Status</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --card-soft: #eff1f5;
+    --border: #dde1e8;
+    --text: #0b0d10;
+    --secondary: #596273;
+    --micro: #8992a0;
+    --accent: #5b6cf9;
+    --accent-ink: #ffffff;
+    --success: #3ccb8e;
+    --warning: #f4b860;
+    --danger: #f26767;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d10;
+      --card: #11141a;
+      --card-soft: #1a1f27;
+      --border: #242a33;
+      --text: #f7f8fa;
+      --secondary: #a5adbb;
+      --micro: #6d7684;
+      --accent: #6d7cff;
+      --accent-ink: #ffffff;
+    }
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center;
-    background: #0b0d10; color: #e8eaed;
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding: 32px 0;
+    margin: 0; min-height: 100vh;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  main { width: min(420px, 92vw); padding: 28px; }
-  h1 { margin: 0 0 2px; font-size: 20px; letter-spacing: -0.01em; }
-  p.hint { margin: 0 0 20px; color: #9aa0a6; font-size: 13px; }
-  .machine { display: flex; align-items: center; gap: 8px; margin: 2px 0 18px; }
-  .machine-name { font-size: 14px; font-weight: 600; }
-  .machine-detail { color: #9aa0a6; font-size: 12px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #7fd18b; flex: none; }
-  .dot.warn { background: #f0b254; }
-  .section { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #9aa0a6; margin: 18px 0 6px; }
-  .perm { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #171a1f; border: 1px solid #262a31; border-radius: 8px; margin-bottom: 6px; }
-  .perm .name { font-size: 13px; }
-  .perm .state { font-size: 12px; font-weight: 600; }
-  .perm .state.ok { color: #7fd18b; }
-  .perm .state.bad { color: #f0883e; }
-  .perm .state.other { color: #9aa0a6; }
+  main { width: min(460px, 100%); margin: 0 auto; padding: 28px 20px 40px; }
+
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand svg { width: 26px; height: 26px; }
+  .brand .word { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .ver { font-size: 11px; font-weight: 500; color: var(--micro); }
+
+  h1 {
+    margin: 18px 0 2px; font-size: 26px; font-weight: 600; letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+  }
+  .state-line { display: flex; align-items: center; gap: 7px; margin-bottom: 22px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--micro); flex: none; }
+  .dot.ok { background: var(--success); }
+  .dot.warn { background: var(--warning); }
+  .state-text { font-size: 14px; color: var(--secondary); }
+  .state-text.ok { color: var(--text); }
+  .state-text.warn { color: var(--text); }
+
+  .section { margin-bottom: 18px; }
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--micro); margin: 0 2px 7px;
+  }
+  .tag {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 20px; background: var(--card-soft); color: var(--micro);
+  }
+  .tag.warn { background: rgba(244, 184, 96, 0.16); color: #b8812f; }
+  .tag.ok { background: rgba(60, 203, 142, 0.14); color: #25a06d; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px;
+  }
+  .card.pad-sm { padding: 12px 16px; }
+  .card p { margin: 0 0 12px; font-size: 13px; color: var(--secondary); }
+
+  .btn-row { display: flex; gap: 8px; }
+  button {
+    appearance: none; border: 1px solid transparent; border-radius: 10px;
+    padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    background: var(--card-soft); color: var(--text);
+    transition: opacity 0.12s ease;
+  }
+  button:hover { opacity: 0.88; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button.grow { flex: 1; }
+  button.small { padding: 6px 11px; font-size: 12px; }
+
+  .qr-panel { margin-top: 14px; text-align: center; }
   .qr {
     display: flex; align-items: center; justify-content: center;
-    background: #fff; border-radius: 12px; padding: 14px; aspect-ratio: 1; max-width: 260px; margin: 0 auto 20px;
+    background: #fff; border-radius: 12px; padding: 12px;
+    width: 208px; height: 208px; margin: 0 auto 10px;
+    border: 1px solid var(--border);
   }
-  .qr svg, .qr img { width: 100%; height: 100%; }
-  .mark { display: block; width: 68px; height: 68px; margin: 0 auto 14px; }
-  .row { margin-bottom: 12px; }
-  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #9aa0a6; margin-bottom: 4px; }
-  code { display: block; background: #171a1f; border: 1px solid #262a31; border-radius: 8px; padding: 10px 12px; font-size: 13px; overflow-wrap: anywhere; }
-  button {
-    width: 100%; margin-top: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid #2d6cdf;
-    background: #2d6cdf; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  .qr img { width: 100%; height: 100%; }
+  .qr-hint { font-size: 12px; color: var(--micro); }
+
+  .list { padding: 0; overflow: hidden; }
+  .perm {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
   }
-  button.secondary { background: transparent; color: #c6c9ce; border-color: #33383f; }
-  .status { min-height: 18px; margin-top: 8px; font-size: 12px; color: #7fd18b; }
+  .perm + .perm { border-top: 1px solid var(--border); }
+  .perm .icon { width: 20px; height: 20px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; }
+  .perm .icon.ok { background: rgba(60, 203, 142, 0.16); color: #25a06d; }
+  .perm .icon.warn { background: rgba(244, 184, 96, 0.18); color: #b8812f; }
+  .perm .icon.mute { background: var(--card-soft); color: var(--micro); }
+  .perm .icon svg { width: 11px; height: 11px; }
+  .perm .copy { flex: 1; min-width: 0; }
+  .perm .name { font-size: 14px; font-weight: 500; }
+  .perm .sub { font-size: 12px; color: var(--secondary); }
+  .perm .state { font-size: 11px; font-weight: 600; color: var(--micro); text-transform: uppercase; letter-spacing: 0.04em; }
+  .perm .state.ok { color: #25a06d; }
+  .perm .state.warn { color: #b8812f; }
+
+  .switch-row { display: flex; align-items: center; gap: 12px; }
+  .switch-row .copy { flex: 1; min-width: 0; }
+  .switch-row .name { font-size: 14px; font-weight: 500; }
+  .switch-row .sub { font-size: 12px; color: var(--secondary); }
+  .switch {
+    flex: none; width: 44px; height: 26px; border-radius: 999px; border: none;
+    background: var(--card-soft); position: relative; padding: 0; cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    transition: transform 0.15s ease;
+  }
+  .switch[aria-checked="true"] { background: var(--accent); }
+  .switch[aria-checked="true"]::after { transform: translateX(18px); }
+  .switch:disabled { opacity: 0.45; cursor: default; }
+
+  details.card { padding: 0; overflow: hidden; }
+  details summary {
+    list-style: none; display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary .chev { transition: transform 0.15s ease; color: var(--micro); }
+  details[open] summary .chev { transform: rotate(90deg); }
+  details summary:hover { background: var(--card-soft); }
+  .adv { border-top: 1px solid var(--border); padding: 6px 16px 16px; }
+  .adv h3 {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--micro); margin: 14px 0 6px;
+  }
+  .adv .line { font-size: 13px; color: var(--secondary); margin-bottom: 6px; }
+  .adv .line b { color: var(--text); font-weight: 500; }
+  .adv .btn-row { margin-top: 8px; }
+  .kv {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+    background: var(--card-soft); border-radius: 8px; padding: 8px 10px;
+    overflow-wrap: anywhere; color: var(--text); margin-bottom: 6px; display: block;
+  }
+  .kv.clickable { cursor: pointer; }
+  .events { margin: 4px 0 0; padding: 0; list-style: none; }
+  .events li {
+    display: flex; gap: 8px; font-size: 12px; color: var(--secondary);
+    padding: 4px 0; border-top: 1px solid var(--border);
+  }
+  .events li:first-child { border-top: none; }
+  .events .kind { color: var(--text); font-weight: 500; }
+  .events .when { margin-left: auto; color: var(--micro); flex: none; }
+  .flash { min-height: 18px; margin-top: 10px; font-size: 12px; color: var(--secondary); text-align: center; }
+  .flash.ok { color: #25a06d; }
+  .flash.err { color: var(--danger); }
+
+  .gate { text-align: center; padding: 60px 24px; }
+  .gate h1 { margin-top: 16px; }
+  .gate p { color: var(--secondary); font-size: 13px; }
+
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<main>
-  <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
-    <defs>
-      <linearGradient id="connect-cyan" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#00D9FF"/>
-        <stop offset="100%" stop-color="#38F2B2"/>
-      </linearGradient>
-    </defs>
-    <rect x="244" y="96" width="24" height="74" rx="12" fill="#162431"/>
-    <circle cx="256" cy="78" r="46" fill="#162431"/>
-    <circle cx="256" cy="78" r="27" fill="url(#connect-cyan)"/>
-    <rect x="48" y="238" width="76" height="104" rx="38" fill="#162431"/>
-    <rect x="388" y="238" width="76" height="104" rx="38" fill="#162431"/>
-    <rect x="90" y="150" width="332" height="244" rx="92" fill="#162431"/>
-    <rect x="112" y="172" width="288" height="200" rx="72" fill="#F7F8FA"/>
-    <rect x="138" y="204" width="236" height="136" rx="36" fill="#0E1822"/>
-    <path d="M187 242 L233 272 L187 302" stroke="url(#connect-cyan)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    <rect x="258" y="287" width="72" height="18" rx="9" fill="url(#connect-cyan)"/>
-  </svg>
-  <h1>Termx</h1>
-  <div class="machine">
+<main id="main" hidden>
+  <div class="brand">
+    <svg viewBox="0 0 512 512" aria-hidden="true">
+      <defs>
+        <linearGradient id="termx-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#00D9FF"/>
+          <stop offset="100%" stop-color="#38F2B2"/>
+        </linearGradient>
+      </defs>
+      <rect x="244" y="96" width="24" height="74" rx="12" fill="#162431"/>
+      <circle cx="256" cy="78" r="46" fill="#162431"/>
+      <circle cx="256" cy="78" r="27" fill="url(#termx-cyan)"/>
+      <rect x="48" y="238" width="76" height="104" rx="38" fill="#162431"/>
+      <rect x="388" y="238" width="76" height="104" rx="38" fill="#162431"/>
+      <rect x="90" y="150" width="332" height="244" rx="92" fill="#162431"/>
+      <rect x="112" y="172" width="288" height="200" rx="72" fill="#F7F8FA"/>
+      <rect x="138" y="204" width="236" height="136" rx="36" fill="#0E1822"/>
+      <path d="M187 242 L233 272 L187 302" stroke="url(#termx-cyan)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <rect x="258" y="287" width="72" height="18" rx="9" fill="url(#termx-cyan)"/>
+    </svg>
+    <span class="word">Termx</span>
+    <span class="ver" id="version"></span>
+  </div>
+
+  <h1 id="machine-name">This machine</h1>
+  <div class="state-line">
     <span class="dot" id="ready-dot"></span>
-    <div>
-      <div class="machine-name" id="machine-name">Machine status</div>
-      <div class="machine-detail" id="machine-detail">Checking…</div>
+    <span class="state-text" id="ready-text">Checking…</span>
+  </div>
+
+  <section class="section">
+    <div class="section-head"><span>Pair a device</span></div>
+    <div class="card">
+      <p id="pair-copy">Scan the QR code with the Termx app on your phone, or send the link to another device.</p>
+      <div class="btn-row">
+        <button class="primary grow" id="show-qr">Show QR</button>
+        <button class="grow" id="copy-link">Copy link</button>
+      </div>
+      <div class="qr-panel" id="qr-panel" hidden>
+        <div class="qr"><img id="qr-img" alt="Pairing QR code" /></div>
+        <div class="qr-hint">Point your phone's camera at the code</div>
+      </div>
     </div>
-  </div>
-  <div class="section" id="perm-section" hidden>Permissions</div>
-  <div id="perms"></div>
-  <div class="section">Pairing</div>
-  <p class="hint">Scan the QR code from your phone, or open the address in a browser.</p>
-  <div class="qr" id="qr"></div>
-  <div class="row">
-    <div class="label">Connection address</div>
-    <code id="address">loading…</code>
-  </div>
-  <div class="row" id="passcode-row" hidden>
-    <div class="label">Passcode</div>
-    <code id="passcode"></code>
-  </div>
-  <button id="copy">Copy connection link</button>
-  <button class="secondary" id="copy-raw">Copy address only</button>
-  <div class="status" id="status"></div>
+  </section>
+
+  <section class="section" id="perm-section">
+    <div class="section-head">
+      <span>Permissions</span>
+      <span class="tag" id="perm-tag" hidden></span>
+    </div>
+    <div class="card list" id="perms"></div>
+  </section>
+
+  <section class="section" id="lal-section">
+    <div class="card pad-sm switch-row">
+      <div class="copy">
+        <div class="name">Launch at Login</div>
+        <div class="sub" id="lal-sub">Keep Termx ready automatically</div>
+      </div>
+      <button class="switch" id="lal-toggle" role="switch" aria-checked="false" aria-label="Launch at Login" disabled></button>
+    </div>
+  </section>
+
+  <details class="card" id="advanced">
+    <summary>
+      <span>Advanced</span>
+      <svg class="chev" width="10" height="12" viewBox="0 0 10 12" aria-hidden="true">
+        <path d="M2 1 L8 6 L2 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </summary>
+    <div class="adv">
+      <h3>Sharing</h3>
+      <div class="line" id="tunnel-line">Loading…</div>
+      <div class="kv clickable" id="tunnel-url" hidden title="Click to copy"></div>
+      <div class="btn-row">
+        <button class="small" id="tunnel-start">Start sharing</button>
+        <button class="small" id="tunnel-stop" hidden>Stop sharing</button>
+      </div>
+
+      <h3>Service</h3>
+      <div class="line" id="update-line"></div>
+      <div class="btn-row">
+        <button class="small" id="restart">Restart backend</button>
+        <button class="small" id="check-updates">Check for updates</button>
+        <button class="small primary" id="install-update" hidden>Install update</button>
+      </div>
+
+      <h3>Diagnostics</h3>
+      <div class="line" id="diag-line">Loading…</div>
+      <ul class="events" id="events"></ul>
+      <div class="line" style="margin-top:8px">Full logs: Termx menu → Advanced → Open Logs Folder.</div>
+
+      <h3>Connection details</h3>
+      <div class="kv clickable" id="connect-url" title="Click to copy">…</div>
+      <div id="alt-urls"></div>
+      <div class="kv clickable" id="passcode" hidden title="Click to copy"></div>
+    </div>
+  </details>
+
+  <div class="flash" id="status"></div>
 </main>
+
+<div class="gate" id="gate" hidden>
+  <svg viewBox="0 0 512 512" width="64" height="64" aria-hidden="true">
+    <rect x="90" y="150" width="332" height="244" rx="92" fill="#162431"/>
+    <rect x="138" y="204" width="236" height="136" rx="36" fill="#0E1822"/>
+  </svg>
+  <h1>Locked</h1>
+  <p id="gate-copy">This machine requires its passcode. Open Machine Status &amp; Pairing from the Termx app menu.</p>
+</div>
+
 <script>
   const params = new URLSearchParams(location.search);
   const key = params.get("k") || "";
   const suffix = key ? "?k=" + encodeURIComponent(key) : "";
-  const status = document.getElementById("status");
-  let connectUrl = "";
+  const el = (id) => document.getElementById(id);
+  const flashEl = el("status");
 
-  function flash(text) {
-    status.textContent = text;
-    setTimeout(() => { status.textContent = ""; }, 2500);
+  const REQUIRED_PERMS = ["screen_recording", "accessibility"];
+  const PERM_META = {
+    screen_recording: { name: "Screen Recording", sub: "See your Mac from another device" },
+    accessibility: { name: "Accessibility", sub: "Use keyboard and pointer remotely" },
+    screen_capture: { name: "Screen capture", sub: "Provided by the display system" },
+    input: { name: "Input", sub: "Provided by the display system" },
+  };
+
+  let connectUrl = "";
+  let connectInfo = null;
+  let permState = {};
+  let permPollTimer = null;
+  let lalEnabled = false;
+  let lalManaged = false;
+  let tunnelInfo = null;
+
+  function flash(text, cls) {
+    flashEl.textContent = text;
+    flashEl.className = "flash " + (cls || "");
+    if (text) setTimeout(() => { if (flashEl.textContent === text) { flashEl.textContent = ""; flashEl.className = "flash"; } }, 4000);
   }
 
-  async function copy(value) {
+  async function copy(value, label) {
     try {
       await navigator.clipboard.writeText(value);
-      flash("Copied");
     } catch {
       const area = document.createElement("textarea");
       area.value = value;
@@ -114,80 +330,513 @@
       area.select();
       document.execCommand("copy");
       area.remove();
-      flash("Copied");
     }
+    flash(label || "Copied", "ok");
   }
 
-  async function getJson(path) {
-    const res = await fetch(path + suffix);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return res.json();
+  async function api(path, options) {
+    const opts = options || {};
+    opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers);
+    const res = await fetch(path + suffix, opts);
+    if (res.status === 401 || res.status === 403) {
+      const err = new Error("unauthorized");
+      err.status = res.status;
+      throw err;
+    }
+    let data = null;
+    try { data = await res.json(); } catch { /* non-json */ }
+    if (!res.ok) {
+      const err = new Error((data && data.detail) || "HTTP " + res.status);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
   }
 
-  document.getElementById("copy").addEventListener("click", () => connectUrl && copy(connectUrl));
-  document.getElementById("copy-raw").addEventListener("click", () => connectUrl && copy(connectUrl.split("?")[0]));
+  function gate(err) {
+    if (err && (err.status === 401 || err.status === 403)) {
+      el("main").hidden = true;
+      el("gate").hidden = false;
+      return true;
+    }
+    return false;
+  }
 
-  function renderPerms(perms) {
-    const box = document.getElementById("perms");
-    const section = document.getElementById("perm-section");
-    const names = {
-      screen_recording: "Screen Recording",
-      accessibility: "Accessibility",
-      screen_capture: "Screen capture",
-      input: "Input",
-    };
-    const entries = Object.entries(perms || {});
-    if (!entries.length) return;
-    section.hidden = false;
+  /* ---------------- readiness + permissions ---------------- */
+
+  function permNeedsAttention() {
+    return REQUIRED_PERMS.some((name) => permState[name] === "denied");
+  }
+
+  function renderReady() {
+    const attention = permNeedsAttention();
+    const dot = el("ready-dot");
+    const text = el("ready-text");
+    dot.className = "dot " + (attention ? "warn" : "ok");
+    text.className = "state-text " + (attention ? "warn" : "ok");
+    text.textContent = attention ? "Needs attention — a permission is missing" : "Ready";
+    const tag = el("perm-tag");
+    const managed = REQUIRED_PERMS.some((name) => name in permState);
+    tag.hidden = !managed;
+    tag.className = "tag " + (attention ? "warn" : "ok");
+    tag.textContent = attention ? "Needs attention" : "Granted";
+  }
+
+  function renderPerms() {
+    const box = el("perms");
     box.innerHTML = "";
-    for (const [key, value] of entries) {
-      const ok = value === "granted";
-      const other = !ok && value !== "denied";
+    const entries = Object.entries(permState);
+    if (!entries.length) {
       const row = document.createElement("div");
       row.className = "perm";
+      row.innerHTML = '<div class="copy"><div class="name">No special permissions required</div><div class="sub">This platform needs nothing extra</div></div>';
+      box.appendChild(row);
+      return;
+    }
+    for (const [name, value] of entries) {
+      const meta = PERM_META[name] || { name, sub: "" };
+      const ok = value === "granted";
+      const bad = value === "denied";
+      const actionable = bad && REQUIRED_PERMS.includes(name);
+      const row = document.createElement("div");
+      row.className = "perm";
+      const iconCls = ok ? "ok" : bad ? "warn" : "mute";
+      const iconGlyph = ok
+        ? '<svg viewBox="0 0 12 10"><path d="M1 5.5 L4.5 9 L11 1" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : bad
+          ? '<svg viewBox="0 0 12 12"><path d="M6 1 L6 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="10.5" r="1.2" fill="currentColor"/></svg>'
+          : '<svg viewBox="0 0 12 12"><path d="M4 4.5 A2 2 0 1 1 6 6.5 L6 7.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="6" cy="10.3" r="1" fill="currentColor"/></svg>';
+      const stateText = ok ? "Granted" : bad ? "Not granted" : String(value);
       row.innerHTML =
-        '<span class="name"></span><span class="state ' +
-        (ok ? "ok" : other ? "other" : "bad") +
-        '"></span>';
-      row.querySelector(".name").textContent = names[key] || key;
-      row.querySelector(".state").textContent = ok ? "Granted" : value === "denied" ? "Not granted" : String(value);
+        '<span class="icon ' + iconCls + '">' + iconGlyph + '</span>' +
+        '<div class="copy"><div class="name"></div><div class="sub"></div></div>' +
+        '<span class="state ' + (ok ? "ok" : bad ? "warn" : "") + '"></span>';
+      row.querySelector(".name").textContent = meta.name;
+      row.querySelector(".sub").textContent = meta.sub;
+      row.querySelector(".state").textContent = stateText;
+      if (actionable) {
+        const btn = document.createElement("button");
+        btn.className = "small";
+        btn.textContent = "Grant…";
+        btn.addEventListener("click", () => requestPerm(name, btn));
+        row.querySelector(".state").replaceWith(btn);
+      }
       box.appendChild(row);
     }
   }
 
-  getJson("/api/machine")
-    .then((machine) => {
-      document.getElementById("machine-name").textContent = machine.hostname || "This machine";
-      document.getElementById("machine-detail").textContent =
-        [machine.os, machine.arch].filter(Boolean).join(" · ") || "Ready";
-      renderPerms(machine.permissions || {});
-    })
-    .catch(() => {
-      document.getElementById("machine-name").textContent = "Termx machine";
-      document.getElementById("machine-detail").textContent = "Ready";
-    });
+  async function loadPerms() {
+    try {
+      permState = await api("/api/permissions");
+    } catch (err) {
+      if (gate(err)) return;
+      permState = {};
+    }
+    renderPerms();
+    renderReady();
+  }
 
-  getJson("/api/permissions").then(renderPerms).catch(() => {});
+  async function requestPerm(which, btn) {
+    btn.disabled = true;
+    btn.textContent = "Check System Settings…";
+    try {
+      const result = await api("/api/permissions/request", { method: "POST", body: JSON.stringify({ which: [which] }) });
+      permState = result || permState;
+      renderPerms();
+      renderReady();
+    } catch (err) {
+      if (gate(err)) return;
+      btn.disabled = false;
+      btn.textContent = "Grant…";
+      flash("Could not request permission");
+      return;
+    }
+    pollPerms(14);
+  }
 
-  const qr = document.getElementById("qr");
-  const img = document.createElement("img");
-  img.alt = "Connection QR code";
-  img.src = "/api/connect/qr.svg" + suffix;
-  qr.appendChild(img);
-
-  getJson("/api/connect")
-    .then((data) => {
-      connectUrl = data.connect_url || "";
-      const urls = (data.urls || []).filter((u) => !u.includes("127.0.0.1"));
-      document.getElementById("address").textContent = urls[0] || data.connect_url || "unknown";
-      if (data.passcode) {
-        document.getElementById("passcode").textContent = data.passcode;
-        document.getElementById("passcode-row").hidden = false;
+  function pollPerms(attempts) {
+    if (permPollTimer) clearInterval(permPollTimer);
+    let n = 0;
+    permPollTimer = setInterval(async () => {
+      n += 1;
+      await loadPerms();
+      if (n >= attempts || !permNeedsAttention()) {
+        clearInterval(permPollTimer);
+        permPollTimer = null;
       }
-    })
-    .catch(() => {
-      document.getElementById("address").textContent = "Could not load connection info";
-    });
+    }, 2500);
+  }
+
+  /* ---------------- machine + connect info ---------------- */
+
+  async function loadMachine() {
+    try {
+      const machine = await api("/api/machine");
+      el("machine-name").textContent = machine.hostname || "This machine";
+      const detail = [machine.os, machine.arch].filter(Boolean).join(" · ");
+      renderDiag(machine);
+      return machine;
+    } catch (err) {
+      if (gate(err)) return null;
+      el("machine-name").textContent = "Termx machine";
+      return null;
+    }
+  }
+
+  async function loadConnect() {
+    try {
+      connectInfo = await api("/api/connect");
+      connectUrl = connectInfo.connect_url || "";
+      const urls = (connectInfo.urls || []).filter((u) => !u.includes("127.0.0.1") && !u.includes("localhost"));
+      const shown = connectInfo.tunnel_url || urls[0] || (connectInfo.urls || [])[0] || "";
+      el("connect-url").textContent = connectUrl || "unavailable";
+      const alt = el("alt-urls");
+      alt.innerHTML = "";
+      for (const u of connectInfo.urls || []) {
+        if (u === shown || u.includes("127.0.0.1") || u.includes("localhost")) continue;
+        const code = document.createElement("code");
+        code.className = "kv clickable";
+        code.textContent = u;
+        code.title = "Click to copy";
+        code.addEventListener("click", () => copy(u));
+        alt.appendChild(code);
+      }
+      if (connectInfo.passcode) {
+        const pc = el("passcode");
+        pc.hidden = false;
+        pc.textContent = "Passcode: " + connectInfo.passcode;
+      }
+    } catch (err) {
+      if (gate(err)) return;
+      el("connect-url").textContent = "Could not load connection info";
+    }
+  }
+
+  async function loadHealth() {
+    try {
+      const health = await api("/api/health");
+      el("version").textContent = health.version ? "v" + health.version : "";
+      return health;
+    } catch {
+      return null;
+    }
+  }
+
+  /* ---------------- pair a device ---------------- */
+
+  el("show-qr").addEventListener("click", () => {
+    const panel = el("qr-panel");
+    const img = el("qr-img");
+    if (panel.hidden) {
+      if (!img.getAttribute("src")) img.src = "/api/connect/qr.svg" + suffix;
+      panel.hidden = false;
+      el("show-qr").textContent = "Hide QR";
+    } else {
+      panel.hidden = true;
+      el("show-qr").textContent = "Show QR";
+    }
+  });
+  el("copy-link").addEventListener("click", () => connectUrl && copy(connectUrl, "Link copied"));
+  el("connect-url").addEventListener("click", () => connectUrl && copy(connectUrl, "Link copied"));
+  el("passcode").addEventListener("click", () => connectInfo && connectInfo.passcode && copy(connectInfo.passcode, "Passcode copied"));
+
+  /* ---------------- launch at login ---------------- */
+
+  function renderLal() {
+    const toggle = el("lal-toggle");
+    toggle.setAttribute("aria-checked", String(lalEnabled));
+    toggle.disabled = !lalManaged;
+    el("lal-sub").textContent = lalManaged
+      ? "Keep Termx ready automatically"
+      : "Managed by the Termx app on this machine";
+  }
+
+  async function loadLal() {
+    try {
+      const info = await api("/api/launch-at-login");
+      lalManaged = !!info.managed;
+      lalEnabled = !!info.enabled;
+    } catch (err) {
+      if (gate(err)) return;
+      lalManaged = false;
+    }
+    renderLal();
+  }
+
+  el("lal-toggle").addEventListener("click", async () => {
+    if (!lalManaged) return;
+    const next = !lalEnabled;
+    const toggle = el("lal-toggle");
+    toggle.disabled = true;
+    try {
+      const info = await api("/api/launch-at-login", { method: "PUT", body: JSON.stringify({ enabled: next }) });
+      lalEnabled = !!info.enabled;
+      flash(next ? "Launch at login on" : "Launch at login off", "ok");
+    } catch (err) {
+      if (gate(err)) return;
+      flash(err.message || "Could not change launch at login", "err");
+    }
+    toggle.disabled = !lalManaged;
+    renderLal();
+  });
+
+  /* ---------------- advanced: sharing ---------------- */
+
+  function renderTunnel() {
+    const line = el("tunnel-line");
+    const urlEl = el("tunnel-url");
+    const startBtn = el("tunnel-start");
+    const stopBtn = el("tunnel-stop");
+    urlEl.hidden = true;
+    if (!tunnelInfo) {
+      line.innerHTML = "<b>Sharing off</b> — this machine is only reachable on your network.";
+      startBtn.hidden = true;
+      stopBtn.hidden = true;
+      return;
+    }
+    const active = tunnelInfo.active;
+    const providers = tunnelInfo.providers || [];
+    const anyProvider = providers.some((p) => p.available);
+    if (active && (active.state === "connected" || active.state === "starting")) {
+      const label = active.state === "connected" ? "Sharing on" : "Starting…";
+      line.innerHTML = "";
+      const b = document.createElement("b");
+      b.textContent = label;
+      line.appendChild(b);
+      line.appendChild(document.createTextNode(" — " + (active.provider || "tunnel") + (active.uptime_s != null ? ", up " + fmtUptime(active.uptime_s) : "")));
+      if (active.url) {
+        urlEl.hidden = false;
+        urlEl.textContent = active.url;
+        urlEl.onclick = () => copy(active.url, "Share link copied");
+      }
+      startBtn.hidden = true;
+      stopBtn.hidden = false;
+    } else {
+      line.innerHTML = "<b>Sharing off</b> — this machine is only reachable on your network.";
+      startBtn.hidden = !anyProvider;
+      stopBtn.hidden = true;
+      if (!anyProvider) {
+        line.innerHTML = "<b>Sharing off</b> — no tunnel provider installed on this machine.";
+      }
+    }
+  }
+
+  function fmtUptime(s) {
+    if (s < 60) return s + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m";
+    return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+  }
+
+  async function loadTunnels() {
+    try {
+      tunnelInfo = await api("/api/tunnels");
+    } catch (err) {
+      if (gate(err)) return;
+      tunnelInfo = null;
+      el("tunnel-line").textContent = "Tunnel status unavailable.";
+    }
+    renderTunnel();
+  }
+
+  el("tunnel-start").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "Starting…";
+    try {
+      const status = await api("/api/tunnels/start", { method: "POST", body: "{}" });
+      flash(status.state === "connected" ? "Sharing on" : "Share failed: " + (status.detail || status.state), status.state === "connected" ? "ok" : "err");
+    } catch (err) {
+      if (gate(err)) return;
+      flash(err.message || "Share failed", "err");
+    }
+    btn.disabled = false;
+    btn.textContent = "Start sharing";
+    loadTunnels();
+  });
+
+  el("tunnel-stop").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api("/api/tunnels/stop", { method: "POST", body: "{}" });
+      flash("Sharing off", "ok");
+    } catch (err) {
+      if (gate(err)) return;
+      flash(err.message || "Stop failed", "err");
+    }
+    btn.disabled = false;
+    loadTunnels();
+  });
+
+  /* ---------------- advanced: service ---------------- */
+
+  el("restart").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (btn.dataset.armed !== "1") {
+      btn.dataset.armed = "1";
+      btn.textContent = "Click again to restart";
+      setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "Restart backend"; }, 3000);
+      return;
+    }
+    btn.dataset.armed = "";
+    btn.disabled = true;
+    btn.textContent = "Restarting…";
+    try {
+      await api("/api/shutdown", { method: "POST", body: "{}" });
+    } catch (err) {
+      if (gate(err)) return;
+      btn.disabled = false;
+      btn.textContent = "Restart backend";
+      if (err.status === 404) flash("Restart is managed by the Termx app menu", "err");
+      else if (err.status === 403) flash("Restart only works from this machine", "err");
+      else flash(err.message || "Restart failed", "err");
+      return;
+    }
+    // The desktop shell restarts the backend automatically after it exits.
+    for (let i = 0; i < 45; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        await api("/api/health");
+        btn.disabled = false;
+        btn.textContent = "Restart backend";
+        flash("Backend restarted", "ok");
+        refreshAll();
+        return;
+      } catch { /* still down */ }
+    }
+    btn.disabled = false;
+    btn.textContent = "Restart backend";
+    flash("Backend is taking a while — check the Termx app", "err");
+  });
+
+  el("check-updates").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const line = el("update-line");
+    btn.disabled = true;
+    line.textContent = "Checking…";
+    try {
+      const info = await api("/api/update/check");
+      if (info.status === "unknown") {
+        line.textContent = "Update check unavailable — " + (info.reason || "offline");
+      } else if (info.available) {
+        line.innerHTML = "";
+        const b = document.createElement("b");
+        b.textContent = "Termx " + info.latest + " is available";
+        line.appendChild(b);
+        line.appendChild(document.createTextNode(" (running " + info.current + ")"));
+        el("install-update").hidden = false;
+      } else {
+        line.textContent = "Termx " + info.current + " is up to date";
+        el("install-update").hidden = true;
+      }
+    } catch (err) {
+      if (gate(err)) return;
+      line.textContent = "Update check failed.";
+    }
+    btn.disabled = false;
+  });
+
+  el("install-update").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const result = await api("/api/update/apply", { method: "POST", body: "{}" });
+      el("update-line").textContent = result.started
+        ? "Update started — Termx will relaunch when ready."
+        : "Can't self-update: " + (result.instructions || result.reason || "unknown");
+    } catch (err) {
+      if (gate(err)) return;
+      el("update-line").textContent = err.message || "Update failed";
+    }
+    btn.disabled = false;
+  });
+
+  /* ---------------- advanced: diagnostics ---------------- */
+
+  function renderDiag(machine) {
+    if (!machine) {
+      el("diag-line").textContent = "Machine details unavailable.";
+      return;
+    }
+    const caps = (machine.capabilities || {});
+    const sandbox = (caps.execution_sandbox || {});
+    const parts = [
+      [machine.os, machine.arch].filter(Boolean).join(" "),
+      sandbox.backend ? "sandbox " + sandbox.backend : null,
+      "webrtc " + (caps.webrtc ? "on" : "off"),
+    ].filter(Boolean);
+    el("diag-line").textContent = parts.join(" · ");
+  }
+
+  function ago(ts) {
+    const t = Date.parse(ts);
+    if (!t) return "";
+    const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (s < 60) return s + "s ago";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    return Math.floor(s / 86400) + "d ago";
+  }
+
+  async function loadEvents() {
+    const list = el("events");
+    list.innerHTML = "";
+    try {
+      const data = await api("/api/audit");
+      const events = (data.events || []).slice(-6).reverse();
+      for (const ev of events) {
+        const li = document.createElement("li");
+        const kind = document.createElement("span");
+        kind.className = "kind";
+        kind.textContent = String(ev.kind || "event").replace(/_/g, " ");
+        const when = document.createElement("span");
+        when.className = "when";
+        when.textContent = ago(ev.ts);
+        li.appendChild(kind);
+        li.appendChild(when);
+        list.appendChild(li);
+      }
+      if (!events.length) {
+        const li = document.createElement("li");
+        li.textContent = "No recent events.";
+        list.appendChild(li);
+      }
+    } catch (err) {
+      if (gate(err)) return;
+      const li = document.createElement("li");
+      li.textContent = "Event log unavailable.";
+      list.appendChild(li);
+    }
+  }
+
+  let advancedLoaded = false;
+  el("advanced").addEventListener("toggle", () => {
+    if (el("advanced").open && !advancedLoaded) {
+      advancedLoaded = true;
+      loadTunnels();
+      loadEvents();
+    }
+  });
+
+  /* ---------------- boot ---------------- */
+
+  async function refreshAll() {
+    await Promise.all([loadMachine(), loadPerms(), loadConnect(), loadHealth(), loadLal()]);
+    if (advancedLoaded) loadTunnels();
+  }
+
+  window.addEventListener("focus", loadPerms);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadPerms(); });
+
+  (async () => {
+    try {
+      await api("/api/machine");
+    } catch (err) {
+      if (gate(err)) return;
+    }
+    el("main").hidden = false;
+    refreshAll();
+  })();
 </script>
 </body>
 </html>
