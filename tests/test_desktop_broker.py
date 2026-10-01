@@ -128,6 +128,52 @@ def test_send_input_reports_success(tmp_path: Path) -> None:
     fake.close()
 
 
+def test_autostart_reads_and_sets(tmp_path: Path) -> None:
+    state = {"enabled": False}
+
+    def handler(request: dict) -> dict:
+        if "enabled" in request:
+            state["enabled"] = bool(request["enabled"])
+        return {"ok": True, "enabled": state["enabled"]}
+
+    fake = FakeBroker(tmp_path, {"autostart": handler})
+    broker.configure(fake.path)
+    assert broker.autostart() == {"ok": True, "enabled": False}
+    result = broker.set_autostart(True)
+    assert result is not None and result["enabled"] is True
+    assert fake.seen[-1] == {"op": "autostart", "enabled": True}
+    fake.close()
+
+
+def test_launch_at_login_endpoint_via_broker(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+
+    state = {"enabled": False}
+
+    def handler(request: dict) -> dict:
+        if "enabled" in request:
+            state["enabled"] = bool(request["enabled"])
+        return {"ok": True, "enabled": state["enabled"]}
+
+    fake = FakeBroker(tmp_path, {"autostart": handler})
+    broker.configure(fake.path)
+    client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    assert client.get("/api/launch-at-login").status_code == 401
+    res = client.get("/api/launch-at-login", headers={"X-Termx-Passcode": "secret"})
+    assert res.status_code == 200
+    assert res.json() == {"managed": True, "enabled": False}
+    res = client.put(
+        "/api/launch-at-login",
+        headers={"X-Termx-Passcode": "secret"},
+        json={"enabled": True},
+    )
+    assert res.status_code == 200
+    assert res.json() == {"managed": True, "enabled": True}
+    fake.close()
+
+
 def test_unreachable_broker_disables_helpers(tmp_path: Path) -> None:
     broker.configure(str(tmp_path / "missing.sock"))
     assert broker.status() is None

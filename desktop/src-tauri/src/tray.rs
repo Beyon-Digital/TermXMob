@@ -1,5 +1,5 @@
 use serde_json::json;
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
@@ -10,8 +10,8 @@ use crate::ui;
 
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItemBuilder::with_id("show", "Show Termx").build(app)?;
-    let connect = MenuItemBuilder::with_id("connect", "Connection Info…").build(app)?;
-    let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Phone Link").build(app)?;
+    let connect = MenuItemBuilder::with_id("connect", "Machine Status & Pairing…").build(app)?;
+    let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Connection Link").build(app)?;
     let tunnel = MenuItemBuilder::with_id("tunnel", "Start / Stop Tunnel").build(app)?;
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
     let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
@@ -21,17 +21,24 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit Termx").build(app)?;
 
+    // Service operations (tunnel, restarts, permissions) sit under Advanced —
+    // the top level stays machine status, pairing, and launch-at-login.
+    let advanced = SubmenuBuilder::new(app, "Advanced")
+        .item(&permissions)
+        .item(&autostart)
+        .separator()
+        .item(&tunnel)
+        .item(&restart)
+        .item(&restart_app)
+        .build()?;
+
     let menu = MenuBuilder::new(app)
         .item(&show)
         .separator()
         .item(&connect)
         .item(&copy_link)
-        .item(&tunnel)
         .separator()
-        .item(&restart)
-        .item(&restart_app)
-        .item(&permissions)
-        .item(&autostart)
+        .item(&advanced)
         .separator()
         .item(&quit)
         .build()?;

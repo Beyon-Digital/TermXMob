@@ -7,10 +7,10 @@ use crate::backend::Backend;
 use crate::ui;
 
 pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    let connect = MenuItemBuilder::with_id("connect", "Connection Info…")
+    let connect = MenuItemBuilder::with_id("connect", "Machine Status & Pairing…")
         .accelerator("CmdOrCtrl+Shift+C")
         .build(app)?;
-    let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Phone Link").build(app)?;
+    let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Connection Link").build(app)?;
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
     let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
@@ -22,6 +22,16 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
     let quit = MenuItemBuilder::with_id("quit", "Quit Termx")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
+
+    // Low-level service operations live under Advanced — the top level stays
+    // machine status, pairing, permissions, and launch-at-login.
+    let advanced = SubmenuBuilder::new(app, "Advanced")
+        .item(&restart)
+        .item(&restart_app)
+        .item(&check_updates)
+        .separator()
+        .item(&open_logs)
+        .build()?;
 
     let app_menu = SubmenuBuilder::new(app, "Termx")
         .about(Some(
@@ -35,11 +45,9 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
         .item(&copy_link)
         .separator()
         .item(&permissions)
-        .item(&restart)
-        .item(&restart_app)
-        .item(&check_updates)
         .item(&autostart)
-        .item(&open_logs)
+        .separator()
+        .item(&advanced)
         .separator()
         .item(&quit)
         .build()?;
