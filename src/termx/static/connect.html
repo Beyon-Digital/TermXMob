@@ -365,7 +365,9 @@
   /* ---------------- readiness + permissions ---------------- */
 
   function permNeedsAttention() {
-    return REQUIRED_PERMS.some((name) => permState[name] === "denied");
+    // A required permission that is reported but unverified (unknown) or
+    // denied is not ready — only an explicit grant counts as ready.
+    return REQUIRED_PERMS.some((name) => name in permState && permState[name] !== "granted");
   }
 
   function renderReady() {
@@ -537,6 +539,9 @@
     }
   });
   el("copy-link").addEventListener("click", () => connectUrl && copy(connectUrl, "Link copied"));
+  // First-run deep link (?qr=1): the wizard already offered "Show QR & link",
+  // so the QR should be visible when the status page opens.
+  if (new URLSearchParams(location.search).has("qr")) el("show-qr").click();
   el("connect-url").addEventListener("click", () => connectUrl && copy(connectUrl, "Link copied"));
   el("passcode").addEventListener("click", () => connectInfo && connectInfo.passcode && copy(connectInfo.passcode, "Passcode copied"));
 
@@ -643,7 +648,14 @@
     btn.disabled = true;
     btn.textContent = "Starting…";
     try {
-      const status = await api("/api/tunnels/start", { method: "POST", body: "{}" });
+      // Start with an actually-available provider — an empty body defaults
+      // to Cloudflare, which fails on machines that only have ngrok/
+      // Tailscale installed.
+      const provider = (tunnelInfo?.providers || []).find((p) => p.available);
+      const status = await api("/api/tunnels/start", {
+        method: "POST",
+        body: JSON.stringify(provider ? { provider: provider.id } : {}),
+      });
       flash(status.state === "connected" ? "Sharing on" : "Share failed: " + (status.detail || status.state), status.state === "connected" ? "ok" : "err");
     } catch (err) {
       if (gate(err)) return;
@@ -693,16 +705,23 @@
       return;
     }
     // The desktop shell restarts the backend automatically after it exits.
+    // A healthy reply only counts once the OLD backend has actually stopped
+    // answering — otherwise we can report success before the replacement
+    // has even started.
+    let sawDown = false;
     for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 1500));
       try {
         await api("/api/health");
+        if (!sawDown) continue;
         btn.disabled = false;
         btn.textContent = "Restart backend";
         flash("Backend restarted", "ok");
         refreshAll();
         return;
-      } catch { /* still down */ }
+      } catch {
+        sawDown = true;
+      }
     }
     btn.disabled = false;
     btn.textContent = "Restart backend";

@@ -104,11 +104,27 @@ fn connect_url(info: &ReadyInfo) -> String {
 }
 
 pub fn open_connect_window(app: &AppHandle) {
+    open_connect_window_impl(app, false);
+}
+
+/// First-run variant: opens the same status window but tells the page to
+/// reveal the pairing QR immediately — the wizard promised "Show QR & link".
+/// Only the macOS onboarding flow calls it.
+#[cfg(target_os = "macos")]
+pub fn open_connect_window_qr(app: &AppHandle) {
+    open_connect_window_impl(app, true);
+}
+
+fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
     let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
         notify(app, "Termx is starting", "Connection details are not ready yet.");
         return;
     };
-    let url = connect_url(&info);
+    let url = if reveal_qr {
+        format!("{}&qr=1", connect_url(&info))
+    } else {
+        connect_url(&info)
+    };
     if let Some(window) = app.get_webview_window("connect") {
         if let Ok(parsed) = url.parse() {
             let _ = window.navigate(parsed);
@@ -325,9 +341,7 @@ fn onboarding_screen_recording(app: &AppHandle) {
                 let _ = prompt.run_on_main_thread(move || {
                     crate::permissions::request_screen_recording();
                 });
-                if !crate::permissions::status().screen_recording {
-                    open_permission_settings(&handle);
-                }
+                open_permission_settings_when_settled(&handle, true);
             }
             onboarding_accessibility(&handle);
         });
@@ -355,9 +369,7 @@ fn onboarding_accessibility(app: &AppHandle) {
                 let _ = prompt.run_on_main_thread(move || {
                     crate::permissions::request_accessibility();
                 });
-                if !crate::permissions::status().accessibility {
-                    open_accessibility_settings(&handle);
-                }
+                open_permission_settings_when_settled(&handle, false);
             }
             onboarding_autostart(&handle);
         });
@@ -393,8 +405,33 @@ fn onboarding_ready(app: &AppHandle) {
         .title("Termx — Machine ready")
         .buttons(MessageDialogButtons::OkCustom("Show QR & link".to_string()))
         .show(move |_| {
-            open_connect_window(&handle);
+            open_connect_window_qr(&handle);
         });
+}
+
+/// The TCC prompt a grant request triggers is still pending when the dialog
+/// callback runs — checking status immediately reads the stale "denied" and
+/// yanks the user into System Settings alongside the system prompt. Poll
+/// until the request settles; only open Settings if the grant never lands.
+#[cfg(target_os = "macos")]
+fn open_permission_settings_when_settled(app: &AppHandle, screen_recording: bool) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            let status = crate::permissions::status();
+            if if screen_recording { status.screen_recording } else { status.accessibility } {
+                return;
+            }
+        }
+        let _ = handle.run_on_main_thread(move || {
+            if screen_recording {
+                open_permission_settings(&handle);
+            } else {
+                open_accessibility_settings(&handle);
+            }
+        });
+    });
 }
 
 #[cfg(target_os = "macos")]
