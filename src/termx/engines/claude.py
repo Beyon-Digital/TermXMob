@@ -145,6 +145,9 @@ class ClaudeEngine:
         from claude_agent_sdk import McpStdioServerConfig, McpHttpServerConfig
         for binding in cfg.mcp_bindings:
             name = str(binding.get("connection_id") or "mcp")
+            # OAuth-bound connections stay brokered TermX-side.
+            if binding.get("auth_method") == "oauth":
+                continue
             if binding.get("url"):
                 out[name] = McpHttpServerConfig(type="http", url=str(binding["url"]))
             elif binding.get("command"):

@@ -457,26 +457,40 @@ class AcpEngine:
         )
 
     def _mcp_servers(self, cfg: EffectiveRunConfiguration) -> list[Any]:
-        # P4 wires real TermX MCP bindings; for now pass through explicit defs.
         out: list[Any] = []
         try:
-            from acp.schema import McpServerStdio, EnvVariable
+            from acp.schema import (
+                EnvVariable,
+                HttpMcpServer,
+                McpServerStdio,
+                SseMcpServer,
+            )
         except ImportError:
             return out
         for binding in cfg.mcp_bindings:
-            cmd = binding.get("command") or []
-            if not cmd:
+            name = str(binding.get("connection_id") or "mcp")
+            # OAuth-bound connections are brokered TermX-side; the engine is
+            # not handed credentials it can't consent to.
+            if binding.get("auth_method") == "oauth":
                 continue
             env_vars = [
                 EnvVariable(name=str(k), value=str(v))
                 for k, v in (binding.get("env") or {}).items()
             ]
-            out.append(McpServerStdio(
-                name=str(binding.get("connection_id") or "mcp"),
-                command=str(cmd[0]),
-                args=[str(a) for a in cmd[1:]],
-                env=env_vars,
-            ))
+            if binding.get("url") and binding.get("transport") == "sse":
+                out.append(SseMcpServer(name=name, url=str(binding["url"])))
+            elif binding.get("url"):
+                out.append(HttpMcpServer(name=name, url=str(binding["url"])))
+            else:
+                cmd = binding.get("command") or []
+                if not cmd:
+                    continue
+                out.append(McpServerStdio(
+                    name=name,
+                    command=str(cmd[0]),
+                    args=[str(a) for a in cmd[1:]],
+                    env=env_vars,
+                ))
         return out
 
     async def attach(self, binding: EngineSessionBinding) -> EngineSessionBinding:

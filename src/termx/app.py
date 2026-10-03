@@ -49,6 +49,11 @@ from termx.engines.grok import GrokEngine
 from termx.forwards import ForwardManager
 from termx.lifecycle import shutdown_state
 from termx.machine import machine_snapshot
+from termx.mcp.client import McpPool, McpConnectionError
+from termx.mcp.defs import ConnectionDef, ConnectionError_, validate_connection
+from termx.mcp.gateway import GatewayAuthError, McpGateway
+from termx.mcp.oauth import LoopbackCallback
+from termx.mcp.registry import ConnectionRegistry
 from termx.net import connect_url, http_urls, qr_svg
 from termx.project_files import ProjectFiles
 from termx import git_ops, lsp
@@ -124,8 +129,24 @@ class AppState:
             self.agent_store,
             agents_dir=os.path.join(self.agents_root, "agents"),
         )
+        # MCP: connection defs + pooled clients + session-scoped gateway.
+        self.mcp_loopback = LoopbackCallback()
+        self.mcp_pool = McpPool(self.credentials)
+        self.mcp_gateway = McpGateway(self.mcp_pool)
+        self.mcp_auth_urls: dict[str, str] = {}
+        # Engine sessions resolve agent mcp_connections through the registry;
+        # secret env values come from the credential store at spawn time.
+        self.engines.mcp_resolver = lambda conn_id: self.mcp_registry().get(conn_id)
+        self.engines.credential_lookup = self.credentials.get
         self.port = port
         self.request_shutdown = None
+
+    def mcp_registry(self) -> ConnectionRegistry:
+        dirs = [os.path.join(self.agents_root, "mcp")]
+        for p in self.projects.projects():
+            if p.get("path"):
+                dirs.append(os.path.join(p["path"], ".agents", "mcp"))
+        return ConnectionRegistry(dirs)
 
     def extension_scan(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Fresh bounded scan of all roots with enable/trust overlay applied."""
@@ -554,6 +575,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             asyncio.create_task(state.agent.recover_task(task_id))
         yield
         state.forwards.stop_all()
+        await state.mcp_pool.shutdown()
+        await state.mcp_loopback.stop()
         await state.engines.shutdown()
         await shutdown_state(state)
 
@@ -2018,6 +2041,203 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             note=body.get("note"),
         )
         return {"state": st}
+
+    # MCP connections ---------------------------------------------------
+
+    def _conn_or_404(state: AppState, conn_id: str) -> ConnectionDef:
+        conn = state.mcp_registry().get(conn_id)
+        if conn is None:
+            raise HTTPException(status_code=404, detail="connection not found")
+        return conn
+
+    @app.get("/api/mcp/connections")
+    def list_mcp_connections(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        status = state.mcp_pool.status()
+        out = []
+        for conn in state.mcp_registry().list():
+            d = conn.as_dict()
+            d["runtime"] = status.get(conn.id, {"connected": False})
+            if conn.id in state.mcp_auth_urls:
+                d["auth_url_pending"] = state.mcp_auth_urls[conn.id]
+            out.append(d)
+        return {"connections": out}
+
+    @app.post("/api/mcp/connections")
+    def create_mcp_connection(
+        body: dict[str, Any],
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            conn = validate_connection(body)
+        except ConnectionError_ as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if conn.transport in {"http", "sse"}:
+            from termx.mcp.ssrf import SSRFError, validate_url
+            try:
+                validate_url(conn.url, lan=conn.lan)
+            except SSRFError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        path = state.mcp_registry().save(conn)
+        return {"connection": conn.as_dict(), "path": path}
+
+    @app.post("/api/mcp/connections/{conn_id}/trust")
+    def trust_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        """Explicit user consent: flip a def's ``trust`` to trusted on disk."""
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        conn.trust = "trusted"
+        state.mcp_registry().save(conn)
+        return {"connection": conn.as_dict()}
+
+    @app.post("/api/mcp/connections/{conn_id}/connect")
+    async def connect_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        if not conn.enabled:
+            raise HTTPException(status_code=400, detail="connection is disabled")
+        if not conn.trusted:
+            raise HTTPException(
+                status_code=403,
+                detail="connection is untrusted — POST .../trust first",
+            )
+        auth_url_ready = asyncio.Event()
+
+        async def on_auth_url(url: str) -> None:
+            state.mcp_auth_urls[conn.id] = url
+            auth_url_ready.set()
+
+        task = asyncio.create_task(
+            state.mcp_pool.connect(
+                conn, on_auth_url=on_auth_url, loopback=state.mcp_loopback
+            )
+        )
+        done, _ = await asyncio.wait(
+            {task, asyncio.create_task(auth_url_ready.wait())},
+            timeout=30.0,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if auth_url_ready.is_set():
+            return {
+                "connection": conn.id,
+                "status": "auth_required",
+                "auth_url": state.mcp_auth_urls[conn.id],
+                "note": "open this URL on the host to complete sign-in",
+            }
+        try:
+            catalog = task.result()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        state.mcp_auth_urls.pop(conn.id, None)
+        return {"connection": conn.id, "status": "connected",
+                "catalog": catalog, "fingerprint": state.mcp_pool._connections[conn.id].fingerprint}
+
+    @app.post("/api/mcp/connections/{conn_id}/disconnect")
+    async def disconnect_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        await state.mcp_pool.disconnect(
+            conn_id if conn_id.startswith("connection.") else f"connection.{conn_id}"
+        )
+        return {"disconnected": conn_id}
+
+    @app.post("/api/mcp/connections/{conn_id}/call/{tool}")
+    async def call_mcp_tool(
+        conn_id: str,
+        tool: str,
+        body: dict[str, Any],
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        fq = conn.id
+        catalog = state.mcp_pool.catalog(fq) or {}
+        approved = conn.approved_tools
+        tool_names = {t["name"] for t in catalog.get("tools", [])}
+        if tool not in tool_names:
+            raise HTTPException(status_code=404, detail="tool not in catalog")
+        if "*" not in approved and tool not in approved:
+            raise HTTPException(status_code=403, detail="tool not in approved_tools")
+        try:
+            result = await state.mcp_pool.call_tool(fq, tool, body.get("arguments") or {})
+        except McpConnectionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"result": result}
+
+    @app.delete("/api/mcp/connections/{conn_id}")
+    def delete_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        if not conn.path:
+            raise HTTPException(status_code=409, detail="connection has no file to delete")
+        os.unlink(conn.path)
+        return {"deleted": conn.id}
+
+    # Session-scoped MCP gateway (capability-token auth, loopback only) --
+
+    def _require_loopback(request: Request) -> None:
+        host = (request.client.host if request.client else "") or ""
+        if host not in {"127.0.0.1", "::1", "localhost"}:
+            raise HTTPException(status_code=403, detail="gateway is loopback-only")
+
+    @app.get("/api/mcp-gw/{token}/catalog")
+    async def gw_catalog(token: str, request: Request) -> dict[str, object]:
+        _require_loopback(request)
+        try:
+            return {"connections": await state.mcp_gateway.catalog(token)}
+        except GatewayAuthError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    @app.post("/api/mcp-gw/{token}/call")
+    async def gw_call(token: str, request: Request, body: dict[str, Any]) -> dict[str, object]:
+        _require_loopback(request)
+        try:
+            result = await state.mcp_gateway.call_tool(
+                token,
+                str(body.get("connection") or ""),
+                str(body.get("tool") or ""),
+                dict(body.get("arguments") or {}),
+            )
+        except GatewayAuthError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except McpConnectionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"result": result}
 
     @app.get("/api/agent/policies")
     def list_agent_policies(

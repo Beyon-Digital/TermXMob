@@ -13,6 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .base import EngineAdapter
@@ -33,6 +34,9 @@ class EngineGateway:
         self._store = store
         self._emit = emit
         self._adapters: dict[str, EngineAdapter] = {}
+        # set by AppState: resolve connection.<id> -> ConnectionDef-like obj
+        self.mcp_resolver: Any = None
+        self.credential_lookup: Any = None  # ref -> secret
         # binding_id -> live binding (in-memory; engine_sessions table persists)
         self._bindings: dict[str, EngineSessionBinding] = {}
         # binding_id -> task_id (the task currently owning the native session)
@@ -81,6 +85,46 @@ class EngineGateway:
 
     # ------------------------------------------------------------ lifecycle
 
+    def _resolve_mcp_bindings(
+        self, mcp_connections: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Agent mcp_connections → per-session binding dicts for adapters.
+
+        Only trusted+enabled defs are passed through — discovery alone never
+        authorizes. Secret env values are resolved from CredentialStore at
+        spawn time and never written to the binding's persisted payload.
+        """
+        out: list[dict[str, Any]] = []
+        if self.mcp_resolver is None:
+            return out
+        for link in mcp_connections:
+            conn_id = str(link.get("connection") or "")
+            conn = self.mcp_resolver(conn_id) if conn_id else None
+            if conn is None:
+                continue
+            if not getattr(conn, "trusted", False) or not getattr(conn, "enabled", True):
+                continue  # untrusted defs cannot reach an engine session
+            env: dict[str, str] = {}
+            import os
+            for name in getattr(conn, "env_names", []) or []:
+                if name in os.environ:
+                    env[name] = os.environ[name]
+            if self.credential_lookup:
+                for ref in getattr(conn, "secret_refs", []) or []:
+                    value = self.credential_lookup(ref)
+                    if value:
+                        env[ref.rsplit(".", 1)[-1].upper()] = value
+            out.append({
+                "connection_id": conn_id,
+                "transport": getattr(conn, "transport", "http"),
+                "command": list(getattr(conn, "command", []) or []),
+                "url": getattr(conn, "url", ""),
+                "env": env,
+                "tools": link.get("tools"),
+                "auth_method": getattr(conn, "auth_method", "none"),
+            })
+        return out
+
     async def create_task(
         self,
         *,
@@ -106,6 +150,24 @@ class EngineGateway:
         if custom_agent:
             instructions = str(custom_agent.get("instructions") or "").strip()
 
+        file_cfg = dict((custom_agent or {}).get("file") or {})
+        skills = file_cfg.get("skills") or {}
+        mcp_bindings = self._resolve_mcp_bindings(file_cfg.get("mcp_connections") or [])
+
+        # Resolved tool profile → cfg.tools (enforcement level varies by
+        # engine and is labelled in capabilities, never overclaimed).
+        from termx.agents.tools import resolve_tools
+        tools_resolution = resolve_tools(
+            SimpleNamespace(
+                tools_omitted=file_cfg.get("tools_omitted", False),
+                tools_mode=file_cfg.get("tools_mode", "explicit"),
+                tools=file_cfg.get("tools") or (custom_agent or {}).get("tools") or [],
+                toolsets=file_cfg.get("toolsets") or [],
+                mcp_connections=file_cfg.get("mcp_connections") or [],
+                deny_tools=file_cfg.get("deny_tools") or [],
+            )
+        )
+
         cfg = EffectiveRunConfiguration(
             engine=engine,
             model=model or (str(custom_agent["model"]) if custom_agent and custom_agent.get("model") else None),
@@ -115,6 +177,15 @@ class EngineGateway:
             sandbox_profile=sandbox_profile,
             approval_mode=approval_mode,
             agent_profile_revision=str((custom_agent or {}).get("file_revision") or ""),
+            skills=[{"id": s} for s in (skills.get("include") or [])],
+            mcp_bindings=mcp_bindings,
+            tools={
+                "allowed": tools_resolution.tools if tools_resolution.tools_mode == "explicit" else [],
+                "denied": file_cfg.get("deny_tools") or [],
+                "tools_mode": tools_resolution.tools_mode,
+                "review_required": tools_resolution.review_required,
+                "limits": limits or {},
+            },
         )
 
         # Reuse a live native session for this conversation when one exists —
@@ -142,6 +213,20 @@ class EngineGateway:
             if binding is not None:
                 binding.conversation_id = conversation_id
                 self._bindings[binding.binding_id] = binding
+
+        # Strict profiles must not launch when the engine cannot enforce them
+        # (spec §6): an explicit tool allowlist requires at least gateway-level
+        # enforcement; purely advisory engines get an advisory event instead.
+        caps = adapter.capabilities()
+        if tools_resolution.tools_mode == "explicit" and tools_resolution.tools:
+            if caps.tools_filter == "unsupported":
+                raise ValueError(
+                    f"engine '{engine}' cannot enforce a tool allowlist "
+                    f"(tools_filter=unsupported) — refusing strict profile"
+                )
+            if caps.tools_filter == "advisory":
+                # Launch allowed but disclose: filtering is advisory-only.
+                pass
 
         task = self._store.create_task(
             prompt=prompt,
