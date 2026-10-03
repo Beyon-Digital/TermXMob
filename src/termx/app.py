@@ -941,7 +941,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     # Native engine integrations (engine-extensions P1) -------------------
 
     @app.get("/api/engines")
-    def list_engines(
+    async def list_engines(
         x_termx_passcode: str | None = Header(default=None),
         authorization: str | None = Header(default=None),
         k: str | None = Query(default=None),
@@ -965,11 +965,16 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
                 },
             }
         ]
-        for name in state.engines.engines():
-            adapter = state.engines.adapter(name)
-            desc = adapter.descriptor().as_dict()
-            desc["capabilities"] = adapter.capabilities().as_dict()
-            engines.append(desc)
+        # Probe each adapter so install/auth state reflects now, not startup —
+        # bounded and concurrent since probes are subprocess calls.
+        probed = await asyncio.gather(
+            *(state.engines.probe(name) for name in state.engines.engines()),
+            return_exceptions=True,
+        )
+        for item in probed:
+            if isinstance(item, BaseException):
+                continue
+            engines.append(item)
         return {"engines": engines}
 
     @app.post("/api/engines/{engine_id}/probe")
