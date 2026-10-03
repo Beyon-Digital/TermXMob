@@ -1,0 +1,17 @@
+# Sources — refreshed during P0 (accessed 2026-10-03)
+
+- S1 Codex app-server: https://developers.openai.com/codex/app-server.md → full protocol read: stdio JSONL (no `jsonrpc` field), initialize/initialized, thread/{start,resume,fork,read,list,turns/list,metadata,loaded/list,unsubscribe,archive,delete,unarchive,compact/start,shellCommand,backgroundTerminals/*,rollback,inject_items}, turn/{start,steer,interrupt}, model/list, review/start, command/exec, configRequirements/read, windowsSandbox/*; approval requests server→client (command exec, file change, tool/requestUserInput, permission, MCP elicitation); transports stdio/ws/unix; bounded queues (-32001 overload). Marked experimental upstream.
+- S2 Devin ACP: https://docs.devin.ai/cli/acp/zed → `devin acp` JSON-RPC stdio; auth via "Log in with browser" (agent-initiated); slash commands advertised; `--agent-type`, `--model`/`DEVIN_MODEL` (from local CLI docs 3000.11.3). Config roots: `~/.config/devin/config.json`, `.devin/config.json`, `.devin/mcp_config.json`, skills at `~/.config/devin/skills`.
+- S3 Grok: https://docs.x.ai/build/cli/headless-scripting → `grok agent stdio` = ACP; auth `xai.api_key` or `cached_token`; `session/new{cwd,mcpServers}`, `session/prompt`; sessions in `~/.grok/sessions`; `--no-auto-update` for headless.
+- S4 Claude Agent SDK: https://code.claude.com/docs/en/agent-sdk/overview → Python+TS SDKs, bundled CLI, permissions/hooks/subagents/MCP/sessions/skills. **ToS: no third-party claude.ai login/rate-limit resale without approval → API key auth only.**
+- S5/S6 ACP v1: https://agentclientprotocol.com/protocol/v1/overview → JSON-RPC 2.0; initialize/authenticate/session/{new,load,prompt,cancel,set_mode}/logout; client: session/request_permission, fs/*, terminal/*, elicitation/*; `_meta` extensibility. ACP v2 = draft — implement v1, gate extras by negotiation.
+- S7 ACP Python SDK: agentclientprotocol/python-sdk → PyPI `agent-client-protocol` 0.12.1, Apache-2.0 (verified LICENSE).
+- S8 Agent Skills: https://agentskills.io/specification → SKILL.md frontmatter (name ≤64 lcase-hyphen matching dir, description ≤1024, license/compatibility/metadata/allowed-tools); progressive disclosure; skills-ref validator exists.
+- S9 Codex skills: resolved to learn.chatgpt.com/docs/build-skills — native skill dirs verified during impl (`codex app-server` turn/start supports skill invocation per S1 params).
+- S10 Copilot custom agents: docs.github.com/en/copilot/reference/custom-agents-configuration → fields name/description(required)/target/tools(omitted=all, []=none, `server/*`)/model/disable-model-invocation/user-invocable/mcp-servers/metadata; aliases read/edit/search/execute/agent/web; prompt ≤30k chars.
+- S11 MCP SDKs: modelcontextprotocol.io/docs/sdk → adopted `mcp` 2.3.0 (MIT, ≥3.10 incl 3.14; protocol 2026-07-28 per docs).
+- S12/S13/S14 OpenCode/Pi/Goose — inspected; not adopted (see reuse-audit.md).
+- S15–S17 MCP auth 2026-07-28: authorization → client-registration (order: pre-registered → CIMD `client_id_metadata_document_supported` → DCR `registration_endpoint` w/ `application_type` native|web → manual; issuer-bound persistence mandatory; DCR deprecated-but-supported) → security-considerations (PKCE S256, CSRF state, resource audience, redirect exact-match, SSRF).
+- R1–R3 repo reads confirmed against local checkouts (agent/manager.py, app.py, client files).
+
+Pinning: `mcp==2.3.0`, `agent-client-protocol==0.12.1`, `claude-agent-sdk`==<installed> (recorded in uv.lock), codex-cli 0.159.2 schema fixtures.
