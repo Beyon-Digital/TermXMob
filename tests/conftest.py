@@ -6,6 +6,9 @@ import pytest
 @pytest.fixture(autouse=True)
 def termx_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "termx-config"))
+    # Keep file-backed agent/discovery writes hermetic: never touch the real
+    # ~/.agents tree from tests unless a test opts in explicitly.
+    monkeypatch.setenv("TERMX_AGENTS_DIR", str(tmp_path / "agents-root"))
 
 
 @pytest.fixture(autouse=True)
