@@ -306,6 +306,18 @@ class AgentStore:
                 ON policy_rules(fingerprint, action_type);
             CREATE INDEX IF NOT EXISTS policy_rules_scope
                 ON policy_rules(scope_type, scope_id);
+            CREATE TABLE IF NOT EXISTS extension_states (
+                qid TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                trusted INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS settings_kv (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT '{}',
+                updated_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS engine_sessions_task
                 ON engine_sessions(task_id);
             CREATE INDEX IF NOT EXISTS engine_sessions_conversation
@@ -341,6 +353,20 @@ class AgentStore:
             self._db.execute(
                 "ALTER TABLE custom_agents ADD COLUMN sandbox_profile TEXT NOT NULL DEFAULT 'agent'"
             )
+        # File-backed agents (tech-specs §4): the .agent.md file is the
+        # authority; these columns make custom_agents a synced projection.
+        for col, ddl in (
+            ("file_path", "ALTER TABLE custom_agents ADD COLUMN file_path TEXT"),
+            ("file_revision", "ALTER TABLE custom_agents ADD COLUMN file_revision TEXT"),
+            ("engine", "ALTER TABLE custom_agents ADD COLUMN engine TEXT NOT NULL DEFAULT 'inherit'"),
+            ("enabled", "ALTER TABLE custom_agents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"),
+            ("source", "ALTER TABLE custom_agents ADD COLUMN source TEXT NOT NULL DEFAULT 'device'"),
+            ("sync_state", "ALTER TABLE custom_agents ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'db'"),
+            ("file_json", "ALTER TABLE custom_agents ADD COLUMN file_json TEXT"),
+            ("migrated_at", "ALTER TABLE custom_agents ADD COLUMN migrated_at REAL"),
+        ):
+            if ca_columns and col not in ca_columns:
+                self._db.execute(ddl)
         wt_columns = {
             row["name"] for row in self._db.execute("PRAGMA table_info(task_worktrees)")
         }
@@ -1069,6 +1095,24 @@ class AgentStore:
                 row["sandbox_profile"] if "sandbox_profile" in row.keys() else None
             )
             or "agent",
+            "engine": row["engine"] if "engine" in row.keys() else "inherit",
+            "enabled": bool(row["enabled"]) if "enabled" in row.keys() else True,
+            "source": row["source"] if "source" in row.keys() else "device",
+            "sync_state": (
+                row["sync_state"] if "sync_state" in row.keys() else "db"
+            ),
+            "file_path": row["file_path"] if "file_path" in row.keys() else None,
+            "file_revision": (
+                row["file_revision"] if "file_revision" in row.keys() else None
+            ),
+            "file": (
+                json.loads(row["file_json"])
+                if "file_json" in row.keys() and row["file_json"]
+                else None
+            ),
+            "migrated_at": (
+                row["migrated_at"] if "migrated_at" in row.keys() else None
+            ),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -1482,6 +1526,186 @@ class AgentStore:
             )
             self._db.commit()
         return cursor.rowcount > 0
+
+    # File-backed agent projection --------------------------------------
+
+    def upsert_agent_file(
+        self,
+        *,
+        agent_id: str,
+        name: str,
+        description: str,
+        instructions: str,
+        model: str | None,
+        tools: list[str],
+        limits: dict[str, Any],
+        approval_mode: str,
+        sandbox_profile: str,
+        engine: str,
+        enabled: bool,
+        file_path: str,
+        file_revision: str,
+        file_json: str,
+        source: str,
+        sync_state: str = "synced",
+        migrated_at: float | None = None,
+    ) -> None:
+        """Insert/update the DB projection of an on-disk ``*.agent.md``."""
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO custom_agents
+                    (id, name, description, instructions, provider_id, model,
+                     tools, limits, approval_mode, sandbox_profile,
+                     file_path, file_revision, engine, enabled, source,
+                     sync_state, file_json, migrated_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    description = excluded.description,
+                    instructions = excluded.instructions,
+                    model = excluded.model,
+                    tools = excluded.tools,
+                    limits = excluded.limits,
+                    approval_mode = excluded.approval_mode,
+                    sandbox_profile = excluded.sandbox_profile,
+                    file_path = excluded.file_path,
+                    file_revision = excluded.file_revision,
+                    engine = excluded.engine,
+                    enabled = excluded.enabled,
+                    source = excluded.source,
+                    sync_state = excluded.sync_state,
+                    file_json = excluded.file_json,
+                    migrated_at = COALESCE(excluded.migrated_at, custom_agents.migrated_at),
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    agent_id, name, description, instructions, model,
+                    json.dumps(list(tools)), json.dumps(dict(limits)),
+                    approval_mode, sandbox_profile,
+                    file_path, file_revision, engine, int(enabled), source,
+                    sync_state, file_json, migrated_at, now, now,
+                ),
+            )
+            self._db.commit()
+
+    def custom_agent_by_file(self, file_path: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM custom_agents WHERE file_path = ?", (file_path,)
+            ).fetchone()
+        return self._custom_agent(row) if row else None
+
+    def custom_agents_needing_files(self) -> list[dict[str, Any]]:
+        """Device-era rows that predate file authority (no file_path yet)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM custom_agents WHERE file_path IS NULL"
+            ).fetchall()
+        return [self._custom_agent(row) for row in rows]
+
+    def mark_agent_sync(self, agent_id: str, sync_state: str) -> None:
+        with self._lock:
+            self._db.execute(
+                "UPDATE custom_agents SET sync_state = ?, updated_at = ? WHERE id = ?",
+                (sync_state, time(), agent_id),
+            )
+            self._db.commit()
+
+    # Extension state ----------------------------------------------------
+
+    def extension_state(self, qid: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM extension_states WHERE qid = ?", (qid,)
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "qid": row["qid"],
+            "enabled": bool(row["enabled"]),
+            "trusted": bool(row["trusted"]),
+            "note": row["note"],
+            "updated_at": row["updated_at"],
+        }
+
+    def set_extension_state(
+        self,
+        qid: str,
+        *,
+        enabled: bool | None = None,
+        trusted: bool | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        now = time()
+        current = self.extension_state(qid) or {
+            "enabled": False,
+            "trusted": False,
+            "note": "",
+        }
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO extension_states (qid, enabled, trusted, note, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(qid) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    trusted = excluded.trusted,
+                    note = excluded.note,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    qid,
+                    int(current["enabled"] if enabled is None else enabled),
+                    int(current["trusted"] if trusted is None else trusted),
+                    current["note"] if note is None else note,
+                    now,
+                ),
+            )
+            self._db.commit()
+        return self.extension_state(qid)  # type: ignore[return-value]
+
+    def all_extension_states(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM extension_states").fetchall()
+        return {
+            row["qid"]: {
+                "qid": row["qid"],
+                "enabled": bool(row["enabled"]),
+                "trusted": bool(row["trusted"]),
+                "note": row["note"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        }
+
+    # Small settings KV (rollback flags etc.) ------------------------------
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT value FROM settings_kv WHERE key = ?", (key,)
+            ).fetchone()
+        if not row:
+            return default
+        try:
+            return json.loads(row["value"])
+        except json.JSONDecodeError:
+            return default
+
+    def set_setting(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO settings_kv (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, json.dumps(value), time()),
+            )
+            self._db.commit()
 
     # Policy rules ------------------------------------------------------
 

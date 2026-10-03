@@ -37,6 +37,8 @@ from termx.desktop.capture import virtual_display_reason
 from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
+from termx.agents.files import AgentFile, AgentFileError, parse_agent_file
+from termx.agents.registry import AgentRegistry, RevisionConflict
 from termx.desktop.webrtc import RtcError, RtcManager
 from termx.engines.claude import ClaudeEngine
 from termx.engines.codex import CodexEngine
@@ -113,8 +115,37 @@ class AppState:
                     approval_sink=self.engines.approval_sink,
                 )
             )
+        # ~/.agents root (overridable for tests/packaging) and the
+        # file-authoritative custom-agent registry.
+        self.agents_root = os.path.abspath(
+            os.path.expanduser(os.environ.get("TERMX_AGENTS_DIR", "~/.agents"))
+        )
+        self.agent_registry = AgentRegistry(
+            self.agent_store,
+            agents_dir=os.path.join(self.agents_root, "agents"),
+        )
         self.port = port
         self.request_shutdown = None
+
+    def extension_scan(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Fresh bounded scan of all roots with enable/trust overlay applied."""
+        from termx.discovery.index import DiscoveryIndex
+        from termx.discovery.roots import default_roots
+
+        projects = {
+            p["id"]: p["path"] for p in self.projects.projects() if p.get("path")
+        }
+        roots = default_roots(projects, user_agents_dir=self.agents_root)
+        entries, report = DiscoveryIndex(roots).scan()
+        states = self.agent_store.all_extension_states()
+        out: dict[str, Any] = {}
+        for qid, entry in entries.items():
+            st = states.get(qid, {})
+            entry.enabled = bool(st.get("enabled", False))
+            if st.get("trusted"):
+                entry.trusted = True
+            out[qid] = entry.as_dict()
+        return out, report.as_dict()
 
 
 class CreateSessionBody(BaseModel):
@@ -338,10 +369,21 @@ class CustomAgentBody(BaseModel):
     instructions: str = Field(default="", max_length=20_000)
     provider_id: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=200)
-    tools: list[str] = Field(default_factory=list, max_length=64)
+    tools: list[str] | None = Field(default=None, max_length=64)
     limits: dict[str, Any] = Field(default_factory=dict)
     approval_mode: str = Field(default="standard", pattern=r"^(standard|remember|autonomous)$")
     sandbox_profile: str = Field(default="agent", pattern=r"^(host|workspace|agent)$")
+    # v2 file-backed fields (tech-specs §4)
+    engine: str = Field(default="inherit", pattern=r"^(internal|codex|devin|grok|claude|inherit)$")
+    enabled: bool = True
+    auto_use: bool = True
+    toolsets: list[str] = Field(default_factory=list, max_length=64)
+    deny_tools: list[str] = Field(default_factory=list, max_length=64)
+    skills: dict[str, Any] | None = None
+    workflows: list[str] = Field(default_factory=list, max_length=64)
+    mcp_connections: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    delegation: dict[str, Any] | None = None
+    slug: str | None = Field(default=None, max_length=80)
 
 
 class CustomAgentPatchBody(BaseModel):
@@ -354,6 +396,21 @@ class CustomAgentPatchBody(BaseModel):
     limits: dict[str, Any] | None = None
     approval_mode: str | None = Field(default=None, pattern=r"^(standard|remember|autonomous)$")
     sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace|agent)$")
+    engine: str | None = Field(default=None, pattern=r"^(internal|codex|devin|grok|claude|inherit)$")
+    enabled: bool | None = None
+    auto_use: bool | None = None
+    toolsets: list[str] | None = Field(default=None, max_length=64)
+    deny_tools: list[str] | None = Field(default=None, max_length=64)
+    skills: dict[str, Any] | None = None
+    workflows: list[str] | None = Field(default=None, max_length=64)
+    mcp_connections: list[dict[str, Any]] | None = Field(default=None, max_length=32)
+    delegation: dict[str, Any] | None = None
+    revision: str | None = Field(default=None, max_length=80)
+
+
+class CustomAgentImportBody(BaseModel):
+    markdown: str = Field(min_length=1, max_length=200_000)
+    source: str = Field(default="import", max_length=40)
 
 
 class AgentApprovalBody(BaseModel):
@@ -487,6 +544,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     async def lifespan(_app: FastAPI):
         state.forwards.start_auto()
         state.engines.recover()
+        # File authority for custom agents: one-time DB->file export for
+        # device-era rows, then files->DB projection sync. Bounded + safe.
+        try:
+            await asyncio.to_thread(state.agent_registry.sync)
+        except Exception:  # noqa: BLE001 - never block startup on sync
+            log_event("agent_registry_sync_error")
         for task_id in state.agent.pending_recoveries():
             asyncio.create_task(state.agent.recover_task(task_id))
         yield
@@ -1676,6 +1739,41 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         _require_scope(state, secret, "agent-view")
         return {"agents": state.agent_store.list_custom_agents()}
 
+    def _agent_file_from_body(body: CustomAgentBody) -> AgentFile:
+        skills = body.skills or {}
+        return AgentFile(
+            slug=body.slug or "",
+            name=body.name,
+            description=body.description,
+            instructions=body.instructions,
+            engine=body.engine,
+            model=body.model,
+            enabled=body.enabled,
+            auto_use=body.auto_use,
+            tools_mode="explicit" if body.tools is not None else "all",
+            tools=list(body.tools or []),
+            tools_omitted=body.tools is None,
+            toolsets=list(body.toolsets),
+            deny_tools=list(body.deny_tools),
+            skills_mode=str(skills.get("mode", "auto")),
+            skills_include=list(skills.get("include") or []),
+            skills_exclude=list(skills.get("exclude") or []),
+            workflows=list(body.workflows),
+            mcp_connections=[dict(c) for c in body.mcp_connections],
+            delegation=dict(body.delegation or {}),
+            approval_mode=body.approval_mode,
+            sandbox_profile=body.sandbox_profile,
+            limits=dict(body.limits),
+        )
+
+    def _slug_for_agent(state: AppState, agent_id: str) -> str | None:
+        if agent_id.startswith("agent."):
+            return agent_id.removeprefix("agent.")
+        row = state.agent_store.get_custom_agent(agent_id)
+        if row and row.get("file_path"):
+            return Path(row["file_path"]).name.removesuffix(".agent.md")
+        return None
+
     @app.post("/api/custom-agents")
     def create_custom_agent(
         body: CustomAgentBody,
@@ -1686,9 +1784,31 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
-            agent = state.agent_store.create_custom_agent(**body.model_dump())
-        except ValueError as exc:
+            agent = state.agent_registry.save(_agent_file_from_body(body))
+        except (ValueError, AgentFileError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        row = state.agent_store.get_custom_agent(agent.qid_id)
+        return {"agent": row or agent.as_dict()}
+
+    @app.get("/api/custom-agents/{agent_id}")
+    def get_custom_agent(
+        agent_id: str,
+        source: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        if source == "file":
+            slug = _slug_for_agent(state, agent_id)
+            raw = state.agent_registry.read_raw(slug) if slug else None
+            if raw is None:
+                raise HTTPException(status_code=404, detail="agent file not found")
+            return {"id": agent_id, "slug": slug, "markdown": raw}
+        agent = state.agent_store.get_custom_agent(agent_id)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
         return {"agent": agent}
 
     @app.patch("/api/custom-agents/{agent_id}")
@@ -1701,14 +1821,62 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
-        updates = {key: value for key, value in body.model_dump().items() if value is not None}
-        try:
-            agent = state.agent_store.update_custom_agent(agent_id, **updates)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if agent is None:
+        slug = _slug_for_agent(state, agent_id)
+        if slug is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
-        return {"agent": agent}
+        af = state.agent_registry.load(slug)
+        if af is None:
+            raise HTTPException(status_code=404, detail="agent file not found")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        if "name" in updates:
+            af.name = updates["name"]
+        if "description" in updates:
+            af.description = updates["description"]
+        if "instructions" in updates:
+            af.instructions = updates["instructions"]
+        if "model" in updates:
+            af.model = updates["model"]
+        if "tools" in updates:
+            af.tools = list(updates["tools"])
+            af.tools_omitted = False
+            af.tools_mode = "explicit"
+        if "limits" in updates:
+            af.limits = dict(updates["limits"])
+        if "approval_mode" in updates:
+            af.approval_mode = updates["approval_mode"]
+        if "sandbox_profile" in updates:
+            af.sandbox_profile = updates["sandbox_profile"]
+        if "engine" in updates:
+            af.engine = updates["engine"]
+        if "enabled" in updates:
+            af.enabled = updates["enabled"]
+        if "auto_use" in updates:
+            af.auto_use = updates["auto_use"]
+        if "toolsets" in updates:
+            af.toolsets = list(updates["toolsets"])
+        if "deny_tools" in updates:
+            af.deny_tools = list(updates["deny_tools"])
+        if "skills" in updates:
+            skills = updates["skills"]
+            af.skills_mode = str(skills.get("mode", af.skills_mode))
+            af.skills_include = list(skills.get("include", af.skills_include))
+            af.skills_exclude = list(skills.get("exclude", af.skills_exclude))
+        if "workflows" in updates:
+            af.workflows = list(updates["workflows"])
+        if "mcp_connections" in updates:
+            af.mcp_connections = [dict(c) for c in updates["mcp_connections"]]
+        if "delegation" in updates:
+            af.delegation = dict(updates["delegation"])
+        try:
+            saved = state.agent_registry.save(
+                af, expected_revision=body.revision or af.revision,
+            )
+        except RevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (ValueError, AgentFileError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        row = state.agent_store.get_custom_agent(saved.qid_id)
+        return {"agent": row or saved.as_dict()}
 
     @app.delete("/api/custom-agents/{agent_id}")
     def delete_custom_agent(
@@ -1719,9 +1887,137 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
+        slug = _slug_for_agent(state, agent_id)
+        if slug is not None and state.agent_registry.delete(slug):
+            return {"deleted": agent_id}
         if not state.agent_store.delete_custom_agent(agent_id):
             raise HTTPException(status_code=404, detail="custom agent not found")
         return {"deleted": agent_id}
+
+    @app.post("/api/custom-agents/{agent_id}/duplicate")
+    def duplicate_custom_agent(
+        agent_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        slug = _slug_for_agent(state, agent_id)
+        dup = state.agent_registry.duplicate(slug) if slug else None
+        if dup is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        row = state.agent_store.get_custom_agent(dup.qid_id)
+        return {"agent": row or dup.as_dict()}
+
+    @app.post("/api/custom-agents/import")
+    def import_custom_agent(
+        body: CustomAgentImportBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            agent = state.agent_registry.import_markdown(
+                body.markdown, source=body.source or "import"
+            )
+        except (ValueError, AgentFileError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        row = state.agent_store.get_custom_agent(agent.qid_id)
+        return {"agent": row or agent.as_dict()}
+
+    @app.get("/api/custom-agents/{agent_id}/export")
+    def export_custom_agent(
+        agent_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        slug = _slug_for_agent(state, agent_id)
+        raw = state.agent_registry.read_raw(slug) if slug else None
+        if raw is None:
+            raise HTTPException(status_code=404, detail="agent file not found")
+        return {"id": agent_id, "slug": slug, "markdown": raw}
+
+    # Extension catalog -------------------------------------------------
+
+    @app.get("/api/extensions")
+    def list_extensions(
+        kind: str | None = Query(default=None),
+        source: str | None = Query(default=None),
+        enabled: bool | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        entries, report = state.extension_scan()
+        items = list(entries.values())
+        if kind:
+            items = [e for e in items if e["kind"] == kind]
+        if source:
+            items = [e for e in items if e["source"] == source]
+        if enabled is not None:
+            items = [e for e in items if e["enabled"] is enabled]
+        return {"extensions": items, "report": report}
+
+    @app.post("/api/extensions/rescan")
+    def rescan_extensions(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        state.agent_registry.sync()
+        entries, report = state.extension_scan()
+        return {"extensions": list(entries.values()), "report": report}
+
+    @app.get("/api/extensions/{qid:path}")
+    def get_extension(
+        qid: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        entries, _ = state.extension_scan()
+        entry = entries.get(qid)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="extension not found")
+        from termx.discovery.safety import safe_read_text
+        try:
+            entry["body"] = safe_read_text(entry["path"])
+        except Exception as exc:  # noqa: BLE001
+            entry["body_error"] = str(exc)
+        return {"extension": entry}
+
+    @app.post("/api/extensions/{qid:path}/state")
+    def set_extension_state(
+        qid: str,
+        body: dict[str, Any],
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        entries, _ = state.extension_scan()
+        if qid not in entries:
+            raise HTTPException(status_code=404, detail="extension not found")
+        st = state.agent_store.set_extension_state(
+            qid,
+            enabled=body.get("enabled"),
+            trusted=body.get("trusted"),
+            note=body.get("note"),
+        )
+        return {"state": st}
 
     @app.get("/api/agent/policies")
     def list_agent_policies(
