@@ -222,6 +222,7 @@ def _codex(tmp_path: Path, events: list, approvals: list | None = None,
         return f"appr_{token}"
 
     return _CodexProc(
+        executable_override=sys.executable,
         event_sink=lambda bid, ev: events.append((bid, ev)),
         approval_sink=sink,
         spawn_env=_fake_env(**(env_extra or {})),

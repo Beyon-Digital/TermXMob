@@ -10,17 +10,20 @@ def test_desktop_web_bundle_is_committed() -> None:
 
 
 def test_desktop_web_assets_are_tracked() -> None:
-    """Icon fonts under assets/ must be committed.
+    """Bundled fonts must be committed.
 
-    The export nests them under assets/node_modules/*/build/, which collides
-    with the node_modules/ and build/ ignore rules; if they drop out of git the
-    packaged app renders every icon as a box.
+    The web UI renders icons as inline SVG, but its text fonts are woff2 files
+    under fonts/ referenced by global.css @font-face rules; if they drop out of
+    git the packaged app falls back to system fonts. Any icon .ttf assets under
+    assets/ (which can collide with node_modules/ and build/ ignore rules) must
+    also be tracked.
     """
     root = Path(__file__).resolve().parents[1]
-    fonts = sorted((root / "desktop" / "web" / "assets").rglob("*.ttf"))
+    fonts = sorted((root / "desktop" / "web" / "fonts").rglob("*.woff2"))
+    fonts += sorted((root / "desktop" / "web" / "assets").rglob("*.ttf"))
     assert fonts, "web export has no bundled fonts"
     tracked = subprocess.run(
-        ["git", "ls-files", "--", "desktop/web/assets"],
+        ["git", "ls-files", "--", "desktop/web"],
         cwd=root,
         capture_output=True,
         text=True,
