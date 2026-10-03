@@ -38,9 +38,12 @@ from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
 from termx.desktop.webrtc import RtcError, RtcManager
+from termx.engines.claude import ClaudeEngine
 from termx.engines.codex import CodexEngine
+from termx.engines.devin import DevinEngine
 from termx.engines.env import env_diff_report, resolve_executable
 from termx.engines.gateway import EngineGateway
+from termx.engines.grok import GrokEngine
 from termx.forwards import ForwardManager
 from termx.lifecycle import shutdown_state
 from termx.machine import machine_snapshot
@@ -98,12 +101,18 @@ class AppState:
             project_files=self.projects,
         )
         self.engines = EngineGateway(self.agent_store, self.agent.emit_external)
-        self.engines.register(
-            CodexEngine(
-                event_sink=self.engines.on_engine_event,
-                approval_sink=self.engines.approval_sink,
+        for adapter in (
+            CodexEngine,
+            DevinEngine,
+            GrokEngine,
+            ClaudeEngine,
+        ):
+            self.engines.register(
+                adapter(
+                    event_sink=self.engines.on_engine_event,
+                    approval_sink=self.engines.approval_sink,
+                )
             )
-        )
         self.port = port
         self.request_shutdown = None
 

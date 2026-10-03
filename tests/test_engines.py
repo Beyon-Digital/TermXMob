@@ -504,6 +504,7 @@ def test_engine_task_requires_valid_engine(tmp_path):
     resp = client.post("/api/agent/tasks", json={
         "prompt": "hi", "cwd": str(tmp_path), "engine": "bogus"})
     assert resp.status_code == 422  # pattern rejects unknown engines
+    state.engines._adapters.pop("devin")  # unregister → valid name, no adapter
     resp = client.post("/api/agent/tasks", json={
         "prompt": "hi", "cwd": str(tmp_path), "engine": "devin"})
-    assert resp.status_code == 404  # registered engines only for now
+    assert resp.status_code == 404  # registered engines only
