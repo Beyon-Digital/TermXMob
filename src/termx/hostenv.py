@@ -53,6 +53,19 @@ def _darwin_candidates() -> list[str]:
             "/usr/local/sbin",
         ]
     )
+    # User-local install dirs — where `devin`, `grok`, `claude`, and other
+    # agent CLIs live. Without these, Finder-launched TermX can't see engines
+    # that work fine from a terminal.
+    home = Path.home()
+    out.extend(
+        [
+            str(home / ".local" / "bin"),
+            str(home / ".local" / "share" / "mise" / "shims"),
+            str(home / ".volta" / "bin"),
+            str(home / ".cargo" / "bin"),
+            str(home / "bin"),
+        ]
+    )
     return out
 
 
@@ -83,6 +96,7 @@ def _windows_candidates() -> list[str]:
                 [
                     str(Path(value) / "scoop" / "shims"),
                     str(Path(value) / "go" / "bin"),
+                    str(Path(value) / ".local" / "bin"),
                 ]
             )
     out.extend([r"C:\Program Files\Tailscale", r"C:\Program Files (x86)\Tailscale"])

@@ -691,6 +691,12 @@ class AgentManager:
             if not subscribers:
                 self._subscribers.pop(task_id, None)
 
+    def emit_external(self, task_id: str, event_type: str,
+                      payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist + broadcast an event produced outside the internal loop
+        (native engine sessions route through here so WS subscribers work)."""
+        return self._emit(task_id, event_type, payload)
+
     async def close(self) -> None:
         for event in self._cancel.values():
             event.set()

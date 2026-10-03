@@ -47,6 +47,9 @@ TASK_FIELDS = frozenset(
         "previous_response_id",
         "runtime",
         "metrics",
+        "engine",
+        "engine_session_id",
+        "engine_native_id",
         "updated_at",
     }
 )
@@ -251,6 +254,18 @@ class AgentStore:
                 started_at REAL NOT NULL,
                 finished_at REAL
             );
+            CREATE TABLE IF NOT EXISTS engine_sessions (
+                binding_id TEXT PRIMARY KEY,
+                task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+                engine TEXT NOT NULL,
+                native_session_id TEXT NOT NULL,
+                conversation_id TEXT,
+                cwd TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                payload TEXT NOT NULL DEFAULT '{}',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS policy_rules (
                 id TEXT PRIMARY KEY,
                 version INTEGER NOT NULL DEFAULT 1,
@@ -291,6 +306,22 @@ class AgentStore:
                 ON policy_rules(fingerprint, action_type);
             CREATE INDEX IF NOT EXISTS policy_rules_scope
                 ON policy_rules(scope_type, scope_id);
+            CREATE TABLE IF NOT EXISTS extension_states (
+                qid TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                trusted INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS settings_kv (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT '{}',
+                updated_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS engine_sessions_task
+                ON engine_sessions(task_id);
+            CREATE INDEX IF NOT EXISTS engine_sessions_conversation
+                ON engine_sessions(conversation_id);
             """
         )
         # Additive migration for databases created before the Chat mode column.
@@ -303,6 +334,14 @@ class AgentStore:
             self._db.execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT")
         if "custom_agent_id" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN custom_agent_id TEXT")
+        if "engine" not in columns:
+            self._db.execute(
+                "ALTER TABLE tasks ADD COLUMN engine TEXT NOT NULL DEFAULT 'internal'"
+            )
+        if "engine_session_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN engine_session_id TEXT")
+        if "engine_native_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN engine_native_id TEXT")
         ca_columns = {
             row["name"] for row in self._db.execute("PRAGMA table_info(custom_agents)")
         }
@@ -314,6 +353,20 @@ class AgentStore:
             self._db.execute(
                 "ALTER TABLE custom_agents ADD COLUMN sandbox_profile TEXT NOT NULL DEFAULT 'agent'"
             )
+        # File-backed agents (tech-specs §4): the .agent.md file is the
+        # authority; these columns make custom_agents a synced projection.
+        for col, ddl in (
+            ("file_path", "ALTER TABLE custom_agents ADD COLUMN file_path TEXT"),
+            ("file_revision", "ALTER TABLE custom_agents ADD COLUMN file_revision TEXT"),
+            ("engine", "ALTER TABLE custom_agents ADD COLUMN engine TEXT NOT NULL DEFAULT 'inherit'"),
+            ("enabled", "ALTER TABLE custom_agents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"),
+            ("source", "ALTER TABLE custom_agents ADD COLUMN source TEXT NOT NULL DEFAULT 'device'"),
+            ("sync_state", "ALTER TABLE custom_agents ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'db'"),
+            ("file_json", "ALTER TABLE custom_agents ADD COLUMN file_json TEXT"),
+            ("migrated_at", "ALTER TABLE custom_agents ADD COLUMN migrated_at REAL"),
+        ):
+            if ca_columns and col not in ca_columns:
+                self._db.execute(ddl)
         wt_columns = {
             row["name"] for row in self._db.execute("PRAGMA table_info(task_worktrees)")
         }
@@ -444,6 +497,8 @@ class AgentStore:
         mode: str = "agent",
         parent_id: str | None = None,
         custom_agent_id: str | None = None,
+        engine: str = "internal",
+        status: str = "planning",
     ) -> dict[str, Any]:
         now = time()
         task_id = uuid.uuid4().hex
@@ -451,10 +506,10 @@ class AgentStore:
             self._db.execute(
                 """
                 INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?, ?)
+                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, engine, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, parent_id, custom_agent_id, now, now),
+                (task_id, prompt, cwd, provider_id, model, status, _json(limits), mode, parent_id, custom_agent_id, engine, now, now),
             )
             self._db.commit()
         task = self.get_task(task_id)
@@ -556,6 +611,119 @@ class AgentStore:
             }
             for row in rows
         ]
+
+    # Engine sessions ---------------------------------------------------
+
+    def save_engine_session(
+        self,
+        binding_id: str,
+        *,
+        task_id: str | None,
+        engine: str,
+        native_session_id: str,
+        conversation_id: str | None = None,
+        cwd: str = "",
+        status: str = "active",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO engine_sessions
+                    (binding_id, task_id, engine, native_session_id, conversation_id,
+                     cwd, status, payload, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(binding_id) DO UPDATE SET
+                    task_id=excluded.task_id,
+                    native_session_id=excluded.native_session_id,
+                    conversation_id=excluded.conversation_id,
+                    status=excluded.status,
+                    payload=excluded.payload,
+                    updated_at=excluded.updated_at
+                """,
+                (binding_id, task_id, engine, native_session_id, conversation_id,
+                 cwd, status, _json(payload or {}), now, now),
+            )
+            self._db.commit()
+        row = self.get_engine_session(binding_id)
+        assert row is not None
+        return row
+
+    def get_engine_session(self, binding_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM engine_sessions WHERE binding_id = ?", (binding_id,)
+            ).fetchone()
+        return self._engine_session(row) if row else None
+
+    def engine_session_for_task(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM engine_sessions WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        return self._engine_session(row) if row else None
+
+    def engine_session_for_conversation(self, conversation_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                """
+                SELECT * FROM engine_sessions
+                WHERE conversation_id = ? AND status IN ('active','idle')
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                (conversation_id,),
+            ).fetchone()
+        return self._engine_session(row) if row else None
+
+    def update_engine_session(
+        self, binding_id: str, *, task_id: str | None = None,
+        status: str | None = None, payload: dict[str, Any] | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        changes: dict[str, Any] = {"updated_at": time()}
+        if task_id is not None:
+            changes["task_id"] = task_id
+        if status is not None:
+            changes["status"] = status
+        if payload is not None:
+            changes["payload"] = _json(payload)
+        if conversation_id is not None:
+            changes["conversation_id"] = conversation_id
+        assignments = ", ".join(f"{k} = ?" for k in changes)
+        with self._lock:
+            self._db.execute(
+                f"UPDATE engine_sessions SET {assignments} WHERE binding_id = ?",
+                (*changes.values(), binding_id),
+            )
+            self._db.commit()
+        return self.get_engine_session(binding_id)
+
+    def list_engine_sessions(self, status: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM engine_sessions"
+        args: tuple[Any, ...] = ()
+        if status:
+            sql += " WHERE status = ?"
+            args = (status,)
+        with self._lock:
+            rows = self._db.execute(sql + " ORDER BY updated_at DESC", args).fetchall()
+        return [self._engine_session(row) for row in rows]
+
+    @staticmethod
+    def _engine_session(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "binding_id": row["binding_id"],
+            "task_id": row["task_id"],
+            "engine": row["engine"],
+            "native_session_id": row["native_session_id"],
+            "conversation_id": row["conversation_id"],
+            "cwd": row["cwd"],
+            "status": row["status"],
+            "payload": _load_json(row["payload"], {}),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
 
     # Checkpoints ---------------------------------------------------------
 
@@ -715,6 +883,13 @@ class AgentStore:
             "result": row["result"],
             "error": row["error"],
             "previous_response_id": row["previous_response_id"],
+            "engine": (row["engine"] if "engine" in row.keys() else "internal") or "internal",
+            "engine_session_id": (
+                row["engine_session_id"] if "engine_session_id" in row.keys() else None
+            ),
+            "engine_native_id": (
+                row["engine_native_id"] if "engine_native_id" in row.keys() else None
+            ),
             "runtime": _load_json(row["runtime"], {}),
             "metrics": _load_json(row["metrics"], {}) if "metrics" in row.keys() else {},
             "created_at": row["created_at"],
@@ -920,6 +1095,24 @@ class AgentStore:
                 row["sandbox_profile"] if "sandbox_profile" in row.keys() else None
             )
             or "agent",
+            "engine": row["engine"] if "engine" in row.keys() else "inherit",
+            "enabled": bool(row["enabled"]) if "enabled" in row.keys() else True,
+            "source": row["source"] if "source" in row.keys() else "device",
+            "sync_state": (
+                row["sync_state"] if "sync_state" in row.keys() else "db"
+            ),
+            "file_path": row["file_path"] if "file_path" in row.keys() else None,
+            "file_revision": (
+                row["file_revision"] if "file_revision" in row.keys() else None
+            ),
+            "file": (
+                json.loads(row["file_json"])
+                if "file_json" in row.keys() and row["file_json"]
+                else None
+            ),
+            "migrated_at": (
+                row["migrated_at"] if "migrated_at" in row.keys() else None
+            ),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -1333,6 +1526,186 @@ class AgentStore:
             )
             self._db.commit()
         return cursor.rowcount > 0
+
+    # File-backed agent projection --------------------------------------
+
+    def upsert_agent_file(
+        self,
+        *,
+        agent_id: str,
+        name: str,
+        description: str,
+        instructions: str,
+        model: str | None,
+        tools: list[str],
+        limits: dict[str, Any],
+        approval_mode: str,
+        sandbox_profile: str,
+        engine: str,
+        enabled: bool,
+        file_path: str,
+        file_revision: str,
+        file_json: str,
+        source: str,
+        sync_state: str = "synced",
+        migrated_at: float | None = None,
+    ) -> None:
+        """Insert/update the DB projection of an on-disk ``*.agent.md``."""
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO custom_agents
+                    (id, name, description, instructions, provider_id, model,
+                     tools, limits, approval_mode, sandbox_profile,
+                     file_path, file_revision, engine, enabled, source,
+                     sync_state, file_json, migrated_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    description = excluded.description,
+                    instructions = excluded.instructions,
+                    model = excluded.model,
+                    tools = excluded.tools,
+                    limits = excluded.limits,
+                    approval_mode = excluded.approval_mode,
+                    sandbox_profile = excluded.sandbox_profile,
+                    file_path = excluded.file_path,
+                    file_revision = excluded.file_revision,
+                    engine = excluded.engine,
+                    enabled = excluded.enabled,
+                    source = excluded.source,
+                    sync_state = excluded.sync_state,
+                    file_json = excluded.file_json,
+                    migrated_at = COALESCE(excluded.migrated_at, custom_agents.migrated_at),
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    agent_id, name, description, instructions, model,
+                    json.dumps(list(tools)), json.dumps(dict(limits)),
+                    approval_mode, sandbox_profile,
+                    file_path, file_revision, engine, int(enabled), source,
+                    sync_state, file_json, migrated_at, now, now,
+                ),
+            )
+            self._db.commit()
+
+    def custom_agent_by_file(self, file_path: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM custom_agents WHERE file_path = ?", (file_path,)
+            ).fetchone()
+        return self._custom_agent(row) if row else None
+
+    def custom_agents_needing_files(self) -> list[dict[str, Any]]:
+        """Device-era rows that predate file authority (no file_path yet)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM custom_agents WHERE file_path IS NULL"
+            ).fetchall()
+        return [self._custom_agent(row) for row in rows]
+
+    def mark_agent_sync(self, agent_id: str, sync_state: str) -> None:
+        with self._lock:
+            self._db.execute(
+                "UPDATE custom_agents SET sync_state = ?, updated_at = ? WHERE id = ?",
+                (sync_state, time(), agent_id),
+            )
+            self._db.commit()
+
+    # Extension state ----------------------------------------------------
+
+    def extension_state(self, qid: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM extension_states WHERE qid = ?", (qid,)
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "qid": row["qid"],
+            "enabled": bool(row["enabled"]),
+            "trusted": bool(row["trusted"]),
+            "note": row["note"],
+            "updated_at": row["updated_at"],
+        }
+
+    def set_extension_state(
+        self,
+        qid: str,
+        *,
+        enabled: bool | None = None,
+        trusted: bool | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        now = time()
+        current = self.extension_state(qid) or {
+            "enabled": False,
+            "trusted": False,
+            "note": "",
+        }
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO extension_states (qid, enabled, trusted, note, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(qid) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    trusted = excluded.trusted,
+                    note = excluded.note,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    qid,
+                    int(current["enabled"] if enabled is None else enabled),
+                    int(current["trusted"] if trusted is None else trusted),
+                    current["note"] if note is None else note,
+                    now,
+                ),
+            )
+            self._db.commit()
+        return self.extension_state(qid)  # type: ignore[return-value]
+
+    def all_extension_states(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM extension_states").fetchall()
+        return {
+            row["qid"]: {
+                "qid": row["qid"],
+                "enabled": bool(row["enabled"]),
+                "trusted": bool(row["trusted"]),
+                "note": row["note"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        }
+
+    # Small settings KV (rollback flags etc.) ------------------------------
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT value FROM settings_kv WHERE key = ?", (key,)
+            ).fetchone()
+        if not row:
+            return default
+        try:
+            return json.loads(row["value"])
+        except json.JSONDecodeError:
+            return default
+
+    def set_setting(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO settings_kv (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, json.dumps(value), time()),
+            )
+            self._db.commit()
 
     # Policy rules ------------------------------------------------------
 

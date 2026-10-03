@@ -37,10 +37,23 @@ from termx.desktop.capture import virtual_display_reason
 from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
+from termx.agents.files import AgentFile, AgentFileError, parse_agent_file
+from termx.agents.registry import AgentRegistry, RevisionConflict
 from termx.desktop.webrtc import RtcError, RtcManager
+from termx.engines.claude import ClaudeEngine
+from termx.engines.codex import CodexEngine
+from termx.engines.devin import DevinEngine
+from termx.engines.env import env_diff_report, resolve_executable
+from termx.engines.gateway import EngineGateway
+from termx.engines.grok import GrokEngine
 from termx.forwards import ForwardManager
 from termx.lifecycle import shutdown_state
 from termx.machine import machine_snapshot
+from termx.mcp.client import McpPool, McpConnectionError
+from termx.mcp.defs import ConnectionDef, ConnectionError_, validate_connection
+from termx.mcp.gateway import GatewayAuthError, McpGateway
+from termx.mcp.oauth import LoopbackCallback
+from termx.mcp.registry import ConnectionRegistry
 from termx.net import connect_url, http_urls, qr_svg
 from termx.project_files import ProjectFiles
 from termx import git_ops, lsp
@@ -94,8 +107,66 @@ class AppState:
             adapter_factory=adapter_factory,
             project_files=self.projects,
         )
+        self.engines = EngineGateway(self.agent_store, self.agent.emit_external)
+        for adapter in (
+            CodexEngine,
+            DevinEngine,
+            GrokEngine,
+            ClaudeEngine,
+        ):
+            self.engines.register(
+                adapter(
+                    event_sink=self.engines.on_engine_event,
+                    approval_sink=self.engines.approval_sink,
+                )
+            )
+        # ~/.agents root (overridable for tests/packaging) and the
+        # file-authoritative custom-agent registry.
+        self.agents_root = os.path.abspath(
+            os.path.expanduser(os.environ.get("TERMX_AGENTS_DIR", "~/.agents"))
+        )
+        self.agent_registry = AgentRegistry(
+            self.agent_store,
+            agents_dir=os.path.join(self.agents_root, "agents"),
+        )
+        # MCP: connection defs + pooled clients + session-scoped gateway.
+        self.mcp_loopback = LoopbackCallback()
+        self.mcp_pool = McpPool(self.credentials)
+        self.mcp_gateway = McpGateway(self.mcp_pool)
+        self.mcp_auth_urls: dict[str, str] = {}
+        # Engine sessions resolve agent mcp_connections through the registry;
+        # secret env values come from the credential store at spawn time.
+        self.engines.mcp_resolver = lambda conn_id: self.mcp_registry().get(conn_id)
+        self.engines.credential_lookup = self.credentials.get
         self.port = port
         self.request_shutdown = None
+
+    def mcp_registry(self) -> ConnectionRegistry:
+        dirs = [os.path.join(self.agents_root, "mcp")]
+        for p in self.projects.projects():
+            if p.get("path"):
+                dirs.append(os.path.join(p["path"], ".agents", "mcp"))
+        return ConnectionRegistry(dirs)
+
+    def extension_scan(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Fresh bounded scan of all roots with enable/trust overlay applied."""
+        from termx.discovery.index import DiscoveryIndex
+        from termx.discovery.roots import default_roots
+
+        projects = {
+            p["id"]: p["path"] for p in self.projects.projects() if p.get("path")
+        }
+        roots = default_roots(projects, user_agents_dir=self.agents_root)
+        entries, report = DiscoveryIndex(roots).scan()
+        states = self.agent_store.all_extension_states()
+        out: dict[str, Any] = {}
+        for qid, entry in entries.items():
+            st = states.get(qid, {})
+            entry.enabled = bool(st.get("enabled", False))
+            if st.get("trusted"):
+                entry.trusted = True
+            out[qid] = entry.as_dict()
+        return out, report.as_dict()
 
 
 class CreateSessionBody(BaseModel):
@@ -231,6 +302,7 @@ class AgentImageBody(BaseModel):
 class AgentTaskBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     cwd: str = Field(min_length=1, max_length=4000)
+    engine: str = Field(default="internal", pattern=r"^(internal|codex|devin|grok|claude)$")
     provider_id: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=200)
     attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
@@ -318,10 +390,21 @@ class CustomAgentBody(BaseModel):
     instructions: str = Field(default="", max_length=20_000)
     provider_id: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=200)
-    tools: list[str] = Field(default_factory=list, max_length=64)
+    tools: list[str] | None = Field(default=None, max_length=64)
     limits: dict[str, Any] = Field(default_factory=dict)
     approval_mode: str = Field(default="standard", pattern=r"^(standard|remember|autonomous)$")
     sandbox_profile: str = Field(default="agent", pattern=r"^(host|workspace|agent)$")
+    # v2 file-backed fields (tech-specs §4)
+    engine: str = Field(default="inherit", pattern=r"^(internal|codex|devin|grok|claude|inherit)$")
+    enabled: bool = True
+    auto_use: bool = True
+    toolsets: list[str] = Field(default_factory=list, max_length=64)
+    deny_tools: list[str] = Field(default_factory=list, max_length=64)
+    skills: dict[str, Any] | None = None
+    workflows: list[str] = Field(default_factory=list, max_length=64)
+    mcp_connections: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    delegation: dict[str, Any] | None = None
+    slug: str | None = Field(default=None, max_length=80)
 
 
 class CustomAgentPatchBody(BaseModel):
@@ -334,15 +417,32 @@ class CustomAgentPatchBody(BaseModel):
     limits: dict[str, Any] | None = None
     approval_mode: str | None = Field(default=None, pattern=r"^(standard|remember|autonomous)$")
     sandbox_profile: str | None = Field(default=None, pattern=r"^(host|workspace|agent)$")
+    engine: str | None = Field(default=None, pattern=r"^(internal|codex|devin|grok|claude|inherit)$")
+    enabled: bool | None = None
+    auto_use: bool | None = None
+    toolsets: list[str] | None = Field(default=None, max_length=64)
+    deny_tools: list[str] | None = Field(default=None, max_length=64)
+    skills: dict[str, Any] | None = None
+    workflows: list[str] | None = Field(default=None, max_length=64)
+    mcp_connections: list[dict[str, Any]] | None = Field(default=None, max_length=32)
+    delegation: dict[str, Any] | None = None
+    revision: str | None = Field(default=None, max_length=80)
+
+
+class CustomAgentImportBody(BaseModel):
+    markdown: str = Field(min_length=1, max_length=200_000)
+    source: str = Field(default="import", max_length=40)
 
 
 class AgentApprovalBody(BaseModel):
-    decision: str = Field(pattern=r"^(approved|denied)$")
+    decision: str = Field(pattern=r"^(approved|denied|cancel)$")
     # v2: "once" or omitted = just this call; task/project/custom_agent
     # persist a remembered policy rule for equivalent actions.
     remember: str | None = Field(
-        default=None, pattern=r"^(once|task|project|custom_agent)$"
+        default=None, pattern=r"^(once|task|project|custom_agent|session|always)$"
     )
+    # Engine elicitation responses may carry structured content.
+    content: Any = None
 
 
 class PolicyRuleBody(BaseModel):
@@ -464,10 +564,20 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         state.forwards.start_auto()
+        state.engines.recover()
+        # File authority for custom agents: one-time DB->file export for
+        # device-era rows, then files->DB projection sync. Bounded + safe.
+        try:
+            await asyncio.to_thread(state.agent_registry.sync)
+        except Exception:  # noqa: BLE001 - never block startup on sync
+            log_event("agent_registry_sync_error")
         for task_id in state.agent.pending_recoveries():
             asyncio.create_task(state.agent.recover_task(task_id))
         yield
         state.forwards.stop_all()
+        await state.mcp_pool.shutdown()
+        await state.mcp_loopback.stop()
+        await state.engines.shutdown()
         await shutdown_state(state)
 
     app = FastAPI(title="termx", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -828,6 +938,88 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         except (ValueError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Native engine integrations (engine-extensions P1) -------------------
+
+    @app.get("/api/engines")
+    async def list_engines(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        engines: list[dict[str, object]] = [
+            {
+                "id": "internal",
+                "label": "TermX internal",
+                "installed": True,
+                "transport": "in-process",
+                "auth_state": "not_required",
+                "capabilities": {
+                    "tools_filter": "native",
+                    "approvals": "native",
+                    "streaming": True,
+                    "resume": "supported",
+                    "steer": "supported",
+                    "subagents": "supported",
+                },
+            }
+        ]
+        # Probe each adapter so install/auth state reflects now, not startup —
+        # bounded and concurrent since probes are subprocess calls.
+        probed = await asyncio.gather(
+            *(state.engines.probe(name) for name in state.engines.engines()),
+            return_exceptions=True,
+        )
+        for item in probed:
+            if isinstance(item, BaseException):
+                continue
+            engines.append(item)
+        return {"engines": engines}
+
+    @app.post("/api/engines/{engine_id}/probe")
+    async def probe_engine(
+        engine_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        try:
+            return await state.engines.probe(engine_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/engines/{engine_id}/models")
+    async def engine_models(
+        engine_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        try:
+            return {"models": await state.engines.models(engine_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/engines/diagnostics")
+    def engine_diagnostics(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "host-admin")
+        report = env_diff_report(dict(os.environ))
+        report["resolutions"] = {
+            name: resolve_executable(name)
+            for name in ("codex", "devin", "grok", "claude")
+        }
+        return report
+
     @app.get("/api/agent/tasks")
     def list_agent_tasks(
         limit: int = Query(default=100, ge=1, le=500),
@@ -867,6 +1059,38 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         )
         if custom_agent_id and custom_agent is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
+        if body.engine != "internal":
+            try:
+                task = await state.engines.create_task(
+                    prompt=body.prompt,
+                    cwd=body.cwd,
+                    engine=body.engine,
+                    model=body.model,
+                    custom_agent=custom_agent,
+                    conversation_id=body.conversation_id or None,
+                    limits=body.limits,
+                    sandbox_profile=str(
+                        (custom_agent or {}).get("sandbox_profile") or "agent"),
+                    approval_mode=str(
+                        (custom_agent or {}).get("approval_mode") or "standard"),
+                )
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if body.conversation_id:
+                state.agent_store.add_conversation_turn(
+                    body.conversation_id,
+                    prompt=body.turn_prompt or body.prompt,
+                    task_id=task["id"],
+                    mode=body.mode,
+                    provider_id=None,
+                    model=body.model,
+                    context_refs=body.context_refs,
+                    attachment_refs=[{"ref": item.name} for item in body.attachments],
+                )
+            log_event("agent_task_create", task_id=task["id"], engine=body.engine)
+            return task
         provider_id = body.provider_id or (
             str(conversation.get("provider_id"))
             if conversation and conversation.get("provider_id")
@@ -961,6 +1185,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
+            resolved = await state.engines.resolve_approval(
+                task_id, approval_id, body.decision,
+                remember=body.remember, content=body.content,
+            )
+            if resolved is not None:
+                return resolved
             return await state.agent.resolve_approval(
                 task_id, approval_id, body.decision, remember=body.remember
             )
@@ -970,7 +1200,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/agent/tasks/{task_id}/steer")
-    def steer_agent_task(
+    async def steer_agent_task(
         task_id: str,
         body: AgentSteerBody,
         x_termx_passcode: str | None = Header(default=None),
@@ -980,6 +1210,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
+            steered = await state.engines.steer(task_id, body.message)
+            if steered is not None:
+                return steered
             return state.agent.steer(task_id, body.message)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="task not found") from exc
@@ -996,6 +1229,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
+            cancelled = await state.engines.cancel(task_id)
+            if cancelled is not None:
+                return cancelled
             return state.agent.cancel(task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="task not found") from exc
@@ -1531,6 +1767,41 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         _require_scope(state, secret, "agent-view")
         return {"agents": state.agent_store.list_custom_agents()}
 
+    def _agent_file_from_body(body: CustomAgentBody) -> AgentFile:
+        skills = body.skills or {}
+        return AgentFile(
+            slug=body.slug or "",
+            name=body.name,
+            description=body.description,
+            instructions=body.instructions,
+            engine=body.engine,
+            model=body.model,
+            enabled=body.enabled,
+            auto_use=body.auto_use,
+            tools_mode="explicit" if body.tools is not None else "all",
+            tools=list(body.tools or []),
+            tools_omitted=body.tools is None,
+            toolsets=list(body.toolsets),
+            deny_tools=list(body.deny_tools),
+            skills_mode=str(skills.get("mode", "auto")),
+            skills_include=list(skills.get("include") or []),
+            skills_exclude=list(skills.get("exclude") or []),
+            workflows=list(body.workflows),
+            mcp_connections=[dict(c) for c in body.mcp_connections],
+            delegation=dict(body.delegation or {}),
+            approval_mode=body.approval_mode,
+            sandbox_profile=body.sandbox_profile,
+            limits=dict(body.limits),
+        )
+
+    def _slug_for_agent(state: AppState, agent_id: str) -> str | None:
+        if agent_id.startswith("agent."):
+            return agent_id.removeprefix("agent.")
+        row = state.agent_store.get_custom_agent(agent_id)
+        if row and row.get("file_path"):
+            return Path(row["file_path"]).name.removesuffix(".agent.md")
+        return None
+
     @app.post("/api/custom-agents")
     def create_custom_agent(
         body: CustomAgentBody,
@@ -1541,9 +1812,31 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
-            agent = state.agent_store.create_custom_agent(**body.model_dump())
-        except ValueError as exc:
+            agent = state.agent_registry.save(_agent_file_from_body(body))
+        except (ValueError, AgentFileError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        row = state.agent_store.get_custom_agent(agent.qid_id)
+        return {"agent": row or agent.as_dict()}
+
+    @app.get("/api/custom-agents/{agent_id}")
+    def get_custom_agent(
+        agent_id: str,
+        source: str | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        if source == "file":
+            slug = _slug_for_agent(state, agent_id)
+            raw = state.agent_registry.read_raw(slug) if slug else None
+            if raw is None:
+                raise HTTPException(status_code=404, detail="agent file not found")
+            return {"id": agent_id, "slug": slug, "markdown": raw}
+        agent = state.agent_store.get_custom_agent(agent_id)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
         return {"agent": agent}
 
     @app.patch("/api/custom-agents/{agent_id}")
@@ -1556,14 +1849,62 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
-        updates = {key: value for key, value in body.model_dump().items() if value is not None}
-        try:
-            agent = state.agent_store.update_custom_agent(agent_id, **updates)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if agent is None:
+        slug = _slug_for_agent(state, agent_id)
+        if slug is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
-        return {"agent": agent}
+        af = state.agent_registry.load(slug)
+        if af is None:
+            raise HTTPException(status_code=404, detail="agent file not found")
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        if "name" in updates:
+            af.name = updates["name"]
+        if "description" in updates:
+            af.description = updates["description"]
+        if "instructions" in updates:
+            af.instructions = updates["instructions"]
+        if "model" in updates:
+            af.model = updates["model"]
+        if "tools" in updates:
+            af.tools = list(updates["tools"])
+            af.tools_omitted = False
+            af.tools_mode = "explicit"
+        if "limits" in updates:
+            af.limits = dict(updates["limits"])
+        if "approval_mode" in updates:
+            af.approval_mode = updates["approval_mode"]
+        if "sandbox_profile" in updates:
+            af.sandbox_profile = updates["sandbox_profile"]
+        if "engine" in updates:
+            af.engine = updates["engine"]
+        if "enabled" in updates:
+            af.enabled = updates["enabled"]
+        if "auto_use" in updates:
+            af.auto_use = updates["auto_use"]
+        if "toolsets" in updates:
+            af.toolsets = list(updates["toolsets"])
+        if "deny_tools" in updates:
+            af.deny_tools = list(updates["deny_tools"])
+        if "skills" in updates:
+            skills = updates["skills"]
+            af.skills_mode = str(skills.get("mode", af.skills_mode))
+            af.skills_include = list(skills.get("include", af.skills_include))
+            af.skills_exclude = list(skills.get("exclude", af.skills_exclude))
+        if "workflows" in updates:
+            af.workflows = list(updates["workflows"])
+        if "mcp_connections" in updates:
+            af.mcp_connections = [dict(c) for c in updates["mcp_connections"]]
+        if "delegation" in updates:
+            af.delegation = dict(updates["delegation"])
+        try:
+            saved = state.agent_registry.save(
+                af, expected_revision=body.revision or af.revision,
+            )
+        except RevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (ValueError, AgentFileError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        row = state.agent_store.get_custom_agent(saved.qid_id)
+        return {"agent": row or saved.as_dict()}
 
     @app.delete("/api/custom-agents/{agent_id}")
     def delete_custom_agent(
@@ -1574,9 +1915,334 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> dict[str, object]:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
+        slug = _slug_for_agent(state, agent_id)
+        if slug is not None and state.agent_registry.delete(slug):
+            return {"deleted": agent_id}
         if not state.agent_store.delete_custom_agent(agent_id):
             raise HTTPException(status_code=404, detail="custom agent not found")
         return {"deleted": agent_id}
+
+    @app.post("/api/custom-agents/{agent_id}/duplicate")
+    def duplicate_custom_agent(
+        agent_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        slug = _slug_for_agent(state, agent_id)
+        dup = state.agent_registry.duplicate(slug) if slug else None
+        if dup is None:
+            raise HTTPException(status_code=404, detail="custom agent not found")
+        row = state.agent_store.get_custom_agent(dup.qid_id)
+        return {"agent": row or dup.as_dict()}
+
+    @app.post("/api/custom-agents/import")
+    def import_custom_agent(
+        body: CustomAgentImportBody,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            agent = state.agent_registry.import_markdown(
+                body.markdown, source=body.source or "import"
+            )
+        except (ValueError, AgentFileError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        row = state.agent_store.get_custom_agent(agent.qid_id)
+        return {"agent": row or agent.as_dict()}
+
+    @app.get("/api/custom-agents/{agent_id}/export")
+    def export_custom_agent(
+        agent_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        slug = _slug_for_agent(state, agent_id)
+        raw = state.agent_registry.read_raw(slug) if slug else None
+        if raw is None:
+            raise HTTPException(status_code=404, detail="agent file not found")
+        return {"id": agent_id, "slug": slug, "markdown": raw}
+
+    # Extension catalog -------------------------------------------------
+
+    @app.get("/api/extensions")
+    def list_extensions(
+        kind: str | None = Query(default=None),
+        source: str | None = Query(default=None),
+        enabled: bool | None = Query(default=None),
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        entries, report = state.extension_scan()
+        items = list(entries.values())
+        if kind:
+            items = [e for e in items if e["kind"] == kind]
+        if source:
+            items = [e for e in items if e["source"] == source]
+        if enabled is not None:
+            items = [e for e in items if e["enabled"] is enabled]
+        return {"extensions": items, "report": report}
+
+    @app.post("/api/extensions/rescan")
+    def rescan_extensions(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        state.agent_registry.sync()
+        entries, report = state.extension_scan()
+        return {"extensions": list(entries.values()), "report": report}
+
+    @app.get("/api/extensions/{qid:path}")
+    def get_extension(
+        qid: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        entries, _ = state.extension_scan()
+        entry = entries.get(qid)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="extension not found")
+        from termx.discovery.safety import safe_read_text
+        try:
+            entry["body"] = safe_read_text(entry["path"])
+        except Exception as exc:  # noqa: BLE001
+            entry["body_error"] = str(exc)
+        return {"extension": entry}
+
+    @app.post("/api/extensions/{qid:path}/state")
+    def set_extension_state(
+        qid: str,
+        body: dict[str, Any],
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        entries, _ = state.extension_scan()
+        if qid not in entries:
+            raise HTTPException(status_code=404, detail="extension not found")
+        st = state.agent_store.set_extension_state(
+            qid,
+            enabled=body.get("enabled"),
+            trusted=body.get("trusted"),
+            note=body.get("note"),
+        )
+        return {"state": st}
+
+    # MCP connections ---------------------------------------------------
+
+    def _conn_or_404(state: AppState, conn_id: str) -> ConnectionDef:
+        conn = state.mcp_registry().get(conn_id)
+        if conn is None:
+            raise HTTPException(status_code=404, detail="connection not found")
+        return conn
+
+    @app.get("/api/mcp/connections")
+    def list_mcp_connections(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        status = state.mcp_pool.status()
+        out = []
+        for conn in state.mcp_registry().list():
+            d = conn.as_dict()
+            d["runtime"] = status.get(conn.id, {"connected": False})
+            if conn.id in state.mcp_auth_urls:
+                d["auth_url_pending"] = state.mcp_auth_urls[conn.id]
+            out.append(d)
+        return {"connections": out}
+
+    @app.post("/api/mcp/connections")
+    def create_mcp_connection(
+        body: dict[str, Any],
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        try:
+            conn = validate_connection(body)
+        except ConnectionError_ as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if conn.transport in {"http", "sse"}:
+            from termx.mcp.ssrf import SSRFError, validate_url
+            try:
+                validate_url(conn.url, lan=conn.lan)
+            except SSRFError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        path = state.mcp_registry().save(conn)
+        return {"connection": conn.as_dict(), "path": path}
+
+    @app.post("/api/mcp/connections/{conn_id}/trust")
+    def trust_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        """Explicit user consent: flip a def's ``trust`` to trusted on disk."""
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        conn.trust = "trusted"
+        state.mcp_registry().save(conn)
+        return {"connection": conn.as_dict()}
+
+    @app.post("/api/mcp/connections/{conn_id}/connect")
+    async def connect_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        if not conn.enabled:
+            raise HTTPException(status_code=400, detail="connection is disabled")
+        if not conn.trusted:
+            raise HTTPException(
+                status_code=403,
+                detail="connection is untrusted — POST .../trust first",
+            )
+        auth_url_ready = asyncio.Event()
+
+        async def on_auth_url(url: str) -> None:
+            state.mcp_auth_urls[conn.id] = url
+            auth_url_ready.set()
+
+        task = asyncio.create_task(
+            state.mcp_pool.connect(
+                conn, on_auth_url=on_auth_url, loopback=state.mcp_loopback
+            )
+        )
+        done, _ = await asyncio.wait(
+            {task, asyncio.create_task(auth_url_ready.wait())},
+            timeout=30.0,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if auth_url_ready.is_set():
+            return {
+                "connection": conn.id,
+                "status": "auth_required",
+                "auth_url": state.mcp_auth_urls[conn.id],
+                "note": "open this URL on the host to complete sign-in",
+            }
+        try:
+            catalog = task.result()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        state.mcp_auth_urls.pop(conn.id, None)
+        return {"connection": conn.id, "status": "connected",
+                "catalog": catalog, "fingerprint": state.mcp_pool._connections[conn.id].fingerprint}
+
+    @app.post("/api/mcp/connections/{conn_id}/disconnect")
+    async def disconnect_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        await state.mcp_pool.disconnect(
+            conn_id if conn_id.startswith("connection.") else f"connection.{conn_id}"
+        )
+        return {"disconnected": conn_id}
+
+    @app.post("/api/mcp/connections/{conn_id}/call/{tool}")
+    async def call_mcp_tool(
+        conn_id: str,
+        tool: str,
+        body: dict[str, Any],
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        fq = conn.id
+        catalog = state.mcp_pool.catalog(fq) or {}
+        approved = conn.approved_tools
+        tool_names = {t["name"] for t in catalog.get("tools", [])}
+        if tool not in tool_names:
+            raise HTTPException(status_code=404, detail="tool not in catalog")
+        if "*" not in approved and tool not in approved:
+            raise HTTPException(status_code=403, detail="tool not in approved_tools")
+        try:
+            result = await state.mcp_pool.call_tool(fq, tool, body.get("arguments") or {})
+        except McpConnectionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"result": result}
+
+    @app.delete("/api/mcp/connections/{conn_id}")
+    def delete_mcp_connection(
+        conn_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-control")
+        conn = _conn_or_404(state, conn_id)
+        if not conn.path:
+            raise HTTPException(status_code=409, detail="connection has no file to delete")
+        os.unlink(conn.path)
+        return {"deleted": conn.id}
+
+    # Session-scoped MCP gateway (capability-token auth, loopback only) --
+
+    def _require_loopback(request: Request) -> None:
+        host = (request.client.host if request.client else "") or ""
+        if host not in {"127.0.0.1", "::1", "localhost"}:
+            raise HTTPException(status_code=403, detail="gateway is loopback-only")
+
+    @app.get("/api/mcp-gw/{token}/catalog")
+    async def gw_catalog(token: str, request: Request) -> dict[str, object]:
+        _require_loopback(request)
+        try:
+            return {"connections": await state.mcp_gateway.catalog(token)}
+        except GatewayAuthError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    @app.post("/api/mcp-gw/{token}/call")
+    async def gw_call(token: str, request: Request, body: dict[str, Any]) -> dict[str, object]:
+        _require_loopback(request)
+        try:
+            result = await state.mcp_gateway.call_tool(
+                token,
+                str(body.get("connection") or ""),
+                str(body.get("tool") or ""),
+                dict(body.get("arguments") or {}),
+            )
+        except GatewayAuthError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except McpConnectionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"result": result}
 
     @app.get("/api/agent/policies")
     def list_agent_policies(
