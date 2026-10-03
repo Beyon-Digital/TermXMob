@@ -38,6 +38,9 @@ from termx.desktop.permissions import permission_snapshot, request_permissions
 from termx.desktop.session import DesktopManager
 from termx.desktop.virtual import VirtualDisplayError, create_virtual_display, destroy_virtual_display
 from termx.desktop.webrtc import RtcError, RtcManager
+from termx.engines.codex import CodexEngine
+from termx.engines.env import env_diff_report, resolve_executable
+from termx.engines.gateway import EngineGateway
 from termx.forwards import ForwardManager
 from termx.lifecycle import shutdown_state
 from termx.machine import machine_snapshot
@@ -93,6 +96,13 @@ class AppState:
             self.desktop,
             adapter_factory=adapter_factory,
             project_files=self.projects,
+        )
+        self.engines = EngineGateway(self.agent_store, self.agent.emit_external)
+        self.engines.register(
+            CodexEngine(
+                event_sink=self.engines.on_engine_event,
+                approval_sink=self.engines.approval_sink,
+            )
         )
         self.port = port
         self.request_shutdown = None
@@ -231,6 +241,7 @@ class AgentImageBody(BaseModel):
 class AgentTaskBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     cwd: str = Field(min_length=1, max_length=4000)
+    engine: str = Field(default="internal", pattern=r"^(internal|codex|devin|grok|claude)$")
     provider_id: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=200)
     attachments: list[AgentImageBody] = Field(default_factory=list, max_length=4)
@@ -337,12 +348,14 @@ class CustomAgentPatchBody(BaseModel):
 
 
 class AgentApprovalBody(BaseModel):
-    decision: str = Field(pattern=r"^(approved|denied)$")
+    decision: str = Field(pattern=r"^(approved|denied|cancel)$")
     # v2: "once" or omitted = just this call; task/project/custom_agent
     # persist a remembered policy rule for equivalent actions.
     remember: str | None = Field(
-        default=None, pattern=r"^(once|task|project|custom_agent)$"
+        default=None, pattern=r"^(once|task|project|custom_agent|session|always)$"
     )
+    # Engine elicitation responses may carry structured content.
+    content: Any = None
 
 
 class PolicyRuleBody(BaseModel):
@@ -464,10 +477,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         state.forwards.start_auto()
+        state.engines.recover()
         for task_id in state.agent.pending_recoveries():
             asyncio.create_task(state.agent.recover_task(task_id))
         yield
         state.forwards.stop_all()
+        await state.engines.shutdown()
         await shutdown_state(state)
 
     app = FastAPI(title="termx", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -828,6 +843,83 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         except (ValueError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Native engine integrations (engine-extensions P1) -------------------
+
+    @app.get("/api/engines")
+    def list_engines(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        engines: list[dict[str, object]] = [
+            {
+                "id": "internal",
+                "label": "TermX internal",
+                "installed": True,
+                "transport": "in-process",
+                "auth_state": "not_required",
+                "capabilities": {
+                    "tools_filter": "native",
+                    "approvals": "native",
+                    "streaming": True,
+                    "resume": "supported",
+                    "steer": "supported",
+                    "subagents": "supported",
+                },
+            }
+        ]
+        for name in state.engines.engines():
+            adapter = state.engines.adapter(name)
+            desc = adapter.descriptor().as_dict()
+            desc["capabilities"] = adapter.capabilities().as_dict()
+            engines.append(desc)
+        return {"engines": engines}
+
+    @app.post("/api/engines/{engine_id}/probe")
+    async def probe_engine(
+        engine_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        try:
+            return await state.engines.probe(engine_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/engines/{engine_id}/models")
+    async def engine_models(
+        engine_id: str,
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "agent-view")
+        try:
+            return {"models": await state.engines.models(engine_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/engines/diagnostics")
+    def engine_diagnostics(
+        x_termx_passcode: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        k: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        secret = provided(x_termx_passcode, authorization, k)
+        _require_scope(state, secret, "host-admin")
+        report = env_diff_report(dict(os.environ))
+        report["resolutions"] = {
+            name: resolve_executable(name)
+            for name in ("codex", "devin", "grok", "claude")
+        }
+        return report
+
     @app.get("/api/agent/tasks")
     def list_agent_tasks(
         limit: int = Query(default=100, ge=1, le=500),
@@ -867,6 +959,38 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         )
         if custom_agent_id and custom_agent is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
+        if body.engine != "internal":
+            try:
+                task = await state.engines.create_task(
+                    prompt=body.prompt,
+                    cwd=body.cwd,
+                    engine=body.engine,
+                    model=body.model,
+                    custom_agent=custom_agent,
+                    conversation_id=body.conversation_id or None,
+                    limits=body.limits,
+                    sandbox_profile=str(
+                        (custom_agent or {}).get("sandbox_profile") or "agent"),
+                    approval_mode=str(
+                        (custom_agent or {}).get("approval_mode") or "standard"),
+                )
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if body.conversation_id:
+                state.agent_store.add_conversation_turn(
+                    body.conversation_id,
+                    prompt=body.turn_prompt or body.prompt,
+                    task_id=task["id"],
+                    mode=body.mode,
+                    provider_id=None,
+                    model=body.model,
+                    context_refs=body.context_refs,
+                    attachment_refs=[{"ref": item.name} for item in body.attachments],
+                )
+            log_event("agent_task_create", task_id=task["id"], engine=body.engine)
+            return task
         provider_id = body.provider_id or (
             str(conversation.get("provider_id"))
             if conversation and conversation.get("provider_id")
@@ -961,6 +1085,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
+            resolved = await state.engines.resolve_approval(
+                task_id, approval_id, body.decision,
+                remember=body.remember, content=body.content,
+            )
+            if resolved is not None:
+                return resolved
             return await state.agent.resolve_approval(
                 task_id, approval_id, body.decision, remember=body.remember
             )
@@ -970,7 +1100,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/agent/tasks/{task_id}/steer")
-    def steer_agent_task(
+    async def steer_agent_task(
         task_id: str,
         body: AgentSteerBody,
         x_termx_passcode: str | None = Header(default=None),
@@ -980,6 +1110,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
+            steered = await state.engines.steer(task_id, body.message)
+            if steered is not None:
+                return steered
             return state.agent.steer(task_id, body.message)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="task not found") from exc
@@ -996,6 +1129,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-control")
         try:
+            cancelled = await state.engines.cancel(task_id)
+            if cancelled is not None:
+                return cancelled
             return state.agent.cancel(task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="task not found") from exc

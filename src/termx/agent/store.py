@@ -47,6 +47,9 @@ TASK_FIELDS = frozenset(
         "previous_response_id",
         "runtime",
         "metrics",
+        "engine",
+        "engine_session_id",
+        "engine_native_id",
         "updated_at",
     }
 )
@@ -251,6 +254,18 @@ class AgentStore:
                 started_at REAL NOT NULL,
                 finished_at REAL
             );
+            CREATE TABLE IF NOT EXISTS engine_sessions (
+                binding_id TEXT PRIMARY KEY,
+                task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+                engine TEXT NOT NULL,
+                native_session_id TEXT NOT NULL,
+                conversation_id TEXT,
+                cwd TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                payload TEXT NOT NULL DEFAULT '{}',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS policy_rules (
                 id TEXT PRIMARY KEY,
                 version INTEGER NOT NULL DEFAULT 1,
@@ -291,6 +306,10 @@ class AgentStore:
                 ON policy_rules(fingerprint, action_type);
             CREATE INDEX IF NOT EXISTS policy_rules_scope
                 ON policy_rules(scope_type, scope_id);
+            CREATE INDEX IF NOT EXISTS engine_sessions_task
+                ON engine_sessions(task_id);
+            CREATE INDEX IF NOT EXISTS engine_sessions_conversation
+                ON engine_sessions(conversation_id);
             """
         )
         # Additive migration for databases created before the Chat mode column.
@@ -303,6 +322,14 @@ class AgentStore:
             self._db.execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT")
         if "custom_agent_id" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN custom_agent_id TEXT")
+        if "engine" not in columns:
+            self._db.execute(
+                "ALTER TABLE tasks ADD COLUMN engine TEXT NOT NULL DEFAULT 'internal'"
+            )
+        if "engine_session_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN engine_session_id TEXT")
+        if "engine_native_id" not in columns:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN engine_native_id TEXT")
         ca_columns = {
             row["name"] for row in self._db.execute("PRAGMA table_info(custom_agents)")
         }
@@ -444,6 +471,8 @@ class AgentStore:
         mode: str = "agent",
         parent_id: str | None = None,
         custom_agent_id: str | None = None,
+        engine: str = "internal",
+        status: str = "planning",
     ) -> dict[str, Any]:
         now = time()
         task_id = uuid.uuid4().hex
@@ -451,10 +480,10 @@ class AgentStore:
             self._db.execute(
                 """
                 INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?, ?)
+                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, engine, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, prompt, cwd, provider_id, model, _json(limits), mode, parent_id, custom_agent_id, now, now),
+                (task_id, prompt, cwd, provider_id, model, status, _json(limits), mode, parent_id, custom_agent_id, engine, now, now),
             )
             self._db.commit()
         task = self.get_task(task_id)
@@ -556,6 +585,119 @@ class AgentStore:
             }
             for row in rows
         ]
+
+    # Engine sessions ---------------------------------------------------
+
+    def save_engine_session(
+        self,
+        binding_id: str,
+        *,
+        task_id: str | None,
+        engine: str,
+        native_session_id: str,
+        conversation_id: str | None = None,
+        cwd: str = "",
+        status: str = "active",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        now = time()
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO engine_sessions
+                    (binding_id, task_id, engine, native_session_id, conversation_id,
+                     cwd, status, payload, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(binding_id) DO UPDATE SET
+                    task_id=excluded.task_id,
+                    native_session_id=excluded.native_session_id,
+                    conversation_id=excluded.conversation_id,
+                    status=excluded.status,
+                    payload=excluded.payload,
+                    updated_at=excluded.updated_at
+                """,
+                (binding_id, task_id, engine, native_session_id, conversation_id,
+                 cwd, status, _json(payload or {}), now, now),
+            )
+            self._db.commit()
+        row = self.get_engine_session(binding_id)
+        assert row is not None
+        return row
+
+    def get_engine_session(self, binding_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM engine_sessions WHERE binding_id = ?", (binding_id,)
+            ).fetchone()
+        return self._engine_session(row) if row else None
+
+    def engine_session_for_task(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM engine_sessions WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        return self._engine_session(row) if row else None
+
+    def engine_session_for_conversation(self, conversation_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                """
+                SELECT * FROM engine_sessions
+                WHERE conversation_id = ? AND status IN ('active','idle')
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                (conversation_id,),
+            ).fetchone()
+        return self._engine_session(row) if row else None
+
+    def update_engine_session(
+        self, binding_id: str, *, task_id: str | None = None,
+        status: str | None = None, payload: dict[str, Any] | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        changes: dict[str, Any] = {"updated_at": time()}
+        if task_id is not None:
+            changes["task_id"] = task_id
+        if status is not None:
+            changes["status"] = status
+        if payload is not None:
+            changes["payload"] = _json(payload)
+        if conversation_id is not None:
+            changes["conversation_id"] = conversation_id
+        assignments = ", ".join(f"{k} = ?" for k in changes)
+        with self._lock:
+            self._db.execute(
+                f"UPDATE engine_sessions SET {assignments} WHERE binding_id = ?",
+                (*changes.values(), binding_id),
+            )
+            self._db.commit()
+        return self.get_engine_session(binding_id)
+
+    def list_engine_sessions(self, status: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM engine_sessions"
+        args: tuple[Any, ...] = ()
+        if status:
+            sql += " WHERE status = ?"
+            args = (status,)
+        with self._lock:
+            rows = self._db.execute(sql + " ORDER BY updated_at DESC", args).fetchall()
+        return [self._engine_session(row) for row in rows]
+
+    @staticmethod
+    def _engine_session(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "binding_id": row["binding_id"],
+            "task_id": row["task_id"],
+            "engine": row["engine"],
+            "native_session_id": row["native_session_id"],
+            "conversation_id": row["conversation_id"],
+            "cwd": row["cwd"],
+            "status": row["status"],
+            "payload": _load_json(row["payload"], {}),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
 
     # Checkpoints ---------------------------------------------------------
 
@@ -715,6 +857,13 @@ class AgentStore:
             "result": row["result"],
             "error": row["error"],
             "previous_response_id": row["previous_response_id"],
+            "engine": (row["engine"] if "engine" in row.keys() else "internal") or "internal",
+            "engine_session_id": (
+                row["engine_session_id"] if "engine_session_id" in row.keys() else None
+            ),
+            "engine_native_id": (
+                row["engine_native_id"] if "engine_native_id" in row.keys() else None
+            ),
             "runtime": _load_json(row["runtime"], {}),
             "metrics": _load_json(row["metrics"], {}) if "metrics" in row.keys() else {},
             "created_at": row["created_at"],
