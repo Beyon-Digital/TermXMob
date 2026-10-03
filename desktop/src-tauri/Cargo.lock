@@ -4439,7 +4439,7 @@ dependencies = [
 
 [[package]]
 name = "termx-desktop"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "cc",
  "core-foundation 0.10.1",
