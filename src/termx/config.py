@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -251,6 +252,92 @@ class DesktopPrefs:
 
 
 @dataclass
+class AgentPrefs:
+    limits: dict[str, int] = field(default_factory=lambda: _agent_limits())
+    provider_timeout_s: int = 300
+    engines: dict[str, dict[str, Any]] = field(default_factory=dict)
+    acp_runners: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+def _agent_limits(value: dict[str, Any] | None = None) -> dict[str, int]:
+    from termx.agent.limits import resolve_limits
+    return resolve_limits(value)
+
+
+def _agent_prefs(raw: dict[str, Any]) -> AgentPrefs:
+    if not isinstance(raw, dict):
+        raise ValueError("agent configuration must be an object")
+    if raw.keys() - {"limits", "provider_timeout_s", "engines", "acp_runners"}:
+        raise ValueError("unknown agent configuration field")
+    timeout = raw.get("provider_timeout_s", 300)
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
+        raise ValueError("provider_timeout_s must be an integer between 1 and 86400")
+    engines = raw.get("engines", {})
+    if not isinstance(engines, dict):
+        raise ValueError("agent.engines must be an object")
+    runners = raw.get("acp_runners", {})
+    if not isinstance(runners, dict):
+        raise ValueError("agent.acp_runners must be an object")
+    reserved = {"internal", "inherit", "codex", "claude", "devin", "grok", "antigravity"}
+    for name, cfg in runners.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name):
+            raise ValueError(f"invalid or reserved ACP runner ID: {name}")
+        if not isinstance(cfg, dict) or cfg.keys() - {"label", "executable", "args", "env_names", "cwd", "enabled", "transport", "startup_timeout_s", "cancel_timeout_s", "catalogue_timeout_s", "registry_id", "registry_version", "registry_env"}:
+            raise ValueError(f"invalid ACP runner configuration: {name}")
+        if not isinstance(cfg.get("executable"), str) or not cfg["executable"].strip():
+            raise ValueError(f"{name}.executable must be a non-empty string")
+        if "registry_id" in cfg and (not isinstance(cfg["registry_id"], str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", cfg["registry_id"])):
+            raise ValueError(f"{name}.registry_id must be a valid ACP registry ID")
+        if "registry_version" in cfg and (not isinstance(cfg["registry_version"], str) or not cfg["registry_version"].strip()):
+            raise ValueError(f"{name}.registry_version must be a non-empty string")
+        registry_env = cfg.get("registry_env", {})
+        if not isinstance(registry_env, dict) or any(
+            not isinstance(k, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k)
+            or not isinstance(v, str) or "\0" in v for k, v in registry_env.items()
+        ):
+            raise ValueError(f"{name}.registry_env must map environment names to strings")
+        if name in reserved and not cfg.get("registry_id"):
+            raise ValueError(f"invalid or reserved ACP runner ID: {name}")
+        for key in {"label", "cwd"} & cfg.keys():
+            if not isinstance(cfg[key], str) or not cfg[key].strip():
+                raise ValueError(f"{name}.{key} must be a non-empty string")
+        if cfg.get("transport", "stdio") != "stdio":
+            raise ValueError("ACP runners currently support the standard stdio transport")
+        if "enabled" in cfg and not isinstance(cfg["enabled"], bool):
+            raise ValueError(f"{name}.enabled must be a boolean")
+    for name, cfg, is_runner in [*( (n, c, True) for n, c in runners.items()),
+                                *( (n, c, False) for n, c in engines.items())]:
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name) or not isinstance(cfg, dict):
+            raise ValueError(f"invalid engine configuration: {name}")
+        common = {"executable", "model"}
+        acp_fields = {"args", "env_names", "mode", "config_options", "startup_timeout_s", "cancel_timeout_s", "catalogue_timeout_s"}
+        runner_fields = {"label", "cwd", "enabled", "transport", "registry_id", "registry_version", "registry_env"} if is_runner else set()
+        if cfg.keys() - (common | runner_fields | (acp_fields if name not in {"codex", "claude"} else set())):
+            raise ValueError(f"unknown configuration field for {name}")
+        for key in {"executable", "model", "mode"} & cfg.keys():
+            if not isinstance(cfg[key], str) or not cfg[key].strip() or "\0" in cfg[key]:
+                raise ValueError(f"{name}.{key} must be a non-empty string")
+        for key in {"args", "env_names"} & cfg.keys():
+            if not isinstance(cfg[key], list) or any(not isinstance(v, str) or "\0" in v for v in cfg[key]):
+                raise ValueError(f"{name}.{key} must be a list of strings")
+        if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", v) for v in cfg.get("env_names", [])):
+            raise ValueError(f"{name}.env_names must contain environment variable names")
+        options = cfg.get("config_options", {})
+        if not isinstance(options, dict) or any(
+            not isinstance(k, str) or not isinstance(v, (str, bool)) for k, v in options.items()
+        ):
+            raise ValueError(f"{name}.config_options must map option IDs to strings or booleans")
+        for key in {"startup_timeout_s", "cancel_timeout_s", "catalogue_timeout_s"} & cfg.keys():
+            v = cfg[key]
+            maximum = 3600 if key == "catalogue_timeout_s" else 300
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v <= maximum:
+                raise ValueError(f"{name}.{key} must be between 0 and {maximum} seconds")
+    return AgentPrefs(limits=_agent_limits(raw.get("limits")), provider_timeout_s=timeout,
+                      engines={name: dict(cfg) for name, cfg in engines.items()},
+                      acp_runners={name: dict(cfg) for name, cfg in runners.items()})
+
+
+@dataclass
 class HostConfig:
     version: int = CONFIG_VERSION
     terminal: TerminalPrefs = field(default_factory=TerminalPrefs)
@@ -260,6 +347,7 @@ class HostConfig:
     forwards: ForwardPrefs = field(default_factory=ForwardPrefs)
     workspace: WorkspacePrefs = field(default_factory=WorkspacePrefs)
     desktop: DesktopPrefs = field(default_factory=DesktopPrefs)
+    agent: AgentPrefs = field(default_factory=AgentPrefs)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -277,6 +365,7 @@ class HostConfig:
                 "saved_at": self.workspace.saved_at,
             },
             "desktop": asdict(self.desktop),
+            "agent": asdict(self.agent),
         }
 
 
@@ -372,6 +461,7 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
             view_only_default=bool(desktop_raw.get("view_only_default", True)),
             retain_virtual_display=bool(desktop_raw.get("retain_virtual_display", False)),
         ),
+        agent=_agent_prefs(raw.get("agent") or {}),
     )
 
 
@@ -405,6 +495,25 @@ class ConfigStore:
                 self._config.terminal.cwd = validate_cwd(cwd)
             self._save()
             return TerminalPrefs(shell=self._config.terminal.shell, cwd=self._config.terminal.cwd)
+
+    def update_agent(self, updates: dict[str, Any]) -> AgentPrefs:
+        if not isinstance(updates, dict):
+            raise ValueError("agent configuration must be an object")
+        with self._lock:
+            raw = {**asdict(self._config.agent), **updates}
+            if "limits" in updates:
+                if not isinstance(updates["limits"], dict):
+                    raise ValueError("limits must be an object")
+                raw["limits"] = {**self._config.agent.limits, **updates["limits"]}
+            prefs = _agent_prefs(raw)
+            old = self._config.agent
+            self._config.agent = prefs
+            try:
+                self._save()
+            except Exception:
+                self._config.agent = old
+                raise
+            return prefs
 
     def list_commands(self) -> list[SavedCommand]:
         with self._lock:

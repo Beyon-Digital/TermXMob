@@ -114,12 +114,11 @@ impl Backend {
         let adopted = self.0.adopted.load(Ordering::SeqCst);
         if let Some(info) = info {
             if !adopted {
-                let _ = api_json(
+                let _ = gql(
                     info.port,
-                    "POST",
-                    "/api/shutdown",
                     &info.passcode,
-                    Some(json!({})),
+                    "mutation { shutdown { ok } }",
+                    None,
                 );
             }
         }
@@ -473,7 +472,7 @@ impl Backend {
         if !is_termx(port) {
             return false;
         }
-        api_json(port, "GET", "/api/machine", passcode, None).is_some()
+        gql(port, passcode, "{ machine { hostname } }", None).is_some()
     }
 }
 
@@ -496,48 +495,58 @@ pub fn backend_binary(app: &AppHandle) -> PathBuf {
     dev
 }
 
-pub fn api_json(port: u16, method: &str, path: &str, passcode: &str, body: Option<Value>) -> Option<Value> {
-    let url = format!("http://127.0.0.1:{port}{path}");
+/// POST a GraphQL operation to the backend's /graphql endpoint and return
+/// the `data` object (or None on transport/GraphQL errors).
+pub fn gql(port: u16, passcode: &str, query: &str, variables: Option<Value>) -> Option<Value> {
+    let url = format!("http://127.0.0.1:{port}/graphql");
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_millis(2000))
         .build();
-    let request = match method {
-        "POST" => agent.post(&url),
-        _ => agent.get(&url),
+    let mut payload = json!({ "query": query });
+    if let Some(vars) = variables {
+        payload["variables"] = vars;
     }
-    .set("X-Termx-Passcode", passcode);
-    let result = match body {
-        Some(value) => request.send_json(value),
-        None => request.call(),
-    };
+    let result = agent
+        .post(&url)
+        .set("X-Termx-Passcode", passcode)
+        .send_json(payload);
     match result {
-        Ok(response) if (200..300).contains(&response.status()) => response.into_json().ok(),
+        Ok(response) if (200..300).contains(&response.status()) => {
+            let body: Value = response.into_json().ok()?;
+            let has_errors = body
+                .get("errors")
+                .and_then(Value::as_array)
+                .map(|items| !items.is_empty())
+                .unwrap_or(false);
+            if has_errors {
+                return None;
+            }
+            body.get("data").cloned()
+        }
         _ => None,
     }
 }
 
-pub fn api_get(app: &AppHandle, path: &str) -> Option<Value> {
+pub fn gql_app(app: &AppHandle, query: &str, variables: Option<Value>) -> Option<Value> {
     let backend = app.try_state::<Backend>()?;
     let info = backend.info()?;
-    api_json(info.port, "GET", path, &info.passcode, None)
-}
-
-pub fn api_post(app: &AppHandle, path: &str, body: Value) -> Option<Value> {
-    let backend = app.try_state::<Backend>()?;
-    let info = backend.info()?;
-    api_json(info.port, "POST", path, &info.passcode, Some(body))
+    gql(info.port, &info.passcode, query, variables)
 }
 
 fn is_termx(port: u16) -> bool {
-    let url = format!("http://127.0.0.1:{port}/api/health");
+    let url = format!("http://127.0.0.1:{port}/graphql");
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_millis(800))
         .build();
-    match agent.get(&url).call() {
+    match agent.post(&url).send_json(json!({ "query": "{ health { app } }" })) {
         Ok(response) if (200..300).contains(&response.status()) => {
             let value: Option<Value> = response.into_json().ok();
             value
-                .and_then(|body| body.get("app").and_then(Value::as_str).map(str::to_string))
+                .and_then(|body| {
+                    body.pointer("/data/health/app")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .map(|app| app == "termx")
                 .unwrap_or(false)
         }

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from _gql import data
+
 from termx.app import AppState, create_app
 
 
@@ -20,13 +22,20 @@ def test_listing_includes_files_when_requested(tmp_path: Path, monkeypatch) -> N
     (work / "notes.txt").write_text("hello")
     (work / "sub").mkdir()
 
-    dirs_only = client.get("/api/fs", params={"path": str(work), "k": "secret"}).json()
+    headers = {"X-Termx-Passcode": "secret"}
+    listing = (
+        "query($path: String, $files: Boolean!) "
+        "{ fs(path: $path, files: $files) { entries } }"
+    )
+    dirs_only = data(
+        client, listing, "fs", {"path": str(work), "files": False}, headers
+    )
     assert [entry["name"] for entry in dirs_only["entries"]] == ["sub"]
     assert all(entry.get("dir") for entry in dirs_only["entries"])
 
-    with_files = client.get(
-        "/api/fs", params={"path": str(work), "files": 1, "k": "secret"}
-    ).json()
+    with_files = data(
+        client, listing, "fs", {"path": str(work), "files": True}, headers
+    )
     names = [entry["name"] for entry in with_files["entries"]]
     assert names == ["sub", "notes.txt"]
     file_entry = with_files["entries"][1]

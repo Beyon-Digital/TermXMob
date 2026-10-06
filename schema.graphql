@@ -1,0 +1,1131 @@
+type ActivityEvent {
+  type: String!
+  id: String
+  activity: ActivityItem
+}
+
+type ActivityItem {
+  id: String!
+  kind: String!
+  project_id: String
+  title: String!
+  state: String
+  started_at: Float
+  updated_at: Float
+  actions: JSON
+  extra: JSON
+}
+
+type ActivitySnapshot {
+  activity: [ActivityItem!]!
+}
+
+input AgentApprovalInput {
+  decision: String!
+  remember: String = null
+  content: JSON = null
+  limits: JSON = null
+}
+
+input AgentImageInput {
+  name: String! = "image"
+  mime: String! = "image/png"
+  data: String! = ""
+}
+
+type AgentProvider {
+  id: String!
+  kind: String!
+  name: String!
+  base_url: String
+  model: String
+  models: [String!]
+  capabilities: [String!]
+  secret_configured: Boolean
+  created_at: Float
+  updated_at: Float
+}
+
+input AgentProviderInput {
+  id: String!
+  kind: String! = "openai"
+  name: String! = ""
+  base_url: String! = "https://api.openai.com/v1"
+  model: String! = ""
+  capabilities: [String!] = null
+  api_key: String = null
+}
+
+input AgentRetentionInput {
+  retention_days: Int! = 30
+  max_bytes: Int! = 500000000
+}
+
+type AgentStoragePruneResult {
+  removed: [String!]
+  storage: AgentStorageStatus
+}
+
+type AgentStorageStatus {
+  bytes: Int
+  artifact_bytes: Int
+  database_bytes: Int
+  task_count: Int
+  retention_days: Int
+  max_bytes: Int
+}
+
+type AgentTask {
+  id: String!
+  prompt: String!
+  cwd: String
+  provider_id: String
+  engine: String
+  engine_session_id: String
+  engine_native_id: String
+  mode: String
+  model: String
+  status: String!
+  limits: JSON
+  plan: JSON
+  result: String
+  error: String
+  execution_mode: String
+  conversation_id: String
+  custom_agent_id: String
+  parent_id: String
+  runtime: JSON
+  metrics: JSON
+  created_at: Float
+  updated_at: Float
+  events: JSON
+  approvals: JSON
+  artifacts: JSON
+}
+
+input AgentTaskInput {
+  prompt: String!
+  cwd: String!
+  engine: String = null
+  engine_mode: String = null
+  config_options: JSON = null
+  provider_id: String = null
+  model: String = null
+  attachments: [AgentImageInput!] = null
+  limits: JSON = null
+  mode: String! = "agent"
+  execution_mode: String = null
+  conversation_id: String = null
+  custom_agent_id: String = null
+  turn_prompt: String = null
+  context_refs: [JSON!] = null
+}
+
+input CommandInput {
+  name: String!
+  command: String!
+  confirm: Boolean! = false
+}
+
+input CommandPatchInput {
+  name: String = null
+  command: String = null
+  confirm: Boolean = null
+}
+
+type ConnectInfo {
+  urls: [String!]!
+  tunnel_url: String
+  passcode: String!
+  connect_url: String!
+  qr_svg: String
+}
+
+input ConversationInput {
+  title: String! = ""
+  project_id: String = null
+  cwd: String = null
+  mode: String! = "ask"
+  custom_agent_id: String = null
+  provider_id: String = null
+  model: String = null
+  pinned: Boolean! = false
+  archived: Boolean! = false
+  draft: Boolean! = false
+}
+
+input ConversationPatchInput {
+  title: String = null
+  project_id: String = null
+  cwd: String = null
+  mode: String = null
+  custom_agent_id: String = null
+  provider_id: String = null
+  model: String = null
+  pinned: Boolean = null
+  archived: Boolean = null
+  draft: Boolean = null
+}
+
+type ConversationTurn {
+  id: String!
+  conversation_id: String
+  sequence: Int
+  task_id: String
+  prompt: String
+  mode: String
+  provider_id: String
+  model: String
+  context_refs: JSON
+  attachment_refs: JSON
+  created_at: Float
+}
+
+input ConversationTurnInput {
+  prompt: String!
+  task_id: String = null
+  mode: String = null
+  provider_id: String = null
+  model: String = null
+  context_refs: [JSON!] = null
+  attachment_refs: [JSON!] = null
+}
+
+input CreateSessionInput {
+  cols: Int! = 80
+  rows: Int! = 24
+  title: String = null
+  shell: String = null
+  cwd: String = null
+  sandbox_profile: String = null
+}
+
+type CustomAgentFile {
+  id: String!
+  slug: String
+  markdown: String
+}
+
+input CustomAgentImportInput {
+  markdown: String!
+  source: String! = "import"
+}
+
+input CustomAgentInput {
+  name: String!
+  description: String! = ""
+  instructions: String! = ""
+  provider_id: String = null
+  model: String = null
+  engine_mode: String = null
+  config_options: JSON = null
+  tools: [String!] = null
+  limits: JSON = null
+  approval_mode: String! = "standard"
+  sandbox_profile: String! = "agent"
+  engine: String! = "inherit"
+  enabled: Boolean! = true
+  auto_use: Boolean! = true
+  toolsets: [String!] = null
+  deny_tools: [String!] = null
+  skills: JSON = null
+  workflows: [String!] = null
+  mcp_connections: [JSON!] = null
+  delegation: JSON = null
+  slug: String = null
+}
+
+input CustomAgentPatchInput {
+  name: String = null
+  description: String = null
+  instructions: String = null
+  provider_id: String = null
+  model: String = null
+  engine_mode: String = null
+  config_options: JSON = null
+  tools: [String!] = null
+  limits: JSON = null
+  approval_mode: String = null
+  sandbox_profile: String = null
+  engine: String = null
+  enabled: Boolean = null
+  auto_use: Boolean = null
+  toolsets: [String!] = null
+  deny_tools: [String!] = null
+  skills: JSON = null
+  workflows: [String!] = null
+  mcp_connections: [JSON!] = null
+  delegation: JSON = null
+  revision: String = null
+}
+
+type Deleted {
+  deleted: String
+}
+
+type DeviceInfo {
+  id: String!
+  scopes: [String!]!
+  device_name: String!
+  created_at: Float
+  last_seen: Float
+  expires_at: Float
+}
+
+type DirectoriesResult {
+  cwd: String
+  directories: [SavedDirectory!]!
+}
+
+input DirectoryInput {
+  name: String! = ""
+  path: String! = ""
+}
+
+type DisplayInfo {
+  id: String!
+  name: String
+  kind: String
+  width: Int
+  height: Int
+  x: Int
+  y: Int
+  main: Boolean
+  backend: String
+  output: String
+  detail: String
+  selected: Boolean
+}
+
+type DisplaysResult {
+  selected_display: String
+  view_only: Boolean
+  permissions: JSON
+  viewer_count: Int
+  fps: Int
+  target_fps: Int
+  last_capture_ms: Float
+  virtual_display_reason: String
+  displays: [DisplayInfo!]!
+}
+
+type EffectivePolicies {
+  approval_mode: String
+  sandbox_profile: String
+  sandbox_capabilities: [String!]
+  rules: [PolicyRule!]!
+}
+
+type EngineDescriptor {
+  id: String!
+  label: String!
+  installed: Boolean!
+  executable: String
+  version: String
+  auth_state: String
+  auth_detail: String
+  location: String
+  transport: String
+  protocol: JSON
+  error: String
+  capabilities: JSON
+}
+
+type ExtensionEntry {
+  qid: String!
+  kind: String
+  id: String
+  slug: String
+  name: String
+  description: String
+  path: String
+  source: String
+  trusted: Boolean
+  compat: Boolean
+  enabled: Boolean
+  authorized: Boolean
+  digest: String
+  errors: [String!]
+  body: String
+  body_error: String
+}
+
+input ExtensionStateInput {
+  enabled: Boolean = null
+  trusted: Boolean = null
+  note: String = null
+}
+
+type ExtensionsResult {
+  report: JSON
+  extensions: [ExtensionEntry!]!
+}
+
+input FileActionInput {
+  action: String!
+  path: String!
+  destination: String! = ""
+  revision: String! = ""
+}
+
+input FileSaveInput {
+  path: String!
+  content: String! = ""
+  revision: String! = ""
+}
+
+input FileSearchInput {
+  query: String!
+  content: Boolean! = true
+  case_sensitive: Boolean! = false
+}
+
+input ForwardInput {
+  name: String! = ""
+  kind: String! = "local"
+  listen_host: String! = "127.0.0.1"
+  listen_port: Int! = 0
+  target_host: String! = "127.0.0.1"
+  target_port: Int! = 0
+  ssh_host: String! = ""
+  auto_start: Boolean! = false
+}
+
+input ForwardPatchInput {
+  name: String = null
+  auto_start: Boolean = null
+}
+
+type ForwardRule {
+  id: String!
+  name: String!
+  kind: String!
+  listen_host: String!
+  listen_port: Int!
+  target_host: String!
+  target_port: Int!
+  ssh_host: String
+  auto_start: Boolean
+  created_at: Float
+}
+
+type ForwardStatus {
+  id: String!
+  state: String!
+  detail: String
+  started_at: Float
+  uptime_s: Float
+  log: [String!]
+}
+
+type ForwardsResult {
+  rules: [ForwardRule!]!
+  statuses: [ForwardStatus!]!
+}
+
+type FsListing {
+  path: String!
+  parent: String
+  home: String
+  entries: JSON
+}
+
+input GitBranchInput {
+  name: String!
+  create: Boolean! = false
+}
+
+type GitFile {
+  path: String!
+  index: String
+  worktree: String
+  staged: Boolean
+  untracked: Boolean
+}
+
+input GitHunkInput {
+  patch: String!
+  stage: Boolean! = true
+}
+
+input GitStageInput {
+  paths: [String!] = null
+  stage: Boolean! = true
+}
+
+type GitStatus {
+  repo: Boolean!
+  branch: String
+  ahead: Int
+  behind: Int
+  files: [GitFile!]!
+}
+
+type Health {
+  app: String
+  ok: Boolean!
+  version: String
+  passcode_required: Boolean
+  capabilities: JSON
+  tunnel: JSON
+}
+
+type HostConversation {
+  id: String!
+  title: String
+  project_id: String
+  cwd: String
+  mode: String
+  custom_agent_id: String
+  provider_id: String
+  model: String
+  pinned: Boolean
+  archived: Boolean
+  draft: Boolean
+  created_at: Float
+  updated_at: Float
+  turns: JSON
+}
+
+type HostCustomAgent {
+  id: String!
+  name: String!
+  description: String
+  instructions: String
+  provider_id: String
+  model: String
+  engine_mode: String
+  config_options: JSON
+  tools: [String!]
+  limits: JSON
+  engine: String
+  enabled: Boolean
+  auto_use: Boolean
+  tools_mode: String
+  toolsets: [String!]
+  deny_tools: [String!]
+  skills: JSON
+  workflows: [String!]
+  mcp_connections: JSON
+  delegation: JSON
+  source: String
+  sync_state: String
+  file_path: String
+  file_revision: String
+  approval_mode: String
+  sandbox_profile: String
+  created_at: Float
+  updated_at: Float
+}
+
+type HostNotification {
+  id: String!
+  kind: String!
+  title: String!
+  body: String
+  url: String
+  level: String
+  source: String
+  task_id: String
+  read: Boolean!
+  created_at: Float!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+type LaunchAtLogin {
+  managed: Boolean!
+  enabled: Boolean
+}
+
+type MachineInfo {
+  hostname: String!
+  os: String!
+  arch: String
+  shells: [String!]!
+  terminal: JSON
+  permissions: JSON
+  helper: JSON
+  capabilities: JSON
+  tunnel: JSON
+  user: String
+}
+
+type McpConnectResult {
+  connection: String
+  status: String!
+  auth_url: String
+  note: String
+  catalog: JSON
+  fingerprint: String
+}
+
+type McpConnectionInfo {
+  id: String!
+  label: String
+  transport: String
+  command: [String!]
+  url: String
+  enabled: Boolean
+  owner: String
+  auth: JSON
+  secret_refs: [String!]
+  approved_tools: [String!]
+  trust: String
+  lan: Boolean
+  runtime: JSON
+  auth_url_pending: String
+  path: String
+}
+
+input McpConnectionInput {
+  data: JSON!
+}
+
+input McpToolCallInput {
+  arguments: JSON = null
+}
+
+type Mutation {
+  notify(input: NotifyInput!): Ok!
+  request_permissions(input: PermissionsInput = null): JSON!
+  set_launch_at_login(enabled: Boolean!): LaunchAtLogin!
+  apply_update: UpdateInfo!
+  shutdown: Ok!
+  pair(input: PairInput = null): PairResult!
+  revoke_device(device_id: String!): Ok!
+  set_device_scopes(device_id: String!, scopes: [String!]!): DeviceInfo!
+  publish_notification(input: NotifyInput!, kind: String! = "info"): HostNotification!
+  mark_notifications_read(ids: [String!]!): Int!
+  mark_all_notifications_read: Int!
+  create_session(input: CreateSessionInput = null): SessionInfo!
+  rename_session(session_id: String!, title: String!): SessionInfo!
+  delete_session(session_id: String!): Ok!
+  save_workspace(sessions: [WorkspaceSessionInput!]!): Workspace!
+  restore_workspace: WorkspaceRestoreResult!
+  set_preferences(input: PreferencesInput!): Preferences!
+  create_command(input: CommandInput!): SavedCommand!
+  patch_command(command_id: String!, input: CommandPatchInput!): SavedCommand!
+  delete_command(command_id: String!): Ok!
+  reorder_commands(order: [String!]!): [SavedCommand!]!
+  create_directory(input: DirectoryInput!): SavedDirectory!
+  delete_directory(directory_id: String!): Ok!
+  use_directory(directory_id: String!): UseDirectoryResult!
+  register_project(input: ProjectInput!): Project!
+  rename_project(project_id: String!, name: String!): Project!
+  forget_project(project_id: String!): Ok!
+  save_project_file(project_id: String!, input: FileSaveInput!): JSON!
+  project_file_action(project_id: String!, input: FileActionInput!): JSON!
+  git_stage(project_id: String!, input: GitStageInput!): JSON!
+  git_stage_hunk(project_id: String!, input: GitHunkInput!): JSON!
+  git_commit(project_id: String!, message: String!): JSON!
+  git_branch(project_id: String!, input: GitBranchInput!): JSON!
+  git_remote_op(project_id: String!, operation: String!): JSON!
+  create_project_preview(project_id: String!, input: PreviewInput!): ProjectPreview!
+  delete_project_preview(project_id: String!, preview_id: String!): Ok!
+  preview_from_port(project_id: String!, input: PreviewFromPortInput!): PreviewFromPortResult!
+  create_tunnel_profile(input: TunnelProfileInput!): TunnelProfile!
+  delete_tunnel_profile(profile_id: String!): Ok!
+  start_tunnel(input: TunnelStartInput = null): TunnelStatus!
+  stop_tunnel: TunnelStatus!
+  restart_tunnel: TunnelStatus!
+  create_forward(input: ForwardInput!): ForwardRule!
+  patch_forward(rule_id: String!, input: ForwardPatchInput!): ForwardRule!
+  delete_forward(rule_id: String!): Ok!
+  start_forward(rule_id: String!): ForwardStatus!
+  stop_forward(rule_id: String!): ForwardStatus!
+  create_virtual_display(input: VirtualDisplayInput!): JSON!
+  delete_display(display_id: String!): Ok!
+  rtc_offer(input: RtcOfferInput!): JSON!
+  rtc_ice(session_id: String!, candidate: JSON!): Ok!
+  refresh_acp_registry: JSON!
+  install_acp_runner(registry_id: String!): JSON!
+  update_agent_configuration(input: JSON!): JSON!
+  refresh_engine_catalogue(engine_id: String = null, cwd: String = null): JSON!
+  authenticate_engine(engine_id: String!, method_id: String!): JSON!
+  save_agent_provider(input: AgentProviderInput!): AgentProvider!
+  delete_agent_provider(provider_id: String!): Ok!
+  test_agent_provider(provider_id: String!): JSON!
+  create_agent_task(input: AgentTaskInput!): AgentTask!
+  delete_agent_task(task_id: String!): Ok!
+  resolve_agent_approval(task_id: String!, approval_id: String!, input: AgentApprovalInput!): JSON!
+  steer_agent_task(task_id: String!, message: String!): JSON!
+  cancel_agent_task(task_id: String!): JSON!
+  recover_agent_task(task_id: String!, confirm: Boolean! = false): JSON!
+  takeover_agent_task(task_id: String!): JSON!
+  resolve_task_worktree(task_id: String!, input: WorktreeActionInput!): TaskWorktree!
+  prune_agent_storage(input: AgentRetentionInput = null): AgentStoragePruneResult!
+  create_agent_policy(input: PolicyRuleInput!): PolicyRule!
+  patch_agent_policy(rule_id: String!, input: PolicyRulePatchInput!): PolicyRule!
+  revoke_agent_policy(rule_id: String!): Ok!
+  create_conversation(input: ConversationInput!): HostConversation!
+  patch_conversation(conversation_id: String!, input: ConversationPatchInput!): HostConversation!
+  delete_conversation(conversation_id: String!): Deleted!
+  add_conversation_turn(conversation_id: String!, input: ConversationTurnInput!): ConversationTurn!
+  create_custom_agent(input: CustomAgentInput!): HostCustomAgent!
+  patch_custom_agent(agent_id: String!, input: CustomAgentPatchInput!): HostCustomAgent!
+  delete_custom_agent(agent_id: String!): Deleted!
+  duplicate_custom_agent(agent_id: String!): HostCustomAgent!
+  import_custom_agent(input: CustomAgentImportInput!): HostCustomAgent!
+  rescan_extensions: ExtensionsResult!
+  set_extension_state(qid: String!, input: ExtensionStateInput!): JSON!
+  create_mcp_connection(input: McpConnectionInput!): JSON!
+  trust_mcp_connection(conn_id: String!): JSON!
+  connect_mcp_connection(conn_id: String!): McpConnectResult!
+  disconnect_mcp_connection(conn_id: String!): JSON!
+  call_mcp_tool(conn_id: String!, tool: String!, input: McpToolCallInput = null): JSON!
+  delete_mcp_connection(conn_id: String!): JSON!
+  start_chatgpt_sign_in(account_id: String = null): JSON!
+  cancel_chatgpt_sign_in(attempt_id: String!): JSON!
+  refresh_chatgpt_models(account_id: String!): JSON!
+  acknowledge_chatgpt_plan(account_id: String!): JSON!
+  sign_out_chatgpt(account_id: String!): JSON!
+  create_runbook(input: RunbookInput!): Runbook!
+  update_runbook(runbook_id: String!, input: RunbookPatchInput!): Runbook!
+  delete_runbook(runbook_id: String!): Ok!
+  run_runbook(runbook_id: String!, profile: String! = "host"): RunbookRun!
+  confirm_runbook_run(run_id: String!): RunbookRun!
+  cancel_runbook_run(run_id: String!): RunbookRun!
+}
+
+input NotifyInput {
+  title: String!
+  body: String! = ""
+  url: String = null
+}
+
+type Ok {
+  ok: Boolean!
+}
+
+input PairInput {
+  device_name: String! = ""
+  scopes: [String!] = null
+  expires_in_s: Int = null
+}
+
+type PairResult {
+  token: String!
+  scopes: [String!]!
+  expires_at: Float
+}
+
+input PermissionsInput {
+  which: [String!] = null
+}
+
+type PolicyRule {
+  id: String!
+  scope_type: String
+  scope_id: String
+  effect: String
+  matcher: JSON
+  created_at: Float
+  expires_at: Float
+  revoked_at: Float
+}
+
+input PolicyRuleInput {
+  effect: String!
+  scope_type: String!
+  tool: String!
+  fingerprint: String!
+  scope_id: String = null
+  action_type: String! = "tool"
+  fingerprint_kind: String! = "exact"
+  matcher: JSON = null
+  capabilities: [String!] = null
+  sandbox_profile: String = null
+  display: String! = ""
+  task_id: String = null
+  project_id: String = null
+  expires_at: Float = null
+}
+
+input PolicyRulePatchInput {
+  effect: String = null
+  expires_at: Float = null
+  display: String = null
+  capabilities: [String!] = null
+}
+
+type PortListener {
+  port: Int!
+  address: String
+  pid: Int
+  name: String
+  command: String
+  url: String
+  is_http: Boolean
+  protocol: String
+  project_id: String
+}
+
+type PortsResult {
+  supported: Boolean!
+  ports: [PortListener!]!
+}
+
+type Preferences {
+  shell: String
+  cwd: String
+  shells: [String!]
+}
+
+input PreferencesInput {
+  shell: String = null
+  cwd: String = null
+}
+
+input PreviewFromPortInput {
+  port: Int!
+  name: String! = ""
+}
+
+type PreviewFromPortResult {
+  preview: JSON
+  listener: JSON
+}
+
+input PreviewInput {
+  name: String! = ""
+  url: String! = ""
+}
+
+type ProcessInfo {
+  pid: Int!
+  name: String
+  command: String
+  cwd: String
+  cpu: Float
+  mem: Float
+  project_id: String
+}
+
+type ProcessesResult {
+  supported: Boolean!
+  processes: [ProcessInfo!]!
+}
+
+type Project {
+  id: String!
+  path: String!
+  name: String!
+  updated_at: Float
+}
+
+type ProjectFile {
+  path: String!
+  size: Int
+  editable: Boolean
+  content: String
+  revision: String
+  reason: String
+  encoding: String
+  line_ending: String
+}
+
+input ProjectInput {
+  path: String!
+  name: String! = ""
+}
+
+type ProjectPreview {
+  id: String!
+  name: String!
+  url: String!
+}
+
+type ProjectTree {
+  path: String!
+  entries: JSON
+  next_offset: Int
+  total: Int
+}
+
+type Query {
+  health: Health!
+  connect_info: ConnectInfo!
+  machine: MachineInfo!
+  permissions: JSON!
+  launch_at_login: LaunchAtLogin!
+  update_check: UpdateInfo!
+  devices: [DeviceInfo!]!
+  audit(limit: Int! = 100): [JSON!]!
+  notifications(limit: Int! = 100, unread: Boolean! = false): [HostNotification!]!
+  notification_unread_count: Int!
+  sessions: [SessionInfo!]!
+  workspace: Workspace!
+  preferences: Preferences!
+  commands: [SavedCommand!]!
+  directories: DirectoriesResult!
+  fs(path: String = null, files: Boolean! = false): FsListing!
+  projects: [Project!]!
+  project(project_id: String!): Project!
+  project_tree(project_id: String!, path: String! = "", offset: Int! = 0, limit: Int! = 200): ProjectTree!
+  project_file(project_id: String!, path: String!): ProjectFile!
+  project_search(project_id: String!, input: FileSearchInput!): SearchResults!
+  project_previews(project_id: String!): [ProjectPreview!]!
+  lsp_servers(project_id: String!): JSON!
+  git_status(project_id: String!): GitStatus!
+  git_diff(project_id: String!, path: String!, staged: Boolean! = false): JSON!
+  git_branches(project_id: String!): JSON!
+  ports(project_id: String = null): PortsResult!
+  processes(project_id: String = null): ProcessesResult!
+  tunnels: TunnelRuntime!
+  forwards: ForwardsResult!
+  displays: DisplaysResult!
+  activity: ActivitySnapshot!
+  agent_configuration: JSON!
+  engine_configuration(engine_id: String!, cwd: String = null): JSON!
+  engine_task_configuration(task_id: String!): JSON!
+  agent_providers: [AgentProvider!]!
+  engines: [EngineDescriptor!]!
+  acp_registry: JSON!
+  engine_probe(engine_id: String!): EngineDescriptor!
+  engine_models(engine_id: String!): [String!]!
+  engine_diagnostics: JSON!
+  agent_tasks(limit: Int! = 100): [AgentTask!]!
+  agent_task(task_id: String!): AgentTask!
+  agent_task_worktree(task_id: String!): TaskWorktree!
+  agent_task_export(task_id: String!): JSON!
+  agent_storage: AgentStorageStatus!
+  agent_policies(scope_type: String = null, scope_id: String = null, effect: String = null, include_revoked: Boolean! = false): [PolicyRule!]!
+  effective_agent_policies(project_id: String = null, custom_agent_id: String = null): EffectivePolicies!
+  conversations(archived: String = null): [HostConversation!]!
+  conversation(conversation_id: String!): HostConversation!
+  custom_agents: [HostCustomAgent!]!
+  custom_agent(agent_id: String!): HostCustomAgent!
+  custom_agent_export(agent_id: String!): CustomAgentFile!
+  extensions(kind: String = null, source: String = null, enabled: Boolean = null): ExtensionsResult!
+  extension(qid: String!): ExtensionEntry!
+  mcp_connections: [McpConnectionInfo!]!
+  chatgpt_accounts: JSON!
+  chatgpt_sign_in_status(attempt_id: String!): JSON!
+  runbooks(project_id: String = null): [Runbook!]!
+  runbook(runbook_id: String!): RunbookDetail!
+  runbook_runs(runbook_id: String = null): [RunbookRun!]!
+  runbook_run(run_id: String!): RunbookRun!
+}
+
+input RtcOfferInput {
+  offer: JSON!
+  session_id: String = null
+}
+
+type Runbook {
+  id: String!
+  name: String!
+  project_id: String
+  steps: JSON
+  created_at: Float
+  updated_at: Float
+}
+
+type RunbookDetail {
+  runbook: Runbook
+  runs: [RunbookRun!]!
+}
+
+input RunbookInput {
+  name: String!
+  steps: [JSON!]!
+  project_id: String = null
+}
+
+input RunbookPatchInput {
+  name: String = null
+  project_id: String = null
+  steps: [JSON!] = null
+}
+
+type RunbookRun {
+  id: String!
+  runbook_id: String
+  status: String!
+  step_index: Int
+  step: Int
+  error: String
+  steps: JSON
+  created_at: Float
+  updated_at: Float
+}
+
+type SavedCommand {
+  id: String!
+  name: String!
+  command: String!
+  confirm: Boolean
+  order: Int
+  created_at: Float
+  updated_at: Float
+}
+
+type SavedDirectory {
+  id: String!
+  name: String!
+  path: String!
+  order: Int
+  created_at: Float
+  updated_at: Float
+}
+
+type SearchResult {
+  path: String!
+  line: Int
+  text: String
+  revision: String
+}
+
+type SearchResults {
+  truncated: Boolean
+  results: [SearchResult!]!
+}
+
+type SessionInfo {
+  id: String!
+  title: String!
+  created_at: Float!
+  cols: Int!
+  rows: Int!
+  exited: Boolean!
+  exit_code: Int
+  cwd: String
+  live_cwd: String
+  shell: String
+}
+
+type Subscription {
+  activity_events: ActivityEvent!
+  agent_task_events(task_id: String!, after: Int! = 0): TaskEventEnvelope!
+  notification_events: HostNotification!
+}
+
+type TaskEventEnvelope {
+  sequence: Int!
+  type: String!
+  task_id: String
+  payload: JSON
+  created_at: Float
+}
+
+type TaskWorktree {
+  task_id: String!
+  mode: String
+  base_repo: String
+  base_ref: String
+  base_branch: String
+  worktree_path: String
+  branch: String
+  head_sha: String
+  status: String
+  dirty: [String!]
+  diff: JSON
+  created_at: Float
+  updated_at: Float
+}
+
+type TunnelProfile {
+  id: String!
+  provider: String!
+  name: String!
+  kind: String!
+  extra: JSON
+}
+
+input TunnelProfileInput {
+  provider: String!
+  name: String!
+  kind: String! = "quick"
+  extra: JSON = null
+}
+
+type TunnelProviderInfo {
+  id: String!
+  name: String!
+  available: Boolean!
+  binary: String
+  kinds: [String!]
+  install: String
+}
+
+type TunnelRuntime {
+  active_profile_id: String
+  runtime: JSON
+  active: JSON
+  providers: [TunnelProviderInfo!]!
+  profiles: [TunnelProfile!]!
+}
+
+input TunnelStartInput {
+  profile_id: String = null
+  provider: String = null
+  kind: String = null
+}
+
+type TunnelStatus {
+  provider: String
+  state: String
+  url: String
+  detail: String
+  log: [String!]
+  started_at: Float
+  uptime_s: Int
+}
+
+type UpdateInfo {
+  started: Boolean
+  reason: String
+  instructions: String
+  current: String
+  latest: String
+  tag: String
+  available: Boolean
+  status: String
+  url: String
+  notes: String
+  published_at: String
+}
+
+type UseDirectoryResult {
+  cwd: String
+  directory: SavedDirectory
+}
+
+input VirtualDisplayInput {
+  width: Int! = 1170
+  height: Int! = 2532
+  dpr: Float! = 2
+  refresh_hz: Int! = 60
+}
+
+type Workspace {
+  saved_at: Float
+  sessions: [WorkspaceSession!]!
+}
+
+type WorkspaceRestoreResult {
+  restored: Int!
+  already_running: Int!
+  sessions: [SessionInfo!]!
+}
+
+type WorkspaceSession {
+  title: String
+  shell: String
+  cwd: String
+}
+
+input WorkspaceSessionInput {
+  title: String! = ""
+  shell: String! = ""
+  cwd: String! = ""
+}
+
+input WorktreeActionInput {
+  action: String!
+  confirm: Boolean! = false
+}

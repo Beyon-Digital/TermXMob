@@ -12,6 +12,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from _gql import data, err_status
+
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.app import AppState, create_app
@@ -485,14 +487,12 @@ def test_engines_api_lists_internal_and_codex(tmp_path):
         credentials=CredentialStore(str(tmp_path / "creds")),
     )
     client = TestClient(create_app(state, web_dir=None))
-    resp = client.get("/api/engines")
-    assert resp.status_code == 200
-    ids = [e["id"] for e in resp.json()["engines"]]
+    engines = data(client, "{ engines { id } }", "engines")
+    ids = [e["id"] for e in engines]
     assert "internal" in ids and "codex" in ids
     codex = next(e for e in ids if e == "codex" and ids)
-    diag = client.get("/api/engines/diagnostics")
-    assert diag.status_code == 200
-    assert "resolutions" in diag.json()
+    diag = data(client, "{ engine_diagnostics }", "engine_diagnostics")
+    assert "resolutions" in diag
 
 
 def test_engine_task_requires_valid_engine(tmp_path):
@@ -502,10 +502,40 @@ def test_engine_task_requires_valid_engine(tmp_path):
         credentials=CredentialStore(str(tmp_path / "creds")),
     )
     client = TestClient(create_app(state, web_dir=None))
-    resp = client.post("/api/agent/tasks", json={
-        "prompt": "hi", "cwd": str(tmp_path), "engine": "bogus"})
-    assert resp.status_code == 422  # pattern rejects unknown engines
-    state.engines._adapters.pop("devin")  # unregister → valid name, no adapter
-    resp = client.post("/api/agent/tasks", json={
-        "prompt": "hi", "cwd": str(tmp_path), "engine": "devin"})
-    assert resp.status_code == 404  # registered engines only
+    create = (
+        "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id } }"
+    )
+    # Unknown engines are rejected (404) — the REST-era 422 came from a
+    # pydantic pattern; under GraphQL every unresolvable engine is a 404.
+    assert (
+        err_status(
+            client, create,
+            {"input": {"prompt": "hi", "cwd": str(tmp_path), "engine": "bogus"}},
+        )
+        == 404
+    )
+    # ACP engines are registered from the official registry only when a host
+    # installation is detected; Devin is absent from this isolated test host.
+    assert (
+        err_status(
+            client, create,
+            {"input": {"prompt": "hi", "cwd": str(tmp_path), "engine": "devin"}},
+        )
+        == 404
+    )  # registered engines only
+
+
+def test_graphql_read_only_chat_uses_codex_model_without_acp_mode(tmp_path):
+    state = AppState(passcode="test-only")
+    engine = _codex(tmp_path, [])
+    engine._event_sink = state.engines.on_engine_event
+    state.engines.register(engine)
+    with TestClient(create_app(state, web_dir=None)) as client:
+        task = data(client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id engine model } }",
+            "create_agent_task",
+            {"input": {"prompt": "Explain the project", "cwd": str(tmp_path),
+                       "engine": "codex", "mode": "ask", "model": "gpt-fake-1"}},
+            headers={"X-Termx-Passcode": "test-only"})
+        assert task["engine"] == "codex"
+        assert task["model"] == "gpt-fake-1"

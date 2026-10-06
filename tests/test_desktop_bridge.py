@@ -2,6 +2,8 @@ import json
 
 from fastapi.testclient import TestClient
 
+from _gql import data, err_status
+
 from termx import notify
 from termx.app import AppState, create_app
 from termx.desktop import paths as paths_module
@@ -39,18 +41,19 @@ def test_ready_emits_json_event(monkeypatch, capsys) -> None:
 
 def test_health_identifies_termx() -> None:
     client = TestClient(create_app(AppState(passcode=None), web_dir=None))
-    assert client.get("/api/health").json()["app"] == "termx"
+    assert data(client, "{ health { app } }", "health")["app"] == "termx"
 
 
 def test_connect_info_requires_auth_and_reports_qr() -> None:
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
-    assert client.get("/api/connect").status_code == 401
-    res = client.get("/api/connect", headers={"X-Termx-Passcode": "secret"})
-    assert res.status_code == 200
-    body = res.json()
+    headers = {"X-Termx-Passcode": "secret"}
+    connect = "{ connect_info { passcode urls connect_url } }"
+    assert err_status(client, connect) == 401
+    body = data(client, connect, "connect_info", headers=headers)
     assert body["passcode"] == "secret"
     assert any(url.startswith("http://127.0.0.1") for url in body["urls"])
     assert "k=secret" in body["connect_url"]
+    # The QR svg stays a raw binary route.
     qr = client.get("/api/connect/qr.svg", headers={"X-Termx-Passcode": "secret"})
     assert qr.status_code == 200
     assert qr.headers["content-type"].startswith("image/svg+xml")
@@ -70,23 +73,26 @@ def test_notify_endpoint_requires_auth_and_forwards(monkeypatch) -> None:
     def fake_notify(title: str, body: str = "", **_: object) -> None:
         captured.append((title, body))
 
-    monkeypatch.setattr("termx.app.notify.notify", fake_notify)
+    monkeypatch.setattr("termx.notify.notify", fake_notify)
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
-    assert client.post("/api/notify", json={"title": "hi"}).status_code == 401
-    res = client.post(
-        "/api/notify",
-        json={"title": "hi", "body": "there"},
-        headers={"X-Termx-Passcode": "secret"},
+    headers = {"X-Termx-Passcode": "secret"}
+    send = (
+        "mutation($input: NotifyInput!) { notify(input: $input) { ok } }"
     )
-    assert res.status_code == 200
+    assert err_status(client, send, {"input": {"title": "hi"}}) == 401
+    data(
+        client, send, "notify",
+        {"input": {"title": "hi", "body": "there"}}, headers=headers,
+    )
     assert captured == [("hi", "there")]
 
 
 def test_shutdown_endpoint_is_hidden_outside_desktop(monkeypatch) -> None:
     monkeypatch.delenv("TERMX_DESKTOP", raising=False)
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
-    res = client.post("/api/shutdown", headers={"X-Termx-Passcode": "secret"})
-    assert res.status_code == 404
+    assert err_status(
+        client, "mutation { shutdown { ok } }", headers={"X-Termx-Passcode": "secret"}
+    ) == 404
 
 
 def test_shutdown_endpoint_requires_loopback(monkeypatch) -> None:
@@ -95,23 +101,25 @@ def test_shutdown_endpoint_requires_loopback(monkeypatch) -> None:
     calls: list[str] = []
     state.request_shutdown = lambda: calls.append("stop")
     client = TestClient(create_app(state, web_dir=None))
-    res = client.post("/api/shutdown", headers={"X-Termx-Passcode": "secret"})
-    assert res.status_code == 403
+    # The TestClient's host is not loopback, so the loopback guard fires.
+    assert err_status(
+        client, "mutation { shutdown { ok } }", headers={"X-Termx-Passcode": "secret"}
+    ) == 403
     assert calls == []
 
 
 def test_permissions_endpoint_roundtrip() -> None:
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
-    assert client.get("/api/permissions").status_code == 401
-    res = client.get("/api/permissions", headers={"X-Termx-Passcode": "secret"})
-    assert res.status_code == 200
-    assert isinstance(res.json(), dict)
-    requested = client.post(
-        "/api/permissions/request",
-        json={"which": ["screen_recording"]},
-        headers={"X-Termx-Passcode": "secret"},
+    headers = {"X-Termx-Passcode": "secret"}
+    assert err_status(client, "{ permissions }") == 401
+    res = data(client, "{ permissions }", "permissions", headers=headers)
+    assert isinstance(res, dict)
+    data(
+        client,
+        "mutation($input: PermissionsInput!) { request_permissions(input: $input) }",
+        "request_permissions", {"input": {"which": ["screen_recording"]}},
+        headers=headers,
     )
-    assert requested.status_code == 200
 
 
 def test_desktop_display_selection_over_socket() -> None:
@@ -200,7 +208,10 @@ def test_connect_qr_prefers_lan_address() -> None:
 
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
-    body = client.get("/api/connect", headers={"X-Termx-Passcode": "secret"}).json()
+    body = data(
+        client, "{ connect_info { connect_url urls } }", "connect_info",
+        headers={"X-Termx-Passcode": "secret"},
+    )
     target = body["connect_url"].split("?")[0]
     loopback = target.startswith("http://127.") or target.startswith("http://localhost")
     has_lan = any(

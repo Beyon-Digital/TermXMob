@@ -7,7 +7,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::backend::{api_get, Backend, ReadyInfo};
+use crate::backend::{gql_app, Backend, ReadyInfo};
 use crate::{config, logging};
 
 pub static START_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -153,8 +153,13 @@ pub fn copy_connect_link(app: &AppHandle) {
         notify(app, "Termx is starting", "Connection details are not ready yet.");
         return;
     };
-    let link = match api_get(app, "/api/connect")
-        .and_then(|value| value.get("connect_url").and_then(|item| item.as_str()).map(str::to_string))
+    let link = match gql_app(app, "{ connect_info { connect_url } }", None)
+        .and_then(|value| {
+            value
+                .pointer("/connect_info/connect_url")
+                .and_then(|item| item.as_str())
+                .map(str::to_string)
+        })
     {
         Some(link) => link,
         None => info.window_url(),

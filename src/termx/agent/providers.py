@@ -364,7 +364,7 @@ class OpenAIResponsesAdapter:
         if body.get("error"):
             error = body["error"]
             message = error.get("message") if isinstance(error, dict) else str(error)
-            raise ProviderError(str(message or "Provider request failed"))
+            raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider request failed"))
         return body
 
     async def _post_stream(
@@ -402,7 +402,7 @@ class OpenAIResponsesAdapter:
         on_event: Any,
     ) -> dict[str, Any]:
         final: dict[str, Any] | None = None
-        async with client.stream("POST", self.url, json=payload) as response:
+        async with client.stream("POST", self.url, json=payload, headers=self.request_headers()) as response:
             if response.is_error:
                 detail = await response.aread()
                 raise ProviderError(
@@ -448,13 +448,13 @@ class OpenAIResponsesAdapter:
                 elif kind == "error":
                     error = event.get("error")
                     message = error.get("message") if isinstance(error, dict) else str(error)
-                    raise ProviderError(str(message or "Provider stream failed"))
+                    raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider stream failed"))
         if final is None:
             raise ProviderError("Provider stream ended without a completion event")
         if final.get("error"):
             error = final["error"]
             message = error.get("message") if isinstance(error, dict) else str(error)
-            raise ProviderError(str(message or "Provider request failed"))
+            raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider request failed"))
         return final
 
 
@@ -479,16 +479,19 @@ def _retry_after(headers: httpx.Headers) -> float | None:
 
 
 def _provider_http_error(status: int, detail: str) -> str:
+    try:
+        parsed = json.loads(detail)
+        error = parsed.get("error") if isinstance(parsed, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        message = error.get("message") if isinstance(error, dict) else parsed.get("detail")
+    except (json.JSONDecodeError, AttributeError):
+        code, message = None, None
+    if code and str(code).startswith(("subscription_sharing_", "chatpass_v2_")):
+        return f"ChatGPT request failed ({status}): {code}"
     if status == 429:
         return "Provider is temporarily rate limited. Try again shortly or choose another model."
     if status == 400:
         return "Provider rejected the request. Check that the selected model supports the configured tools."
-    try:
-        parsed = json.loads(detail)
-        error = parsed.get("error") if isinstance(parsed, dict) else None
-        message = error.get("message") if isinstance(error, dict) else parsed.get("detail")
-    except (json.JSONDecodeError, AttributeError):
-        message = None
     clean = redact(str(message or "")).strip()
     if not clean or len(clean) > 240 or clean.startswith(("{", "[")):
         clean = "The provider returned an error."
@@ -756,3 +759,73 @@ def _fallback_plan_steps(prompt: str, count: int | None) -> list[str]:
     if target == 1 and len(requested) > 1:
         return ["; then ".join([requested[0], requested[1][0].lower() + requested[1][1:]])]
     return steps[:target]
+
+
+class ChatGPTResponsesAdapter(OpenAIResponsesAdapter):
+    """Responses through a user's explicitly authorized ChatGPT plan.
+
+    Refresh before every request; never fall back to API-key billing. HTTP
+    history stays local and each request must stream with store=false.
+    """
+    def __init__(self, *, accounts, account_id, model, timeout_s=300):
+        super().__init__(base_url="https://api.openai.com/v1", model=model,
+                         api_key="", capabilities=["shell", "functions"],
+                         native_computer=False, timeout_s=timeout_s)
+        self.accounts = accounts
+        self.account_id = account_id
+
+    @staticmethod
+    def _plan_payload(payload):
+        payload = dict(payload)
+        for key in ("max_output_tokens", "previous_response_id", "temperature", "top_p"):
+            payload.pop(key, None)
+        if not isinstance(payload.get("input"), list):
+            payload["input"] = [{"role": "user", "content": str(payload.get("input", ""))}]
+        tools = payload.get("tools")
+        if tools and not all(t.get("type") == "namespace" for t in tools):
+            payload["tools"] = [{"type": "namespace", "name": "termx",
+                                  "description": "Tools on the user's paired computer", "tools": tools}]
+        payload.update(store=False, stream=True)
+        return payload
+
+    def _turn_payload(self, **kwargs):
+        # Always resubmit the supplied local transcript, never previous_response_id.
+        kwargs["previous_response_id"] = None
+        return self._plan_payload(super()._turn_payload(**kwargs))
+
+    async def _post(self, payload):
+        # test() and plan() also require SSE on this route.
+        return await self._post_stream(payload)
+
+    async def _post_stream(self, payload, *, on_delta=None, on_event=None):
+        from termx.agent.chatgpt import USAGE_URL
+        self.api_key = await self.accounts.access_token(self.account_id)
+        payload = self._plan_payload(payload)
+        try:
+            if self.client is not None:
+                body = await self._stream_with(self.client, payload, on_delta, on_event)
+            else:
+                async with httpx.AsyncClient(timeout=self.timeout_s, follow_redirects=False) as client:
+                    body = await self._stream_with(client, payload, on_delta, on_event)
+            if body.get("status") != "completed":
+                raise ProviderError("ChatGPT response did not complete. Retry this request.")
+            return body
+        except httpx.RequestError as exc:
+            raise ProviderError("Could not reach ChatGPT. Try again later.", network=True) from exc
+        except ProviderError as exc:
+            message = str(exc)
+            if "subscription_sharing_usage_limit_exceeded" in message or "subscription_sharing_usage_unavailable" in message:
+                raise ProviderError(f"ChatGPT usage limit reached. Manage usage: {USAGE_URL}",
+                                    status_code=403) from exc
+            if "subscription_sharing_unauthorized" in message or "chatpass_v2_scope_not_authorized" in message:
+                raise ProviderError("ChatGPT plan usage is not authorized. Sign in again and enable plan usage.") from exc
+            if "subscription_sharing_unsupported_capability" in message:
+                raise ProviderError("This capability is not available through your ChatGPT plan.") from exc
+            if "subscription_sharing_user_unavailable" in message:
+                raise ProviderError("ChatGPT is temporarily unavailable. Try again later.", status_code=503) from exc
+            if exc.status_code == 401:
+                # Refresh for the next request without automatically replaying a
+                # turn that might already have streamed partial output.
+                await self.accounts.access_token(self.account_id, force=True)
+                raise ProviderError("ChatGPT access was renewed. Retry this request.") from exc
+            raise

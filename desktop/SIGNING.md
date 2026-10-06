@@ -132,3 +132,16 @@ desktop/scripts/sign_macos_release.sh --input ~/Downloads
 
 The result is `signed-Termx_X.Y.Z_*.dmg`. Windows and Linux artifacts can be signed
 the same way with `sign_windows_release.ps1` and `sign_linux_release.sh`.
+
+## Sign a downloaded macOS app update
+
+With `desktop/signing.env` configured, sign and notarize a downloaded `.app` bundle
+in place with one command:
+
+```bash
+desktop/scripts/sign_notarize_app.sh "/Applications/Agent OS.app"
+```
+
+The script signs a staged copy, submits it to Apple, staples and validates the
+notarization ticket, clears download quarantine, then replaces the supplied app
+only after Apple accepts it. The app stays untouched if notarization fails.

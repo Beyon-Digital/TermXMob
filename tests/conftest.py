@@ -9,6 +9,9 @@ def termx_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Keep file-backed agent/discovery writes hermetic: never touch the real
     # ~/.agents tree from tests unless a test opts in explicitly.
     monkeypatch.setenv("TERMX_AGENTS_DIR", str(tmp_path / "agents-root"))
+    monkeypatch.setenv("TERMX_ACP_HOME", str(tmp_path / "acp-registry"))
+    # Catalogue tests opt in; unrelated tests never start real vendor agents.
+    monkeypatch.setenv("TERMX_ENGINE_STARTUP_REFRESH", "0")
 
 
 @pytest.fixture(autouse=True)

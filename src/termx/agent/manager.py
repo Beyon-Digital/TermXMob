@@ -45,18 +45,12 @@ from termx.agent.runtime import ProviderHttpRuntime
 from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
+from termx.agent.limits import DEFAULT_LIMITS, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
 from termx.agent import worktrees
 
 T = TypeVar("T")
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
-DEFAULT_LIMITS = {
-    "max_steps": 24,
-    "max_seconds": 900,
-    "shell_timeout_s": 120,
-    "max_parallel_subagents": 3,
-    "max_subagents_total": 8,
-}
 
 
 class AgentManager:
@@ -71,14 +65,19 @@ class AgentManager:
         adapter_factory: AdapterFactory | None = None,
         project_files: Any = None,
         runner_for: Any = None,
+        settings: Callable[[], Any] | None = None,
     ) -> None:
         self.store = store
+        self._settings = settings
         self.credentials = credentials
         self.desktop = desktop
         self._adapter_factory = adapter_factory or self._default_adapter
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._cancel: dict[str, asyncio.Event] = {}
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
+        # Global event listeners (notification center, etc.) — fired for every
+        # persisted event in addition to the per-task subscriber queues.
+        self._listeners: set[Callable[[str, dict[str, Any]], None]] = set()
         self._steering: dict[str, list[str]] = defaultdict(list)
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
         self._computer = ComputerController()
@@ -113,6 +112,15 @@ class AgentManager:
         )
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
+            # Native engines own their recovery. Budget approvals are durable
+            # safe boundaries and must remain paused across host restarts.
+            if task.get("engine") not in (None, "internal"):
+                continue
+            if task["status"] == "awaiting_approval" and any(
+                a["kind"] == "budget" and a["status"] == "pending"
+                for a in self.store.approvals(task["id"])
+            ):
+                continue
             if task["status"] in ACTIVE_STATUSES:
                 checkpoint = self.store.latest_checkpoint(task["id"], kind="execution")
                 decision = recovery_decision(checkpoint)
@@ -177,6 +185,9 @@ class AgentManager:
         capabilities: list[str],
         api_key: str | None = None,
     ) -> dict[str, Any]:
+        current = self.store.get_provider(provider_id)
+        if provider_id.startswith("chatgpt-") or (current and current["kind"] == "chatgpt"):
+            raise ValueError("ChatGPT providers are managed through Sign in with ChatGPT")
         if kind not in {"openai", "openai-compatible"}:
             raise ValueError("provider kind must be openai or openai-compatible")
         if not base_url.startswith(("https://", "http://")):
@@ -208,6 +219,9 @@ class AgentManager:
         return {"status": "connected", "message": message}
 
     def delete_provider(self, provider_id: str) -> bool:
+        current = self.store.get_provider(provider_id)
+        if current and current["kind"] == "chatgpt":
+            raise ValueError("Sign out of this ChatGPT account instead")
         deleted = self.store.delete_provider(provider_id)
         if deleted:
             self.credentials.delete(provider_id)
@@ -405,6 +419,7 @@ class AgentManager:
         decision: str,
         *,
         remember: str | None = None,
+        limits: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         task = self._task(task_id)
         approval = self.store.get_approval(approval_id)
@@ -415,6 +430,15 @@ class AgentManager:
             escalation and approval["status"] == "pending"
         ):
             raise ValueError("task is not awaiting approval")
+        if approval["status"] != "pending":
+            raise ValueError("approval is already resolved")
+        next_limits = None
+        if approval["kind"] == "budget" and decision == "approved":
+            step = int((task.get("runtime") or {}).get("step") or 0)
+            suggested = approval["payload"]["suggested_limits"]
+            next_limits = resolve_limits(limits, {**task["limits"], **suggested})
+            if next_limits["max_steps"] <= step:
+                raise ValueError("max_steps must exceed the completed tool count")
         if (
             decision != "denied"
             and approval["kind"] == "tool"
@@ -458,7 +482,16 @@ class AgentManager:
             self.store.update_task(task_id, status="cancelled", error="Approval denied")
             self._emit(task_id, "task.cancelled", {"message": "Approval denied"})
             return approval
-        if approval["kind"] == "plan":
+        if approval["kind"] == "budget":
+            if next_limits is None:
+                self._mark_cancelled(task_id)
+                return approval
+            runtime = dict(task.get("runtime") or {})
+            runtime["started_at"] = None
+            self.store.update_task(task_id, limits=next_limits, runtime=runtime)
+            self._emit(task_id, "task.budget.extended", {"limits": next_limits})
+            self._launch(task_id, self._drive(task_id))
+        elif approval["kind"] == "plan":
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
             assert private_payload is not None
@@ -743,10 +776,11 @@ class AgentManager:
                 if cancel.is_set():
                     await self._cancelled(task_id)
                     return
-                if step >= limits["max_steps"]:
-                    raise RuntimeError("Agent stopped at the configured step limit")
-                if monotonic() - started_at >= limits["max_seconds"]:
-                    raise RuntimeError("Agent stopped at the configured time limit")
+                reason = ("max_steps" if step >= limits["max_steps"] else
+                          "max_seconds" if monotonic() - started_at >= limits["max_seconds"] else None)
+                if reason:
+                    self._pause_budget(task_id, history, step, started_at, reason)
+                    return
                 steering = self._steering.pop(task_id, [])
                 for message in steering:
                     history.append({"role": "user", "content": message})
@@ -965,6 +999,24 @@ class AgentManager:
                 # terminal transition — completed, failed, cancelled or a
                 # crashed worker — not just the paths that call _finish_state.
                 self.store.expire_task_policy_rules(task_id)
+
+    def _pause_budget(self, task_id: str, history: list[dict[str, Any]],
+                      step: int, started_at: float, reason: str) -> None:
+        task = self._task(task_id)
+        runtime = {**(task.get("runtime") or {}), "history": history,
+                   "step": step, "started_at": started_at}
+        self.store.update_task(task_id, status="awaiting_approval", runtime=runtime)
+        chunk = self._limits(None)["max_steps"]
+        suggested = {"max_steps": min(100000, max(step + chunk, task["limits"]["max_steps"]))}
+        approval = self.store.create_approval(task_id, "budget", {
+            "title": "Continue this task with a renewed run budget",
+            "reason": reason, "completed_steps": step, "limits": task["limits"],
+            "suggested_limits": suggested,
+            "consequence": "Continues from saved tool results; grants a fresh time budget",
+        })
+        self._emit(task_id, "task.budget.exhausted", approval["payload"])
+        self._emit(task_id, "approval.requested", {"approval": approval})
+        self._emit(task_id, "task.status", {"status": "awaiting_approval"})
 
     async def _run_calls(
         self,
@@ -2053,6 +2105,11 @@ class AgentManager:
 
     def _emit(self, task_id: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         event = self.store.append_event(task_id, event_type, payload)
+        for listener in tuple(self._listeners):
+            try:
+                listener(task_id, event)
+            except Exception:  # noqa: BLE001 - listeners must never break emit
+                pass
         for queue in tuple(self._subscribers.get(task_id, ())):
             try:
                 queue.put_nowait(event)
@@ -2070,7 +2127,10 @@ class AgentManager:
             raise ValueError("task is already running")
         worker = asyncio.create_task(coroutine, name=f"termx-agent-{task_id[:8]}")
         self._workers[task_id] = worker
-        worker.add_done_callback(lambda _done: self._workers.pop(task_id, None))
+        def finished(done: asyncio.Task[None]) -> None:
+            if self._workers.get(task_id) is done:
+                self._workers.pop(task_id, None)
+        worker.add_done_callback(finished)
 
     def _provider(self, provider_id: str) -> dict[str, Any]:
         provider = self.store.get_provider(provider_id)
@@ -2079,6 +2139,11 @@ class AgentManager:
         return provider
 
     def _adapter(self, provider: dict[str, Any]) -> ProviderAdapter:
+        if provider["kind"] == "chatgpt":
+            from termx.agent.providers import ChatGPTResponsesAdapter
+            return ChatGPTResponsesAdapter(accounts=self.chatgpt, account_id=provider["id"],
+                                           model=provider["model"],
+                                           timeout_s=self._settings().provider_timeout_s if self._settings else 300)
         key = self.credentials.get(provider["id"]) or ""
         return self._adapter_factory(provider, key)
 
@@ -2089,6 +2154,7 @@ class AgentManager:
             api_key=key,
             capabilities=provider["capabilities"],
             native_computer=provider["kind"] == "openai",
+            timeout_s=self._settings().provider_timeout_s if self._settings else 300,
         )
         adapter.client = self._http.client_for(
             provider["id"],
@@ -2103,16 +2169,8 @@ class AgentManager:
             raise KeyError(task_id)
         return task
 
-    @staticmethod
-    def _limits(value: dict[str, Any] | None) -> dict[str, Any]:
-        source = value or {}
-        return {
-            "max_steps": min(100, max(1, int(source.get("max_steps") or DEFAULT_LIMITS["max_steps"]))),
-            "max_seconds": min(3600, max(30, int(source.get("max_seconds") or DEFAULT_LIMITS["max_seconds"]))),
-            "shell_timeout_s": min(600, max(5, int(source.get("shell_timeout_s") or DEFAULT_LIMITS["shell_timeout_s"]))),
-            "max_parallel_subagents": min(8, max(1, int(source.get("max_parallel_subagents") or DEFAULT_LIMITS["max_parallel_subagents"]))),
-            "max_subagents_total": min(32, max(1, int(source.get("max_subagents_total") or DEFAULT_LIMITS["max_subagents_total"]))),
-        }
+    def _limits(self, value: dict[str, Any] | None) -> dict[str, int]:
+        return resolve_limits(value, self._settings().limits if self._settings else None)
 
     @staticmethod
     def _call(value: dict[str, Any]) -> ProviderCall:

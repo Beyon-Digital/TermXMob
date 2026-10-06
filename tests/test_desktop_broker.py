@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from _gql import data, err_status
+
 from termx.desktop import broker
 from termx.desktop.input import _virtual_desktop_point
 
@@ -160,17 +162,17 @@ def test_launch_at_login_endpoint_via_broker(tmp_path: Path) -> None:
     fake = FakeBroker(tmp_path, {"autostart": handler})
     broker.configure(fake.path)
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
-    assert client.get("/api/launch-at-login").status_code == 401
-    res = client.get("/api/launch-at-login", headers={"X-Termx-Passcode": "secret"})
-    assert res.status_code == 200
-    assert res.json() == {"managed": True, "enabled": False}
-    res = client.put(
-        "/api/launch-at-login",
-        headers={"X-Termx-Passcode": "secret"},
-        json={"enabled": True},
+    headers = {"X-Termx-Passcode": "secret"}
+    query = "{ launch_at_login { managed enabled } }"
+    assert err_status(client, query) == 401
+    res = data(client, query, "launch_at_login", headers=headers)
+    assert res == {"managed": True, "enabled": False}
+    res = data(
+        client,
+        "mutation { set_launch_at_login(enabled: true) { managed enabled } }",
+        "set_launch_at_login", headers=headers,
     )
-    assert res.status_code == 200
-    assert res.json() == {"managed": True, "enabled": True}
+    assert res == {"managed": True, "enabled": True}
     fake.close()
 
 

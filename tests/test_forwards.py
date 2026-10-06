@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from _gql import data, err_status
+
 from termx.app import AppState, create_app
 from termx.config import ConfigStore
 from termx.forwards import ForwardManager, ssh_args
@@ -121,64 +123,65 @@ def test_manager_reports_error_for_missing_binary(tmp_path: Path, monkeypatch) -
 def test_forwards_api(tmp_path: Path, monkeypatch, fake_ssh: str) -> None:
     monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
+    headers = {"X-Termx-Passcode": "secret"}
 
-    created = client.post(
-        "/api/forwards",
-        params={"k": "secret"},
-        json={
-            "name": "dev server",
-            "kind": "local",
-            "listen_port": 18082,
-            "target_host": "127.0.0.1",
-            "target_port": 13002,
-            "ssh_host": "me@box",
-            "auto_start": True,
-        },
+    rule = data(
+        client,
+        "mutation($input: ForwardInput!) { create_forward(input: $input) { id auto_start } }",
+        "create_forward",
+        {"input": {
+            "name": "dev server", "kind": "local", "listen_port": 18082,
+            "target_host": "127.0.0.1", "target_port": 13002,
+            "ssh_host": "me@box", "auto_start": True,
+        }},
+        headers,
     )
-    assert created.status_code == 200
-    rule = created.json()
     assert rule["auto_start"] is True
 
-    listed = client.get("/api/forwards", params={"k": "secret"}).json()
+    listed = data(client, "{ forwards { rules { id } } }", "forwards", headers=headers)
     assert [item["id"] for item in listed["rules"]] == [rule["id"]]
 
-    started = client.post(f"/api/forwards/{rule['id']}/start", params={"k": "secret"}).json()
+    started = data(
+        client,
+        'mutation($id: String!) { start_forward(rule_id: $id) { state } }',
+        "start_forward", {"id": rule["id"]}, headers,
+    )
     assert started["state"] == "running"
     time.sleep(0.1)
-    stopped = client.post(f"/api/forwards/{rule['id']}/stop", params={"k": "secret"}).json()
+    stopped = data(
+        client,
+        'mutation($id: String!) { stop_forward(rule_id: $id) { state } }',
+        "stop_forward", {"id": rule["id"]}, headers,
+    )
     assert stopped["state"] == "stopped"
 
+    create = "mutation($input: ForwardInput!) { create_forward(input: $input) { id } }"
+    # Invalid input (out-of-range port, bad kind) — one validation layer now.
     assert (
-        client.post(
-            "/api/forwards",
-            params={"k": "secret"},
-            json={
-                "name": "bad",
-                "kind": "local",
-                "listen_port": 70000,
-                "target_port": 1,
-                "ssh_host": "me@box",
-            },
-        ).status_code
-        == 422
-    )
-    assert (
-        client.post(
-            "/api/forwards",
-            params={"k": "secret"},
-            json={
-                "name": "bad",
-                "kind": "nope",
-                "listen_port": 8080,
-                "target_port": 1,
-                "ssh_host": "me@box",
-            },
-        ).status_code
+        err_status(client, create, {"input": {
+            "name": "bad", "kind": "local", "listen_port": 70000,
+            "target_port": 1, "ssh_host": "me@box",
+        }}, headers)
         == 400
     )
-    patched = client.patch(
-        f"/api/forwards/{rule['id']}", params={"k": "secret"}, json={"auto_start": False}
-    ).json()
+    assert (
+        err_status(client, create, {"input": {
+            "name": "bad", "kind": "nope", "listen_port": 8080,
+            "target_port": 1, "ssh_host": "me@box",
+        }}, headers)
+        == 400
+    )
+    patched = data(
+        client,
+        'mutation($id: String!, $input: ForwardPatchInput!) { patch_forward(rule_id: $id, input: $input) { auto_start } }',
+        "patch_forward", {"id": rule["id"], "input": {"auto_start": False}}, headers,
+    )
     assert patched["auto_start"] is False
-    assert client.delete(f"/api/forwards/{rule['id']}", params={"k": "secret"}).json() == {"ok": True}
-    assert client.get("/api/forwards", params={"k": "secret"}).json()["rules"] == []
+    data(
+        client,
+        'mutation($id: String!) { delete_forward(rule_id: $id) { ok } }',
+        "delete_forward", {"id": rule["id"]}, headers,
+    )
+    assert data(
+        client, "{ forwards { rules { id } } }", "forwards", headers=headers
+    )["rules"] == []

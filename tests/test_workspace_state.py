@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from _gql import data, err_status
+
 from termx.app import AppState, create_app
 from termx.config import ConfigStore, WorkspaceSession
 
@@ -37,62 +39,78 @@ def test_workspace_roundtrip(tmp_path: Path, monkeypatch) -> None:
     assert ConfigStore().get_workspace().sessions == []
 
 
+_WORKSPACE = "{ workspace { saved_at sessions { title shell cwd } } }"
+_SAVE = (
+    "mutation($sessions: [WorkspaceSessionInput!]!) "
+    "{ save_workspace(sessions: $sessions) { sessions { title } } }"
+)
+_RESTORE = (
+    "mutation { restore_workspace { restored already_running sessions { id title cwd } } }"
+)
+_SESSIONS = "{ sessions { id } }"
+
+
 def test_workspace_api_saves_and_restores(tmp_path: Path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
+    headers = {"X-Termx-Passcode": "secret"}
     work = tmp_path / "work"
     work.mkdir()
 
-    empty = client.get("/api/workspace", params={"k": "secret"}).json()
-    assert empty == {"sessions": [], "saved_at": 0}
+    empty = data(client, _WORKSPACE, "workspace", headers=headers)
+    assert empty["sessions"] == []
 
-    saved = client.put(
-        "/api/workspace",
-        params={"k": "secret"},
-        json={"sessions": [{"title": "shell one", "shell": "/bin/sh", "cwd": str(work)}]},
+    saved = data(
+        client, _SAVE, "save_workspace",
+        {"sessions": [{"title": "shell one", "shell": "/bin/sh", "cwd": str(work)}]},
+        headers,
     )
-    assert saved.status_code == 200
-    assert saved.json()["sessions"][0]["title"] == "shell one"
+    assert saved["sessions"][0]["title"] == "shell one"
 
-    restored = client.post("/api/workspace/restore", params={"k": "secret"}).json()
+    restored = data(client, _RESTORE, "restore_workspace", headers=headers)
     assert restored["restored"] == 1
     snapshot = restored["sessions"][0]
     assert snapshot["title"] == "shell one"
     assert Path(snapshot["cwd"]).name == "work"
 
-    live = client.get("/api/sessions", params={"k": "secret"}).json()["sessions"]
+    live = data(client, _SESSIONS, "sessions", headers=headers)
     assert [item["id"] for item in live] == [snapshot["id"]]
 
     # A second client connection must reuse the host-owned live PTY instead of
     # replaying the persisted spec into a duplicate terminal.
-    repeated = client.post("/api/workspace/restore", params={"k": "secret"}).json()
+    repeated = data(client, _RESTORE, "restore_workspace", headers=headers)
     assert repeated["restored"] == 0
     assert repeated["already_running"] == 1
     assert [item["id"] for item in repeated["sessions"]] == [snapshot["id"]]
-    assert len(client.get("/api/sessions", params={"k": "secret"}).json()["sessions"]) == 1
+    assert len(data(client, _SESSIONS, "sessions", headers=headers)) == 1
 
-    client.delete(f"/api/sessions/{snapshot['id']}", params={"k": "secret"})
+    data(
+        client,
+        'mutation($id: String!) { delete_session(session_id: $id) { ok } }',
+        "delete_session", {"id": snapshot["id"]}, headers,
+    )
 
-    assert client.get("/api/workspace", params={"k": "secret"}).status_code == 200
-    assert client.get("/api/workspace").status_code == 401
+    assert data(client, _WORKSPACE, "workspace", headers=headers) is not None
+    assert err_status(client, _WORKSPACE) == 401
 
 
 def test_restore_falls_back_on_missing_shell_and_cwd(tmp_path: Path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
-    client.put(
-        "/api/workspace",
-        params={"k": "secret"},
-        json={
-            "sessions": [
-                {"title": "gone", "shell": "/nope/missing-shell", "cwd": str(tmp_path / "missing-dir")}
-            ]
-        },
+    headers = {"X-Termx-Passcode": "secret"}
+    data(
+        client, _SAVE, "save_workspace",
+        {"sessions": [{"title": "gone", "shell": "/nope/missing-shell", "cwd": str(tmp_path / "missing-dir")}]},
+        headers,
     )
-    restored = client.post("/api/workspace/restore", params={"k": "secret"}).json()
+    restored = data(client, _RESTORE, "restore_workspace", headers=headers)
     assert restored["restored"] == 1
     snapshot = restored["sessions"][0]
     assert snapshot["title"] == "gone"
     assert Path(snapshot["cwd"]).is_dir()
-    client.delete(f"/api/sessions/{snapshot['id']}", params={"k": "secret"})
+    data(
+        client,
+        'mutation($id: String!) { delete_session(session_id: $id) { ok } }',
+        "delete_session", {"id": snapshot["id"]}, headers,
+    )
 
 
 def test_workspace_caps_session_count(tmp_path: Path, monkeypatch) -> None:

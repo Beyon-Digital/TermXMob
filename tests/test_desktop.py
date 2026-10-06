@@ -7,6 +7,8 @@ import time
 
 import pytest
 
+from _gql import data
+
 import termx.desktop.capabilities as desktop_capabilities
 import termx.desktop.virtual as vmod
 from termx.desktop.capabilities import probe_desktop
@@ -649,7 +651,11 @@ def test_update_check_reports_release(tmp_path, monkeypatch) -> None:
     )
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
-    body = client.get("/api/update/check?k=secret").json()
+    body = data(
+        client,
+        "{ update_check { available latest url } }",
+        "update_check", headers={"X-Termx-Passcode": "secret"},
+    )
     assert body["available"] is True
     assert body["latest"] == "9.9.9"
     assert body["url"].endswith("v9.9.9")
@@ -666,6 +672,10 @@ def test_update_apply_without_desktop_shell(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(update_module, "fetch_latest_release", lambda timeout=8.0: None)
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
-    body = client.post("/api/update/apply?k=secret").json()
+    body = data(
+        client,
+        "mutation { apply_update { started instructions } }",
+        "apply_update", headers={"X-Termx-Passcode": "secret"},
+    )
     assert body["started"] is False
     assert "instructions" in body

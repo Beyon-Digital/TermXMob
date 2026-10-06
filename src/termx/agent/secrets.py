@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 from termx.config import config_dir
@@ -177,7 +178,17 @@ class CredentialStore:
     def _windows_set(self, provider_id: str, secret: str) -> None:
         path = self._windows_path(provider_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(self._protect(secret.encode("utf-8"), decrypt=False))
+        encrypted = self._protect(secret.encode("utf-8"), decrypt=False)
+        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".credential-")
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encrypted)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
         if os.name == "posix":  # pragma: no cover - Windows branch
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 

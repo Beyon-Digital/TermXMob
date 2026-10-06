@@ -14,6 +14,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from _gql import data, err_status, gql
+
 from termx.agent import providers as agent_providers
 from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
@@ -1502,46 +1504,51 @@ def test_agent_api_scopes_and_write_only_provider(tmp_path: Path) -> None:
     state.agent._computer = FakeComputer()  # type: ignore[assignment]
     viewer = state.tokens.issue(["agent-view"])
     with TestClient(create_app(state, web_dir=None)) as client:
-        assert client.get("/api/agent/providers").status_code == 401
-        assert client.get("/api/agent/providers", headers={"Authorization": f"Bearer {viewer}"}).status_code == 200
-        denied = client.put(
-            "/api/agent/providers/fake",
-            headers={"Authorization": f"Bearer {viewer}"},
-            json={"id": "fake", "name": "Fake", "model": "fake", "api_key": "do-not-return"},
+        assert err_status(client, "{ agent_providers { id } }") == 401
+        data(client, "{ agent_providers { id } }", headers={"Authorization": f"Bearer {viewer}"})
+        denied = gql(
+            client,
+            "mutation($input: AgentProviderInput!) { save_agent_provider(input: $input) { id } }",
+            {"input": {"id": "fake", "name": "Fake", "model": "fake", "api_key": "do-not-return"}},
+            {"Authorization": f"Bearer {viewer}"},
         )
-        assert denied.status_code == 403
-        saved = client.put(
-            "/api/agent/providers/fake",
-            headers={"X-Termx-Passcode": "secret"},
-            json={
-                "id": "fake",
-                "kind": "openai-compatible",
-                "name": "Fake",
-                "base_url": "http://127.0.0.1:9999/v1",
-                "model": "fake",
-                "capabilities": ["shell"],
-                "api_key": "do-not-return",
+        assert denied.json()["errors"][0]["extensions"]["http_status"] == 403
+        saved = gql(
+            client,
+            "mutation($input: AgentProviderInput!) { save_agent_provider(input: $input) { secret_configured } }",
+            {
+                "input": {
+                    "id": "fake",
+                    "kind": "openai-compatible",
+                    "name": "Fake",
+                    "base_url": "http://127.0.0.1:9999/v1",
+                    "model": "fake",
+                    "capabilities": ["shell"],
+                    "api_key": "do-not-return",
+                }
             },
+            {"X-Termx-Passcode": "secret"},
         )
-        assert saved.status_code == 200
-        assert saved.json()["secret_configured"] is True
+        assert saved.json()["data"]["save_agent_provider"]["secret_configured"] is True
         assert "do-not-return" not in saved.text
-        created = client.post(
-            "/api/agent/tasks",
+        task = data(
+            client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id status events } }",
+            "create_agent_task",
+            {"input": {"prompt": "Check", "cwd": str(tmp_path), "provider_id": "fake"}},
             headers={"X-Termx-Passcode": "secret"},
-            json={"prompt": "Check", "cwd": str(tmp_path), "provider_id": "fake"},
         )
-        assert created.status_code == 200
-        task = created.json()
         assert task["status"] == "awaiting_approval"
         assert task["events"][0]["sequence"] == 1
-        replay = client.get(
-            f"/api/agent/tasks/{task['id']}",
+        replay = data(
+            client,
+            "query($id: String!) { agent_task(task_id: $id) { events } }",
+            "agent_task",
+            {"id": task["id"]},
             headers={"Authorization": f"Bearer {viewer}"},
         )
-        assert replay.status_code == 200
-        assert [item["sequence"] for item in replay.json()["events"]] == sorted(
-            item["sequence"] for item in replay.json()["events"]
+        assert [item["sequence"] for item in replay["events"]] == sorted(
+            item["sequence"] for item in replay["events"]
         )
 
 
@@ -2387,45 +2394,64 @@ def test_conversations_crud_and_turns(tmp_path: Path) -> None:
     state = _conversation_state(tmp_path)
     with TestClient(create_app(state, web_dir=None)) as client:
         headers = {"x-termx-passcode": "secret"}
-        assert client.get("/api/conversations").status_code == 401
-        created = client.post(
-            "/api/conversations",
-            json={"title": "Thread A", "cwd": "/tmp", "mode": "agent", "pinned": True},
+        assert err_status(client, "{ conversations { id } }") == 401
+        created = data(
+            client,
+            "mutation($input: ConversationInput!) { create_conversation(input: $input) { id title pinned draft } }",
+            "create_conversation",
+            {"input": {"title": "Thread A", "cwd": "/tmp", "mode": "agent", "pinned": True}},
             headers=headers,
-        ).json()["conversation"]
+        )
         assert created["title"] == "Thread A"
         assert created["pinned"] is True and created["draft"] is False
-        listed = client.get("/api/conversations", headers=headers).json()["conversations"]
+        listed = data(client, "{ conversations { id } }", "conversations", headers=headers)
         assert [c["id"] for c in listed] == [created["id"]]
-        turn = client.post(
-            f"/api/conversations/{created['id']}/turns",
-            json={
+        turn = data(
+            client,
+            "mutation($id: String!, $input: ConversationTurnInput!) { add_conversation_turn(conversation_id: $id, input: $input) { sequence task_id context_refs attachment_refs } }",
+            "add_conversation_turn",
+            {"id": created["id"], "input": {
                 "prompt": "fix the bug",
                 "task_id": "task-1",
                 "context_refs": [{"ref": "src/a.py", "start_line": 3}],
                 "attachment_refs": [{"ref": "shot.png"}],
-            },
+            }},
             headers=headers,
-        ).json()["turn"]
+        )
         assert turn["sequence"] == 1 and turn["task_id"] == "task-1"
         assert turn["context_refs"][0]["meta"] == {"start_line": 3}
         assert turn["attachment_refs"][0]["ref"] == "shot.png"
-        fetched = client.get(
-            f"/api/conversations/{created['id']}", headers=headers
-        ).json()["conversation"]
+        fetched = data(
+            client,
+            "query($id: String!) { conversation(conversation_id: $id) { turns } }",
+            "conversation", {"id": created["id"]}, headers=headers,
+        )
         assert fetched["turns"][0]["prompt"] == "fix the bug"
-        patched = client.patch(
-            f"/api/conversations/{created['id']}",
-            json={"archived": True, "title": "Renamed"},
+        patched = data(
+            client,
+            "mutation($id: String!, $input: ConversationPatchInput!) { patch_conversation(conversation_id: $id, input: $input) { archived title } }",
+            "patch_conversation",
+            {"id": created["id"], "input": {"archived": True, "title": "Renamed"}},
             headers=headers,
-        ).json()["conversation"]
+        )
         assert patched["archived"] is True and patched["title"] == "Renamed"
-        assert client.get("/api/conversations", headers=headers).json()["conversations"] == []
-        assert client.get(
-            "/api/conversations?archived=all", headers=headers
-        ).json()["conversations"][0]["id"] == created["id"]
-        client.delete(f"/api/conversations/{created['id']}", headers=headers)
-        assert client.get(f"/api/conversations/{created['id']}", headers=headers).status_code == 404
+        assert data(client, "{ conversations { id } }", "conversations", headers=headers) == []
+        assert data(
+            client, '{ conversations(archived: "all") { id } }', "conversations", headers=headers
+        )[0]["id"] == created["id"]
+        data(
+            client,
+            "mutation($id: String!) { delete_conversation(conversation_id: $id) { deleted } }",
+            "delete_conversation", {"id": created["id"]}, headers=headers,
+        )
+        assert (
+            err_status(
+                client,
+                "query($id: String!) { conversation(conversation_id: $id) { id } }",
+                {"id": created["id"]}, headers=headers,
+            )
+            == 404
+        )
 
 
 def test_conversation_turn_links_task_creation(tmp_path: Path) -> None:
@@ -2440,20 +2466,23 @@ def test_conversation_turn_links_task_creation(tmp_path: Path) -> None:
     )
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        conv = client.post(
-            "/api/conversations", json={"title": "T"}, headers=headers
-        ).json()["conversation"]
-        missing = client.post(
-            "/api/agent/tasks",
-            json={
+        conv = data(
+            client,
+            "mutation($input: ConversationInput!) { create_conversation(input: $input) { id } }",
+            "create_conversation", {"input": {"title": "T"}}, headers=headers,
+        )
+        missing = gql(
+            client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id } }",
+            {"input": {
                 "prompt": "do it",
                 "cwd": str(tmp_path),
                 "provider_id": "missing-conv-test",
                 "conversation_id": "nope",
-            },
-            headers=headers,
+            }},
+            headers,
         )
-        assert missing.status_code == 404
+        assert missing.json()["errors"][0]["extensions"]["http_status"] == 404
         state.agent.save_provider(
             provider_id="fake",
             kind="openai-compatible",
@@ -2462,19 +2491,23 @@ def test_conversation_turn_links_task_creation(tmp_path: Path) -> None:
             model="m",
             capabilities=["shell"],
         )
-        task = client.post(
-            "/api/agent/tasks",
-            json={
+        task = data(
+            client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id } }",
+            "create_agent_task",
+            {"input": {
                 "prompt": "do it",
                 "cwd": str(tmp_path),
                 "provider_id": "fake",
                 "conversation_id": conv["id"],
-            },
+            }},
             headers=headers,
-        ).json()
-        convo = client.get(
-            f"/api/conversations/{conv['id']}", headers=headers
-        ).json()["conversation"]
+        )
+        convo = data(
+            client,
+            "query($id: String!) { conversation(conversation_id: $id) { turns } }",
+            "conversation", {"id": conv["id"]}, headers=headers,
+        )
         assert convo["turns"][0]["task_id"] == task["id"]
         assert convo["turns"][0]["prompt"] == "do it"
 
@@ -2493,9 +2526,11 @@ def test_task_records_display_turn_fields(tmp_path: Path) -> None:
     )
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        conv = client.post(
-            "/api/conversations", json={"title": "T"}, headers=headers
-        ).json()["conversation"]
+        conv = data(
+            client,
+            "mutation($input: ConversationInput!) { create_conversation(input: $input) { id } }",
+            "create_conversation", {"input": {"title": "T"}}, headers=headers,
+        )
         state.agent.save_provider(
             provider_id="fake",
             kind="openai-compatible",
@@ -2504,21 +2539,25 @@ def test_task_records_display_turn_fields(tmp_path: Path) -> None:
             model="m",
             capabilities=["shell"],
         )
-        task = client.post(
-            "/api/agent/tasks",
-            json={
+        task = data(
+            client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id } }",
+            "create_agent_task",
+            {"input": {
                 "prompt": "instructions preface\n\nSummarize this\n\n--- a.py lines 1-2 ---\nx = 1",
                 "cwd": str(tmp_path),
                 "provider_id": "fake",
                 "conversation_id": conv["id"],
                 "turn_prompt": "Summarize this",
                 "context_refs": [{"ref": "a.py", "meta": {"path": "a.py", "cwd": "/w", "start": 1, "end": 2}}],
-            },
+            }},
             headers=headers,
-        ).json()
-        turn = client.get(
-            f"/api/conversations/{conv['id']}", headers=headers
-        ).json()["conversation"]["turns"][0]
+        )
+        turn = data(
+            client,
+            "query($id: String!) { conversation(conversation_id: $id) { turns } }",
+            "conversation", {"id": conv["id"]}, headers=headers,
+        )["turns"][0]
         assert turn["task_id"] == task["id"]
         assert turn["prompt"] == "Summarize this"
         assert turn["context_refs"][0]["ref"] == "a.py"
@@ -2534,32 +2573,44 @@ def test_custom_agents_crud(tmp_path: Path) -> None:
     state = _conversation_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        assert client.get("/api/custom-agents").status_code == 401
-        agent = client.post(
-            "/api/custom-agents",
-            json={
+        assert err_status(client, "{ custom_agents { id } }") == 401
+        agent = data(
+            client,
+            "mutation($input: CustomAgentInput!) { create_custom_agent(input: $input) { id name tools limits } }",
+            "create_custom_agent",
+            {"input": {
                 "name": "Reviewer",
                 "instructions": "review every diff",
                 "tools": ["git_status", "git_diff"],
                 "limits": {"max_steps": 10},
-            },
+            }},
             headers=headers,
-        ).json()["agent"]
+        )
         assert agent["name"] == "Reviewer"
         assert agent["tools"] == ["git_status", "git_diff"]
         assert agent["limits"] == {"max_steps": 10}
-        patched = client.patch(
-            f"/api/custom-agents/{agent['id']}",
-            json={"description": "code reviewer"},
+        patched = data(
+            client,
+            "mutation($id: String!, $input: CustomAgentPatchInput!) { patch_custom_agent(agent_id: $id, input: $input) { description } }",
+            "patch_custom_agent",
+            {"id": agent["id"], "input": {"description": "code reviewer"}},
             headers=headers,
-        ).json()["agent"]
+        )
         assert patched["description"] == "code reviewer"
-        listed = client.get("/api/custom-agents", headers=headers).json()["agents"]
+        listed = data(client, "{ custom_agents { id } }", "custom_agents", headers=headers)
         assert listed[0]["id"] == agent["id"]
-        client.delete(f"/api/custom-agents/{agent['id']}", headers=headers)
-        assert client.get("/api/custom-agents", headers=headers).json()["agents"] == []
+        data(
+            client,
+            "mutation($id: String!) { delete_custom_agent(agent_id: $id) { deleted } }",
+            "delete_custom_agent", {"id": agent["id"]}, headers=headers,
+        )
+        assert data(client, "{ custom_agents { id } }", "custom_agents", headers=headers) == []
         assert (
-            client.post("/api/custom-agents", json={"name": "  "}, headers=headers).status_code
+            err_status(
+                client,
+                'mutation { create_custom_agent(input: {name: "  "}) { id } }',
+                headers=headers,
+            )
             in {400, 422}
         )
 
@@ -2796,39 +2847,52 @@ def test_worktree_rest_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         await wait_for_status(store, task_id, "completed")
 
     with TestClient(create_app(state, web_dir=None)) as client:
-        assert client.get("/api/agent/tasks/nope/worktree", headers=headers).status_code == 404
-        task = client.post(
-            "/api/agent/tasks",
-            json={
+        assert (
+            err_status(
+                client,
+                '{ agent_task_worktree(task_id: "nope") { task_id } }', headers=headers,
+            )
+            == 404
+        )
+        task = data(
+            client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id } }",
+            "create_agent_task",
+            {"input": {
                 "prompt": "do it",
                 "cwd": str(repo),
                 "provider_id": "fake",
                 "execution_mode": "worktree",
-            },
+            }},
             headers=headers,
-        ).json()
+        )
         asyncio.run(drive(task["id"]))
-        view = client.get(
-            f"/api/agent/tasks/{task['id']}/worktree", headers=headers
-        ).json()["worktree"]
+        view = data(
+            client,
+            "query($id: String!) { agent_task_worktree(task_id: $id) { mode status worktree_path } }",
+            "agent_task_worktree", {"id": task["id"]}, headers=headers,
+        )
         assert view["mode"] == "worktree"
         assert view["status"] == "active"
         # Dirty the worktree, then verify the 409 confirm gate + confirm path.
         Path(view["worktree_path"], "extra.txt").write_text("x\n")
-        blocked = client.post(
-            f"/api/agent/tasks/{task['id']}/worktree",
-            json={"action": "discard"},
+        blocked = gql(
+            client,
+            "mutation($id: String!, $input: WorktreeActionInput!) { resolve_task_worktree(task_id: $id, input: $input) { status } }",
+            {"id": task["id"], "input": {"action": "discard"}},
+            headers,
+        )
+        blocked_err = blocked.json()["errors"][0]["extensions"]
+        assert blocked_err["http_status"] == 409
+        assert blocked_err["requires_confirm"] is True
+        confirmed = data(
+            client,
+            "mutation($id: String!, $input: WorktreeActionInput!) { resolve_task_worktree(task_id: $id, input: $input) { status } }",
+            "resolve_task_worktree",
+            {"id": task["id"], "input": {"action": "discard", "confirm": True}},
             headers=headers,
         )
-        assert blocked.status_code == 409
-        assert blocked.json()["detail"]["requires_confirm"] is True
-        confirmed = client.post(
-            f"/api/agent/tasks/{task['id']}/worktree",
-            json={"action": "discard", "confirm": True},
-            headers=headers,
-        )
-        assert confirmed.status_code == 200
-        assert confirmed.json()["worktree"]["status"] == "discarded"
+        assert confirmed["status"] == "discarded"
 
 
 # ---------------------------------------------------------------------------
@@ -2848,7 +2912,7 @@ def test_activity_endpoint_and_snapshot(tmp_path: Path) -> None:
     headers = {"x-termx-passcode": "secret"}
 
     with TestClient(create_app(state, web_dir=None)) as client:
-        assert client.get("/api/activity").status_code == 401
+        assert err_status(client, "{ activity { activity { id } } }") == 401
         project = state.projects.register(str(tmp_path), "demo")
         state.projects.add_preview(project["id"], "dev", "http://127.0.0.1:3000")
         session = state.sessions.create(title="build shell", cwd=str(tmp_path))
@@ -2860,13 +2924,19 @@ def test_activity_endpoint_and_snapshot(tmp_path: Path) -> None:
             model="m",
             capabilities=["shell"],
         )
-        task = client.post(
-            "/api/agent/tasks",
-            json={"prompt": "check it", "cwd": str(tmp_path), "provider_id": "fake"},
+        task = data(
+            client,
+            "mutation($input: AgentTaskInput!) { create_agent_task(input: $input) { id } }",
+            "create_agent_task",
+            {"input": {"prompt": "check it", "cwd": str(tmp_path), "provider_id": "fake"}},
             headers=headers,
-        ).json()
+        )
 
-        activity = client.get("/api/activity", headers=headers).json()["activity"]
+        activity = data(
+            client,
+            "{ activity { activity { id kind project_id title state started_at updated_at actions extra } } }",
+            "activity", headers=headers,
+        )["activity"]
         by_kind = {}
         for item in activity:
             assert set(item) >= {
@@ -2881,7 +2951,7 @@ def test_activity_endpoint_and_snapshot(tmp_path: Path) -> None:
         assert term_item["state"] == "running"
         assert term_item["project_id"] == project["id"]
         prev_item = by_kind["preview"][0]
-        assert prev_item["url"] == "http://127.0.0.1:3000"
+        assert prev_item["extra"]["url"] == "http://127.0.0.1:3000"
         state.sessions.kill(session.id)
 
 
@@ -2894,20 +2964,32 @@ def test_activity_ws_pushes_changes(tmp_path: Path) -> None:
     )
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        with client.websocket_connect("/api/activity/events?k=secret") as ws:
+        with client.websocket_connect(
+            "/graphql", subprotocols=["graphql-transport-ws"]
+        ) as ws:
+            ws.send_json({"type": "connection_init", "payload": {"k": "secret"}})
+            assert ws.receive_json()["type"] == "connection_ack"
+            ws.send_json({
+                "id": "1",
+                "type": "subscribe",
+                "payload": {"query": "subscription { activity_events { type id activity { id } } }"},
+            })
             project = state.projects.register(str(tmp_path), "demo")
             state.projects.add_preview(project["id"], "dev", "http://127.0.0.1:8000")
             deadline = time.time() + 8
             seen: dict[str, dict] = {}
             while time.time() < deadline:
                 msg = ws.receive_json()
-                if msg["type"] == "activity.upsert":
-                    seen[msg["activity"]["id"]] = msg["activity"]
+                if msg.get("type") != "next":
+                    continue
+                event = msg["payload"]["data"]["activity_events"]
+                if event["type"] == "activity.upsert":
+                    seen[event["activity"]["id"]] = event["activity"]
                 if any(key.startswith("preview:") for key in seen):
                     break
             assert any(key.startswith("preview:") for key in seen), seen
         # stale terminal rows don't leak into a second snapshot
-        assert client.get("/api/activity", headers=headers).status_code == 200
+        data(client, "{ activity { activity { id } } }", "activity", headers=headers)
 
 
 # ---------------------------------------------------------------------------
@@ -2937,10 +3019,18 @@ def test_ports_and_processes_endpoints(tmp_path: Path) -> None:
     server, port = _http_listener()
     try:
         with TestClient(create_app(state, web_dir=None)) as client:
-            assert client.get("/api/ports").status_code == 401
-            assert client.get("/api/processes").status_code == 401
-            ports = client.get("/api/ports", headers=headers).json()["ports"]
-            procs = client.get("/api/processes", headers=headers).json()["processes"]
+            assert err_status(client, "{ ports { ports { port } } }") == 401
+            assert err_status(client, "{ processes { processes { pid } } }") == 401
+            ports = data(
+                client,
+                "{ ports { ports { port pid url is_http } } }",
+                "ports", headers=headers,
+            )["ports"]
+            procs = data(
+                client,
+                "{ processes { processes { pid } } }",
+                "processes", headers=headers,
+            )["processes"]
             if sys.platform == "win32":
                 # Discovery is truthfully gated off on Windows — endpoints
                 # degrade to empty lists rather than pretending to work.
@@ -2972,30 +3062,34 @@ def test_preview_from_port(tmp_path: Path) -> None:
     try:
         with TestClient(create_app(state, web_dir=None)) as client:
             project = state.projects.register(str(tmp_path), "demo")
-            missing = client.post(
-                f"/api/projects/{project['id']}/previews/from-port",
-                json={"port": port + 99},
-                headers=headers,
+            assert (
+                err_status(
+                    client,
+                    "mutation($id: String!, $input: PreviewFromPortInput!) { preview_from_port(project_id: $id, input: $input) { preview } }",
+                    {"id": project["id"], "input": {"port": port + 99}},
+                    headers,
+                )
+                == 404
             )
-            assert missing.status_code == 404
-            created = client.post(
-                f"/api/projects/{project['id']}/previews/from-port",
-                json={"port": port, "name": "dev server"},
-                headers=headers,
+            created_status = err_status(
+                client,
+                "mutation($id: String!, $input: PreviewFromPortInput!) { preview_from_port(project_id: $id, input: $input) { preview } }",
+                {"id": project["id"], "input": {"port": port, "name": "dev server"}},
+                headers,
             )
             if sys.platform == "win32":
                 # Port discovery is gated off on Windows, so no port is ever
                 # known and preview-from-port cannot resolve.
-                assert created.status_code == 404
+                assert created_status == 404
                 return
-            assert created.status_code == 200
-            preview = created.json()["preview"]
+            assert created_status == 200
+            preview = data(
+                client,
+                "query($id: String!) { project_previews(project_id: $id) { name url } }",
+                "project_previews", {"id": project["id"]}, headers=headers,
+            )[-1]
             assert preview["name"] == "dev server"
             assert preview["url"] == f"http://127.0.0.1:{port}"
-            listed = client.get(
-                f"/api/projects/{project['id']}/previews", headers=headers
-            ).json()["previews"]
-            assert any(p["id"] == preview["id"] for p in listed)
     finally:
         server.shutdown()
         server.server_close()
@@ -3026,67 +3120,102 @@ async def _wait_run(store: AgentStore, run_id: str, status: str, timeout: float 
     raise AssertionError(f"run {run_id} never reached {status}: {run}")
 
 
+_RUNBOOK = "id name project_id steps created_at updated_at"
+_RUN = "id runbook_id status step_index step error steps created_at updated_at"
+
+
+def _create_runbook(client, headers, name: str, steps: list) -> dict:
+    return data(
+        client,
+        "mutation($input: RunbookInput!) { create_runbook(input: $input) { %s } }" % _RUNBOOK,
+        "create_runbook",
+        {"input": {"name": name, "steps": steps}},
+        headers=headers,
+    )
+
+
+def _run_runbook(client, headers, runbook_id: str) -> dict:
+    return data(
+        client,
+        "mutation($id: String!) { run_runbook(runbook_id: $id) { %s } }" % _RUN,
+        "run_runbook", {"id": runbook_id}, headers=headers,
+    )
+
+
 def test_runbooks_crud(tmp_path: Path) -> None:
     state = _runbook_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        assert client.get("/api/runbooks").status_code == 401
-        assert client.post(
-            "/api/runbooks", json={"name": "x", "steps": []}, headers=headers
-        ).status_code == 422
-        bad = client.post(
-            "/api/runbooks",
-            json={"name": "x", "steps": [{"kind": "shell", "command": ""}]},
-            headers=headers,
+        assert err_status(client, "{ runbooks { id } }") == 401
+        assert (
+            err_status(
+                client,
+                'mutation { create_runbook(input: {name: "x", steps: []}) { id } }',
+                headers=headers,
+            )
+            == 422
         )
-        assert bad.status_code == 400
-        created = client.post(
-            "/api/runbooks",
-            json={
-                "name": "dev stack",
-                "steps": [
-                    {"kind": "shell", "command": "echo one"},
-                    {"kind": "shell", "command": "echo two"},
-                ],
-            },
-            headers=headers,
-        ).json()["runbook"]
+        assert (
+            err_status(
+                client,
+                'mutation { create_runbook(input: {name: "x", steps: [{kind: "shell", command: ""}]}) { id } }',
+                headers=headers,
+            )
+            == 422
+        )
+        created = _create_runbook(
+            client, headers, "dev stack",
+            [{"kind": "shell", "command": "echo one"},
+             {"kind": "shell", "command": "echo two"}],
+        )
         assert created["name"] == "dev stack"
         assert len(created["steps"]) == 2
-        detail = client.get(f"/api/runbooks/{created['id']}", headers=headers).json()
+        detail = data(
+            client,
+            "query($id: String!) { runbook(runbook_id: $id) { runbook { id } } }",
+            "runbook", {"id": created["id"]}, headers=headers,
+        )
         assert detail["runbook"]["id"] == created["id"]
-        patched = client.patch(
-            f"/api/runbooks/{created['id']}", json={"name": "renamed"}, headers=headers
-        ).json()["runbook"]
+        patched = data(
+            client,
+            "mutation($id: String!, $input: RunbookPatchInput!) { update_runbook(runbook_id: $id, input: $input) { name } }",
+            "update_runbook", {"id": created["id"], "input": {"name": "renamed"}},
+            headers=headers,
+        )
         assert patched["name"] == "renamed"
-        assert client.delete(f"/api/runbooks/{created['id']}", headers=headers).status_code == 200
-        assert client.get(f"/api/runbooks/{created['id']}", headers=headers).status_code == 404
+        data(
+            client,
+            "mutation($id: String!) { delete_runbook(runbook_id: $id) { ok } }",
+            "delete_runbook", {"id": created["id"]}, headers=headers,
+        )
+        assert (
+            err_status(
+                client,
+                "query($id: String!) { runbook(runbook_id: $id) { runbook { id } } }",
+                {"id": created["id"]}, headers=headers,
+            )
+            == 404
+        )
 
 
 def test_runbook_sequential_run_and_history(tmp_path: Path) -> None:
     state = _runbook_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        runbook = client.post(
-            "/api/runbooks",
-            json={
-                "name": "seq",
-                "steps": [
-                    {"kind": "shell", "command": "echo first"},
-                    {"kind": "shell", "command": "echo second"},
-                ],
-            },
-            headers=headers,
-        ).json()["runbook"]
-        run = client.post(
-            f"/api/runbooks/{runbook['id']}/run", headers=headers
-        ).json()["run"]
+        runbook = _create_runbook(
+            client, headers, "seq",
+            [{"kind": "shell", "command": "echo first"},
+             {"kind": "shell", "command": "echo second"}],
+        )
+        run = _run_runbook(client, headers, runbook["id"])
         final = asyncio.run(_wait_run(state.agent_store, run["id"], "completed"))
         assert [r["status"] for r in final["step_results"]] == ["completed", "completed"]
         assert "first" in final["step_results"][0]["output"]
-        history = client.get(
-            f"/api/runbook-runs?runbook_id={runbook['id']}", headers=headers
-        ).json()["runs"]
+        history = data(
+            client,
+            "query($id: String) { runbook_runs(runbook_id: $id) { id } }",
+            "runbook_runs", {"id": runbook["id"]}, headers=headers,
+        )
         assert history and history[0]["id"] == run["id"]
 
 
@@ -3094,20 +3223,12 @@ def test_runbook_stop_on_failure(tmp_path: Path) -> None:
     state = _runbook_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        runbook = client.post(
-            "/api/runbooks",
-            json={
-                "name": "fails",
-                "steps": [
-                    {"kind": "shell", "command": "exit 3"},
-                    {"kind": "shell", "command": "echo never"},
-                ],
-            },
-            headers=headers,
-        ).json()["runbook"]
-        run = client.post(
-            f"/api/runbooks/{runbook['id']}/run", headers=headers
-        ).json()["run"]
+        runbook = _create_runbook(
+            client, headers, "fails",
+            [{"kind": "shell", "command": "exit 3"},
+             {"kind": "shell", "command": "echo never"}],
+        )
+        run = _run_runbook(client, headers, runbook["id"])
         final = asyncio.run(_wait_run(state.agent_store, run["id"], "failed"))
         assert len(final["step_results"]) == 1  # step 2 never ran
         assert final["step_results"][0]["exit_code"] == 3
@@ -3118,27 +3239,21 @@ def test_runbook_confirm_gate(tmp_path: Path) -> None:
     state = _runbook_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        runbook = client.post(
-            "/api/runbooks",
-            json={
-                "name": "gated",
-                "steps": [
-                    {"kind": "shell", "command": "echo before"},
-                    {"kind": "shell", "command": "echo after", "confirm": True},
-                ],
-            },
-            headers=headers,
-        ).json()["runbook"]
-        run = client.post(
-            f"/api/runbooks/{runbook['id']}/run", headers=headers
-        ).json()["run"]
+        runbook = _create_runbook(
+            client, headers, "gated",
+            [{"kind": "shell", "command": "echo before"},
+             {"kind": "shell", "command": "echo after", "confirm": True}],
+        )
+        run = _run_runbook(client, headers, runbook["id"])
         paused = asyncio.run(
             _wait_run(state.agent_store, run["id"], "awaiting_confirmation")
         )
         assert len(paused["step_results"]) == 1
-        confirmed = client.post(
-            f"/api/runbook-runs/{run['id']}/confirm", headers=headers
-        ).json()["run"]
+        confirmed = data(
+            client,
+            "mutation($id: String!) { confirm_runbook_run(run_id: $id) { status } }",
+            "confirm_runbook_run", {"id": run["id"]}, headers=headers,
+        )
         assert confirmed["status"] == "running"
         final = asyncio.run(_wait_run(state.agent_store, run["id"], "completed"))
         assert len(final["step_results"]) == 2
@@ -3148,21 +3263,17 @@ def test_runbook_cancel_kills_process(tmp_path: Path) -> None:
     state = _runbook_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        runbook = client.post(
-            "/api/runbooks",
-            json={
-                "name": "long",
-                "steps": [{"kind": "shell", "command": "sleep 30"}],
-            },
-            headers=headers,
-        ).json()["runbook"]
-        run = client.post(
-            f"/api/runbooks/{runbook['id']}/run", headers=headers
-        ).json()["run"]
+        runbook = _create_runbook(
+            client, headers, "long",
+            [{"kind": "shell", "command": "sleep 30"}],
+        )
+        run = _run_runbook(client, headers, runbook["id"])
         asyncio.run(asyncio.sleep(0.3))  # let the step spawn
-        cancelled = client.post(
-            f"/api/runbook-runs/{run['id']}/cancel", headers=headers
-        ).json()["run"]
+        cancelled = data(
+            client,
+            "mutation($id: String!) { cancel_runbook_run(run_id: $id) { status } }",
+            "cancel_runbook_run", {"id": run["id"]}, headers=headers,
+        )
         assert cancelled["status"] == "cancelled"
 
 
@@ -3170,20 +3281,12 @@ def test_runbook_parallel_steps(tmp_path: Path) -> None:
     state = _runbook_state(tmp_path)
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        runbook = client.post(
-            "/api/runbooks",
-            json={
-                "name": "par",
-                "steps": [
-                    {"kind": "shell", "command": "echo a", "parallel": True},
-                    {"kind": "shell", "command": "echo b", "parallel": True},
-                ],
-            },
-            headers=headers,
-        ).json()["runbook"]
-        run = client.post(
-            f"/api/runbooks/{runbook['id']}/run", headers=headers
-        ).json()["run"]
+        runbook = _create_runbook(
+            client, headers, "par",
+            [{"kind": "shell", "command": "echo a", "parallel": True},
+             {"kind": "shell", "command": "echo b", "parallel": True}],
+        )
+        run = _run_runbook(client, headers, runbook["id"])
         final = asyncio.run(_wait_run(state.agent_store, run["id"], "completed"))
         assert len(final["step_results"]) == 2
 

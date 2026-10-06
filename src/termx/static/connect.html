@@ -334,23 +334,27 @@
     flash(label || "Copied", "ok");
   }
 
-  async function api(path, options) {
-    const opts = options || {};
-    opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers);
-    const res = await fetch(path + suffix, opts);
-    if (res.status === 401 || res.status === 403) {
-      const err = new Error("unauthorized");
-      err.status = res.status;
+  async function gql(query, variables) {
+    const res = await fetch("/graphql" + suffix, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* non-json */ }
+    const first = body && body.errors && body.errors[0];
+    if (first) {
+      const status = (first.extensions && first.extensions.http_status) || res.status || 500;
+      const err = new Error(first.message || "Request failed");
+      err.status = status;
       throw err;
     }
-    let data = null;
-    try { data = await res.json(); } catch { /* non-json */ }
     if (!res.ok) {
-      const err = new Error((data && data.detail) || "HTTP " + res.status);
+      const err = new Error("HTTP " + res.status);
       err.status = res.status;
       throw err;
     }
-    return data;
+    return (body && body.data) || {};
   }
 
   function gate(err) {
@@ -429,7 +433,7 @@
 
   async function loadPerms() {
     try {
-      permState = await api("/api/permissions");
+      permState = (await gql("{ permissions }")).permissions;
     } catch (err) {
       if (gate(err)) return;
       permState = {};
@@ -442,8 +446,11 @@
     btn.disabled = true;
     btn.textContent = "Check System Settings…";
     try {
-      const result = await api("/api/permissions/request", { method: "POST", body: JSON.stringify({ which: [which] }) });
-      permState = result || permState;
+      const result = await gql(
+        "mutation($which: [String!]) { request_permissions(input: { which: $which }) }",
+        { which: [which] },
+      );
+      permState = result.request_permissions || permState;
       renderPerms();
       renderReady();
     } catch (err) {
@@ -473,7 +480,7 @@
 
   async function loadMachine() {
     try {
-      const machine = await api("/api/machine");
+      const machine = (await gql("{ machine { hostname os arch capabilities } }")).machine;
       el("machine-name").textContent = machine.hostname || "This machine";
       const detail = [machine.os, machine.arch].filter(Boolean).join(" · ");
       renderDiag(machine);
@@ -487,7 +494,9 @@
 
   async function loadConnect() {
     try {
-      connectInfo = await api("/api/connect");
+      connectInfo = (await gql(
+        "{ connect_info { connect_url urls tunnel_url passcode } }",
+      )).connect_info;
       connectUrl = connectInfo.connect_url || "";
       const urls = (connectInfo.urls || []).filter((u) => !u.includes("127.0.0.1") && !u.includes("localhost"));
       const shown = connectInfo.tunnel_url || urls[0] || (connectInfo.urls || [])[0] || "";
@@ -516,7 +525,7 @@
 
   async function loadHealth() {
     try {
-      const health = await api("/api/health");
+      const health = (await gql("{ health { version } }")).health;
       el("version").textContent = health.version ? "v" + health.version : "";
       return health;
     } catch {
@@ -558,7 +567,7 @@
 
   async function loadLal() {
     try {
-      const info = await api("/api/launch-at-login");
+      const info = (await gql("{ launch_at_login { managed enabled } }")).launch_at_login;
       lalManaged = !!info.managed;
       lalEnabled = !!info.enabled;
     } catch (err) {
@@ -574,7 +583,10 @@
     const toggle = el("lal-toggle");
     toggle.disabled = true;
     try {
-      const info = await api("/api/launch-at-login", { method: "PUT", body: JSON.stringify({ enabled: next }) });
+      const info = (await gql(
+        "mutation($enabled: Boolean!) { set_launch_at_login(enabled: $enabled) { managed enabled } }",
+        { enabled: next },
+      )).set_launch_at_login;
       lalEnabled = !!info.enabled;
       flash(next ? "Launch at login on" : "Launch at login off", "ok");
     } catch (err) {
@@ -634,7 +646,9 @@
 
   async function loadTunnels() {
     try {
-      tunnelInfo = await api("/api/tunnels");
+      tunnelInfo = (await gql(
+        "{ tunnels { providers { id name available kinds } active } }",
+      )).tunnels;
     } catch (err) {
       if (gate(err)) return;
       tunnelInfo = null;
@@ -652,10 +666,10 @@
       // to Cloudflare, which fails on machines that only have ngrok/
       // Tailscale installed.
       const provider = (tunnelInfo?.providers || []).find((p) => p.available);
-      const status = await api("/api/tunnels/start", {
-        method: "POST",
-        body: JSON.stringify(provider ? { provider: provider.id } : {}),
-      });
+      const status = (await gql(
+        "mutation($provider: String) { start_tunnel(input: { provider: $provider }) { state url detail provider uptime_s } }",
+        { provider: provider ? provider.id : null },
+      )).start_tunnel;
       flash(status.state === "connected" ? "Sharing on" : "Share failed: " + (status.detail || status.state), status.state === "connected" ? "ok" : "err");
     } catch (err) {
       if (gate(err)) return;
@@ -670,7 +684,7 @@
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
-      await api("/api/tunnels/stop", { method: "POST", body: "{}" });
+      await gql("mutation { stop_tunnel { state } }");
       flash("Sharing off", "ok");
     } catch (err) {
       if (gate(err)) return;
@@ -694,7 +708,7 @@
     btn.disabled = true;
     btn.textContent = "Restarting…";
     try {
-      await api("/api/shutdown", { method: "POST", body: "{}" });
+      await gql("mutation { shutdown { ok } }");
     } catch (err) {
       if (gate(err)) return;
       btn.disabled = false;
@@ -712,7 +726,7 @@
     for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 1500));
       try {
-        await api("/api/health");
+        await gql("{ health { ok } }");
         if (!sawDown) continue;
         btn.disabled = false;
         btn.textContent = "Restart backend";
@@ -734,7 +748,9 @@
     btn.disabled = true;
     line.textContent = "Checking…";
     try {
-      const info = await api("/api/update/check");
+      const info = (await gql(
+        "{ update_check { status available latest current reason } }",
+      )).update_check;
       if (info.status === "unknown") {
         line.textContent = "Update check unavailable — " + (info.reason || "offline");
       } else if (info.available) {
@@ -759,7 +775,9 @@
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
-      const result = await api("/api/update/apply", { method: "POST", body: "{}" });
+      const result = (await gql(
+        "mutation { apply_update { started instructions reason } }",
+      )).apply_update;
       el("update-line").textContent = result.started
         ? "Update started — Termx will relaunch when ready."
         : "Can't self-update: " + (result.instructions || result.reason || "unknown");
@@ -801,8 +819,8 @@
     const list = el("events");
     list.innerHTML = "";
     try {
-      const data = await api("/api/audit");
-      const events = (data.events || []).slice(-6).reverse();
+      const data = await gql("{ audit }");
+      const events = (data.audit || []).slice(-6).reverse();
       for (const ev of events) {
         const li = document.createElement("li");
         const kind = document.createElement("span");
@@ -849,7 +867,7 @@
 
   (async () => {
     try {
-      await api("/api/machine");
+      await gql("{ machine { hostname } }");
     } catch (err) {
       if (gate(err)) return;
     }

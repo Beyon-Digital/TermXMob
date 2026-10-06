@@ -47,6 +47,9 @@ TASK_FIELDS = frozenset(
         "previous_response_id",
         "runtime",
         "metrics",
+        "limits",
+        "model",
+        "mode",
         "engine",
         "engine_session_id",
         "engine_native_id",
@@ -536,6 +539,14 @@ class AgentStore:
             ).fetchall()
         return [self._task(row) for row in rows]
 
+    def active_tasks_for_provider(self, provider_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM tasks WHERE provider_id = ? AND status NOT IN ('completed', 'failed', 'cancelled')",
+                (provider_id,),
+            ).fetchall()
+        return [self._task(row) for row in rows]
+
     def list_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._db.execute(
@@ -552,7 +563,7 @@ class AgentStore:
         changes.setdefault("updated_at", time())
         encoded: dict[str, Any] = {}
         for key, value in changes.items():
-            encoded[key] = _json(value) if key in {"plan", "runtime", "metrics"} and value is not None else value
+            encoded[key] = _json(value) if key in {"plan", "runtime", "metrics", "limits"} and value is not None else value
         assignments = ", ".join(f"{key} = ?" for key in encoded)
         with self._lock:
             cursor = self._db.execute(
@@ -670,7 +681,7 @@ class AgentStore:
             row = self._db.execute(
                 """
                 SELECT * FROM engine_sessions
-                WHERE conversation_id = ? AND status IN ('active','idle')
+                WHERE conversation_id = ? AND status IN ('active','idle','lost')
                 ORDER BY updated_at DESC LIMIT 1
                 """,
                 (conversation_id,),
@@ -1070,6 +1081,8 @@ class AgentStore:
 
     @staticmethod
     def _custom_agent(row: sqlite3.Row) -> dict[str, Any]:
+        file_cfg = _load_json(row["file_json"] if "file_json" in row.keys() else None, {})
+        file_cfg = file_cfg if isinstance(file_cfg, dict) else {}
         try:
             tools = json.loads(row["tools"] or "[]")
         except json.JSONDecodeError:
@@ -1085,6 +1098,8 @@ class AgentStore:
             "instructions": row["instructions"],
             "provider_id": row["provider_id"],
             "model": row["model"],
+            "engine_mode": file_cfg.get("engine_mode"),
+            "config_options": file_cfg.get("config_options", {}),
             "tools": tools,
             "limits": limits,
             "approval_mode": (

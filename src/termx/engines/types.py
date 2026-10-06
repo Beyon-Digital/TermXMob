@@ -14,8 +14,6 @@ ENGINE_SCHEMA_VERSION = 1
 class EngineKind(str, Enum):
     INTERNAL = "internal"
     CODEX = "codex"
-    DEVIN = "devin"
-    GROK = "grok"
     CLAUDE = "claude"
 
 
@@ -75,6 +73,8 @@ class EngineCapabilities:
     skills_native: str = "unverified"
     mcp_native: str = "unverified"
     models: list[str] = field(default_factory=list)
+    modes: list[dict[str, Any]] = field(default_factory=list)
+    config_options: list[dict[str, Any]] = field(default_factory=list)
     notes: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
@@ -89,6 +89,8 @@ class EngineCapabilities:
             "skills_native": self.skills_native,
             "mcp_native": self.mcp_native,
             "models": self.models,
+            "modes": self.modes,
+            "config_options": self.config_options,
             "notes": self.notes,
         }
 
@@ -144,6 +146,8 @@ class EffectiveRunConfiguration:
 
     engine: str = EngineKind.INTERNAL.value
     model: str | None = None
+    mode: str | None = None
+    config_options: dict[str, str | bool] = field(default_factory=dict)
     agent_profile_revision: str = ""
     agent_id: str | None = None
     instructions: str = ""
@@ -159,6 +163,8 @@ class EffectiveRunConfiguration:
         return {
             "engine": self.engine,
             "model": self.model,
+            "mode": self.mode,
+            "config_options": self.config_options,
             "agent_profile_revision": self.agent_profile_revision,
             "agent_id": self.agent_id,
             "tools": self.tools,

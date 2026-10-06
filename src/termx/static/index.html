@@ -130,7 +130,27 @@
       const k = passInput.value;
       return k ? { "X-Termx-Passcode": k, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
     };
-    const api = (path, opts = {}) => fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+    const gql = async (query, variables) => {
+      const res = await fetch("/graphql", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ query, variables }),
+      });
+      const body = await res.json().catch(() => ({}));
+      const first = body.errors && body.errors[0];
+      if (first) {
+        const status = (first.extensions && first.extensions.http_status) || res.status || 500;
+        const err = new Error(status === 401 ? "Wrong passcode" : first.message || "Request failed");
+        err.status = status;
+        throw err;
+      }
+      if (!res.ok) {
+        const err = new Error("Request failed");
+        err.status = res.status;
+        throw err;
+      }
+      return body.data;
+    };
 
     let sessions = [];
     let active = null;
@@ -326,14 +346,19 @@
     window.addEventListener("resize", resize);
     new ResizeObserver(resize).observe(document.getElementById("term"));
 
+    const createSession = async () => {
+      const data = await gql(
+        "mutation($input: CreateSessionInput) { create_session(input: $input) { id title cols rows exited } }",
+        { input: { cols: term.cols, rows: term.rows } },
+      );
+      return data.create_session;
+    };
+
     async function refresh() {
-      const res = await api("/api/sessions");
-      if (!res.ok) throw new Error(res.status === 401 ? "Wrong passcode" : "Could not list sessions");
-      const data = await res.json();
+      const data = await gql("{ sessions { id title exited } }");
       sessions = data.sessions;
       if (!sessions.length) {
-        const created = await (await api("/api/sessions", { method: "POST", body: JSON.stringify({ cols: term.cols, rows: term.rows }) })).json();
-        sessions = [created];
+        sessions = [await createSession()];
       }
       renderTabs();
       const still = sessions.find((s) => s.id === active);
@@ -341,13 +366,13 @@
     }
 
     document.getElementById("new").onclick = async () => {
-      const created = await (await api("/api/sessions", { method: "POST", body: JSON.stringify({ cols: term.cols, rows: term.rows }) })).json();
+      const created = await createSession();
       sessions.push(created);
       attach(created.id);
     };
     document.getElementById("kill").onclick = async () => {
       if (!active) return;
-      await api("/api/sessions/" + active, { method: "DELETE" });
+      await gql("mutation($id: String!) { delete_session(session_id: $id) { ok } }", { id: active });
       active = null;
       await refresh();
     };
@@ -356,8 +381,8 @@
       e.preventDefault();
       document.getElementById("err").textContent = "";
       try {
-        const health = await (await api("/api/health")).json();
-        if (health.passcode_required && !passInput.value) {
+        const data = await gql("{ health { passcode_required } }");
+        if (data.health.passcode_required && !passInput.value) {
           document.getElementById("err").textContent = "Passcode required";
           return;
         }
@@ -374,8 +399,8 @@
 
     (async () => {
       try {
-        const health = await (await fetch("/api/health")).json();
-        if (!health.passcode_required) {
+        const data = await gql("{ health { passcode_required } }");
+        if (!data.health.passcode_required) {
           document.getElementById("connect").requestSubmit();
         }
       } catch {}

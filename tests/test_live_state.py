@@ -6,6 +6,8 @@ import sys
 
 from fastapi.testclient import TestClient
 
+from _gql import data, err_status
+
 from termx.app import AppState, create_app
 from termx.sessions import SessionManager, parse_osc7
 
@@ -78,14 +80,25 @@ def test_session_reports_cwd_and_activity(monkeypatch) -> None:
 
 def test_devices_list_and_revoke() -> None:
     client = TestClient(create_app(AppState(passcode="secret"), web_dir=None))
-    issued = client.post("/api/pair", headers={"X-Termx-Passcode": "secret"}).json()["token"]
-    devices = client.get("/api/devices", headers={"X-Termx-Passcode": "secret"}).json()["devices"]
+    admin = {"X-Termx-Passcode": "secret"}
+    issued = data(client, "mutation { pair { token } }", "pair", headers=admin)["token"]
+    devices = data(client, "{ devices { id } }", "devices", headers=admin)
     assert len(devices) == 1
     device_id = devices[0]["id"]
-    assert client.delete(f"/api/devices/{device_id}").status_code == 401
-    assert client.delete(f"/api/devices/{device_id}", headers={"X-Termx-Passcode": "secret"}).status_code == 200
-    assert client.get("/api/devices", headers={"X-Termx-Passcode": "secret"}).json()["devices"] == []
-    assert client.get("/api/sessions", headers={"Authorization": f"Bearer {issued}"}).status_code == 401
+    assert err_status(
+        client,
+        'mutation($id: String!) { revoke_device(device_id: $id) { ok } }',
+        {"id": device_id},
+    ) == 401
+    data(
+        client,
+        'mutation($id: String!) { revoke_device(device_id: $id) { ok } }',
+        "revoke_device", {"id": device_id}, admin,
+    )
+    assert data(client, "{ devices { id } }", "devices", headers=admin) == []
+    assert err_status(
+        client, "{ sessions { id } }", headers={"Authorization": f"Bearer {issued}"}
+    ) == 401
 
 
 def test_shell_integration_zsh_sets_zdotdir(tmp_path):

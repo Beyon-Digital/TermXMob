@@ -9,6 +9,7 @@ instructions.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,7 +17,7 @@ from ..discovery.safety import slugify
 from ..frontmatter import dump_frontmatter, split_frontmatter
 
 SCHEMA_VERSION = 1
-ENGINES = {"internal", "codex", "devin", "grok", "claude", "inherit"}
+ENGINES = {"internal", "codex", "claude", "inherit"}
 APPROVAL_MODES = {"standard", "remember", "autonomous"}
 SANDBOX_PROFILES = {"host", "workspace", "agent"}
 SKILL_MODES = {"auto", "manual", "off"}
@@ -54,6 +55,8 @@ class AgentFile:
     instructions: str = ""
     engine: str = "inherit"          # x-termx.engine
     model: str | None = None         # x-termx.model or top-level model
+    engine_mode: str | None = None
+    config_options: dict[str, str | bool] = field(default_factory=dict)
     enabled: bool = True
     auto_use: bool = True
     tools_mode: str = "explicit"
@@ -93,6 +96,8 @@ class AgentFile:
             "instructions": self.instructions,
             "engine": self.engine,
             "model": self.model,
+            "engine_mode": self.engine_mode,
+            "config_options": dict(self.config_options),
             "enabled": self.enabled,
             "auto_use": self.auto_use,
             "tools_mode": self.tools_mode,
@@ -133,6 +138,14 @@ def _as_str_dict_list(value: Any) -> list[dict[str, Any]]:
     return [v for v in value if isinstance(v, dict)]
 
 
+def validate_config_options(value: Any) -> dict[str, str | bool]:
+    if not isinstance(value, dict) or any(
+        not isinstance(k, str) or not isinstance(v, (str, bool)) for k, v in value.items()
+    ):
+        raise AgentFileError("config_options must map option IDs to strings or booleans")
+    return dict(value)
+
+
 def parse_agent_file(text: str, *, slug_hint: str = "") -> AgentFile:
     """Parse agent markdown into an AgentFile. Collects errors; never raises
     for content problems (structural YAML errors raise AgentFileError)."""
@@ -166,8 +179,8 @@ def parse_agent_file(text: str, *, slug_hint: str = "") -> AgentFile:
         tools_mode = "explicit"
 
     engine = str(xt.get("engine") or "inherit")
-    if engine not in ENGINES:
-        errors.append(f"engine must be one of {sorted(ENGINES)}")
+    if engine not in ENGINES and not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", engine):
+        errors.append("engine must be a built-in engine or a valid ACP runner ID")
         engine = "inherit"
     approval = str(xt.get("approval_mode") or "standard")
     if approval not in APPROVAL_MODES:
@@ -199,12 +212,21 @@ def parse_agent_file(text: str, *, slug_hint: str = "") -> AgentFile:
     for conn in mcp_conns:
         if "connection" not in conn:
             errors.append("mcp_connections entries need a 'connection' id")
+    engine_mode = xt.get("engine_mode")
+    if engine_mode is not None and (not isinstance(engine_mode, str) or not engine_mode.strip()):
+        errors.append("engine_mode must be a non-empty string")
+        engine_mode = None
+    try:
+        config_options = validate_config_options(xt.get("config_options", {}))
+    except AgentFileError as exc:
+        errors.append(str(exc))
+        config_options = {}
 
     known_xt = {
         "schema-version", "id", "engine", "model", "enabled", "auto_use",
         "tools_mode", "toolsets", "deny_tools", "skills", "workflows",
         "mcp_connections", "delegation", "policy_profile", "approval_mode",
-        "sandbox_profile", "limits",
+        "sandbox_profile", "limits", "engine_mode", "config_options",
     }
 
     af = AgentFile(
@@ -214,6 +236,8 @@ def parse_agent_file(text: str, *, slug_hint: str = "") -> AgentFile:
         instructions=body.strip(),
         engine=engine,
         model=(xt.get("model") or meta.get("model") or None),
+        engine_mode=engine_mode,
+        config_options=config_options,
         enabled=bool(xt.get("enabled", meta.get("user-invocable", True))),
         auto_use=not bool(meta.get("disable-model-invocation", False))
         and bool(xt.get("auto_use", True)),
@@ -273,6 +297,10 @@ def serialize_agent(agent: AgentFile) -> str:
     }
     if agent.model and agent.engine != "inherit":
         xt["model"] = agent.model
+    if agent.engine_mode:
+        xt["engine_mode"] = agent.engine_mode
+    if agent.config_options:
+        xt["config_options"] = validate_config_options(agent.config_options)
     if agent.toolsets:
         xt["toolsets"] = list(agent.toolsets)
     if agent.deny_tools:

@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from _gql import data, err_status
+
 from termx.sandbox import SpawnSpec
 from termx.sandbox.host import HostSandboxRunner
 from termx.sandbox.provision import helper_path, provision_status
@@ -243,24 +245,24 @@ def test_runbook_run_workspace_profile(tmp_path: Path) -> None:
     )
     headers = {"x-termx-passcode": "secret"}
     with TestClient(create_app(state, web_dir=None)) as client:
-        runbook = client.post(
-            "/api/runbooks",
-            json={"name": "ws", "steps": [{"kind": "shell", "command": "echo ok"}]},
-            headers=headers,
-        ).json()["runbook"]
-        bad = client.post(
-            f"/api/runbooks/{runbook['id']}/run",
-            json={"profile": "agent"},
+        runbook = data(
+            client,
+            'mutation($input: RunbookInput!) { create_runbook(input: $input) { id } }',
+            "create_runbook",
+            {"input": {"name": "ws", "steps": [{"kind": "shell", "command": "echo ok"}]}},
             headers=headers,
         )
-        assert bad.status_code == 422  # human runbooks are host|workspace only
-        resp = client.post(
-            f"/api/runbooks/{runbook['id']}/run",
-            json={"profile": "workspace"},
-            headers=headers,
+        run = (
+            'mutation($id: String!, $profile: String!) '
+            "{ run_runbook(runbook_id: $id, profile: $profile) { id status } }"
         )
-        assert resp.status_code == 200, resp.text
-        run_id = resp.json()["run"]["id"]
+        # human runbooks are host|workspace only
+        assert err_status(client, run, {"id": runbook["id"], "profile": "agent"}, headers) == 422
+        resp = data(
+            client, run, "run_runbook",
+            {"id": runbook["id"], "profile": "workspace"}, headers=headers,
+        )
+        run_id = resp["id"]
         deadline = time.time() + 20
         run = None
         while time.time() < deadline:
@@ -315,15 +317,16 @@ def test_sessions_api_workspace_profile(tmp_path: Path) -> None:
 
     state = AppState()
     with TestClient(create_app(state, web_dir=None)) as client:
-        bad = client.post("/api/sessions", json={"sandbox_profile": "nope"})
-        assert bad.status_code == 422
-        agent = client.post("/api/sessions", json={"sandbox_profile": "agent"})
-        assert agent.status_code == 422  # interactive terminals are host|workspace
-        created = client.post(
-            "/api/sessions",
-            json={"sandbox_profile": "workspace", "cwd": str(tmp_path)},
+        create = (
+            'mutation($input: CreateSessionInput!) '
+            "{ create_session(input: $input) { id } }"
         )
-        assert created.status_code == 200, created.text
-        snap = created.json()
+        assert err_status(client, create, {"input": {"sandbox_profile": "nope"}}) == 422
+        # interactive terminals are host|workspace
+        assert err_status(client, create, {"input": {"sandbox_profile": "agent"}}) == 422
+        snap = data(
+            client, create, "create_session",
+            {"input": {"sandbox_profile": "workspace", "cwd": str(tmp_path)}},
+        )
         assert snap["id"]
         state.sessions.kill(snap["id"])

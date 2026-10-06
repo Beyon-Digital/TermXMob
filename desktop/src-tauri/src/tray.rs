@@ -1,10 +1,9 @@
-use serde_json::json;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::backend::{api_get, api_post};
+use crate::backend::gql_app;
 use crate::menu;
 use crate::ui;
 
@@ -75,18 +74,17 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn toggle_tunnel(app: &AppHandle) {
-    let status = api_get(app, "/api/tunnels");
+    let status = gql_app(app, "{ tunnels { active } }", None);
     let connected = status
         .as_ref()
-        .and_then(|value| value.get("active"))
-        .and_then(|value| value.get("state"))
+        .and_then(|value| value.pointer("/tunnels/active/state"))
         .and_then(|value| value.as_str())
         .map(|state| state == "connected")
         .unwrap_or(false);
     let result = if connected {
-        api_post(app, "/api/tunnels/stop", json!({}))
+        gql_app(app, "mutation { stop_tunnel { state } }", None)
     } else {
-        api_post(app, "/api/tunnels/start", json!({}))
+        gql_app(app, "mutation { start_tunnel { state } }", None)
     };
     if result.is_none() {
         ui::notify(
