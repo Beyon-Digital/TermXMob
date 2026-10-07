@@ -42,13 +42,15 @@ pub fn install(window: &WebviewWindow, port: u16) -> tauri::Result<()> {
 #[cfg(target_os = "linux")]
 pub fn install(window: &WebviewWindow, _port: u16) -> tauri::Result<()> {
     use gtk::prelude::*;
-    use webkit2gtk::prelude::*;
+    use webkit2gtk::{
+        PermissionRequestExt, SettingsExt, UserMediaPermissionRequestExt, WebViewExt,
+    };
     let app = window.app_handle().clone();
     window.with_webview(move |webview| {
         let view = webview.inner();
         // UserMedia capture needs WebKit's media-stream feature as well as
         // the installed audio device/PipeWire or PulseAudio stack.
-        if let Some(settings) = webkit2gtk::prelude::WebViewExt::settings(&view) { settings.set_enable_media_stream(true); }
+        if let Some(settings) = WebViewExt::settings(&view) { settings.set_enable_media_stream(true); }
         view.connect_permission_request(move |view, request| {
             let Some(media) = request.downcast_ref::<webkit2gtk::UserMediaPermissionRequest>() else { return false; };
             let current = view.uri().and_then(|uri| tauri::Url::parse(&uri).ok());
