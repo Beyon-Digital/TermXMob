@@ -1,5 +1,7 @@
 import {it,expect} from 'vitest';
-import {mergeBuffers,validateWindowState,type TransferBuffer} from './window-state';
+import {transferBuffers,mergeBuffers,validateWindowState,type TransferBuffer} from './window-state';
 const buffer:TransferBuffer={key:'owned-checkout:a.py',project_id:'project',path:'a.py',content:'unsaved source',revision:'original-digest',editable:true,dirty:true,root:'/workspace',workspaceSession:'session',worktree:'tree'};
 it('retains both conflicting dirty buffers and their original checkout/revision without disk writes',()=>{const merged=mergeBuffers([buffer],[{...buffer,content:'detached unsaved source'}],'receipt');expect(merged).toHaveLength(2);expect(merged.map(row=>row.content)).toEqual(['unsaved source','detached unsaved source']);expect(merged[1].revision).toBe('original-digest');expect(merged[1].worktree).toBe('tree');expect(mergeBuffers(merged,[{...buffer,content:'detached unsaved source'}],'receipt')).toHaveLength(2)});
 it('accepts exact bounded buffer/draft snapshots and refuses path escape or oversized payload',()=>{const value={version:1,sessionId:'session',draft:{text:'Unsent instruction',saved:'',dirty:true,context:[]},buffers:[buffer]};expect(validateWindowState(value).buffers[0]).toEqual(buffer);expect(()=>validateWindowState({...value,buffers:[{...buffer,path:'../outside'}]})).toThrow();expect(()=>validateWindowState({...value,buffers:[{...buffer,content:'x'.repeat(2*1024*1024+1)}]})).toThrow()});
+
+it('persists cloneable source snapshots without CodeMirror runtime state or callbacks',()=>{const editorBuffer={...buffer,state:{callback:()=>{},parent:window}};const stored=transferBuffers([editorBuffer]);expect(structuredClone(stored)).toEqual([buffer]);expect(stored[0]).not.toHaveProperty('state')});

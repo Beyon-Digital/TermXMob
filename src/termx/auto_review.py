@@ -69,7 +69,7 @@ class ResponsesReviewer:
         if p.username or p.password:raise ValueError('credentials cannot be placed in provider URL')
         self.provider_id=provider_id;self.url=base_url.rstrip('/')+'/responses'
         self.model=model;self.api_key=api_key;self.version=version;self.client=client
-        self.usage={'requests':0,'input_tokens':0,'output_tokens':0,'missing_usage_requests':0}
+        self.usage={'requests':0,'input_tokens':0,'cached_input_tokens':0,'output_tokens':0,'missing_usage_requests':0,'missing_cached_usage_requests':0}
     async def evaluate(self,action,context):
         from termx.agent.policy import redact
         # A closed allowlist is deliberately independent of caller-supplied evidence.
@@ -80,7 +80,7 @@ class ResponsesReviewer:
                  'text':{'format':{'type':'json_schema','name':'action_verdict','strict':True,'schema':{'type':'object','additionalProperties':False,'required':['decision','reason_code'],'properties':{'decision':{'type':'string','enum':sorted(DECISIONS)},'reason_code':{'type':'string','enum':['aligned','uncertain','misaligned']}}}}}}
         headers={'Authorization':f'Bearer {self.api_key}'} if self.api_key else {}
         async def request(client):
-            self.usage['requests']+=1;self.usage['missing_usage_requests']+=1
+            self.usage['requests']+=1;self.usage['missing_usage_requests']+=1;self.usage['missing_cached_usage_requests']+=1
             async with client.stream('POST',self.url,json=payload,headers=headers,timeout=5) as response:
                 response.raise_for_status()
                 content=bytearray()
@@ -89,8 +89,12 @@ class ResponsesReviewer:
                     content.extend(chunk)
                 body=json.loads(content)
             usage=body.get('usage',{})
-            if all(isinstance(usage.get(key),int) and not isinstance(usage[key],bool) and usage[key]>=0 for key in ('input_tokens','output_tokens')):
+            if isinstance(usage,dict) and all(isinstance(usage.get(key),int) and not isinstance(usage[key],bool) and 0<=usage[key]<=1_000_000_000 for key in ('input_tokens','output_tokens')):
                 self.usage['input_tokens']+=usage['input_tokens'];self.usage['output_tokens']+=usage['output_tokens'];self.usage['missing_usage_requests']-=1
+                details=usage.get('input_tokens_details')
+                cached=details.get('cached_tokens') if isinstance(details,dict) else None
+                if isinstance(cached,int) and not isinstance(cached,bool) and 0<=cached<=usage['input_tokens']:
+                    self.usage['cached_input_tokens']+=cached;self.usage['missing_cached_usage_requests']-=1
             if any(x.get('type') not in {'message','reasoning'} for x in body.get('output',[])):raise ValueError('reviewer attempted a tool call')
             output=''.join(c.get('text','') for x in body.get('output',[]) for c in x.get('content',[]) if c.get('type')=='output_text')
             verdict=json.loads(output)
@@ -126,7 +130,7 @@ class DecisionBroker:
         row=self.records.get('review',id)
         if not row or row['principal_id']!=principal_id or row['status']!='needs_user':raise ValueError('pending action not found')
         if row['expires_at']<time():raise ValueError('approval expired')
-        row['status']='approved_once' if approve else 'blocked';row['decision']='ALLOW' if approve else 'BLOCK';row['reason']='exact human decision'
+        row['status']='approved_once' if approve else 'blocked';row['decision']='ALLOW' if approve else 'BLOCK';row['reason']='exact human decision';row['decision_source']='human'
         self.records.put('review',id,row);return row
     async def authorize(self,action:ActionEnvelope,*,validate:Callable[[],bool],context=None,hard_deny=None):
         lock=self._locks.setdefault(action.action_id,asyncio.Lock())
@@ -139,9 +143,13 @@ class DecisionBroker:
                 if row['status']=='approved_once':
                     row.update(status='permitted',permit=secrets.token_urlsafe(24),expires_at=min(row['expires_at'],time()+15))
                     self.records.put('review',row['id'],row);return row
-                if row['status']=='permitted' and row['expires_at']>time():return row
+                if row['status']=='permitted' and row['expires_at']>time():
+                    if not self._reviewer_permit_valid(row):
+                        raise ReviewRequired(row)
+                    return row
                 raise ReviewRequired(row)
             rules=[r for r in self.records.list('review-rule') if r['expires_at']>time() and r['scope']==self._scope(action)]
+            used_model=False
             if any(r['decision']=='BLOCK' for r in rules):
                 row=self._record(action,'BLOCK','remembered deny','blocked');raise ActionBlocked(row)
             if action.intended_effect in SENSITIVE or action.intended_effect=='unknown' or 'secret' in action.data_labels:
@@ -151,10 +159,12 @@ class DecisionBroker:
             elif not self.reviewer or not self.reviewer_valid():
                 verdict=ReviewVerdict('NEEDS_USER','reviewer_unavailable','Configure and evaluate an eligible reviewer','host-policy-v1',time()+300)
             else:
+                reviewer=self.reviewer
                 started=monotonic()
                 try:
-                    verdict=await asyncio.wait_for(self.reviewer.evaluate(action,context or {}),5)
-                    if verdict.decision not in DECISIONS or verdict.expires_at<=time() or verdict.reviewer_version!=self.reviewer.version:raise ValueError('invalid verdict')
+                    verdict=await asyncio.wait_for(reviewer.evaluate(action,context or {}),5)
+                    if verdict.decision not in DECISIONS or verdict.expires_at<=time() or verdict.reviewer_version!=reviewer.version or self.reviewer is not reviewer or not self.reviewer_valid():raise ValueError('invalid or stale reviewer verdict')
+                    used_model=True
                 except Exception:
                     verdict=ReviewVerdict('NEEDS_USER','reviewer_unavailable','Review failed closed','host-policy-v1',time()+300)
                 self.records.audit(action_id=action.action_id,provider_id=getattr(self.reviewer,'provider_id',''),model=getattr(self.reviewer,'model',''),latency_ms=int((monotonic()-started)*1000))
@@ -162,6 +172,9 @@ class DecisionBroker:
                 row=self._record(action,'BLOCK','state changed during review','invalidated');raise ActionBlocked(row)
             status={'ALLOW':'permitted','NEEDS_USER':'needs_user','BLOCK':'blocked'}[verdict.decision]
             row=self._record(action,verdict.decision,verdict.reason_code,status,expires_at=min(verdict.expires_at,time()+(15 if status=='permitted' else 300)),reviewer_version=verdict.reviewer_version)
+            if used_model:
+                row.update(decision_source='model',reviewer_account_revision=getattr(self.reviewer,'account_revision',''))
+                self.records.put('review',row['id'],row)
             if status=='permitted':return row
             raise (ActionBlocked if status=='blocked' else ReviewRequired)(row)
     def _record(self,a,decision,reason,status,**extra):
@@ -169,11 +182,22 @@ class DecisionBroker:
         if status=='permitted':row['permit']=secrets.token_urlsafe(24)
         self.records.put('review',a.action_id,row);self.records.audit(principal_id=a.principal_id,session_id=a.session_id,action_id=a.action_id,tool_id=a.tool_id,grant_id=a.grant_id,decision=decision,reason=reason)
         return row
+    def _reviewer_permit_valid(self,row):
+        if row.get('decision_source')!='model':return True
+        valid=bool(self.reviewer and self.reviewer.version==row.get('reviewer_version') and self.reviewer_valid()
+                   and getattr(self.reviewer,'account_revision','')==row.get('reviewer_account_revision',''))
+        if not valid:
+            # An unconsumed model permit is revoked. The same exact action can
+            # still receive fresh human consent after normal host validation.
+            row.update(status='needs_user',decision='NEEDS_USER',decision_source='host',reviewer_version='host-policy-v1',
+                       expires_at=time()+300,reason='reviewer account or qualification changed');row.pop('permit',None)
+            self.records.put('review',row['id'],row);self.records.audit(action_id=row['id'],decision='BLOCK',reason=row['reason'])
+        return valid
     async def execute(self,action,permit,*,validate,operation:Callable[[],Awaitable[Any]]):
         lock=self._locks.setdefault(action.action_id,asyncio.Lock())
         async with lock:
             row=self.records.get('review',action.action_id)
-            if not row or row['fingerprint']!=action.fingerprint() or row['status']!='permitted' or row['expires_at']<=time() or not secrets.compare_digest(row.get('permit',''),permit) or not validate():raise ValueError('execution permit expired, consumed or invalidated')
+            if not row or row['fingerprint']!=action.fingerprint() or row['status']!='permitted' or row['expires_at']<=time() or not secrets.compare_digest(row.get('permit',''),permit) or not validate() or not self._reviewer_permit_valid(row):raise ValueError('execution permit expired, consumed or invalidated')
             # Persist consumption before any side effect. Crash is unknown, never replay.
             row.update(status='executing');row.pop('permit',None);self.records.put('review',row['id'],row)
             try:
@@ -187,7 +211,7 @@ class DecisionBroker:
         """Consume before a native hook releases execution; post-hook settles it."""
         async with self._locks.setdefault(action.action_id,asyncio.Lock()):
             row=self.records.get('review',action.action_id)
-            if not row or row['fingerprint']!=action.fingerprint() or row['status']!='permitted' or row['expires_at']<=time() or not secrets.compare_digest(row.get('permit',''),permit) or not validate():
+            if not row or row['fingerprint']!=action.fingerprint() or row['status']!='permitted' or row['expires_at']<=time() or not secrets.compare_digest(row.get('permit',''),permit) or not validate() or not self._reviewer_permit_valid(row):
                 raise ValueError('Native execution permit expired or invalidated')
             row.update(status='executing',outcome='awaiting native completion hook');row.pop('permit',None)
             self.records.put('review',row['id'],row)

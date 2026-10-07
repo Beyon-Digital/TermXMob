@@ -1,0 +1,118 @@
+"""Actual Windows console/token/job integration; no terminal API mocks."""
+import os
+from pathlib import Path
+import sys
+import time
+
+import pytest
+from termx.sandbox import SpawnSpec, SandboxFailure, runner_for, windows_backend_available
+
+pytestmark = pytest.mark.skipif(sys.platform != 'win32', reason='Actual Windows ConPTY integration')
+
+
+def runner(tmp_path):
+    if not windows_backend_available():
+        if os.environ.get('TERMX_RUNTIME_QUALIFICATION') == '1':
+            pytest.fail('Required restricted-token/Job Object terminal launch is unavailable')
+        pytest.skip('Restricted-token/Job Object primitive unavailable; no host fallback')
+    return runner_for('workspace', backend='windows', state_dir=tmp_path/'state')
+
+
+def capture(terminal, marker, timeout=15):
+    data = bytearray(); deadline = time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        chunk = terminal.read(.1)
+        if chunk: data.extend(chunk)
+        if marker.encode() in data: return bytes(data)
+        if chunk == b'': break
+    raise AssertionError(f'Actual restricted console did not emit {marker!r}: {bytes(data)!r}')
+
+
+def spec(workspace, script, **changes):
+    values = dict(profile='workspace', argv=(sys.executable,'-u',str(script)),
+        cwd=str(workspace), workspace_root=str(workspace), writable_roots=(str(workspace),),
+        pty=True, purpose='terminal', task_id='synthetic-conpty-fixture', network='outbound',
+        granted_capabilities=('net.outbound:any',))
+    values.update(changes)
+    return SpawnSpec(**values)
+
+
+def test_actual_conpty_input_resize_interrupt_and_write_boundary(tmp_path, monkeypatch):
+    workspace=tmp_path/'project'; workspace.mkdir()
+    outside=tmp_path/'outside.txt'
+    script=workspace/'console_fixture.py'
+    script.write_text('''import ctypes, ctypes.wintypes as wt, os, time
+from pathlib import Path
+k=ctypes.WinDLL('kernel32',use_last_error=True)
+k.GetStdHandle.argtypes=[wt.DWORD];k.GetStdHandle.restype=wt.HANDLE
+k.GetConsoleMode.argtypes=[wt.HANDLE,ctypes.POINTER(wt.DWORD)];k.GetConsoleMode.restype=wt.BOOL
+handle=k.GetStdHandle(-11);mode=wt.DWORD()
+print('CONSOLE_MODE='+str(int(bool(k.GetConsoleMode(handle,ctypes.byref(mode))))),flush=True)
+class Coord(ctypes.Structure):_fields_=[('x',ctypes.c_short),('y',ctypes.c_short)]
+class Rect(ctypes.Structure):_fields_=[('l',ctypes.c_short),('t',ctypes.c_short),('r',ctypes.c_short),('b',ctypes.c_short)]
+class Info(ctypes.Structure):_fields_=[('size',Coord),('cursor',Coord),('attr',wt.WORD),('window',Rect),('maximum',Coord)]
+k.GetConsoleScreenBufferInfo.argtypes=[wt.HANDLE,ctypes.POINTER(Info)];k.GetConsoleScreenBufferInfo.restype=wt.BOOL
+print('HOST_SECRET='+str('TERMX_SYNTHETIC_HOST_SECRET' in os.environ),flush=True)
+Path('allowed.txt').write_text('approved write')
+try:Path(%r).write_text('forbidden write');print('OUTSIDE_WRITE_ALLOWED',flush=True)
+except PermissionError:print('OUTSIDE_WRITE_DENIED',flush=True)
+while True:
+ try:
+  command=input('READY>')
+  if command=='size':
+   info=Info();assert k.GetConsoleScreenBufferInfo(handle,ctypes.byref(info));print('SIZE='+str(info.size.x)+','+str(info.size.y),flush=True)
+  elif command=='sleep':print('SLEEPING',flush=True);time.sleep(60)
+  elif command=='exit':break
+ except KeyboardInterrupt:print('INTERRUPTED',flush=True)
+''' % str(outside))
+    monkeypatch.setenv('TERMX_SYNTHETIC_HOST_SECRET','synthetic-value-must-not-enter-terminal')
+    backend=runner(tmp_path)
+    terminal=backend.spawn_terminal(spec(workspace,script),31,96)
+    try:
+        initial=capture(terminal,'READY>')
+        assert b'CONSOLE_MODE=1' in initial and b'HOST_SECRET=False' in initial
+        assert b'OUTSIDE_WRITE_DENIED' in initial and b'OUTSIDE_WRITE_ALLOWED' not in initial
+        assert (workspace/'allowed.txt').read_text()=='approved write' and not outside.exists()
+        terminal.resize(45,120); terminal.write(b'size\r')
+        assert b'SIZE=120,45' in capture(terminal,'SIZE=120,45')
+        terminal.write(b'sleep\r');capture(terminal,'SLEEPING')
+        assert terminal.send_signal('int')
+        capture(terminal,'INTERRUPTED'); assert terminal.alive()
+        terminal.write(b'exit\r'); assert terminal.wait(15)==0
+        assert not terminal.alive()
+    finally:terminal.kill()
+
+
+def test_conpty_rejects_unsupported_network_denial_instead_of_host_fallback(tmp_path):
+    workspace=tmp_path/'project';workspace.mkdir();script=workspace/'unused.py'
+    script.write_text('raise AssertionError("must never execute")')
+    with pytest.raises(SandboxFailure,match='network-denied'):
+        runner(tmp_path).spawn_terminal(spec(workspace,script,network='none',granted_capabilities=()),24,80)
+
+
+def test_actual_conpty_job_kill_reaps_descendants_before_root_release(tmp_path):
+    workspace=tmp_path/'project';workspace.mkdir();script=workspace/'descendants.py'
+    script.write_text('''import subprocess,sys,time
+from pathlib import Path
+child=subprocess.Popen([sys.executable,'-u','-c',"from pathlib import Path;import time;time.sleep(8);Path('escaped-child.txt').write_text('not reaped')"])
+Path('child.pid').write_text(str(child.pid));print('TREE_READY',flush=True);time.sleep(60)
+''')
+    backend=runner(tmp_path);terminal=backend.spawn_terminal(spec(workspace,script),24,80)
+    try:
+        capture(terminal,'TREE_READY');terminal.kill(15);terminal.wait(15)
+        assert terminal._done.is_set() and not terminal.alive()
+        from termx.sandbox import windows_runner
+        assert not any(Path(path)==workspace for path in windows_runner._LABEL_HELD)
+        # Real process query: the descendant is absent/terminated immediately.
+        import ctypes,ctypes.wintypes as wt
+        api=ctypes.WinDLL('kernel32',use_last_error=True)
+        api.OpenProcess.argtypes=[wt.DWORD,wt.BOOL,wt.DWORD];api.OpenProcess.restype=wt.HANDLE
+        api.GetExitCodeProcess.argtypes=[wt.HANDLE,ctypes.POINTER(wt.DWORD)];api.GetExitCodeProcess.restype=wt.BOOL
+        api.CloseHandle.argtypes=[wt.HANDLE];api.CloseHandle.restype=wt.BOOL
+        handle=api.OpenProcess(0x1000,False,int((workspace/'child.pid').read_text()))
+        if handle:
+            try:
+                code=wt.DWORD();assert api.GetExitCodeProcess(handle,ctypes.byref(code));assert code.value!=259
+            finally:api.CloseHandle(handle)
+        assert not (workspace/'escaped-child.txt').exists()
+    finally:terminal.kill()

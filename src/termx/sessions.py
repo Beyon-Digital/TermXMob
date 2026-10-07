@@ -5,6 +5,7 @@ import json
 import os
 import re
 import signal
+import sys
 import tempfile
 import threading
 import time as _time
@@ -188,7 +189,17 @@ class Session:
     _activity_task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
-        if self.sandbox_profile != "host":
+        terminal = None
+        if self.sandbox_profile != 'host' and sys.platform == 'win32':
+            runner, spec = self._restricted_context()
+            spawn = getattr(runner, 'spawn_terminal', None)
+            if spawn is None:
+                raise TerminalError('Windows sandbox cannot create restricted ConPTY terminals')
+            try:
+                terminal = spawn(spec, self.rows, self.cols)
+            except Exception as exc:
+                raise TerminalError(f'restricted Windows terminal unavailable: {exc}') from exc
+        elif self.sandbox_profile != "host":
             argv, env = self._restricted_launch()
         else:
             env = os.environ.copy()
@@ -196,7 +207,8 @@ class Session:
             env.setdefault("COLORTERM", "truecolor")
             argv = with_shell_integration(self.argv, env)
         try:
-            terminal = spawn_terminal(argv, self.cwd, env, self.rows, self.cols)
+            if terminal is None:
+                terminal = spawn_terminal(argv, self.cwd, env, self.rows, self.cols)
         except TerminalError:
             raise
         self._terminal = terminal
@@ -213,6 +225,18 @@ class Session:
         same kernel isolation as agent spawns. Fails closed — a backend with
         no pty story raises TerminalError instead of spawning unsandboxed.
         """
+        runner, spec = self._restricted_context()
+        spawn_argv = getattr(runner, "spawn_argv", None)
+        if spawn_argv is None:
+            raise TerminalError(
+                f"sandbox backend {runner.capabilities().backend} cannot spawn pty terminals"
+            )
+        try:
+            return spawn_argv(spec), spec.env or {}
+        except Exception as exc:
+            raise TerminalError(f"sandbox spawn rejected: {exc}") from exc
+
+    def _restricted_context(self):
         from termx.sandbox import SpawnSpec, runner_for
         from termx.sandbox.environment import build_environment, sandbox_home
         from termx.config import config_dir
@@ -255,15 +279,7 @@ class Session:
                 "no kernel sandbox backend available for "
                 f"profile {self.sandbox_profile!r} — see provisioning status"
             )
-        spawn_argv = getattr(runner, "spawn_argv", None)
-        if spawn_argv is None:
-            raise TerminalError(
-                f"sandbox backend {runner.capabilities().backend} cannot spawn pty terminals"
-            )
-        try:
-            return spawn_argv(spec), env
-        except Exception as exc:
-            raise TerminalError(f"sandbox spawn rejected: {exc}") from exc
+        return runner, spec
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop

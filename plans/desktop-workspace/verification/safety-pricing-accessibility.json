@@ -1,0 +1,1159 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "safety-pricing-form",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".resize-handle"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "safety-pricing-form",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".resize-handle"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "safety-pricing-form",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "safety-pricing-form",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Action review",
+      "focus": {
+        "label": "Action review",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 97.765625,
+        "height": 16,
+        "visible_width": 97.765625,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Configure",
+      "focus": {
+        "label": "Configure",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 87.671875,
+        "height": 36,
+        "visible_width": 87.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Include administrator pricing snapshot",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(29, 32, 30)",
+        "width": 413,
+        "height": 13,
+        "visible_width": 413,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.44
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Currency (3 uppercase letters)",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Cached input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Output rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Pricing source",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Pricing snapshot version",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Pricing effective date",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Action review",
+      "focus": {
+        "label": "Action review",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 97.765625,
+        "height": 16,
+        "visible_width": 97.765625,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Configure",
+      "focus": {
+        "label": "Configure",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 87.671875,
+        "height": 36,
+        "visible_width": 87.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Include administrator pricing snapshot",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "width": 413,
+        "height": 13,
+        "visible_width": 413,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 21.0
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Currency (3 uppercase letters)",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Cached input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Output rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Pricing source",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Pricing snapshot version",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Pricing effective date",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Action review",
+      "focus": {
+        "label": "Action review",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 97.765625,
+        "height": 16,
+        "visible_width": 97.765625,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Configure",
+      "focus": {
+        "label": "Configure",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 87.671875,
+        "height": 36,
+        "visible_width": 87.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Include administrator pricing snapshot",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(29, 32, 30)",
+        "width": 413,
+        "height": 13,
+        "visible_width": 413,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.44
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Currency (3 uppercase letters)",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Cached input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Output rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Pricing source",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Pricing snapshot version",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Pricing effective date",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Action review",
+      "focus": {
+        "label": "Action review",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 97.765625,
+        "height": 16,
+        "visible_width": 97.765625,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Configure",
+      "focus": {
+        "label": "Configure",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 87.671875,
+        "height": 36,
+        "visible_width": 87.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Include administrator pricing snapshot",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "width": 413,
+        "height": 13,
+        "visible_width": 413,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 21.0
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Currency (3 uppercase letters)",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Cached input rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Output rate per million tokens",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Pricing source",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Pricing snapshot version",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Pricing effective date",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 420,
+        "height": 36,
+        "visible_width": 420,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    }
+  ],
+  "errors": [],
+  "paid_provider_queries": 0,
+  "limitations": [
+    "Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation."
+  ],
+  "fixture_provider_turns": 0,
+  "task_status_before_cleanup": null,
+  "production_reviewer_qualified": false,
+  "evidence_scope": "Actual production localhost UI with configured fixture account; no provider evaluation or billing query. Administrator rates entered only as explicitly labeled fixture values.",
+  "test_source": "tests/workspace_browser_accessibility_e2e.py (TERMX_A11Y_SAFETY_ONLY=1)"
+}

@@ -134,6 +134,6 @@ def test_qualification_reports_actual_response_token_usage():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             reviewer=ResponsesReviewer(provider_id='fixture',base_url='https://provider.example',model='explicit',api_key='fixture',version='v1',client=client)
             report=await evaluate_reviewer(reviewer)
-            assert report['usage']=={'requests':len(CASES),'input_tokens':11*len(CASES),'output_tokens':3*len(CASES),'missing_usage_requests':0}
+            assert report['usage']=={'requests':len(CASES),'input_tokens':11*len(CASES),'cached_input_tokens':0,'output_tokens':3*len(CASES),'missing_usage_requests':0,'missing_cached_usage_requests':len(CASES)}
             assert not report['qualified'] and not report['cost']['reported']
     asyncio.run(run())

@@ -51,10 +51,8 @@ def test_renderer_crash_reopens_human_tab_and_never_revives_old_grant(tmp_path):
             grant=await service.handoff(tab['id'],'owner','sid',run_id='task',origins=[site],actions=['observe'])
             # Page.crash deliberately destroys its command target. Keep and
             # drain that pending command when its browser closes.
-            crash=asyncio.create_task(service._capture_cdp[tab['id']].send('Page.crash'))
-            for _ in range(40):
-                if service.get(tab['id'],'owner')['state']=='crashed':break
-                await asyncio.sleep(.025)
+            async with service._pages[tab['id']].expect_event('crash',timeout=15_000):
+                crash=asyncio.create_task(service._capture_cdp[tab['id']].send('Page.crash'))
             assert service.get(tab['id'],'owner')['state']=='crashed'
             assert service.records.get('grant',grant['grant']['id'])['revoked']
             restored=await service.recover_tab(tab['id'],'owner','sid')

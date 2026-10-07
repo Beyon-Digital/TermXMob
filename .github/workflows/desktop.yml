@@ -231,7 +231,7 @@ jobs:
           TERMX_RUNTIME_QUALIFICATION: '1'
           TERMX_JS_DEBUG_SERVER: ${{ github.workspace }}/desktop/build/runtime/js-debug/src/dapDebugServer.js
           TERMX_RUNTIME_ASSETS: ${{ github.workspace }}/desktop/build/runtime
-        run: uv run --no-sync pytest -q tests/test_debug_workspace.py tests/test_workspace_runtime.py tests/test_lsp_navigation.py
+        run: uv run --no-sync pytest -q tests/test_debug_workspace.py tests/test_workspace_runtime.py tests/test_lsp_navigation.py tests/test_windows_conpty.py
 
       - name: Verify installed browser grant and recovery contracts
         env:

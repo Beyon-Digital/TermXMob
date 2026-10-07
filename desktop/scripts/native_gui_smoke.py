@@ -194,6 +194,34 @@ def password_signin(driver, username, password, setup=False):
     return assert_workspace(driver)
 
 
+def terminal_transport(driver, session_id):
+    """Actual installed restricted terminal and cookie-authenticated webview WS."""
+    created = driver.api('/api/workspace/sessions/'+session_id+'/terminal', 'POST')
+    assert created['status'] == 200, 'Installed restricted terminal unavailable: '+str(created)
+    terminal_id = created['body']['id']
+    try:
+        result = driver.call('POST', '/execute/async', {'script': '''
+const id=arguments[0],done=arguments[arguments.length-1];
+const marker='TERMX_NATIVE_RESTRICTED_CONSOLE_OK';
+let settled=false,text='';
+const socket=new WebSocket(location.origin.replace(/^http/,'ws')+'/api/sessions/'+encodeURIComponent(id)+'/pty');
+socket.binaryType='arraybuffer';
+const timer=setTimeout(()=>finish({ok:false,error:'Authenticated terminal output deadline'}),25000);
+function finish(value){if(settled)return;settled=true;clearTimeout(timer);socket.close();done(value)}
+socket.onopen=()=>{socket.send(JSON.stringify({type:'resize',cols:100,rows:30}));socket.send(JSON.stringify({type:'input',data:'echo '+marker+'\\r'}))};
+socket.onmessage=event=>{if(typeof event.data==='string')return;text+=new TextDecoder().decode(event.data);const plain=text.replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g,'');if(plain.split(/[\\r\\n]+/).some(line=>line.trim()===marker))finish({ok:true,connected:true,bytes:text.length})};
+socket.onerror=()=>finish({ok:false,error:'Native authenticated terminal socket error'});
+socket.onclose=event=>{if(!settled)finish({ok:false,error:'Native terminal socket closed '+event.code})};
+''', 'args':[terminal_id]})
+        assert result.get('ok') and result.get('connected'), str(result)
+        return {'authenticated_webview_socket':True,'restricted_console_output_bytes':result['bytes']}
+    finally:
+        removed = driver.api('/graphql','POST',{'query':
+            'mutation($id:String!){deleteSession(sessionId:$id){ok}}',
+            'variables':{'id':terminal_id}})
+        assert removed['status'] == 200 and not removed['body'].get('errors'), str(removed)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary',required=True,type=Path)
@@ -250,6 +278,7 @@ def main():
             created = driver.api('/api/workspace/sessions','POST',{'title':'Native fixture conversation','engine':'internal','mode':'ask'})
             assert created['status'] == 200
             session_id = created['body']['id']
+            report['steps']['installed_restricted_terminal_transport'] = terminal_transport(driver, session_id)
             origin = driver.script('return location.origin')
             driver.call('POST','/url',{'url':origin+'/?'+urlencode({'session':session_id,'layout':'chat'})})
             assert_workspace(driver)

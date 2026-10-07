@@ -1,0 +1,39 @@
+name: Windows workspace platform contracts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/termx/private_files.py'
+      - 'src/termx/identity*.py'
+      - 'src/termx/sandbox/*win*.py'
+      - 'src/termx/sessions.py'
+      - 'src/termx/agent/secrets.py'
+      - 'tests/test_windows_conpty.py'
+      - 'tests/test_private_files.py'
+      - '.github/workflows/windows-platform-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actual-windows-contracts:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install source test dependencies
+        run: uv sync --locked --group dev --extra development --extra media --extra webrtc
+      - name: Verify actual private storage, authority and restricted console contracts
+        env:
+          TERMX_RUNTIME_QUALIFICATION: '1'
+        run: >-
+          uv run --no-sync pytest -q
+          tests/test_identity.py tests/test_private_files.py
+          tests/test_config.py tests/test_tokens.py
+          tests/test_chatgpt.py tests/test_discovery_agents.py
+          tests/test_engines.py tests/test_engine_catalogue.py tests/test_engines_acp.py
+          tests/test_runner_agents.py tests/test_windows_conpty.py

@@ -1,0 +1,35 @@
+{
+  "backend_tests": 44,
+  "backend_passed": 44,
+  "backend_elapsed_seconds": 9.71,
+  "frontend_targeted_tests": 9,
+  "frontend_passed": 9,
+  "typescript_build": "passed",
+  "actual_chromium_crash_test": "passed",
+  "actual_chromium_crash_seconds": 9.08,
+  "paid_provider_queries": 0,
+  "production_reviewer_qualified": false,
+  "pricing_source": "Explicit fixtures only; no invented market prices or automatic price defaults.",
+  "usage_scope": "Actual Responses parsing exercised with bounded httpx.MockTransport responses; usage values are synthetic fixture reports, not live provider consumption.",
+  "test_sources": [
+    "tests/test_reviewer_pricing_binding.py",
+    "tests/test_auto_review.py",
+    "tests/test_agent_action_review.py",
+    "tests/test_native_action_review.py",
+    "desktop/workspace/src/features/safety-pricing.test.tsx",
+    "desktop/workspace/src/features/browser.test.tsx"
+  ],
+  "verified_behaviors": [
+    "Exact Decimal estimate with input/cached-input/output rates per million tokens",
+    "Frozen administrator currency/source/effective-date/version and distinct immutable report IDs",
+    "Missing or invalid usage cannot claim complete cost; differential cached pricing yields explicit bounds",
+    "Safety qualification stays independent of pricing; incomplete cost keeps qualification_evidence_complete false",
+    "Same provider ID credential change invalidates activation and active reviewer",
+    "Account change after verdict fails closed",
+    "Cached internal and native permits revoked before any effect; fresh exact human approval can resume current action",
+    "Model version name cannot impersonate a host rule",
+    "Reports and exports contain neither credentials nor private binding salt/digest",
+    "Actual Chromium crash event wait retains terminal state, revoked old grant, human recovery and old-grant rejection assertions"
+  ],
+  "remaining_requirement": "REVIEW-07 requires a deliberately selected live review account/model and administrator pricing snapshot, then live qualification and measured usage/latency/escalation/false-allow/cost report. No live account was selected or queried."
+}

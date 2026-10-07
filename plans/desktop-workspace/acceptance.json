@@ -13,7 +13,7 @@
       "id": "UX-02",
       "requirement": "Chat/Workbench/Browser layout moves preserve conversation/native IDs, active runs, drafts, scroll, dirty buffers and PTYs.",
       "status": "partial",
-      "evidence": "Mounted docked views preserve IDs, scroll and dirty split buffers; draft flush/unmount/revision tests pass. Exact browser context and approved upload references persist across full reload as inspectable/removable composer chips. Session checkout binds files/PTY/LSP/debug. Actual loaded Workbench200% has a useful editor and fully reachable split controls. Installed native active-run/window proof remains open."
+      "evidence": "Actual rendered Git proof preserves active canonical run, draft, dirty buffer and the same restricted PTY through Chat/Workbench moves, with exact real output assertions. Browser workflow preserves active task through takeover/private resume. Concurrent dirty popup buffers survive both reloads with distinct IndexedDB slots and unchanged disk. Native IDs/session checkout continuity and receipt recovery have regression coverage; installed native window handoff proof remains open."
     },
     {
       "id": "CHAT-01",
@@ -43,7 +43,7 @@
       "id": "AUTH-02",
       "requirement": "Rate-limited password attempts, secure storage, refresh rotation, parallel refresh coordination, expiry and device/session revocation work.",
       "status": "partial",
-      "evidence": "Password rate limits, hashed refresh rotation/reuse/expiry/device-session revoke and browser/native parallel refresh coordination pass. Actual Linux/Windows OS credential-service write/read/delete passed. Windows full-suite exposed POSIX chmod assumptions in backend private credential files/config validation; explicit owner/SYSTEM/admin DACL protection and platform tests are being implemented. This is a genuine secure-storage integration gap; SSO/signing remains a separate support-matrix limit."
+      "evidence": "Password rate limits, hashed refresh rotation/reuse/expiry/device-session revoke and browser/native parallel refresh coordination pass. Actual Linux/Windows OS credential-service write/read/delete passed. Explicit Windows owner/SYSTEM/admin protected DACL now covers backend private credentials, config, SQLite and atomic temp files; foreign owners fail closed. Source regression checks pass; actual Windows full-suite/private-file DACL qualification is pending in CI."
     },
     {
       "id": "AUTH-03",
@@ -120,8 +120,8 @@
     {
       "id": "GIT-01",
       "requirement": "Two parallel worktrees \u2192 edits/tests \u2192 stage/commit/push \u2192 PR/checks; conflicts, failed checks and cleanup are handled without discarding dirty user files.",
-      "status": "partial",
-      "evidence": "Two actual isolated worktrees, scoped edits/commits, hunk roundtrip, divergent fast-forward pull and dirty cleanup refusal pass. Reviewed production-port push and draft PR #28 creation completed, with actual failed backend and passing frontend checks visible. Session-selected worktree now governs files, execution, PTY, language tools and debugging; latest platform CI and rendered Git journey remain open."
+      "status": "verified",
+      "evidence": "verification/git-workspace-rendered.json proves two actual UI-created worktrees, selected-hunk stage/unstage, edits and passing/failing real PTY checks, independent commits/exact-confirmed local-bare pushes, divergent pull refusal and dirty cleanup preservation. Clean B removal retains its branch and resets Delivery to Project without an alert while the active chat remains on A. Actual draft PR28/checks are inspected through UI; earlier production push/PR creation succeeded. No paid query or external mutation in this proof."
     },
     {
       "id": "EXT-01",
@@ -210,8 +210,8 @@
     {
       "id": "REVIEW-05",
       "requirement": "Policy update, scope revoke, account switch, navigation or takeover invalidate cached reviews and queued permits. Restart/reconnect does not duplicate submissions.",
-      "status": "partial",
-      "evidence": "Scope/policy/session/document/lease checks, takeover-during-review, changed targets and consumed effect persistence pass. Audit found reused provider ID with changed account credentials does not yet invalidate reviewer qualification: configuration hash currently binds only URL/model/version. A private credential binding with opaque account revision and pre/post-review validation is being added; no secrets may enter status/export."
+      "status": "verified",
+      "evidence": "Scope/policy/session/document/lease checks, takeover-during-review, changed targets and consumed effects persist. Private HMAC credential binding exposes only opaque account revisions. tests/test_reviewer_pricing_binding.py proves same-ID credential rotation invalidates qualification and cached/native permits, rejects credentials changed after a verdict, and permits fresh exact human approval without repeating consumed effects. No key, salt or credential digest reaches status/export; 41 focused reviewer tests pass without paid queries."
     },
     {
       "id": "REVIEW-06",
@@ -223,7 +223,7 @@
       "id": "REVIEW-07",
       "requirement": "Evaluate and pin the smaller reviewer against a frozen representative/adversarial suite. Report false-allow cases, escalation rate, latency and cost. Zero escapes in release-blocking fixtures is necessary but not proof of general safety.",
       "status": "partial",
-      "evidence": "Frozen21-case model qualification and version pins exist; actual response token usage, latency and escalation are reported without invented cost. No smaller reviewer is qualified yet: real approved account/model and monetary-cost evaluation remain required."
+      "evidence": "Frozen21-case safety suite, version/account pins and immutable qualification export exist. Explicit administrator pricing snapshots produce precise estimates from actual Responses input/cached/output token usage, disclose missing usage/ranges and never claim billed charges; 41 focused reviewer tests pass with no paid queries. No real smaller reviewer is qualified yet: approved entitled account/model and its explicit pricing remain required."
     },
     {
       "id": "REVIEW-08",

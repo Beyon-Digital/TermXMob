@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import secrets
 from pathlib import Path
 from time import time
 from typing import Literal
@@ -14,6 +15,8 @@ from termx.auth import extract_passcode
 from termx.auto_review import ReviewRequired,ActionBlocked,ResponsesReviewer,ActionEnvelope
 from termx.browser.network import origin
 from termx.browser.evaluation import evaluate_reviewer
+from termx.browser.pricing import PricingSnapshot
+from termx.browser.reviewer_binding import account_revision
 
 class Route(APIRoute):
     def get_route_handler(self):
@@ -45,7 +48,11 @@ class DraftTestBody(Body):target_tab_id:str;parameters:dict[str,str]=Field(defau
 class DraftPublishBody(Body):version:str
 class UploadBody(Body):filename:str;mime_type:str='application/octet-stream';data_base64:str
 class DecisionBody(Body):approve:bool
-class ReviewConfigBody(Body):provider_id:str;model:str;version:str
+class ReviewConfigBody(Body):
+    provider_id:str=Field(min_length=1,max_length=200)
+    model:str=Field(min_length=1,max_length=200)
+    version:str=Field(min_length=1,max_length=120,pattern=r'\S')
+class ReviewEvaluationBody(ReviewConfigBody):pricing:PricingSnapshot|None=None
 class RuleBody(Body):action_id:str;decision:Literal['ALLOW','BLOCK'];expires_in:int=3600
 
 
@@ -54,19 +61,26 @@ def browser_router(state):
     service=state.browser
     from termx.browser.skills import BrowserSkills
     skills=BrowserSkills(service)
+    def binding(provider):
+        return account_revision(service.records,provider,state.credentials.get(provider['id']) or '')
+    def eligible(report,provider,model,version,revision=None):
+        digest=hashlib.sha256((provider['base_url']+model+version).encode()).hexdigest() if provider else ''
+        return bool(provider and provider['model']==model and report and report['qualified']
+                    and report.get('configuration_hash')==digest and report.get('account_revision')==(revision or binding(provider))
+                    and time()-report['created_at']<=30*86400)
     def current_reviewer():
         config=service.records.get('reviewer-config','active')
         if not config:return None
         provider=state.agent_store.get_provider(config['provider_id'])
         report=service.records.get('reviewer-evaluation',config['evaluation_id'])
-        digest=hashlib.sha256((provider['base_url']+config['model']+config['version']).encode()).hexdigest() if provider else ''
-        if not provider or provider['model']!=config['model'] or not report or not report['qualified'] or report['configuration_hash']!=digest or time()-report['created_at']>30*86400:return None
+        if not eligible(report,provider,config['model'],config['version']) or config.get('account_revision')!=report.get('account_revision'):return None
         return provider,config
     service.review.reviewer_valid=lambda:current_reviewer() is not None
     persisted=current_reviewer()
     if persisted:
         provider,config=persisted
         service.review.reviewer=ResponsesReviewer(provider_id=config['provider_id'],base_url=provider['base_url'],model=config['model'],api_key=state.credentials.get(config['provider_id']) or '',version=config['version'])
+        service.review.reviewer.account_revision=config['account_revision']
     def identity(request,scope='desktop-view',kind=None,id=None,project=None):
         token=extract_passcode(request.headers.get('x-termx-passcode'),request.headers.get('authorization'))
         if not state.auth.allows(token,scope):raise HTTPException(403,'missing browser authority')
@@ -210,9 +224,29 @@ def browser_router(state):
     @router.get('/reviewer')
     async def reviewer_status(request:Request):
         identity(request)
-        return {'configuration':service.records.get('reviewer-config','active'),'evaluations':service.records.list('reviewer-evaluation'),'active':service.review.reviewer is not None}
+        def status():
+            reports=[];providers={};revisions={}
+            for report in service.records.list('reviewer-evaluation'):
+                identifier=report['provider_id']
+                if identifier not in providers:
+                    providers[identifier]=state.agent_store.get_provider(identifier)
+                    revisions[identifier]=binding(providers[identifier]) if providers[identifier] else ''
+                provider=providers[identifier]
+                reports.append({**report,'activation_eligible':eligible(report,provider,report['model'],report['reviewer_version'],revisions[identifier])})
+            return {'configuration':service.records.get('reviewer-config','active'),'evaluations':reports,'active':service.review.reviewer is not None and current_reviewer() is not None}
+        value=await asyncio.to_thread(status)
+        identity(request)
+        return value
+    @router.get('/reviewer/evaluations/{identifier}/export')
+    async def reviewer_export(identifier:str,request:Request):
+        identity(request)
+        report=service.records.get('reviewer-evaluation',identifier)
+        if not report:raise KeyError(identifier)
+        provider=state.agent_store.get_provider(report['provider_id'])
+        report={**report,'activation_eligible':eligible(report,provider,report['model'],report['reviewer_version'])}
+        return JSONResponse(report,headers={'Content-Disposition':'attachment; filename="termx-reviewer-qualification.json"','Cache-Control':'no-store'})
     @router.post('/reviewer/evaluate')
-    async def reviewer_evaluate(request:Request,body:ReviewConfigBody):
+    async def reviewer_evaluate(request:Request,body:ReviewEvaluationBody):
         identity(request,'host-admin')
         provider=state.agent_store.get_provider(body.provider_id)
         if not provider or provider['kind'] not in {'openai','openai-compatible'} or body.model!=provider['model']:
@@ -221,21 +255,26 @@ def browser_router(state):
         if not key and not provider['base_url'].startswith(('http://localhost','http://127.0.0.1')):
             raise ValueError('configured provider account required')
         reviewer=ResponsesReviewer(provider_id=body.provider_id,base_url=provider['base_url'],model=body.model,api_key=key,version=body.version)
-        report=await evaluate_reviewer(reviewer)
-        ref=body.provider_id+':'+body.model+':'+body.version
-        service.records.put('reviewer-evaluation',ref,{'id':ref,**report,'configuration_hash':hashlib.sha256((provider['base_url']+body.model+body.version).encode()).hexdigest()})
+        revision=binding(provider)
+        report=await evaluate_reviewer(reviewer,body.pricing)
+        identity(request,'host-admin')
+        ref=secrets.token_urlsafe(24)
+        current=state.agent_store.get_provider(body.provider_id)
+        report=service.records.put('reviewer-evaluation',ref,{'id':ref,**report,'account_revision':revision,'configuration_hash':hashlib.sha256((provider['base_url']+body.model+body.version).encode()).hexdigest(),
+            'activation_eligible_at_evaluation':eligible({**report,'account_revision':revision,'configuration_hash':hashlib.sha256((provider['base_url']+body.model+body.version).encode()).hexdigest()},current,body.model,body.version)})
         return report
     @router.post('/reviewer')
     async def configure_reviewer(request:Request,body:ReviewConfigBody):
         identity(request,'host-admin')
         provider=state.agent_store.get_provider(body.provider_id)
-        report=service.records.get('reviewer-evaluation',body.provider_id+':'+body.model+':'+body.version)
-        digest=hashlib.sha256((provider['base_url']+body.model+body.version).encode()).hexdigest() if provider else ''
-        if not report or not report['qualified'] or report['configuration_hash']!=digest or time()-report['created_at']>30*86400:
+        matches=[report for report in service.records.list('reviewer-evaluation') if report['provider_id']==body.provider_id and report['model']==body.model and report['reviewer_version']==body.version and eligible(report,provider,body.model,body.version)]
+        report=max(matches,key=lambda row:row['created_at']) if matches else None
+        if not report:
             raise ValueError('current provider/model/version must pass qualification first')
         key=state.credentials.get(body.provider_id) or ''
         service.review.reviewer=ResponsesReviewer(provider_id=body.provider_id,base_url=provider['base_url'],model=body.model,api_key=key,version=body.version)
-        config={'id':'active',**body.model_dump(),'evaluation_id':report['id'],'configuration_hash':digest,'activated_at':time()}
+        service.review.reviewer.account_revision=report['account_revision']
+        config={'id':'active',**body.model_dump(),'evaluation_id':report['id'],'configuration_hash':report['configuration_hash'],'account_revision':report['account_revision'],'activated_at':time()}
         service.records.put('reviewer-config','active',config);return config
     @router.delete('/reviewer')
     async def disable_reviewer(request:Request):

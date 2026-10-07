@@ -1,0 +1,25 @@
+{
+  "commit": "806e6c70380e50b5ae053f813c6b40808d5e54c9",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37604886285",
+  "conclusion": "success",
+  "linux_backend": {
+    "passed": 787,
+    "skipped": 129,
+    "seconds": 161.21
+  },
+  "macos_backend": {
+    "passed": 818,
+    "skipped": 98,
+    "seconds": 236.21
+  },
+  "workspace": {
+    "passed": 57,
+    "files": 21,
+    "build": "passed"
+  },
+  "limits": [
+    "Linux exact-window capture job was skipped in this PR workflow.",
+    "This is source CI; installer qualification is separate.",
+    "Later working-tree changes require their own CI."
+  ]
+}

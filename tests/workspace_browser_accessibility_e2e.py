@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 
 def run(destination,axe_source):
     signin_only=os.environ.get('TERMX_A11Y_SIGNIN_ONLY')=='1'
+    safety_only=os.environ.get('TERMX_A11Y_SAFETY_ONLY')=='1'
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
     axe=Path(axe_source);assert axe.is_file()
     report={'tool':'axe-core/4.10.3','states':[],'keyboard':[],'errors':[],'paid_provider_queries':0,'limitations':['Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation.']}
@@ -17,6 +18,7 @@ def run(destination,axe_source):
         os.environ.update(TERMX_CONFIG_DIR=str(root/'config'),TERMX_AGENTS_DIR=str(root/'agents'),TERMX_ENGINE_STARTUP_REFRESH='0')
         from termx.app import AppState,create_app
         from termx.agent.providers import ProviderCall,ProviderTurn
+        from termx.agent.secrets import CredentialStore
         from test_agent import FakeAdapter
         finish=threading.Event()
         class FixtureAdapter(FakeAdapter):
@@ -26,7 +28,7 @@ def run(destination,axe_source):
                 while not finish.is_set():await asyncio.sleep(.05)
                 return ProviderTurn('finish','Done',[],{},[])
         adapter=FixtureAdapter()
-        state=AppState(passcode=None,adapter_factory=lambda *_:adapter)
+        state=AppState(passcode=None,credentials=CredentialStore({}),adapter_factory=lambda *_:adapter)
         owner=state.identity.setup_owner('a11y-owner','keyboard-browser-fixture-password-123')
         project=state.projects.register(str(root),name='Keyboard browser fixture')
         state.agent.save_provider(provider_id='fixture',kind='openai-compatible',name='No network fixture',base_url='http://127.0.0.1:9999/v1',model='fixture',capabilities=['shell'],api_key='fixture')
@@ -98,6 +100,17 @@ def run(destination,axe_source):
                             page.close()
                             continue
                         if (page.locator('html').get_attribute('data-theme') or 'dark')!=theme:button('Appearance')
+                        if safety_only:
+                            button('Action review');button('Configure')
+                            checkbox=page.get_by_role('checkbox',name='Include an administrator pricing snapshot',exact=True)
+                            seek(checkbox,'Include administrator pricing snapshot');page.keyboard.press('Space')
+                            for label,value in [('Currency (3 uppercase letters)','USD'),('Input rate per million tokens','2'),('Cached input rate per million tokens','0.5'),('Output rate per million tokens','8'),('Pricing source','Explicit test fixture, not a market price'),('Pricing snapshot version','fixture-price-v1')]:
+                                type_label(label,value)
+                            seek(page.get_by_label('Pricing effective date',exact=True),'Pricing effective date')
+                            assert page.get_by_role('button',name='Activate qualified reviewer',exact=True).is_disabled()
+                            audit('safety-pricing-form')
+                            page.close()
+                            continue
                         if not state.agent_store.list_tasks():
                             type_label('Message','Keyboard browser task');button('Send message');button('Allow once')
                         page.keyboard.press('Control+3')
@@ -147,7 +160,7 @@ def run(destination,axe_source):
                 browser.close()
                 report['fixture_provider_turns']=adapter.turns
                 report['task_status_before_cleanup']=state.agent_store.list_tasks()[0]['status'] if state.agent_store.list_tasks() else None
-                assert signin_only or (adapter.turns==2 and report['task_status_before_cleanup']=='running')
+                assert signin_only or safety_only or (adapter.turns==2 and report['task_status_before_cleanup']=='running')
         finally:
             finish.set();host.should_exit=True;worker.join(timeout=15);listener.close();site.shutdown();site.server_close()
             (destination/'report.json').write_text(json.dumps(report,indent=2))
