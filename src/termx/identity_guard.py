@@ -53,6 +53,21 @@ class SessionGuard:
         cookie = cookies.get(ACCESS_COOKIE)
         raw_cookie = cookie.value if cookie else None
         token = extract_passcode(headers.get("x-termx-passcode"), headers.get("authorization"))
+        socket_proof = query.get('st',[None])[0]
+        if protected and socket_proof:
+            from termx.identity import AuthenticationError
+            origin_scheme = 'https' if scope['scheme']=='wss' else 'http'
+            if (scope['type']!='websocket' or token or query_token or
+                (headers.get('origin') and not same_origin(headers['origin'],origin_scheme,headers.get('host','')))):
+                await self._reject(scope,receive,send,401,'invalid socket admission transport')
+                return
+            try:
+                token = await asyncio.to_thread(self.state.managed_pairing.admit_socket,socket_proof,
+                    host_id=query.get('host_id',[''])[0],path=path)
+            except AuthenticationError:
+                await self._reject(scope,receive,send,401,'socket proof expired or invalid')
+                return
+            scope = dict(scope,headers=[*scope.get('headers',[]),(b'authorization',f'Bearer {token}'.encode())])
         cookie_auth = token is None and raw_cookie is not None
         if protected and cookie_auth:
             scheme = "https" if scope["scheme"] == "wss" else "http" if scope["scheme"] == "ws" else scope["scheme"]

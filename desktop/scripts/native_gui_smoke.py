@@ -20,7 +20,7 @@ import subprocess
 import sys
 import tempfile
 from time import monotonic, sleep
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -330,6 +330,16 @@ def main():
             driver.call('POST','/window',{'handle':original})
             wait(lambda:driver.script('return document.querySelector("textarea[aria-label=Message]")?.value === arguments[0]',draft),'main workspace retains detached draft')
             report['steps']['acknowledged_redock_preserves_draft'] = True
+            live_before=assert_workspace(driver)
+            driver.click('[aria-label="Lock workspace"]')
+            wait(lambda:driver.element('.lock-screen'),'actual native Lock overlay')
+            driver.type('.lock-screen input[type="password"]',password)
+            driver.click('//button[normalize-space()="Unlock workspace"]','xpath')
+            wait(lambda:not driver.element('.lock-screen'),'same-session native unlock')
+            live_after=assert_workspace(driver)
+            assert live_after['session_id']==live_before['session_id']
+            wait(lambda:driver.script('return document.querySelector("textarea[aria-label=Message]")?.value===arguments[0]',draft),'draft preserved through Lock')
+            report['steps']['explicit_lock_unlock_same_session_preserves_draft']=True
             driver.screenshot('redocked-workspace')
             current = assert_workspace(driver)
             revoked = driver.api('/auth/sessions/'+current['session_id'],'DELETE')
@@ -350,6 +360,27 @@ def main():
             wait(lambda:driver.element('.sign-in'),'logout remains revoked after restart')
             report['steps']['native_logout_clears_os_refresh'] = True
             driver.screenshot('signed-out')
+            password_signin(driver,username,password)
+            host_origin=driver.script('return location.origin')
+            old_pid_record=json.loads((data_dir/'backend.pid').read_text())
+            driver.click('[aria-label="Stop host"]')
+            wait(lambda:driver.element('.host-stop-effects'),'explicit installed host effects')
+            driver.click('[role="dialog"] input[type="checkbox"]')
+            driver.click('//button[normalize-space()="Stop host now"]','xpath')
+            def host_down():
+                try:
+                    with urlopen(host_origin+'/auth/methods',timeout=3):return False
+                except URLError as error:return isinstance(error.reason,ConnectionRefusedError)
+            wait(host_down,'graceful installed native host shutdown',40)
+            deadline=monotonic()+15
+            while monotonic()<deadline:
+                assert driver.process.poll() is None,'Stop host quit the native driver/application tree'
+                assert host_down(),'Native monitor automatically restarted an explicitly stopped host'
+                pid_file=data_dir/'backend.pid'
+                assert not pid_file.exists() or json.loads(pid_file.read_text())==old_pid_record,'Native monitor launched another backend'
+                sleep(.5)
+            assert driver.call('GET','/window/handles'),'Native window disappeared during host-only shutdown'
+            report['steps']['accepted_host_stop_does_not_respawn_native_backend']=True
             verify_unchanged_assets(report, args.binary, args.package)
             report['passed'] = True
         except Exception as error:

@@ -1,6 +1,7 @@
+import {persistArtifactDrafts,snapshotArtifactDrafts} from './artifact-drafts';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export const nativeWorkspace = () => isTauri();
 export async function nativeLogin(username: string, password: string, setup = false) {
@@ -12,8 +13,8 @@ export async function nativeRequest<T>(path: string, init: RequestInit = {}): Pr
   return invoke('workspace_request', { path, method: (init.method || 'GET').toUpperCase(), data: init.body ? JSON.parse(init.body as string) : null });
 }
 export async function nativeSignOut() { await invoke('workspace_logout') }
-export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 'workbench' | 'browser' | 'computer') {
-  if (nativeWorkspace()) return invoke<string>('workspace_detach', { sessionId, panel });
+export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 'workbench' | 'browser' | 'computer' | 'artifacts') {
+  if (nativeWorkspace()) {const owner=await nativeRequest<{principal:{id:string}}>('/auth/me');const label=await invoke<string>('workspace_detach', { sessionId, panel });if(panel==='artifacts')await persistArtifactDrafts(owner.body.principal.id,snapshotArtifactDrafts(owner.body.principal.id),label);return label}
   const url = new URL(window.location.href); url.search = ''; url.searchParams.set('layout', panel);
   if (sessionId) url.searchParams.set('session', sessionId);
   const child = window.open(url.toString(), '_blank', 'popup,width=1100,height=780');
@@ -21,7 +22,7 @@ export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 
   return 'browser-window';
 }
 
-export type NativePanel = 'chat' | 'workbench' | 'browser' | 'computer';
+export type NativePanel = 'chat' | 'workbench' | 'browser' | 'computer' | 'artifacts';
 export type NativeRedockEvent = { id: string; source: string; ownerId: string; sessionId: string | null; panel: NativePanel; payload: unknown };
 export const isDetachedWindow = () => nativeWorkspace() && getCurrentWindow().label.startsWith('workspace-');
 export async function listenNativeRedock(handler: (event: NativeRedockEvent) => void): Promise<UnlistenFn> {
@@ -74,4 +75,13 @@ export async function nativeBinary(path:string,init:RequestInit={}):Promise<{sta
  const result=await invoke<{status:number;body_base64:string;content_type:string}>('workspace_binary',{path,method,bodyBase64:bytes?btoa(source):null,contentType:encoded.headers.get('Content-Type')||'application/octet-stream'});
  const raw=atob(result.body_base64);const body=new Uint8Array(raw.length);for(let index=0;index<raw.length;index++)body[index]=raw.charCodeAt(index);
  return {status:result.status,body,mime:result.content_type};
+}
+
+export const nativeLockState = () => invoke<import('./api').LockState>('workspace_lock_state');
+export const nativeUnlock = (evidence:import('./api').UnlockEvidence) => invoke('workspace_unlock',{method:evidence.method,username:evidence.username||'',password:evidence.password||'',assertion:evidence.assertion||''});
+export const nativeUnlockOidc = (method:string) => invoke<{authorization_url:string}>('workspace_unlock_oidc',{method});
+export async function listenNativeLocks(){
+ if(!nativeWorkspace())return()=>{};
+ const releases=await Promise.all([listen('termx-session-locked',()=>window.dispatchEvent(new Event('termx-session-locked'))),listen('termx-session-unlocked',()=>window.dispatchEvent(new Event('termx-session-unlocked')))]);
+ return()=>releases.forEach(release=>release());
 }

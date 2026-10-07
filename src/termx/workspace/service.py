@@ -38,7 +38,7 @@ class WorkspaceService:
         state.agent._listeners.add(self._on_event)
 
     def require(self, principal: Principal, scope: str, project_id: str | None = None, cwd: str | None = None, *, resource_kind=None, resource_id=None):
-        live = self.state.identity.principal_by_id(principal.id) if hasattr(self.state, 'identity') else principal
+        live = self.state.identity.current_principal(principal) if hasattr(self.state, 'identity') else principal
         if not live or scope not in live.scopes:
             raise PermissionError('Permission denied')
         authz = getattr(self.state, 'authorization', None)

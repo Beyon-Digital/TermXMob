@@ -4,8 +4,8 @@ mod capture;
 mod config;
 mod input_macos;
 mod logging;
-mod menu;
 mod media_permission;
+mod menu;
 mod permissions;
 mod private_storage;
 mod tray;
@@ -75,6 +75,9 @@ fn main() {
             workspace::workspace_resume_sso,
             workspace::workspace_request,
             workspace::workspace_logout,
+            workspace::workspace_lock_state,
+            workspace::workspace_unlock,
+            workspace::workspace_unlock_oidc,
             workspace::workspace_detach,
             workspace::workspace_redock,
             workspace::workspace_redock_accept,

@@ -84,8 +84,10 @@ class RunnerAgentService:
             records=getattr(self.state.browser,'records',None)
             authority=records.get('agent-task-authority',job['task']) if records else None
             if authority:
-                live=self.state.identity.session_by_id(authority['session_id'])
+                live=self.state.identity.execution_session(authority['session_id'])
                 if not live or live.principal.id!=principal.id or live.principal.policy_version!=job['policy_version']:return False
+                self.state.authorization.require_principal(live.principal,'host-admin')
+                self.state.authorization.require_principal(live.principal,'agent-run',project_id=runner['project'])
             provider=self._account(job['provider'],job['credential_ref'],self.store.get_task(job['task'])['model'])
             return runner['expires']>time() and self.runners.authority(runner) and self._fingerprint(provider,job['credential_ref'])==job['provider_fingerprint'] and runner['status']=='ready'
         except Exception:return False

@@ -8,6 +8,7 @@ from termx.auth import extract_passcode
 from termx.identity_http import ACCESS_COOKIE
 from termx.workspace.automation import AutomationService
 from termx.workspace.extensions import ExtensionService
+from termx.workspace.skill_sources import SkillSourceService
 from termx.workspace.service import WorkspaceService
 from termx.workspace.store import Conflict
 
@@ -125,7 +126,30 @@ class DigestInput(Input):
 
 class RegistryInput(Input):
     name: str=Field(min_length=1,max_length=200)
-    path: str
+    path: str | None=None
+    url: str | None=None
+    kind: str='private_local'
+    credential: str | None=Field(default=None,max_length=4096)
+
+
+class SkillSourceInput(Input):
+    scope:str
+    name:str
+    project_id:str|None=None
+    markdown:str=Field(max_length=512000)
+    expected_digest:str|None=None
+
+
+class SkillPublishInput(Input):
+    scope:str
+    name:str
+    version:str
+    project_id:str|None=None
+
+
+class RegistryCredential(Input):
+    credential:str=Field(min_length=1,max_length=4096)
+    revision:int
 
 
 class ApprovalInput(Input):
@@ -152,6 +176,8 @@ def mount_workspace(app,state):
     if not getattr(state,'extensions',None):
         state.extensions=ExtensionService(workspace)
     automation=state.automation; extensions=state.extensions
+    if not getattr(state,'skill_sources',None):state.skill_sources=SkillSourceService(workspace,extensions)
+    skills=state.skill_sources
     router=APIRouter(prefix='/api/workspace')
 
     def principal(request):
@@ -402,7 +428,7 @@ def mount_workspace(app,state):
     def extension_list(request:Request):
         actor=principal(request);call(workspace.require,actor,'host-admin')
         return {'extensions':workspace.store.list('extension'), 'formats':sorted(extensions.adapters),
-                'registries':workspace.store.list('registry',actor.id)}
+                'registries':[extensions.public_registry(row) for row in workspace.store.list('registry',actor.id)]}
 
     @router.post('/extensions/preview')
     def extension_preview(request:Request,body:BundleInput):
@@ -436,6 +462,48 @@ def mount_workspace(app,state):
     @router.post('/registries/{identifier}/preview')
     def registry_preview(request:Request,identifier:str,body:dict):
         return call(extensions.registry_preview,principal(request),identifier,body.get('filename',''))
+
+    @router.patch('/registries/{identifier}/credential')
+    def registry_credential(request:Request,identifier:str,body:RegistryCredential):
+        return call(extensions.rotate_registry_credential,principal(request),identifier,body.credential,body.revision)
+
+    @router.get('/skill-sources')
+    def skill_sources(request:Request,project_id:str|None=None):
+        return call(skills.list,principal(request),project_id)
+
+    @router.get('/skill-sources/source')
+    def skill_source(request:Request,scope:str,name:str,project_id:str|None=None):
+        return call(skills.read,principal(request),scope=scope,name=name,project_id=project_id)
+
+    @router.put('/skill-sources/source')
+    def save_skill_source(request:Request,body:SkillSourceInput):
+        return call(skills.save,principal(request),**body.model_dump())
+
+    @router.post('/skill-sources/validate')
+    def validate_skill_source(request:Request,body:SkillSourceInput):
+        from termx.workspace.skill_sources import validate_markdown
+        call(skills._root,principal(request),body.scope,body.project_id)
+        return call(validate_markdown,body.markdown)
+
+    @router.get('/skill-sources/versions')
+    def skill_versions(request:Request,scope:str,name:str,project_id:str|None=None):
+        return {'versions':call(skills.versions,principal(request),scope=scope,name=name,project_id=project_id)}
+
+    @router.get('/skill-sources/versions/{identifier}')
+    def skill_version(request:Request,identifier:str):
+        return call(skills.version,principal(request),identifier)
+
+    @router.post('/skill-sources/publish-preview')
+    def publish_skill(request:Request,body:SkillPublishInput):
+        return call(skills.publish_preview,principal(request),**body.model_dump())
+
+    @router.get('/skill-sources/compatibility')
+    def compatibility_sources(request:Request,project_id:str|None=None):
+        return {'sources':call(skills.compatibility,principal(request),project_id)}
+
+    @router.get('/skill-sources/compatibility/{identifier}')
+    def compatibility_source(request:Request,identifier:str,project_id:str|None=None):
+        return call(skills.compatibility,principal(request),project_id,identifier)
 
     @router.get('/audit')
     def audit(request:Request):

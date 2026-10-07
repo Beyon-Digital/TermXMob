@@ -1,8 +1,9 @@
+import {validateArtifactDrafts,type ArtifactDraft} from './artifact-drafts';
 import type {Draft} from './drafts';
 import {isTauri} from '@tauri-apps/api/core';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 export type TransferBuffer={key:string;project_id:string;path:string;content:string;revision:string;editable:boolean;dirty:boolean;root?:string;workspaceSession?:string;worktree?:string|null};
-export type WindowState={version:1;sessionId:string;draft:Draft|null;buffers:TransferBuffer[];terminalId?:string};
+export type WindowState={version:1;sessionId:string;draft:Draft|null;buffers:TransferBuffer[];artifacts?:ArtifactDraft[];terminalId?:string};
 const current=new Map<string,TransferBuffer[]>();
 const terminals=new Map<string,string>();
 export function rememberTerminal(sessionId:string,id:string){if(id)terminals.set(sessionId,id)}
@@ -30,7 +31,7 @@ export function validateWindowState(value:unknown):WindowState{
  if(state.draft&&(typeof state.draft.text!=='string'||typeof state.draft.saved!=='string'||state.draft.text.length>64000||!Array.isArray(state.draft.context||[])||(state.draft.context||[]).length>16))throw new Error('Invalid conversation draft handoff');
  for(const item of state.draft?.attachments||[]){if(typeof item.name!=='string'||item.name.length>255||!['image/png','image/jpeg','image/webp'].includes(item.mime)||typeof item.data!=='string'||item.data.length>2800000)throw new Error('Invalid image attachment handoff')}
  if((state.draft?.attachments||[]).length>4)throw new Error('Invalid image attachment handoff');
- return structuredClone(state);
+ if(state.artifacts!==undefined)state.artifacts=validateArtifactDrafts(state.artifacts);return structuredClone(state);
 }
 export async function receiveBuffers(owner:string,incoming:TransferBuffer[],handoff:string){const existing=mergeBuffers(await restoreBuffers(owner),snapshotBuffers(owner),'restored');const merged=mergeBuffers(existing,incoming,handoff);await persistBuffers(owner,merged);publishBuffers(owner,merged);window.dispatchEvent(new CustomEvent('termx-buffer-handoff',{detail:{owner,buffers:merged}}))}
 if(typeof window!=='undefined')window.addEventListener('termx-signed-out',()=>{current.clear();terminals.clear()});

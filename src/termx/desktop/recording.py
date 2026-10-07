@@ -8,6 +8,7 @@ import json
 import re
 import secrets
 import threading
+import weakref
 from time import time
 
 from termx.agent.policy import redact
@@ -16,6 +17,13 @@ from termx.desktop.windows import WindowCapture
 _PRIVATE = {}
 _LOCK = threading.RLock()
 _PRIVACY_REVISION = 0
+_PRIVACY_LISTENERS = []
+
+def on_capture_private(callback):
+    """Weak host observers close their transports before private acknowledgement."""
+    with _LOCK:
+        _PRIVACY_LISTENERS.append(weakref.WeakMethod(callback))
+
 
 def set_capture_private(identifier, *, expires_at, valid):
     """Shared host observation barrier, never an execution grant."""
@@ -23,6 +31,15 @@ def set_capture_private(identifier, *, expires_at, valid):
     with _LOCK:
         _PRIVATE[identifier]=(expires_at,valid)
         _PRIVACY_REVISION+=1
+        callbacks=[callback() for callback in _PRIVACY_LISTENERS if callback() is not None]
+        _PRIVACY_LISTENERS[:]=[callback for callback in _PRIVACY_LISTENERS if callback() is not None]
+    # Never hold the privacy mutex while closing peer transports: their
+    # capture workers may be checking this same epoch during cancellation.
+    failures=[]
+    for callback in callbacks:
+        try:callback()
+        except Exception as exc:failures.append(exc)
+    if failures:raise PermissionError('Private barrier retained; remote observation shutdown could not be confirmed') from failures[0]
 
 def clear_capture_private(identifier):
     global _PRIVACY_REVISION

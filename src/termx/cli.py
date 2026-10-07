@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--web-dir",
         default=None,
-        help="Expo web export directory (default ./app/dist)",
+        help="Shared desktop workspace bundle directory (auto-detected by default)",
     )
     parser.add_argument(
         "--desktop",
@@ -197,7 +197,7 @@ async def _start_server(
     return None
 
 
-async def _serve(args: argparse.Namespace) -> None:
+async def _serve(args: argparse.Namespace) -> int:
     if args.desktop:
         os.environ["TERMX_DESKTOP"] = "1"
     from termx.desktop import broker as desktop_broker
@@ -210,7 +210,7 @@ async def _serve(args: argparse.Namespace) -> None:
     if started is None:
         if not args.desktop:
             print(f"termx: could not bind {args.host}:{args.port} (and nearby ports)", flush=True)
-        return
+        return 0
     server, serve_task, actual_port = started
     if actual_port != args.port:
         state.port = actual_port
@@ -258,11 +258,17 @@ async def _serve(args: argparse.Namespace) -> None:
             except (asyncio.CancelledError, Exception):
                 pass
 
+    # This exact status is consumed only by the desktop parent. It preserves
+    # deliberate shutdown even if its stdout reader loses the exit race.
+    return notify.HOST_STOP_EXIT_CODE if args.desktop and state.host_stop_requested else 0
+
 
 def main() -> None:
     augment_path()
     args = build_parser().parse_args()
     try:
-        asyncio.run(_serve(args))
+        status = asyncio.run(_serve(args))
+        if status:
+            raise SystemExit(status)
     except KeyboardInterrupt:
         pass

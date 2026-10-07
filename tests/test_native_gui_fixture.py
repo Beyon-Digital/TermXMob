@@ -46,3 +46,20 @@ def test_native_fixture_rejects_changed_installed_asset(tmp_path):
     with pytest.raises(AssertionError, match='assets changed'):
         module.verify_unchanged_assets(report, binary, package)
     assert report['asset_verification']['unchanged'] is False
+
+
+def test_native_artifact_canvas_is_allowed_only_through_existing_window_guards():
+    source=(Path(__file__).resolve().parents[1]/'desktop/src-tauri/src/workspace.rs').read_text()
+    for name in ('workspace_redock','workspace_detach'):
+        body=source.split('fn '+name,1)[1].split('#[tauri::command]',1)[0]
+        assert 'trusted(&app, &window)?' in body
+        assert '["chat", "workbench", "browser", "computer", "artifacts"]' in body
+        assert 'valid_session_id(&session_id)' in body
+
+
+def test_native_pairing_sponsor_has_exact_routes_without_authentication_retargeting():
+    source=(Path(__file__).resolve().parents[1]/'desktop/src-tauri/src/workspace.rs').read_text()
+    gate=source.split('pub async fn workspace_request',1)[1].split('spawn_blocking',1)[0]
+    assert 'trusted(&app, &window)?' in gate
+    assert '"/auth/pair/issue"' in gate and '"/auth/pair/revoke"' in gate
+    assert '"/auth/pair/exchange"' not in gate and 'path.starts_with("/auth/pair/")' not in gate

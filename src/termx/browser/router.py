@@ -55,7 +55,8 @@ class ReviewConfigBody(Body):
     model:str=Field(min_length=1,max_length=200)
     version:str=Field(min_length=1,max_length=120,pattern=r'\S')
 class ReviewEvaluationBody(ReviewConfigBody):pricing:PricingSnapshot|None=None
-class RuleBody(Body):action_id:str;decision:Literal['ALLOW','BLOCK'];expires_in:int=3600
+class RuleBody(Body):action_id:str;decision:Literal['ALLOW','BLOCK'];expires_in:int=Field(default=3600,ge=1,le=30*86400)
+class RuleEditBody(Body):decision:Literal['ALLOW','BLOCK'];expires_in:int=Field(ge=1,le=30*86400);revision:int=Field(ge=1)
 
 
 def browser_router(state):
@@ -354,6 +355,23 @@ def browser_router(state):
         if not record or record['principal_id']!=principal:raise KeyError('action')
         envelope=ActionEnvelope(**record['envelope'])
         return service.review.rule(envelope,body.decision,expires_at=time()+body.expires_in)
+    @router.patch('/rules/{id}')
+    async def edit_rule(id:str,request:Request,body:RuleEditBody):
+        token,principal,session=identity(request,'desktop-control')
+        row=service.records.get('review-rule',id)
+        if not row or row['scope']['principal_id']!=principal:raise KeyError('rule')
+        def current(scope):
+            if scope['principal_id']!=principal or scope['session_id']!=session or revision(token)!=scope['policy_version'] or not service.session_valid(principal,session,scope['policy_version']) or not service.task_live(scope['run_id']):return False
+            identity(request,'desktop-control',project=scope['project_id'])
+            if scope['grant_id'].startswith('task:'):
+                authority=service.records.get('agent-task-authority',scope['run_id'])
+                return bool(scope['grant_id']=='task:'+scope['run_id'] and authority and all(authority[key]==scope[key] for key in ('principal_id','session_id','project_id','policy_version')))
+            grant=service.records.get('grant',scope['grant_id'])
+            tab=service.records.get('tab',grant['tab_id']) if grant else None
+            if not tab or not service._grant_valid(tab,grant):return False
+            identity(request,'desktop-control','browser-tab',tab['id'],scope['project_id'])
+            return bool(all(grant[key]==scope[key] for key in ('principal_id','session_id','project_id','run_id','profile_id','policy_version')) and scope['target'] in grant['origins'] and scope['tool_id'].removeprefix('browser.') in grant['actions'])
+        return service.review.edit_rule(id,body.decision,expires_at=time()+body.expires_in,revision=body.revision,validate=current)
     @router.delete('/rules/{id}')
     async def revoke_rule(id:str,request:Request):
         _,principal,_=identity(request,'desktop-control');rule=service.records.get('review-rule',id)

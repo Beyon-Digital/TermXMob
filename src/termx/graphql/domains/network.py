@@ -272,9 +272,16 @@ class NetworkMutations:
     def rtc_offer(self, info: Ctx, input: RtcOfferInput) -> JSON:
         ctx = info.context
         ctx.require("desktop-view")
-        session_id = input.session_id or uuid.uuid4().hex[:12]
+        client_id = input.session_id or uuid.uuid4().hex[:12]
+        if len(client_id)>128:raise HTTPException(400,"RTC identifier exceeds 128 characters")
+        actor = ctx.state.identity.resolve(ctx.secret)
+        import hashlib
+        session_id = hashlib.sha256(((actor.session_id if actor else str(ctx.secret)) + "\0" + client_id).encode()).hexdigest()
         try:
-            return ctx.state.rtc.handle_offer(session_id, input.offer)
+            result = ctx.state.rtc.handle_offer(session_id, input.offer,
+                principal_id=actor.principal.id if actor else None, managed_session_id=actor.session_id if actor else None,
+                authorize=lambda: ctx.state.authorization.can(ctx.secret,'desktop-view'))
+            return {**result,'session_id':client_id}
         except RtcError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -283,5 +290,9 @@ class NetworkMutations:
     def rtc_ice(self, info: Ctx, session_id: str, candidate: JSON) -> T.Ok:
         ctx = info.context
         ctx.require("desktop-view")
-        ctx.state.rtc.add_ice(session_id, candidate)
+        if not 1<=len(session_id)<=128:raise HTTPException(400,"Invalid RTC identifier")
+        actor = ctx.state.identity.resolve(ctx.secret)
+        import hashlib
+        identifier = hashlib.sha256(((actor.session_id if actor else str(ctx.secret)) + "\0" + session_id).encode()).hexdigest()
+        ctx.state.rtc.add_ice(identifier, candidate,principal_id=actor.principal.id if actor else None,managed_session_id=actor.session_id if actor else None)
         return T.Ok.wrap({"ok": True})

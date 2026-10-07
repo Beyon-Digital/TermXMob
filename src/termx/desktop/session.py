@@ -119,10 +119,15 @@ class DesktopManager:
             json.dumps({"type": "displays", "created": created, "id": self.display_id, **self.snapshot()})
         )
 
-    async def _ws_rtc(self, websocket: WebSocket, payload: dict[str, Any]) -> None:
+    async def _ws_rtc(self, websocket: WebSocket, payload: dict[str, Any], *, principal_id=None, managed_session_id=None, authorize=None, viewer_id="legacy", owned_rtc=None) -> None:
         """WebRTC signalling over the session socket instead of HTTP."""
         rtc = self.rtc
-        session_id = str(payload.get("session_id") or "desktop")
+        client_id = str(payload.get("session_id") or "desktop")
+        if len(client_id)>128:
+            await websocket.send_text(json.dumps({"type":"rtc","ok":False,"error":"RTC identifier exceeds 128 characters"}))
+            return
+        import hashlib
+        session_id = hashlib.sha256((viewer_id + "\0" + client_id).encode()).hexdigest()
         if rtc is None or not rtc.available():
             await websocket.send_text(
                 json.dumps(
@@ -138,10 +143,12 @@ class DesktopManager:
         action = str(payload.get("action") or "offer")
         try:
             if action == "offer":
+                if owned_rtc is not None: owned_rtc.add(session_id)
                 result = await asyncio.to_thread(
                     rtc.handle_offer,
                     session_id,
                     {**(payload.get("offer") or {}), "_termx_fps": self._target_fps},
+                    principal_id=principal_id, managed_session_id=managed_session_id, authorize=authorize,
                 )
                 await websocket.send_text(
                     json.dumps(
@@ -149,15 +156,15 @@ class DesktopManager:
                             "type": "rtc",
                             "action": "answer",
                             "ok": True,
-                            "session_id": result.get("session_id", session_id),
+                            "session_id": client_id,
                             "answer": result.get("answer"),
                         }
                     )
                 )
             elif action == "ice":
-                await asyncio.to_thread(rtc.add_ice, session_id, payload.get("candidate") or {})
+                await asyncio.to_thread(rtc.add_ice, session_id, payload.get("candidate") or {}, principal_id=principal_id, managed_session_id=managed_session_id)
             elif action == "close":
-                await asyncio.to_thread(rtc.close, session_id)
+                await asyncio.to_thread(rtc.close_owned, session_id, principal_id=principal_id, managed_session_id=managed_session_id)
         except Exception as exc:  # surface negotiation failures to the client
             await websocket.send_text(
                 json.dumps({"type": "rtc", "action": action, "ok": False, "error": str(exc)})
@@ -196,7 +203,7 @@ class DesktopManager:
         await row['websocket'].close(code=1000)
         return {'ok': True}
 
-    async def attach(self, websocket: WebSocket, authorize_control=None, *, principal_id=None, session_id=None) -> None:
+    async def attach(self, websocket: WebSocket, authorize_control=None, *, principal_id=None, session_id=None, authorize_view=None) -> None:
         await self._cancel_idle_close()
         permissions = permission_snapshot()
         if permissions.get("screen_recording") == "denied":
@@ -215,6 +222,7 @@ class DesktopManager:
                   'view_only': view_only, 'paused': False, 'stop': stop, 'resume': resume, 'websocket': websocket}
         self._views[identifier] = viewer
         applied_input = False
+        owned_rtc = set()
 
         async def frames() -> None:
             last = time.monotonic()
@@ -226,7 +234,15 @@ class DesktopManager:
                     break
                 try:
                     started = time.monotonic()
+                    from termx.desktop.recording import capture_privacy_revision
+                    def allowed_frame():
+                        if (session_id is not None and authorize_view is None) or (authorize_view is not None and not authorize_view()):
+                            raise PermissionError("Desktop view authority expired")
+                        return capture_privacy_revision()
+                    privacy = await asyncio.to_thread(allowed_frame)
                     frame = await asyncio.to_thread(grab_jpeg, self.display_id)
+                    if await asyncio.to_thread(allowed_frame) != privacy:
+                        raise PermissionError("Desktop privacy changed during capture")
                     now = time.monotonic()
                     dt = now - last
                     if dt > 0:
@@ -237,6 +253,8 @@ class DesktopManager:
                         # Paused or disconnected while this frame was in flight;
                         # don't deliver a frame after "paused" was acknowledged.
                         continue
+                    if await asyncio.to_thread(allowed_frame) != privacy:
+                        raise PermissionError("Desktop privacy changed before publication")
                     await websocket.send_bytes(frame)
                     if reported is not None:
                         reported = None
@@ -370,7 +388,7 @@ class DesktopManager:
                     )
                     continue
                 if kind == "rtc":
-                    await self._ws_rtc(websocket, payload)
+                    await self._ws_rtc(websocket, payload, principal_id=principal_id, managed_session_id=session_id, authorize=authorize_view, viewer_id=identifier, owned_rtc=owned_rtc)
                     continue
                 if kind == "metrics":
                     await websocket.send_text(json.dumps(self._metrics_payload()))
@@ -417,6 +435,9 @@ class DesktopManager:
             pass
         finally:
             self._views.pop(identifier, None)
+            if self.rtc is not None:
+                for rtc_id in owned_rtc:
+                    await asyncio.to_thread(self.rtc.close_owned, rtc_id, principal_id=principal_id, managed_session_id=session_id)
             stop.set()
             resume.set()
             self._stops.discard(stop)

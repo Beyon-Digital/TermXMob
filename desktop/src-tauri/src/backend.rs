@@ -44,6 +44,8 @@ struct Inner {
     state: Mutex<State>,
     ready_at: Mutex<Option<Instant>>,
     stop_requested: AtomicBool,
+    shutdown_pending: AtomicBool,
+    shutdown_confirmed: AtomicBool,
     quitting: AtomicBool,
     adopted: AtomicBool,
     restarts: AtomicU32,
@@ -63,6 +65,8 @@ impl Backend {
             state: Mutex::new(State::Idle),
             ready_at: Mutex::new(None),
             stop_requested: AtomicBool::new(false),
+            shutdown_pending: AtomicBool::new(false),
+            shutdown_confirmed: AtomicBool::new(false),
             quitting: AtomicBool::new(false),
             adopted: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
@@ -95,6 +99,22 @@ impl Backend {
         thread::spawn(move || manager.run_session());
     }
 
+    /// Prevent automatic crash recovery while an authorized host stop is sent.
+    /// This never signals, kills or bypasses the daemon's graceful cleanup.
+    pub fn arm_expected_shutdown(&self) {
+        self.0.shutdown_pending.store(true, Ordering::SeqCst);
+    }
+
+    /// A failed request cannot undo an accepted stop or an ordinary app quit.
+    pub fn disarm_expected_shutdown(&self) {
+        self.0.shutdown_pending.store(false, Ordering::SeqCst);
+    }
+
+    fn expected_shutdown(&self) -> bool {
+        self.0.shutdown_pending.load(Ordering::SeqCst)
+            || self.0.shutdown_confirmed.load(Ordering::SeqCst)
+    }
+
     pub fn restart(&self) {
         let manager = self.clone();
         self.0.stop_requested.store(true, Ordering::SeqCst);
@@ -102,6 +122,8 @@ impl Backend {
             manager.stop();
             manager.0.restarts.store(0, Ordering::SeqCst);
             manager.0.stop_requested.store(false, Ordering::SeqCst);
+            manager.0.shutdown_pending.store(false, Ordering::SeqCst);
+            manager.0.shutdown_confirmed.store(false, Ordering::SeqCst);
             manager
                 .0
                 .state
@@ -163,7 +185,10 @@ impl Backend {
     }
 
     fn run_session(&self) {
-        if self.0.quitting.load(Ordering::SeqCst) || self.0.stop_requested.load(Ordering::SeqCst) {
+        if self.0.quitting.load(Ordering::SeqCst)
+            || self.0.stop_requested.load(Ordering::SeqCst)
+            || self.expected_shutdown()
+        {
             return;
         }
         self.cleanup_stale();
@@ -286,6 +311,11 @@ impl Backend {
     }
 
     fn on_exit(&self, code: Option<i32>, expected: bool) {
+        // Private daemon status79 also covers Stop host requested from the
+        // browser, independent of stdout-reader versus monitor scheduling.
+        if code == Some(79) {
+            self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
+        }
         *self.0.child.lock().unwrap() = None;
         let _ = fs::remove_file(config::pid_path(&self.0.app));
         if let Ok(mut info) = self.0.info.lock() {
@@ -294,6 +324,7 @@ impl Backend {
         if expected
             || self.0.quitting.load(Ordering::SeqCst)
             || self.0.stop_requested.load(Ordering::SeqCst)
+            || self.expected_shutdown()
         {
             if let Ok(mut state) = self.0.state.lock() {
                 *state = State::Idle;
@@ -327,7 +358,10 @@ impl Backend {
             "Restarting the local service…",
         );
         thread::sleep(delay);
-        if self.0.stop_requested.load(Ordering::SeqCst) || self.0.quitting.load(Ordering::SeqCst) {
+        if self.0.stop_requested.load(Ordering::SeqCst)
+            || self.0.quitting.load(Ordering::SeqCst)
+            || self.expected_shutdown()
+        {
             return;
         }
         if let Ok(mut state) = self.0.state.lock() {
@@ -355,6 +389,16 @@ impl Backend {
             return;
         };
         match value.get("termx").and_then(Value::as_str) {
+            Some("stopping")
+                if value.get("reason").and_then(Value::as_str) == Some("host-stop-cancelled") =>
+            {
+                self.disarm_expected_shutdown();
+            }
+            Some("stopping")
+                if value.get("reason").and_then(Value::as_str) == Some("host-stop") =>
+            {
+                self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
+            }
             Some("ready") => {
                 let port = value
                     .get("port")

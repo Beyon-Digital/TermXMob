@@ -6,14 +6,14 @@ import hmac
 import ipaddress
 from dataclasses import asdict
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from termx.auth import extract_passcode
-from termx.identity import ABSOLUTE_TTL, AuthenticationError, LoginLimited, SessionCredentials
+from termx.identity import ABSOLUTE_TTL, AuthenticationError, LoginLimited, SessionCredentials, SessionLocked
 
 if TYPE_CHECKING:
     from termx.app import AppState
@@ -47,15 +47,55 @@ class LoginInput(BaseModel):
     transport: str = "cookie"
 
 
+class UnlockInput(LoginInput):
+    refresh_token: str | None = Field(default=None,max_length=256)
+
+
+class HostStopInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    host_id: str = Field(min_length=1,max_length=128)
+    acknowledge: bool = False
+
+
 class RefreshInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refresh_token: str | None = Field(default=None, max_length=256)
+
+
+class PairIssueInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scopes: list[str] = Field(min_length=1, max_length=32)
+    legacy_token: str | None = Field(default=None, max_length=512)
+    associate_legacy: bool = False
+
+
+class PairExchangeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ticket: str = Field(min_length=32, max_length=256)
+    host_id: str = Field(min_length=1, max_length=128)
+    device_name: str = Field(min_length=1, max_length=128)
+
+
+class SocketProofInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: str = Field(min_length=1, max_length=512)
+
+
+class PairRevokeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ticket: str = Field(min_length=32, max_length=256)
 
 
 def mount_identity(app, state: AppState) -> None:
     router = APIRouter(prefix="/auth")
     service = state.identity
     app_state = state
+    from termx.identity_pairing import ManagedPairing
+    pairing = ManagedPairing(service, state.tokens)
+    state.managed_pairing = pairing
+    from termx.identity_locks import SessionLocks, protect_surfaces
+    locks = SessionLocks(service)
+    state.session_locks = locks
 
     def transport(request: Request) -> None:
         peer = request.client.host if request.client else ""
@@ -186,9 +226,11 @@ def mount_identity(app, state: AppState) -> None:
             raise HTTPException(403, "identity callback origin mismatch")
         transport(request)
         try:
-            credentials = await service.login(method, {"state": state, "code": code,
-                                                       "binding": request.cookies.get(f"termx_oidc_{method}", "")},
-                                              peer=request.client.host if request.client else "", device_name="Browser SSO")
+            evidence = {"state":state,"code":code,"binding":request.cookies.get(f"termx_oidc_{method}","")}
+            if locks.oidc_pending(method,state):
+                credentials = await locks.finish_oidc(method,state,evidence,peer=request.client.host if request.client else "")
+            else:
+                credentials = await service.login(method,evidence,peer=request.client.host if request.client else "",device_name="Browser SSO")
         except AuthenticationError as exc:
             raise HTTPException(401, str(exc)) from exc
         redirect = RedirectResponse("/", status_code=303)
@@ -204,9 +246,135 @@ def mount_identity(app, state: AppState) -> None:
             csrf(request, raw, refresh=True)
         try:
             credentials = service.refresh(raw or "")
+        except SessionLocked as exc:
+            raise HTTPException(423,str(exc)) from exc
         except AuthenticationError as exc:
             raise HTTPException(401, str(exc)) from exc
         return issue(request, response, credentials, "bearer" if body.refresh_token else "cookie")
+
+    def locked_device(request, raw=None):
+        transport(request)
+        actor = service.resolve(credential(request),allow_locked=True)
+        raw = raw or request.cookies.get(REFRESH_COOKIE)
+        refresh_actor = locks.refresh_identity(raw)
+        if actor and refresh_actor and actor.session_id != refresh_actor.session_id:
+            raise HTTPException(401,"Device proof mismatch")
+        actor = refresh_actor or actor
+        if not actor: raise HTTPException(401,"Current device session required")
+        return actor,raw
+
+    def lock_status(actor):
+        return {'locked':locks.is_locked(actor),'principal':{'id':actor.principal.id,'display_name':actor.principal.display_name},
+                'session_id':actor.session_id,'host_id':service.host_id,'methods':service.methods()}
+
+    @router.get('/lock-state')
+    def lock_state(request:Request,response:Response):
+        actor,_ = locked_device(request)
+        response.headers['Cache-Control']='no-store'
+        return lock_status(actor)
+
+    @router.post('/lock-state')
+    def native_lock_state(body:RefreshInput,request:Request,response:Response):
+        actor,_ = locked_device(request,body.refresh_token)
+        if not body.refresh_token: csrf(request,request.cookies.get(REFRESH_COOKIE),refresh=True)
+        response.headers['Cache-Control']='no-store'
+        return lock_status(actor)
+
+    @router.post('/lock')
+    async def lock_session(request:Request,response:Response):
+        actor=current(request)
+        if not request.headers.get('authorization'):csrf(request,credential(request))
+        # Strip existing observation/control grants before changing the auth
+        # bit. These barriers remain private until explicit fresh handoff.
+        failure=None
+        try:await protect_surfaces(app_state,actor)
+        except Exception as exc:failure=exc
+        # Even a transport failure must not strand a local-only lock overlay
+        # with an otherwise still-authorized device credential.
+        await asyncio.to_thread(locks.lock,actor)
+        rtc=getattr(app_state,'rtc',None)
+        try:
+            if rtc:await asyncio.to_thread(rtc.close_device,actor.principal.id,actor.session_id)
+        except Exception as exc:failure=failure or exc
+        response.headers['Cache-Control']='no-store'
+        if failure:raise HTTPException(503,'Session locked; remote observation shutdown could not be confirmed. Private barriers remain retained.')
+        return {**lock_status(actor),'jobs_not_cancelled':True,'observation_requires_fresh_consent':True}
+
+    @router.post('/unlock')
+    async def unlock_session(body:UnlockInput,request:Request,response:Response):
+        actor,raw=locked_device(request,body.refresh_token)
+        if not body.refresh_token:csrf(request,raw,refresh=True)
+        try:
+            credentials=await locks.unlock(raw or '',body.method,{'username':body.username,'password':body.password,'assertion':body.assertion},
+                                           peer=request.client.host if request.client else '')
+        except LoginLimited as exc:raise HTTPException(429,str(exc),headers={'Retry-After':'60'}) from exc
+        except AuthenticationError as exc:raise HTTPException(401,str(exc)) from exc
+        return issue(request,response,credentials,'bearer' if body.refresh_token else 'cookie')
+
+    @router.post('/oidc/{method}/unlock-begin')
+    async def unlock_oidc_begin(method:str,body:RefreshInput,request:Request,response:Response):
+        from termx.identity_adapters import OidcAdapter
+        actor,raw=locked_device(request,body.refresh_token)
+        if not body.refresh_token:csrf(request,raw,refresh=True)
+        adapter=service.adapters.get(method)
+        if not locks.is_locked(actor) or not isinstance(adapter,OidcAdapter) or method not in {m['id'] for m in service.methods()}:
+            raise HTTPException(403,'Configured unlock identity provider required')
+        if str(request.base_url).rstrip('/')+f'/auth/oidc/{method}/callback' != adapter.config.redirect_uri:
+            raise HTTPException(403,'Identity callback origin mismatch')
+        try:
+            service._attempt(request.client.host if request.client else '')
+            url,binding=await adapter.begin()
+            state=parse_qs(urlsplit(url).query).get('state',[''])[0]
+            if not state:raise AuthenticationError('Identity state unavailable')
+            locks.bind_oidc(actor,raw,method,state)
+        except LoginLimited as exc:raise HTTPException(429,str(exc)) from exc
+        except AuthenticationError as exc:raise HTTPException(401,str(exc)) from exc
+        response.set_cookie(f'termx_oidc_{method}',binding,max_age=300,httponly=True,secure=request.url.scheme=='https',samesite='lax',path=f'/auth/oidc/{method}')
+        response.headers['Cache-Control']='no-store'
+        return {'authorization_url':url}
+
+    def host_operator(request):
+        actor=current(request)
+        app_state.authorization.require_principal(actor.principal,'host-admin')
+        return actor
+
+    @router.get('/host/lifecycle')
+    def host_lifecycle(request:Request,response:Response):
+        host_operator(request)
+        response.headers['Cache-Control']='no-store'
+        return {'host_id':service.host_id,'can_stop':callable(getattr(app_state,'request_shutdown',None)),
+                'effects':['Disconnect clients and stop local tasks, terminals and observation','Pause schedules until this host restarts',
+                           'Cancel reachable cloud tasks; dedicated machines are retained']}
+
+    @router.post('/host/stop')
+    def stop_host(body:HostStopInput,request:Request,response:Response,background:BackgroundTasks):
+        actor=host_operator(request)
+        if not request.headers.get('authorization'):csrf(request,credential(request))
+        if body.host_id!=service.host_id or not body.acknowledge:raise HTTPException(400,'Explicit current-host shutdown acknowledgement required')
+        callback=getattr(app_state,'request_shutdown',None)
+        if not callable(callback):raise HTTPException(503,'This host launcher does not support managed shutdown')
+        from termx.audit import log_event
+        log_event('host_stop_requested',principal_id=actor.principal.id,session_id=actor.session_id,host_id=service.host_id)
+        async def shutdown():
+            await asyncio.sleep(0.1)
+            import inspect
+            live=await asyncio.to_thread(service.resolve,credential(request))
+            from termx.notify import host_stop_cancelled
+            if not live or live.session_id!=actor.session_id:
+                host_stop_cancelled()
+                return
+            try:await asyncio.to_thread(app_state.authorization.require_principal,live.principal,'host-admin')
+            except HTTPException:
+                host_stop_cancelled()
+                return
+            app_state.host_stop_requested=True
+            from termx.notify import host_stopping
+            host_stopping()
+            result=callback()
+            if inspect.isawaitable(result):await result
+        background.add_task(shutdown)
+        response.headers['Cache-Control']='no-store'
+        return {'accepted':True,'host_id':service.host_id}
 
     @router.get("/me")
     def me(request: Request, response: Response):
@@ -220,6 +388,53 @@ def mount_identity(app, state: AppState) -> None:
         response.headers["Cache-Control"] = "no-store"
         return service.list_sessions(current(request).principal.id)
 
+    @router.post("/pair/issue")
+    def pair_issue(body: PairIssueInput, request: Request, response: Response):
+        actor = current(request)
+        if not request.headers.get('authorization'):
+            csrf(request,credential(request))
+        response.headers['Cache-Control'] = 'no-store'
+        try:
+            return pairing.issue(actor,body.scopes,legacy_token=body.legacy_token,associate_legacy=body.associate_legacy)
+        except AuthenticationError as exc:
+            raise HTTPException(403,str(exc)) from exc
+
+    @router.post("/pair/exchange")
+    def pair_exchange(body: PairExchangeInput, request: Request, response: Response):
+        transport(request)
+        try:
+            service._attempt(request.client.host if request.client else '')
+            credentials = pairing.exchange(body.ticket,host_id=body.host_id,device_name=body.device_name)
+        except LoginLimited as exc:
+            raise HTTPException(429,str(exc),headers={'Retry-After':'60'}) from exc
+        except AuthenticationError as exc:
+            raise HTTPException(401,str(exc)) from exc
+        result = issue(request,response,credentials,'bearer')
+        actor = service.resolve(credentials.access_token)
+        return {**result,'host_id':service.host_id,'principal':asdict(actor.principal)}
+
+    @router.post("/socket-ticket")
+    def socket_ticket(body: SocketProofInput, request: Request, response: Response):
+        actor = current(request)
+        if not request.headers.get('authorization'):
+            csrf(request,credential(request))
+        response.headers['Cache-Control'] = 'no-store'
+        try:
+            return pairing.socket(actor,body.path)
+        except AuthenticationError as exc:
+            raise HTTPException(403,str(exc)) from exc
+
+    @router.post("/pair/revoke")
+    def pair_revoke(body: PairRevokeInput, request: Request, response: Response):
+        actor=current(request)
+        if not request.headers.get('authorization'):
+            csrf(request,credential(request))
+        response.headers['Cache-Control']='no-store'
+        try:
+            return {'revoked':pairing.revoke(actor,body.ticket)}
+        except AuthenticationError as exc:
+            raise HTTPException(401,str(exc)) from exc
+
     @router.delete("/sessions/{session_id}")
     def revoke(session_id: str, request: Request):
         transport(request)
@@ -228,15 +443,19 @@ def mount_identity(app, state: AppState) -> None:
         identity = current(request)
         if not service.revoke(session_id, identity.principal.id):
             raise HTTPException(404, "session not found")
+        if getattr(app_state,"rtc",None):app_state.rtc.close_device(identity.principal.id,session_id)
         return {"ok": True}
 
     @router.post("/logout")
-    def logout(request: Request, response: Response):
+    def logout(request: Request, response: Response, body: RefreshInput | None = None):
         transport(request)
-        if not request.headers.get("authorization"):
-            csrf(request, credential(request))
-        identity = current(request)
+        raw=body.refresh_token if body else None
+        identity,proof=locked_device(request,raw)
+        if not raw and not request.headers.get("authorization"):
+            if locks.is_locked(identity):csrf(request,proof,refresh=True)
+            else:csrf(request,credential(request))
         service.revoke(identity.session_id, identity.principal.id)
+        if getattr(app_state,"rtc",None):app_state.rtc.close_device(identity.principal.id,identity.session_id)
         response.delete_cookie(ACCESS_COOKIE, path="/")
         response.delete_cookie(REFRESH_COOKIE, path="/auth")
         response.delete_cookie(CSRF_COOKIE, path="/")

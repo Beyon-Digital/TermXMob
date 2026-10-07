@@ -1,0 +1,13 @@
+import {useEffect,useRef,useState} from 'react';
+import {request,json} from '../lib/api';
+import {Dialog,DialogContent,DialogTitle,DialogDescription} from './ui/dialog';
+import {Button} from './ui/button';
+import './lock-screen.css';
+type Host={host_id:string;can_stop:boolean;effects:string[]};
+export default function HostStop({open,onOpenChange}:{open:boolean;onOpenChange:(open:boolean)=>void}){
+ const identity=useRef<{principal:{id:string};session_id:string}|null>(null);
+ const [host,setHost]=useState<Host|null>(null),[ack,setAck]=useState(false),[busy,setBusy]=useState(false),[accepted,setAccepted]=useState(false),[error,setError]=useState('');
+ useEffect(()=>{if(!open)return;let stopped=false;setHost(null);setAck(false);setError('');setAccepted(false);Promise.all([request<Host>('/auth/host/lifecycle'),request<{principal:{id:string};session_id:string}>('/auth/me')]).then(([value,actor])=>{if(!stopped){identity.current=actor;setHost(value)}}).catch(error=>{if(!stopped)setError(String(error))});return()=>{stopped=true}},[open]);
+ async function stop(){if(!host?.can_stop||!ack)return;setBusy(true);setError('');try{const actor=await request<{principal:{id:string};session_id:string}>('/auth/me');if(actor.principal.id!==identity.current?.principal.id||actor.session_id!==identity.current?.session_id)throw Error('The signed-in session changed. Inspect this host again before stopping it.');await request('/auth/host/stop',json('POST',{host_id:host.host_id,acknowledge:true}));setAccepted(true)}catch(error){setError(String(error))}finally{setBusy(false)}}
+ return <Dialog open={open} onOpenChange={value=>{if(!busy)onOpenChange(value)}}><DialogContent><DialogTitle>Stop this host</DialogTitle><DialogDescription>Stopping the host disconnects this workspace. A host administrator must restart it before reconnecting.</DialogDescription>{!host&&!error&&<p role="status">Inspecting the current host…</p>}{host&&<><p>Host: {host.host_id}</p><ul className="host-stop-effects">{host.effects.map(effect=><li key={effect}>{effect}</li>)}</ul>{!host.can_stop&&<p role="status">This launcher cannot perform managed shutdown.</p>}<label><input type="checkbox" checked={ack} disabled={busy||accepted} onChange={event=>setAck(event.target.checked)}/> I understand these effects and want to stop this host.</label><Button variant="destructive" disabled={!ack||!host.can_stop||busy||accepted} onClick={()=>void stop()}>{accepted?'Shutdown requested':busy?'Requesting shutdown…':'Stop host now'}</Button></>}{accepted&&<p role="status">The host accepted shutdown. Restart it to reconnect; your unsaved changes remain on this device.</p>}{error&&<p role="alert" className="inline-error">{error}</p>}</DialogContent></Dialog>
+}

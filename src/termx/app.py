@@ -155,6 +155,7 @@ class AppState:
         self.notifications.bridge_agent(self.agent, self.agent_store)
         self.port = port
         self.request_shutdown = None
+        self.host_stop_requested = False
         from termx.development.debug import DebugService
         from termx.development.delivery import DeliveryService
         self.debug = DebugService()
@@ -383,6 +384,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             return principal is not None and principal.policy_version == policy_version
 
     state.browser = BrowserService(config_dir() / "browser", session_valid=browser_session_valid)
+    def execution_session_valid(principal_id, session_id, policy_version):
+        enrolled = state.identity.execution_session(session_id)
+        return bool(enrolled and enrolled.principal.id == principal_id
+                    and enrolled.principal.policy_version == policy_version)
+    state.browser.execution_session_valid = execution_session_valid
     state.agent.browser = state.browser
     state.engines.set_browser_service(state.browser)
     app.include_router(browser_router(state))
@@ -909,6 +915,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         await state.desktop.attach(
             websocket,
             authorize_control=lambda: state.authorization.can(token, "desktop-control"),
+            authorize_view=lambda: state.authorization.can(token, "desktop-view"),
             principal_id=managed_session.principal.id if managed_session else None,
             session_id=managed_session.session_id if managed_session else None,
         )

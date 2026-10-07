@@ -237,6 +237,19 @@ class TokenStore:
                     return True
         return False
 
+    def association_record(self, raw: str) -> dict[str, Any] | None:
+        """Proof of possession for explicit managed migration, never API auth.
+
+        Expired records may be associated by an authenticated administrator;
+        this does not extend their expiry or invent an owner for legacy data.
+        """
+        if not raw or len(raw) > 512:
+            return None
+        digest = _hash_token(raw)
+        with self._lock:
+            record = next((row for row in self._tokens if hmac.compare_digest(row['hash'],digest)),None)
+            return {'id':record['id'],'scopes':list(record['scopes'])} if record else None
+
     def list_public(self) -> list[dict]:
         with self._lock:
             return [

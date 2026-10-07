@@ -1,6 +1,6 @@
 import {windowSlot} from './window-state';
 import {sessionDrafts,type Draft} from './drafts';
-export type WindowPanel='chat'|'workbench'|'browser'|'computer';
+export type WindowPanel='chat'|'workbench'|'browser'|'computer'|'artifacts';
 export type WindowRecord={slot:string;ownerId:string;sessionId:string|null;panel:WindowPanel;parent:string|null;token:string|null;updated:number};
 const initial=new URLSearchParams(location.search);
 export const detachedBrowser=initial.get('detached')==='true';

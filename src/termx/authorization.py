@@ -44,6 +44,7 @@ class ResourceAuthoritySnapshot:
     resources: tuple[tuple[str, str | None], ...]
     expires_at: float | None = None
     administrator: bool = False
+    authority_session_id: str | None = None
 
     @property
     def allowed_ids(self) -> frozenset[str]:
@@ -104,6 +105,12 @@ class AuthorizationService:
             raise ValueError('invalid resource identity')
         now = time()
         with self.identity._db() as db:
+            if principal.authority_session_id:
+                session = db.execute('SELECT * FROM sessions WHERE id=? AND principal_id=?',
+                                     (principal.authority_session_id,principal.id)).fetchone()
+                current = self.identity._live_principal(db,session)
+                if not current or action not in current.scopes:
+                    raise HTTPException(403,'session disabled or collection action denied')
             live = db.execute('SELECT scopes,policy_version FROM principals WHERE id=? AND enabled=1',
                               (principal.id,)).fetchone()
             role = db.execute('SELECT role,trusted_execution FROM host_roles WHERE principal_id=?',
@@ -113,7 +120,8 @@ class AuthorizationService:
             admin = role['role'] in {'owner','admin'}
             if admin:
                 return ResourceAuthoritySnapshot(principal.id, live['policy_version'], action,
-                    resource_kind, tuple((identifier,None) for identifier in identifiers), administrator=True)
+                    resource_kind, tuple((identifier,None) for identifier in identifiers), administrator=True,
+                    authority_session_id=principal.authority_session_id)
             grants = {row['project_id']:row for row in db.execute(
                 'SELECT project_id,scopes,expires FROM project_grants WHERE principal_id=?', (principal.id,))}
             allowed = []
@@ -131,11 +139,18 @@ class AuthorizationService:
                     if project and grant['expires'] is not None:
                         expires.append(grant['expires'])
             return ResourceAuthoritySnapshot(principal.id, live['policy_version'], action,
-                resource_kind, tuple(allowed), min(expires) if expires else None)
+                resource_kind, tuple(allowed), min(expires) if expires else None,
+                authority_session_id=principal.authority_session_id)
 
     def validate_resource_snapshot(self, snapshot: ResourceAuthoritySnapshot) -> None:
         """Recheck durable current policy immediately before collection output."""
         with self.identity._db() as db:
+            if snapshot.authority_session_id:
+                session = db.execute('SELECT * FROM sessions WHERE id=? AND principal_id=?',
+                                     (snapshot.authority_session_id,snapshot.principal_id)).fetchone()
+                current = self.identity._live_principal(db,session)
+                if not current or snapshot.action not in current.scopes:
+                    raise HTTPException(403,'collection session authority changed')
             live = db.execute('SELECT scopes,policy_version FROM principals WHERE id=? AND enabled=1',
                               (snapshot.principal_id,)).fetchone()
             if (not live or live['policy_version'] != snapshot.policy_version or
@@ -147,7 +162,7 @@ class AuthorizationService:
                           resource_kind: str | None = None, resource_id: str | None = None):
         # Used by enrolled durable jobs after an explicit delegated grant.
         # Reload authority: callers cannot resurrect disabled users/stale scopes.
-        live = self.identity.principal_by_id(principal.id)
+        live = self.identity.current_principal(principal)
         if live is None or action not in live.scopes:
             raise HTTPException(403, 'principal disabled or action denied')
         with self.identity._db() as db:
@@ -174,7 +189,7 @@ class AuthorizationService:
         raise HTTPException(403, 'project or resource authority denied')
 
     def claim_principal(self, principal, kind: str, resource_id: str, project_id: str | None = None):
-        live=self.identity.principal_by_id(principal.id)
+        live=self.identity.current_principal(principal)
         if not live:
             raise HTTPException(403,'principal disabled')
         if project_id:
@@ -199,7 +214,7 @@ class AuthorizationService:
         return dict(row) if row else None
 
     def require_creation_principal(self, principal, action: str):
-        live = self.identity.principal_by_id(principal.id)
+        live = self.identity.current_principal(principal)
         if not live or action not in live.scopes:
             raise HTTPException(403, 'principal disabled or creation action denied')
         with self.identity._db() as db:

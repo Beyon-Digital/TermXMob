@@ -57,6 +57,11 @@ def _make_fake_helper(tmp_path):
 
 
 def test_grab_jpeg_from_env_helper(tmp_path, monkeypatch) -> None:
+    from termx.desktop import permissions
+    # This subprocess emits static TINY_JPEG bytes; it never accesses a screen.
+    # OS capture permission tests remain separate from the helper framing test.
+    monkeypatch.setattr(permissions, "permission_snapshot",
+                        lambda: {"screen_recording": "granted", "accessibility": "denied"})
     helper = _make_fake_helper(tmp_path)
     monkeypatch.setenv("TERMX_CAPTURE_BIN", str(helper))
     close_capture()

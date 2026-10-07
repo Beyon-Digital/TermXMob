@@ -36,7 +36,8 @@ def proposal(service,task_id,binding,tool,args,cwd,*,call_id,decision=None,read_
     envelope=ActionEnvelope(call_id,binding['principal_id'],binding['session_id'],binding['project_id'],task_id,'agent.'+tool,
         canonical_hash({'args':args,'cwd':str(root),'baseline':baseline}),str(root),effect,'task:'+task_id,binding['policy_version'],0,0,data_labels=('secret',) if redact(raw)!=raw else ())
     def validate():
-        if not service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']):return False
+        check=service.session_valid if effect=='unknown' else getattr(service,'execution_session_valid',service.session_valid)
+        if not check(binding['principal_id'],binding['session_id'],binding['policy_version']):return False
         if effect == 'unknown':
             from termx.desktop.recording import capture_privacy_revision
             try:

@@ -267,6 +267,7 @@ class CustomAgentPatchInput:
     engine_mode: str | None = None
     config_options: JSON | None = None
     tools: list[str] | None = None
+    tools_mode: str | None = None
     limits: JSON | None = None
     approval_mode: str | None = None
     sandbox_profile: str | None = None

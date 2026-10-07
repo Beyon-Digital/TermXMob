@@ -1,7 +1,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {cleanup,render,waitFor} from '@testing-library/react';
 const mock=vi.hoisted(()=>({instances:[] as any[]}));
-vi.mock('@xterm/xterm',()=>({Terminal:class{options:any;dispose=vi.fn();reset=vi.fn();constructor(options:any){this.options=options;mock.instances.push(this)}loadAddon(){}open(){}onData(){}}}));
+vi.mock('@xterm/xterm',()=>({Terminal:class{options:any;dispose=vi.fn();reset=vi.fn();constructor(options:any){this.options=options;mock.instances.push(this)}loadAddon(){}open(){}onData(){}attachCustomKeyEventHandler(){}}}));
 vi.mock('@xterm/addon-fit',()=>({FitAddon:class{fit(){}}}));
 vi.mock('../lib/api',()=>({gql:vi.fn().mockResolvedValue({sessions:[]}),request:vi.fn()}));
 import TerminalPanel from './TerminalPanel';

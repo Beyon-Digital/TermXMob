@@ -124,9 +124,20 @@ class DecisionBroker:
         if decision not in {'ALLOW','BLOCK'} or expires_at<=time() or expires_at>time()+30*86400:raise ValueError('bounded allow/deny rule required')
         # No sensitive automatic remembers. Once-specific approval is separate.
         if decision=='ALLOW' and action.intended_effect in SENSITIVE|{'unknown'}:raise ValueError('consequential or unknown effects cannot be remembered as blanket allows')
-        row={'id':secrets.token_urlsafe(16),'decision':decision,'expires_at':expires_at,'scope':self._scope(action)}
+        row={'id':secrets.token_urlsafe(16),'decision':decision,'expires_at':expires_at,'scope':self._scope(action),'revision':1}
         self.records.put('review-rule',row['id'],row);return row
     def revoke_rule(self,id):self.records.delete('review-rule',id)
+    def edit_rule(self,id,decision,*,expires_at,revision,validate):
+        row=self.records.get('review-rule',id)
+        if not row:raise KeyError('rule')
+        if row.get('revision',1)!=revision:raise ValueError('Remembered rule changed; inspect its current decision before editing')
+        if decision not in {'ALLOW','BLOCK'} or not time()<expires_at<=time()+30*86400:raise ValueError('bounded allow/deny rule required')
+        if decision=='ALLOW' and row['scope']['intended_effect'] in SENSITIVE|{'unknown'}:raise ValueError('consequential or unknown effects cannot be remembered as blanket allows')
+        if row['expires_at']<=time() or not validate(row['scope']):raise PermissionError('Remembered rule authority expired or changed; create a new rule from a current action')
+        updated={**row,'decision':decision,'expires_at':expires_at,'updated_at':time(),'revision':revision+1}
+        self.records.put('review-rule',id,updated)
+        self.records.audit(principal_id=row['scope']['principal_id'],session_id=row['scope']['session_id'],rule_id=id,decision=decision,reason='owner edited bounded remembered rule')
+        return updated
     def _scope(self,a):
         return {k:getattr(a,k) for k in ('principal_id','session_id','project_id','run_id','tool_id','target','intended_effect','grant_id','policy_version','profile_id','account_id')}
     def invalidate(self,*,grant_id=None,session_id=None):

@@ -171,6 +171,12 @@ fn refresh(app: &AppHandle, port: u16, session: &mut MemorySession) -> Result<()
         None,
         None,
     )?;
+    if result.status == 423 {
+        session.access.clear();
+        session.expires = 0;
+        let _ = app.emit("termx-session-locked", json!({}));
+        return Err("Session locked; unlock required".into());
+    }
     if result.status != 200 {
         let _ = entry(&session.host_id)?.delete_credential();
         session.access.clear();
@@ -377,6 +383,11 @@ pub async fn workspace_request(
             "/auth/methods",
             "/auth/access",
             "/auth/sessions",
+            "/auth/pair/issue",
+            "/auth/pair/revoke",
+            "/auth/lock",
+            "/auth/host/lifecycle",
+            "/auth/host/stop",
         ]
         .contains(&path.as_str())
         || path.starts_with("/auth/sessions/"))
@@ -397,6 +408,54 @@ pub async fn workspace_request(
         if session.expires <= now() + 20 {
             refresh(&app, port, &mut session)?;
         }
+        if path == "/auth/host/stop" {
+            if method != "POST"
+                || data
+                    .as_ref()
+                    .and_then(|value| value.get("host_id"))
+                    .and_then(Value::as_str)
+                    != Some(session.host_id.as_str())
+                || data
+                    .as_ref()
+                    .and_then(|value| value.get("acknowledge"))
+                    .and_then(Value::as_bool)
+                    != Some(true)
+            {
+                return Err("Explicit current-host shutdown acknowledgement required".into());
+            }
+            let mut status = call(
+                port,
+                "/auth/host/lifecycle",
+                "GET",
+                None,
+                Some(&session.access),
+                None,
+            )?;
+            if status.status == 401 {
+                refresh(&app, port, &mut session)?;
+                status = call(
+                    port,
+                    "/auth/host/lifecycle",
+                    "GET",
+                    None,
+                    Some(&session.access),
+                    None,
+                )?;
+            }
+            if status.status != 200
+                || status.body["can_stop"] != true
+                || status.body["host_id"] != session.host_id
+            {
+                return Err("Current administrator host shutdown is unavailable".into());
+            }
+            let backend = app.state::<crate::backend::Backend>();
+            backend.arm_expected_shutdown();
+            let response = call(port, &path, &method, data, Some(&session.access), None);
+            if !matches!(&response,Ok(value) if value.status==200 && value.body["accepted"]==true) {
+                backend.disarm_expected_shutdown();
+            }
+            return response;
+        }
         let mut response = call(
             port,
             &path,
@@ -409,10 +468,158 @@ pub async fn workspace_request(
             refresh(&app, port, &mut session)?;
             response = call(port, &path, &method, data, Some(&session.access), None)?;
         }
+        if path == "/auth/lock"
+            && (response.status == 200
+                || (response.status == 503
+                    && response.body["detail"]
+                        .as_str()
+                        .is_some_and(|value| value.starts_with("Session locked;"))))
+        {
+            session.access.clear();
+            session.expires = 0;
+            app.emit("termx-session-locked", json!({}))
+                .map_err(|_| "Could not notify locked workspace windows")?;
+        }
         Ok(response)
     })
     .await
     .map_err(|_| "Native request worker unavailable")?
+}
+#[tauri::command]
+pub async fn workspace_lock_state(app: AppHandle, window: WebviewWindow) -> Result<Value, String> {
+    let port = trusted(&app, &window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<NativeSession>();
+        let mut session = state
+            .0
+            .lock()
+            .map_err(|_| "Session coordinator unavailable")?;
+        session.host_id = host_identity(port)?;
+        let secret = entry(&session.host_id)?
+            .get_password()
+            .map_err(|_| "Sign in required")?;
+        let result = call(
+            port,
+            "/auth/lock-state",
+            "POST",
+            Some(json!({"refresh_token":secret})),
+            None,
+            None,
+        )?;
+        if result.status != 200 {
+            return Err("Session expired or revoked; sign in again".into());
+        }
+        Ok(result.body)
+    })
+    .await
+    .map_err(|_| "Lock status worker unavailable")?
+}
+#[tauri::command]
+pub async fn workspace_unlock(
+    app: AppHandle,
+    window: WebviewWindow,
+    method: String,
+    username: String,
+    password: String,
+    assertion: String,
+) -> Result<Value, String> {
+    let port = trusted(&app, &window)?;
+    if method.len() > 128
+        || username.len() > 128
+        || password.len() > 1024
+        || assertion.len() > 16384
+    {
+        return Err("Invalid unlock evidence".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let state=app.state::<NativeSession>();
+        let mut session=state.0.lock().map_err(|_| "Session coordinator unavailable")?;
+        session.host_id=host_identity(port)?;
+        let secret=entry(&session.host_id)?.get_password().map_err(|_| "Sign in required")?;
+        let result=call(port,"/auth/unlock","POST",Some(json!({"refresh_token":secret,"method":method,"username":username,"password":password,"assertion":assertion})),None,None)?;
+        if result.status!=200 {return Err(result.body["detail"].as_str().unwrap_or("Unlock failed").into());}
+        if let Err(error)=save(&mut session,&result.body) {
+            if let Some(token)=result.body["access_token"].as_str() {let _=call(port,"/auth/logout","POST",Some(json!({})),Some(token),None);}
+            session.access.clear();session.expires=0;return Err(error);
+        }
+        install_access_cookie(&app,&result.body)?;
+        app.emit("termx-session-unlocked",json!({})).map_err(|_| "Could not notify workspace windows")?;
+        Ok(call(port,"/auth/me","GET",None,Some(&session.access),None)?.body)
+    }).await.map_err(|_| "Unlock worker unavailable")?
+}
+#[tauri::command]
+pub async fn workspace_unlock_oidc(
+    app: AppHandle,
+    window: WebviewWindow,
+    method: String,
+) -> Result<Value, String> {
+    let port = trusted(&app, &window)?;
+    if method.is_empty()
+        || method.len() > 128
+        || !method
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Invalid identity method".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<NativeSession>();
+        let mut session = state
+            .0
+            .lock()
+            .map_err(|_| "Session coordinator unavailable")?;
+        session.host_id = host_identity(port)?;
+        let secret = entry(&session.host_id)?
+            .get_password()
+            .map_err(|_| "Sign in required")?;
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(30))
+            .redirects(0)
+            .build();
+        let response = match agent
+            .post(&format!(
+                "http://127.0.0.1:{port}/auth/oidc/{method}/unlock-begin"
+            ))
+            .send_json(json!({"refresh_token":secret}))
+        {
+            Ok(response) | Err(ureq::Error::Status(_, response)) => response,
+            Err(_) => return Err("Identity provider unavailable".into()),
+        };
+        if response.status() != 200 {
+            return Err("Unlock identity flow unavailable".into());
+        }
+        let name = format!("termx_oidc_{method}");
+        let binding = response
+            .all("set-cookie")
+            .iter()
+            .find_map(|raw| {
+                let parsed = tauri::webview::cookie::Cookie::parse(raw.to_string()).ok()?;
+                if parsed.name() == name {
+                    Some(parsed.value().to_owned())
+                } else {
+                    None
+                }
+            })
+            .ok_or("Identity browser binding unavailable")?;
+        let value = response
+            .into_json::<Value>()
+            .map_err(|_| "Identity response unavailable")?;
+        // Only the one-use OIDC browser binding enters WebView cookies;
+        // the device refresh secret stays exclusively in OS secure storage.
+        window
+            .set_cookie(
+                tauri::webview::cookie::Cookie::build((name, binding))
+                    .domain("127.0.0.1")
+                    .path(format!("/auth/oidc/{method}"))
+                    .http_only(true)
+                    .same_site(tauri::webview::cookie::SameSite::Lax)
+                    .build(),
+            )
+            .map_err(|_| "Could not install identity browser binding")?;
+        Ok(value)
+    })
+    .await
+    .map_err(|_| "SSO unlock worker unavailable")?
 }
 #[tauri::command]
 pub async fn workspace_logout(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
@@ -426,13 +633,22 @@ pub async fn workspace_logout(app: AppHandle, window: WebviewWindow) -> Result<(
         if session.expires <= now() {
             let _ = refresh(&app, port, &mut session);
         }
-        let revoked = if !session.access.is_empty() {
+        let refresh_proof = if session.host_id.is_empty() {
+            None
+        } else {
+            entry(&session.host_id)?.get_password().ok()
+        };
+        let revoked = if !session.access.is_empty() || refresh_proof.is_some() {
             call(
                 port,
                 "/auth/logout",
                 "POST",
-                Some(json!({})),
-                Some(&session.access),
+                Some(json!({"refresh_token":refresh_proof})),
+                if session.access.is_empty() {
+                    None
+                } else {
+                    Some(&session.access)
+                },
                 None,
             )
             .map(|r| r.status == 200 || r.status == 401)
@@ -703,7 +919,7 @@ pub async fn workspace_redock(
     let port = trusted(&app, &window)?;
     if !window.label().starts_with("workspace-")
         || !valid_session_id(&session_id)
-        || !["chat", "workbench", "browser", "computer"].contains(&panel.as_str())
+        || !["chat", "workbench", "browser", "computer", "artifacts"].contains(&panel.as_str())
         || !valid_handoff(&payload, &session_id)
     {
         return Err("Invalid or oversized detached workspace handoff".into());
@@ -900,7 +1116,7 @@ pub fn workspace_detach(
     panel: String,
 ) -> Result<String, String> {
     let port = trusted(&app, &window)?;
-    if !["chat", "workbench", "browser", "computer"].contains(&panel.as_str())
+    if !["chat", "workbench", "browser", "computer", "artifacts"].contains(&panel.as_str())
         || !valid_session_id(&session_id)
     {
         return Err("Invalid detached workspace request".into());

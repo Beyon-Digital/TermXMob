@@ -442,6 +442,15 @@ class ChatMutations:
             af.tools = list(updates["tools"])
             af.tools_omitted = False
             af.tools_mode = "explicit"
+        if input.tools_mode is not None:
+            if input.tools_mode not in {"all", "explicit"}:
+                raise HTTPException(400, "tools_mode must be all|explicit")
+            if input.tools_mode == "all" and input.tools:
+                raise HTTPException(400, "Inherited tools cannot also supply an explicit tool list")
+            af.tools_mode = input.tools_mode
+            af.tools_omitted = input.tools_mode == "all"
+            if af.tools_omitted:
+                af.tools = []
         if "limits" in updates:
             af.limits = dict(updates["limits"])
         if "approval_mode" in updates:

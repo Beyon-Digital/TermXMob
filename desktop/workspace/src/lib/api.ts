@@ -1,9 +1,10 @@
-import { nativeWorkspace, nativeRequest, nativeLogin, nativeSignOut } from './native';
+import { nativeWorkspace, nativeRequest, nativeLogin, nativeSignOut, nativeLockState, nativeUnlock, nativeUnlockOidc } from './native';
 export class ApiError extends Error {constructor(public status:number,message:string){super(message)}}
 export function csrf(){const value=document.cookie.split('; ').find(value=>value.startsWith('termx_csrf='));return value?decodeURIComponent(value.slice('termx_csrf='.length)):'';}
 let refreshing:Promise<void>|undefined;
 const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('termx-session-state'):undefined;
-channel?.addEventListener('message',event=>{if(event.data==='signed-out')window.dispatchEvent(new Event('termx-signed-out'))});
+channel?.addEventListener('message',event=>{if(['signed-out','session-locked','session-unlocked'].includes(event.data))window.dispatchEvent(new Event('termx-'+event.data))});
+function locked(){channel?.postMessage('session-locked');window.dispatchEvent(new Event('termx-session-locked'));}
 export async function refreshSession(){
  if(refreshing)return refreshing;
  refreshing=(async()=>{
@@ -12,6 +13,7 @@ export async function refreshSession(){
    const current=await fetch('/auth/me',{credentials:'same-origin'});
    if(current.ok)return; // Another window already refreshed while this one waited.
    const response=await fetch('/auth/refresh',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Termx-CSRF':csrf()},body:'{}'});
+   if(response.status===423){locked();throw new ApiError(423,'Session locked; unlock required');}
    if(!response.ok){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));throw new ApiError(401,'Session expired or revoked. Sign in again.');}
   });
  })().finally(()=>{refreshing=undefined});return refreshing;
@@ -19,14 +21,15 @@ export async function refreshSession(){
 export async function request<T>(path:string,init:RequestInit={},retry=true):Promise<T>{
  if(!path.startsWith('/')||path.startsWith('//'))throw new Error('API requests must stay on this workspace origin');
  if(nativeWorkspace() && !path.startsWith('/auth/oidc/')){
-  try { const response=await nativeRequest<T>(path,init);if(response.status<200||response.status>=300){const value=response.body as {detail?:unknown};throw new ApiError(response.status,typeof value?.detail==='string'?value.detail:JSON.stringify(value));}return response.body; }
-  catch(error){if(error instanceof ApiError)throw error;const message=error instanceof Error?error.message:String(error);if(/expired|revoked|Sign in required/.test(message)){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));throw new ApiError(401,message);}throw new Error(message);}
+  try { const response=await nativeRequest<T>(path,init);if(response.status===423)locked();if(response.status<200||response.status>=300){const value=response.body as {detail?:unknown};throw new ApiError(response.status,typeof value?.detail==='string'?value.detail:JSON.stringify(value));}return response.body; }
+  catch(error){if(error instanceof ApiError)throw error;const message=error instanceof Error?error.message:String(error);if(/Session locked/.test(message)){locked();throw new ApiError(423,message);}if(/expired|revoked|Sign in required/.test(message)){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));throw new ApiError(401,message);}throw new Error(message);}
  }
  const headers=new Headers(init.headers);
  if(init.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');
  if(!['GET','HEAD'].includes((init.method||'GET').toUpperCase()))headers.set('X-Termx-CSRF',csrf());
  const response=await fetch(path,{...init,headers,credentials:'same-origin'});
  if(response.status===401&&retry&&(!path.startsWith('/auth/')||path==='/auth/me')){await refreshSession();return request<T>(path,init,false);}
+ if(response.status===423)locked();
  if(!response.ok){const body=await response.json().catch(()=>({detail:response.statusText}));throw new ApiError(response.status,typeof (body.detail||body.error)==='string'?(body.detail||body.error):JSON.stringify(body.detail||body.error||body));}
  if(response.status===204)return undefined as T;
  return response.json() as Promise<T>;
@@ -45,4 +48,17 @@ export async function login(username:string,password:string,setup=false,bootstra
  if(nativeWorkspace())return nativeLogin(username,password,setup);
  await request(setup?'/auth/setup':'/auth/login',{...json('POST',{method:'local-password',username,password,transport:'cookie',device_name:'Desktop workspace'}),headers:bootstrap?{'X-Termx-Passcode':bootstrap}:undefined},false);
  return request('/auth/me');
+}
+
+export interface LockState {locked:boolean;principal:{id:string;display_name:string};session_id:string;host_id:string;methods:{id:string;label:string;flow?:'credentials'|'redirect'}[]}
+export interface UnlockEvidence {method:string;username?:string;password?:string;assertion?:string}
+export async function lockState():Promise<LockState>{return nativeWorkspace()?nativeLockState():request<LockState>('/auth/lock-state',{},false)}
+export async function lockWorkspace(){try{await request('/auth/lock',json('POST',{}),false)}catch(error){if(error instanceof ApiError&&error.status===503&&error.message.startsWith('Session locked;'))locked();throw error}locked()}
+export async function unlockWorkspace(evidence:UnlockEvidence){
+ if(nativeWorkspace())await nativeUnlock(evidence);else await request('/auth/unlock',json('POST',evidence),false);
+ channel?.postMessage('session-unlocked');window.dispatchEvent(new Event('termx-session-unlocked'));return request('/auth/me',{},false);
+}
+export async function beginUnlockOidc(method:string){
+ if(nativeWorkspace())return nativeUnlockOidc(method);
+ return request<{authorization_url:string}>(`/auth/oidc/${encodeURIComponent(method)}/unlock-begin`,json('POST',{}),false);
 }

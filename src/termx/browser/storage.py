@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,created R
             return [json.loads(r[0]) for r in db.execute('SELECT body FROM records WHERE kind=? ORDER BY id',(kind,))]
     def audit(self, **metadata):
         # No raw arguments, page content, URLs with query, provider output or exception.
-        allowed = {'principal_id','session_id','tab_id','action_id','tool_id','decision','reason','grant_id','outcome','origin','revision','provider_id','model','latency_ms'}
+        allowed = {'principal_id','session_id','tab_id','action_id','rule_id','tool_id','decision','reason','grant_id','outcome','origin','revision','provider_id','model','latency_ms'}
         body = {k:v for k,v in metadata.items() if k in allowed}
         with self.transaction() as db:
             db.execute('INSERT INTO events(created,body) VALUES(?,?)',(time(),json.dumps(body)))
