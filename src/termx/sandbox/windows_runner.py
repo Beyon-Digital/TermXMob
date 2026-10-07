@@ -335,6 +335,8 @@ class WindowsSandboxRunner:
     # -- internals ------------------------------------------------------
 
     def _shim_argv(self, req_path: Path) -> list[str]:
+        if getattr(sys, 'frozen', False):
+            return [sys.executable, '--runtime-module', 'termx.sandbox._win_shim', str(req_path)]
         return [sys.executable, "-m", "termx.sandbox._win_shim", str(req_path)]
 
     def _shim_env(self) -> dict[str, str]:

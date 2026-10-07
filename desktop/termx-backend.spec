@@ -22,6 +22,12 @@ if ROOT.joinpath("helpers", "macos", "bin").is_dir():
     datas.append((str(ROOT / "helpers" / "macos" / "bin"), "helpers/macos/bin"))
 
 hiddenimports = [
+    'termx.sandbox._win_shim',
+    'termx.sandbox._win_conpty',
+    'termx.sandbox._win_conpty_host',
+    'termx.sandbox._win_conpty_worker',
+    'termx.sandbox._win_conpty_protocol',
+    'termx.sandbox._win_conpty_security',
     *collect_submodules("uvicorn"),
     *collect_submodules("websockets"),
     *collect_submodules("qrcode"),

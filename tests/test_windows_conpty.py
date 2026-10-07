@@ -90,6 +90,20 @@ def test_conpty_rejects_unsupported_network_denial_instead_of_host_fallback(tmp_
         runner(tmp_path).spawn_terminal(spec(workspace,script,network='none',granted_capabilities=()),24,80)
 
 
+def test_console_broker_refuses_normal_host_token_before_shell_effect(tmp_path):
+    import subprocess
+    from termx.sandbox._win_conpty_protocol import encode
+    target=tmp_path/'must-not-exist.txt'
+    script=tmp_path/'must-not-run.py'
+    script.write_text(f'from pathlib import Path;Path({str(target)!r}).write_text("unsafe")')
+    request={'type':'start','command':subprocess.list2cmdline([sys.executable,str(script)]),
+        'cwd':str(tmp_path),'env':{},'job':{},'rows':24,'cols':80}
+    result=subprocess.run([sys.executable,'-I','-m','termx.sandbox._win_conpty_worker'],
+        input=encode(request),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
+    assert result.returncode!=0 and not target.exists()
+    assert b'Console child' in result.stderr
+
+
 def test_actual_conpty_job_kill_reaps_descendants_before_root_release(tmp_path):
     workspace=tmp_path/'project';workspace.mkdir();script=workspace/'descendants.py'
     script.write_text('''import subprocess,sys,time
