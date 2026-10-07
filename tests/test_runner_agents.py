@@ -275,9 +275,18 @@ def test_running_runner_checks_live_delegation_and_originating_session(tmp_path)
         grant['revoked']=False
         records=Records(tmp_path/'session-records');state.browser.records=records
         records.put('agent-task-authority',task['id'],{'session_id':'managed-session'})
-        state.identity.session_by_id=lambda identifier:SimpleNamespace(principal=principal)
+        lookups=[];live={'principal':principal}
+        def execution_session(identifier):
+            lookups.append(identifier)
+            return SimpleNamespace(principal=live['principal']) if live['principal'] else None
+        state.identity.execution_session=execution_session
         assert service._valid(job)
-        state.identity.session_by_id=lambda identifier:None
+        assert lookups==['managed-session']
+        live['principal']=SimpleNamespace(id='other-owner',policy_version=principal.policy_version)
+        assert not service._valid(job)
+        live['principal']=SimpleNamespace(id=principal.id,policy_version=principal.policy_version+1)
+        assert not service._valid(job)
+        live['principal']=None
         assert not service._valid(job)
         await service.close();await state.agent.close();state.agent.store.close()
     asyncio.run(run())

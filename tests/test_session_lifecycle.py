@@ -18,7 +18,8 @@ def test_lock_denies_transport_keeps_enrolled_job_and_unlock_same_narrow_device(
     actor=state.identity.resolve(token)
     ordinary=actor.principal
     assert client.post('/auth/lock',headers={'Authorization':'Bearer '+token}).status_code==200
-    assert client.get('/auth/me',headers={'Authorization':'Bearer '+token}).status_code==401
+    assert client.get('/auth/me',headers={'Authorization':'Bearer '+token}).status_code==423
+    assert client.get('/api/fixture',headers={'Authorization':'Bearer '+token}).status_code==423
     assert state.identity.current_principal(ordinary) is None
     assert state.identity.session_by_id(sid) is None
     enrolled=state.identity.execution_session(sid)
@@ -187,7 +188,7 @@ def test_real_tls_cookie_lock_closes_existing_wss_then_same_sid_unlock(tls_host)
             ws.send('controlled browser fixture')
             assert ws.recv(timeout=5)
             assert client.post('/auth/lock',headers=headers).status_code==200
-            assert client.get('/auth/me').status_code==401
+            assert client.get('/auth/me').status_code==423
             assert client.get('/auth/lock-state').json()['session_id']==original
             with pytest.raises(ConnectionClosed):ws.recv(timeout=5)
         assert client.post('/auth/refresh',headers=headers,json={}).status_code==423
@@ -226,3 +227,18 @@ def test_failed_transport_shutdown_still_locks_canonical_device(tmp_path):
     assert state.identity.resolve(owner.access_token) is None
     assert client.post('/auth/lock-state',json={'refresh_token':owner.refresh_token}).json()['locked']
     assert client.post('/auth/unlock',json={'refresh_token':owner.refresh_token,'username':'owner','password':PASSWORD}).status_code==200
+
+
+def test_locked_cookie_admission_keeps_origin_csrf_and_expired_401_distinctions(tmp_path):
+    state,app,owner,client,headers=fixture(tmp_path)
+    login=client.post('/auth/login',headers={'Origin':'https://localhost'},json={'username':'owner','password':PASSWORD})
+    sid=login.json()['session_id'];csrf=login.json()['csrf_token']
+    valid={'Origin':'https://localhost','X-Termx-CSRF':csrf}
+    assert client.post('/auth/lock',headers=valid).status_code==200
+    assert client.get('/api/fixture').status_code==423
+    assert client.post('/api/fixture',headers={'Origin':'https://foreign.example','X-Termx-CSRF':csrf}).status_code==403
+    assert client.post('/api/fixture',headers={'Origin':'https://localhost'}).status_code==403
+    assert client.post('/api/fixture',headers=valid).status_code==423
+    state.identity.revoke(sid,state.session_locks.refresh_identity(client.cookies['termx_refresh']).principal.id)
+    assert client.get('/api/fixture').status_code==401
+    assert client.post('/api/fixture',headers=valid).status_code==401

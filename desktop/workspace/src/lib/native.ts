@@ -72,7 +72,10 @@ export async function nativeBinary(path:string,init:RequestInit={}):Promise<{sta
  const bytes=init.body?new Uint8Array(await encoded.arrayBuffer()):null;
  if(bytes&&bytes.byteLength>64*1024*1024)throw new Error('Transfer exceeds 64 MiB');
  let source='';if(bytes)for(let offset=0;offset<bytes.length;offset+=8192)source+=String.fromCharCode(...bytes.subarray(offset,offset+8192));
- const result=await invoke<{status:number;body_base64:string;content_type:string}>('workspace_binary',{path,method,bodyBase64:bytes?btoa(source):null,contentType:encoded.headers.get('Content-Type')||'application/octet-stream'});
+ let result:{status:number;body_base64:string;content_type:string};
+ try{result=await invoke('workspace_binary',{path,method,bodyBase64:bytes?btoa(source):null,contentType:encoded.headers.get('Content-Type')||'application/octet-stream'});}
+ catch(error){if(String(error).includes('Session locked')){window.dispatchEvent(new Event('termx-session-locked'));const denied=new Error('Session locked; unlock required') as Error&{status:number};denied.status=423;throw denied}throw error;}
+ if(result.status===423)window.dispatchEvent(new Event('termx-session-locked'));
  const raw=atob(result.body_base64);const body=new Uint8Array(raw.length);for(let index=0;index<raw.length;index++)body[index]=raw.charCodeAt(index);
  return {status:result.status,body,mime:result.content_type};
 }

@@ -5,6 +5,7 @@ export async function transfer(path:string,init:RequestInit={},retry=true):Promi
  if(!path.startsWith('/')||path.startsWith('//'))throw new Error('Transfers must stay on this workspace');
  if(nativeWorkspace()){
   const result=await nativeBinary(path,init);
+  if(result.status===423){window.dispatchEvent(new Event('termx-session-locked'));throw new ApiError(423,'Session locked; unlock required')}
   const blob=new Blob([new Uint8Array(result.body)],{type:result.mime});
   if(result.status<200||result.status>=300){const error=await blob.text();throw new Error(error)}
   return blob;
@@ -12,6 +13,7 @@ export async function transfer(path:string,init:RequestInit={},retry=true):Promi
  const headers=new Headers(init.headers);if((init.method||'GET')!=='GET')headers.set('X-Termx-CSRF',csrf());
  const result=await fetch(path,{...init,headers,credentials:'same-origin'});
  if(result.status===401&&retry&&!path.startsWith('/auth/')){await refreshSession();return transfer(path,init,false)}
+ if(result.status===423){window.dispatchEvent(new Event('termx-session-locked'));throw new ApiError(423,'Session locked; unlock required')}
  if(!result.ok){const error=await result.json().catch(()=>({detail:result.statusText}));throw new ApiError(result.status,error.detail||result.statusText)}
  return result.blob();
 }

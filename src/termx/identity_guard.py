@@ -68,6 +68,13 @@ class SessionGuard:
                 await self._reject(scope,receive,send,401,'socket proof expired or invalid')
                 return
             scope = dict(scope,headers=[*scope.get('headers',[]),(b'authorization',f'Bearer {token}'.encode())])
+        locked_actor=None
+        if protected and scope['type']=='http' and managed:
+            effective=token or raw_cookie
+            locked_actor=await asyncio.to_thread(service.resolve,effective,allow_locked=True)
+            if effective and effective.count('.')==2 and locked_actor is None and await asyncio.to_thread(self.state.auth.scopes,effective) is None:
+                await self._reject(scope,receive,send,401,'Session expired or revoked; sign in again')
+                return
         cookie_auth = token is None and raw_cookie is not None
         if protected and cookie_auth:
             scheme = "https" if scope["scheme"] == "wss" else "http" if scope["scheme"] == "ws" else scope["scheme"]
@@ -76,11 +83,14 @@ class SessionGuard:
                 await self._reject(scope, receive, send, 403, "same-origin socket required")
                 return
             if scope["type"] == "http" and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
-                if not origin_ok or not await asyncio.to_thread(service.valid_csrf, raw_cookie, headers.get("x-termx-csrf")):
+                if not origin_ok or not await asyncio.to_thread(service.valid_csrf, raw_cookie, headers.get("x-termx-csrf"),allow_locked=bool(locked_actor and locked_actor.locked)):
                     await self._reject(scope, receive, send, 403, "same-origin request and CSRF token required")
                     return
             token = raw_cookie
             scope = dict(scope, headers=[*scope.get("headers", []), (b"authorization", f"Bearer {token}".encode())])
+        if locked_actor and locked_actor.locked:
+            await self._reject(scope,receive,send,423,'Session locked; unlock required')
+            return
         if scope["type"] != "websocket" or not protected:
             await self.app(scope, receive, send)
             return

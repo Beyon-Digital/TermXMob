@@ -68,6 +68,7 @@ class SessionIdentity:
     principal: Principal
     session_id: str
     expires_at: float
+    locked: bool = False
 
 
 @dataclass(frozen=True)
@@ -455,7 +456,7 @@ class AuthenticationService:
                 principal = self._live_principal(db, session,allow_locked=allow_locked)
                 if principal is None:
                     return None
-                return SessionIdentity(principal, session["id"], min(claims["exp"], session["expires"], session["last_seen"] + IDLE_TTL))
+                return SessionIdentity(principal, session["id"], min(claims["exp"], session["expires"], session["last_seen"] + IDLE_TTL),bool(session["locked"]))
         except (jwt.PyJWTError, ValueError, TypeError, KeyError):
             return None
 
@@ -503,10 +504,10 @@ class AuthenticationService:
         log_event("auth_refresh", session_id=result.session_id)
         return result
 
-    def valid_csrf(self, credential: str | None, csrf: str | None, *, refresh: bool = False) -> bool:
+    def valid_csrf(self, credential: str | None, csrf: str | None, *, refresh: bool = False, allow_locked: bool = False) -> bool:
         if not credential or not csrf:
             return False
-        identity = None if refresh else self.resolve(credential)
+        identity = None if refresh else self.resolve(credential,allow_locked=allow_locked)
         with self._db() as db:
             if refresh:
                 row = db.execute("""SELECT s.csrf_hash FROM sessions s JOIN refresh_tokens r ON r.session_id=s.id

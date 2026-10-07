@@ -110,9 +110,11 @@ def mount_identity(app, state: AppState) -> None:
 
     def current(request: Request):
         transport(request)
-        identity = service.resolve(credential(request))
+        identity = service.resolve(credential(request),allow_locked=True)
         if identity is None:
             raise HTTPException(401, "sign in required")
+        if identity.locked:
+            raise HTTPException(423,"Session locked; unlock required")
         return identity
 
     def csrf(request: Request, token: str | None, *, refresh: bool = False) -> None:

@@ -10,6 +10,8 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import queue
+import threading
 import socket
 import ssl
 import time
@@ -17,6 +19,8 @@ from urllib.parse import urljoin, urlsplit
 
 MAX_BYTES = 2_100_000
 MAX_SECONDS = 12
+MAX_DNS_SECONDS = 3
+_DNS_SLOTS = threading.BoundedSemaphore(4)
 
 
 def checked_url(value: str):
@@ -32,7 +36,31 @@ def checked_url(value: str):
 
 
 def public_addresses(host,port):
-    addresses=sorted({answer[4][0] for answer in socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)})
+    # getaddrinfo has no portable per-call timeout. Bound admission and caller
+    # waiting without an executor whose shutdown could block on a stuck resolver.
+    slots=_DNS_SLOTS
+    if not slots.acquire(blocking=False):
+        raise ValueError('Registry DNS lookup capacity is busy')
+    result=queue.Queue(maxsize=1)
+    def resolve():
+        try:
+            result.put((True,socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)))
+        except Exception as exc:
+            result.put((False,exc))
+        finally:
+            slots.release()
+    try:
+        threading.Thread(target=resolve,name='termx-registry-dns',daemon=True).start()
+    except BaseException:
+        slots.release()
+        raise
+    try:
+        succeeded,answers=result.get(timeout=MAX_DNS_SECONDS)
+    except queue.Empty:
+        raise ValueError('Registry DNS lookup exceeded its time budget') from None
+    if not succeeded:
+        raise ValueError('Registry DNS lookup failed') from None
+    addresses=sorted({answer[4][0] for answer in answers})
     if not addresses or len(addresses)>16:
         raise ValueError('Registry DNS did not return a bounded address set')
     for address in addresses:

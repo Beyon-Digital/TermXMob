@@ -128,3 +128,21 @@ def test_registry_owner_and_live_authority_are_rechecked_after_download(workspac
     service.transport=RevokingTransport()
     with pytest.raises(PermissionError):service.registry_preview(owner,registry['id'],'inspect@1')
     assert not ws.store.list('extension_preview') and not ws.store.list('extension')
+
+
+def test_dns_wait_and_outstanding_work_are_bounded(monkeypatch):
+    from time import monotonic
+    import termx.workspace.https_registry as registry
+    release=threading.Event();finished=threading.Event()
+    def stalled(*args,**kwargs):
+        release.wait(2);finished.set();return []
+    monkeypatch.setattr(registry.socket,'getaddrinfo',stalled)
+    monkeypatch.setattr(registry,'MAX_DNS_SECONDS',.02)
+    monkeypatch.setattr(registry,'_DNS_SLOTS',threading.BoundedSemaphore(1))
+    started=monotonic()
+    try:
+        with pytest.raises(ValueError,match='time budget'):registry.public_addresses('registry.example',443)
+        assert monotonic()-started<.5
+        with pytest.raises(ValueError,match='capacity'):registry.public_addresses('registry.example',443)
+    finally:
+        release.set();assert finished.wait(1)
