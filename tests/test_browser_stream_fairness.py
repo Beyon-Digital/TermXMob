@@ -10,26 +10,29 @@ from termx.browser.service import BrowserService
 def test_human_viewers_share_one_capture_and_cancellation_does_not_cancel_other_viewer(tmp_path):
     async def run():
         service=BrowserService(tmp_path)
-        tab={'id':'tab','principal_id':'owner','project_id':'project','profile_id':'profile','session_id':'sid','url':'https://example.com','state':'human','document_revision':1,'lease_revision':1,'grant_id':None,'recording':False}
-        service.records.put('tab','tab',tab);service._pages['tab']=object()
-        started=asyncio.Event();release=asyncio.Event()
-        class Capture:
-            calls=0
-            async def send(self,method,args):
-                assert method=='Page.captureScreenshot'
-                self.calls+=1;started.set();await release.wait()
-                return {'data':base64.b64encode(b'human-frame').decode()}
-        capture=Capture();service._capture_cdp['tab']=capture
-        first=asyncio.create_task(service.frame('tab','owner',human=True));await started.wait()
-        second=asyncio.create_task(service.frame('tab','owner',human=True));await asyncio.sleep(0)
-        first.cancel()
-        with pytest.raises(asyncio.CancelledError):await first
-        release.set()
-        assert await second==b'human-frame'
-        assert await service.frame('tab','owner',human=True)==b'human-frame'
-        assert capture.calls==1
-        service.takeover('tab','owner',private=True)
-        assert 'tab' not in service._frame_cache
+        try:
+            tab={'id':'tab','principal_id':'owner','project_id':'project','profile_id':'profile','session_id':'sid','url':'https://example.com','state':'human','document_revision':1,'lease_revision':1,'grant_id':None,'recording':False}
+            service.records.put('tab','tab',tab);service._pages['tab']=object()
+            started=asyncio.Event();release=asyncio.Event()
+            class Capture:
+                calls=0
+                async def send(self,method,args):
+                    assert method=='Page.captureScreenshot'
+                    self.calls+=1;started.set();await release.wait()
+                    return {'data':base64.b64encode(b'human-frame').decode()}
+            capture=Capture();service._capture_cdp['tab']=capture
+            first=asyncio.create_task(service.frame('tab','owner',human=True));await started.wait()
+            second=asyncio.create_task(service.frame('tab','owner',human=True));await asyncio.sleep(0)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):await first
+            release.set()
+            assert await second==b'human-frame'
+            assert await service.frame('tab','owner',human=True)==b'human-frame'
+            assert capture.calls==1
+            service.takeover('tab','owner',private=True)
+            assert 'tab' not in service._frame_cache
+        finally:
+            await service.close()
     asyncio.run(run())
 
 
