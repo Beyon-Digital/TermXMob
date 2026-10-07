@@ -1,0 +1,53 @@
+{
+  "source_commit": "7f1160f628c74499fbcf04be1ba7cb65b2788d55",
+  "source_tree": "91e7013aeec5c419e4c5fc5f30ea0781817cccd6",
+  "pr_checkout_commit": "0a727360880ae692a0d2cf4700e2507e92d11742",
+  "pr_checkout_tree_matches_source": true,
+  "source_ci": {
+    "run": 37687130032,
+    "status": "passed",
+    "frontend": {
+      "passed": 245,
+      "files": 64
+    },
+    "linux": {
+      "passed": 1054,
+      "skipped": 147,
+      "seconds": 207.68
+    },
+    "macos": {
+      "passed": 1085,
+      "skipped": 116,
+      "seconds": 302.6
+    }
+  },
+  "windows_contracts": {
+    "run": 37687129894,
+    "status": "passed",
+    "passed": 247,
+    "skipped": 1,
+    "seconds": 232.99,
+    "native_dacl_passed": 3,
+    "owned_printwindow_digest": "sha256:f0e459d4336c3e8fee942a1287a728bb41468eddcaf54a70d3888877c29a5970"
+  },
+  "native_acl_compile": {
+    "run": 37687129897,
+    "status": "passed",
+    "platforms": [
+      "ubuntu-22.04",
+      "windows-2022",
+      "macos-14"
+    ],
+    "runtime_resources_override": "Source compilation only; TAURI_CONFIG bundle.resources=null. Actual packaging must stage and verify real resources."
+  },
+  "artifact_only_dispatch": {
+    "run": 37687927763,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37687927763",
+    "release_tag": "",
+    "draft": true,
+    "include_intel": true,
+    "source_sha_verified": true
+  },
+  "elf_test_scope": "Linux source CI installs patchelf and aggregate checks pass. Quiet output does not individually name the ELF testcase; artifact staging requires clean ldd closure for every real AV library and aborts if tools/dependencies are missing. Mac declares the Linux-only regression skip.",
+  "qualification_limit": "Source and generated ACL compilation qualified. Current artifact-only build, actual installed-app lifecycle/signature/monitor tests and entitled live-provider evaluation remain independent gates. PR installed-Mac run is fixture-only."
+}

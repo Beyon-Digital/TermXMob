@@ -72,10 +72,12 @@ Source checkpoint `02f987be049075298ebd17da5a0e9d035b22d39a` passes245 frontend,
 native compile checks. The exact-source artifact run37677911211 found eight
 additional failures in the full Windows suite (1048 passed,126 skipped); Windows
 sidecar, installers and installed-MSI checks did not run. The [failure record](verification/windows-installer-02f987b-failures.json)
-preserves that boundary. The subsequentac3874a source checkpoint passes245 frontend,1048 Linux,1080
+preserves that boundary. The subsequent [7f1160f source checkpoint](verification/ci-7f1160f.json) passes245 frontend,1054 Linux,1085
 macOS and247 expanded Windows tests, plus three Windows storage checks. Its PR
-checkout tree matches the published tree. Native ACL, Linux AV closure and Intel
-headless-DMG follow-ups still require fresh compiled/installed qualification;
+checkout tree matches the published tree. Native-command ACL compilation passes
+on Linux/macOS/Windows with bundle resources overridden for source checks. Actual
+AV closure, Intel DMG construction and installed-app qualification are pending in
+[artifact-only run37687927763](https://github.com/Beyon-Digital/TermXMob/actions/runs/37687927763). That run has a [Windows readiness-fixture failure](verification/windows-artifact-7f-backend-failure.json) before actual EOF cancellation, and the ARM build has an [application-only notarization ticket](verification/macos-artifact-7f-history.md). Strict final-DMG ticket creation and separately bounded worker readiness need a fresh source-qualified artifact run;
 [the failed02 artifact outcomes](verification/artifact-02f987b-outcome.json) are
 preserved separately.
 

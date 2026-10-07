@@ -63,17 +63,23 @@ def test_qualified_image_boundary_and_explicit_account(tmp_path):
 def test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_eof(tmp_path,invalid_frame):
     root=tmp_path/'remote-invalid';root.mkdir();target=root/'hello.txt';target.write_text('unchanged')
     async def run():
-        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-invalid')}
+        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-invalid'),'TERMX_RUNNER_DIAGNOSTICS':'1'}
         process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
         process.stdin.write(frame({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Bounded protocol refusal','mode':'agent','limits':{'max_seconds':10,'max_steps':2}}))
-        events=[];last_task=None
+        await process.stdin.drain()
+        events=[];last_task=None;phase='await-planning-rpc';planning=False
         try:
-            async with asyncio.timeout(15):
+            async with asyncio.timeout(30):
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
+                    if value['type']=='event':events.append(value['event']['type']);last_task=value['task']
                     if value['type']=='rpc':
                         assert value['method']=='plan'
-                        process.stdin.write(invalid_frame);break
+                        planning=True;break
+                assert planning,'Worker exited before its pending planning RPC'
+            phase='reject-invalid-host-control'
+            async with asyncio.timeout(5):
+                process.stdin.write(invalid_frame);await process.stdin.drain()
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
                     if value['type']=='event':
@@ -85,6 +91,14 @@ def test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_e
             assert 'task.cancelled' not in events and last_task['status']=='failed'
             assert last_task['error']=='Host runner control protocol failed'
             assert target.read_text()=='unchanged'
+        except TimeoutError:
+            prekill_returncode=process.returncode
+            if process.returncode is None:process.kill()
+            await process.wait()
+            stderr=await asyncio.wait_for(process.stderr.read(16384),2)
+            raise AssertionError(json.dumps({'phase':phase,'startup_timeout_seconds':30,'cancellation_timeout_seconds':5,
+                'event_types':events[-16:],'alive_before_fixture_kill':prekill_returncode is None,
+                'stderr':stderr.decode('utf-8','replace')})) from None
         finally:
             if process.returncode is None:process.kill()
             await process.wait()
@@ -94,19 +108,31 @@ def test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_e
 def test_worker_normal_cancellation_of_pending_broker_is_not_protocol_failure(tmp_path,control):
     root=tmp_path/'remote-cancel';root.mkdir();target=root/'hello.txt';target.write_text('unchanged')
     async def run():
-        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-cancel')}
+        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-cancel'),'TERMX_RUNNER_DIAGNOSTICS':'1'}
         process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
         process.stdin.write(frame({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Bounded cancellation','mode':'agent','limits':{'max_seconds':10,'max_steps':2}}))
-        events=[];last_task=None
+        await process.stdin.drain()
+        events=[];last_task=None;phase='await-planning-rpc';planning=False
         try:
-            async with asyncio.timeout(15):
+            # Loading the real worker's modules/private stores is distinct
+            # from cancellation latency. Bound readiness separately so a slow
+            # Windows import cannot consume the effect-control deadline.
+            async with asyncio.timeout(30):
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
+                    if value['type']=='event':events.append(value['event']['type']);last_task=value['task']
                     if value['type']=='rpc':
                         assert value['method']=='plan'
-                        if control=='cancel':process.stdin.write(frame({'type':'cancel'}))
-                        else:process.stdin.close()
-                        break
+                        planning=True;break
+                assert planning,'Worker exited before its pending planning RPC'
+            # Start this strict deadline only after the host actually revokes
+            # the pending operation, retaining the no-effects/no-retry proof.
+            phase='cancel-pending-planning-rpc:'+control
+            async with asyncio.timeout(5):
+                if control=='cancel':
+                    process.stdin.write(frame({'type':'cancel'}));await process.stdin.drain()
+                else:
+                    process.stdin.close();await process.stdin.wait_closed()
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
                     if value['type']=='event':events.append(value['event']['type']);last_task=value['task']
@@ -114,7 +140,16 @@ def test_worker_normal_cancellation_of_pending_broker_is_not_protocol_failure(tm
                 await asyncio.wait_for(process.wait(),3)
                 assert process.returncode==0,(await process.stderr.read()).decode()
             assert events.count('task.cancelled')==1 and 'runner.failure' not in events
+            assert not any(event.startswith('tool.') for event in events)
             assert last_task['status']=='cancelled' and target.read_text()=='unchanged'
+        except TimeoutError:
+            prekill_returncode=process.returncode
+            if process.returncode is None:process.kill()
+            await process.wait()
+            stderr=await asyncio.wait_for(process.stderr.read(16384),2)
+            raise AssertionError(json.dumps({'phase':phase,'startup_timeout_seconds':30,'cancellation_timeout_seconds':5,
+                'event_types':events[-16:],'alive_before_fixture_kill':prekill_returncode is None,
+                'stderr':stderr.decode('utf-8','replace')})) from None
         finally:
             if process.returncode is None:process.kill()
             await process.wait()

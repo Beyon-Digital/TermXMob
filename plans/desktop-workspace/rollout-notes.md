@@ -1,6 +1,6 @@
 # Desktop workspace rollout and recovery notes
 
-These notes accompany source checkpoint `ac3874ac1d5b10b12dee8ef573937201062edffd`. Source CI passes245 frontend,1048 Linux and1080 macOS tests; Windows contracts and all three native compile targets pass. Exact-source installer qualification is recorded separately. Live media/reviewer qualification still requires the chosen entitled API account/model and a bounded evaluation allowance. No production release or updater publication has occurred.
+These notes accompany source checkpoint `7f1160f628c74499fbcf04be1ba7cb65b2788d55`. [Source CI evidence](verification/ci-7f1160f.json) records245 frontend,1054 Linux and1085 macOS tests passing; Windows contracts and all three native compile targets pass. Exact-source installer qualification is recorded separately. Live media/reviewer qualification still requires the chosen entitled API account/model and a bounded evaluation allowance. No production release or updater publication has occurred.
 
 ## Upgrade preparation
 
