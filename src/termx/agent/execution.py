@@ -98,6 +98,7 @@ async def stream_shell(
         granted_capabilities=tuple(granted_capabilities or ()),
         task_id=task_id,
         purpose="run_shell",
+        stdin=asyncio.subprocess.DEVNULL,
     )
     spawned = await runner.spawn(spec)
     process = spawned.process

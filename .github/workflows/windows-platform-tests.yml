@@ -8,12 +8,14 @@ on:
       - 'src/termx/identity*.py'
       - 'src/termx/sandbox/*win*.py'
       - 'src/termx/sessions.py'
+      - 'src/termx/git_ops.py'
       - 'src/termx/agent/secrets.py'
       - 'src/termx/runners/*.py'
       - 'desktop/src-tauri/src/private_storage.rs'
       - 'desktop/src-tauri/src/config.rs'
       - 'tests/test_windows_conpty.py'
       - 'tests/test_runner_agents.py'
+      - 'tests/test_git_stream_boundary.py'
       - 'tests/test_private_files.py'
       - '.github/workflows/windows-platform-tests.yml'
 
@@ -54,3 +56,4 @@ jobs:
           tests/test_chatgpt.py tests/test_discovery_agents.py
           tests/test_engines.py tests/test_engine_catalogue.py tests/test_engines_acp.py
           tests/test_runner_agents.py tests/test_windows_conpty.py
+          tests/test_git_stream_boundary.py
