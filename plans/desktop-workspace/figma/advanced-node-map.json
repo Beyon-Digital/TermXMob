@@ -980,8 +980,8 @@
       "node_id": "64:16548",
       "width": 1440,
       "height": 900,
-      "texts": 47,
-      "instances": 83,
+      "texts": 84,
+      "instances": 129,
       "image_fills": 0,
       "fonts": [
         "Geist"
@@ -1100,8 +1100,8 @@
       "node_id": "64:18508",
       "width": 1440,
       "height": 900,
-      "texts": 47,
-      "instances": 83,
+      "texts": 72,
+      "instances": 105,
       "image_fills": 0,
       "fonts": [
         "Geist"
@@ -1112,8 +1112,8 @@
       "node_id": "64:18704",
       "width": 1440,
       "height": 900,
-      "texts": 47,
-      "instances": 83,
+      "texts": 72,
+      "instances": 105,
       "image_fills": 0,
       "fonts": [
         "Geist"
@@ -3343,5 +3343,7 @@
       "id": "21:16",
       "name": "Molecule/Advanced/SectionHeader"
     }
-  ]
+  ],
+  "shared_budget_dialog_alignment": "verification/shared-tree-budget-figma.json",
+  "general_approval_dialog_alignment": "verification/general-approval-figma-dialog.json"
 }

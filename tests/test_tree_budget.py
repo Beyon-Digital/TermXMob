@@ -343,3 +343,69 @@ def test_actual_restart_after_committed_grant_requires_continue_without_granting
    assert len([e for e in store.events(task['id']) if e['type']=='tool.finished'])==2
   finally:await manager.close();store.close()
  asyncio.run(run())
+
+
+def test_actual_spawned_child_budgets_escalate_and_invalid_wrapper_grant_stays_pending(tmp_path):
+ import asyncio
+ from collections import defaultdict
+ from termx.agent.providers import ProviderCall,ProviderTurn
+ from test_agent import build_manager,wait_for_status
+ class Adapter:
+  def __init__(self):self.count=defaultdict(int);self.manager=None
+  async def plan(self,prompt,cwd,manifest):
+   return {'summary':prompt,'steps':['Delegate two read-only inspections'],'tools':['spawn_subagent'],'risks':[]},'plan'
+  async def turn(self,**kwargs):
+   prompt=kwargs['prompt'];self.count[prompt]+=1
+   if prompt=='Coordinate actual children':
+    if self.count[prompt]==1:
+     calls=[ProviderCall('function','spawn-'+name,'spawn_subagent',{'task':name,'mode':'ask','agent':name}) for name in ('Child A','Child B')]
+    elif self.count[prompt]==2:calls=[ProviderCall('function','wait','await_subagents',{})]
+    else:calls=[]
+   elif self.count[prompt]==1:
+    # Ensure both actual child watchers are attached and the parent's await
+    # position is reserved before the children compete for the pooled batch.
+    while self.manager.tree_budget.snapshot(self.parent_id)['used_steps']<3:await asyncio.sleep(.01)
+    calls=[ProviderCall('function',prompt+'-'+str(i),'read_file',{'path':'read.txt'}) for i in range(6)]
+   else:calls=[]
+   return ProviderTurn(prompt+str(self.count[prompt]),'Completed' if not calls else '',calls,{},[])
+ async def run():
+  (tmp_path/'read.txt').write_text('Actual delegated read')
+  adapter=Adapter();manager,store=build_manager(tmp_path,adapter);adapter.manager=manager
+  try:
+   parent=await manager.create_task(prompt='Coordinate actual children',cwd=str(tmp_path),provider_id='fake',limits={'max_steps':8,'max_seconds':120})
+   adapter.parent_id=parent['id']
+   await manager.resolve_approval(parent['id'],parent['approvals'][0]['id'],'approved')
+   for _ in range(500):
+    pending=[a for a in store.approvals(parent['id']) if a['status']=='pending']
+    for approval in pending:
+     if approval['kind']=='tool':await manager.resolve_approval(parent['id'],approval['id'],'approved')
+    wrappers=[a for a in pending if a['kind']=='budget' and a['payload'].get('child_id')]
+    if len(wrappers)==2:break
+    await asyncio.sleep(.01)
+   assert len(wrappers)==2
+   children=store.children(parent['id']);assert len(children)==2
+   before=manager.tree_budget.snapshot(parent['id']);assert before['used_steps']==3 and before['version']==1
+   from time import monotonic
+   for handle in manager._subagent_handles(parent['id']).values():handle.deadline=monotonic()+.05
+   await asyncio.sleep(.5)
+   assert all(store.get_task(child['id'])['status']=='awaiting_approval' for child in children)
+   assert manager.tree_budget.snapshot(parent['id'])['used_execution_seconds']==before['used_execution_seconds']
+   first,second=wrappers
+   inner=store.get_approval(first['payload']['child_approval_id'])
+   with pytest.raises(ValueError,match='ceiling|count'):
+    await manager.resolve_approval(parent['id'],first['id'],'approved',limits={'max_steps':3,'max_seconds':120})
+   assert store.get_approval(first['id'])['status']==store.get_approval(inner['id'])['status']=='pending'
+   assert manager.tree_budget.snapshot(parent['id'])['version']==1
+   # Durable wrapper IDs are enough to recover the verified parent/child
+   # binding when its in-memory relay record is absent.
+   manager._pending_approval_calls.pop(first['id'])
+   await manager.resolve_approval(parent['id'],first['id'],'approved',limits={'max_steps':16,'max_seconds':120})
+   await wait_for_status(store,first['payload']['child_id'],'completed')
+   assert manager.tree_budget.snapshot(parent['id'])['version']==2
+   await manager.resolve_approval(parent['id'],second['id'],'approved',limits={'max_steps':999,'max_seconds':999})
+   await wait_for_status(store,parent['id'],'completed')
+   final=manager.tree_budget.snapshot(parent['id']);assert final['version']==2 and final['max_steps']==16 and final['max_execution_seconds']==120 and final['used_steps']==15
+   assert all(store.get_task(child['id'])['status']=='completed' for child in children)
+   assert sum(sum(e['type']=='tool.finished' and str(e['payload'].get('call_id','')).startswith(('Child A-','Child B-')) for e in store.events(child['id'])) for child in children)==12
+  finally:await manager.close();store.close()
+ asyncio.run(run())

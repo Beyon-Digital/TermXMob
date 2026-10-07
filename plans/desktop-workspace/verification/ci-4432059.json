@@ -1,0 +1,29 @@
+{
+  "source_commit": "44320592c6880721f82d6369b1942a031f8ec825",
+  "source_run": 37670590634,
+  "status": "passed",
+  "frontend": {
+    "passed": 243,
+    "files": 64,
+    "production_build": "passed"
+  },
+  "backend": {
+    "linux": {
+      "passed": 1034,
+      "skipped": 147,
+      "seconds": 177.39
+    },
+    "macos": {
+      "passed": 1066,
+      "skipped": 115,
+      "seconds": 365.9
+    }
+  },
+  "platform_runs": {
+    "windows_contracts": 37670590839,
+    "native_microphone_compile": 37670590617,
+    "macos_gui_feasibility": 37670590612,
+    "macos_installed_fixture_only": 37670590604
+  },
+  "qualification_limit": "Source checkpoint only. PR installed-macOS workflow ran fixture tests and skipped actual installed-app job. Later parent-child budget relay and compact approval dialogs require their own coherent source and installed/live qualification."
+}

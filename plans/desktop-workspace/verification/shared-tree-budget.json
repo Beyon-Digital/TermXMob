@@ -1,6 +1,6 @@
 {
   "kind": "actual-internal-coordinator-shared-tree-budget",
-  "status": "source-and-focused-regressions-verified",
+  "status": "source-focused-regressions-and-actual-web-renderer-verified",
   "scope": "Internal AgentManager root tree, including synchronous context preparation and provider planning; independent native/runner limits remain separately declared",
   "units": {
     "steps": "Atomic exact tool-call position reservations, not tokens or completed effects",
@@ -15,20 +15,30 @@
     "Approved sibling/restart continuation reuses same grant and ignores invented client increases",
     "Planning renewal resumes planning and requires separate plan approval before tools",
     "Partial tool time exhaustion does not automatically replay effects",
-    "No token or billing estimates"
+    "No token or billing estimates",
+    "Actual spawned child budget escalates to the canonical parent conversation; rejected grants leave both approvals pending.",
+    "A verified durable child wrapper reconstructs a missing relay map; resolving a sibling wrapper reuses the exact existing grant.",
+    "Child watchdog excludes human budget/tool decisions rather than cancelling a paused worker."
   ],
   "checks": [
     {
-      "command": ".venv/bin/python -m pytest tests/test_tree_budget.py tests/test_agent.py -q -k \"tree_budget or budget or subagent\"",
-      "passed": 24,
-      "deselected": 99,
-      "seconds": 22.81
+      "command": ".venv/bin/python -m pytest tests/test_tree_budget.py tests/test_agent.py -q -k \"tree_budget or budget or subagent_escalates\"",
+      "passed": 16,
+      "deselected": 108,
+      "seconds": 6.54
     },
     {
-      "command": "pnpm exec vitest run src/features/budget-approval.test.tsx",
-      "cwd": "desktop/workspace",
-      "passed": 4,
-      "seconds": 8.81
+      "command": ".venv/bin/python -m pytest tests/test_agent.py -q -k \"subagent_fanout_and_await or spawn_subagent_returns_async_handle\"",
+      "passed": 2,
+      "deselected": 107,
+      "seconds": 3.79
+    },
+    {
+      "kind": "Parent-reported dialog regression slice",
+      "passed": 16,
+      "files": 3,
+      "seconds": 7.22,
+      "command": "Command retained by parent; not independently reconstructed."
     }
   ],
   "code": [
@@ -40,11 +50,45 @@
   ],
   "tests": [
     "tests/test_tree_budget.py",
-    "desktop/workspace/src/features/budget-approval.test.tsx"
+    "desktop/workspace/src/features/budget-approval.test.tsx",
+    "tests/workspace_tree_budget_e2e.py"
   ],
   "limitations": [
-    "Actual concurrent coordinator/provider/tool fixtures use local deterministic adapters, never paid providers.",
-    "This record does not claim final rendered shared-budget UI or installed runtime proof.",
-    "Existing individual token/cost accounting is not invented; pool units remain reserved calls and summed active seconds."
-  ]
+    "Concurrent coordinator/provider/tool fixtures use local deterministic adapters, never paid providers.",
+    "Actual managed web renderer is qualified; this record does not claim installed native or live provider qualification.",
+    "No token/cost accounting is invented; pool units remain reserved calls and summed active seconds."
+  ],
+  "previous_checkpoint": {
+    "checks": [
+      {
+        "command": ".venv/bin/python -m pytest tests/test_tree_budget.py tests/test_agent.py -q -k \"tree_budget or budget or subagent\"",
+        "passed": 24,
+        "deselected": 99,
+        "seconds": 22.81
+      },
+      {
+        "command": "pnpm exec vitest run src/features/budget-approval.test.tsx",
+        "cwd": "desktop/workspace",
+        "passed": 4,
+        "seconds": 8.81
+      }
+    ],
+    "status": "source-and-focused-regressions-verified"
+  },
+  "rendered": {
+    "report": "shared-tree-budget-rendered.json",
+    "script": "tests/workspace_tree_budget_e2e.py",
+    "entry": "assets/index-Czw5tLfK.js",
+    "entry_sha256": "29083e51a98a0130d3541bc3f7f908f178125f03bdb1ef2916f3307a4aed3618",
+    "css": "assets/index-B2w6tMzk.css",
+    "css_sha256": "bd7f05d532cdb85744a38270e297b0b03c6b3a0f4d7d90c03413d1cbd3ab64a7",
+    "states": 13,
+    "keyboard_checks": 31,
+    "explicit_dialog_focus_returns": 4,
+    "axe_violations": 0,
+    "page_overflow": 0,
+    "UI_errors": 0,
+    "server_exceptions": [],
+    "grant_HTTP_resolutions": 2
+  }
 }

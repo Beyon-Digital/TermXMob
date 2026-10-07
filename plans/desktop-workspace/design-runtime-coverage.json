@@ -694,7 +694,10 @@
             "Personal policy inspect, CAS edit/revoke, expiry/authority change",
             "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
             "Planning budget pause resumes planning then still requires separate plan approval",
-            "Crash after approved grant requires explicit continuation within same grant"
+            "Crash after approved grant requires explicit continuation within same grant",
+            "Child budget escalated to canonical parent conversation",
+            "Compact review trigger and bounded budget grant dialog",
+            "Explicit continuation within committed grant after host restart"
           ],
           "proof_links": [
             "tests/test_agent.py",
@@ -711,7 +714,10 @@
             "desktop/workspace/src/features/budget-approval.test.tsx",
             "plans/desktop-workspace/verification/shared-tree-budget.json",
             "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
-            "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+            "plans/desktop-workspace/verification/mcp-manager-rendered.json",
+            "tests/workspace_tree_budget_e2e.py",
+            "plans/desktop-workspace/verification/shared-tree-budget-rendered.json",
+            "plans/desktop-workspace/verification/shared-tree-budget-figma.json"
           ],
           "journey_ids": [
             "J-CODE",
@@ -952,7 +958,10 @@
             "tests/test_runner_agents.py",
             "plans/desktop-workspace/verification/advanced-figma.json",
             "tests/test_tree_budget.py",
-            "plans/desktop-workspace/verification/shared-tree-budget.json"
+            "plans/desktop-workspace/verification/shared-tree-budget.json",
+            "tests/workspace_tree_budget_e2e.py",
+            "plans/desktop-workspace/verification/shared-tree-budget-rendered.json",
+            "plans/desktop-workspace/verification/shared-tree-budget-figma.json"
           ],
           "journey_ids": [
             "J-AUTOMATE"
@@ -2410,7 +2419,10 @@
       "proof_links": [
         "tests/test_durable_workspace.py",
         "tests/test_runner_agents.py",
-        "plans/desktop-workspace/verification/advanced-figma.json"
+        "plans/desktop-workspace/verification/advanced-figma.json",
+        "tests/workspace_tree_budget_e2e.py",
+        "plans/desktop-workspace/verification/shared-tree-budget-rendered.json",
+        "plans/desktop-workspace/verification/shared-tree-budget-figma.json"
       ],
       "advanced_figma_start_node": "32:579",
       "advanced_prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-579&starting-point-node-id=32%3A579"
@@ -2505,7 +2517,7 @@
     "Paid configured voice/image execution is unperformed; contract/artifact fixtures do not prove paid inference.",
     "The extension rendered fixture qualifies its immutable asset snapshot and verified local TLS transport. External production registry availability and undocumented adapters are not inferred.",
     "Queue/Jump actual immutable Buw UI and later policy-fingerprint source regressions have separate evidence. MCP actual Cfb Manager\u2192owned typed preset\u2192AgentManager\u2192local stdio tool execution is verified, including ordinary human approval; Figma navigation does not prove execution.",
-    "CJW Access eight-state proof predates configurable SessionPolicy. Shared tree coordinator/planning/restart regressions and four budget UI tests pass; the final session-policy/shared-budget rendered snapshot remains independently qualified by its own forthcoming report."
+    "CJW Access eight-state proof predates configurable SessionPolicy. The final Internal shared-budget web renderer passed 13 loaded states and 31 keyboard/ring checks on immutable Czw assets, including actual child escalation, one grant and host restart continuation. Session-policy and installed/native qualification retain their independent evidence boundaries."
   ],
   "analytics": {
     "external_telemetry": false,

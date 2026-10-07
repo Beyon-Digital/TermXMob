@@ -1,0 +1,100 @@
+{
+  "inspected_at_utc": "2026-10-07T19:20:05Z",
+  "source_base": "44320592c6880721f82d6369b1942a031f8ec825",
+  "candidate_modal_changes_unpublished": true,
+  "scope": "Read-only actual provider/model metadata from both local daemon and native-desktop config, including live SQLite WAL; no credential values retrieved.",
+  "live_provider_requests": 0,
+  "actual_account_entitlement_verified": false,
+  "configured_metadata": [
+    {
+      "host": "local-daemon",
+      "kind": "chatgpt",
+      "credential_configured_flag": true,
+      "capabilities": [
+        "functions",
+        "shell"
+      ],
+      "classification": "Subscription account; not media API entitlement."
+    },
+    {
+      "host": "local-daemon",
+      "id": "openai",
+      "kind": "openai",
+      "origin": "localhost",
+      "model": "auto",
+      "credential_configured_flag": false,
+      "capabilities": [
+        "computer",
+        "shell"
+      ]
+    },
+    {
+      "host": "native-desktop",
+      "id": "openrouter",
+      "kind": "openai",
+      "origin": "openrouter.ai",
+      "model": "openrouter/free",
+      "credential_configured_flag": true,
+      "capabilities": [
+        "computer",
+        "shell"
+      ]
+    },
+    {
+      "host": "native-desktop",
+      "id": "kiro",
+      "kind": "openai",
+      "origin": "0.0.0.0",
+      "models": [
+        "claude-opus-5-5-thinking",
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "claude-sonnet-5-thinking"
+      ],
+      "credential_configured_flag": true,
+      "capabilities": [
+        "computer",
+        "shell"
+      ],
+      "classification": "Local compatible proxy; metadata does not prove media or exact-model entitlement."
+    }
+  ],
+  "selection": {
+    "latest_five_daemon_sessions": "provider_id/model unset",
+    "latest_three_native_sessions": "provider_id/model unset",
+    "native_engine_preference_models": "none configured"
+  },
+  "bounded_qualification_configuration": {
+    "numeric_spend_cap_present": false,
+    "live_qualification_environment_present": false,
+    "reviewer_configuration_or_pricing_snapshot_present": false,
+    "media_capability_declared": false
+  },
+  "remaining_prerequisites": [
+    "Explicit existing API account and exact supported model associated with the chosen TermX session; no subscription/API fallback.",
+    "Numeric bounded test allowance and truthful declared image/audio capabilities for MEDIA-01; actual provider acceptance remains to be tested.",
+    "REVIEW-07 exact reviewer account/model/version plus administrator pricing snapshot, then the frozen 21-case qualification and measured identity, usage, cost, latency, escalation and false-allow report."
+  ],
+  "source_contracts": [
+    "src/termx/media/service.py:MediaProvider.generate",
+    "src/termx/browser/router.py:reviewer_evaluate",
+    "src/termx/browser/evaluation.py:evaluate_reviewer",
+    "src/termx/browser/pricing.py:PricingSnapshot"
+  ],
+  "approval_modal_read_only_review": {
+    "files": [
+      "desktop/workspace/src/features/BudgetApproval.tsx",
+      "desktop/workspace/src/features/GeneralApprovalCard.tsx"
+    ],
+    "lock_and_signout": "Close modal, disable actions, invalidate in-flight callbacks; App synchronously bridges session-locked to termx-locked.",
+    "continuity": "Retain edited budget/scope across close and lock; identity changes reset corresponding approval state.",
+    "stale_replies": "Task/approval identity plus generation fences; actual unmount invalidates callbacks.",
+    "host_boundary": "This UI fencing does not cancel already-dispatched requests; current host session/approval validation remains authoritative.",
+    "new_high_impact_findings": [],
+    "executed_tests_this_review": false,
+    "existing_regression_sources": [
+      "desktop/workspace/src/features/budget-approval.test.tsx",
+      "desktop/workspace/src/features/general-approvals.test.tsx"
+    ]
+  }
+}

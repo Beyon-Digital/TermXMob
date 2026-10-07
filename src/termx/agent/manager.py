@@ -455,6 +455,17 @@ class AgentManager:
         approval = self.store.get_approval(approval_id)
         if approval is None or approval["task_id"] != task_id:
             raise KeyError(approval_id)
+        # Budget wrappers are durable parent-side decisions. Reconstruct only
+        # their verified child binding after restart, never an arbitrary tool
+        # request from its public payload.
+        wrapper = self._pending_approval_calls.get(approval_id)
+        if approval['kind'] == 'budget' and not wrapper:
+            payload = approval.get('payload') or {}
+            child = self.store.get_task(str(payload.get('child_id') or ''))
+            inner = self.store.get_approval(str(payload.get('child_approval_id') or ''))
+            if child and inner and child.get('parent_id') == task_id and inner['task_id'] == child['id'] and inner['kind'] == 'budget':
+                wrapper = {'task_id':task_id,'child_id':child['id'],'child_approval_id':inner['id']}
+                self._pending_approval_calls[approval_id] = wrapper
         escalation = "child_approval_id" in (self._pending_approval_calls.get(approval_id) or {})
         if task["status"] != "awaiting_approval" and not (
             escalation and approval["status"] == "pending"
@@ -462,6 +473,24 @@ class AgentManager:
             raise ValueError("task is not awaiting approval")
         if approval["status"] != "pending":
             raise ValueError("approval is already resolved")
+        if approval['kind'] == 'budget' and escalation:
+            # Validate and commit the real child grant before consuming its UI
+            # wrapper. A stale/invalid renewal must stay inspectable on both
+            # tasks. The child alone owns the atomic grant/version receipt.
+            child_id = str(wrapper['child_id'])
+            child = self._task(child_id)
+            inner = self.store.get_approval(str(wrapper['child_approval_id']))
+            if child.get('parent_id') != task_id or not inner or inner['task_id'] != child_id or inner['kind'] != 'budget':
+                raise ValueError('Child budget request no longer belongs to this parent')
+            if inner['status'] == 'pending':
+                await self.resolve_approval(child_id,inner['id'],decision,limits=limits)
+            elif inner['status'] != decision:
+                raise ValueError('Child budget decision changed; inspect the current task')
+            approval = self.store.resolve_approval(approval_id,decision)
+            self._pending_approval_calls.pop(approval_id,None)
+            self._emit(task_id,'approval.resolved',{'approval':approval})
+            self._unpause_if_idle(task_id)
+            return approval
         browser_pending=self._pending_approval_calls.get(approval_id) or {}
         if browser_pending.get('browser_review_id') and decision!='denied' and self.browser:
             reviewed=self.browser.records.get('review',browser_pending['browser_review_id'])
@@ -2089,6 +2118,8 @@ class AgentManager:
             while True:
                 if handle.parent_cancel is not None and handle.parent_cancel.is_set():
                     self.cancel(child_id)
+                waiting_for_user = self._task(child_id)['status'] == 'awaiting_approval'
+                wait_started = monotonic()
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=0.4)
                 except asyncio.TimeoutError:
@@ -2097,14 +2128,19 @@ class AgentManager:
                         status = current["status"]
                         result = str(current.get("result") or current.get("error") or "")
                         break
-                    if monotonic() >= handle.deadline:
+                    if current['status'] != 'awaiting_approval' and monotonic() >= handle.deadline:
                         self.cancel(child_id)
                     continue
+                finally:
+                    # The watchdog must not cancel a child while the same
+                    # explicit human wait is paused by the shared meter.
+                    if waiting_for_user:
+                        handle.deadline += monotonic() - wait_started
                 event_type = event["type"]
                 payload = event.get("payload") or {}
                 if event_type == "approval.requested":
                     approval = payload.get("approval") or {}
-                    if approval.get("kind") == "tool" and approval.get("id"):
+                    if approval.get("kind") in {"tool", "budget"} and approval.get("id"):
                         self._escalate_child_approval(parent_id, child_id, handle.agent, approval)
                 self._emit(
                     parent_id,

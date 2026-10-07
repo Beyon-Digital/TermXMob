@@ -1,0 +1,458 @@
+{
+  "mutatedNodeIds": [
+    "64:18607",
+    "64:18803"
+  ],
+  "boundBackgroundToken": "VariableID:2:7",
+  "summary": [
+    {
+      "id": "64:18312",
+      "name": "AD-J-AUTOMATE-10 \u00b7 Supervise one shared parent and child execution pool",
+      "texts": 47,
+      "instances": 83,
+      "descendants": 194,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "id": "64:18508",
+      "name": "AD-J-AUTOMATE-11 \u00b7 Approve a versioned shared budget extension",
+      "texts": 72,
+      "instances": 105,
+      "descendants": 247,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "id": "64:18704",
+      "name": "AD-J-AUTOMATE-12 \u00b7 Restart after an approved grant \u2014 continue without a second reset",
+      "texts": 72,
+      "instances": 105,
+      "descendants": 247,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    }
+  ],
+  "advancedFrameCount": 95,
+  "storedEdgeCount": 238,
+  "kind": "Existing shared-budget dialog alignment",
+  "file_key": "Vo9guk8YNqP0H9DUMPvmCv",
+  "canonical_page": "32:2",
+  "managed_edge_count": 234,
+  "inherited_original_navigation_edge_count": 4,
+  "inherited_edges": [
+    {
+      "source": "I56:13974;5:173",
+      "destination": "9:1562"
+    },
+    {
+      "source": "I56:13974;5:181",
+      "destination": "8:1557"
+    },
+    {
+      "source": "I56:14031;5:173",
+      "destination": "9:1562"
+    },
+    {
+      "source": "I56:14031;5:181",
+      "destination": "8:1557"
+    }
+  ],
+  "unchanged_state_count": 95,
+  "unchanged_managed_prototype_edges": true,
+  "source_renderer": "verification/shared-tree-budget-rendered.json",
+  "renders": [
+    "figma/advanced-renders/shared-budget-grant.png",
+    "figma/advanced-renders/shared-budget-restart-receipt.png"
+  ],
+  "presentation": {
+    "grant": "Compact review trigger to bounded editable review dialog; current shared version, total reserved-call ceiling, fresh summed active seconds, sibling explicit continuation and stale grant refusal.",
+    "receipt": "Explicit continuation within committed allowance; no editable replacement limits or second grant."
+  },
+  "mutation_ids": {
+    "mutatedNodeIds": [
+      "I64:18456;4:104;4:5",
+      "64:18456",
+      "64:18648",
+      "I64:18648;21:17",
+      "I64:18648;21:18",
+      "64:18651",
+      "64:18652",
+      "64:18655",
+      "64:18658",
+      "64:18661",
+      "I64:18661;21:15",
+      "64:18663",
+      "64:18664",
+      "64:18670",
+      "64:18676",
+      "64:18677",
+      "64:18683",
+      "64:18689",
+      "64:18690",
+      "64:18694",
+      "64:18698",
+      "64:18647",
+      "64:18607",
+      "64:18844",
+      "I64:18844;21:17",
+      "I64:18844;21:18",
+      "64:18847",
+      "64:18848",
+      "64:18851",
+      "64:18854",
+      "64:18857",
+      "I64:18857;21:15",
+      "64:18859",
+      "64:18860",
+      "64:18866",
+      "64:18872",
+      "64:18873",
+      "64:18879",
+      "64:18885",
+      "64:18886",
+      "64:18890",
+      "64:18894",
+      "I64:18848;4:104;4:5",
+      "64:18843",
+      "64:18803",
+      "64:18699",
+      "64:18895",
+      "72:16620",
+      "72:16672",
+      "72:16673",
+      "72:16725"
+    ],
+    "createdNodeIds": [
+      "72:16620",
+      "72:16621",
+      "72:16622",
+      "72:16623",
+      "72:16624",
+      "72:16625",
+      "72:16626",
+      "72:16627",
+      "72:16628",
+      "72:16629",
+      "72:16630",
+      "72:16631",
+      "72:16632",
+      "72:16633",
+      "72:16634",
+      "72:16635",
+      "72:16636",
+      "72:16672",
+      "72:16673",
+      "72:16674",
+      "72:16675",
+      "72:16676",
+      "72:16677",
+      "72:16678",
+      "72:16679",
+      "72:16680",
+      "72:16681",
+      "72:16682",
+      "72:16683",
+      "72:16684",
+      "72:16685",
+      "72:16686",
+      "72:16687",
+      "72:16688",
+      "72:16689",
+      "72:16725"
+    ],
+    "summary": [
+      {
+        "id": "64:18312",
+        "descendants": 194,
+        "imageFills": 0,
+        "fonts": [
+          "Geist"
+        ],
+        "edges": [
+          {
+            "id": "64:18456",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "64:18508",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "64:18508",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          },
+          {
+            "id": "64:18459",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "64:18900",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "64:18900",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          },
+          {
+            "id": "64:18462",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "32:707",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "32:707",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "64:18508",
+        "descendants": 247,
+        "imageFills": 0,
+        "fonts": [
+          "Geist"
+        ],
+        "edges": [
+          {
+            "id": "64:18652",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "64:18312",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "64:18312",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          },
+          {
+            "id": "64:18655",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "32:707",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "32:707",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          },
+          {
+            "id": "64:18658",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "64:18704",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "64:18704",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "64:18704",
+        "descendants": 247,
+        "imageFills": 0,
+        "fonts": [
+          "Geist"
+        ],
+        "edges": [
+          {
+            "id": "64:18848",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "64:18312",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "64:18312",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          },
+          {
+            "id": "64:18851",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "32:707",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "32:707",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          },
+          {
+            "id": "64:18854",
+            "reactions": [
+              {
+                "action": {
+                  "type": "NODE",
+                  "destinationId": "32:707",
+                  "navigation": "NAVIGATE",
+                  "transition": null,
+                  "resetVideoPosition": false,
+                  "resetScrollPosition": true
+                },
+                "actions": [
+                  {
+                    "type": "NODE",
+                    "destinationId": "32:707",
+                    "navigation": "NAVIGATE",
+                    "transition": null,
+                    "resetVideoPosition": false,
+                    "resetScrollPosition": true
+                  }
+                ],
+                "trigger": {
+                  "type": "ON_CLICK"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "stateIdsPreserved": true
+  },
+  "cached_renders_inspected": true,
+  "final_visual_correction": "The bound paint helper normalizes opacity, so dimming is applied to backdrop node opacity=.10. Both bounded dialogs retain dark workspace tokens and wrapped two-line notices."
+}

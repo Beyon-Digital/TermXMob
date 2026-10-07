@@ -1,36 +1,37 @@
 import {fireEvent,render,screen,waitFor,cleanup} from '@testing-library/react';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {GeneralApprovalCard} from './GeneralApprovalCard';
+function openReview(){fireEvent.click(screen.getByRole('button',{name:/^Review (action|browser operation|manual operation)$/}))}
 import {GeneralPolicyManager} from './GeneralPolicyManager';
 const mocked=vi.hoisted(()=>({request:vi.fn()}));vi.mock('../lib/api',()=>mocked);
 afterEach(cleanup);beforeEach(()=>{mocked.request.mockReset()});
 describe('host-advertised coding consent',()=>{
  it('sends only the selected advertised conversation scope and exact approval',async()=>{
-  mocked.request.mockResolvedValue({});const onDone=vi.fn();render(<GeneralApprovalCard taskId="task-a" approval={{id:'approval-a',payload:{remember_options:['conversation','invented','project'],reason:'Exact publication'}}} onDone={onDone} onError={vi.fn()}/>);
+  mocked.request.mockResolvedValue({});const onDone=vi.fn();render(<GeneralApprovalCard taskId="task-a" approval={{id:'approval-a',payload:{remember_options:['conversation','invented','project'],reason:'Exact publication'}}} onDone={onDone} onError={vi.fn()}/>);openReview();
   expect(screen.queryByText('This task')).toBeNull();expect(screen.queryByText('invented')).toBeNull();
   fireEvent.change(screen.getByRole('combobox',{name:'Remember approval scope'}),{target:{value:'conversation'}});fireEvent.click(screen.getByRole('button',{name:'Allow and remember'}));
   await waitFor(()=>expect(onDone).toHaveBeenCalledOnce());expect(mocked.request.mock.calls[0][0]).toBe('/api/workspace/tasks/task-a/approvals/approval-a/resolve');expect(JSON.parse(mocked.request.mock.calls[0][1].body)).toEqual({decision:'approved',remember:'conversation'});
  });
  it('falls back visibly to once when a scope is withdrawn from the same approval',async()=>{
   mocked.request.mockResolvedValue({});const props={taskId:'t',onDone:vi.fn(),onError:vi.fn()};
-  const view=render(<GeneralApprovalCard {...props} approval={{id:'a',payload:{remember_options:['project']}}}/>);
+  const view=render(<GeneralApprovalCard {...props} approval={{id:'a',payload:{remember_options:['project']}}}/>);openReview();
   fireEvent.change(screen.getByRole('combobox',{name:'Remember approval scope'}),{target:{value:'project'}});
   view.rerender(<GeneralApprovalCard {...props} approval={{id:'a',payload:{remember_options:[]}}}/>);
   fireEvent.click(screen.getByRole('button',{name:'Allow once'}));await waitFor(()=>expect(mocked.request).toHaveBeenCalledOnce());
   expect(JSON.parse(mocked.request.mock.calls[0][1].body)).toEqual({decision:'approved'});
  });
  it('native approvals without declared scopes expose only exact one-time consent',async()=>{
-  mocked.request.mockResolvedValue({});render(<GeneralApprovalCard taskId="native" approval={{id:'a',payload:{tool:'native permission'}}} onDone={vi.fn()} onError={vi.fn()}/>);
+  mocked.request.mockResolvedValue({});render(<GeneralApprovalCard taskId="native" approval={{id:'a',payload:{tool:'native permission'}}} onDone={vi.fn()} onError={vi.fn()}/>);openReview();
   expect(screen.queryByRole('combobox')).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Deny'}));await waitFor(()=>expect(mocked.request).toHaveBeenCalled());expect(JSON.parse(mocked.request.mock.calls[0][1].body)).toEqual({decision:'denied'});
  });
  it('fences a late response after approval replacement and prevents duplicate dispatch',async()=>{
   let finish!:(value:unknown)=>void;mocked.request.mockImplementation(()=>new Promise(resolve=>{finish=resolve}));const done=vi.fn(),error=vi.fn();
-  const view=render(<GeneralApprovalCard taskId="task-a" approval={{id:'a',payload:{}}} onDone={done} onError={error}/>);
+  const view=render(<GeneralApprovalCard taskId="task-a" approval={{id:'a',payload:{}}} onDone={done} onError={error}/>);openReview();
   const allow=screen.getByRole('button',{name:'Allow once'});fireEvent.click(allow);fireEvent.click(allow);expect(mocked.request).toHaveBeenCalledOnce();
-  view.rerender(<GeneralApprovalCard taskId="task-b" approval={{id:'b',payload:{}}} onDone={done} onError={error}/>);finish({});await waitFor(()=>expect(screen.getByRole('button',{name:'Allow once'})).not.toBeDisabled());expect(done).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
+  view.rerender(<GeneralApprovalCard taskId="task-b" approval={{id:'b',payload:{}}} onDone={done} onError={error}/>);openReview();finish({});await waitFor(()=>expect(screen.getByRole('button',{name:'Allow once'})).not.toBeDisabled());expect(done).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
  });
  it('failed decisions preserve the exact request and show the host rejection',async()=>{
-  mocked.request.mockRejectedValue(new Error('Policy changed; request fresh consent'));render(<GeneralApprovalCard taskId="t" approval={{id:'a',payload:{remember_options:['task']}}} onDone={()=>{}} onError={()=>{}}/>);
+  mocked.request.mockRejectedValue(new Error('Policy changed; request fresh consent'));render(<GeneralApprovalCard taskId="t" approval={{id:'a',payload:{remember_options:['task']}}} onDone={()=>{}} onError={()=>{}}/>);openReview();
   fireEvent.click(screen.getByRole('button',{name:'Allow once'}));await screen.findByRole('alert');expect(screen.getByRole('alert').textContent).toContain('Policy changed');expect(screen.getByRole('button',{name:'Allow once'})).not.toBeDisabled();
  });
  it('keeps stale conflict edits and never sends matcher or binding changes',async()=>{
@@ -55,4 +56,12 @@ describe('coding policy lifecycle',()=>{
   render(<GeneralPolicyManager/>);const revoke=await screen.findByRole('button',{name:'Revoke coding policy'});fireEvent.click(revoke);fireEvent.click(revoke);
   expect(mocked.request.mock.calls.filter(([path])=>path.includes('/r'))).toHaveLength(1);finish({});await waitFor(()=>expect(revoke).not.toBeDisabled());
  });
+});
+
+it('preserves the selected scope across close and Lock without accepting a stale decision',async()=>{
+ let finish!:(value:unknown)=>void;mocked.request.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));const done=vi.fn(),error=vi.fn();
+ render(<GeneralApprovalCard taskId="task" approval={{id:'approval',payload:{remember_options:['conversation']}}} onDone={done} onError={error}/>);
+ expect(screen.queryByRole('dialog')).toBeNull();expect(mocked.request).not.toHaveBeenCalled();openReview();fireEvent.change(screen.getByRole('combobox',{name:'Remember approval scope'}),{target:{value:'conversation'}});fireEvent.click(screen.getByRole('button',{name:'Close'}));openReview();expect(screen.getByRole('combobox',{name:'Remember approval scope'})).toHaveValue('conversation');
+ fireEvent.click(screen.getByRole('button',{name:'Allow and remember'}));fireEvent(window,new Event('termx-locked'));expect(screen.queryByRole('dialog')).toBeNull();expect(screen.getByRole('button',{name:'Review action'})).toBeDisabled();finish({});await waitFor(()=>expect(done).not.toHaveBeenCalled());expect(error).not.toHaveBeenCalled();
+ fireEvent(window,new Event('termx-session-unlocked'));openReview();expect(screen.getByRole('combobox',{name:'Remember approval scope'})).toHaveValue('conversation');expect(screen.getByRole('button',{name:'Allow and remember'})).not.toBeDisabled();
 });

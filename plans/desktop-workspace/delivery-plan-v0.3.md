@@ -20,7 +20,7 @@ TermX gets one independent React DOM desktop/web workspace. Tauri and external b
 
 ## 2. Current baseline: reuse it, verify it, keep unfinished work separate
 
-The last published green checkpoint is `f97b71153f8794948ff55120a0df765341a94706`, on [draft PR28](https://github.com/Beyon-Digital/TermXMob/pull/28). [CI evidence](verification/ci-f97b711.json):207 frontend tests,986 Linux backend tests and1018 macOS backend tests passed. Platform source/contract checks also passed. This is not installed-app qualification.
+The published green checkpoint is `44320592c6880721f82d6369b1942a031f8ec825`, on [draft PR28](https://github.com/Beyon-Digital/TermXMob/pull/28). [CI evidence](verification/ci-4432059.json):243 frontend tests,1034 Linux backend tests and1066 macOS backend tests passed. Windows contracts, native platform compilation and hosted macOS GUI feasibility passed. This is source qualification; the PR macOS installed workflow exercised fixtures only. Parent/child budget relay and compact approval dialog follow-ups are undergoing their own rendered and coherent CI checks.
 
 The companion mobile changes are on [draft PR26](https://github.com/Beyon-Digital/termx-app/pull/26), with green CI. Three unrelated untracked mobile probes remain untouched.
 
@@ -122,4 +122,4 @@ Every mandatory HTML requirement has a mapped implementation, reachable UX state
 
 A package with missing installed/live evidence remains pending. An unsupported badge, mock provider, structural Figma check, source compile or old green CI cannot stand in for that missing evidence.
 
-**Current action: stabilize backend candidates, verify one coherent checkpoint, then finish shared frontend journeys and adapter/platform qualification.**
+**Current action: qualify the final parent/child budget and compact approval journeys, then build exact-source installers and complete installed/live adapter gates. The user selected each session’s current chosen provider; live checks must use that selection without billing or model fallback.**

@@ -517,7 +517,7 @@
               "variant": "secondary"
             },
             {
-              "label": "Review exact action",
+              "label": "Review action",
               "target": "J-ENTRY-21",
               "variant": "secondary"
             }
@@ -1774,6 +1774,13 @@
                 "plans/desktop-workspace/verification/mcp-manager-rendered.json"
               ]
             }
+          },
+          "presentation": {
+            "kind": "bounded_review_dialog",
+            "trigger": "Review action",
+            "preserves": "Unsent composer draft and focus return on Close/Escape",
+            "prototype_branches": "Existing exact allow/deny/policy inspection IDs preserved",
+            "evidence": "verification/general-approval-figma-dialog.json"
           }
         },
         {
@@ -5772,7 +5779,7 @@
           "notice": "This measures reserved tool calls and summed active execution seconds. It does not estimate tokens or billed costs. Cancelling preserves consumed reservations and actual checkpoints.",
           "actions": [
             {
-              "label": "Review shared boundary",
+              "label": "Review budget extension",
               "target": "J-AUTOMATE-11",
               "variant": "primary"
             },
@@ -6009,6 +6016,12 @@
                 "plans/desktop-workspace/verification/mcp-manager-rendered.json"
               ]
             }
+          },
+          "presentation": {
+            "kind": "bounded_review_dialog",
+            "trigger": "Review budget extension",
+            "preserves": "Unsent composer draft and focus return on Close/Escape",
+            "proof": "verification/shared-tree-budget-rendered.json"
           }
         },
         {
@@ -6149,6 +6162,12 @@
                 "plans/desktop-workspace/verification/mcp-manager-rendered.json"
               ]
             }
+          },
+          "presentation": {
+            "kind": "bounded_review_dialog",
+            "trigger": "Review approved continuation",
+            "preserves": "Unsent composer draft and focus return on Close/Escape",
+            "proof": "verification/shared-tree-budget-rendered.json"
           }
         },
         {
