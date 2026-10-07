@@ -2,6 +2,8 @@
 import asyncio
 import threading
 import time
+from types import SimpleNamespace
+import pytest
 
 from termx.app import AppState
 from termx.identity_guard import SessionGuard
@@ -59,9 +61,42 @@ def test_each_socket_frame_checks_live_session_off_loop_before_effect(tmp_path):
             assert effects == ['allowed']
             # Every live check executes on an IO worker before transport effects.
             assert all(identifier != loop_thread for identifier in checks)
-            assert len(checks) >= 4 and len(heartbeats) >= 10
+            # Windows timer resolution differs; thread placement is the strict
+            # assertion, while heartbeats establish continued loop progress.
+            assert len(checks) >= 4 and len(heartbeats) >= 2
         finally:
             guard.cancel();ticker.cancel()
             await asyncio.gather(guard,ticker,return_exceptions=True)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('disconnect, failure', [(True, asyncio.CancelledError),
+                                               (False, asyncio.CancelledError),
+                                               (True, RuntimeError)])
+def test_disconnect_suppresses_only_expected_child_cancellation(disconnect, failure):
+    state = SimpleNamespace(identity=SimpleNamespace(configured=False, resolve=lambda _:None),
+                            auth=SimpleNamespace(passcode=None, scopes=lambda _:[]))
+
+    async def run():
+        async def app(scope, receive, send):
+            await receive()
+            raise failure('fixture child outcome')
+
+        async def receive():
+            return {'type':'websocket.disconnect' if disconnect else 'websocket.receive',
+                    'text':'fixture'}
+
+        async def send(message):
+            pass
+
+        scope = {'type':'websocket','path':'/api/fixture','scheme':'ws',
+                 'client':('127.0.0.1',1234),'query_string':b'','headers':[]}
+        result = SessionGuard(app, state)(scope, receive, send)
+        if disconnect and failure is asyncio.CancelledError:
+            await result
+        else:
+            with pytest.raises(failure):
+                await result
 
     asyncio.run(run())

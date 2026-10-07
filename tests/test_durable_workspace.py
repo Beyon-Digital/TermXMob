@@ -626,3 +626,133 @@ async def test_enrolled_worktree_owns_session_files_dispatch_and_schedule_target
     with pytest.raises(OSError):await service.send(owner,row['id'],prompt='Removed checkout must refuse',request_id='removed-worktree-run')
     recovered=service.update_session(owner,row['id'],revision=selected['revision'],changes={'worktree_id':None})
     assert recovered['cwd']==str(root)
+
+
+def test_bulk_session_projection_binds_canonical_target_and_revalidates_live_grant(workspace,monkeypatch):
+    from fastapi import HTTPException
+    from termx.authorization import AuthorizationService
+    service,owner,path=workspace
+    project={'id':'project-a','path':str(path),'name':'Fixture'}
+    service.state.projects=SimpleNamespace(project=lambda identifier:project,projects=lambda:[project])
+    authz=AuthorizationService(service.state.identity);service.state.authorization=authz
+    user=service.state.identity.create_principal('Collection operator',list(owner.scopes))
+    authz.set_role(user.id,'operator',trusted_execution=True)
+    authz.grant_project(user.id,'project-a',['agent-view','agent-control','agent-run'])
+    valid=service.create_session(user,project_id='project-a',provider_id='fixture',model='fixture')
+    mismatched=service.create_session(user,project_id='project-a',provider_id='fixture',model='fixture')
+    escaped=service.create_session(user,project_id='project-a',provider_id='fixture',model='fixture')
+    service.agents.update_conversation(mismatched['id'],project_id='foreign-project')
+    service.store.update('conversation',escaped['id'],{**escaped,'cwd':str(path.parent)})
+    original=service.agents.workspace_conversations_snapshot
+    calls=[]
+    def bulk(ids):calls.append(ids);return original(ids)
+    monkeypatch.setattr(service.agents,'workspace_conversations_snapshot',bulk)
+    monkeypatch.setattr(service.agents,'get_conversation',lambda *args,**kwargs:pytest.fail('Collection must not open canonical conversations individually'))
+    assert [row['id'] for row in service.sessions(user)]==[valid['id']]
+    assert len(calls)==1 and len(calls[0])==2
+    def revoke_during_read(ids):
+        rows=original(ids)
+        authz.revoke_project(user.id,'project-a')
+        return rows
+    monkeypatch.setattr(service.agents,'workspace_conversations_snapshot',revoke_during_read)
+    with pytest.raises(HTTPException):service.sessions(user)
+    assert service.sessions(user)==[]
+
+
+@pytest.mark.anyio
+async def test_browser_context_draft_is_durable_inspectable_and_dispatch_is_idempotent(workspace):
+    service,owner,path=workspace
+    row=session(workspace)
+    context=[{'type':'approved-browser-upload','tab_id':'tab-fixture','file':{'id':'file-fixture','filename':'notes.txt','sha256':'exact-content-digest'}},
+             {'type':'browser-context','context':{'tab_id':'tab-fixture','document_revision':3,'url':'https://fixture.invalid/docs','title':'Documentation','elements':[{'selector':'#submit','name':'Submit'}]}}]
+    service.update_session(owner,row['id'],revision=row['revision'],changes={'draft_text':'Read the selected references','draft_context':context})
+    persisted=WorkspaceStore(path/'workspace.sqlite3')
+    assert persisted.get('conversation',row['id'])['draft_context']==context
+    persisted.close()
+    task=await service.send(owner,row['id'],prompt='Read the selected references',context=context,request_id='context-reference-turn')
+    assert 'grants no browser control' in task['prompt']
+    assert json.loads(task['prompt'].split('grants no browser control):\n',1)[1])==context
+    assert service.session(owner,row['id'])['draft_context']==[]
+    repeated=await service.send(owner,row['id'],prompt='Read the selected references',context=context,request_id='context-reference-turn')
+    assert repeated['id']==task['id'] and service.state.agent.calls==1
+    with pytest.raises(Conflict):
+        await service.send(owner,row['id'],prompt='Read the selected references',context=context[:1],request_id='context-reference-turn')
+    with pytest.raises(ValueError):
+        service.update_session(owner,row['id'],revision=service.session(owner,row['id'])['revision'],changes={'draft_context':[{'type':'permission-grant','scope':'browser-control'}]})
+
+
+def test_large_history_keeps_old_matching_conversations_with_bounded_live_snapshots(workspace):
+    from termx.authorization import AuthorizationService
+    service,owner,path=workspace
+    project={'id':'project-a','path':str(path),'name':'Fixture'}
+    service.state.projects=SimpleNamespace(project=lambda identifier:project,projects=lambda:[project])
+    service.state.authorization=AuthorizationService(service.state.identity)
+    template=session(workspace)
+    with service.agents._lock,service.store.lock:
+        canonical=dict(service.agents._db.execute('SELECT * FROM conversations WHERE id=?',(template['id'],)).fetchone())
+        columns=list(canonical)
+        records=[];conversations=[]
+        for index in range(5001):
+            identifier='history-'+str(index)
+            item={**canonical,'id':identifier,'title':'Old matching conversation' if index==0 else 'Other conversation'}
+            conversations.append(tuple(item[column] for column in columns))
+            records.append(('conversation',identifier,owner.id,'project-a',1,json.dumps({'engine':'internal','cwd':str(path),'draft_text':'','scroll':0}),index+1,index+1))
+        service.agents._db.executemany('INSERT INTO conversations ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',conversations)
+        service.agents._db.commit()
+        service.store.db.executemany('INSERT INTO records VALUES(?,?,?,?,?,?,?,?)',records);service.store.db.commit()
+    rows=service.sessions(owner,query='Old matching')
+    assert [row['id'] for row in rows]==['history-0']
+
+
+@pytest.mark.anyio
+async def test_lost_dispatch_response_retains_canonical_turn_before_worker_and_never_replays(workspace,monkeypatch):
+    service,owner,path=workspace
+    row=session(workspace)
+    calls=[]
+    async def interrupted(**kwargs):
+        task=service.agents.create_task(prompt=kwargs['prompt'],cwd=kwargs['cwd'],provider_id='fixture',model='fixture',limits=kwargs['limits'],mode=kwargs['mode'])
+        calls.append(task['id'])
+        kwargs['on_created'](task['id'])
+        assert service.agents.workspace_turns_page(row['id'])[0]['task_id']==task['id']
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(service.state.agent,'create_task',interrupted)
+    with pytest.raises(asyncio.CancelledError):await service.send(owner,row['id'],prompt='Original user intent',request_id='lost-before-response')
+    resumed=await service.send(owner,row['id'],prompt='Original user intent',request_id='lost-before-response')
+    assert resumed['id']==calls[0] and len(calls)==1
+    service.agents.add_conversation_turn(row['id'],prompt='Original user intent',task_id=resumed['id'])
+    turns=service.agents.workspace_turns_page(row['id'])
+    assert len(turns)==1 and turns[0]['prompt']=='Original user intent'
+
+
+@pytest.mark.anyio
+async def test_restart_heals_dispatched_receipt_without_canonical_turn_or_new_worker(workspace):
+    service,owner,path=workspace
+    row=session(workspace)
+    task=await service.send(owner,row['id'],prompt='Digest-bound original request',request_id='restart-between-commits')
+    with service.agents._lock:
+        service.agents._db.execute('DELETE FROM conversation_turns WHERE conversation_id=?',(row['id'],));service.agents._db.commit()
+    # New service against the same persisted receipts mirrors the host restart.
+    reopened=WorkspaceService(service.state,path/'workspace.sqlite3',project_check=lambda *args:None)
+    try:
+        healed=await reopened.send(owner,row['id'],prompt='Digest-bound original request',request_id='restart-between-commits')
+        assert healed['id']==task['id'] and service.state.agent.calls==1
+        turn=service.agents.workspace_turns_page(row['id'])[0]
+        assert turn['prompt']=='Digest-bound original request' and turn['mode']==task['mode'] and turn['model']==task['model']
+        with pytest.raises(Conflict):await reopened.send(owner,row['id'],prompt='Changed intent',request_id='restart-between-commits')
+        assert len(service.agents.workspace_turns_page(row['id']))==1
+    finally:reopened.store.close()
+
+
+@pytest.mark.anyio
+async def test_dispatch_does_not_erase_a_new_draft_written_while_waiting_for_response(workspace,monkeypatch):
+    service,owner,path=workspace
+    row=session(workspace)
+    original=service.state.agent.create_task
+    async def write_followup(**kwargs):
+        task=await original(**kwargs)
+        current=service.session(owner,row['id'],turns=False)
+        service.update_session(owner,row['id'],revision=current['revision'],changes={'draft_text':'Next unsent instruction'})
+        return task
+    monkeypatch.setattr(service.state.agent,'create_task',write_followup)
+    await service.send(owner,row['id'],prompt='Original submitted instruction',request_id='preserve-new-draft')
+    assert service.session(owner,row['id'],turns=False)['draft_text']=='Next unsent instruction'

@@ -48,6 +48,7 @@ class TurnInput(Input):
     request_id: str=Field(min_length=8,max_length=128)
     limits: dict | None=None
     attachments: list[dict] | None=None
+    context: list[dict] | None=None
 
 
 class ForkInput(Input):

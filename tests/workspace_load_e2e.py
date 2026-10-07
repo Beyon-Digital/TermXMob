@@ -47,6 +47,7 @@ def run(destination):
             with sync_playwright() as playwright:
                 browser=playwright.chromium.launch(headless=True,args=['--enable-precise-memory-info'])
                 context=browser.new_context(viewport={'width':2560,'height':1080},reduced_motion='reduce')
+                context.add_init_script("window.__workspaceSocketEvents=[];const OriginalSocket=window.WebSocket;window.WebSocket=class extends OriginalSocket{constructor(...args){super(...args);this.addEventListener('close',event=>window.__workspaceSocketEvents.push({path:new URL(this.url).pathname,code:event.code,reason:event.reason}));}}")
                 def attach_page(value):
                     value.on('pageerror',lambda error:report['errors'].append(str(error)))
                     def websocket(ws):
@@ -63,6 +64,10 @@ def run(destination):
                 page.get_by_text('Fixture message 9999: inspect the workspace state.',exact=True).wait_for(timeout=90000)
                 page.get_by_text('Conversation fixture 498',exact=True).wait_for(timeout=90000)
                 report['authenticated_load_ms']=round((monotonic()-start)*1000)
+                separator=page.get_by_role('separator',name='Resize sidebar',exact=True);original_width=separator.get_attribute('aria-valuenow')
+                separator.press('ArrowRight');page.wait_for_function(r'(original)=>document.querySelector("[aria-label=\"Resize sidebar\"]").getAttribute("aria-valuenow")!==original',arg=original_width)
+                page.keyboard.press('Control+Alt+z');page.wait_for_function(r'(original)=>document.querySelector("[aria-label=\"Resize sidebar\"]").getAttribute("aria-valuenow")===original',arg=original_width)
+                report['layout_geometry_undo']=True
                 cookie=next(cookie['value'] for cookie in context.cookies() if cookie['name']=='termx_access')
                 managed=state.identity.resolve(cookie)
                 async def prepare():
@@ -127,7 +132,12 @@ def run(destination):
                 other.wait_for_function('(()=>{const e=document.querySelector("textarea[aria-label=Message]");return !!e&&!e.disabled})()',timeout=90000)
                 other.get_by_label('Terminal session').wait_for(timeout=90000);other.get_by_label('Terminal session').select_option(pty.id)
                 other.get_by_role('button',name='Commands',exact=True).click();other.get_by_role('button',name='Focus browser',exact=False).click()
-                other.get_by_text('Live browser connected',exact=True).wait_for(timeout=90000)
+                try:other.get_by_text('Live browser connected',exact=True).wait_for(timeout=15000)
+                except Exception:
+                    other.screenshot(path=str(destination/'other-failure.png'));(destination/'other-failure.html').write_text(other.content())
+                    report['window_socket_events']=[view.evaluate('window.__workspaceSocketEvents') for view in (page,other)]
+                    raise
+                other.get_by_text('Conversation fixture 498',exact=True).wait_for(timeout=90000)
                 loops[0].call_soon_threadsafe(gate.set)
                 warmup_start=monotonic();warmup_deadline=warmup_start+45
                 while report['agent_actions']<2 and not stress.done() and monotonic()<warmup_deadline:page.wait_for_timeout(100)
@@ -177,4 +187,5 @@ def run(destination):
             (destination/'report.json').write_text(json.dumps(report,indent=2))
     return report
 
-if __name__=='__main__':print(json.dumps(run(sys.argv[1]),indent=2))
+if __name__=='__main__':
+    result=run(sys.argv[1]);print(json.dumps({key:value for key,value in result.items() if key not in {'browser_phases','host_lag_stacks'}},indent=2))

@@ -45,6 +45,21 @@
       }
     },
     {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 591,
+        "height": 483,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
+    },
+    {
       "theme": "light",
       "zoom_percent": 100,
       "css_viewport": {
@@ -86,6 +101,21 @@
         "accent/accent-soft": 5.52,
         "destructive/muted": 5.4
       }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 591,
+        "height": 483,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
     },
     {
       "theme": "dark",
@@ -231,6 +261,21 @@
       }
     },
     {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 582,
+        "height": 176,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
+    },
+    {
       "theme": "light",
       "zoom_percent": 200,
       "css_viewport": {
@@ -372,6 +417,21 @@
         "accent/accent-soft": 5.52,
         "destructive/muted": 5.4
       }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 582,
+        "height": 143,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
     }
   ],
   "keyboard": [
@@ -379,40 +439,40 @@
       "theme": "dark",
       "zoom_percent": 100,
       "focus": {
-        "tag": "BUTTON",
-        "name": "Rename or move conversation",
-        "outline": "solid",
-        "width": "2px"
+        "tag": "SUMMARY",
+        "name": "Run budget \u00b7 256 steps",
+        "outline": "auto",
+        "width": "1px"
       }
     },
     {
       "theme": "light",
       "zoom_percent": 100,
       "focus": {
-        "tag": "BUTTON",
-        "name": "Rename or move conversation",
-        "outline": "solid",
-        "width": "2px"
+        "tag": "SUMMARY",
+        "name": "Run budget \u00b7 256 steps",
+        "outline": "auto",
+        "width": "1px"
       }
     },
     {
       "theme": "dark",
       "zoom_percent": 200,
       "focus": {
-        "tag": "BUTTON",
-        "name": "Rename or move conversation",
-        "outline": "solid",
-        "width": "2px"
+        "tag": "SUMMARY",
+        "name": "Run budget \u00b7 256 steps",
+        "outline": "auto",
+        "width": "1px"
       }
     },
     {
       "theme": "light",
       "zoom_percent": 200,
       "focus": {
-        "tag": "BUTTON",
-        "name": "Rename or move conversation",
-        "outline": "solid",
-        "width": "2px"
+        "tag": "SUMMARY",
+        "name": "Run budget \u00b7 256 steps",
+        "outline": "auto",
+        "width": "1px"
       }
     }
   ],

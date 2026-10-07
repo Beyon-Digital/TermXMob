@@ -34,6 +34,22 @@ class AuthorizationDecision:
     constraints: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class ResourceAuthoritySnapshot:
+    """One collection decision, never a cached or delegated execution grant."""
+    principal_id: str
+    policy_version: int
+    action: str
+    resource_kind: str
+    resources: tuple[tuple[str, str | None], ...]
+    expires_at: float | None = None
+    administrator: bool = False
+
+    @property
+    def allowed_ids(self) -> frozenset[str]:
+        return frozenset(identifier for identifier, _ in self.resources)
+
+
 class AuthorizationPort(Protocol):
     def evaluate(self, credential: str | None, action: str, *, project_id: str | None = None,
                  resource_kind: str | None = None, resource_id: str | None = None,
@@ -70,6 +86,62 @@ class AuthorizationService:
                 if owner:
                     db.execute("INSERT OR IGNORE INTO host_roles VALUES (?, 'owner', 1)", (owner[0],))
                     db.execute("INSERT INTO metadata VALUES ('authorization_initialized', '1')")
+
+    def resource_snapshot(self, principal, action: str, resource_kind: str,
+                          resource_ids) -> ResourceAuthoritySnapshot:
+        """Read current authority once for a bounded, already-owned collection.
+
+        Callers must still bind each row's owner/project/path to its ledger entry
+        and validate the snapshot immediately before publishing their collection.
+        No decision survives into a later request or authorizes an execution.
+        """
+        identifiers = tuple(dict.fromkeys(resource_ids))
+        if action not in VIEWER:
+            raise ValueError('collection snapshots cannot authorize execution or mutations')
+        if action not in SCOPES or not resource_kind or len(resource_kind) > 64 or len(identifiers) > 5000:
+            raise ValueError('invalid bounded resource collection')
+        if any(not isinstance(value, str) or not value or len(value) > 256 for value in identifiers):
+            raise ValueError('invalid resource identity')
+        now = time()
+        with self.identity._db() as db:
+            live = db.execute('SELECT scopes,policy_version FROM principals WHERE id=? AND enabled=1',
+                              (principal.id,)).fetchone()
+            role = db.execute('SELECT role,trusted_execution FROM host_roles WHERE principal_id=?',
+                              (principal.id,)).fetchone()
+            if not live or action not in json.loads(live['scopes']) or not role or action not in ROLES.get(role['role'], ()):
+                raise HTTPException(403, 'principal disabled or collection action denied')
+            admin = role['role'] in {'owner','admin'}
+            if admin:
+                return ResourceAuthoritySnapshot(principal.id, live['policy_version'], action,
+                    resource_kind, tuple((identifier,None) for identifier in identifiers), administrator=True)
+            grants = {row['project_id']:row for row in db.execute(
+                'SELECT project_id,scopes,expires FROM project_grants WHERE principal_id=?', (principal.id,))}
+            allowed = []
+            expires = []
+            for offset in range(0,len(identifiers),500):
+                chunk = identifiers[offset:offset+500]
+                rows = db.execute('SELECT resource_id,project_id FROM resource_owners WHERE kind=? AND principal_id=? AND resource_id IN ('+
+                                  ','.join('?' for _ in chunk)+')', (resource_kind,principal.id,*chunk))
+                for row in rows:
+                    project = row['project_id']
+                    grant = grants.get(project)
+                    if project and (not grant or (grant['expires'] is not None and grant['expires'] <= now) or action not in json.loads(grant['scopes'])):
+                        continue
+                    allowed.append((row['resource_id'],project))
+                    if project and grant['expires'] is not None:
+                        expires.append(grant['expires'])
+            return ResourceAuthoritySnapshot(principal.id, live['policy_version'], action,
+                resource_kind, tuple(allowed), min(expires) if expires else None)
+
+    def validate_resource_snapshot(self, snapshot: ResourceAuthoritySnapshot) -> None:
+        """Recheck durable current policy immediately before collection output."""
+        with self.identity._db() as db:
+            live = db.execute('SELECT scopes,policy_version FROM principals WHERE id=? AND enabled=1',
+                              (snapshot.principal_id,)).fetchone()
+            if (not live or live['policy_version'] != snapshot.policy_version or
+                snapshot.action not in json.loads(live['scopes']) or
+                (snapshot.expires_at is not None and snapshot.expires_at <= time())):
+                raise HTTPException(403, 'collection authority changed; reload current permissions')
 
     def require_principal(self, principal, action: str, *, project_id: str | None = None,
                           resource_kind: str | None = None, resource_id: str | None = None):

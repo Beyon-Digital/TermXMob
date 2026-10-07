@@ -82,7 +82,7 @@ class WorkspaceStore:
                 raise Conflict('Resource changed; reload before saving')
             clean = {k: v for k, v in body.items() if k not in {'id', 'owner', 'project_id', 'revision', 'created_at', 'updated_at'}}
             if kind == 'conversation':
-                clean = {k:v for k,v in clean.items() if k in {'engine','cwd','draft_text','scroll','linked_from','transfer','extension_ids','workflow','group_id','scratch','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest'}}
+                clean = {k:v for k,v in clean.items() if k in {'engine','cwd','draft_text','draft_context','scroll','linked_from','transfer','extension_ids','workflow','group_id','scratch','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest'}}
             self.db.execute('UPDATE records SET body=?,revision=revision+1,updated=? WHERE kind=? AND id=?',
                             (json.dumps(clean), time(), kind, identifier))
             self.db.commit()

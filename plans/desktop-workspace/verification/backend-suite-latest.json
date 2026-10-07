@@ -1,0 +1,15 @@
+{
+  "verification_date": "2026-10-07",
+  "base_commit": "273e59868bef796bd0498c2709d898c03d2e4734",
+  "source_state": "subsequent integration working tree",
+  "command": ".venv/bin/python -m pytest -q",
+  "passed": 786,
+  "skipped": 96,
+  "failed": 0,
+  "duration_seconds": 295.38,
+  "limits": [
+    "Optional actual Chromium/runtime integrations require their declared environment and are separately qualified",
+    "Canonical-turn cancellation fix and new adversarial cases were added after collection and need their separate targeted results",
+    "Native Rust geometry is verified separately; this suite is Python only"
+  ]
+}

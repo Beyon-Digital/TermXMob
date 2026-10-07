@@ -63,6 +63,8 @@ class EngineGateway:
         self.browser_service = service
         from termx.agent.policy import redact
         service.task_summary = lambda task_id: redact(str((self._store.get_task(task_id) or {}).get('prompt', '')))[:1600]
+        from termx.agent.store import ACTIVE_STATUSES
+        service.task_live = lambda task_id: (self._store.get_task(task_id) or {}).get('status') in ACTIVE_STATUSES - {'cancelling'}
         for adapter in self._adapters.values():
             adapter.browser_service = service
 

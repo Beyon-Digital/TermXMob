@@ -30,3 +30,8 @@
 .checkout-picker{display:flex;flex-direction:column;gap:5px;padding:8px 12px;font-size:11px}.checkout-picker select{width:100%;background:var(--surface);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:5px}.checkout-picker small{overflow-wrap:anywhere;color:var(--secondary)}
 
 .split-control{flex-direction:row;margin:0;flex-shrink:0}.split-control select{height:28px;min-height:28px;margin:0;padding:2px 5px}
+
+.checkout-picker small{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.composer-context{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;max-height:180px;overflow:auto}.context-chip{display:flex;align-items:flex-start;border:1px solid var(--border);border-radius:7px;padding:4px 4px 4px 8px;max-width:100%;background:var(--muted)}.context-chip details{min-width:0;max-width:100%}.context-chip summary{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}.context-chip p{font-size:11px;margin:4px 0;color:var(--secondary);overflow-wrap:anywhere}.context-chip pre{max-height:110px;max-width:100%;overflow:auto;white-space:pre-wrap;font-size:11px}.context-chip button{flex-shrink:0}
+
+.session-row>button .status-dot{flex:0 0 6px;width:6px;min-width:6px}

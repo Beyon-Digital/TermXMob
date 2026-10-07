@@ -7,6 +7,7 @@ expiry or policy reduction, including an idle socket awaiting its next input.
 from __future__ import annotations
 
 import asyncio
+import anyio
 import json
 from contextlib import suppress
 from http.cookies import SimpleCookie
@@ -77,6 +78,7 @@ class SessionGuard:
         initial_identity, resolved_scopes = await asyncio.to_thread(inspect_current)
         initial_scopes = resolved_scopes if token or not required else None
         revoked = False
+        disconnected = False
         initial_version = initial_identity.principal.policy_version if initial_identity else None
         validation_lock = asyncio.Lock()
 
@@ -98,8 +100,10 @@ class SessionGuard:
                 return scopes is None or not set(initial_scopes) <= set(scopes)
 
         async def guarded_receive():
-            nonlocal token, initial_scopes, revoked
+            nonlocal token, initial_scopes, revoked, disconnected
             message = await receive()
+            if message.get('type') == 'websocket.disconnect':
+                disconnected = True
             if message.get("type") == "websocket.receive" and path.startswith("/graphql"):
                 # Browser WS credentials can arrive with connection_init.
                 try:
@@ -145,11 +149,20 @@ class SessionGuard:
         try:
             done, _ = await asyncio.wait((app_task, watch_task), return_when=asyncio.FIRST_COMPLETED)
             for task in done:
-                await task
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    if not (disconnected or revoked):
+                        raise
         finally:
             for task in (app_task, watch_task):
                 task.cancel()
-            await asyncio.gather(app_task, watch_task, return_exceptions=True)
+            # ASGI transports use cancellation scopes during disconnect. A
+            # second cancellation during gather would replace the originating
+            # scope's cancellation and surface as an unrelated cancelled future.
+            # Shield teardown only; application errors still propagate above.
+            with anyio.CancelScope(shield=True):
+                await asyncio.gather(app_task, watch_task, return_exceptions=True)
 
     @staticmethod
     async def _reject(scope, receive, send, code, detail):

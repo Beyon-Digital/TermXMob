@@ -27,8 +27,9 @@ class BrowserService:
         self.network=NetworkPolicy(development_origins);self.executable_path=executable_path
         self.session_valid=session_valid or (lambda principal,session,policy_version:True)
         self.task_summary=lambda task_id:''
+        self.task_live=lambda task_id:True # App gateway replaces this with its canonical task ledger.
         self._playwright=None;self._contexts={};self._pages={};self._proxies={};self._locks={};self._diagnostics={};self._start_lock=asyncio.Lock();self._monitor=None
-        self._capture_cdp={};self._capture_jobs={};self._frame_cache={};self._control_waiters={}
+        self._capture_cdp={};self._capture_jobs={};self._frame_cache={};self._control_waiters={};self._closed_contexts=set();self._context_tabs={}
         for tab in self.records.list('tab'):
             tab.update(state='closed',grant_id=None,lease_revision=tab['lease_revision']+1);self.records.put('tab',tab['id'],tab)
         for grant in self.records.list('grant'):
@@ -48,6 +49,11 @@ class BrowserService:
     async def _context(self,profile):
         id=profile['id']
         async with self._start_lock:
+            if id in self._closed_contexts:
+                self._contexts.pop(id,None)
+                previous=self._proxies.pop(id,None)
+                if previous:await previous.close()
+                self._closed_contexts.discard(id)
             if id in self._contexts:return self._contexts[id]
             from playwright.async_api import async_playwright
             if self._playwright is None:self._playwright=await async_playwright().start()
@@ -61,11 +67,19 @@ class BrowserService:
             except BaseException:
                 await proxy.close();raise
             self._contexts[id]=context;self._proxies[id]=proxy
+            self._context_tabs[id]=set()
+            context.on('close',lambda:self._context_closed(id))
             if self._monitor is None:self._monitor=asyncio.create_task(self._monitor_grants())
             await context.route('**/*',self._route)
             # Popups stay in their originating profile and under parent ownership.
             context.on('page',lambda page:asyncio.create_task(self._adopt_popup(page,profile)))
             return context
+    def _context_closed(self,profile_id):
+        self._closed_contexts.add(profile_id)
+        # Page-close events can precede context-close. Only tabs belonging to
+        # this runtime context qualify; explicitly closed tabs were removed.
+        for tab_id in self._context_tabs.pop(profile_id,set()):
+            if self.records.get('tab',tab_id):self._closed(tab_id,'crashed')
     async def _monitor_grants(self):
         while True:
             for tab in self.records.list('tab'):
@@ -102,6 +116,8 @@ class BrowserService:
         id=secrets.token_urlsafe(16)
         return self.records.put('tab',id,{'id':id,'principal_id':profile['principal_id'],'project_id':profile['project_id'],'profile_id':profile['id'],'session_id':session_id,'url':'about:blank','title':'New tab','state':'human','document_revision':0,'lease_revision':0,'grant_id':None,'recording':False,'created_at':time()})
     async def _wire_page(self,page,id):
+        tab=self.records.get('tab',id)
+        self._context_tabs.setdefault(tab['profile_id'],set()).add(id)
         page.on('framenavigated',lambda frame:asyncio.create_task(self._navigation(id)) if frame==page.main_frame else None)
         page.on('close',lambda: self._closed(id))
         page.on('crash',lambda:self._closed(id,'crashed'))
@@ -172,12 +188,26 @@ class BrowserService:
             self.records.put('history',secrets.token_urlsafe(12),{'id':secrets.token_urlsafe(12),'principal_id':tab['principal_id'],'profile_id':tab['profile_id'],'origin':origin(page.url) if page.url.startswith(('https://','http://')) else 'about:blank','title':tab['title'],'url':page.url.split('?')[0].split('#')[0],'visited_at':time()})
     def _closed(self,id,state='closed'):
         tab=self.records.get('tab',id)
+        # A crashed renderer can subsequently emit close. Preserve recovery
+        # information unless close_tab explicitly changed the state first.
+        if tab and tab['state']=='crashed' and state=='closed':state='crashed'
         if tab:self._revoke(tab,state)
         self._pages.pop(id,None)
     async def close_tab(self,id,principal):
         tab=self.get(id,principal);self._revoke(tab,'closed')
+        self._context_tabs.get(tab['profile_id'],set()).discard(id)
         page=self._pages.pop(id,None)
         if page and not page.is_closed():await page.close()
+    async def recover_tab(self,id,principal,session_id):
+        previous=self.get(id,principal)
+        if previous['state'] not in {'closed','crashed'}:raise ValueError('Only a closed or crashed tab can be reopened')
+        if previous.get('recovered_tab_id'):
+            recovered=self.get(previous['recovered_tab_id'],principal)
+            if recovered['state'] not in {'closed','crashed'}:return recovered
+        # Preserve this user's profile, but never revive a renderer's task grant.
+        recovered=await self.create_tab(principal,session_id,previous['profile_id'],previous['url'])
+        previous['recovered_tab_id']=recovered['id'];self.records.put('tab',id,previous)
+        return recovered
     def _revoke(self,tab,state):
         self._diagnostics.pop(tab['id'],None)
         self._frame_cache.pop(tab['id'],None)
@@ -191,13 +221,14 @@ class BrowserService:
         return self._revoke(self.get(id,principal),'private' if private else 'human')
     def _grant_valid(self,tab,grant):
         try:
-            return bool(grant and not grant['revoked'] and grant['expires_at']>time() and tab['grant_id']==grant['id'] and tab['lease_revision']==grant['lease_revision'] and tab['state']=='agent' and self.session_valid(grant['principal_id'],grant['session_id'],grant['policy_version']))
+            return bool(grant and not grant['revoked'] and grant['expires_at']>time() and all(grant[key]==tab[key] for key in ('principal_id','project_id','profile_id')) and grant['tab_id']==tab['id'] and tab['grant_id']==grant['id'] and tab['lease_revision']==grant['lease_revision'] and tab['state']=='agent' and self.task_live(grant['run_id']) and self.session_valid(grant['principal_id'],grant['session_id'],grant['policy_version']))
         except Exception:
             return False
     async def handoff(self,id,principal,session,*,run_id,origins,actions,expires_in=600,policy_version=0):
         tab=self.get(id,principal)
         if tab['state'] in {'closed','crashed'}:raise ValueError('tab is closed')
         if not run_id or len(run_id)>128:raise ValueError('named task required')
+        if not self.task_live(run_id):raise PermissionError('Start an active task before handing over this tab')
         sites=sorted(set(origin(o) for o in origins))
         if not sites or len(sites)>30:raise ValueError('one to thirty exact origins required')
         for site in sites:await self.network.validate(site)
@@ -206,6 +237,7 @@ class BrowserService:
         if origin(page.url) not in sites:raise ValueError('current page must be inside granted origins')
         allowed={'navigate','observe','capture','click','type','scroll','wait','find','zoom','history','upload','download','diagnostics'}
         if not actions or set(actions)-allowed:raise ValueError('unsupported action grant')
+        if 'observe' not in actions:raise ValueError('handoff requires observation permission for its fresh context')
         if not 10<=expires_in<=3600:raise ValueError('grant duration must be 10 to 3600 seconds')
         self._revoke(tab,'human');id_grant=secrets.token_urlsafe(16)
         tab['url']=page.url
@@ -508,6 +540,7 @@ class BrowserService:
             self._monitor.cancel();await asyncio.gather(self._monitor,return_exceptions=True);self._monitor=None
         for tab in self.records.list('tab'):
             if tab['state'] not in {'closed','crashed'}:self._revoke(tab,'closed')
+        self._context_tabs.clear() # Intentional host shutdown is not a renderer failure.
         captures=list(self._capture_jobs.values())
         for capture in captures:capture.cancel()
         await asyncio.gather(*captures,return_exceptions=True)

@@ -10,6 +10,8 @@ use tauri::{
 };
 
 const SERVICE: &str = "com.jaexxxy.termx.workspace.session";
+#[path = "window_geometry.rs"]
+mod window_geometry;
 #[derive(Default)]
 struct MemorySession {
     access: String,
@@ -560,23 +562,53 @@ struct WindowPlacement {
     y: i32,
     width: u32,
     height: u32,
+    #[serde(default = "default_scale")]
+    scale: f64,
+    #[serde(default)]
+    frame_width: u32,
+    #[serde(default)]
+    frame_height: u32,
+    #[serde(default)]
+    monitor: Option<SavedMonitor>,
 }
-fn visible_position(saved: &WindowPlacement, monitors: &[tauri::Monitor]) -> (i32, i32) {
-    let intersects = monitors.iter().any(|m| {
-        let p = m.position();
-        let size = m.size();
-        saved.x.saturating_add(80) > p.x
-            && saved.y.saturating_add(40) > p.y
-            && saved.x < p.x.saturating_add(size.width as i32)
-            && saved.y < p.y.saturating_add(size.height as i32)
-    });
-    if intersects {
-        return (saved.x, saved.y);
+#[derive(Serialize, Deserialize)]
+struct SavedMonitor {
+    name: Option<String>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    scale: f64,
+}
+fn default_scale() -> f64 {
+    1.0
+}
+fn monitor_area(monitor: &tauri::Monitor) -> window_geometry::WorkArea {
+    let area = monitor.work_area();
+    window_geometry::WorkArea {
+        x: area.position.x,
+        y: area.position.y,
+        width: area.size.width,
+        height: area.size.height,
+        scale: monitor.scale_factor(),
     }
-    monitors
-        .first()
-        .map(|m| (m.position().x + 40, m.position().y + 40))
-        .unwrap_or((40, 40))
+}
+fn placement_filename(label: &str) -> Option<String> {
+    if !workspace_label(label)
+        || label.len() > 200
+        || !label
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(format!("workspace-window-{label}.json"))
+}
+fn detached_label(panel: &str, session: Option<&str>, slot: usize) -> String {
+    let context = session
+        .map(|id| format!("session-{id}"))
+        .unwrap_or_else(|| "unassigned".into());
+    format!("workspace-{panel}-{context}-{slot}")
 }
 #[tauri::command]
 pub fn workspace_detach(
@@ -596,7 +628,12 @@ pub fn workspace_detach(
     {
         return Err("Invalid detached workspace request".into());
     }
-    let label = format!("workspace-{}", rand::random::<u64>());
+    // Reuse stable placement slots for the same panel/session across launches.
+    // Simultaneously open windows each have their own independent slot/file.
+    let label = (0..1024)
+        .map(|slot| detached_label(&panel, session_id.as_deref(), slot))
+        .find(|label| app.get_webview_window(label).is_none())
+        .ok_or("Too many detached workspace windows")?;
     let mut url =
         tauri::Url::parse(&format!("http://127.0.0.1:{port}/")).map_err(|_| "Invalid host URL")?;
     url.query_pairs_mut().append_pair("layout", &panel);
@@ -614,47 +651,147 @@ pub fn workspace_detach(
     Ok(label)
 }
 pub fn restore_placement(app: &AppHandle, window: &WebviewWindow) {
-    let path = crate::config::data_dir(app).join("workspace-window.json");
-    if let Ok(text) = std::fs::read_to_string(path) {
-        if let Ok(saved) = serde_json::from_str::<WindowPlacement>(&text) {
-            if let Ok(monitors) = window.available_monitors() {
-                let (x, y) = visible_position(&saved, &monitors);
-                let max = monitors
+    let Some(filename) = placement_filename(window.label()) else {
+        return;
+    };
+    let directory = crate::config::data_dir(app);
+    // Migrate the former shared file only into the main window's placement.
+    let text = std::fs::read_to_string(directory.join(filename)).or_else(|error| {
+        if window.label() == "main" && error.kind() == std::io::ErrorKind::NotFound {
+            std::fs::read_to_string(directory.join("workspace-window.json"))
+        } else {
+            Err(error)
+        }
+    });
+    // Fresh and malformed placements use the same monitor recovery as saved
+    // windows, so even the initial window fits a small work area.
+    let saved = text
+        .ok()
+        .and_then(|text| serde_json::from_str::<WindowPlacement>(&text).ok())
+        .or_else(|| capture_placement(window));
+    if let Some(saved) = saved {
+        if let Ok(monitors) = window.available_monitors() {
+            let areas: Vec<_> = monitors.iter().map(monitor_area).collect();
+            let preferred = saved.monitor.as_ref().and_then(|previous| {
+                // Prefer an exact identity when duplicate display names exist.
+                monitors
                     .iter()
-                    .map(|m| m.size().width)
-                    .max()
-                    .unwrap_or(1600);
-                let height = monitors
-                    .iter()
-                    .map(|m| m.size().height)
-                    .max()
-                    .unwrap_or(1000);
-                let _ = window.set_size(PhysicalSize::new(
-                    saved.width.clamp(760, max.max(760)),
-                    saved.height.clamp(520, height.max(520)),
-                ));
-                let _ = window.set_position(PhysicalPosition::new(x, y));
-            }
+                    .position(|monitor| {
+                        monitor.name().cloned() == previous.name
+                            && monitor.work_area().position.x == previous.x
+                            && monitor.work_area().position.y == previous.y
+                    })
+                    .or_else(|| {
+                        previous.name.as_ref().and_then(|name| {
+                            let matches: Vec<_> = monitors
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, monitor)| monitor.name() == Some(name))
+                                .collect();
+                            if matches.len() == 1 {
+                                Some(matches[0].0)
+                            } else {
+                                None
+                            }
+                        })
+                    })
+            });
+            let primary = window.primary_monitor().ok().flatten().and_then(|primary| {
+                monitors.iter().position(|monitor| {
+                    monitor.position() == primary.position() && monitor.size() == primary.size()
+                })
+            });
+            let previous_area = saved
+                .monitor
+                .as_ref()
+                .map(|previous| window_geometry::WorkArea {
+                    x: previous.x,
+                    y: previous.y,
+                    width: previous.width,
+                    height: previous.height,
+                    scale: previous.scale,
+                });
+            // Measure current decorations, including changes to OS chrome.
+            // Express them in the saved scale before recovery scales them
+            // into the selected monitor's physical work area.
+            let frame = window.outer_size().ok().zip(window.inner_size().ok());
+            let current_scale = window.scale_factor().unwrap_or(1.0);
+            let valid_scale = if saved.scale.is_finite() && (0.25..=8.0).contains(&saved.scale) {
+                saved.scale
+            } else {
+                1.0
+            };
+            let saved_frame = |actual: u32| {
+                (f64::from(actual) * valid_scale / current_scale.max(0.25)).round() as u32
+            };
+            let (frame_width, frame_height) = frame
+                .map(|(outer, inner)| {
+                    (
+                        saved_frame(outer.width.saturating_sub(inner.width)),
+                        saved_frame(outer.height.saturating_sub(inner.height)),
+                    )
+                })
+                .unwrap_or((saved.frame_width, saved.frame_height));
+            let restored = window_geometry::recover(
+                window_geometry::SavedWindow {
+                    x: saved.x,
+                    y: saved.y,
+                    width: saved.width,
+                    height: saved.height,
+                    scale: saved.scale,
+                    frame_width,
+                    frame_height,
+                    previous_area,
+                },
+                &areas,
+                preferred,
+                primary,
+            );
+            let _ = window.set_min_size(Some(PhysicalSize::new(
+                restored.minimum_width,
+                restored.minimum_height,
+            )));
+            let _ = window.set_size(PhysicalSize::new(restored.width, restored.height));
+            let _ = window.set_position(PhysicalPosition::new(restored.x, restored.y));
         }
     }
 }
+fn capture_placement(window: &WebviewWindow) -> Option<WindowPlacement> {
+    let position = window.outer_position().ok()?;
+    let size = window.inner_size().ok()?;
+    let outer = window.outer_size().unwrap_or(size);
+    Some(WindowPlacement {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+        scale: window.scale_factor().unwrap_or(1.0),
+        frame_width: outer.width.saturating_sub(size.width),
+        frame_height: outer.height.saturating_sub(size.height),
+        monitor: window.current_monitor().ok().flatten().map(|monitor| {
+            let area = monitor_area(&monitor);
+            SavedMonitor {
+                name: monitor.name().cloned(),
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: area.height,
+                scale: area.scale,
+            }
+        }),
+    })
+}
 pub fn track_placement(app: &AppHandle, window: &WebviewWindow) {
+    let Some(filename) = placement_filename(window.label()) else {
+        return;
+    };
     let handle = app.clone();
     let observed = window.clone();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-            if let (Ok(p), Ok(s)) = (observed.outer_position(), observed.inner_size()) {
-                let saved = WindowPlacement {
-                    x: p.x,
-                    y: p.y,
-                    width: s.width,
-                    height: s.height,
-                };
+            if let Some(saved) = capture_placement(&observed) {
                 if let Ok(text) = serde_json::to_string(&saved) {
-                    let _ = std::fs::write(
-                        crate::config::data_dir(&handle).join("workspace-window.json"),
-                        text,
-                    );
+                    let _ = std::fs::write(crate::config::data_dir(&handle).join(&filename), text);
                 }
             }
         }
@@ -664,14 +801,25 @@ pub fn track_placement(app: &AppHandle, window: &WebviewWindow) {
 mod tests {
     use super::*;
     #[test]
-    fn empty_monitor_recovery() {
-        let p = WindowPlacement {
-            x: -9000,
-            y: 200,
-            width: 1100,
-            height: 780,
-        };
-        assert_eq!(visible_position(&p, &[]), (40, 40));
+    fn detached_placement_keys_are_stable_and_do_not_overwrite_main_or_each_other() {
+        let first = detached_label("chat", Some("session-1"), 0);
+        assert_eq!(first, detached_label("chat", Some("session-1"), 0));
+        for other in [
+            "main".into(),
+            detached_label("chat", Some("session-1"), 1),
+            detached_label("workbench", Some("session-1"), 0),
+            detached_label("chat", Some("session-2"), 0),
+        ] {
+            assert_ne!(placement_filename(&first), placement_filename(&other));
+        }
+        assert!(placement_filename("workspace-../../other").is_none());
+    }
+    #[test]
+    fn legacy_window_placement_remains_readable() {
+        let legacy: WindowPlacement =
+            serde_json::from_str(r#"{"x":40,"y":40,"width":1100,"height":780}"#).unwrap();
+        assert_eq!(legacy.scale, 1.0);
+        assert!(legacy.monitor.is_none());
     }
 }
 

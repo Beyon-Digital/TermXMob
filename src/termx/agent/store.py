@@ -1362,6 +1362,19 @@ class AgentStore:
             self._db.commit()
         return cursor.rowcount > 0
 
+    def workspace_conversations_snapshot(self, identifiers: list[str]) -> list[dict]:
+        """Bounded public collection projection without per-conversation reads."""
+        identifiers=list(dict.fromkeys(identifiers))
+        if len(identifiers)>500:raise ValueError('Read at most 500 conversations per batch')
+        if not identifiers:return []
+        placeholders=','.join('?' for _ in identifiers)
+        with self._lock:
+            rows=self._db.execute('SELECT c.*,t.status AS latest_status,t.updated_at AS latest_task_updated '
+                'FROM conversations c LEFT JOIN conversation_turns ct ON ct.id=(SELECT id FROM conversation_turns '
+                'WHERE conversation_id=c.id ORDER BY sequence DESC LIMIT 1) '
+                'LEFT JOIN tasks t ON t.id=ct.task_id WHERE c.id IN ('+placeholders+')',identifiers).fetchall()
+            return [{**self._conversation(row),'latest_status':row['latest_status'],'latest_task_updated':row['latest_task_updated'] or 0} for row in rows]
+
     def workspace_turn(self, identifier: str) -> dict | None:
         with self._lock:
             row = self._db.execute('SELECT * FROM conversation_turns WHERE id=?', (identifier,)).fetchone()
@@ -1397,6 +1410,11 @@ class AgentStore:
         now = time()
         turn_id = uuid.uuid4().hex[:16]
         with self._lock:
+            if task_id:
+                existing=self._db.execute('SELECT id FROM conversation_turns WHERE conversation_id=? AND task_id=?',(conversation_id,task_id)).fetchone()
+                if existing:
+                    conversation=self.get_conversation(conversation_id,include_turns=True)
+                    return next(turn for turn in conversation['turns'] if turn['id']==existing['id'])
             row = self._db.execute(
                 "SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_turns WHERE conversation_id = ?",
                 (conversation_id,),

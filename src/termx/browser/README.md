@@ -34,6 +34,12 @@ allow. Policy changes, takeover, private mode, expiry, document/target changes a
 restart invalidate stale permits. Consumption is persisted before side effects;
 unknown outcomes are never automatically replayed.
 
+Handoff and every subsequent action require a live canonical task. Completed,
+failed, cancelled and cancelling tasks cannot retain control. A first internal
+browser call without a grant pauses the same call for explicit handoff and resumes
+it once; its pending state grants no observation or browser authority. Takeover
+and private login require a fresh explicit grant before either model can resume.
+
 ## Recordings
 
 Browser tabs and native windows require explicit capture/record consent. Plain
@@ -71,3 +77,13 @@ recorded steps executed, not arbitrary natural-language instruction semantics.
   resume and private human view/context exclusion, zero UI errors and zero paid
   provider queries. No production reviewer is represented as qualified without
   its explicit evaluation/configuration.
+- `tests/test_browser_review_task.py` executes 30 real safe browser actions,
+  audits all 30 decisions, separates 25 host-rule approvals from five fixture
+  reviewer approvals, and requires zero repeated human prompts. The fixture
+  reviewer is explicitly not production-qualified. It also checks task liveness,
+  exact first-call handoff resume and actual renderer/context crash recovery.
+- `tests/test_browser_acceptance_adversarial.py` checks each grant identity and
+  revision boundary, hidden and deceptively labelled page controls, cross-origin
+  file references, untrusted approval claims from four input sources, and real
+  timeout/invalid-JSON/unavailable-account/expired-verdict failure paths. Failed
+  review remains a resumable exact human gate rather than executing an effect.

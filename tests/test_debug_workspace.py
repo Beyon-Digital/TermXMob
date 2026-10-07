@@ -65,9 +65,13 @@ def test_debug_api_binds_owned_conversation_checkout_and_rejects_removed_worktre
         denied = client.post('/api/development/projects/' + other['id'] + '/debug', headers=headers,
                              json={'language': 'python', 'workspace_session': conversation['id']})
         assert denied.status_code == 403
-        git('worktree', 'remove', tree['path'])
+        # Revoke enrollment while the real adapter owns its working directory.
+        # Windows prevents physically removing a directory used by a process.
+        with state.delivery.db() as db:
+            db.execute('DELETE FROM worktrees WHERE id = ?', (tree['id'],))
         assert client.get(endpoint + '/events', headers=headers).status_code == 409
         assert client.delete(endpoint, headers=headers).status_code == 200
+        git('worktree', 'remove', tree['path'])
 
 
 def test_real_python_breakpoint_step_stack_and_variables(tmp_path):
@@ -121,7 +125,7 @@ def test_real_python_loopback_attach_breakpoint_and_inspection(tmp_path):
         service=DebugService()
         connecting=None
         try:
-            assert await asyncio.wait_for(target.stdout.readline(),20)==b'ready\n'
+            assert (await asyncio.wait_for(target.stdout.readline(),20)).strip()==b'ready'
             session=await service.create('project',tmp_path,'python')
             await session.active.request('initialize',session.validate('initialize',{}))
             connecting=asyncio.create_task(session.request('attach',session.validate('attach',{'connect':{'host':'127.0.0.1','port':port}})))

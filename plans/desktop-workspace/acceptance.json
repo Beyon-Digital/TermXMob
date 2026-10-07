@@ -13,7 +13,7 @@
       "id": "UX-02",
       "requirement": "Chat/Workbench/Browser layout moves preserve conversation/native IDs, active runs, drafts, scroll, dirty buffers and PTYs.",
       "status": "partial",
-      "evidence": "Mounted docked views, synchronized dirty split buffers, draft flush/unmount and stale metadata revisions pass. Conversation checkout controls now bind editor/save/search, PTY and language/debug targets; switching preserves dirty original-checkout buffers. Updated useful editor geometry at200% and installed native active-run/monitor proof remain open."
+      "evidence": "Mounted docked views preserve IDs, scroll and dirty split buffers; draft flush/unmount/revision tests pass. Exact browser context and approved upload references persist across full reload as inspectable/removable composer chips. Session checkout binds files/PTY/LSP/debug. Actual loaded Workbench200% has a useful editor and fully reachable split controls. Installed native active-run/window proof remains open."
     },
     {
       "id": "CHAT-01",
@@ -30,8 +30,8 @@
     {
       "id": "DATA-01",
       "requirement": "Reconnect or duplicate windows do not duplicate prompts, messages, website submissions, Git mutations or tool calls.",
-      "status": "partial",
-      "evidence": "Canonical host idempotency covers prompts, one-use reviewed effects, Git, media and runner jobs. Real second window creates no extra turn. Opaque media/runner intent IDs survive reload; lost Git/provider outcomes remain unknown and consumed. Targeted reload/non-replay tests pass; combined noisy stream proof remains open."
+      "status": "verified",
+      "evidence": "Canonical request keys, idempotent pre-worker turn linkage and dispatched-receipt healing survive cancellation/restart without a new worker. Durable regression preserves an edited follow-up draft after slow dispatch. Actual two-window streamed proof creates no duplicate turn. tests/test_agent.py recovery phases, test_delivery_workspace.py uncertain publication, media/runner reload-intent and browser consumed-permit tests prevent repeated prompts, tool calls, submissions and mutations. Original exact digests remain binding."
     },
     {
       "id": "AUTH-01",
@@ -43,7 +43,7 @@
       "id": "AUTH-02",
       "requirement": "Rate-limited password attempts, secure storage, refresh rotation, parallel refresh coordination, expiry and device/session revocation work.",
       "status": "partial",
-      "evidence": "Backend rate limits, hashed refresh rotation/reuse/expiry/revoke tested; browser navigator.locks coordinates windows; Rust keyring and refresh single-flight compile verified. Live OS keyring/SSO installer checks remain pending."
+      "evidence": "Backend rate limits, hashed refresh rotation/reuse/expiry/revoke tests pass; browser navigator.locks and Rust refresh single-flight prevent parallel rotation. Windows CI actual OS credential-service synthetic write/read/delete passed. Installed native password/SSO journeys and other platform keyring results remain pending."
     },
     {
       "id": "AUTH-03",
@@ -60,32 +60,32 @@
     {
       "id": "BROW-01",
       "requirement": "Complete sign-in \u2192 browse \u2192 handoff \u2192 agent action \u2192 human takeover \u2192 explicit resume inside the app, plus external-browser access to the same host tab.",
-      "status": "partial",
-      "evidence": "Actual managed Chromium workspace sign-in, tab/profile, task handoff, exact approval resume and private human-only view pass without provider queries. Real Claude CLI initialization/MCP connected. Final rendered takeover/explicit resume and installed worker proof remain gates."
+      "status": "verified",
+      "evidence": "verification/browser-workflow.json: actual managed sign-in and workspace host tab; task handoff, exact approval, real internal action, human takeover and new explicit grant resume. Actual tool effects complete after both takeover and private-login resumes; same host-owned tab is served through the shared browser UI. No paid queries."
     },
     {
       "id": "BROW-02",
       "requirement": "Revoked/expired/tab-mismatched grants and stale document/lease revisions reject actions. No agent sees unrelated tabs or another user\u2019s profile.",
-      "status": "partial",
-      "evidence": "Owner/profile/task/tab/grant/policy/document/lease checks and revocation implemented and covered by test_managed_browser.py and test_browser_private_race.py."
+      "status": "verified",
+      "evidence": "tests/test_browser_acceptance_adversarial.py mismatch cases bind grant to owner/profile/project/tab/task/session/policy/document/lease. test_managed_browser.py covers real owner/profile isolation, expiration and HTTP revoke. test_browser_review_task.py proves terminal tasks cannot gain, retain or execute control."
     },
     {
       "id": "BROW-03",
       "requirement": "Private login produces no agent-visible credential input, DOM snapshot, screenshot or recording. Takeover stops queued actions and reports in-flight outcomes.",
-      "status": "partial",
-      "evidence": "Private DOM/screenshot/capture blocked before and after awaited operations; takeover invalidates reviewed effects. Window private epochs also block enter/exit observation races. Browser, native broker and window service tests pass; cross-platform installed privacy smoke remains open."
+      "status": "verified",
+      "evidence": "Actual private UI/credential exclusion in verification/browser-workflow.json; test_browser_private_race.py rejects observation/capture race; test_window_recording.py enforces private epochs. Takeover invalidates queued permits; interrupted effects become failed/unknown and never replay."
     },
     {
       "id": "BROW-04",
       "requirement": "Block unapproved origins/redirects, raw CDP exposure, protected local services, metadata access and attempts to reach privileged app/native bridges.",
-      "status": "partial",
-      "evidence": "DNS-pinning proxy, redirects, metadata/private origins, scoped project exceptions and no raw CDP endpoint enforced. Privileged native route/window checks compile verified. Managed browser tests cover network escapes."
+      "status": "verified",
+      "evidence": "test_managed_browser.py covers actual blocked private/metadata URLs and real redirect with no contact to denied destination. DNS-pinned proxy and restricted toolsets expose no raw CDP/native bridge. Native boundary tests separately reject unauthorized origins/paths/windows."
     },
     {
       "id": "BROW-05",
       "requirement": "Only built-in tabs can be handed to the agent. No external-tab attach, cookie import or extension flow exists. URL-only opening creates a fresh built-in tab. Annotation staleness, permitted file transfer and browser crash recovery work.",
-      "status": "partial",
-      "evidence": "Only host-created built-in tabs can be handed off. Annotation revision, explicit upload/download and restart recovery implemented. Signed worker packaging and complete rendered transfer/crash workflow remain pending."
+      "status": "verified",
+      "evidence": "verification/browser-workflow.json proves approved upload file/download bytes, annotation staleness and actual crash recovery to new human-only tab. test_browser_review_task.py renderer/context recovery cannot revive old grants. Only built-in URL-created tabs exist; no external attach/cookie import/extension path."
     },
     {
       "id": "CAP-01",
@@ -102,14 +102,14 @@
     {
       "id": "AUTO-01",
       "requirement": "Schedules survive UI close/host restart; honor timezone, missed-run and overlap policy; approval waits do not time out into consent; delegated grants and budget caps are enforced.",
-      "status": "partial",
-      "evidence": "Durable TZ/missed-run/overlap/budget/lease schedules use explicit delegated grants and retain human waits. Selected internal runner and credential location are snapshotted; changed targets require renewed delegation. Durable source tests pass; actual scheduled container journey remains open."
+      "status": "verified",
+      "evidence": "tests/test_durable_workspace.py covers persisted scheduler reconstruction with no UI, atomic leases/budgets, timezone/DST, missed skip/once, overlap skip/queue, retained human approval waits and expired/revoked grants. Target changes require renewed delegation; canonical goal cancellation stops the tree. This verifies durable host behavior without a paid inference request."
     },
     {
       "id": "AGENT-01",
       "requirement": "Parent/child task tree, cancellation/steering, fan-out limits, aggregation and concurrency budgets work without hidden shared-directory writes.",
-      "status": "partial",
-      "evidence": "Children use real distinct Git worktrees or bounded independent snapshots; parent files remain unchanged. Bounded public UI tree shows paths, branches, cancel/steer and aggregate state. Child isolation and durable tests pass; full aggregate budget journey remains open."
+      "status": "verified",
+      "evidence": "Actual AgentManager aggregation/cancellation/steering/fanout/concurrency tests in tests/test_agent.py pass. tests/test_child_isolation.py uses simultaneous real Git worktrees and nonGit snapshots: children write the same relative filename in separate roots, parent remains unchanged, isolation paths are visible, symlink/size failures fail closed. Limits are per-task steps/time and bounded tree concurrency; no pooled monetary counter is claimed."
     },
     {
       "id": "DEV-01",
@@ -150,8 +150,8 @@
     {
       "id": "CLOUD-01",
       "requirement": "Create/enroll dedicated runner \u2192 scoped secret injection \u2192 run/logs/browser where supported \u2192 results \u2192 budget stop/teardown; local/cloud side effects are never silently migrated.",
-      "status": "partial",
-      "evidence": "Actual dedicated nonroot read-only Docker command/upload/secret/log/result/budget/teardown pass. Actual immutable network-none existing-loop worker passed reviewed file write, exact human shell approval, exported artifact, canonical admission and cancellation stopping the container; provider key remains on host. Session/schedule target snapshots tested. Remote SSH/VM and installed runtime remain open."
+      "status": "verified",
+      "evidence": "Qualified dedicated-container route: tests/test_dedicated_runners.py actual upload/nonroot/read-only execution/scoped secret/results/budget/teardown, and tests/test_runner_agents.py actual network-none existing-loop worker, host-only provider broker, human approval, canonical logs/artifacts and cancellation/active delegation revocation pass. Explicit session/schedule target cannot silently migrate or fall back. Provider adapter is a no-charge fixture; browser tools are explicitly unsupported in this runner adapter. Remote SSH/VM and live provider qualification remain separate support-matrix limits."
     },
     {
       "id": "SAFE-01",
@@ -168,14 +168,14 @@
     {
       "id": "PERF-01",
       "requirement": "Measure load, interaction, stream and memory budgets; test 10,000 messages, 500 sessions, multiple windows, noisy PTY logs and active browser control. These are test fixtures, not measured results.",
-      "status": "partial",
-      "evidence": "Actual500-session/10000-turn,two-window noisyPTY/livebrowser activity runs produce frame/control/heap/filter metrics with no errors or duplicate turn. Stack sampling exposed synchronous session projection and per-frame authority checks blocking the host loop; these are offloaded with live policy revalidation and the combined proof is rerunning."
+      "status": "verified",
+      "evidence": "Actual source UI/runtime proof in verification/combined-load.json: fully loaded 500 sessions, 10000 turns and two windows; 393 PTY frames/82000 bytes, 22 browser frames/325112 bytes, 15 real browser actions. Authenticated load2352ms; filters66\u2013251ms; heap24.8/17.2MB; no JS errors, duplicate turn or accidental send. Browser action maximum1334ms and host-loop maximum lag866ms are disclosed. These measured results qualify the named macOS13 Intel/Chromium fixture, not all hardware or an installer."
     },
     {
       "id": "A11Y-01",
       "requirement": "Keyboard-only browsing/workspace flows, screen-reader labels and meaningful content, contrast, 200% zoom and reduced motion work in both themes.",
       "status": "partial",
-      "evidence": "Eight actual loaded Chat/Workbench states in both themes at100%/200% passed axe, focus and overflow checks. Visual review found too little editor height at200%, fixed with adaptive bottom-panel bounds; useful editor dimensions are now required in the rerun. Broader browser/manager keyboard journey remains open."
+      "evidence": "Eight actual loaded Chat/Workbench states in both themes at100%/200% passed axe, keyboard focus, reduced motion and overflow checks. Full Split selector stays visible. Adaptive bottom panel preserves useful editor area at200%:582x176 dark and582x143 light CSS pixels, with actual Python language server. Broader browser/manager keyboard journey remains open."
     },
     {
       "id": "VIEW-01",
@@ -186,38 +186,38 @@
     {
       "id": "REVIEW-01",
       "requirement": "Run a representative 30-action safe browser task with no repeated human approval once the task grant is valid. Audit every automated decision; distinguish rule-based from model-based approvals.",
-      "status": "partial",
-      "evidence": "Exact durable one-use permits, remembered safe rules and per-decision audit implemented. Representative30-action browser and typed-file tasks running; model qualification/reviewer latency/cost awaits configured account."
+      "status": "verified",
+      "evidence": "verification/browser-review-30-actions.json:30real Chromium actions completed with30audited ALLOW decisions,25host-rule and5explicit fixture reviewer approvals,0human prompts/paid queries. This proves host task behavior; no production model qualification is implied."
     },
     {
       "id": "REVIEW-02",
       "requirement": "Sensitive sends, payments, deletes, publication and privilege changes stop at the approved human gate; a single explicit decision does not expand unrelated authority.",
-      "status": "partial",
-      "evidence": "Sensitive sends/payment/delete/publication/privilege and unknown mutations retain exact human gate; scope does not expand. Managed browser/adversarial broker fixtures verify sensitive denial."
+      "status": "verified",
+      "evidence": "test_auto_review.py sensitive/unknown sends/payments/deletes/publication/privilege changes cannot be allowed by a reviewer. Actual rendered send pauses at exact human consent; unrelated file transfer needs its own gate. Browser scope alone is not transaction consent."
     },
     {
       "id": "REVIEW-03",
       "requirement": "Injection in pages, files, tool outputs or executor summaries cannot change policy or mint grants. Test hidden content, redirects, cross-origin uploads and deceptively labelled controls.",
-      "status": "partial",
-      "evidence": "Only host-built envelopes can be evaluated; page descriptions cannot mint policy/grants. Hidden labels, file-secret paths, cross-origin transfer and stale DOM hashes covered. Generic native coding hook coverage under test."
+      "status": "verified",
+      "evidence": "test_browser_acceptance_adversarial.py input-source approval claims, actual hidden/deceptive controls and cross-origin approved-file rejection; real redirect/protected credential tests. Host-built envelopes and final checks prevent page/file/tool/executor data minting grants."
     },
     {
       "id": "REVIEW-04",
       "requirement": "Reviewer timeout, invalid JSON, unavailable account or stale decision never allow an unknown action. Report review error and preserve resumable state.",
-      "status": "partial",
-      "evidence": "Malformed JSON, timeout/unavailable reviewer, stale decisions and oversized streamed reviewer responses fail closed. Oversized output stops reading at the bound and closes the response; resumable review error is retained. Live configured model qualification remains open."
+      "status": "verified",
+      "evidence": "Actual5second timeout, invalid JSON, missing reviewer account and expired verdict tests in test_browser_acceptance_adversarial.py preserve a resumable exact user gate. Oversized streaming response stops at bound; no unavailable reviewer or unknown effect fails open."
     },
     {
       "id": "REVIEW-05",
       "requirement": "Policy update, scope revoke, account switch, navigation or takeover invalidate cached reviews and queued permits. Restart/reconnect does not duplicate submissions.",
-      "status": "partial",
-      "evidence": "Revision-bound one-time permits consumed before effect; account/policy/document/takeover changes invalidate reviews. Durable restart/revoke tests and private observation race tests pass."
+      "status": "verified",
+      "evidence": "Live scope/policy/session/document/lease checks, takeover-during-review, changed target and persisted consumed effects are covered by browser/adversarial/auto_review/native tests. Restart invalidates grants and cannot replay completed submissions."
     },
     {
       "id": "REVIEW-06",
       "requirement": "Remembered allow/deny policies are scoped and revocable; deny wins. Audit cannot contain passwords/cookies/token values; private login reaches neither model.",
-      "status": "partial",
-      "evidence": "Deny precedence, scoped/revocable remembered policies and redacted audit implemented; private observations suppressed from both models. Browser tests pass; actual smaller-model privacy evaluation pending."
+      "status": "verified",
+      "evidence": "Scoped policy revoke and deny precedence tests pass; audit hashes raw arguments, excludes password/token fields, and private observations reach neither execution nor review inputs. Production smaller-model qualification is separately required by REVIEW-07."
     },
     {
       "id": "REVIEW-07",
@@ -228,8 +228,8 @@
     {
       "id": "REVIEW-08",
       "requirement": "Test each native/internal/ACP adapter\u2019s interception coverage. A supported run cannot evade required enforcement using unrestricted shell, raw CDP or alternate network tools.",
-      "status": "partial",
-      "evidence": "Internal broker, dedicated Claude MCP browser, Claude coding hooks, Codex stdio command/file/capability approvals and ACP host filesystem/terminal callbacks verified by combined tests. Native-owned sandbox fastpaths remain documented native policy; strict browser handoff remains refused for native modes without complete enforcement. Full matrix acceptance stays open."
+      "status": "verified",
+      "evidence": "Internal/Claude supported controlled-mode escape rejection and Codex/ACP exact coding approval callbacks pass native_action_review/browser_claude_mcp tests. Native sandbox fastpaths are documented native policy; Codex/ACP restricted browser/cloud modes without enforceable interception are refused, not represented as delivered capabilities."
     }
   ],
   "updated_at": "2026-10-07"

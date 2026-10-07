@@ -108,6 +108,7 @@ jobs:
             file \
             xvfb \
             x11-apps \
+            x11-utils \
             wmctrl \
             openbox \
             dbus-x11 \
@@ -224,6 +225,11 @@ jobs:
           TERMX_JS_DEBUG_SERVER: ${{ github.workspace }}/desktop/build/runtime/js-debug/src/dapDebugServer.js
           TERMX_RUNTIME_ASSETS: ${{ github.workspace }}/desktop/build/runtime
         run: uv run --no-sync pytest -q tests/test_debug_workspace.py tests/test_workspace_runtime.py tests/test_lsp_navigation.py
+
+      - name: Verify installed browser grant and recovery contracts
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/desktop/build/runtime/browsers
+        run: uv run --no-sync pytest -q tests/test_browser_review_task.py tests/test_browser_acceptance_adversarial.py tests/test_browser_private_race.py
 
       - name: Verify rendered workspace accessibility
         env:

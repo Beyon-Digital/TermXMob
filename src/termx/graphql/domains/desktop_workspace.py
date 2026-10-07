@@ -195,10 +195,14 @@ def session_connection(info,owner,query,archived,project_id,first,after):
         pages[identifier]=page
     rows=page['rows'];visible=rows[offset:offset+first]
     # Check current authority again: a cursor is never delegated consent.
+    authority=state.authorization.resource_snapshot(owner,'agent-view','conversation',[row['id'] for row in visible])
+    boundaries=dict(authority.resources)
+    allowed=authority.allowed_ids
     edges=[]
     for position,row in enumerate(visible,offset):
-        try:state.workspace.require(owner,'agent-view',row.get('project_id'),row.get('cwd'),resource_kind='conversation',resource_id=row['id'])
-        except PermissionError:fail(403,'Session authorization changed; reload the list')
+        if row.get('owner')!=owner.id or row['id'] not in allowed or (not authority.administrator and row.get('project_id')!=boundaries.get(row['id'])):
+            fail(403,'Session authorization changed; reload the list')
         edges.append(relay.Edge(node=session_node(row),cursor=base64.b64encode(f'{identifier}:{position}'.encode()).decode()))
+    state.authorization.validate_resource_snapshot(authority)
     return WorkspaceSessionConnection(edges=edges,page_info=WorkspacePageInfo(has_next_page=offset+first<len(rows),
         has_previous_page=offset>0,start_cursor=edges[0].cursor if edges else None,end_cursor=edges[-1].cursor if edges else None))

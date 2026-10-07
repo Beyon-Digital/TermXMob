@@ -45,6 +45,55 @@ def test_two_users_cannot_cross_projects_resources_or_host(tmp_path):
     assert authz.can(login('owner'),'agent-view',resource_kind='conversation',resource_id='chat')
 
 
+def test_collection_snapshot_batches_live_resource_grants_and_revalidates(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import termx.authorization as policy
+    identity,authz,owner,alice,bob,_ = fixture(tmp_path)
+    deadline = time()+120
+    authz.grant_project(alice.id,'one',['agent-view'],expires=deadline)
+    identifiers = [f'chat-{index}' for index in range(1002)]
+    with identity._db() as db:
+        db.executemany('INSERT INTO resource_owners VALUES (?,?,?,?)',
+                       [('conversation',identifier,alice.id,'one') for identifier in identifiers])
+        db.executemany('INSERT INTO resource_owners VALUES (?,?,?,?)', [
+            ('conversation','scratch',alice.id,None),
+            ('conversation','foreign',bob.id,'one'),
+            ('conversation','ungranted',alice.id,'two')])
+    original = identity._db
+    transactions = []
+
+    @contextmanager
+    def counted():
+        transactions.append(1)
+        with original() as db:
+            yield db
+
+    monkeypatch.setattr(identity,'_db',counted)
+    snapshot = authz.resource_snapshot(alice,'agent-view','conversation',
+                                       identifiers+['scratch','foreign','unclaimed','ungranted'])
+    assert len(transactions) == 1
+    assert snapshot.allowed_ids == frozenset(identifiers+['scratch'])
+    assert dict(snapshot.resources)['scratch'] is None
+    assert dict(snapshot.resources)['chat-0'] == 'one'
+    assert snapshot.expires_at == deadline and not snapshot.administrator
+    authz.validate_resource_snapshot(snapshot)
+    assert len(transactions) == 2
+    monkeypatch.setattr(policy,'time',lambda:deadline+1)
+    with pytest.raises(HTTPException):authz.validate_resource_snapshot(snapshot)
+    expired = authz.resource_snapshot(alice,'agent-view','conversation',identifiers+['scratch'])
+    assert expired.allowed_ids == {'scratch'}
+    monkeypatch.setattr(policy,'time',time)
+    authz.revoke_project(alice.id,'one')
+    with pytest.raises(HTTPException):authz.validate_resource_snapshot(snapshot)
+    identity.disable(alice.id)
+    with pytest.raises(HTTPException):authz.validate_resource_snapshot(expired)
+    with pytest.raises(HTTPException):authz.resource_snapshot(alice,'agent-view','conversation',['scratch'])
+    administrator = authz.resource_snapshot(owner,'agent-view','conversation',['foreign','unclaimed'])
+    assert administrator.administrator and administrator.allowed_ids == {'foreign','unclaimed'}
+    with pytest.raises(ValueError,match='cannot authorize execution'):
+        authz.resource_snapshot(owner,'agent-run','conversation',['foreign'])
+
+
 def test_scratch_ownership_live_grants_and_denied_execution(tmp_path):
     identity,authz,owner,a,b,login=fixture(tmp_path)
     alice=login('alice')

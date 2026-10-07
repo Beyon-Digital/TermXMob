@@ -123,6 +123,12 @@ def browser_router(state):
     @router.delete('/tabs/{id}')
     async def close_tab(id:str,request:Request):
         (_,principal,_),_=tab_identity(request,id,'desktop-control');await service.close_tab(id,principal);return {'ok':True}
+    @router.post('/tabs/{id}/recover')
+    async def recover_tab(id:str,request:Request):
+        (token,principal,session),tab=tab_identity(request,id,'desktop-control')
+        identity(request,'desktop-control','browser-profile',tab['profile_id'],tab['project_id'])
+        value=await service.recover_tab(id,principal,session)
+        claim(token,'browser-tab',value['id'],value['project_id']);return value
     @router.post('/tabs/{id}/handoff')
     async def handoff(id:str,request:Request,body:HandoffBody):
         (token,principal,session),tab=tab_identity(request,id,'desktop-control')

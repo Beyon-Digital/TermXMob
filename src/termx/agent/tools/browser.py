@@ -27,7 +27,35 @@ async def execute(call,ctx):
             await asyncio.sleep(.25)
         return ToolOutcome({'refused':True,'error':'No built-in tab handed off before wait expired'})
     binding=service.records.get('browser-task',ctx.task_id)
-    if not binding:return ToolOutcome({'refused':True,'error':'User must hand a built-in tab to this task first'})
+    requested_tab=call.arguments.get('tab_id')
+    def granted():
+        current=service.records.get('browser-task',ctx.task_id)
+        if not current:return None
+        for tab in service.tabs(current['principal_id']):
+            grant=service.records.get('grant',tab['grant_id']) if tab.get('grant_id') else None
+            if (not requested_tab or tab['id']==requested_tab) and grant and grant['run_id']==ctx.task_id and service._grant_valid(tab,grant):return current
+        return None
+    binding=granted()
+    if not binding:
+        # Park the existing call without granting observations or finishing the
+        # turn. A human's task-scoped handoff resumes this same call identity.
+        ctx.emit('task.handoff.required',{'call_id':call.call_id,'tab_id':requested_tab,'message':'Hand a built-in tab to this task to continue.'})
+        previous=ctx.store.get_task(ctx.task_id)
+        ctx.store.update_task(ctx.task_id,status='paused')
+        deadline=monotonic()+300
+        try:
+            while monotonic()<deadline:
+                if ctx.cancel.is_set():raise asyncio.CancelledError
+                task=ctx.store.get_task(ctx.task_id)
+                if not task or task['status'] in {'completed','cancelled','failed','cancelling'}:raise asyncio.CancelledError
+                binding=granted()
+                if binding:break
+                await asyncio.sleep(.1)
+            if not binding:return ToolOutcome({'refused':True,'error':'Browser handoff wait expired; no action executed'})
+        finally:
+            current=ctx.store.get_task(ctx.task_id)
+            if current and current['status']=='paused':ctx.store.update_task(ctx.task_id,status=previous['status'])
+        ctx.emit('task.handoff.resumed',{'call_id':call.call_id,'tab_id':requested_tab})
     if ctx.read_only and call.name=='browser_action':return ToolOutcome({'refused':True,'error':'Ask mode cannot send browser input'})
     if not service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']):return ToolOutcome({'refused':True,'error':'Browser task authority expired or was revoked'})
     result=await BrowserToolAdapter(service).execute(call.name,call.arguments,task_id=ctx.task_id,principal_id=binding['principal_id'],session_id=binding['session_id'],call_id=ctx.task_id+':'+call.call_id,authority=lambda:service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']))

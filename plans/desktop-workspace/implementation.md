@@ -129,11 +129,46 @@ release keys held by a controller during disconnect cleanup.
 
 Combined-load stack sampling found synchronous session-list projection and
 per-frame identity SQLite checks blocking the ASGI loop. Both now run on IO
-workers, retaining per-message live authority and final policy checks. The
-combined rendered activity proof is rerunning; previous multi-second stalls are
-not treated as meeting the performance gate.
+workers, retaining per-message live authority and final policy checks. The final
+combined rendered activity proof passed with two content-ready windows, 500
+sessions, 10000 turns, PTY output and actual browser actions. The complete report
+is retained in verification/combined-load.json; latency tails remain disclosed.
 
 CI now exercises synthetic OS credential-store write/read/delete on all three
 platforms. Frozen runtime verification executes bundled Node, FFmpeg, all five
 language servers, debugpy and Chromium rather than only locating files. Actual
 development runtime smoke passed; frozen execution and signing remain CI gates.
+
+
+Latest verification checkpoint
+
+- Combined loaded workload passed: authenticated load2352ms, session filters66–251ms,
+  393 PTY frames/82KB, 22 browser frames/325KB, 15 actual controls, heap24.8/17.2MB.
+  Browser control maximum1334ms and host loop lag866ms remain visible in the report.
+- Eight actual loaded Chat/Workbench accessibility states passed in both themes
+  at100%/200%, with visible keyboard focus, reduced motion and no overflow.
+  At200%, the editor retains582x176/143 CSS pixels and Split remains reachable.
+- CI on273e598 passed actual frozen Linux and Windows execution of Node, FFmpeg,
+  five language servers, debugpy, Microsoft JS debugger and Chromium render/PNG.
+  Windows also passed native bridge and real OS credential-service roundtrip.
+  Later platform fixture failures remain distinct from these passed steps.
+- Fixed Linux's missing xmessage dependency, macOS socket cancellation teardown,
+  Windows LSP file-URI normalization, and Windows debug fixture cwd/CRLF assumptions.
+  Actual root Python debug enrollment-revocation and attach regressions:2passed.
+- Browser task control is now live-task scoped: first missing handoff parks the
+  exact call, explicit handoff resumes it, and terminal tasks lose control.
+  Real Chromium30-action proof distinguishes25host rules from5fixture reviewer
+  decisions and records30audits/0human prompts. No real reviewer is qualified.
+- Browser context uses labeled, inspectable/removable composer references; exact
+  payload and draft persist through layout moves and full reload.
+
+The767pass/87skip backend result is an earlier committed checkpoint. New complete
+backend and artifact-only platform reruns must cover these subsequent changes.
+
+Subsequent source checkpoint: complete backend collection passed786tests with96
+optional integrations skipped in295.38seconds. The later canonical turn/receipt
+restart and follow-up draft fixes passed44targeted tests; browser fault/injection
+and native review contracts passed45tests with one optional CLI case skipped.
+Active-task rendered browser proof passed all14workflow flags with zero UI errors
+and no paid provider queries. New native recovery passed six geometry source tests
+and cargo check --tests; actual multi-monitor GUI validation remains open.

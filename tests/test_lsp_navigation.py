@@ -4,9 +4,18 @@ import json
 import os
 from pathlib import Path
 import shutil
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 import pytest
 from fastapi import WebSocketDisconnect
 from termx import lsp
+
+def local_file_identity(uri):
+    """Compare actual files, including encoded/normalized Windows drive URIs."""
+    parts = urlsplit(uri)
+    assert parts.scheme == 'file' and parts.netloc in {'', 'localhost'}
+    assert not parts.query and not parts.fragment
+    return Path(url2pathname(parts.path)).resolve()
 
 class Socket:
     def __init__(self):self.input=asyncio.Queue();self.output=asyncio.Queue()
@@ -52,7 +61,7 @@ def test_real_language_definition_hover_and_completion(tmp_path,monkeypatch,lang
             params={'textDocument':{'uri':file.as_uri()},'position':{'line':line,'character':character}}
             definition=await socket.request(2,'textDocument/definition',params)
             locations=definition if isinstance(definition,list) else [definition]
-            assert locations and locations[0]['uri']==file.as_uri()
+            assert locations and local_file_identity(locations[0]['uri'])==file.resolve()
             assert locations[0]['range']['start']['line']==0
             hover=await socket.request(3,'textDocument/hover',params)
             assert 'answer' in json.dumps(hover)
