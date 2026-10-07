@@ -29,6 +29,7 @@ def _git(
             return subprocess.run(
                 ["git", "-C", root, *args],
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=timeout,
                 check=False,

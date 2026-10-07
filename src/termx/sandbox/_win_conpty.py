@@ -66,6 +66,8 @@ class RestrictedConPTY:
         self._process = None
         self._broker = None
         self._returncode = None
+        self._reader_error = None
+        self._resume_count = None
         self._closing = threading.Event()
         self._done = threading.Event()
         self._output = queue.Queue(maxsize=512)
@@ -168,7 +170,8 @@ class RestrictedConPTY:
             member = wt.BOOL()
             _check(kernel.IsProcessInJob(self._process, self._job, ctypes.byref(member)))
             if not member.value: raise PermissionError('Restricted console did not inherit its Job Object')
-            if kernel.ResumeThread(thread) == 0xffffffff: raise win._last_error()
+            self._resume_count = kernel.ResumeThread(thread)
+            if self._resume_count == 0xffffffff: raise win._last_error()
             kernel.CloseHandle(thread); self._handles.remove(thread)
         finally:
             if initialized: kernel.DeleteProcThreadAttributeList(attributes)
@@ -240,7 +243,11 @@ class RestrictedConPTY:
     def _pump(self):
         buffer, count = ctypes.create_string_buffer(8192), wt.DWORD()
         try:
-            while kernel.ReadFile(self._output_read, buffer, len(buffer), ctypes.byref(count), None) and count.value:
+            while True:
+                if not kernel.ReadFile(self._output_read, buffer, len(buffer), ctypes.byref(count), None):
+                    self._reader_error = ctypes.get_last_error()
+                    break
+                if not count.value: break
                 data = buffer.raw[:count.value]
                 while not self._closing.is_set():
                     try: self._output.put(data, timeout=.1); break
@@ -310,6 +317,11 @@ class RestrictedConPTY:
                 if result < 0: raise OSError(f'ResizePseudoConsole failed ({result})')
 
     def alive(self): return self._returncode is None and not self._done.is_set()
+    def diagnostics(self):
+        with self._state:
+            return {'exit_code':self._returncode,'alive':self.alive(),
+                'reader_error':self._reader_error,'resume_count':self._resume_count,
+                'job_active':win._job_process_count(self._job) if self._job else 0}
     def exit_code(self): return self._returncode
     def poll(self): return self.exit_code()
     def wait(self, timeout=None):

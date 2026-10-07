@@ -380,14 +380,16 @@ mod windows {
 #[cfg(test)]
 mod tests {
     use super::*;
+    static FIXTURE_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     fn fixture() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
-            "termx-native-private-{}-{}",
+            "termx-native-private-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            FIXTURE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ))
     }
     #[test]

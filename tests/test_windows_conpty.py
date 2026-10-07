@@ -25,7 +25,7 @@ def capture(terminal, marker, timeout=15):
         if chunk: data.extend(chunk)
         if marker.encode() in data: return bytes(data)
         if chunk == b'': break
-    raise AssertionError(f'Actual restricted console did not emit {marker!r}: {bytes(data)!r}')
+    raise AssertionError(f'Actual restricted console did not emit {marker!r}: {bytes(data)!r}; {terminal.diagnostics()}')
 
 
 def spec(workspace, script, **changes):
