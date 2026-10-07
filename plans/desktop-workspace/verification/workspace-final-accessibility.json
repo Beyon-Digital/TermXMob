@@ -1,0 +1,549 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "css_viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "device_scale_factor": 1.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.08,
+        "secondary/surface": 7.66,
+        "accent/accent-soft": 6.98,
+        "destructive/muted": 6.8
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 591,
+        "height": 483,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "css_viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "device_scale_factor": 1.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.03,
+        "secondary/surface": 5.39,
+        "accent/accent-soft": 5.52,
+        "destructive/muted": 5.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 591,
+        "height": 483,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "css_viewport": {
+        "width": 720,
+        "height": 450
+      },
+      "device_scale_factor": 2.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-current=\"page\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button aria-current=\"page\">",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                "nav > button:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                "nav > button:nth-child(3)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                "nav > button:nth-child(4)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.08,
+        "secondary/surface": 7.66,
+        "accent/accent-soft": 6.98,
+        "destructive/muted": 6.8
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 582,
+        "height": 176,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "css_viewport": {
+        "width": 720,
+        "height": 450
+      },
+      "device_scale_factor": 2.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-current=\"page\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button aria-current=\"page\">",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".layout-tabs > button:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".layout-tabs > button:nth-child(3)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".layout-tabs > button:nth-child(4)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.03,
+        "secondary/surface": 5.39,
+        "accent/accent-soft": 5.52,
+        "destructive/muted": 5.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "layout": "workbench",
+      "reduced_motion": true,
+      "editor_viewport": {
+        "width": 582,
+        "height": 176,
+        "font_size": "13px",
+        "line_height": "18.2px"
+      },
+      "violations": [],
+      "overflow": false,
+      "split_selector_visible": true
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "focus": {
+        "tag": "SUMMARY",
+        "name": "Voice mode \u00b7 dictation and spoken replies",
+        "outline": "solid",
+        "width": "2px"
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "focus": {
+        "tag": "SUMMARY",
+        "name": "Voice mode \u00b7 dictation and spoken replies",
+        "outline": "solid",
+        "width": "2px"
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "focus": {
+        "tag": "SUMMARY",
+        "name": "Voice mode \u00b7 dictation and spoken replies",
+        "outline": "solid",
+        "width": "2px"
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "focus": {
+        "tag": "SUMMARY",
+        "name": "Voice mode \u00b7 dictation and spoken replies",
+        "outline": "solid",
+        "width": "2px"
+      }
+    }
+  ],
+  "errors": [],
+  "fixture_adapter_bin": "/Users/jainamshah/Documents/GitHub/termxmob/.venv/bin",
+  "UI_asset_snapshot": {
+    "assets/BrowserSurface-D2Pz21-j.js": "7c289f77793e8c40cae42a9b518244aca513c299ef21cd1c9111ed94aedb0abe",
+    "assets/CaptureStatus-CNYhVR7w.js": "86c8fccf68e7051e1ecff91fccf2116aad0ee7d0fcff81b40f65cf4a8d3b1a5f",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/ComputerSurface-CxlfjoXl.js": "c82c64265a44fd231f49dfe162905bfb7eb7c4ba39299ff4fd5a3f186c1a2bdf",
+    "assets/Debugger-BpRcyQag.js": "87f6fb5fc65c0dd7c55f8973f46da79c73444c4086fdcf45cd0d8069a14da08b",
+    "assets/Delivery-CGw2UnYs.js": "e9e7b49b76021c03819339d9568e7996d4ad74bf1a4bbeb8783b350c24da62b8",
+    "assets/Keybindings-igh3YzQ1.js": "451ce827ec7b15fe62305f9749617659b76bf358421e89ea074314b1b7ea4d69",
+    "assets/Managers-CqT4CvC1.css": "3345c7f9537bd53c7d84ce3ccb6993b5c28e663d2486975721de22081d6106da",
+    "assets/Managers-ZnTSkzMf.js": "982b9e6c720b7685daffec704a09536647cd96e5186ee0e1f46d8fbed376e20a",
+    "assets/Media-CoBjs5fF.js": "0f64539656b5a91adb3a0124e760cc33246297514665a1c36fc7bd0ff5ef49d2",
+    "assets/Preview-BYrUH05G.js": "d7f2ed3b9871e9121b3622186acf7a3b297c5060332d91d5f2d84dcbd7b56ec5",
+    "assets/Runners-BmEokjb1.js": "0b5a4db5b71512871eb92ddc7a7d921ce7074e76c851b4f29d978d728c2aef0e",
+    "assets/SafetyManager-h7pXuP-8.js": "3cfe056d9c005c04c8ee7ef2433d99c00c904ffb8b5bb55318f8db40bb52b975",
+    "assets/TerminalPanel-D16bzQsd.js": "a35ac258cb1c4b6f6d4aa7d4f97cf7308886d6b396e63291e451d06ca382eb3d",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/Workbench-D7EqeSRb.js": "1cad802a316f4ed6271c7dc77555e3f374ead27e1f14a69e4b6c9360172cfb3a",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CUMm1BRt.css": "beeb7d96c5624af916b04bd8eb353489f803bd05eb4355c8acf86b30b8c3636f",
+    "assets/circle-Bw7P0rww.js": "516a6e792e1dbfb7b6655762f2413223e2ebdecfd2bec6faaced11df98fbc688",
+    "assets/creation-DqD_e-x6.css": "8727d73da5aa78a36a84387233139f75841b9435ed6c2f7c640a2213be2e08d7",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-DH3NrI_E.js": "ed56f1af730a1d96adba53d228f4b7345089e9ffdf46385561763c2f66eb3701",
+    "assets/index-0xZ3naUl.css": "05697930a92f15d38d2115e9c7b89a13d197516d870b1481b880fafe39349439",
+    "assets/index-t8fN_0qQ.js": "0f7b6cfaeaba3e2b3efcd64585051f50fc580aa1033e72c8aabb9f06f18b6bbb",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-4H8Dtj2A.css": "051d151bd7de335a8ae5fe85eca5727c9325210f46cd6b3656443f9ef429c7af",
+    "assets/mermaid-MCJ5UELQ-BOZQE02R.js": "49c5595112ad21d442eee5d708f4d8cb0cbfa2f953b2e0f78da9ef6d9b5c4001",
+    "assets/play-C2UMpaS4.js": "b18f62d5ad7774eff44490eb746ceb9ccf3630b43130e8b276881797a31e9f65",
+    "assets/square-ClKR0QI7.js": "3f3404f7faad160bc046d40db316267dfe6a4fcb90f14c966d8a0d076ff7e4d5",
+    "assets/transfers-Ce4Zy2UM.js": "5fdeb432a49df9610d79b09187e4ddc39422b1c4143016a4fd7de26157b86467",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "dbb0b3c5c813dcb22de297b7bd8ba4a3f861377fe20fea7e631431d6a0a529b1"
+  },
+  "production_bundle": "index-t8fN_0qQ.js",
+  "scope": "Actual production Chat and Workbench through an isolated host with explicitly qualified venv-based Python LSP, eight theme/zoom states, editor minimum120px and visible Split selector, preserved draft and visible keyboard focus. No CSS injection, host error toast or paid queries. Installed native and human screen reader qualification remain separate."
+}

@@ -277,7 +277,7 @@ class AgentStore:
                 id TEXT PRIMARY KEY,
                 version INTEGER NOT NULL DEFAULT 1,
                 effect TEXT NOT NULL CHECK(effect IN ('allow','deny')),
-                scope_type TEXT NOT NULL CHECK(scope_type IN ('task','project','custom_agent','host')),
+                scope_type TEXT NOT NULL CHECK(scope_type IN ('task','conversation','project','custom_agent','host')),
                 scope_id TEXT,
                 action_type TEXT NOT NULL DEFAULT 'tool'
                     CHECK(action_type IN ('tool','capability','publication','computer')),
@@ -332,6 +332,17 @@ class AgentStore:
             """
         )
         # Additive migration for databases created before the Chat mode column.
+        policy_columns = {row["name"] for row in self._db.execute("PRAGMA table_info(policy_rules)")}
+        if "consent_binding" not in policy_columns:
+            self._db.execute("ALTER TABLE policy_rules ADD COLUMN consent_binding TEXT NOT NULL DEFAULT '{}'")
+        policy_sql = self._db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='policy_rules'").fetchone()[0]
+        if "'conversation'" not in policy_sql:
+            self._db.execute('ALTER TABLE policy_rules RENAME TO policy_rules_legacy_scope')
+            self._db.execute(policy_sql.replace("'task','project','custom_agent','host'", "'task','conversation','project','custom_agent','host'"))
+            self._db.execute('INSERT INTO policy_rules SELECT * FROM policy_rules_legacy_scope')
+            self._db.execute('DROP TABLE policy_rules_legacy_scope')
+            self._db.execute('CREATE INDEX policy_rules_fingerprint ON policy_rules(fingerprint,action_type)')
+            self._db.execute('CREATE INDEX policy_rules_scope ON policy_rules(scope_type,scope_id)')
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tasks)")}
         if "mode" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'")
@@ -1820,10 +1831,11 @@ class AgentStore:
         project_id: str | None = None,
         display: str = "",
         expires_at: float | None = None,
+        consent_binding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if effect not in {"allow", "deny"}:
             raise ValueError("effect must be allow or deny")
-        if scope_type not in {"task", "project", "custom_agent", "host"}:
+        if scope_type not in {"task", "conversation", "project", "custom_agent", "host"}:
             raise ValueError("invalid scope_type")
         if action_type not in {"tool", "capability", "publication", "computer"}:
             raise ValueError("invalid action_type")
@@ -1850,8 +1862,8 @@ class AgentStore:
                     (id, effect, scope_type, scope_id, action_type, tool,
                      fingerprint, fingerprint_kind, matcher_json, capabilities_json,
                      sandbox_profile, source_approval_id, task_id, project_id,
-                     display, created_at, updated_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     display, created_at, updated_at, expires_at, consent_binding)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rule_id,
@@ -1872,6 +1884,7 @@ class AgentStore:
                     now,
                     now,
                     expires_at,
+                    _json(consent_binding or {}),
                 ),
             )
             self._db.commit()
@@ -1987,7 +2000,7 @@ class AgentStore:
         assignments = ", ".join(f"{key} = ?" for key in encoded)
         with self._lock:
             cursor = self._db.execute(
-                f"UPDATE policy_rules SET {assignments} WHERE id = ? AND revoked_at IS NULL",
+                f"UPDATE policy_rules SET {assignments}, version = version + 1 WHERE id = ? AND revoked_at IS NULL",
                 (*encoded.values(), rule_id),
             )
             if cursor.rowcount == 0:
@@ -1998,6 +2011,24 @@ class AgentStore:
             raise KeyError(rule_id)
         return rule
 
+    def edit_policy_consent(self, rule_id: str, *, version: int, validate, effect=None, expires_at=None, revoke=False):
+        """CAS editor: immutable matcher, identity, scope and capabilities."""
+        with self._lock:
+            rule = self.get_policy_rule(rule_id)
+            if not rule: raise KeyError(rule_id)
+            validate(rule)
+            if rule['version'] != version: raise ValueError('Coding policy changed; refresh before editing')
+            if rule['revoked_at'] is not None: raise ValueError('Coding policy was revoked')
+            now = time()
+            if not revoke and (effect not in {'allow','deny'} or not isinstance(expires_at,(int,float)) or not now < expires_at <= now + 30*86400 + 1):
+                raise ValueError('Choose a bounded decision and expiry')
+            cursor = self._db.execute(
+                'UPDATE policy_rules SET effect=?,expires_at=?,revoked_at=?,updated_at=?,version=version+1 WHERE id=? AND version=? AND revoked_at IS NULL',
+                (rule['effect'] if revoke else effect,rule['expires_at'] if revoke else expires_at,now if revoke else None,now,rule_id,version))
+            if cursor.rowcount != 1: raise ValueError('Coding policy changed; refresh before editing')
+            self._db.commit()
+            return self.get_policy_rule(rule_id)
+
     def expire_task_policy_rules(self, task_id: str) -> int:
         """Expire every task-scoped rule for a task — called at terminal state
         so scoped trust can never outlive its task."""
@@ -2007,9 +2038,9 @@ class AgentStore:
                 """
                 UPDATE policy_rules SET expires_at = ?, updated_at = ?
                 WHERE scope_type = 'task' AND scope_id = ?
-                  AND revoked_at IS NULL AND expires_at IS NULL
+                  AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
                 """,
-                (now, now, task_id),
+                (now, now, task_id, now),
             )
             self._db.commit()
         return cursor.rowcount
@@ -2030,7 +2061,7 @@ class AgentStore:
         now = time()
         with self._lock:
             cursor = self._db.execute(
-                "UPDATE policy_rules SET revoked_at = ?, updated_at = ? WHERE id = ? AND revoked_at IS NULL",
+                "UPDATE policy_rules SET revoked_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND revoked_at IS NULL",
                 (now, now, rule_id),
             )
             if cursor.rowcount == 0:
@@ -2046,6 +2077,7 @@ class AgentStore:
         return {
             "id": row["id"],
             "version": row["version"],
+            "consent_binding": _load_json(row["consent_binding"], {}),
             "effect": row["effect"],
             "scope_type": row["scope_type"],
             "scope_id": row["scope_id"],

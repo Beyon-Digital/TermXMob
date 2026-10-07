@@ -1,0 +1,72 @@
+{
+  "kind": "backend-first-generic-consent-candidate-audit",
+  "status": "source-verified-and-AQa-routine-consent-rendered",
+  "source_base": "f97b71153f8794948ff55120a0df765341a94706",
+  "candidate_uncommitted": true,
+  "changed_in_this_stabilization": [
+    "src/termx/graphql/domains/agent.py",
+    "src/termx/agent/policies/models.py",
+    "src/termx/agent/action_review.py",
+    "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+    "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+    "desktop/workspace/src/features/general-approvals.test.tsx",
+    "tests/test_coding_consent.py",
+    "tests/test_agent_action_review.py"
+  ],
+  "reviewed_existing_candidate": [
+    "src/termx/workspace/coding_policies.py",
+    "src/termx/agent/policies/engine.py",
+    "src/termx/workspace/prompt_queue.py",
+    "src/termx/agent/manager.py",
+    "src/termx/agent/store.py",
+    "src/termx/auto_review.py"
+  ],
+  "boundaries": {
+    "graphQL": "Canonical conversation scope reaches actual Manager; unsupported native always remains rejected for internal approval without settling pending consent or effects.",
+    "CAS": "Only decision/expiry/revocation can change; owner/current policy/conversation device and target/arguments/sandbox/capabilities remain bound. Alternate legacy mutation refuses bound member rows.",
+    "deny": "Hard restrictions and applicable capability/execution denies dominate matching owner-scoped allows; final matched rule version and authority checked before effects.",
+    "queue": "Applicable live policy revision, expiry/revoke and reviewer account/configuration fingerprints invalidate queued consent; exact review required before dispatch.",
+    "credential_content": "Bounded structured fields, nested serialized JSON, quoted assignments and private-key/bearer markers require exact human review before remembered/model paths. Oversized/deep metadata is also ineligible. This is conservative eligibility classification, not arbitrary secret detection.",
+    "public_metadata": "Recursive public matcher redaction preserves stored authority; exact references/digests remain inspectable.",
+    "UI_lifecycle": "Fresh inventory after unlock discards old observation; synchronous CAS and approval fences prevent duplicate requests; withdrawn scope visibly falls back once."
+  },
+  "checks": [
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_coding_consent.py::test_graphql_accepts_canonical_conversation_consent_and_keeps_exact_host_validation tests/test_coding_consent.py::test_public_policy_metadata_recursively_redacts_without_changing_matcher_authority tests/test_policies.py tests/test_policy_api.py",
+      "passed": 58,
+      "seconds": 22.83
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_agent_action_review.py tests/test_coding_consent.py tests/test_prompt_queue.py",
+      "passed": 28,
+      "seconds": 101.38
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_agent_action_review.py::test_structured_credential_content_is_bounded_and_never_blanket_eligible tests/test_agent_action_review.py::test_structured_credentials_require_once_only_human_decisions_without_reviewer_or_remembered_allow",
+      "passed": 2,
+      "seconds": 3.08,
+      "note": "Final classifier source including nested JSON strings and existing-allow touch assertion."
+    },
+    {
+      "command": "pnpm --dir desktop/workspace exec vitest run src/features/general-approvals.test.tsx",
+      "passed": 8,
+      "seconds": 3.56
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_native_action_review.py",
+      "passed": 4,
+      "seconds": 10.63,
+      "note": "Actual Codex stdio/ACP host file/terminal intercepted callbacks; no paid native query."
+    }
+  ],
+  "historical_rendered_evidence": "coding-consent-rendered-Cfb.json; original approve/inspect/edit/revoke candidate, not a render of this latest source.",
+  "qualification_limits": [
+    "No paid/provider network query.",
+    "No Figma mutation.",
+    "Shared proposal is used by internal and native intercepted callbacks; no universal native fastpath interception claim.",
+    "Claude six-tool restricted browser mode remains declared; Codex/ACP restricted browser sessions remain explicitly refused.",
+    "Final coherent TypeScript/build and renderer qualification are integration-owner work; previous shared TSC failure was Identity deferred-test types, since fixed by its owner.",
+    "Live REVIEW07 and installed desktop/native hardware qualification remain open."
+  ],
+  "final_routine_rendered_evidence": "coding-consent-rendered-AQa.json"
+}

@@ -1,0 +1,56 @@
+{
+  "qualification": "local source and immutable production UI",
+  "platform": "macOS 13 Intel",
+  "production_bundle": "index-t8fN_0qQ.js",
+  "frontend": {
+    "passed": 107,
+    "files": 34,
+    "duration_seconds": 36.28,
+    "production_build": "passed",
+    "build_seconds": 11.94
+  },
+  "backend_batches": [
+    {
+      "tests": [
+        "test_workspace_presets",
+        "test_custom_agent_authority",
+        "test_provider_declarations",
+        "test_media_workspace",
+        "test_native_gui_fixture"
+      ],
+      "passed": 27,
+      "skipped": 1,
+      "duration_seconds": 24.36,
+      "skip": "Optional Docker proof; actual immutable runner is separately qualified in session-presets-runner.json"
+    },
+    {
+      "tests": [
+        "test_private_shutdown_order",
+        "test_engines",
+        "test_native_action_review"
+      ],
+      "passed": 28,
+      "duration_seconds": 10.95
+    },
+    {
+      "tests": [
+        "test_private_shutdown_order"
+      ],
+      "passed": 6,
+      "duration_seconds": 4.84,
+      "scope": "Final exact shutdown source, including live-native-process refusal; overlaps earlier batch."
+    }
+  ],
+  "rendered_evidence": [
+    "workspace-final-accessibility.json",
+    "voice-workspace-rendered.json"
+  ],
+  "limits": [
+    "Batches overlap earlier recorded tests; counts are not a full-suite total.",
+    "No paid provider query, physical microphone, installed native binary or Rust delivery build is implied.",
+    "Final source CI and installed installer qualification remain separate."
+  ],
+  "source_commit": "3edf12cc21908d2008442f0b7cb999e6e2e4cc64",
+  "source_CI_run": 37627728055,
+  "artifact_only_run": 37627744804
+}

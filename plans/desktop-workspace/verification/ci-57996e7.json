@@ -1,0 +1,35 @@
+{
+  "source_commit": "57996e70f33116e26ee0ee836157386bcc54f30b",
+  "run_id": 37629702706,
+  "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37629702706",
+  "result": "success",
+  "jobs": [
+    {
+      "id": 112820439562,
+      "platform": "Linux",
+      "passed": 901,
+      "skipped": 142,
+      "seconds": 177.33
+    },
+    {
+      "id": 112820438921,
+      "platform": "macOS",
+      "passed": 933,
+      "skipped": 110,
+      "seconds": 246.37
+    },
+    {
+      "id": 112820439266,
+      "platform": "workspace",
+      "passed": 107,
+      "files": 34,
+      "production_build": "passed",
+      "build_seconds": 7.21
+    }
+  ],
+  "scope": "Exact clean source checkpoint with private BrowserService fixture cleanup. Counts are separate platform totals, not summed.",
+  "limits": [
+    "Four-panel Computer docking and remembered-rule editing are later changes and require their own source qualification.",
+    "Installed native GUI, hardware permission and real entitled media/reviewer model remain separate gates."
+  ]
+}

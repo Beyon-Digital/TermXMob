@@ -1,0 +1,146 @@
+{
+  "pageId": "32:2",
+  "edges": [
+    {
+      "sourceState": "J-ENTRY-24",
+      "sourceFrame": "64:17136",
+      "button": "64:17280",
+      "label": "Save group and inspect",
+      "targetState": "J-ENTRY-25",
+      "targetFrame": "64:17332"
+    },
+    {
+      "sourceState": "J-ENTRY-24",
+      "sourceFrame": "64:17136",
+      "button": "64:17283",
+      "label": "Stale revision review",
+      "targetState": "J-ENTRY-26",
+      "targetFrame": "64:17528"
+    },
+    {
+      "sourceState": "J-ENTRY-24",
+      "sourceFrame": "64:17136",
+      "button": "64:17286",
+      "label": "Audit retention",
+      "targetState": "J-ENTRY-27",
+      "targetFrame": "64:17724"
+    },
+    {
+      "sourceState": "J-ENTRY-24",
+      "sourceFrame": "64:17136",
+      "button": "68:16665",
+      "label": "Device session policy",
+      "targetState": "J-ENTRY-30",
+      "targetFrame": "68:16270"
+    },
+    {
+      "sourceState": "J-ENTRY-30",
+      "sourceFrame": "68:16270",
+      "button": "68:16414",
+      "label": "Save session policy",
+      "targetState": "J-ENTRY-31",
+      "targetFrame": "68:16466"
+    },
+    {
+      "sourceState": "J-ENTRY-30",
+      "sourceFrame": "68:16270",
+      "button": "68:16417",
+      "label": "Inspect stale response",
+      "targetState": "J-ENTRY-31",
+      "targetFrame": "68:16466"
+    },
+    {
+      "sourceState": "J-ENTRY-30",
+      "sourceFrame": "68:16270",
+      "button": "68:16420",
+      "label": "Cancel changes",
+      "targetState": "J-ENTRY-24",
+      "targetFrame": "64:17136"
+    },
+    {
+      "sourceState": "J-ENTRY-31",
+      "sourceFrame": "68:16466",
+      "button": "68:16610",
+      "label": "Reload current policy",
+      "targetState": "J-ENTRY-30",
+      "targetFrame": "68:16270"
+    },
+    {
+      "sourceState": "J-ENTRY-31",
+      "sourceFrame": "68:16466",
+      "button": "68:16613",
+      "label": "Sign in again",
+      "targetState": "J-ENTRY-01",
+      "targetFrame": "32:3"
+    },
+    {
+      "sourceState": "J-ENTRY-31",
+      "sourceFrame": "68:16466",
+      "button": "68:16616",
+      "label": "Back to Access",
+      "targetState": "J-ENTRY-24",
+      "targetFrame": "64:17136"
+    }
+  ],
+  "createdNodeIds": [
+    "68:16665",
+    "I68:16665;4:116",
+    "I68:16665;4:116;4:5"
+  ],
+  "mutatedNodeIds": [
+    "I64:17289;21:15",
+    "64:17279",
+    "I64:17280;4:104;4:5",
+    "64:17280",
+    "I64:17283;4:116;4:5",
+    "64:17283",
+    "I64:17286;4:116;4:5",
+    "64:17286",
+    "I68:16665;4:116;4:5",
+    "68:16665",
+    "I68:16423;21:15",
+    "I68:16271;5:396",
+    "I68:16271;5:396;4:183",
+    "I68:16271;5:396;4:183;4:49",
+    "I68:16271;5:396;4:183;4:50",
+    "I68:16271;5:396;4:183;4:51",
+    "I68:16271;5:396;4:186",
+    "I68:16271;5:396;4:186;4:5",
+    "I68:16271;5:405",
+    "I68:16271;5:405;4:189",
+    "I68:16271;5:405;4:189;4:56",
+    "I68:16271;5:405;4:189;4:57",
+    "I68:16271;5:405;4:189;4:58",
+    "I68:16271;5:405;4:192",
+    "I68:16271;5:405;4:192;4:5",
+    "68:16413",
+    "I68:16414;4:104;4:5",
+    "68:16414",
+    "I68:16417;4:116;4:5",
+    "68:16417",
+    "I68:16420;4:116;4:5",
+    "68:16420",
+    "I68:16619;21:15",
+    "I68:16467;5:396",
+    "I68:16467;5:396;4:183",
+    "I68:16467;5:396;4:183;4:49",
+    "I68:16467;5:396;4:183;4:50",
+    "I68:16467;5:396;4:183;4:51",
+    "I68:16467;5:396;4:186",
+    "I68:16467;5:396;4:186;4:5",
+    "I68:16467;5:405",
+    "I68:16467;5:405;4:189",
+    "I68:16467;5:405;4:189;4:56",
+    "I68:16467;5:405;4:189;4:57",
+    "I68:16467;5:405;4:189;4:58",
+    "I68:16467;5:405;4:192",
+    "I68:16467;5:405;4:192;4:5",
+    "68:16609",
+    "I68:16610;4:104;4:5",
+    "68:16610",
+    "I68:16613;4:116;4:5",
+    "68:16613",
+    "I68:16616;4:116;4:5",
+    "68:16616"
+  ]
+}

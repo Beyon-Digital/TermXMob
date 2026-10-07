@@ -1,0 +1,50 @@
+{
+  "kind": "actual-internal-coordinator-shared-tree-budget",
+  "status": "source-and-focused-regressions-verified",
+  "scope": "Internal AgentManager root tree, including synchronous context preparation and provider planning; independent native/runner limits remain separately declared",
+  "units": {
+    "steps": "Atomic exact tool-call position reservations, not tokens or completed effects",
+    "seconds": "Sum of active-worker seconds including concurrent planning/provider work; human approval and child-decision waits paused"
+  },
+  "durable_tables": "Root grant/version, task membership, exact reservations, active leases and atomic approval-resume receipt in AgentStore SQLite",
+  "boundaries": [
+    "All-or-nothing group reservation and idempotent exact retry",
+    "Cancellation releases active lease but never resets pool usage",
+    "Startup uncertain leases exhaust time and require explicit renewal",
+    "Approval decision, grant update and restart receipt commit atomically",
+    "Approved sibling/restart continuation reuses same grant and ignores invented client increases",
+    "Planning renewal resumes planning and requires separate plan approval before tools",
+    "Partial tool time exhaustion does not automatically replay effects",
+    "No token or billing estimates"
+  ],
+  "checks": [
+    {
+      "command": ".venv/bin/python -m pytest tests/test_tree_budget.py tests/test_agent.py -q -k \"tree_budget or budget or subagent\"",
+      "passed": 24,
+      "deselected": 99,
+      "seconds": 22.81
+    },
+    {
+      "command": "pnpm exec vitest run src/features/budget-approval.test.tsx",
+      "cwd": "desktop/workspace",
+      "passed": 4,
+      "seconds": 8.81
+    }
+  ],
+  "code": [
+    "src/termx/agent/tree_budget.py",
+    "src/termx/agent/manager.py",
+    "src/termx/workspace/http.py",
+    "desktop/workspace/src/features/BudgetApproval.tsx",
+    "desktop/workspace/src/features/TaskSupervisor.tsx"
+  ],
+  "tests": [
+    "tests/test_tree_budget.py",
+    "desktop/workspace/src/features/budget-approval.test.tsx"
+  ],
+  "limitations": [
+    "Actual concurrent coordinator/provider/tool fixtures use local deterministic adapters, never paid providers.",
+    "This record does not claim final rendered shared-budget UI or installed runtime proof.",
+    "Existing individual token/cost accounting is not invented; pool units remain reserved calls and summed active seconds."
+  ]
+}

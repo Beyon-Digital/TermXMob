@@ -50,6 +50,8 @@ class Identity:
     issuer: str
     subject: str
     strength: str
+    groups: tuple[str, ...] | None = None
+    membership_ttl: int = 300
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,8 @@ class Principal:
     # Server-derived provenance preserves device grants across live reloads.
     authority_session_id: str | None = None
     authority_execution: bool = False
+    groups: tuple[str, ...] = ()
+    organizations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,7 @@ class SessionCredentials:
     csrf_token: str
     session_id: str
     expires_in: int = ACCESS_TTL
+    refresh_expires_in: int = ABSOLUTE_TTL
 
 
 class AuthenticationPort(Protocol):
@@ -177,6 +182,10 @@ class AuthenticationService:
                 self._rotate_key(db)
         self.issuer = f"urn:termx:host:{self.host_id}"
         self.audience = f"termx-api:{self.host_id}"
+        from termx.session_policy import SessionPolicy
+        self.session_policy = SessionPolicy(self, idle_default=IDLE_TTL, absolute_default=ABSOLUTE_TTL)
+        from termx.identity_groups import IdentityGroups
+        self.groups=IdentityGroups(self)
         self.adapters: dict[str, AuthenticationPort] = {"local-password": LocalPasswordAdapter(self)}
         for adapter in adapters:
             self.register_adapter(adapter)
@@ -300,7 +309,8 @@ class AuthenticationService:
         with self._db() as db:
             session = db.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
             principal = self._live_principal(db, session)
-        return SessionIdentity(principal, session_id, session['expires']) if principal else None
+            deadline=self.session_policy.deadline(db,session) if principal else None
+        return SessionIdentity(principal, session_id, deadline) if principal else None
 
     def execution_session(self, session_id: str) -> SessionIdentity | None:
         """Enrolled background execution only; never authenticates API/capture.
@@ -311,9 +321,10 @@ class AuthenticationService:
         with self._db() as db:
             session=db.execute('SELECT * FROM sessions WHERE id=?',(session_id,)).fetchone()
             principal=self._live_principal(db,session,allow_locked=True)
+            deadline=self.session_policy.deadline(db,session) if principal else None
         if not principal:return None
         from dataclasses import replace
-        return SessionIdentity(replace(principal,authority_execution=True),session_id,session['expires'])
+        return SessionIdentity(replace(principal,authority_execution=True),session_id,deadline)
 
     def principal_by_id(self, principal_id: str) -> Principal | None:
         with self._db() as db:
@@ -333,9 +344,10 @@ class AuthenticationService:
                 WHERE i.issuer=? AND i.subject=? AND p.enabled=1""", (identity.issuer, identity.subject)).fetchone()
         return self._principal(row) if row else None
 
-    @staticmethod
-    def _principal(row: sqlite3.Row) -> Principal:
-        return Principal(row["id"], row["display_name"], tuple(json.loads(row["scopes"])), row["policy_version"])
+    def _principal(self,row: sqlite3.Row) -> Principal:
+        with self._db() as db:
+            scopes,groups,organizations=self.groups.context(db,row['id'],json.loads(row['scopes']))
+        return Principal(row["id"], row["display_name"], scopes, row["policy_version"],groups=groups,organizations=organizations)
 
     def map_identity(self, identity: Identity, principal_id: str) -> None:
         """Administrator composition API; deliberately absent from agent tools."""
@@ -389,6 +401,8 @@ class AuthenticationService:
             raise AuthenticationError("identity provider unavailable") from exc
         if principal is None:
             raise AuthenticationError("invalid credentials")
+        self.groups.sync(identity,principal.id)
+        principal=self.principal_by_id(principal.id)
         return identity,principal
 
     async def login(self, adapter_id: str, evidence: dict[str, str], *, peer: str, device_name: str = "") -> SessionCredentials:
@@ -396,12 +410,14 @@ class AuthenticationService:
         raw, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), uuid.uuid4().hex
         now = time()
         with self._db() as db:
-            db.execute("INSERT INTO sessions (id, principal_id, device_name, strength, created, last_seen, expires, revoked, csrf_hash, adapter_id) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-                       (sid, principal.id, device_name[:128], identity.strength, now, now, now + ABSOLUTE_TTL, _digest(csrf), adapter_id))
+            policy=self.session_policy.read(db)
+            db.execute("INSERT INTO sessions (id, principal_id, device_name, strength, created, last_seen, expires, revoked, csrf_hash, adapter_id,idle_ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?,?)",
+                       (sid, principal.id, device_name[:128], identity.strength, now, now, now + policy['absolute_ttl_seconds'], _digest(csrf), adapter_id,policy['idle_ttl_seconds']))
             db.execute("INSERT INTO refresh_tokens VALUES (?, ?, 0)", (_digest(raw), sid))
             token = self._issue(db, principal, sid)
+            credentials=self._credentials(db,token,raw,csrf,sid)
         log_event("auth_login", principal_id=principal.id, session_id=sid, adapter_id=adapter_id)
-        return SessionCredentials(token, raw, csrf, sid)
+        return credentials
 
     @staticmethod
     def _rotate_key(db: sqlite3.Connection) -> str:
@@ -426,11 +442,17 @@ class AuthenticationService:
         kid = db.execute("SELECT value FROM metadata WHERE key='active_key'").fetchone()[0]
         key = db.execute("SELECT secret FROM signing_keys WHERE id=?", (kid,)).fetchone()[0]
         now = int(time())
+        session=db.execute('SELECT * FROM sessions WHERE id=?',(sid,)).fetchone()
+        expires=min(now+ACCESS_TTL,int(self.session_policy.deadline(db,session)))
         return jwt.encode({"iss": self.issuer, "aud": self.audience, "sub": principal.id,
-                           "sid": sid, "iat": now, "exp": now + ACCESS_TTL,
+                           "sid": sid, "iat": now, "exp": expires,
                            "token_type": "access", "policy_version": principal.policy_version,
-                           "auth_generation": db.execute("SELECT auth_generation FROM sessions WHERE id=?",(sid,)).fetchone()[0]},
+                           "auth_generation": session['auth_generation']},
                           key, algorithm="HS256", headers={"typ": "at+jwt", "kid": kid})
+
+    def _credentials(self,db,token,raw,csrf,sid):
+        expires=jwt.decode(token,options={'verify_signature':False})['exp']
+        return SessionCredentials(token,raw,csrf,sid,max(0,expires-int(time())),self.session_policy.absolute_remaining(db,sid))
 
     def resolve(self, token: str | None, *, allow_locked: bool = False) -> SessionIdentity | None:
         if not token or len(token) > 16384:
@@ -456,24 +478,24 @@ class AuthenticationService:
                 principal = self._live_principal(db, session,allow_locked=allow_locked)
                 if principal is None:
                     return None
-                return SessionIdentity(principal, session["id"], min(claims["exp"], session["expires"], session["last_seen"] + IDLE_TTL),bool(session["locked"]))
+                return SessionIdentity(principal, session["id"], min(claims["exp"],self.session_policy.deadline(db,session)),bool(session["locked"]))
         except (jwt.PyJWTError, ValueError, TypeError, KeyError):
             return None
 
     def _live_principal(self, db: sqlite3.Connection, session: sqlite3.Row | None, *, allow_locked: bool = False) -> Principal | None:
         now = time()
-        if session is None or session["revoked"] or session["expires"] <= now or session["last_seen"] + IDLE_TTL <= now:
+        if session is None or session["revoked"] or self.session_policy.deadline(db,session) <= now:
             return None
         if session['locked'] and not allow_locked:
             return None
         row = db.execute("SELECT * FROM principals WHERE id=? AND enabled=1", (session["principal_id"],)).fetchone()
         if not row:
             return None
-        scopes = tuple(json.loads(row['scopes']))
+        scopes,groups,organizations=self.groups.context(db,row['id'],json.loads(row['scopes']))
         if session['grant_scopes'] is not None:
             granted = set(json.loads(session['grant_scopes']))
             scopes = tuple(scope for scope in scopes if scope in granted)
-        return Principal(row['id'], row['display_name'], scopes, row['policy_version'], session['id'])
+        return Principal(row['id'], row['display_name'], scopes, row['policy_version'], session['id'],groups=groups,organizations=organizations)
 
     def refresh(self, raw: str) -> SessionCredentials:
         failure = "invalid refresh credential"
@@ -495,7 +517,7 @@ class AuthenticationService:
                         db.execute("UPDATE refresh_tokens SET consumed=1 WHERE digest=?", (_digest(raw),))
                         db.execute("INSERT INTO refresh_tokens VALUES (?, ?, 0)", (_digest(new_raw), sid))
                         db.execute("UPDATE sessions SET last_seen=?, csrf_hash=? WHERE id=?", (time(), _digest(csrf), sid))
-                        result = SessionCredentials(self._issue(db, principal, sid), new_raw, csrf, sid)
+                        result = self._credentials(db,self._issue(db,principal,sid),new_raw,csrf,sid)
         # Commit replay revocation before raising (never roll it back).
         if result is None:
             if locked:

@@ -1,0 +1,162 @@
+{
+  "proof": "actual-canonical-prompt-queue-interrupt-jump",
+  "paid_queries": 0,
+  "external_network_requests": 0,
+  "errors": [],
+  "states": [
+    {
+      "theme": "dark",
+      "width": 1440,
+      "queue_button": {
+        "top": 810,
+        "bottom": 840,
+        "height": 30,
+        "viewport": 1000,
+        "uncovered": true
+      },
+      "axe_violations": []
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "queue_button": {
+        "top": 810,
+        "bottom": 840,
+        "height": 30,
+        "viewport": 1000,
+        "uncovered": true
+      },
+      "axe_violations": []
+    },
+    {
+      "theme": "dark",
+      "width": 720,
+      "queue_button": {
+        "top": 356,
+        "bottom": 386,
+        "height": 30,
+        "viewport": 500,
+        "uncovered": true
+      },
+      "axe_violations": []
+    },
+    {
+      "theme": "light",
+      "width": 720,
+      "queue_button": {
+        "top": 356,
+        "bottom": 386,
+        "height": 30,
+        "viewport": 500,
+        "uncovered": true
+      },
+      "axe_violations": []
+    }
+  ],
+  "steps": [
+    "Two real queued turns survive page close, execute once in order through AgentManager, preserve later draft and old reading position; Jump returns to actual latest answer",
+    "Consequence confirmation cancels the exact active canonical task and starts the replacement once as a new queued turn",
+    "Expired follow-up blocks until explicit old/current target review; cancellation remains inspectable in bounded history without executing"
+  ],
+  "UI_asset_snapshot": {
+    "assets/BrowserSurface-CXs2-aIt.js": "312947e4e8de07aa1729145b02c0bfcd7dd80eaa3e13ef188182e4492f82c421",
+    "assets/CaptureStatus-BwANVLGc.js": "824d3fab90e5893c20625e76b264e0fe1443a602f3e779fdbb7bb44f1576985e",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/ComputerSurface-CpqujLdl.js": "ad8e458ccec370058cc3fd52e3f820778692421ea995084ea3bc8f4bc4a2f614",
+    "assets/Debugger-C0-yICNc.js": "9ad93258c88a672d9fc072195c74964a8e37cdc0718f2d09c0eecb01e35245a3",
+    "assets/Delivery-BnwIvO5T.js": "2472d74204db37fcca1d67d7bf12c49b1cb3ea32c279e66c9da4427ed051d983",
+    "assets/Keybindings-Cord95P2.js": "869f40be1d502b03341c60e5b08f1b18e224da221b72a20bad28f86c8d17f737",
+    "assets/Managers-CTJPm9lD.js": "bad1de6be13ca761c6965baa2f7ed026323135b04bd70f3630055570de5dedc9",
+    "assets/Managers-K6iCTEID.css": "c7ea2030a05ca76f502bf3b22ff3dcb9f02283b91e236c76f5b1c1d23c5d1f58",
+    "assets/Media-BWP7IXYX.js": "ceb08af0a83ce622ddbf970d654c1f9daca518a61bfb30f18d471ec9e808b5d0",
+    "assets/Preview-Da2H4bBO.js": "948167f73798126332b4e65dffe6eec37d13d424130198f861900b256e251e2b",
+    "assets/Runners-DPMqc-2o.js": "3ab22d21276cb9093f9e0755d75848f5972b35262d82b3a2c4bcaa54af8e29ea",
+    "assets/SafetyManager-BD4OPd_R.js": "29b192b19778cb9a28419fdf000b73872361f77eddd974c52f1ffa616e817972",
+    "assets/TerminalPanel-BTxUvdoD.js": "b459938a7d66cfd99f3976052c1d5b11912f180c02f5f21c71ce01456a130e9c",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/Workbench-CvjNXGAZ.js": "aa7a69538f91505230d0da421da3ce61c062036cb20c1b191ef50cdaf3763943",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-DUjxGDE-.js": "30fc75aee2693d65dbb021fd8becc8a2a52011af596b1bfa0516faa7299a83b0",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-D4jvgZKu.js": "42aaeb30b75966f4b174f2dbb16eec1ffb9696b65a43677d934ae96d59c838a4",
+    "assets/index-BuwFeuqP.js": "3d84ce06f83b96053bd0e9e3f694a498737ca12b8149d2cc44632f0de4eff6a2",
+    "assets/index-CP122w_J.css": "1340284bfca4d7bcec4131f136a10eeb9bcede7bbe68adae6efebefb6dddb1e6",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/mermaid-MCJ5UELQ-ydqtWDxP.js": "fe1410f42d6d4f451a2545dbbb19c718a7552b3541de689d97d825e03216c5de",
+    "assets/play-CDjrud-I.js": "aa87349bf923271dcf1024a5f3d060a81efa412910b74218054c44c4d86b0eb4",
+    "assets/square-DAJrshaA.js": "62612ae587b3c60be2da63d1c61cee897d6099e8a5bd7ddb4fa45167b60fdb89",
+    "assets/transfers-Dv3fiKQf.js": "2d4e8516c2804b8a4ea42dc474de84f234219096b5f4f26fe22ae462565c5dbd",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "a149a29be88c1edd2c12f5c6b1221fccc7ea92b577c6014c3adbedc7cfd0cfde"
+  },
+  "reading_position": {
+    "old_offset": 5887,
+    "restored_offset": 5887,
+    "old_anchor": "47",
+    "restored_anchor": "47"
+  },
+  "fixture_provider_turns": [
+    "Initial active task",
+    "Queued exact A",
+    "Queued exact B",
+    "Interrupt gate",
+    "Interrupt replacement",
+    "Cancellation gate"
+  ],
+  "status": "passed",
+  "source_checkpoint": "f97b71153f8794948ff55120a0df765341a94706",
+  "fixture": "tests/workspace_prompt_queue_e2e.py",
+  "scope": "Real canonical local AgentManager with no-network fixture provider; four light/dark viewport states; queue restart reconciliation also covered by tests/test_prompt_queue.py, not a second host process in this rendered run",
+  "screenshots": [
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/queue-dark-720.png",
+      "sha256": "dd5201ffbcd2264933487df34b4e7173d0085ac13013513b0fa11de7ba3d6382"
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/queue-dark-1440.png",
+      "sha256": "19cfef4f3f0d113c064de2c66204ec3cc3828b913cc72da742e9647eac1b2522"
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/queue-light-1440.png",
+      "sha256": "f7bfcb3e8cf0079068f3d945647ad4c67c1a6190edcfdd3baa8e70b8338069ac"
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/queue-light-720.png",
+      "sha256": "46e5f8519feec77469eeb7b12dc329bb8622ad2e122a27be0594629d965d2fad"
+    }
+  ]
+}

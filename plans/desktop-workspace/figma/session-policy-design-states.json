@@ -1,0 +1,128 @@
+[
+  {
+    "id": "J-ENTRY-30",
+    "title": "Device session lifetime policy",
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "kind": "manager",
+    "index": 0,
+    "fields": [
+      {
+        "label": "Idle timeout \u00b7 seconds",
+        "value": "86400",
+        "hint": "600\u20132592000; current activity extends idle only within the absolute cap"
+      },
+      {
+        "label": "Absolute lifetime \u00b7 seconds",
+        "value": "2592000",
+        "hint": "At least idle timeout; maximum31536000"
+      },
+      {
+        "label": "Access token lifetime \u00b7 seconds",
+        "value": "300 \u00b7 Read only",
+        "hint": "Short-lived access and WebSocket tickets remain bound to origin session"
+      },
+      {
+        "label": "Policy revision",
+        "value": "1",
+        "hint": "Save uses exact revision; no automatic stale retry"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Current issued sessions",
+        "value": "Reductions immediately tighten idle and absolute caps",
+        "status": "May expire this session"
+      },
+      {
+        "name": "New login and pairing",
+        "value": "Increased limits apply only to new sessions",
+        "status": "Never resurrect expiry"
+      }
+    ],
+    "notice": "Host administrator only. Saving shorter lifetimes may expire your own session. Review unsaved work first; expired sessions and tickets cannot gain authority from refresh.",
+    "tone": "warning",
+    "actions": [
+      {
+        "label": "Save session policy",
+        "target": "J-ENTRY-31",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect stale response",
+        "target": "J-ENTRY-31",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel changes",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      }
+    ],
+    "light": false
+  },
+  {
+    "id": "J-ENTRY-31",
+    "title": "Policy saved or changed elsewhere",
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "kind": "manager",
+    "index": 1,
+    "fields": [
+      {
+        "label": "Current policy revision",
+        "value": "2",
+        "hint": "Illustrative result; actual host response is authoritative"
+      },
+      {
+        "label": "Expired sessions",
+        "value": "Returned count from the host",
+        "hint": "Only a successful reduction returns its actual expired_sessions count"
+      },
+      {
+        "label": "Unsaved policy draft",
+        "value": "Retained after revision conflict",
+        "hint": "Review current revision before reapplying the retained draft"
+      },
+      {
+        "label": "Current session",
+        "value": "Live \u00b7 or expired by the reduction",
+        "hint": "Expired access requires a fresh configured sign-in; never retry old tickets"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Revision conflict",
+        "value": "Save rejected; no policy or session effects",
+        "status": "Reload current policy"
+      },
+      {
+        "name": "Successful reduction",
+        "value": "Issued session caps tightened durably",
+        "status": "Counts inspectable"
+      }
+    ],
+    "notice": "A stale save has no effects and keeps the draft. A successful reduction can end this session; increased values never widen existing sessions. Reauthenticate through the configured entry flow when needed.",
+    "tone": "warning",
+    "actions": [
+      {
+        "label": "Reload current policy",
+        "target": "J-ENTRY-30",
+        "variant": "primary"
+      },
+      {
+        "label": "Sign in again",
+        "target": "J-ENTRY-01",
+        "variant": "secondary"
+      },
+      {
+        "label": "Back to Access",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      }
+    ],
+    "light": true
+  }
+]

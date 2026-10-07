@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from termx.auth import extract_passcode
-from termx.identity import ABSOLUTE_TTL, AuthenticationError, LoginLimited, SessionCredentials, SessionLocked
+from termx.identity import AuthenticationError, LoginLimited, SessionCredentials, SessionLocked
 
 if TYPE_CHECKING:
     from termx.app import AppState
@@ -130,14 +130,14 @@ def mount_identity(app, state: AppState) -> None:
         secure = request.url.scheme == "https"
         response.set_cookie(ACCESS_COOKIE, credentials.access_token, max_age=credentials.expires_in,
                             httponly=True, secure=secure, samesite="strict", path="/")
-        response.set_cookie(REFRESH_COOKIE, credentials.refresh_token, max_age=ABSOLUTE_TTL,
+        response.set_cookie(REFRESH_COOKIE, credentials.refresh_token, max_age=credentials.refresh_expires_in,
                             httponly=True, secure=secure, samesite="strict", path="/auth")
         # The anti-CSRF value is readable so a reloaded/detached window can
         # supply its header. It grants no API authority; credentials stay HttpOnly.
-        response.set_cookie(CSRF_COOKIE, credentials.csrf_token, max_age=ABSOLUTE_TTL,
+        response.set_cookie(CSRF_COOKIE, credentials.csrf_token, max_age=credentials.refresh_expires_in,
                             secure=secure, samesite="strict", path="/")
         return {"session_id": credentials.session_id, "expires_in": credentials.expires_in,
-                "csrf_token": credentials.csrf_token}
+                "csrf_token": credentials.csrf_token,"refresh_expires_in":credentials.refresh_expires_in}
 
     @router.get("/methods")
     def methods(response: Response):

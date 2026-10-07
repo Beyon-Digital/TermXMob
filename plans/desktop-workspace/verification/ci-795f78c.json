@@ -1,0 +1,22 @@
+{
+  "source_commit": "795f78cd4d4aa8564f5219fbdedefa66e9fe7e08",
+  "workflow_run": 37615683765,
+  "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37615683765",
+  "conclusion": "success",
+  "linux": {
+    "passed": 843,
+    "skipped": 136,
+    "seconds": 134.08
+  },
+  "macos": {
+    "passed": 874,
+    "skipped": 105,
+    "seconds": 191.31
+  },
+  "frontend": {
+    "tests": 62,
+    "files": 22,
+    "production_build": "pass"
+  },
+  "scope": "Committed source checkpoint only; subsequent working-tree browser/reviewer/window/theme/custom-agent changes require their own final CI."
+}

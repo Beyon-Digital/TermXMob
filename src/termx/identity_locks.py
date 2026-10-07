@@ -23,7 +23,8 @@ class SessionLocks:
             row=db.execute('''SELECT s.* FROM sessions s JOIN refresh_tokens r ON r.session_id=s.id
                               WHERE r.digest=? AND r.consumed=0''',(_digest(raw),)).fetchone()
             principal=self.identity._live_principal(db,row,allow_locked=True)
-        return SessionIdentity(principal,row['id'],row['expires']) if principal else None
+            deadline=self.identity.session_policy.deadline(db,row) if principal else None
+        return SessionIdentity(principal,row['id'],deadline) if principal else None
 
     def is_locked(self,identity):
         with self.identity._db() as db:
@@ -66,7 +67,7 @@ class SessionLocks:
         db.execute('UPDATE sessions SET locked=0,auth_generation=auth_generation+1,last_seen=?,csrf_hash=?,adapter_id=?,strength=? WHERE id=?',
                    (time(),_digest(csrf),method,evidence.strength,sid))
         token=self.identity._issue(db,principal,sid)
-        return SessionCredentials(token,raw,csrf,sid)
+        return self.identity._credentials(db,token,raw,csrf,sid)
 
     def bind_oidc(self,actor,raw,method,state):
         with self.identity._db() as db:

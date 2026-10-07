@@ -56,3 +56,18 @@ it('retries a lost image response with the exact same request key and bytes whil
  await waitFor(()=>expect(screen.queryByText(/A previous send needs retry/)).toBeNull());expect(screen.getByLabelText('Message')).toHaveValue('');
  expect(sessionDrafts.get(a.id)?.attachments).toEqual([...sent,next]);expect(screen.getByText('new.png')).toBeVisible();
 });
+
+
+it('refreshes newly created presets when the retained conversation becomes visible after Managers',async()=>{
+ const session=row('preset-return');let presets:any[]=[];
+ vi.mocked(request).mockImplementation(async(path)=>path.includes('/presets?')?{presets} as any:path.includes('available-extensions')?{extensions:[]} as any:{...session} as any);
+ const props={session,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};
+ const {rerender}=render(<Chat {...props} visible/>);
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.includes('/presets?'))).toHaveLength(1));
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Keep this draft while configuring tools'}});
+ rerender(<Chat {...props} visible={false}/>);
+ presets=[{id:'agent.new-scoped',name:'New scoped preset',engine:'internal',workspace_revision:'new-revision'}];
+ rerender(<Chat {...props} visible/>);
+ expect(await screen.findByRole('option',{name:'New scoped preset · internal',hidden:true})).toBeInTheDocument();
+ expect(screen.getByLabelText('Message')).toHaveValue('Keep this draft while configuring tools');
+});

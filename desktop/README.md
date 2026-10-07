@@ -393,3 +393,37 @@ macOS packaging copies the complete backend runtime into `Resources/backend` thr
 For a portable or isolated installation, `TERMX_DESKTOP_DATA_DIR` selects a dedicated absolute native data directory (configuration and logs are stored below it). It never imports another profile's legacy tokens automatically. Unix application directories/files use owner-only permissions; Windows directories and the bootstrap configuration receive protected owner/SYSTEM/administrator DACLs before credential reads or writes. Foreign-owned storage and links/reparse points are refused. The native GUI fixture uses a fresh directory plus isolated webview state; it leaves `HOME` and the user's existing accounts unchanged. Linux CI provides a private D-Bus/GNOME credential service and an Xvfb/Openbox display for this fixture.
 
 Microphone recording starts from the explicit Record action and stops when its chat is hidden or unmounted. macOS bundles declare `NSMicrophoneUsageDescription` and the hardened-runtime audio-input entitlement; the WKWebView delegate requests native consent only for audio from the main frame at the current workspace origin and denies cameras, foreign frames and stale host ports. This preserves OS/TCC consent and the original Wry dialog delegate. Linux connects WebKitGTK's actual user-media permission request to a native, default-No microphone dialog, rechecking the host origin before allowing capture. A working system audio device and PulseAudio/PipeWire stack are required. Windows WebView2 denies foreign-origin microphone requests and camera requests; its default native microphone prompt and Windows privacy settings decide requests from the current workspace. SSO redirects remain supported. Controlled web browsing runs in the separate managed browser. Native policy tests and bundle settings do not prove that a signed, installed application can record on a real audio device; that remains a separate platform/device qualification.
+
+The desktop workspace exposes separate **Lock workspace**, **Sign out**, task
+**Stop**, and administrator **Stop host** controls. Lock retains the enrolled
+session and OS-stored refresh credential, hides observation, and requires the
+same configured identity to unlock. Unlock rotates credentials without changing
+the device scope grant or resuming an old browser/computer handoff. Existing
+explicit background execution can continue under current policy; revocation and
+expiry still terminate its authority. Private browser/capture barriers survive
+unlock until their explicit owner action.
+A current locked session returns HTTP423 so JSON and binary transfers show the
+Lock screen without signing out or consuming its refresh credential. Revoked or
+expired sessions return401; cookie mutation origin/CSRF failures retain403.
+
+Stop host displays the current host and shutdown effects before an explicit
+administrator acknowledgement. It performs graceful service teardown and
+suppresses the native monitor's automatic restart; **Restart Backend** is the
+separate recovery action. API/browser shutdown uses a private desktop-child stop
+notification and intentional exit status79, so it does not depend on a native
+renderer initiating the request. Installer qualification harnesses exercise
+Lock/unlock and the stopped-host/no-respawn state against isolated unchanged
+binaries; their source checks do not prove an installed GUI result.
+
+MCP connections use enrolled execution project IDs. A project-owned connection
+must allow that same project; a host-wide connection requires an administrator.
+Managers separates saving a definition, trusting its inspected revision,
+connecting, and explicitly invoking a tool. Credential bindings are write-only
+and live in the host credential store. Changed definitions, credentials or
+catalogs invalidate the old task binding until reviewed settings are used by a
+new task. The Internal engine uses the existing approval loop and rechecks the
+originating managed session, task, project, preset and connection before every
+MCP call. Project-scoped direct native MCP is refused because those integrations
+do not prove mandatory per-tool revocation interception; global administrator
+native MCP retains its declared trusted boundary. Host MCP credentials are
+never inherited by dedicated cloud runners.

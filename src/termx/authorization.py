@@ -58,6 +58,21 @@ class AuthorizationPort(Protocol):
 
 
 class AuthorizationService:
+    def _role(self,db,principal_id):
+        base=db.execute('SELECT role,trusted_execution FROM host_roles WHERE principal_id=?',(principal_id,)).fetchone()
+        return self.identity.groups.role(db,principal_id,base)
+
+    def _grants(self,db,principal_id):
+        rows=list(db.execute('SELECT project_id,scopes,expires FROM project_grants WHERE principal_id=?',(principal_id,)))
+        rows.extend(self.identity.groups.project_grants(db,principal_id))
+        grants={}
+        for row in rows:
+            if row['expires'] is not None and row['expires']<=time():continue
+            current=grants.setdefault(row['project_id'],{'project_id':row['project_id'],'scopes':set(),'expires':None})
+            current['scopes'].update(json.loads(row['scopes']))
+            if row['expires'] is not None:current['expires']=min(current['expires'] or row['expires'],row['expires'])
+        return {k:{**v,'scopes':json.dumps(sorted(v['scopes']))} for k,v in grants.items()}
+
     def __init__(self, identity: AuthenticationService, auth: Auth | None = None):
         self.identity = identity
         self.auth = auth or Auth(identity=identity)
@@ -113,17 +128,16 @@ class AuthorizationService:
                     raise HTTPException(403,'session disabled or collection action denied')
             live = db.execute('SELECT scopes,policy_version FROM principals WHERE id=? AND enabled=1',
                               (principal.id,)).fetchone()
-            role = db.execute('SELECT role,trusted_execution FROM host_roles WHERE principal_id=?',
-                              (principal.id,)).fetchone()
-            if not live or action not in json.loads(live['scopes']) or not role or action not in ROLES.get(role['role'], ()):
+            role = self._role(db,principal.id)
+            scopes=self.identity.groups.context(db,principal.id,json.loads(live['scopes']))[0] if live else ()
+            if not live or action not in scopes or not role or action not in ROLES.get(role['role'], ()):
                 raise HTTPException(403, 'principal disabled or collection action denied')
             admin = role['role'] in {'owner','admin'}
             if admin:
                 return ResourceAuthoritySnapshot(principal.id, live['policy_version'], action,
                     resource_kind, tuple((identifier,None) for identifier in identifiers), administrator=True,
                     authority_session_id=principal.authority_session_id)
-            grants = {row['project_id']:row for row in db.execute(
-                'SELECT project_id,scopes,expires FROM project_grants WHERE principal_id=?', (principal.id,))}
+            grants = self._grants(db,principal.id)
             allowed = []
             expires = []
             for offset in range(0,len(identifiers),500):
@@ -154,7 +168,8 @@ class AuthorizationService:
             live = db.execute('SELECT scopes,policy_version FROM principals WHERE id=? AND enabled=1',
                               (snapshot.principal_id,)).fetchone()
             if (not live or live['policy_version'] != snapshot.policy_version or
-                snapshot.action not in json.loads(live['scopes']) or
+                snapshot.action not in self.identity.groups.context(db,snapshot.principal_id,json.loads(live['scopes']))[0] or
+                (snapshot.administrator and (not (role:=self._role(db,snapshot.principal_id)) or role['role'] not in {'owner','admin'})) or
                 (snapshot.expires_at is not None and snapshot.expires_at <= time())):
                 raise HTTPException(403, 'collection authority changed; reload current permissions')
 
@@ -166,7 +181,7 @@ class AuthorizationService:
         if live is None or action not in live.scopes:
             raise HTTPException(403, 'principal disabled or action denied')
         with self.identity._db() as db:
-            role = db.execute('SELECT role, trusted_execution FROM host_roles WHERE principal_id=?', (live.id,)).fetchone()
+            role = self._role(db,live.id)
             if role and role['role'] in {'owner', 'admin'}:
                 return AuthorizationDecision(True, 'live administrator', ('trusted-shared-machine',))
             if not role or action not in ROLES.get(role['role'], ()):
@@ -181,7 +196,7 @@ class AuthorizationService:
                 if not project_id:
                     return AuthorizationDecision(True,'owned scratch resource',('trusted-shared-machine',))
             if project_id:
-                grant=db.execute('SELECT scopes,expires FROM project_grants WHERE principal_id=? AND project_id=?',(live.id,project_id)).fetchone()
+                grant=self._grants(db,live.id).get(project_id)
                 if grant and (grant['expires'] is None or grant['expires'] > time()) and action in json.loads(grant['scopes']):
                     return AuthorizationDecision(True,'live project grant',('trusted-shared-machine',))
             elif action == 'machine-view':
@@ -218,7 +233,7 @@ class AuthorizationService:
         if not live or action not in live.scopes:
             raise HTTPException(403, 'principal disabled or creation action denied')
         with self.identity._db() as db:
-            role = db.execute('SELECT role, trusted_execution FROM host_roles WHERE principal_id=?', (live.id,)).fetchone()
+            role = self._role(db,live.id)
         if not role or action not in ROLES.get(role['role'], ()):
             raise HTTPException(403, 'host role denies creation action')
         if action in EXECUTION:
@@ -240,8 +255,8 @@ class AuthorizationService:
 
     def role(self, principal_id: str) -> str | None:
         with self.identity._db() as db:
-            row = db.execute('SELECT role FROM host_roles WHERE principal_id=?', (principal_id,)).fetchone()
-        return row[0] if row else None
+            row = self._role(db,principal_id)
+        return row['role'] if row else None
 
     def revision(self, credential: str | None) -> int:
         session = self.identity.resolve(credential)
@@ -265,7 +280,7 @@ class AuthorizationService:
             # bounded migration window. They have no invented user identity.
             return AuthorizationDecision(True, 'legacy host authority', ('trusted-shared-machine',))
         with self.identity._db() as db:
-            row = db.execute('SELECT role, trusted_execution FROM host_roles WHERE principal_id=?', (session.principal.id,)).fetchone()
+            row = self._role(db,session.principal.id)
             role = row['role'] if row else None
             # The setup owner may be claimed after this service was composed.
             if role is None and not db.execute("SELECT 1 FROM metadata WHERE key='authorization_initialized'").fetchone():
@@ -293,8 +308,7 @@ class AuthorizationService:
                 if not project_id:
                     return AuthorizationDecision(True, 'owned scratch resource', ('trusted-shared-machine',))
             if project_id:
-                grant = db.execute('SELECT scopes, expires FROM project_grants WHERE principal_id=? AND project_id=?',
-                                   (session.principal.id, project_id)).fetchone()
+                grant = self._grants(db,session.principal.id).get(project_id)
                 if not grant or (grant['expires'] is not None and grant['expires'] <= time()):
                     return AuthorizationDecision(False, 'project membership missing or expired')
                 if action not in json.loads(grant['scopes']):
@@ -380,7 +394,7 @@ class AuthorizationService:
 
     def project_grants(self, principal_id: str) -> list[dict]:
         with self.identity._db() as db:
-            rows = db.execute('SELECT project_id, scopes, expires FROM project_grants WHERE principal_id=?', (principal_id,)).fetchall()
+            rows = list(self._grants(db,principal_id).values())
         return [{**dict(row), 'scopes': json.loads(row['scopes'])} for row in rows]
 
     def new_recovery_code(self, *, actor_id: str) -> str:

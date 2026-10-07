@@ -96,7 +96,8 @@ class BrowserService:
             self._context_tabs[id]=set()
             context.on('close',lambda:self._context_closed(id))
             if self._monitor is None:self._monitor=asyncio.create_task(self._monitor_grants())
-            await context.route('**/*',self._route)
+            async def scoped_route(route):await self._route(route,profile_id=id)
+            await context.route('**/*',scoped_route)
             # Popups stay in their originating profile and under parent ownership.
             context.on('page',lambda page:asyncio.create_task(self._adopt_popup(page,profile)))
             return context
@@ -114,7 +115,7 @@ class BrowserService:
                 if tab.get('grant_id') and not self._grant_valid(tab,self.records.get('grant',tab['grant_id'])):
                     self._revoke(tab,'human')
             await asyncio.sleep(.25)
-    async def _route(self,route):
+    async def _route(self,route,*,profile_id=None):
         try:
             request=route.request
             if request.url.startswith(('data:','blob:','about:')):
@@ -123,7 +124,7 @@ class BrowserService:
             try:page=request.frame.page
             except Exception:page=None
             if page:
-                profile_id=next((key for key,context in self._contexts.items() if context==page.context),None)
+                profile_id=profile_id or next((key for key,context in self._contexts.items() if context==page.context),None)
                 if profile_id and (profile_id,destination) not in self._permission_origins:
                     port=self._permission_ports[profile_id]
                     for name in ('microphone','camera'):
@@ -131,9 +132,25 @@ class BrowserService:
                     self._permission_origins.add((profile_id,destination))
             tab_id=next((id for id,p in self._pages.items() if p==page),None)
             tab=self.records.get('tab',tab_id) if tab_id else None
-            if tab and tab['state']=='agent' and request.is_navigation_request() and request.frame==page.main_frame:
-                grant=self.records.get('grant',tab['grant_id'])
+            if not tab and page:
+                # Popup adoption can race its first request. Do not let an
+                # unadopted agent popup escape the originating tab's boundary.
+                opener=await page.opener()
+                parent_id=next((id for id,p in self._pages.items() if p==opener),None)
+                tab=self.records.get('tab',parent_id) if parent_id else None
+            # Passive assets may load their normal CDNs. Agent-controlled
+            # documents, fetch/XHR and non-read requests cannot move data to an
+            # ungranted origin, including a form or script-triggered request.
+            moves_data=request.resource_type in {'document','fetch','xhr'} or request.method.upper() not in {'GET','HEAD','OPTIONS'}
+            if not tab and moves_data and profile_id and any(row['profile_id']==profile_id and row['state'] not in {'closed','crashed'} and (row['state']=='agent' or row.get('transport_restricted')) for row in self.records.list('tab')):
+                # Chromium can report a popup's initial request before its
+                # frame/opener exists. Unattributed data movement in a scoped
+                # profile is refused rather than inheriting human authority.
+                return await route.abort('blockedbyclient')
+            if tab and (tab['state']=='agent' or tab.get('transport_restricted')) and moves_data:
+                grant=self.records.get('grant',tab['grant_id']) if tab.get('grant_id') else None
                 if not grant or destination not in grant['origins'] or not self._grant_valid(tab,grant):
+                    self.records.audit(principal_id=tab['principal_id'],session_id=(grant or {}).get('session_id'),tab_id=tab['id'],grant_id=tab.get('grant_id'),decision='BLOCK',reason='browser request destination outside live scoped origins',target=destination)
                     self._revoke(tab,'human');return await route.abort('blockedbyclient')
             await route.continue_()
         except Exception:await route.abort('blockedbyclient')
@@ -146,6 +163,8 @@ class BrowserService:
         if not parent:await page.close();return
         # An agent popup is human-owned until explicitly granted. No inherited control.
         tab=self._new_tab_record(profile,parent['session_id']);self._pages[tab['id']]=page
+        if parent['state']=='agent' or parent.get('transport_restricted'):
+            tab['transport_restricted']=True;self.records.put('tab',tab['id'],tab)
         await self._wire_page(page,tab['id']);await self._navigation(tab['id'])
     def _new_tab_record(self,profile,session_id):
         id=secrets.token_urlsafe(16)
@@ -182,7 +201,7 @@ class BrowserService:
                 destination=await self.network.validate(url)
                 tab=self.records.get('tab',id)
                 grant=self.records.get('grant',tab['grant_id']) if tab and tab.get('grant_id') else None
-                if tab and tab['state']=='agent' and (not grant or not self._grant_valid(tab,grant) or destination not in grant['origins']):
+                if tab and (tab['state']=='agent' or tab.get('transport_restricted')) and (not grant or not self._grant_valid(tab,grant) or destination not in grant['origins']):
                     self._revoke(tab,'human');raise TargetDenied('Redirect destination outside task grant')
                 await session.send('Fetch.continueRequest',{'requestId':request_id})
             except (TargetDenied,ValueError,OSError):
@@ -279,6 +298,9 @@ class BrowserService:
         clear_capture_private(self._private_capture_id(id))
     def takeover(self,id,principal,*,private=False,session_id=None,policy_version=None):
         tab=self.get(id,principal)
+        # Automatic revocation is not a human takeover. Only this explicit
+        # authorized operation releases the retained page-network boundary.
+        tab.pop('transport_restricted',None)
         if private:
             grant=self.records.get('grant',tab.get('grant_id')) if tab.get('grant_id') else None
             tab['private_session_id']=session_id or (grant or {}).get('session_id') or tab['session_id']
@@ -311,7 +333,7 @@ class BrowserService:
         current=self.get(id,principal)
         if current['lease_revision']!=tab['lease_revision'] or current['document_revision']!=tab['document_revision'] or current['state']!='human' or page.url!=current_url or not self.task_live(run_id) or not self.session_valid(principal,session,policy_version):raise PermissionError('Task, authority or page changed during handoff')
         tab=current;tab['url']=current_url;tab['title']=title
-        tab.update(state='agent',grant_id=id_grant)
+        tab.update(state='agent',grant_id=id_grant,transport_restricted=True)
         grant={'id':id_grant,'tab_id':id,'principal_id':principal,'session_id':session,'project_id':tab['project_id'],'run_id':run_id,'profile_id':tab['profile_id'],'origins':sites,'actions':sorted(set(actions)),'expires_at':time()+expires_in,'lease_revision':tab['lease_revision'],'policy_version':policy_version,'revoked':False}
         self.records.put('grant',id_grant,grant);self.records.put('tab',id,tab)
         self.records.put('browser-task',run_id,{'id':run_id,'principal_id':principal,'session_id':session,'project_id':tab['project_id'],'policy_version':policy_version,'restricted':True})
@@ -392,6 +414,9 @@ class BrowserService:
             self._control_waiters[id]-=1
             self._frame_cache.pop(id,None)
     async def _effect(self,page,action,args):
+        if action in {'click','type','upload'}:
+            from termx.browser.challenges import requires_manual_challenge
+            if await requires_manual_challenge(page,args.get('selector')):return 'challenge',('manual-only',)
         if action in {'observe','capture','scroll','wait','navigate','find','zoom','history'}:return action,()
         if action in {'upload','download'}:return ('upload' if action=='upload' else 'export'),()
         if action=='diagnostics':return 'export',()
@@ -404,19 +429,19 @@ class BrowserService:
             return 'edit',()
         if action=='click':
             if not args.get('selector'):return 'unknown',()
-            metadata=await page.locator(args['selector']).first.evaluate('(e)=>({tag:e.tagName,type:e.type,private:!!e.closest("[data-private]"),href:e.href,text:(e.innerText || e.getAttribute("aria-label") || "").slice(0,200)})')
+            metadata=await page.locator(args['selector']).first.evaluate('(e)=>({tag:e.tagName,type:e.type,custom:!!(e.onclick||e.onchange||e.oninput||e.onpointerdown),private:!!e.closest("[data-private]"),href:e.href,text:(e.innerText || e.getAttribute("aria-label") || "").slice(0,200)})')
             if metadata.get('private'):return 'credential',('secret',)
             label=metadata['text'].lower()
             for words,effect in [({'delete','remove','erase'},'delete'),({'buy','pay','purchase','checkout'},'purchase'),({'send','submit','publish','post'},'send'),({'login','sign in','password'},'credential'),({'share','permission','admin','invite'},'privilege')]:
                 if any(w in label for w in words):return effect,()
             if metadata['tag']=='A' and metadata['href']:
                 await self.network.validate(metadata['href']);return 'navigate',()
-            if metadata['type'] in {'checkbox','radio'}:return 'edit',()
+            if metadata['type'] in {'checkbox','radio'}:return ('unknown' if metadata['custom'] else 'edit'),()
             return 'unknown',()
         return 'unknown',()
     async def _document_hash(self,page,action,args):
         if action in {'click','type','upload'} and args.get('selector'):
-            value=await page.locator(args['selector']).first.evaluate('''e=>({tag:e.tagName,attributes:Array.from(e.attributes).filter(a=>a.name!=='style').map(a=>[a.name,a.value]),text:e.innerText,href:e.href,disabled:!!e.disabled,form:e.form?Array.from(e.form.elements).map(c=>({name:c.name,type:c.type,value:c.value,checked:c.checked})):null})''')
+            value=await page.locator(args['selector']).first.evaluate('''e=>{const root=e.form||e.closest('form,[data-transaction]');return {tag:e.tagName,attributes:Array.from(e.attributes).filter(a=>a.name!=='style').map(a=>[a.name,a.value]),text:e.innerText,href:e.href,disabled:!!e.disabled,form:e.form?Array.from(e.form.elements).map(c=>({name:c.name,type:c.type,value:c.value,checked:c.checked})):null,transaction:root?{attributes:Array.from(root.attributes).map(a=>[a.name,a.value]),text:root.innerText.slice(0,12000),markers:Array.from(root.querySelectorAll('[data-merchant],[data-amount],[data-total],[data-currency],[data-account],[itemprop]')).slice(0,100).map(x=>({attributes:Array.from(x.attributes).map(a=>[a.name,a.value]),text:x.innerText.slice(0,1000)}))}:null}}''')
         else:
             value=await page.evaluate('()=>({url:location.href,title:document.title})')
         # Values are hashed in trusted worker memory, never sent to reviewer,
@@ -431,6 +456,11 @@ class BrowserService:
         # values in approval records. A changed target cannot inherit consent
         # merely because its selector still matches after a model round trip.
         document_hash=await self._document_hash(page,action,args)
+        preview=None
+        if effect in {'send','publish','purchase','delete','privilege','unknown'}:
+            from termx.browser.approval_preview import approval_preview
+            preview=await approval_preview(page,tab,self.records.get('profile',tab['profile_id']) or {},action,args,effect,document_hash)
+            if await self._document_hash(page,action,args)!=document_hash:raise ValueError('Browser document changed during transaction preview; observe and propose a fresh action')
         previous_document=self.records.get('browser-action-document',action_id)
         previous_review=self.records.get('review',action_id)
         if previous_document and previous_review and previous_review['status'] in {'needs_user','approved_once','permitted'} and previous_document['hash']!=document_hash:
@@ -445,7 +475,8 @@ class BrowserService:
         def validate():
             current=self.records.get('tab',id);active=self.records.get('grant',grant_id)
             return bool(current and self._grant_valid(current,active) and current['document_revision']==document_revision and current['lease_revision']==lease_revision and (authority is None or authority()))
-        permit=await self.review.authorize(envelope,validate=validate,hard_deny='use private human login; credentials cannot enter agent tools' if effect=='credential' else None,context={'effect_summary':effect,'task_summary':getattr(self,'task_summary',lambda _:'')(run_id)})
+        denied='use private human login; credentials cannot enter agent tools' if effect=='credential' else preview['reason'] if preview and preview['manual_required'] else None
+        permit=await self.review.authorize(envelope,validate=validate,hard_deny=denied,context={'effect_summary':effect,'task_summary':getattr(self,'task_summary',lambda _:'')(run_id),'human_preview':preview})
         async def execute():
             result=await self._perform(page,tab,action,args,human=False,expected_hash=document_hash)
             current=self.records.get('tab',id);active=self.records.get('grant',grant_id)
@@ -502,13 +533,16 @@ class BrowserService:
     async def human_action(self,id,principal,action,args):
         tab=self.get(id,principal);page=self._pages.get(id)
         if action=='diagnostics':return await self.human_diagnostics(id,principal,args.get('view','performance'))
+        if tab.pop('transport_restricted',None):self.records.put('tab',id,tab)
         if tab['state']=='agent':self._revoke(tab,'human')
         if not page:raise ValueError('tab closed')
+        # Classify before the effect: a solved challenge may disappear on click.
+        # Manual solutions must never become replayable recorded skill steps.
+        effect, _ = await self._effect(page, action, args) if tab['recording'] and tab['state']=='human' else (None,())
         result = await self._perform(page,tab,action,args,human=True)
         current = self.get(id, principal)
         if current['recording'] and current['state'] == 'human':
-            effect, _ = await self._effect(page, action, args)
-            if effect != 'credential': self._record_step(current, action, args)
+            if effect not in {'credential','challenge'}: self._record_step(current, action, args)
         return result
     def _record_step(self,tab,action,args,identifier=None):
         import re
@@ -530,6 +564,9 @@ class BrowserService:
                 grant=self.records.get('grant',tab['grant_id'])
                 if not self._grant_valid(current,grant) or current['lease_revision']!=tab['lease_revision']:raise PermissionError('Control authority changed while queued')
             if expected_hash is not None and await self._document_hash(page,action,args)!=expected_hash:raise ValueError('Browser document changed during approval; observe and propose a fresh action')
+            if not human and action in {'click','type','upload'}:
+                from termx.browser.challenges import requires_manual_challenge
+                if await requires_manual_challenge(page,args.get('selector')):raise PermissionError('Recognized authentication challenge requires human takeover/private login')
             return await self._perform_unlocked(page,tab,action,args,human)
     async def _perform_unlocked(self,page,tab,action,args,human):
         if action=='navigate':

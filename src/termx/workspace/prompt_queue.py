@@ -36,6 +36,39 @@ class PromptQueue:
             rows=self.store.db.execute("SELECT * FROM records WHERE kind='prompt_queue' AND json_extract(body,'$.status') IN ('queued','blocked','dispatching') ORDER BY created,id LIMIT 1000").fetchall()
             return [self.store.unpack(row) for row in rows]
 
+    def policy_binding(self,actor,row):
+        # Read only scopes applicable to the next turn. Parent task consent is
+        # deliberately absent: Queue next creates a new task, not a continuation.
+        rules=[]
+        store=self.workspace.agents
+        if hasattr(store,'list_policy_rules'):
+            scopes=[('host',None),('conversation',row['id'])]
+            if row.get('project_id'):scopes.append(('project',row['project_id']))
+            if row.get('custom_agent_id'):scopes.append(('custom_agent',row['custom_agent_id']))
+            for kind,identifier in scopes:
+                selected=store.list_policy_rules(scope_type=kind,scope_id=identifier,include_revoked=True,limit=1000)
+                if len(selected)>=1000:raise Conflict('Too many policy revisions to bind safely; inspect and consolidate this policy scope before queueing')
+                for rule in selected:
+                    consent=rule.get('consent_binding') or {}
+                    if consent and consent.get('principal_id')!=actor.id:continue
+                    rules.append({key:rule.get(key) for key in ('id','version','effect','expires_at','revoked_at','consent_binding')})
+                    rules[-1]['expired']=rule.get('expires_at') is not None and rule['expires_at']<=self.clock()
+        value={'coding_rules':digest(sorted(rules,key=lambda rule:rule['id']))}
+        browser=getattr(self.state,'browser',None)
+        if browser:
+            config=browser.records.get('reviewer-config','active')
+            if config:
+                # Account revisions use backend HMAC binding, never a raw key or
+                # key hash. Only the aggregate digest leaves this boundary.
+                from termx.browser.reviewer_binding import account_revision
+                provider=store.get_provider(config['provider_id'])
+                revision=account_revision(browser.records,provider,self.state.credentials.get(provider['id']) or '') if provider else None
+                report=browser.records.get('reviewer-evaluation',config['evaluation_id'])
+                value['reviewer']=digest({'configuration':config,'current_account_revision':revision,
+                    'qualification_expired':not report or self.clock()-report['created_at']>30*86400})
+            else:value['reviewer']=None
+        return digest(value)
+
     def binding(self,actor,conversation):
         row=self.workspace.session(actor,conversation,turns=False)
         self.workspace.record(actor,'conversation',conversation,scope='agent-run')
@@ -47,6 +80,7 @@ class PromptQueue:
             selected=extensions.execution_context(actor,row['extension_ids'],row.get('project_id'),row['cwd'],resource_id=conversation)
             value['extensions_digest']=digest(selected)
         value['memory_revision']=digest([(item['id'],item['revision']) for item in self.workspace.memories(actor,project_id=row.get('project_id'),include_excluded=False)])
+        value['policy_revision']=self.policy_binding(actor,row)
         value['hook_revision']=digest([(item['id'],item['revision']) for item in self.store.list('hook',actor.id) if item.get('enabled') and item.get('project_id') in {None,row.get('project_id')}])
         return value
 

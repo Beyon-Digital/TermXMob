@@ -1,0 +1,2060 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-acknowledged-control",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-control-denied",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-global-control-status",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 367.390625,
+          "right": 417.46875,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 423.46875,
+          "right": 516.453125,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 1110.6875,
+          "right": 1208.453125,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 1228.453125,
+          "right": 1318.765625,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 1338.765625,
+          "right": 1426,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-global-stopped",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-expired-private-recovery",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 685.171875,
+          "right": 735.25,
+          "top": 956,
+          "bottom": 980,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 741.25,
+          "right": 834.234375,
+          "top": 956,
+          "bottom": 980,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 262,
+          "right": 359.765625,
+          "top": 984,
+          "bottom": 1000,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 379.765625,
+          "right": 470.078125,
+          "top": 984,
+          "bottom": 1000,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 490.078125,
+          "right": 577.3125,
+          "top": 984,
+          "bottom": 1000,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-acknowledged-control",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-control-denied",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-global-control-status",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 367.390625,
+          "right": 417.46875,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 423.46875,
+          "right": 516.453125,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 1110.6875,
+          "right": 1208.453125,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 1228.453125,
+          "right": 1318.765625,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 1338.765625,
+          "right": 1426,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-global-stopped",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-expired-private-recovery",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 685.171875,
+          "right": 735.25,
+          "top": 956,
+          "bottom": 980,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 741.25,
+          "right": 834.234375,
+          "top": 956,
+          "bottom": 980,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 262,
+          "right": 359.765625,
+          "top": 984,
+          "bottom": 1000,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 379.765625,
+          "right": 470.078125,
+          "top": 984,
+          "bottom": 1000,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 490.078125,
+          "right": 577.3125,
+          "top": 984,
+          "bottom": 1000,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-acknowledged-control",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-control-denied",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-global-control-status",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 111.390625,
+          "right": 161.46875,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 167.46875,
+          "right": 260.453125,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 426.6875,
+          "right": 524.453125,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 530.453125,
+          "right": 620.765625,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 626.765625,
+          "right": 714,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-global-stopped",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-expired-private-recovery",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 429.171875,
+          "right": 479.25,
+          "top": 454,
+          "bottom": 478,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 485.25,
+          "right": 578.234375,
+          "top": 454,
+          "bottom": 478,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 6,
+          "right": 103.765625,
+          "top": 484,
+          "bottom": 500,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 109.765625,
+          "right": 200.078125,
+          "top": 484,
+          "bottom": 500,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 206.078125,
+          "right": 293.3125,
+          "top": 484,
+          "bottom": 500,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-acknowledged-control",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-control-denied",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-global-control-status",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 111.390625,
+          "right": 161.46875,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 167.46875,
+          "right": 260.453125,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 426.6875,
+          "right": 524.453125,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 530.453125,
+          "right": 620.765625,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 626.765625,
+          "right": 714,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-global-stopped",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-expired-private-recovery",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 429.171875,
+          "right": 479.25,
+          "top": 454,
+          "bottom": 478,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 485.25,
+          "right": 578.234375,
+          "top": 454,
+          "bottom": 478,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 6,
+          "right": 103.765625,
+          "top": 484,
+          "bottom": 500,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 109.765625,
+          "right": 200.078125,
+          "top": 484,
+          "bottom": 500,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 206.078125,
+          "right": 293.3125,
+          "top": 484,
+          "bottom": 500,
+          "inside": true
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Computer remote input canvas",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 809,
+        "height": 773,
+        "visible_width": 809,
+        "visible_height": 773,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Computer Escape exit",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 809,
+        "height": 773,
+        "visible_width": 809,
+        "visible_height": 773,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Send Tab",
+      "focus": {
+        "label": "Send Tab",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 84.21875,
+        "height": 36,
+        "visible_width": 84.21875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Pause capture",
+      "focus": {
+        "label": "Pause capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Resume capture",
+      "focus": {
+        "label": "Resume capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Send Escape",
+      "focus": {
+        "label": "Send Escape",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 107.03125,
+        "height": 36,
+        "visible_width": 107.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Workspace controls outside Computer",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Theme preference",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(33, 60, 42)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.04
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "light theme",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(227, 241, 230)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.99
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Computer remote input canvas",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 809,
+        "height": 773,
+        "visible_width": 809,
+        "visible_height": 773,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Computer Escape exit",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 809,
+        "height": 773,
+        "visible_width": 809,
+        "visible_height": 773,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Send Tab",
+      "focus": {
+        "label": "Send Tab",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 84.21875,
+        "height": 36,
+        "visible_width": 84.21875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Pause capture",
+      "focus": {
+        "label": "Pause capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Resume capture",
+      "focus": {
+        "label": "Resume capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Send Escape",
+      "focus": {
+        "label": "Send Escape",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 107.03125,
+        "height": 36,
+        "visible_width": 107.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Workspace controls outside Computer",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Computer remote input canvas",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 717,
+        "height": 227,
+        "visible_width": 717,
+        "visible_height": 227,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Computer Escape exit",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 717,
+        "height": 227,
+        "visible_width": 717,
+        "visible_height": 227,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Send Tab",
+      "focus": {
+        "label": "Send Tab",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 84.21875,
+        "height": 36,
+        "visible_width": 84.21875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Pause capture",
+      "focus": {
+        "label": "Pause capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Resume capture",
+      "focus": {
+        "label": "Resume capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Send Escape",
+      "focus": {
+        "label": "Send Escape",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 107.03125,
+        "height": 36,
+        "visible_width": 107.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Workspace controls outside Computer",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Theme preference",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(33, 60, 42)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.04
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "light theme",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(227, 241, 230)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.99
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Computer remote input canvas",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 717,
+        "height": 227,
+        "visible_width": 717,
+        "visible_height": 227,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Computer Escape exit",
+      "focus": {
+        "label": "Remote computer, keyboard control enabled. Tab leaves the canvas; Escape returns to controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(9, 11, 10)",
+        "width": 717,
+        "height": 227,
+        "visible_width": 717,
+        "visible_height": 227,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.62
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Send Tab",
+      "focus": {
+        "label": "Send Tab",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 84.21875,
+        "height": 36,
+        "visible_width": 84.21875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Pause capture",
+      "focus": {
+        "label": "Pause capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Resume capture",
+      "focus": {
+        "label": "Resume capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Send Escape",
+      "focus": {
+        "label": "Send Escape",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 107.03125,
+        "height": 36,
+        "visible_width": 107.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Workspace controls outside Computer",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    }
+  ],
+  "errors": [],
+  "paid_provider_queries": 0,
+  "limitations": [
+    "Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation.",
+    "Computer frames and input ports are explicit fixtures; this proves rendered keyboard/ACK/Stop authority and denial UX, not OS permission or physical display capture."
+  ],
+  "production_bundle": {
+    "index_sha256": "dbb0b3c5c813dcb22de297b7bd8ba4a3f861377fe20fea7e631431d6a0a529b1",
+    "entry_assets": [
+      "/assets/index-t8fN_0qQ.js",
+      "/assets/index-0xZ3naUl.css"
+    ],
+    "source": "Exact production dist frozen before fixture startup; no source transform or concurrent build asset swaps"
+  },
+  "computer_features": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "host_ack_before_control": true,
+      "tab_leaves_canvas": true,
+      "escape_restores_controls": true,
+      "explicit_remote_tab": true,
+      "denied_control_cleared": true,
+      "global_status_outside_layout": true,
+      "global_stop_closed_owned_viewer": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "host_ack_before_control": true,
+      "tab_leaves_canvas": true,
+      "escape_restores_controls": true,
+      "explicit_remote_tab": true,
+      "denied_control_cleared": true,
+      "global_status_outside_layout": true,
+      "global_stop_closed_owned_viewer": true
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "host_ack_before_control": true,
+      "tab_leaves_canvas": true,
+      "escape_restores_controls": true,
+      "explicit_remote_tab": true,
+      "denied_control_cleared": true,
+      "global_status_outside_layout": true,
+      "global_stop_closed_owned_viewer": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "host_ack_before_control": true,
+      "tab_leaves_canvas": true,
+      "escape_restores_controls": true,
+      "explicit_remote_tab": true,
+      "denied_control_cleared": true,
+      "global_status_outside_layout": true,
+      "global_stop_closed_owned_viewer": true
+    }
+  ],
+  "fixture_provider_turns": 0,
+  "task_status_before_cleanup": null,
+  "asset_manifest": "browser-computer-production-assets.json",
+  "production_asset_count": 64,
+  "artifact_directory": "/tmp/termx-computer-immutable-t8fN-final"
+}

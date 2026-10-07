@@ -1,0 +1,808 @@
+[
+  {
+    "id": "J-ENTRY-21",
+    "title": "Review an exact coding action and its consent scope",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Exact operation",
+        "value": "Apply the reviewed service patch",
+        "hint": "Inspectable arguments, target, policy source and side effects"
+      },
+      {
+        "label": "Remember this decision",
+        "value": "Only this operation / this task / this conversation",
+        "hint": "Only host-advertised eligible scopes are selectable"
+      },
+      {
+        "label": "Personal project or preset rule",
+        "value": "Same project for me / same agent preset for me",
+        "hint": "Principal and current policy version remain bound"
+      },
+      {
+        "label": "Sensitive or credential-like content",
+        "value": "Allow once or deny only",
+        "hint": "No remembered rule and no review-model disclosure"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Plan-approved task",
+        "value": "Service API \u00b7 same execution checkout",
+        "status": "Awaiting action consent"
+      },
+      {
+        "name": "Hard host restriction",
+        "value": "Sandbox, current grants and matching denies",
+        "status": "Still authoritative"
+      }
+    ],
+    "notice": "Approving this exact effect grants no broader filesystem, network or run-budget permission. A conversation rule ends on this device session\u2019s expiry.",
+    "actions": [
+      {
+        "label": "Allow and remember",
+        "target": "J-ENTRY-22",
+        "variant": "primary"
+      },
+      {
+        "label": "Deny once",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      },
+      {
+        "label": "Inspect current policy",
+        "target": "J-ENTRY-23",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 0
+  },
+  {
+    "id": "J-ENTRY-22",
+    "title": "Inspect, edit or revoke your exact action policy",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Search coding policies",
+        "value": "Reviewed patch \u00b7 remembered conversation",
+        "hint": "Bound scope and policy source remain inspectable"
+      },
+      {
+        "label": "Coding decision",
+        "value": "Allow inside unchanged scope / deny",
+        "hint": "Matching denies override every remembered allow"
+      },
+      {
+        "label": "Expires after seconds",
+        "value": "3600",
+        "hint": "Bounded expiry; edit preserves matcher and binding"
+      },
+      {
+        "label": "Current policy revision",
+        "value": "Version 3 \u00b7 exact operation and device",
+        "hint": "CAS mutation requires this inspected version"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Your bounded remembered consent",
+        "value": "Principal \u00b7 conversation \u00b7 session \u00b7 policy revision",
+        "status": "Editable"
+      },
+      {
+        "name": "Shared host rule",
+        "value": "Administrator policy",
+        "status": "Read-only here"
+      }
+    ],
+    "notice": "Editing changes effect or bounded expiry only. It cannot expand the exact target, matcher, sandbox or principal. Revoke is immediate; stale consent needs fresh approval.",
+    "actions": [
+      {
+        "label": "Save current revision",
+        "target": "J-ENTRY-23",
+        "variant": "primary"
+      },
+      {
+        "label": "Revoke coding policy",
+        "target": "J-ENTRY-23",
+        "variant": "danger"
+      },
+      {
+        "label": "Return to Chat",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 1
+  },
+  {
+    "id": "J-ENTRY-23",
+    "title": "A stale or sensitive action needs a fresh decision",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Policy changed",
+        "value": "Your draft is preserved",
+        "hint": "Refresh before applying the inspected revision"
+      },
+      {
+        "label": "Current authority",
+        "value": "Session expired / principal policy changed",
+        "hint": "Previous remembered consent is not reusable"
+      },
+      {
+        "label": "Sensitive content",
+        "value": "Credentials or uninspectable payload",
+        "hint": "Human once-only decision; zero reviewer calls"
+      },
+      {
+        "label": "Revoked rule",
+        "value": "No further effect under this consent",
+        "hint": "The next matching action pauses for fresh consent"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Pending exact operation",
+        "value": "Effect has not run",
+        "status": "Blocked until fresh decision"
+      },
+      {
+        "name": "Remember scope",
+        "value": "Unavailable for this sensitive action",
+        "status": "Allow once / deny"
+      }
+    ],
+    "notice": "No timeout becomes consent. Hard restrictions and current denies still win; a rule cannot override a removed grant or locked originating device session.",
+    "actions": [
+      {
+        "label": "Inspect fresh action",
+        "target": "J-ENTRY-21",
+        "variant": "primary"
+      },
+      {
+        "label": "Refresh policy inventory",
+        "target": "J-ENTRY-22",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel and return",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "warning",
+    "index": 2
+  },
+  {
+    "id": "J-ENTRY-24",
+    "title": "Configure authoritative organizations and identity groups",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Group and organization",
+        "value": "Service maintainers \u00b7 Example organization",
+        "hint": "New group or enrolled group; organization is explicit"
+      },
+      {
+        "label": "Group host role",
+        "value": "Viewer / Operator / Administrator",
+        "hint": "Only administrator mappings grant host authority"
+      },
+      {
+        "label": "Trusted host execution",
+        "value": "Explicit opt-in checkbox",
+        "hint": "Shared host OS user; does not claim tenant isolation"
+      },
+      {
+        "label": "Verified provider mapping",
+        "value": "Configured issuer \u00b7 exact groups claim value",
+        "hint": "Only fresh verified issuer evidence enrolls members"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Group revision",
+        "value": "Version 4",
+        "status": "Inspected before saving"
+      },
+      {
+        "name": "Provider membership",
+        "value": "Verified claim \u00b7 bounded expiry",
+        "status": "Reverify required"
+      }
+    ],
+    "notice": "User-controlled display names or untrusted group claims grant nothing. Removing membership or changing a role/grant revokes affected device sessions.",
+    "actions": [
+      {
+        "label": "Save group and inspect",
+        "target": "J-ENTRY-25",
+        "variant": "primary"
+      },
+      {
+        "label": "Stale revision review",
+        "target": "J-ENTRY-26",
+        "variant": "secondary"
+      },
+      {
+        "label": "Audit retention",
+        "target": "J-ENTRY-27",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 3
+  },
+  {
+    "id": "J-ENTRY-25",
+    "title": "Review live memberships and exact project grants",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Principal and source",
+        "value": "Enabled named principal \u00b7 administrator-managed",
+        "hint": "Provider and manual membership provenance stay distinct"
+      },
+      {
+        "label": "Membership expires in days",
+        "value": "7",
+        "hint": "Bounded 1\u201390 days; removal revokes affected sessions"
+      },
+      {
+        "label": "Execution project",
+        "value": "Enrolled Service API project",
+        "hint": "Groups outside this project cannot acquire its authority"
+      },
+      {
+        "label": "Allowed action scopes",
+        "value": "files-read, agent-view",
+        "hint": "Action-specific project grants; no implied shell permission"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Member removal",
+        "value": "Affected device sessions revoked",
+        "status": "Sign in again for current authority"
+      },
+      {
+        "name": "Project grant",
+        "value": "Current enrolled project only",
+        "status": "Effective live policy"
+      }
+    ],
+    "notice": "Expiry and removal are checked at the host on every effect. Provider mappings require configured verified claims; a stale token cannot preserve removed access.",
+    "actions": [
+      {
+        "label": "Save project grant",
+        "target": "J-ENTRY-24",
+        "variant": "primary"
+      },
+      {
+        "label": "Remove membership",
+        "target": "J-ENTRY-26",
+        "variant": "danger"
+      },
+      {
+        "label": "Return to Access",
+        "target": "J-ENTRY-03",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 4
+  },
+  {
+    "id": "J-ENTRY-26",
+    "title": "Access changed elsewhere \u2014 preserve the draft and inspect",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Unsaved group draft",
+        "value": "Your role/name/organization edits retained",
+        "hint": "A changed current revision cannot overwrite this draft"
+      },
+      {
+        "label": "Reviewed current revision",
+        "value": "Version 5 \u00b7 current role and trusted execution",
+        "hint": "Compare before keep-draft continuation"
+      },
+      {
+        "label": "Live membership state",
+        "value": "Removed / expired / grant revoked",
+        "hint": "Affected sessions lost authority immediately"
+      },
+      {
+        "label": "Current session",
+        "value": "Locked or policy changed",
+        "hint": "No stale response reopens administrator controls"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Save group",
+        "value": "Disabled until conflict reviewed",
+        "status": "No blind overwrite"
+      },
+      {
+        "name": "Keep my draft",
+        "value": "Uses the reviewed current revision",
+        "status": "Explicit decision"
+      }
+    ],
+    "notice": "Refresh only reads current inventory. Choosing to keep your draft acknowledges the inspected revision; grants remain enforced server-side.",
+    "actions": [
+      {
+        "label": "Keep reviewed draft",
+        "target": "J-ENTRY-24",
+        "variant": "primary"
+      },
+      {
+        "label": "Refresh memberships",
+        "target": "J-ENTRY-25",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Access",
+        "target": "J-ENTRY-03",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "warning",
+    "index": 5
+  },
+  {
+    "id": "J-ENTRY-27",
+    "title": "Set audit retention with explicit permanent-removal consent",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Keep records for days",
+        "value": "30",
+        "hint": "Allowed 1\u20133650 days"
+      },
+      {
+        "label": "Maximum audit bytes",
+        "value": "16777216",
+        "hint": "Bounded 65536\u201367108864 bytes"
+      },
+      {
+        "label": "Maximum audit records",
+        "value": "10000",
+        "hint": "Bounded 100\u2013100000 metadata records"
+      },
+      {
+        "label": "Removal acknowledgement",
+        "value": "I understand applying retention removes older records",
+        "hint": "Required before save-and-prune or prune-saved-limits"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Audit content",
+        "value": "Session and action metadata",
+        "status": "No passwords, cookies or captured output"
+      },
+      {
+        "name": "Saved policy",
+        "value": "Host administrator managed",
+        "status": "Live authority required"
+      }
+    ],
+    "notice": "Saving limits immediately prunes older or excess records. Removal is permanent and the retention operation is itself recorded in the audit.",
+    "actions": [
+      {
+        "label": "Save limits and prune",
+        "target": "J-ENTRY-28",
+        "variant": "primary"
+      },
+      {
+        "label": "Prune saved limits",
+        "target": "J-ENTRY-28",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel retention edit",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 6
+  },
+  {
+    "id": "J-ENTRY-28",
+    "title": "Inspect the audit retention result",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Removed records",
+        "value": "120",
+        "hint": "Actual bounded operation count shown after completion"
+      },
+      {
+        "label": "Retained records and bytes",
+        "value": "3400 records \u00b7 891204 bytes",
+        "hint": "Confirmed response; no optimistic success"
+      },
+      {
+        "label": "Saved policy",
+        "value": "30 days \u00b7 16 MiB \u00b7 10000 records",
+        "hint": "The current saved policy is inspectable"
+      },
+      {
+        "label": "Changed or locked identity",
+        "value": "Controls paused; draft retained",
+        "hint": "Fresh observation required after unlock"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Retention operation",
+        "value": "Metadata event appended",
+        "status": "Recorded"
+      },
+      {
+        "name": "Private values",
+        "value": "Not included in audit/export",
+        "status": "Excluded"
+      }
+    ],
+    "notice": "Result counts are illustrative design data; runtime displays the actual host response. A late response from a locked or changed account is ignored.",
+    "actions": [
+      {
+        "label": "Review saved limits",
+        "target": "J-ENTRY-27",
+        "variant": "primary"
+      },
+      {
+        "label": "Open identity groups",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Access",
+        "target": "J-ENTRY-03",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 7
+  },
+  {
+    "id": "J-ENTRY-29",
+    "title": "Manage model favorites without changing any session",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Model search",
+        "value": "Configured model or account name",
+        "hint": "Models manager search filters current catalogs"
+      },
+      {
+        "label": "Installed engine catalog",
+        "value": "Inspect catalog explicitly",
+        "hint": "No paid provider inference and no automatic account fallback"
+      },
+      {
+        "label": "Account model favorite",
+        "value": "Model A \u00b7 configured API account",
+        "hint": "Per-principal device preference shared across windows"
+      },
+      {
+        "label": "Unavailable favorite",
+        "value": "Catalog not loaded or model unavailable",
+        "hint": "Retain clearly labelled entry or remove it"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Model A",
+        "value": "Configured account \u00b7 favorite",
+        "status": "Appears in composer lists"
+      },
+      {
+        "name": "Running conversation",
+        "value": "Current model and task unchanged",
+        "status": "No global active engine"
+      }
+    ],
+    "notice": "Favorites help navigation only. Catalog changes and favorites never retarget a conversation or restart active work; errors preserve the current selection.",
+    "actions": [
+      {
+        "label": "Favorite configured model",
+        "target": "J-ENTRY-19",
+        "variant": "primary"
+      },
+      {
+        "label": "Remove unavailable favorite",
+        "target": "J-ENTRY-19",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Chat",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-MODELS"
+    ],
+    "tone": "accent",
+    "index": 8
+  },
+  {
+    "id": "J-AUTOMATE-10",
+    "title": "Supervise one shared parent and child execution pool",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Root task and grant",
+        "value": "Root task \u00b7 version 2",
+        "hint": "The same immutable pool is visible on each child"
+      },
+      {
+        "label": "Reserved tool calls",
+        "value": "18 / 24",
+        "hint": "Exact retries reuse reservations; parallel children cannot multiply allowance"
+      },
+      {
+        "label": "Summed active worker time",
+        "value": "42.3 / 60 seconds",
+        "hint": "Parent, child, context and provider planning consume the same pool"
+      },
+      {
+        "label": "Human approval waits",
+        "value": "Time lease paused",
+        "hint": "Individual task ceilings and fan-out limits still apply"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Child A",
+        "value": "Isolated checkout \u00b7 read/write effects",
+        "status": "Running"
+      },
+      {
+        "name": "Child B",
+        "value": "Pending exact effect or budget",
+        "status": "Human wait paused"
+      }
+    ],
+    "notice": "This measures reserved tool calls and summed active execution seconds. It does not estimate tokens or billed costs. Cancelling preserves consumed reservations and actual checkpoints.",
+    "actions": [
+      {
+        "label": "Review shared boundary",
+        "target": "J-AUTOMATE-11",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect interrupted planning",
+        "target": "J-AUTOMATE-13",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel descendants",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 9
+  },
+  {
+    "id": "J-AUTOMATE-11",
+    "title": "Approve a versioned shared budget extension",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Inspected shared version",
+        "value": "Version 2 \u00b7 root task",
+        "hint": "Decision, grant and resumable intent commit atomically"
+      },
+      {
+        "label": "Total shared tool-call ceiling",
+        "value": "32",
+        "hint": "Must exceed already reserved calls; completed effects remain"
+      },
+      {
+        "label": "Fresh shared active seconds",
+        "value": "60",
+        "hint": "Explicit fresh summed parent/child time allowance"
+      },
+      {
+        "label": "Other paused task",
+        "value": "Continue within the same new grant",
+        "hint": "Cannot reset the meter or raise the shared ceiling twice"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Parked exact batch",
+        "value": "No effect started before admission",
+        "status": "Resumes once after consent"
+      },
+      {
+        "name": "Grant change conflict",
+        "value": "Inspect current allowance",
+        "status": "Stale extension refused"
+      }
+    ],
+    "notice": "Approval of a budget never approves a tool effect or plan. Every parked task needs explicit continuation; the same exact tool reservation is not charged twice.",
+    "actions": [
+      {
+        "label": "Approve budget extension",
+        "target": "J-AUTOMATE-10",
+        "variant": "primary"
+      },
+      {
+        "label": "Stop at current budget",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      },
+      {
+        "label": "Restart receipt",
+        "target": "J-AUTOMATE-12",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 10
+  },
+  {
+    "id": "J-AUTOMATE-12",
+    "title": "Restart after an approved grant \u2014 continue without a second reset",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Durable approved receipt",
+        "value": "Decision committed before worker launch",
+        "hint": "Original approval and grant version are retained"
+      },
+      {
+        "label": "Continue within approved budget",
+        "value": "No fresh budget input",
+        "hint": "Does not reset time or increase tool-call ceiling"
+      },
+      {
+        "label": "Uncertain live execution",
+        "value": "Time allowance exhausted conservatively",
+        "hint": "Fresh explicit renewal required; partial effects need inspection"
+      },
+      {
+        "label": "Exact saved batch",
+        "value": "Canonical pending calls and completed checkpoints",
+        "hint": "No automatic tool replay"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Host restart",
+        "value": "No provider or tool starts until confirmation",
+        "status": "Paused"
+      },
+      {
+        "name": "Same shared grant",
+        "value": "Version unchanged by continuation",
+        "status": "Idempotent"
+      }
+    ],
+    "notice": "If a running lease was lost, the host cannot assume unused time. A committed approval with no worker launch gets an explicit continue decision inside its existing grant.",
+    "actions": [
+      {
+        "label": "Continue approved budget",
+        "target": "J-AUTOMATE-10",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect actual checkpoint",
+        "target": "J-AUTOMATE-07",
+        "variant": "secondary"
+      },
+      {
+        "label": "Stop remaining work",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "warning",
+    "index": 11
+  },
+  {
+    "id": "J-AUTOMATE-13",
+    "title": "Parallel planning exhausted the shared allowance",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Planning phase",
+        "value": "Saved task context and upload references",
+        "hint": "Both child plans share the parent pool before provider work"
+      },
+      {
+        "label": "Provider planning request",
+        "value": "Cancelled at aggregate time boundary",
+        "hint": "No unaccounted child planning continues"
+      },
+      {
+        "label": "Explicit renewal",
+        "value": "Regenerate the interrupted plan",
+        "hint": "A budget grant cannot bypass plan approval"
+      },
+      {
+        "label": "Plan approval",
+        "value": "Separate current plan decision required",
+        "hint": "No child execution effect before its plan is approved"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Child plan",
+        "value": "Pending renewed shared allowance",
+        "status": "No tool effect"
+      },
+      {
+        "name": "Parent and siblings",
+        "value": "Same summed active seconds",
+        "status": "Shared pool exhausted"
+      }
+    ],
+    "notice": "Human wait is paused. Renewal resumes the preserved planning phase, then presents a new plan for approval; it never silently starts coding after a time grant.",
+    "actions": [
+      {
+        "label": "Review shared renewal",
+        "target": "J-AUTOMATE-11",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect task supervision",
+        "target": "J-AUTOMATE-10",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel interrupted plan",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "warning",
+    "index": 12
+  }
+]

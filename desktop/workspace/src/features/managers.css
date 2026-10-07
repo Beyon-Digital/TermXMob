@@ -4,3 +4,5 @@
 
 .provider-capabilities{border:1px solid var(--border);border-radius:8px;padding:12px;grid-column:1/-1}.provider-capabilities label{display:inline-flex;margin:8px 16px 8px 0}.provider-capabilities label span{display:flex;gap:8px;align-items:center}.provider-capabilities legend{color:var(--foreground);font-size:12px}
 .provider-capabilities label.manager-field{display:grid}.provider-capabilities label:not(.manager-field),.manager-choice{flex-direction:row;align-items:center;gap:10px}.manager-choice{min-height:44px;font-size:13px}
+
+.model-catalog-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.model-catalog-actions button{white-space:normal;text-align:left}

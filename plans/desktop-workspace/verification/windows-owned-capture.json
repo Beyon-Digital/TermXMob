@@ -1,0 +1,21 @@
+{
+  "backend": "PrintWindow",
+  "owned_pid": 6052,
+  "exact_window_dimensions": [
+    360,
+    240
+  ],
+  "center_rgb": [
+    0,
+    255,
+    1
+  ],
+  "foreign_owner_refused": true,
+  "user_desktop_captured": false,
+  "source_commit": "795f78cd4d4aa8564f5219fbdedefa66e9fe7e08",
+  "workflow_run": 37615683684,
+  "job": 112773322187,
+  "artifact_id": 11480420214,
+  "artifact_sha256": "bfd9ceb83e7610e1ed57c630f6abea0b6329a72591abc38a0f2faabd6be65a2a",
+  "scope": "Actual owned Win32 fixture captured through PrintWindow. Installed native GUI/input/re-dock qualification remains separate."
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { request } from '../lib/api';
@@ -9,6 +9,10 @@ import { AgentPresetEditor } from './AgentPresetEditor';
 import { ManagedPairingForm } from './ManagedPairingForm';
 import ExtensionManager from './ExtensionManager';
 import McpManager from './McpManager';
+import ModelFavoritesManager from './ModelFavoritesManager';
+import IdentityGroupsManager from './IdentityGroupsManager';
+import AuditRetentionManager from './AuditRetentionManager';
+import SessionPolicyManager from './SessionPolicyManager';
 
 type Row = Record<string, any>;
 export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void }
@@ -54,7 +58,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       if (section === 'access') {
         const [access, sessions, methods] = await Promise.all([request<Row>('/auth/access'), request<Row[]>('/auth/sessions'), request<Row>('/auth/methods')]);
         const result: Row = { access, sessions, methods };
-        if (admin) { const [principals, adapters, configuration] = await Promise.all([request<Row[]>('/auth/admin/principals'), request<Row[]>('/auth/admin/adapters'), request<Row>('/auth/admin/adapters/configuration')]); Object.assign(result, { principals, adapters, configuration }) }
+        if (admin) { const [principals, adapters, configuration] = await Promise.all([request<Row[]>('/auth/admin/principals'), request<Row[]>('/auth/admin/adapters'), request<Row>('/auth/admin/adapters/configuration')]); const catalog=await gql<{projects:{id:string;name:string}[]}>('{projects{id name}}');Object.assign(result, { principals, adapters, configuration,identityProjects:catalog.projects }) }
         return result;
       }
       return {};
@@ -62,8 +66,13 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
     load().then(value => { if (!cancelled) setData(value) }).catch(exc => { if (!cancelled) setError(exc.message) }).finally(() => { if (!cancelled) setLoading(false) });
     return () => { cancelled = true };
   }, [section, projectId, admin, version]);
+  const setIdentityError=useCallback((reason:unknown)=>setError(reason instanceof Error?reason.message:'Identity settings could not be updated.'),[]);
   const change = (name: string, value: unknown) => setDraft(current => ({ ...current, [name]: value }));
-  const matches = (row: Row) => `${row.id} ${row.name || row.label || row.content || row.event || ''}`.toLowerCase().includes(search.toLowerCase());
+  const matches = (row: Row) => {
+    const terms=search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const text=[row.id,row.name,row.label,row.content,row.event,row.prompt,row.success_criteria,row.device_name,row.display_name,row.state,row.status,row.strength,row.spec?.kind,row.spec?.time,row.spec?.timezone,row.next_run?date(row.next_run):'',row.expires?date(row.expires):'',row.revoked?'revoked':'',row.id===me.session_id?'this session':'',row.enabled===true?'enabled':row.enabled===false?'paused':''].filter(Boolean).join(' ').toLowerCase();
+    return terms.every(term=>text.includes(term));
+  };
   const mutate = async (fn: () => Promise<unknown>, message: string, refresh = true) => { setBusy(true); setError(''); setNotice(''); try { const result = await fn(); if(section==='models')onCapabilitiesChanged?.(); setNotice(message); if (refresh) setVersion(v => v + 1); return result } catch (exc) { setError(exc instanceof Error ? exc.message : String(exc)); return null } finally { setBusy(false) } };
   const post = (path: string, value: unknown, message: string, method = 'POST') => mutate(() => request(path, body(value, method)), message);
   const jsonDraft = (key: string, fallback: unknown) => JSON.parse(draft[key] || JSON.stringify(fallback));
@@ -85,6 +94,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
         {action('Inspect capabilities', () => setPreview(engine), true)}{action('Refresh models', () => mutate(async () => { const value = await gql('query($id:String!){engine_models(engine_id:$id)}', { id: engine.id }); setPreview(value); return value }, 'Model catalog refreshed', false), true)}
         <details><summary>Account sign-in</summary><Input aria-label={`Sign-in method for ${engine.label}`} placeholder="Method ID from engine account settings" value={draft[`method-${engine.id}`] || ''} onChange={e => change(`method-${engine.id}`, e.target.value)} />{action('Sign in', () => mutate(() => gql('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}', { id: engine.id, method: draft[`method-${engine.id}`] || '' }), 'Sign-in request completed'))}</details>
       </Item>)}{preview && <details open><summary>Selected engine capabilities/catalog</summary><Json value={preview} /></details>}
+      {me.principal?.id&&<ModelFavoritesManager ownerId={me.principal.id} engines={data.engines||[]} accounts={data.agent_providers||[]} search={search}/>}
       <h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider: Row) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => mutate(() => gql('mutation($id:String!){test_agent_provider(provider_id:$id)}', { id: provider.id }), 'Provider connection tested'), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
       {admin && editingProvider && <ProviderAccountForm key={editingProvider.id} account={editingProvider as any} busy={busy} onCancel={()=>setEditingProvider(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account updated');if(result!==null)setEditingProvider(null);return result}}/>}
       {admin && <details><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={input=>mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account saved')}/></details>}
@@ -105,7 +115,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
 
       {section === 'automations' && <><h2>Goals and schedules</h2>{!(data.goal || []).length && <Empty>Create a bounded goal in the current chat, then grant unattended execution and preview its schedule.</Empty>}{(data.goal || []).filter(matches).map((goal: Row) => <Item key={goal.id} title={goal.success_criteria} meta={`${goal.status} · ${goal.runs_started}/${goal.max_runs} runs`}>
         {action('Schedule', () => { setSelected(goal.id); setDraft({ maxRuns: goal.max_runs, maxSteps:goal.limits?.max_steps, maxSeconds:goal.limits?.max_seconds, parallel:goal.limits?.max_parallel_subagents, totalAgents:goal.limits?.max_subagents_total }); setPreview(null) }, true)}{action('Cancel goal and children', () => post(`/api/workspace/goals/${goal.id}/cancel`, {}, 'Goal and descendant tasks cancelled'), true)}</Item>)}
-      {(data.schedule || []).map((schedule: Row) => <Item key={schedule.id} title={schedule.prompt} meta={`${schedule.state} · next ${date(schedule.next_run)} · missed ${schedule.missed}, overlap ${schedule.overlap}`}>
+      {(data.schedule || []).filter(matches).map((schedule: Row) => <Item key={schedule.id} title={schedule.prompt} meta={`${schedule.state} · next ${date(schedule.next_run)} · missed ${schedule.missed}, overlap ${schedule.overlap}`}>
         {action(schedule.enabled ? 'Pause' : 'Resume', () => post(`/api/workspace/schedules/${schedule.id}`, { enabled: !schedule.enabled, revision: schedule.revision }, 'Schedule updated', 'PATCH'), true)}</Item>)}
       <details open><summary>{selected ? 'Authorize scheduled work' : 'Create a bounded goal'}</summary><div className="manager-form">{!selected && textarea('success', 'Success criteria')}{input('maxRuns', 'Maximum runs', { type: 'number', defaultValue: '5' })}{input('maxSteps', 'Maximum steps per run', { type: 'number', defaultValue: '128' })}{input('maxSeconds', 'Maximum seconds per run', { type: 'number', defaultValue: '3600' })}{input('parallel', 'Parallel subagents', { type: 'number', defaultValue: '3' })}{input('totalAgents', 'Total subagents per run', { type: 'number', defaultValue: '8' })}
         {!selected ? <>{!sessionId && <p>Select a chat before creating a goal.</p>}{action('Create goal', () => post('/api/workspace/goals', { conversation_id: sessionId, success_criteria: draft.success, max_runs: Number(draft.maxRuns || 5), limits: limits() }, 'Bounded goal created'))}</> : <>
@@ -118,12 +128,12 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       </div></details><details><summary>Run and delegation history</summary><Json value={{ runs:data.schedule_run || [], grants:data.delegation || [] }} /></details>
       {(data.delegation || []).filter((grant: Row) => !grant.revoked).map((grant: Row) => <Item key={grant.id} title={`Execution grant · ${grant.goal_id}`} meta={`Expires ${date(grant.expires_at)} · ${grant.used_runs}/${grant.max_runs} runs`}>{action('Revoke unattended authority', () => confirmDelete(`/api/workspace/delegations/${grant.id}`, 'Delegated authority revoked'), true)}</Item>)}</>}
 
-      {section === 'extensions' && <ExtensionManager key={projectId||'global'} data={data} projectId={projectId} onChanged={()=>setVersion(v=>v+1)}/>}
+      {section === 'extensions' && <ExtensionManager key={projectId||'global'} data={data} projectId={projectId} search={search} onChanged={()=>setVersion(v=>v+1)}/>}
 
       {section === 'connections' && <McpManager projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
 
       {section === 'access' && <>{me.principal?.id && me.session_id && me.host_id && <ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/>}<h2>Your sessions</h2><p className="manager-help">{data.access?.role || 'Member'} · {data.access?.runtime_boundary || 'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>
-      {(data.sessions || []).map((session:Row) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>
+      {(data.sessions || []).filter(matches).map((session:Row) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>
         {!session.revoked && action('Revoke session',()=>confirmDelete(`/auth/sessions/${session.id}`,'Session revoked'),true)}</Item>)}
       {admin && <><h2>People and project access</h2>{(data.principals || []).filter(matches).map((principal:Row) => <Item key={principal.id} title={principal.display_name} meta={`${principal.role || 'No role'} · ${principal.enabled ? 'Enabled' : 'Disabled'}${principal.trusted_execution ? ' · Trusted host execution' : ''}`}>
         {action('Manage access',()=>{setSelected(principal.id);setDraft({role:principal.role})},true)}{action('Revoke all devices',()=>confirmDelete(`/auth/admin/principals/${principal.id}/sessions`,'Device sessions revoked'),true)}
@@ -133,6 +143,9 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
         {input('issuer','Identity issuer')}{input('subject','Stable identity subject')}{action('Bind verified identity',()=>post(`/auth/admin/principals/${selected}/bindings`,{issuer:draft.issuer,subject:draft.subject},'Explicit identity mapping saved'))}
       </div>}
       <details><summary>Add a person</summary><div className="manager-form">{input('personName','Name or local username')}{input('personPassword','Local password (leave empty for SSO)',{type:'password'})}{select('newRole','Initial role',[['viewer','Viewer'],['operator','Operator'],['admin','Administrator']],'viewer')}{action('Create account',()=>post('/auth/admin/principals',{name:draft.personName,password:draft.personPassword || null,role:draft.newRole || 'viewer'},'Account created'))}</div></details>
+      <IdentityGroupsManager projects={data.identityProjects||[]} onError={setIdentityError}/>
+      <AuditRetentionManager onError={setIdentityError}/>
+      <SessionPolicyManager onError={setIdentityError}/>
       <h2>Sign-in methods</h2>{(data.adapters || []).map((adapter:Row)=><Item key={adapter.id} title={adapter.label} meta={`${adapter.enabled ? 'Enabled' : 'Disabled'} · ${adapter.health} · v${adapter.version}`}>
         {action('Check health',()=>post(`/auth/admin/adapters/${adapter.id}/health`,{},'Method health checked'),true)}{action(adapter.enabled ? 'Disable and revoke sessions' : 'Enable',()=>post(`/auth/admin/adapters/${adapter.id}`,{enabled:!adapter.enabled,session_policy:'revoke'},'Sign-in method updated','PUT'),true)}</Item>)}
       <details><summary>Configure enterprise identity</summary><div className="manager-form">{textarea('authConfig','Provider trust configuration',JSON.stringify(data.configuration?.configuration,null,2))}{input('testAdapter','Adapter ID to test')}{textarea('authEvidence','Signed assertion test evidence','{"assertion":"…"}')}

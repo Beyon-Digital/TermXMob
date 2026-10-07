@@ -1,0 +1,27 @@
+{
+  "source_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "status": "passed",
+  "runs": {
+    "ci": 37653591537,
+    "windows_contracts": 37653591487,
+    "native_three_platform_compile": 37653591550,
+    "macos_gui_feasibility": 37653591593,
+    "macos_installed_fixture_source_only": 37653591576
+  },
+  "test_results": {
+    "frontend": {
+      "files": 58,
+      "passed": 207,
+      "build": "passed"
+    },
+    "python_linux": {
+      "passed": 986,
+      "skipped": 143
+    },
+    "python_macos": {
+      "passed": 1018,
+      "skipped": 111
+    }
+  },
+  "qualification_boundary": "These are source/fixture/platform-compile checks. The installed macOS workflow ran its PR fixture-source job; installed-app is intentionally skipped without exact artifact-run dispatch. No installed-native, physical hardware or paid-provider qualification is inferred. Later generic policies, groups, retention and aggregate budget changes need their own source and CI."
+}

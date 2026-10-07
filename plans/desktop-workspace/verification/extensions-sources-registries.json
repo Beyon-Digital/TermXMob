@@ -1,0 +1,390 @@
+{
+  "proof": "actual-managed-skill-sources-and-verified-TLS-registries",
+  "paid_queries": 0,
+  "OS_credential_writes": 0,
+  "errors": [],
+  "states": [
+    {
+      "theme": "dark",
+      "width": 1440,
+      "axe_violations": [],
+      "publication_geometry": {
+        "top": 521.859375,
+        "bottom": 557.859375,
+        "headerBottom": 97,
+        "uncovered": true
+      }
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "axe_violations": [],
+      "publication_geometry": {
+        "top": 521.859375,
+        "bottom": 557.859375,
+        "headerBottom": 97,
+        "uncovered": true
+      }
+    },
+    {
+      "theme": "dark",
+      "width": 720,
+      "axe_violations": [],
+      "publication_geometry": {
+        "top": 271.859375,
+        "bottom": 307.859375,
+        "headerBottom": 97,
+        "uncovered": true
+      }
+    },
+    {
+      "theme": "light",
+      "width": 720,
+      "axe_violations": [],
+      "publication_geometry": {
+        "top": 271.859375,
+        "bottom": 307.859375,
+        "headerBottom": 97,
+        "uncovered": true
+      }
+    }
+  ],
+  "steps": [
+    "Actual project SKILL.md saved; global source remains intact and effective override is inspectable",
+    "External file edit triggers conflict; draft survives and explicit current revision permits save",
+    "Version history restores a draft; reviewed publication activates exact immutable instructions",
+    "Actual compatibility and file imports remain unsaved drafts until validation/save; original native source untouched and no implicit activation",
+    "Real private HTTPS catalog/package fetched and reviewed; rotation rejects prior review, refresh installs exact bytes, host secret absent from UI/durable metadata"
+  ],
+  "UI_asset_snapshot": {
+    "assets/BrowserSurface-A19HyuER.js": "913bfae247fa020fabd3aa7ceb69b9e54f8c297f6011ce1cabeb8bd5b81bc341",
+    "assets/CaptureStatus-_yzB8WoR.js": "96039e5852a13d99c0e3c9e5f8d31174bb47b28b1e4946b461739355f2db4950",
+    "assets/ComputerSurface-829YWMED.js": "7a946eb661edce9daf966534df316110a7892be071423ecbc8468bc7cf44ad5f",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/Debugger-COnZT4ph.js": "d3cf6c1ef051ea7a65041d22a4163b62b9e65ecab4b1ab42a051c091871bce13",
+    "assets/Delivery-DJRiKAHN.js": "56754a86806bcbd9850359a585991749061668bdaee46cf7ac037b97ba5bdad9",
+    "assets/Keybindings-DzodtH-f.js": "1852be88b84d3baea4436ba81f0519a8ee7d2e975380a2e807300654fa40de2a",
+    "assets/Managers-DIxJfTJb.js": "7b46ac95087048bdcbfc664a5a2754b4056f74b2b548e3d999fd7b59e97375cc",
+    "assets/Managers-K6iCTEID.css": "c7ea2030a05ca76f502bf3b22ff3dcb9f02283b91e236c76f5b1c1d23c5d1f58",
+    "assets/Media-j7shhyqe.js": "45d3f6e382f933bd98d1f632c7784ce2ad3bc37280862a2d13a33251ce659168",
+    "assets/Preview-B8nOe9aq.js": "b8cbb57c1553c0d25e02c6258afcc113418b751b4831cb6e5ee548f121190af4",
+    "assets/Runners-D6WDZxUL.js": "09ed8357ff94cbaa4c20376b25430e6ec37b0c5924063f83964ec38fb03535df",
+    "assets/SafetyManager-N4TG0DUs.js": "4784e2a4f02e2ba8c0a503f4d5f87cfafb11ea5b2e808828328f3ef80b7e815e",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/TerminalPanel-vM4r3KOZ.js": "7f01e5fd07d4d39672e4b84bbd1e93201af5bb74ecbdbe4bfcc4901f1ded10f7",
+    "assets/Workbench-BceeUZ9V.js": "9d8e7c967b82b41dffa353ba77c8bd36b80a986e1a4d78884bb373d5266adb85",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-DQ8dYojs.js": "7584750572433ec053fc386f0e59133f826627a83d4b76ac491bb9dfd425ecd4",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-Bv7ep2uH.js": "383544de3e6b1ffe2a97923e90e0d18760eabf60d894d440be06129c8ab51ab3",
+    "assets/index-BofUQw-i.css": "1bb65b3ea5843ef82548127fab29d4d6888414cc3cce900b28446c114f112496",
+    "assets/index-DXGBYvRT.js": "cedb6f3c9309ae8d04b06fb7d5f9283be34cc33b396465733a88895e3902ff4d",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-4H8Dtj2A.css": "051d151bd7de335a8ae5fe85eca5727c9325210f46cd6b3656443f9ef429c7af",
+    "assets/mermaid-MCJ5UELQ-B8qsjNwP.js": "64ba0d2c78f43510f2fbacfa5bb19347530de316b5c3a0fbec47d9cd6db166c8",
+    "assets/play-MucFb5hv.js": "5fb5d600157783d61f816992b2b7d9e73d4ca13790986ada893d80178e3f15d5",
+    "assets/square-BjzBK_mX.js": "d15b0c9feffe36df3b3c8d7e13eb6fe9ba29be6fcd8767c3a3a1490213f74c73",
+    "assets/transfers-AYzyz_NG.js": "4bac0b31622d1b77acbe66eff139a3a47d3945fc96b7af19a4c69892d28d2012",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "445851e1e1d2e5381e00f01a83b5f0aa5a3c9c3ee87f4777f1232bb0b27b87a0"
+  },
+  "source_HTTP": [
+    {
+      "status": 200,
+      "path": "skill-sources/validate"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=inspect&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 409,
+      "path": "skill-sources/source"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source?scope=project&name=inspect&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=inspect&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions/c443b6fcce0cfeed08fc0185e8eb2bc414a34c1ef3f15e8e91eeaebb1c9c45a5"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=inspect&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source?scope=project&name=inspect&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/publish-preview"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility/0562763927ea57eb35e8a64adc083cf37f0680b5628a4f7ae035d8737b2fc6ee?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=LegacySkill&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/validate"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/compatibility?project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/versions?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    },
+    {
+      "status": 200,
+      "path": "skill-sources/source?scope=project&name=file-import&project_id=cc153b0694ebf10fdb9f44b1"
+    }
+  ],
+  "manager_header_geometry": [
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "memory": {
+        "top": 272.078125,
+        "bottom": 308.078125,
+        "headerBottom": 97,
+        "uncovered": true
+      },
+      "preset": {
+        "top": 379.46875,
+        "bottom": 415.46875,
+        "headerBottom": 97,
+        "uncovered": true
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "memory": {
+        "top": 272.078125,
+        "bottom": 308.078125,
+        "headerBottom": 97,
+        "uncovered": true
+      },
+      "preset": {
+        "top": 379.46875,
+        "bottom": 415.46875,
+        "headerBottom": 97,
+        "uncovered": true
+      }
+    }
+  ],
+  "TLS_requests": [
+    {
+      "path": "/index",
+      "authenticated": true
+    },
+    {
+      "path": "/index",
+      "authenticated": true
+    },
+    {
+      "path": "/package",
+      "authenticated": true
+    },
+    {
+      "path": "/index",
+      "authenticated": true
+    },
+    {
+      "path": "/package",
+      "authenticated": true
+    },
+    {
+      "path": "/index",
+      "authenticated": false
+    }
+  ],
+  "credentials_backend_only": true,
+  "status": "passed",
+  "backend_regressions": {
+    "command": ".venv/bin/python -m pytest tests/test_skill_sources.py tests/test_https_registries.py -q",
+    "passed": 11,
+    "includes": [
+      "native CAS/history/override/source-change publication refusal",
+      "secret/alias/size/link boundary",
+      "live project grant revocation",
+      "read-only compatibility import",
+      "real verified TLS private/public downloads",
+      "raw digest/redirect/protected network/encoding limits",
+      "exact dependency lifecycle/runtime graph",
+      "owner and live authority revalidation after download",
+      "bounded default DNS admission and wait; stuck resolver cannot consume unbounded host threads"
+    ]
+  },
+  "limitations": [
+    "Test resolver and CA are host-composed only; no request-side bypass exists.",
+    "Bounded JSON termx-registry/v1, supported inert bundles and same-origin packages only.",
+    "Bearer credential references remain backend owned; undocumented authentication adapters not claimed.",
+    "Native engine discovery retains its own precedence; explicit portable publication uses project-over-global resolution."
+  ],
+  "frontend_regressions": {
+    "passed": 5,
+    "suite": "desktop/workspace/src/features/extensions.test.tsx",
+    "typecheck": "passed"
+  },
+  "fixture": "tests/workspace_extensions_e2e.py",
+  "screenshots": [
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/extensions-extensions-light-720.png",
+      "sha256": "95a65284193eea1d8266637fd16ef9960e3e8a33574bd4034fd1b0ee694d4d06",
+      "visually_inspected": true
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/extensions-extensions-dark-1440.png",
+      "sha256": "c4f97f658b29cec60d532bb79334fdbd88fae690f31fb8ca1e22e3997fe2453e",
+      "visually_inspected": true
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/extensions-manager-header-memory-light-200.png",
+      "sha256": "bb4526c49e9ee78c59cd288706b4d5004371653e243dfe3f5c9119ed1ab8d817",
+      "visually_inspected": true
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/extensions-manager-header-preset-light-200.png",
+      "sha256": "d39fab96682d29f5dfd7f0a42e0ad1eae652de582d5bc0fc6b7bad916cf8c333",
+      "visually_inspected": true
+    }
+  ],
+  "DNS_followup": {
+    "test": "tests/test_https_registries.py::test_dns_wait_and_outstanding_work_are_bounded",
+    "result": "passed",
+    "description": "Captures the admitted semaphore so a timed-out worker releases the same slot after resolver completion."
+  }
+}

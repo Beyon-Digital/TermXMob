@@ -1,0 +1,1302 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-focus-preserves-canvas",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "computer-focus-restored",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "independent-browser-computer-canvases",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-focus-preserves-canvas",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "computer-focus-restored",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "independent-browser-computer-canvases",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-focus-preserves-canvas",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "computer-focus-restored",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-focus-preserves-canvas",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "computer-focus-restored",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Computer dock control outside remote capture",
+      "focus": {
+        "label": "Dock computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(17, 19, 18)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.7
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Independent Computer bottom placement",
+      "focus": {
+        "label": "Dock computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(17, 19, 18)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.7
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Commands",
+      "focus": {
+        "label": "Commands",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 87.234375,
+        "height": 16,
+        "visible_width": 87.234375,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Search commands",
+      "focus": {
+        "label": "Search commands",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 462,
+        "height": 36,
+        "visible_width": 462,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Focus browser command",
+      "focus": {
+        "label": "Focus browserMod+Alt+3",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 458,
+        "height": 41,
+        "visible_width": 458,
+        "visible_height": 41,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Independent browser dock placement",
+      "focus": {
+        "label": "Dock browser",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(17, 19, 18)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.7
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Conversation tab group placement",
+      "focus": {
+        "label": "Dock conversation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(17, 19, 18)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.7
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create a browser profile",
+      "focus": {
+        "label": "Create a browser profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 173.6875,
+        "height": 36,
+        "visible_width": 173.6875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "New profile name",
+      "focus": {
+        "label": "New profile name",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 320,
+        "height": 36,
+        "visible_width": 320,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create profile",
+      "focus": {
+        "label": "Create profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 110.59375,
+        "height": 36,
+        "visible_width": 110.59375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 941.546875,
+        "height": 36,
+        "visible_width": 941.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Detach computer",
+      "focus": {
+        "label": "Detach computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Stop watching",
+      "focus": {
+        "label": "Stop watching",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 115.84375,
+        "height": 36,
+        "visible_width": 115.84375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Theme preference",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(33, 60, 42)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.04
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "light theme",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(227, 241, 230)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.99
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Computer dock control outside remote capture",
+      "focus": {
+        "label": "Dock computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(242, 243, 240)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 4.84
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Independent Computer bottom placement",
+      "focus": {
+        "label": "Dock computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(242, 243, 240)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 4.84
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Commands",
+      "focus": {
+        "label": "Commands",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 87.234375,
+        "height": 16,
+        "visible_width": 87.234375,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Search commands",
+      "focus": {
+        "label": "Search commands",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 462,
+        "height": 36,
+        "visible_width": 462,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Focus browser command",
+      "focus": {
+        "label": "Focus browserMod+Alt+3",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 458,
+        "height": 41,
+        "visible_width": 458,
+        "visible_height": 41,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Independent browser dock placement",
+      "focus": {
+        "label": "Dock browser",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(242, 243, 240)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 4.84
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Conversation tab group placement",
+      "focus": {
+        "label": "Dock conversation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(242, 243, 240)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 4.84
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 787.484375,
+        "height": 36,
+        "visible_width": 787.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Detach computer",
+      "focus": {
+        "label": "Detach computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Stop watching",
+      "focus": {
+        "label": "Stop watching",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 115.84375,
+        "height": 36,
+        "visible_width": 115.84375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Computer dock control outside remote capture",
+      "focus": {
+        "label": "Dock computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(17, 19, 18)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.7
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Detach computer",
+      "focus": {
+        "label": "Detach computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Stop watching",
+      "focus": {
+        "label": "Stop watching",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 115.84375,
+        "height": 36,
+        "visible_width": 115.84375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Theme preference",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(33, 60, 42)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.04
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "light theme",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(227, 241, 230)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.99
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Watch this machine",
+      "focus": {
+        "label": "Watch this machine",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 147.734375,
+        "height": 36,
+        "visible_width": 147.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Take control",
+      "focus": {
+        "label": "Take control",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 126.671875,
+        "height": 36,
+        "visible_width": 126.671875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Computer dock control outside remote capture",
+      "focus": {
+        "label": "Dock computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(242, 243, 240)",
+        "width": 73,
+        "height": 15,
+        "visible_width": 73,
+        "visible_height": 15,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 4.84
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Detach computer",
+      "focus": {
+        "label": "Detach computer",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Stop watching",
+      "focus": {
+        "label": "Stop watching",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 115.84375,
+        "height": 36,
+        "visible_width": 115.84375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    }
+  ],
+  "errors": [],
+  "paid_provider_queries": 0,
+  "limitations": [
+    "Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation.",
+    "Computer frames and input ports are explicit fixtures; this proves rendered keyboard/ACK/Stop authority and denial UX, not OS permission or physical display capture."
+  ],
+  "production_bundle": {
+    "index_sha256": "cc5f43ea01e244e4ef5545eaddb767fb0177aec6c5f148c73b3be3a33b799552",
+    "entry_assets": [
+      "/assets/index-szNKBjZr.js",
+      "/assets/index-0xZ3naUl.css"
+    ],
+    "source": "Exact production dist frozen before fixture startup; no source transform or concurrent build asset swaps"
+  },
+  "computer_docking": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "same_controlled_viewer_during_focus_restore": true,
+      "independent_simultaneous_live_canvases": true,
+      "exact_computer_popup_without_control_inheritance": true,
+      "dock_picker_method": "Actual Tab/focus plus Playwright select_option for native picker; no DOM mutation"
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "same_controlled_viewer_during_focus_restore": true,
+      "independent_simultaneous_live_canvases": true,
+      "exact_computer_popup_without_control_inheritance": true,
+      "dock_picker_method": "Actual Tab/focus plus Playwright select_option for native picker; no DOM mutation"
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "same_controlled_viewer_during_focus_restore": true,
+      "independent_simultaneous_live_canvases": false,
+      "exact_computer_popup_without_control_inheritance": true,
+      "dock_picker_method": "Actual Tab/focus plus Playwright select_option for native picker; no DOM mutation"
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "same_controlled_viewer_during_focus_restore": true,
+      "independent_simultaneous_live_canvases": false,
+      "exact_computer_popup_without_control_inheritance": true,
+      "dock_picker_method": "Actual Tab/focus plus Playwright select_option for native picker; no DOM mutation"
+    }
+  ],
+  "fixture_provider_turns": 0,
+  "task_status_before_cleanup": null,
+  "keyboard_checks": 53,
+  "loaded_states": 12,
+  "minimum_keyboard_text_contrast": 4.84,
+  "prohibited_aria_incomplete": 0
+}

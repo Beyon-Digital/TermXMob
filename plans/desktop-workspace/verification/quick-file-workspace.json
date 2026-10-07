@@ -1,0 +1,33 @@
+{
+  "host_platform": "darwin",
+  "proof": "quick-file-open",
+  "provider_queries": 0,
+  "external_mutations": 0,
+  "fixture_adapter_calls": 0,
+  "errors": [],
+  "steps": [
+    "Actual searchable Commands and ModP opened only the enrolled checkout file and retained unsaved editor content"
+  ],
+  "quick_file_accessibility": [
+    {
+      "zoom": 100,
+      "axe_violations": 0,
+      "named_combobox_selected_option": true,
+      "visible_query": true
+    },
+    {
+      "zoom": 200,
+      "axe_violations": 0,
+      "named_combobox_selected_option": true,
+      "visible_query": true
+    }
+  ],
+  "quick_file": {
+    "searchable_command_palette": true,
+    "actual_mod_p": true,
+    "filename_only_current_worktree": true,
+    "dirty_buffer_retained": true,
+    "host_disk_unchanged": true
+  },
+  "production_bundle": "index-BT-wEaLO"
+}

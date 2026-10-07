@@ -34,6 +34,18 @@ allow. Policy changes, takeover, private mode, expiry, document/target changes a
 restart invalidate stale permits. Consumption is persisted before side effects;
 unknown outcomes are never automatically replayed.
 
+Recognized CAPTCHA/MFA/sitekey/provider-frame controls require manual takeover
+and are never recorded as repeatable solutions. Consequential browser proposals
+include bounded redacted host-observed target/form/charge evidence bound to the
+exact document hash. Unknown, invisible, incomplete or sensitive evidence is
+manual-only; page labels remain untrusted. Agent document/fetch/XHR/nonread
+requests retain their scoped-origin boundary after automatic revocation, including
+retries and popup attribution races, until an explicit human operation. Passive
+assets remain subject to the separate network policy. This does not claim
+universal challenge detection or arbitrary JavaScript consequence prediction.
+[Concrete fixture coverage and limits](../../../plans/desktop-workspace/verification/browser-transaction-boundary.md)
+distinguish these checks from installed/native and live reviewer qualification.
+
 Handoff and every subsequent action require a live canonical task. Completed,
 failed, cancelled and cancelling tasks cannot retain control. A first internal
 browser call without a grant pauses the same call for explicit handoff and resumes

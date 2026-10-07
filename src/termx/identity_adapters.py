@@ -34,6 +34,21 @@ def _https_url(value: str) -> str:
     return value
 
 
+def _group_config(claim,ttl):
+    if claim is not None and (not isinstance(claim,str) or not re.fullmatch(r'[^\s\x00-\x1f]{1,256}',claim)):
+        raise ValueError('Group claim must be an explicit bounded top-level claim name')
+    if isinstance(ttl,bool) or not isinstance(ttl,int) or not 60<=ttl<=86400:
+        raise ValueError('Group membership TTL must be60–86400 seconds')
+
+
+def _verified_groups(claims,claim):
+    if claim is None:return None
+    values=claims.get(claim,[])
+    if (not isinstance(values,list) or len(values)>128 or any(not isinstance(v,str) or not v or len(v)>256 for v in values)):
+        raise AuthenticationError('Malformed configured group claim')
+    return tuple(sorted(set(values)))
+
+
 @dataclass(frozen=True)
 class OidcConfig:
     id: str
@@ -41,8 +56,11 @@ class OidcConfig:
     issuer: str
     client_id: str
     redirect_uri: str
+    groups_claim: str | None = None
+    membership_ttl: int = 300
 
     def __post_init__(self):
+        _group_config(self.groups_claim,self.membership_ttl)
         _https_url(self.issuer)
         redirect = urlsplit(self.redirect_uri)
         if redirect.scheme == "http" and redirect.hostname == "127.0.0.1" and redirect.port and not redirect.username and not redirect.password and not redirect.fragment:
@@ -142,7 +160,7 @@ class OidcAdapter:
                 raise AuthenticationError("identity authorized party mismatch")
             if claims.get("azp", self.config.client_id) != self.config.client_id:
                 raise AuthenticationError("identity authorized party mismatch")
-            return Identity(self.config.issuer, claims["sub"], "oidc")
+            return Identity(self.config.issuer, claims["sub"], "oidc",_verified_groups(claims,self.config.groups_claim),self.config.membership_ttl)
         except AuthenticationError:
             raise
         except Exception as exc:
@@ -152,7 +170,9 @@ class OidcAdapter:
 class SignedAssertionAdapter:
     """Custom integration reference with pinned Ed25519 key and replay defense."""
     def __init__(self, service: AuthenticationService, *, adapter_id: str, label: str,
-                 issuer: str, audience: str, public_key: str):
+                 issuer: str, audience: str, public_key: str,groups_claim: str | None=None,membership_ttl: int=300):
+        _group_config(groups_claim,membership_ttl)
+        self.groups_claim,self.membership_ttl=groups_claim,membership_ttl
         self.service, self.id, self.label = service, adapter_id, label
         key = load_pem_public_key(public_key.encode())
         if not isinstance(key, Ed25519PublicKey) or not issuer or not audience:
@@ -173,7 +193,7 @@ class SignedAssertionAdapter:
             with self.service._db() as db:
                 db.execute("DELETE FROM identity_assertions WHERE expires<=?", (time(),))
                 db.execute("INSERT INTO identity_assertions VALUES (?, ?, ?)", (self.id, claims["jti"], claims["exp"]))
-            return Identity(self.issuer, claims["sub"], "signed-assertion")
+            return Identity(self.issuer, claims["sub"], "signed-assertion",_verified_groups(claims,self.groups_claim),self.membership_ttl)
         except Exception as exc:
             raise AuthenticationError("invalid or replayed identity assertion") from exc
 
@@ -192,14 +212,14 @@ def prepare_adapter_configuration(service: AuthenticationService, config: dict, 
             raise ValueError("invalid or duplicate authentication adapter id")
         ids.add(adapter_id)
         if item["kind"] == "oidc":
-            if set(item)-{'id','kind','label','issuer','client_id','redirect_uri'}:
+            if set(item)-{'id','kind','label','issuer','client_id','redirect_uri','groups_claim','membership_ttl'}:
                 raise ValueError('unknown OIDC configuration field')
-            prepared.append(OidcAdapter(service, OidcConfig(adapter_id, item["label"], item["issuer"], item["client_id"], item["redirect_uri"])))
+            prepared.append(OidcAdapter(service, OidcConfig(adapter_id, item["label"], item["issuer"], item["client_id"], item["redirect_uri"],item.get('groups_claim'),item.get('membership_ttl',300))))
         elif item["kind"] == "signed-assertion":
-            if set(item)-{'id','kind','label','issuer','audience','public_key'}:
+            if set(item)-{'id','kind','label','issuer','audience','public_key','groups_claim','membership_ttl'}:
                 raise ValueError('unknown assertion configuration field')
             prepared.append(SignedAssertionAdapter(service, adapter_id=adapter_id, label=item["label"], issuer=item["issuer"],
-                                                   audience=item["audience"], public_key=item["public_key"]))
+                                                   audience=item["audience"], public_key=item["public_key"],groups_claim=item.get('groups_claim'),membership_ttl=item.get('membership_ttl',300)))
         else:
             raise ValueError("unknown authentication adapter kind")
     with service._db() as db:

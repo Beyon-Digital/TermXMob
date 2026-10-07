@@ -1,0 +1,44 @@
+{
+  "commit": "806e6c7",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37604958925",
+  "artifact_only": true,
+  "published_release_or_updater": false,
+  "macos_arm64": {
+    "conclusion": "success",
+    "complete_runtime_frozen_smoke": "passed",
+    "signature": "signed",
+    "notarization": "Accepted",
+    "notarization_id": "04eb1031-a4e8-43e8-bbb9-0c7ed7085774",
+    "stapling": "completed",
+    "artifact_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37604958925/artifacts/11475134796",
+    "artifact_bytes": 477045611
+  },
+  "macos_intel": {
+    "conclusion": "failure",
+    "complete_runtime_frozen_smoke": "passed",
+    "signature": "signed",
+    "notarization": "Accepted",
+    "notarization_id": "52cda979-dc57-4320-962e-d9c10e61b0f7",
+    "stapling": "completed",
+    "failure": "hdiutil detach: timeout for DiskArbitration expired; drive not detached. DMG bundling failed.",
+    "installer_artifact": null
+  },
+  "linux": {
+    "conclusion": "failure",
+    "failure": "actual managed Chromium crash fixture had an inadequate one-second readiness bound, corrected in later source to an actual crash-event deadline",
+    "installer_gui_qualified": false
+  },
+  "windows": {
+    "conclusion": "failure",
+    "backend_passed": 799,
+    "backend_skipped": 115,
+    "backend_failed": 2,
+    "failure": "two worker noninteractive control-stdin stalls; corrected and passed in later Windows source contracts",
+    "installer_gui_qualified": false
+  },
+  "limits": [
+    "Actual notarization does not qualify installed native GUI journeys.",
+    "Current uncommitted UI/platform changes are outside this older artifact.",
+    "Intel DMG still requires a successful retry; no artifact success is inferred from a signed application bundle."
+  ]
+}

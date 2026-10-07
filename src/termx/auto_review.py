@@ -15,7 +15,7 @@ import httpx
 from termx.browser.storage import Records
 
 DECISIONS={'ALLOW','NEEDS_USER','BLOCK'}
-SENSITIVE={'send','publish','purchase','delete','credential','privilege','export','upload'}
+SENSITIVE={'send','publish','purchase','delete','credential','privilege','export','upload','challenge'}
 SAFE={'observe','capture','scroll','wait','navigate','find','zoom','history'}
 
 def canonical_hash(args: Any) -> str:
@@ -151,13 +151,14 @@ class DecisionBroker:
         if row['expires_at']<time():raise ValueError('approval expired')
         row['status']='approved_once' if approve else 'blocked';row['decision']='ALLOW' if approve else 'BLOCK';row['reason']='exact human decision';row['decision_source']='human'
         self.records.put('review',id,row);return row
-    async def authorize(self,action:ActionEnvelope,*,validate:Callable[[],bool],context=None,hard_deny=None):
+    async def authorize(self,action:ActionEnvelope,*,validate:Callable[[],bool],context=None,hard_deny=None,existing_consent:Callable[[],bool]|None=None):
         lock=self._locks.setdefault(action.action_id,asyncio.Lock())
         async with lock:
             fingerprint=action.fingerprint();row=self.records.get('review',action.action_id)
             if row and row['fingerprint']!=fingerprint:raise ValueError('action id reused with changed authority or arguments')
+            if action.intended_effect=='challenge':hard_deny='Recognized authentication challenge requires human takeover/private login; automated solutions are refused'
             if not validate() or hard_deny:
-                row=self._record(action,'BLOCK',hard_deny or 'outside current capability envelope','blocked');raise ActionBlocked(row)
+                row=self._record(action,'BLOCK',hard_deny or 'outside current capability envelope','blocked',**({'human_preview':context['human_preview']} if context and context.get('human_preview') else {}));raise ActionBlocked(row)
             if row:
                 if row['status']=='approved_once':
                     row.update(status='permitted',permit=secrets.token_urlsafe(24),expires_at=min(row['expires_at'],time()+15))
@@ -169,10 +170,14 @@ class DecisionBroker:
                 raise ReviewRequired(row)
             rules=[r for r in self.records.list('review-rule') if r['expires_at']>time() and r['scope']==self._scope(action)]
             used_model=False
+            used_coding_consent=False
             if any(r['decision']=='BLOCK' for r in rules):
                 row=self._record(action,'BLOCK','remembered deny','blocked');raise ActionBlocked(row)
             if action.intended_effect in SENSITIVE or action.intended_effect=='unknown' or 'secret' in action.data_labels:
                 verdict=ReviewVerdict('NEEDS_USER','consequential_or_unknown','Exact human review required','host-policy-v1',time()+300)
+            elif existing_consent and existing_consent():
+                used_coding_consent=True
+                verdict=ReviewVerdict('ALLOW','bounded_coding_consent','Current owner-scoped coding consent','host-policy-v1',time()+15)
             elif rules or action.intended_effect in SAFE:
                 verdict=ReviewVerdict('ALLOW','current_consent','Inside explicit grant','host-policy-v1',time()+15)
             elif not self.reviewer or not self.reviewer_valid():
@@ -190,7 +195,10 @@ class DecisionBroker:
             if not validate():
                 row=self._record(action,'BLOCK','state changed during review','invalidated');raise ActionBlocked(row)
             status={'ALLOW':'permitted','NEEDS_USER':'needs_user','BLOCK':'blocked'}[verdict.decision]
-            row=self._record(action,verdict.decision,verdict.reason_code,status,expires_at=min(verdict.expires_at,time()+(15 if status=='permitted' else 300)),reviewer_version=verdict.reviewer_version)
+            row=self._record(action,verdict.decision,verdict.reason_code,status,expires_at=min(verdict.expires_at,time()+(15 if status=='permitted' else 300)),reviewer_version=verdict.reviewer_version,**({'human_preview':context['human_preview']} if context and context.get('human_preview') else {}))
+            if used_coding_consent:
+                row['decision_source']='coding-policy'
+                self.records.put('review',row['id'],row)
             if used_model:
                 row.update(decision_source='model',reviewer_account_revision=getattr(self.reviewer,'account_revision',''),reviewer_model_identity=getattr(self.reviewer,'expected_model',None))
                 self.records.put('review',row['id'],row)

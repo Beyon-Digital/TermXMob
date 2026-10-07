@@ -1,0 +1,243 @@
+{
+  "schema_version": "1.0",
+  "kind": "actual-external-editable-figma",
+  "file_key": "Vo9guk8YNqP0H9DUMPvmCv",
+  "source_plan": "plans/desktop-workspace/plan-v0.3.html",
+  "canonical_page": "32:2",
+  "canonical_state_frames": 95,
+  "compact_layout_frames": 4,
+  "new_shared_components": 4,
+  "actual_prototype_edges": 234,
+  "invalid_prototype_destinations": 0,
+  "action_toolbar_overflow": 0,
+  "reachable_from_password_entry": 95,
+  "unreachable_states": [],
+  "original_core_frames_preserved": 11,
+  "original_components_preserved": 66,
+  "original_variant_sets_preserved": 5,
+  "original_core_prototype_edges_preserved": 63,
+  "flattened_ui_image_fills": 0,
+  "node_map": "plans/desktop-workspace/figma/advanced-node-map.json",
+  "flow_spec": "plans/desktop-workspace/figma/advanced-flow-spec.json",
+  "renders": [
+    {
+      "node_id": "32:147",
+      "path": "plans/desktop-workspace/figma/advanced-renders/entry-failure.png",
+      "sha256": "ad85029b09f551dc89854223387b5ac1ea4f76e4d41e829db324ba163f2d5a37",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "32:486",
+      "path": "plans/desktop-workspace/figma/advanced-renders/delivery-review.png",
+      "sha256": "badb12151b8ffbff7dcb7e9d38e077ac032a3739a6129793b4dbd22fc116264f",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "32:967",
+      "path": "plans/desktop-workspace/figma/advanced-renders/voice-session.png",
+      "sha256": "af9117760f672ac9d53c3bcbb435c4609d7137bbffe60272db9e3794a031ec28",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "32:1220",
+      "path": "plans/desktop-workspace/figma/advanced-renders/detached-conflict.png",
+      "sha256": "21cb3b1ed00b82b8aeb4bdc6493317d1397239d0e3abddbfa44334dcf013d3d5",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "35:3",
+      "path": "plans/desktop-workspace/figma/advanced-renders/compact-chat.png",
+      "sha256": "511ad1cb9dfecd01efe5519a7f3320e510a8bc3e2d0cb2d371298739786c2f70",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "35:41",
+      "path": "plans/desktop-workspace/figma/advanced-renders/compact-workbench.png",
+      "sha256": "4d9c90cf069db961bc969901ce77e5e2e236daf7c1a609e5d8e267120dda3618",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "35:66",
+      "path": "plans/desktop-workspace/figma/advanced-renders/compact-browser.png",
+      "sha256": "902b1ddf3fb46da311ca8272e74fafa742bf72e03cf7b8dc0250fe9c2d5ef144",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "35:97",
+      "path": "plans/desktop-workspace/figma/advanced-renders/compact-manager.png",
+      "sha256": "a77e0d8b25aae4458bd6d22c66ec84bb8f80bd5151cd8c8f17fa4ee778591de7",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "33:10685",
+      "path": "plans/desktop-workspace/figma/advanced-renders/remembered-rules.png",
+      "sha256": "64728680964a1a4b5806d6303148f1ac212a21f44689fd0e96d851990f6b6b12",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "32:644",
+      "path": "plans/desktop-workspace/figma/advanced-renders/subagent-supervision.png",
+      "sha256": "43d8787728f5d1d6553c932c1a59f6bd9d786c0e8213a233322400f8b4952884",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "32:839",
+      "path": "plans/desktop-workspace/figma/advanced-renders/skill-test-failure.png",
+      "sha256": "841da53960eea8a21501ae4b2ea8aaae79b8ff4076cf8bca33b8678a61e3a889",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "41:11133",
+      "path": "plans/desktop-workspace/figma/advanced-renders/skill-source-editor.png",
+      "sha256": "5e1f15a2db2be9bffbe670c0acb8d80539f405cf193abf6c7e3fa6bc2a5855b1",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "41:11329",
+      "path": "plans/desktop-workspace/figma/advanced-renders/skill-source-conflict.png",
+      "sha256": "e5b2d001e3193ca00479cef0c8fcf62368cf67f16b71d548986c479fc9ee2fd0",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "41:11525",
+      "path": "plans/desktop-workspace/figma/advanced-renders/https-registry-review.png",
+      "sha256": "69509dbb04c84a3685d2c0024ffb4465db6625a84dc80524b99df38dc47be9d6",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "46:11660",
+      "path": "plans/desktop-workspace/figma/advanced-renders/workspace-lock.png",
+      "sha256": "67f2d9f19faefa9c74d39ae3108dc1ac0ec83eabc2c4c904d40a097289649691",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "46:11955",
+      "path": "plans/desktop-workspace/figma/advanced-renders/managed-pairing-grant.png",
+      "sha256": "6ae018ead48322213dfbef9c68f56a13d4432b322047e13dddee4ed1821669a2",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "46:12151",
+      "path": "plans/desktop-workspace/figma/advanced-renders/host-shutdown-confirmation.png",
+      "sha256": "f5367e49d27eccc0978558cdb7da3dbdd93c068dc82ce5f159704fe707ffdbf2",
+      "visually_inspected": true
+    },
+    {
+      "state_id": "J-ENTRY-16",
+      "node_id": "54:14167",
+      "path": "plans/desktop-workspace/figma/advanced-renders/queue-follow-ups.png",
+      "width": 1440,
+      "height": 900,
+      "sha256": "7385cfbaab62de98df4721289615fffbb017b1320aac7b1aa5a949dd21edb900",
+      "visually_inspected": true
+    },
+    {
+      "state_id": "J-ENTRY-19",
+      "node_id": "54:14871",
+      "path": "plans/desktop-workspace/figma/advanced-renders/session-model-reasoning.png",
+      "width": 1440,
+      "height": 900,
+      "sha256": "bab1e65377d29713a33a7b8870d543371bcf18c42c9225d92e9598648a5ff50a",
+      "visually_inspected": true
+    },
+    {
+      "state_id": "J-RECORD-13",
+      "node_id": "54:15539",
+      "path": "plans/desktop-workspace/figma/advanced-renders/mcp-project-credentials.png",
+      "width": 1440,
+      "height": 900,
+      "sha256": "90ea7e11ecff9c66cf64d175ec7708f40f82994add49d8953b476ec994068d0e",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "64:17136",
+      "path": "plans/desktop-workspace/figma/advanced-renders/identity-groups.png",
+      "sha256": "74c0186d949a6ff188674dadfbfa9c4172f09da7dff11364861a3442e91ce7d6",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "64:18508",
+      "path": "plans/desktop-workspace/figma/advanced-renders/shared-budget-grant.png",
+      "sha256": "c7d39823e531a30d1edec13350e77ebd56715484ff56253bf8774282318babea",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "64:16548",
+      "path": "plans/desktop-workspace/figma/advanced-renders/coding-consent.png",
+      "sha256": "933399c3827ad9db44193e959f9ad8b07850bf9ded8692f226b422197e8a7add",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "64:18116",
+      "path": "plans/desktop-workspace/figma/advanced-renders/model-favorites.png",
+      "sha256": "191f4997ed25057b0fc0a6879134bf40e9d57c64acd0414bfa3a23e01338d983",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "68:16270",
+      "path": "plans/desktop-workspace/figma/advanced-renders/session-policy.png",
+      "sha256": "39a180d06be3e19bcd3df4853a8500e737dcdb9f3e53eebeb6be9778833b086c",
+      "visually_inspected": true
+    },
+    {
+      "node_id": "68:16466",
+      "path": "plans/desktop-workspace/figma/advanced-renders/session-policy-stale.png",
+      "sha256": "487433e265f62bd4cbb8a17f51d08d4339f24cad5ff2dfda68d613cfeab83140",
+      "visually_inspected": true
+    }
+  ],
+  "journeys": [
+    {
+      "id": "J-ENTRY",
+      "title": "Password / identity / owned conversation / lock / pairing / host shutdown",
+      "start_node": "32:3",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-3&starting-point-node-id=32%3A3",
+      "state_count": 31
+    },
+    {
+      "id": "J-BROWSER",
+      "title": "Live task / browser handoff / private login / verified context",
+      "start_node": "32:168",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-168&starting-point-node-id=32%3A168",
+      "state_count": 11
+    },
+    {
+      "id": "J-CODE",
+      "title": "Checkout / editor / checks / reviewed Git delivery",
+      "start_node": "32:388",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-388&starting-point-node-id=32%3A388",
+      "state_count": 8
+    },
+    {
+      "id": "J-AUTOMATE",
+      "title": "Goal / delegated schedule / isolated supervision / outcome",
+      "start_node": "32:579",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-579&starting-point-node-id=32%3A579",
+      "state_count": 13
+    },
+    {
+      "id": "J-RECORD",
+      "title": "Opt-in capture / redact / parameterize / test / enable / native source edit / authenticated registry",
+      "start_node": "32:770",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-770&starting-point-node-id=32%3A770",
+      "state_count": 14
+    },
+    {
+      "id": "J-CREATE",
+      "title": "Configured media / review / version / dedicated execution",
+      "start_node": "32:944",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-944&starting-point-node-id=32%3A944",
+      "state_count": 10
+    },
+    {
+      "id": "J-DETACH",
+      "title": "Dock / multiwindow recovery / reviewed return",
+      "start_node": "32:1149",
+      "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-1149&starting-point-node-id=32%3A1149",
+      "state_count": 8
+    }
+  ],
+  "scope": "Actual node identities, stored reactions, editable structure, semantic tokens, rendered screens and valid reachable prototype paths. Example form data does not submit credentials, authorize production effects or prove paid/native runtime behavior.",
+  "preserved_reference_pages": "Seven additional reference pages remain intact; the connected page is the canonical advanced prototype. No design page was deleted.",
+  "final_readback": "plans/desktop-workspace/figma/final-design-readback.json"
+}

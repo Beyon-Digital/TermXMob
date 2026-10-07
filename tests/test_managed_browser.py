@@ -80,6 +80,9 @@ def test_real_managed_browser_grant_input_private_takeover_and_stale(tmp_path):
             with pytest.raises(ReviewRequired):await service.action(tab['id'],'owner',**args('send-once','click',{'selector':'#send'}))
             with pytest.raises(ActionBlocked):await service.action(tab['id'],'owner',**args('credential','type',{'selector':'#password','text':'never-forward'}))
             assert await service._pages[tab['id']].locator('#password').input_value()==''
+            # Unknown controls now require manual takeover. Use an understood
+            # send control here to exercise exact human approval staleness.
+            await service._pages[tab['id']].locator('#mystery').evaluate("e=>{e.innerText='Send original message'}")
             with pytest.raises(ReviewRequired):
                 await service.action(tab['id'],'owner',**args('changed-target','click',{'selector':'#mystery'}))
             await service._pages[tab['id']].locator('#mystery').evaluate("e=>{e.innerText='Delete account'}")

@@ -16,6 +16,7 @@ Evaluation order (deterministic, per the architecture handoff):
 from __future__ import annotations
 
 from dataclasses import replace
+from time import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from termx.agent.policies import fingerprint as fp
@@ -57,8 +58,10 @@ class PolicyEngine:
         *,
         envelope: Callable[[str], frozenset[str]] | None = None,
         grantable: Callable[[str], frozenset[str]] | None = None,
+        binding_lookup: Callable[[str], dict] | None = None,
     ) -> None:
         self._store = store
+        self._binding_lookup = binding_lookup or (lambda task_id: {})
         # profile -> capabilities the sandbox backend currently provides.
         # Default is the host backend: unrestricted (truthful, not "secure").
         self._envelope = envelope or (lambda _profile: frozenset({"*:any"}))
@@ -129,6 +132,7 @@ class PolicyEngine:
             required_capabilities=capabilities,
             risk_class=risk,
             sandbox_profile=profile,
+            consent_binding=self._binding_lookup(intent.task_id),
         )
 
     # -- precedence ----------------------------------------------------------
@@ -143,6 +147,13 @@ class PolicyEngine:
 
         project_id = intent.project_id or getattr(ctx, "project_id", "") or ""
         custom_agent_id = intent.custom_agent_id
+
+        scopes=[('host',''),('task',intent.task_id),('project',project_id)]
+        if custom_agent_id: scopes.append(('custom_agent',custom_agent_id))
+        if intent.consent_binding.get('conversation_id'): scopes.append(('conversation',intent.consent_binding['conversation_id']))
+        for rule in self._store.capability_rules(scopes=scopes):
+            if rule['effect']=='deny' and (not rule.get('sandbox_profile') or rule['sandbox_profile']==intent.sandbox_profile) and self._binding_matches(rule,intent.consent_binding) and any(_covers(frozenset(rule['capabilities']),cap) for cap in intent.required_capabilities):
+                return _PD(False,False,'Denied by capability policy','A matching capability deny cannot be overridden by remembered consent',intent=intent,auto_resolved='deny',matched_rule_id=rule['id'])
 
         # 1. Sandbox capability check — before every other rule.
         envelope = self._envelope(intent.sandbox_profile)
@@ -171,6 +182,7 @@ class PolicyEngine:
                 task_id=intent.task_id,
                 project_id=project_id,
                 custom_agent_id=custom_agent_id,
+                consent_binding=intent.consent_binding,
             )
             still_missing = [c for c in missing if c not in remembered_caps]
             if still_missing:
@@ -183,6 +195,7 @@ class PolicyEngine:
                     f"This action needs {', '.join(still_missing)} which the {intent.sandbox_profile} sandbox does not currently allow",
                     intent=intent,
                     approval_kind="capability",
+                    remember_options=self._remember_options(intent,project_id,custom_agent_id),
                     required_capabilities=tuple(still_missing),
                     sandbox_profile=intent.sandbox_profile,
                 )
@@ -307,7 +320,12 @@ class PolicyEngine:
                 raise ValueError(
                     f"no grantable capability to remember on profile {intent.sandbox_profile}"
                 )
+        if intent.consent_binding.get("unbound"):
+            raise ValueError("Managed remembered consent requires current originating authority")
+        if intent.consent_binding and self._binding_lookup(intent.task_id) != intent.consent_binding:
+            raise ValueError("Task authority changed; request fresh approval")
         scope_id = {
+            "conversation": intent.consent_binding.get("conversation_id"),
             "task": intent.task_id,
             "project": project_id,
             "custom_agent": intent.custom_agent_id,
@@ -335,9 +353,21 @@ class PolicyEngine:
             task_id=intent.task_id if remember == "task" else None,
             project_id=project_id or None,
             display=intent.display,
+            consent_binding=intent.consent_binding,
+            expires_at=time()+3600 if intent.consent_binding else None,
         )
 
     # -- internals -----------------------------------------------------------
+
+    @staticmethod
+    def _binding_matches(rule, binding):
+        expected = rule.get('consent_binding') or {}
+        if not expected: return True  # explicitly shared administrator/legacy host policy
+        if not binding or binding.get('unbound'): return False
+        if any(expected.get(key) != binding.get(key) for key in ('principal_id','policy_version')): return False
+        if rule['scope_type'] == 'conversation':
+            return all(expected.get(key) == binding.get(key) for key in ('conversation_id','session_id'))
+        return True
 
     def _matching_rules(self, intent: PolicyIntent, *, project_id: str) -> list[dict[str, Any]]:
         scopes: list[tuple[str, str]] = []
@@ -349,11 +379,11 @@ class PolicyEngine:
             scopes.append(("custom_agent", intent.custom_agent_id))
         if project_id:
             scopes.append(("project", project_id))
-        return self._store.matching_policy_rules(
-            fingerprint=intent.fingerprint,
-            action_type="tool",
-            scopes=scopes,
-        )
+        if intent.consent_binding.get("conversation_id"):
+            scopes.append(("conversation", intent.consent_binding["conversation_id"]))
+        return [rule for rule in self._store.matching_policy_rules(
+            fingerprint=intent.fingerprint, action_type="tool", scopes=scopes)
+            if self._binding_matches(rule, intent.consent_binding) and (not rule.get("sandbox_profile") or rule["sandbox_profile"] == intent.sandbox_profile)]
 
     def _remembered_capabilities(
         self,
@@ -362,6 +392,7 @@ class PolicyEngine:
         task_id: str | None,
         project_id: str,
         custom_agent_id: str | None,
+        consent_binding: dict | None = None,
     ) -> set[str]:
         scopes: list[tuple[str, str]] = [("host", "")]
         if task_id:
@@ -370,10 +401,16 @@ class PolicyEngine:
             scopes.append(("custom_agent", custom_agent_id))
         if project_id:
             scopes.append(("project", project_id))
+        binding = consent_binding if consent_binding is not None else self._binding_lookup(task_id or "")
+        if binding.get("conversation_id"):
+            scopes.append(("conversation",binding["conversation_id"]))
         remembered: set[str] = set()
+        denied: set[str] = set()
         for rule in self._store.capability_rules(scopes=scopes):
-            if rule["effect"] == "allow":
-                remembered.update(rule["capabilities"])
+            if not self._binding_matches(rule,binding) or rule.get("sandbox_profile") and rule["sandbox_profile"] != profile: continue
+            if rule["effect"] == "allow": remembered.update(rule["capabilities"])
+            else: denied.update(rule["capabilities"])
+        remembered = {cap for cap in remembered if not _covers(frozenset(denied),cap)}
         # A remembered capability grant only counts where this profile's backend
         # can actually provide it — stored rules cannot invent powers the
         # runner does not advertise as grantable.
@@ -419,7 +456,9 @@ class PolicyEngine:
     def _remember_options(
         intent: PolicyIntent, project_id: str, custom_agent_id: str | None
     ) -> tuple[str, ...]:
+        if intent.consent_binding.get("unbound"): return ()
         options = ["task"]
+        if intent.consent_binding.get("conversation_id"): options.append("conversation")
         if project_id:
             options.append("project")
         if custom_agent_id:

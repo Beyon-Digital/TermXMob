@@ -82,3 +82,62 @@ def test_model_pin_change_after_permit_parks_exact_internal_write_then_resumes_o
             assert len([row for row in service.records.list('review') if row['status']=='completed'])==1
         finally:await manager.close();store.close()
     asyncio.run(run())
+
+
+def test_structured_credential_content_is_bounded_and_never_blanket_eligible():
+    import json
+    from termx.agent.action_review import contains_credentials
+    assert contains_credentials({'content':json.dumps({'nested':[{'password':'private-fixture-value'}]})})
+    assert contains_credentials({'content':json.dumps(json.dumps({'password':'private-fixture-value'}))})
+    assert contains_credentials({'metadata':{'authorization':'Bearer private-fixture-value'}})
+    assert contains_credentials({'patch':'+CONFIG = {"api_key": "private-fixture-value"}\n'})
+    assert contains_credentials({'content':'-----BEGIN PRIVATE KEY-----\nfixture'})
+    assert contains_credentials({'content':'x'*(256*1024+1)})
+    nested='safe'
+    for _ in range(18):nested=[nested]
+    assert contains_credentials({'content':nested})
+    assert not contains_credentials({'content':'VALUE = 1\n','token_id':'safe-reference','metadata':{'password_hint':'public hint'}})
+
+
+def test_structured_credentials_require_once_only_human_decisions_without_reviewer_or_remembered_allow(tmp_path):
+    import json
+    from test_agent import _FanOutAdapter,_fn,build_manager,wait_for_pending_approval,wait_for_status
+    async def run():
+        content=json.dumps({'connection':{'password':'private-fixture-value'}})
+        adapter=_FanOutAdapter({'Exact credential write':([[_fn('first','write_file',path='settings.json',content=content)],[_fn('second','write_file',path='settings.json',content=content)]],0.)})
+        manager,store=build_manager(tmp_path,adapter)
+        service=BrowserService(tmp_path/'browser',session_valid=lambda *_:True);manager.browser=service
+        class Reviewer:
+            version='fixture-must-not-run';calls=0
+            async def evaluate(self,*_):
+                self.calls+=1
+                raise AssertionError('Credential content must bypass the model')
+        reviewer=Reviewer();service.review.reviewer=reviewer
+        # Even a previously owner-scoped exact allow cannot bypass the gate.
+        from termx.auto_review import canonical_hash
+        digest=canonical_hash({'tool':'write_file','cwd':str(tmp_path),'arguments':{'path':'settings.json','content':content}})
+        bound={'principal_id':'owner','session_id':'sid','policy_version':1,'conversation_id':'conversation'}
+        store.create_policy_rule(effect='allow',scope_type='conversation',scope_id='conversation',action_type='tool',tool='write_file',fingerprint=digest,consent_binding=bound,sandbox_profile='agent',expires_at=time()+300)
+        try:
+            task=await manager.create_task(prompt='Exact credential write',cwd=str(tmp_path),provider_id='fake',on_created=lambda id:service.records.put('agent-task-authority',id,{'id':id,'project_id':'project',**bound}))
+            await manager.resolve_approval(task['id'],task['approvals'][0]['id'],'approved')
+            _,first=await wait_for_pending_approval(store,task['id'],'tool')
+            assert first['payload']['remember_options']==[] and not (tmp_path/'settings.json').exists() and reviewer.calls==0
+            assert store.list_policy_rules()[0]['times_used']>0, 'The matching allow must be overridden by credential review'
+            assert tuple(first['payload']['browser_review']['envelope']['data_labels'])==('secret',)
+            try:await manager.resolve_approval(task['id'],first['id'],'approved',remember='project')
+            except ValueError:pass
+            else:raise AssertionError('Sensitive approval advertised blanket consent')
+            assert store.get_approval(first['id'])['status']=='pending'
+            await manager.resolve_approval(task['id'],first['id'],'approved')
+            _,second=await wait_for_pending_approval(store,task['id'],'tool')
+            assert second['id']!=first['id'] and second['payload']['remember_options']==[] and reviewer.calls==0
+            assert (tmp_path/'settings.json').read_text()==content
+            await manager.resolve_approval(task['id'],second['id'],'denied')
+            await wait_for_status(store,task['id'],'cancelled')
+            assert len([event for event in store.events(task['id']) if event['type']=='tool.finished' and not event['payload'].get('result',{}).get('refused')])==1
+            assert len(store.list_policy_rules())==1
+            assert 'private-fixture-value' not in service.records.path.read_bytes().decode(errors='ignore')
+        finally:
+            await manager.close();await service.close();store.close()
+    asyncio.run(run())

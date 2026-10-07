@@ -25,7 +25,7 @@
       "id": "CHAT-02",
       "requirement": "A cross-engine fork retains the original, previews transferred context, records linkage and never claims a native resume.",
       "status": "verified",
-      "evidence": "Digest-bound context preview creates a linked canonical conversation and preserves the original. Durable fork tests reject foreign turns, secrets, changed previews and duplicate commit; native attachment conversion passes without claiming cross-engine native resume."
+      "evidence": "Digest-bound context preview creates a linked canonical conversation and preserves the original. Durable fork tests reject foreign turns, secrets, changed previews and duplicate commit; native attachment conversion passes without claiming cross-engine native resume. verification/fork-context-rendered.json additionally proves actual user-selected turns, project file bytes/hash and summary, editable preview, four once-only linked forks and preserved original in eight theme/zoom states."
     },
     {
       "id": "DATA-01",
@@ -42,8 +42,8 @@
     {
       "id": "AUTH-02",
       "requirement": "Rate-limited password attempts, secure storage, refresh rotation, parallel refresh coordination, expiry and device/session revocation work.",
-      "status": "partial",
-      "evidence": "Password rate limits, hashed refresh rotation/reuse/expiry/device-session revoke and browser/native parallel refresh coordination pass. Actual Linux/Windows OS credential-service write/read/delete passed. Explicit Windows owner/SYSTEM/admin protected DACL now covers backend private credentials, config, SQLite and atomic temp files; foreign owners fail closed. Source regression checks pass; actual Windows full-suite/private-file DACL qualification is pending in CI."
+      "status": "verified",
+      "evidence": "Password rate limits, hashed refresh rotation/reuse/expiry/device-session revoke and browser/native parallel refresh coordination pass. verification/native-private-storage.json records actual Windows protected native bootstrap before first write, junction refusal and foreign-owner refusal, with all3 tests passing. Actual backend DACL/SQLite journal/DPAPI and earlier Linux/Windows OS credential write/read/delete pass. Installed native GUI restart/re-dock remains separately tracked under UX/DOCK/VIEW; unrelated Windows console/worker failures do not qualify those paths. Configurable current-device idle/absolute policy passes real transport/CAS/non-resurrection checks and12 production Access theme/zoom states; increases preserve existing caps."
     },
     {
       "id": "AUTH-03",
@@ -55,7 +55,7 @@
       "id": "AUTH-04",
       "requirement": "Reject wrong issuer/audience/algorithm, ID-token misuse, revoked sessions, stale groups and cross-host/project grants. Enforce shared-host isolation claims.",
       "status": "verified",
-      "evidence": "Current two-user project/resource and trusted shared-machine boundary tests reject wrong issuer/audience/algorithm/token type, revoked sessions, stale groups and cross-host grants. Restricted cloud execution uses a real nonroot network-none read-only container; shared unrestricted OS execution is explicitly a trusted-machine boundary."
+      "evidence": "Current two-user project/resource and trusted shared-machine boundary tests reject wrong issuer/audience/algorithm/token type, revoked sessions, stale groups and cross-host grants. Restricted cloud execution uses a real nonroot network-none read-only container; shared unrestricted OS execution is explicitly a trusted-machine boundary. New canonical group/org and exact pinned verified claim mapping/removal tests plus real Access project-scope/role/expiry proofs enforce current membership across existing sessions."
     },
     {
       "id": "BROW-01",
@@ -67,7 +67,7 @@
       "id": "BROW-02",
       "requirement": "Revoked/expired/tab-mismatched grants and stale document/lease revisions reject actions. No agent sees unrelated tabs or another user\u2019s profile.",
       "status": "verified",
-      "evidence": "tests/test_browser_acceptance_adversarial.py mismatch cases bind grant to owner/profile/project/tab/task/session/policy/document/lease. test_managed_browser.py covers real owner/profile isolation, expiration and HTTP revoke. test_browser_review_task.py proves terminal tasks cannot gain, retain or execute control."
+      "evidence": "tests/test_browser_acceptance_adversarial.py mismatch cases bind grant to owner/profile/project/tab/task/session/policy/document/lease. test_managed_browser.py covers real owner/profile isolation, expiration and HTTP revoke. test_browser_review_task.py proves terminal tasks cannot gain, retain or execute control. Final managed Chromium tests bind consequential host-rendered payload previews to target hashes, block recognized CAPTCHA/MFA and incomplete/sensitive operations, and retain scoped data-request restrictions across automatic revocation until explicit authorized takeover. Passive CDN GET is declared separately; this is not comprehensive arbitrary-page exfiltration prevention."
     },
     {
       "id": "BROW-03",
@@ -91,7 +91,7 @@
       "id": "CAP-01",
       "requirement": "Opt-in window/tab capture has persistent indicator, excludes private mode, and produces an editable/redacted/tested skill draft\u2014not an auto-enabled recording.",
       "status": "verified",
-      "evidence": "Opt-in exact-window/tab recording, private-epoch exclusion, editable/redacted/parameterized draft and separate replay before activation pass. Actual owned macOS and CI X11 capture qualify named window ports; WindowsPrintWindow remains separately unqualified. Global owner/session/policy-scoped capture indicator persists outside Browser/Computer and exposes no private titles/URLs/values. Actual4theme/zoom workflows in verification/browser-accessibility-capture.json prove recording\u2192Chat indicator\u2192Open\u2192Stop with real tab recording ended."
+      "evidence": "Opt-in exact-window/tab recording, private-epoch exclusion, editable/redacted/parameterized draft and separate replay before activation pass. Actual owned macOS, CI X11 and Windows PrintWindow captures qualify named window ports; verification/windows-owned-capture.json proves exact360x240 pixels and foreign-owner refusal without user-desktop capture. Installed native GUI remains separately tracked. Global owner/session/policy-scoped capture indicator persists outside Browser/Computer and exposes no private titles/URLs/values. Actual4theme/zoom workflows in verification/browser-accessibility-capture.json prove recording\u2192Chat indicator\u2192Open\u2192Stop with real tab recording ended."
     },
     {
       "id": "MEM-01",
@@ -139,13 +139,13 @@
       "id": "DOCK-01",
       "requirement": "Drag/keyboard dock, detach/re-dock, concurrent views, missing-monitor restore, browser popup denial and unsaved-buffer conflicts are recoverable.",
       "status": "partial",
-      "evidence": "Drag/tab-region docking and keyboard equivalent, mounted panels and web popup denial implemented; native monitor-aware restore compiles. Real cross-platform detach/re-dock and dirty-buffer conflict proof pending."
+      "evidence": "verification/browser-window-lifecycle.json proves actual toolbar/per-panel popup close/reopen, named active-window focus, image-only draft recovery and conflicting main draft refusal. Acknowledged re-dock closes source only after durable main persistence; both dirty copies remain visible, same canonical task/PTY continue and disk stays unchanged. Drag/tab-region/keyboard docking and popup denial have source tests; native monitor-aware restore compiles. Installed native detach/re-dock/missing-monitor recovery remains open."
     },
     {
       "id": "MEDIA-01",
       "requirement": "Text/voice \u2192 image/document/table/deck/code output \u2192 inspect/edit/version/export through real named adapters; unsupported input and provider entitlement failures are explicit.",
       "status": "partial",
-      "evidence": "Real Office/table/chart/version/export and PDF/DOCX/video/image context conversions pass. Configured-account image/edit/transcription/speech HTTP protocols and no-replay billing are tested; real entitled provider/model validation awaits account selection."
+      "evidence": "verification/media-workspace-rendered.json proves actual UI creation/edit/version inspection/export of documents, tables, decks, charts and code. DOCX/XLSX/PPTX exported XML content, SVG/TXT and unchanged original versions are checked; both themes100/200% have zero axe/overflow/UI errors. Input conversion and configured-account image/edit/transcription/speech HTTP protocols/no-replay billing pass. Real entitled provider/model validation awaits account selection; no paid queries in the rendered proof."
     },
     {
       "id": "CLOUD-01",

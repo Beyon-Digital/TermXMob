@@ -173,6 +173,8 @@ def mount_workspace(app,state):
     if not getattr(state,'workspace',None):
         state.workspace=WorkspaceService(state)
     workspace=state.workspace
+    from termx.workspace.coding_policies import mount_coding_policies
+    mount_coding_policies(app,state)
     workspace.principal_lookup=state.identity.principal_by_id
     if not getattr(state,'automation',None):
         state.automation=AutomationService(workspace,principal_lookup=state.identity.principal_by_id)
@@ -391,6 +393,8 @@ def mount_workspace(app,state):
             result['execution_location']=metadata.get('execution_location') or value.get('cwd')
             result['runner_id']=metadata.get('runner_id')
             result['worktree']=state.agent_store.task_worktree(tid) or ({'worktree_id':metadata['worktree_id'],'worktree_path':metadata.get('cwd'),'branch':metadata.get('worktree_branch'),'source':'session'} if metadata.get('worktree_id') else None)
+            if value.get('engine')=='internal' and hasattr(state.agent,'tree_budget'):
+                result['tree_budget']=state.agent.tree_budget.snapshot(tid)
             result['children']=[]
             if depth<8:
                 for child in state.agent_store.children(tid):

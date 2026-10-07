@@ -1,0 +1,27 @@
+{
+  "source_commit": "3edf12cc21908d2008442f0b7cb999e6e2e4cc64",
+  "run_id": 37627728055,
+  "result": "failure",
+  "workspace": "success",
+  "backend": [
+    {
+      "platform": "Linux",
+      "passed": 883,
+      "failed": 18,
+      "skipped": 142,
+      "seconds": 170.01
+    },
+    {
+      "platform": "macOS",
+      "passed": 915,
+      "failed": 18,
+      "skipped": 110,
+      "seconds": 281.86
+    }
+  ],
+  "diagnosis": "Four private browser test services were not closed and retained legitimate process-wide observation barriers. Production retention remains intact; fixture finally-close cleanup passes the29-test affected sequence with1 optional Chromium skip. Full local rerun remains in progress.",
+  "limits": [
+    "The failed CI run does not qualify this source.",
+    "Native source compile and Windows fast contracts succeeded separately; installed GUI is still unqualified."
+  ]
+}

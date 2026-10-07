@@ -33,7 +33,22 @@ from termx.graphql import types as T
 Ctx = Info[TermxContext, None]
 
 _APPROVAL_DECISIONS = {"approved", "denied", "cancel"}
-_APPROVAL_REMEMBER = {"once", "task", "project", "custom_agent", "session", "always"}
+
+
+def _visible_coding_consent(ctx, rule):
+    binding = rule.get('consent_binding') or {}
+    if not binding: return True  # shared host policy, guarded by existing resource checks
+    session=ctx.state.identity.resolve(ctx.secret)
+    if not session or binding.get('principal_id')!=session.principal.id: return False
+    return ctx.state.authorization.can(ctx.secret,'agent-view',project_id=rule.get('project_id'))
+
+
+def _legacy_policy_editor(ctx, rule=None):
+    ctx.require_host('host-admin')
+    if rule and rule.get('consent_binding'):
+        raise HTTPException(403,'Owner-scoped coding consent requires the versioned CAS editor')
+
+_APPROVAL_REMEMBER = {"once", "task", "conversation", "project", "custom_agent", "session", "always"}
 
 
 @strawberry.type
@@ -195,7 +210,7 @@ class AgentQueries:
             effect=effect,
             include_revoked=include_revoked,
         )
-        return T.PolicyRule.wrap_all([rule_public(rule) for rule in rules])
+        return T.PolicyRule.wrap_all([rule_public(rule) for rule in rules if _visible_coding_consent(ctx,rule)])
 
     @strawberry.field
     @resolver
@@ -216,7 +231,7 @@ class AgentQueries:
         matched = [
             rule
             for rule in rules
-            if (rule["expires_at"] is None or rule["expires_at"] > now)
+            if _visible_coding_consent(ctx,rule) and (rule["expires_at"] is None or rule["expires_at"] > now)
             and (
                 rule["scope_type"] == "host"
                 or any(
@@ -700,7 +715,7 @@ class AgentMutations:
         from termx.agent.policies.models import rule_public
 
         ctx = info.context
-        ctx.require_host('agent-control')
+        _legacy_policy_editor(ctx)
         try:
             rule = ctx.state.agent_store.create_policy_rule(
                 effect=input.effect,
@@ -730,7 +745,7 @@ class AgentMutations:
         from termx.agent.policies.models import rule_public
 
         ctx = info.context
-        ctx.require_host('agent-control')
+        _legacy_policy_editor(ctx,ctx.state.agent_store.get_policy_rule(rule_id))
         updates = {
             key: value
             for key, value in {
@@ -753,7 +768,7 @@ class AgentMutations:
     @resolver
     def revoke_agent_policy(self, info: Ctx, rule_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require_host('agent-control')
+        _legacy_policy_editor(ctx,ctx.state.agent_store.get_policy_rule(rule_id))
         try:
             ctx.state.agent_store.revoke_policy_rule(rule_id)
         except KeyError as exc:

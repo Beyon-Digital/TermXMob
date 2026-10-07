@@ -1,0 +1,3 @@
+# Memory and preset editor workflow
+
+Actual host proof against immutable `index-fCsPFH47.js`: excluded account memory content/provenance/retention edited without scope change, concurrent revision rejects while preserving the draft, and named preset explicit tools/budget edited with a current file revision and zero tasks created. Four dark/light 100/200 states have zero axe violations, horizontal overflow or page errors. Root inspected the light 200% screenshot: checkbox and label align, Save/Cancel remain reachable and the manager scrolls. Full production asset SHA256 inventory is in the JSON report. No provider queries or installed native claim. The earlier `index-DhBbSw6f.js` screenshot set is retained as historical evidence.

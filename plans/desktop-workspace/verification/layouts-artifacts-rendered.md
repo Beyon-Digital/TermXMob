@@ -1,0 +1,9 @@
+# Named layouts and retained artifact editor — actual production proof
+
+Layout/artifact stage passed on frozen `index-o_GFN3u4.js`, with all63 production files hashed in the JSON. The subsequent Lock setup was correctly denied because the fixture omitted Origin; this document does not qualify the Lock stage or call the entire fixture passed.
+
+The actual running canonical task, same owned PTY and dirty CodeMirror/chat draft survived customized Workbench → Chat → Artifacts selection. A named preset was saved, reset, restored after reload and removed. Presets store layout only; no execution permissions or runtime identities are serialized. The independent Artifact panel opened a real same-owner popup, seeded the local unsaved draft, preserved different edits in both windows and closed only after the main durable acknowledgement. Both original and returned-copy contents/base versions remained independently restorable, with no implicit save to the host artifact.
+
+Five loaded states passed axe WCAG2 checks with no violations, prohibited-name incomplete findings, page overflow or JavaScript errors. The proof contains actual Tab/focus/contrast/bounds evidence; the native dock picker used `select_option` after keyboard focus. This functional run is dark100%; prior Computer matrix and broader browser matrix are separate qualifications, not relabeled as a five-panel200% matrix.
+
+Reproduce: `TERMX_A11Y_LAYOUTS_ONLY=1 TERMX_A11Y_LOCK_WITH_LAYOUTS=1 TERMX_A11Y_THEME=dark TERMX_A11Y_ZOOM=100 PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium PYTHONPATH=src:tests .venv/bin/python tests/workspace_browser_accessibility_e2e.py <scratch> <axe-core/4.10.3/axe.min.js>`. The fixture performs no paid provider queries, external browser navigation, external Git mutation or real user-host shutdown. Installed native detachment remains separately qualified.

@@ -1,0 +1,45 @@
+{
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "source_changes_pending_checkpoint": false,
+  "contract": {
+    "configuration": "Canonical allowed_projects IDs must be enrolled. project:<id> owner implies its exact singleton project; conflicting/arbitrary owner labels are rejected. Empty allowed_projects explicitly means host administrator-only global use.",
+    "cas": "Definition upsert/trust/delete bind to the current nonsecret definition_digest. Credential changes rotate a nonsecret credential_revision even if the binding name is unchanged.",
+    "credentials": "Write-only set_mcp_credential supports bounded stdio env, HTTP/SSE header and OAuth client-secret bindings. Only backend-derived MCP references/configured booleans return; credentials never enter canonical native configuration events.",
+    "direct_tools": "Connect/call require current agent-run including trusted_execution/project grants. Project scope and approved catalog/tool names are checked before RPC and before response publication. Live definition edits invalidate pooled access until explicit reconnect.",
+    "internal": "The existing Internal ToolRegistry/scheduler/approval loop exposes mcp_catalog and mcp_call. Dispatch freezes actual definition/catalog digests and preset connection/tool selection; every effect validates owned active task, exact originating SID/principal/policy, authorized execution project/cwd and live delegated grant. Unknown external effects require normal action approval.",
+    "native": "Project-scoped direct MCP bindings fail closed before resolving credentials because current native integrations do not prove mandatory per-MCP-call revocation interception. Global administrator bindings retain their declared trusted boundary; changed definition/scope cannot silently reuse a native session.",
+    "runners": "Host MCP credentials/connections never transfer to a dedicated runner; incompatible preset selection fails before provider dispatch.",
+    "lifecycle": "Each pooled SDK connection holds its async cancellation scopes inside one persistent owning task; disconnect shuts down that task across independent HTTP request tasks."
+  },
+  "tests": [
+    {
+      "suite": "MCP + native reasoning + durable workspace regressions",
+      "result": "109 passed",
+      "seconds": 76.77,
+      "note": "Overlaps the next focused suite; counts are not additive."
+    },
+    {
+      "suite": "Final MCP authority + Internal registry + preset tools regressions",
+      "result": "66 passed,1 optional skipped",
+      "seconds": 23.06,
+      "evidence": "Real stdio MCP transport, current project/trust/tool/definition checks, exact native refusal-before-secrets, write-only memory-backed credential fixture, custom preset binding validation and CAS preservation, normal AgentManager action approval and originating SID revocation deny a second actual server RPC."
+    },
+    {
+      "suite": "Final tests/test_mcp_authority.py, including managed GraphQL task-to-MCP transport",
+      "result": "7 passed",
+      "seconds": 15.98,
+      "evidence": "Actual managed GraphQL task preflight binds canonical task ownership/origin SID before the existing AgentManager loop. Real stdio MCP add returns5 after ordinary explicit tool approval; origin revocation prevents the second actual server RPC. Configuration/preset CAS, untrusted operator spawn denial and write-only credential tests also pass."
+    }
+  ],
+  "limits": [
+    "MCP project scope binds the invocation to an authorized execution project. An external MCP service owns its own tool semantics; this does not advertise hostile-tenant OS isolation for arbitrary server commands.",
+    "Global native MCP is an explicit administrator trust boundary. Per-tool project-scoped native integration remains unsupported rather than silently dropping current scope checks.",
+    "No paid provider call, personal credential mutation, installer GUI or enterprise MCP deployment is inferred from controlled source fixtures."
+  ],
+  "published_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "pending_followup": {
+    "change": "Codex selected per-session MCP fails before secret resolution, task metadata and native startup; capability honestly unsupported",
+    "source_changes_pending_checkpoint": true,
+    "tests": "MCP Codex rejection + reasoning:6 passed in9.60s; consolidated authority suite includes final Codex refusal and all existing MCP cases:102 passed in311.58s (overlapping suites)."
+  }
+}

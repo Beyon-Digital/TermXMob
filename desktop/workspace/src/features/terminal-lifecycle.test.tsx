@@ -54,3 +54,10 @@ it('recovers a reloaded window selection only after the host authorizes the exac
 it('never connects a stored PTY that is absent from the current authorized inventory',async()=>{
  mock.remembered.clear();saveTerminalSelection('owner-a','conversation-a','pty-a');mock.gql.mockResolvedValue({sessions:[]});render(<TerminalPanel ownerId="owner-a" project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);await waitFor(()=>expect(mock.gql).toHaveBeenCalledOnce());expect(Socket.items).toHaveLength(0);expect(screen.getByRole('combobox',{name:'Terminal session'})).toHaveValue('');
 });
+
+it('waits for a fresh authorized inventory on same-mounted unlock and refuses a removed PTY',async()=>{
+ render(<TerminalPanel project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);await waitFor(()=>expect(Socket.items).toHaveLength(1));act(()=>Socket.items[0].onopen());
+ act(()=>window.dispatchEvent(new Event('termx-locked')));const fresh=deferred<{sessions:typeof row[]}>();mock.gql.mockReturnValueOnce(fresh.promise);
+ act(()=>window.dispatchEvent(new Event('termx-session-unlocked')));expect(Socket.items).toHaveLength(1);expect(mock.instances[0].options.disableStdin).toBe(true);
+ await act(async()=>fresh.resolve({sessions:[]}));expect(Socket.items).toHaveLength(1);expect(screen.getByRole('combobox',{name:'Terminal session'})).toHaveValue('');
+});

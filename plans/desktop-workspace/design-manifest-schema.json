@@ -46,7 +46,11 @@
             ]
           },
           "implementation": {
-            "const": "not-started"
+            "enum": [
+              "not-started",
+              "runtime-mapped",
+              "runtime-equivalent"
+            ]
           }
         }
       }
@@ -86,6 +90,12 @@
           "height": {
             "type": "integer",
             "minimum": 1
+          },
+          "implementation": {
+            "enum": [
+              "not-started",
+              "runtime-connected"
+            ]
           }
         }
       }
@@ -104,6 +114,50 @@
           "required": {
             "const": true
           }
+        }
+      }
+    },
+    "advanced_design": {
+      "type": "object",
+      "required": [
+        "status",
+        "file_key",
+        "connected_page",
+        "node_map",
+        "verification",
+        "state_frames",
+        "compact_frames",
+        "prototype_edges",
+        "surface_count",
+        "patterns",
+        "journeys",
+        "runtime_acceptance_independent"
+      ],
+      "properties": {
+        "status": {
+          "const": "externally-authored-and-structurally-verified"
+        },
+        "state_frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "compact_frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "prototype_edges": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "surface_count": {
+          "const": 24
+        },
+        "runtime_acceptance_independent": {
+          "const": true
+        },
+        "connected_page": {
+          "type": "string",
+          "pattern": "^[0-9]+:[0-9]+$"
         }
       }
     }

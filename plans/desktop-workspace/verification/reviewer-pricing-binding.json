@@ -31,5 +31,40 @@
     "Reports and exports contain neither credentials nor private binding salt/digest",
     "Actual Chromium crash event wait retains terminal state, revoked old grant, human recovery and old-grant rejection assertions"
   ],
-  "remaining_requirement": "REVIEW-07 requires a deliberately selected live review account/model and administrator pricing snapshot, then live qualification and measured usage/latency/escalation/false-allow/cost report. No live account was selected or queried."
+  "remaining_requirement": "REVIEW-07 requires a deliberately selected live review account/model and administrator pricing snapshot, then live qualification and measured usage/latency/escalation/false-allow/cost report. No live account was selected or queried.",
+  "model_identity": {
+    "qualification": "all21 Responses requests must report one bounded model ID",
+    "active_request": "exact qualified ID, no alias fallback",
+    "verdict": "response ID must exactly match",
+    "cached_permit": "qualified model ID bound",
+    "provider_claim_limit": true,
+    "missing_or_mixed_unqualified": true
+  },
+  "latest_targeted_tests": {
+    "passed": 53,
+    "skipped": 2,
+    "seconds": 9.46,
+    "live_provider_queries": 0,
+    "skip_reason": "One requires PLAYWRIGHT_BROWSERS_PATH; one requires explicit TERMX_TEST_CLAUDE_INITIALIZE no-query native CLI handshake opt-in."
+  },
+  "resumable_binding_change": {
+    "internal_manager_real_write": true,
+    "acp_host_callback_real_write": true,
+    "effects_before_approval": 0,
+    "exact_approvals": 1,
+    "effect_replayed": false,
+    "out_of_scope_prompts": 0
+  },
+  "follow_up_integrations": {
+    "passed": 2,
+    "seconds": 11.63,
+    "actual_isolated_native_claude_cli_mcp_initialize": true,
+    "actual_managed_chromium_mcp_review_resume_and_tool_refusal": true,
+    "model_queries": 0,
+    "live_reviewer_qualified": false
+  },
+  "final_manager_native_guards": {
+    "passed": 7,
+    "seconds": 4.0
+  }
 }

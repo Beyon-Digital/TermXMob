@@ -52,7 +52,7 @@ def tls_idp(tmp_path):
    flow=shared['codes'].pop(form.get('code',[''])[0],None)
    challenge=base64.urlsafe_b64encode(hashlib.sha256(form.get('code_verifier',[''])[0].encode()).digest()).rstrip(b'=').decode()
    if not flow or form.get('grant_type')!=['authorization_code'] or form.get('client_id')!=['client'] or challenge!=flow['code_challenge'][0] or form.get('redirect_uri')!=flow['redirect_uri']:return self.reply({'error':'invalid_grant'},400)
-   now=int(time());token=jwt.encode({'iss':shared['issuer'],'aud':'client','sub':'stable-subject','iat':now,'exp':now+90,'nonce':flow['nonce'][0]},key,algorithm='RS256',headers={'kid':'tls-provider-key'})
+   now=int(time());token=jwt.encode({'iss':shared['issuer'],'aud':'client','sub':'stable-subject','iat':now,'exp':now+90,'nonce':flow['nonce'][0],**({'groups':shared['groups']} if 'groups' in shared else {})},key,algorithm='RS256',headers={'kid':'tls-provider-key'})
    self.reply({'id_token':token,'token_type':'Bearer'})
  server=ThreadingHTTPServer(('127.0.0.1',0),Provider)
  shared['issuer']=f'https://localhost:{server.server_port}'

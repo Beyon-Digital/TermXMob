@@ -1,0 +1,33 @@
+{
+  "proof": "actual-owned-daemon-host-stop",
+  "tests": "tests/test_desktop_host_stop_cli.py",
+  "result": {
+    "passed": 2,
+    "duration_seconds": 51.78
+  },
+  "observed": [
+    "Exact same-origin bootstrap creates fixture-only owner",
+    "Wrong-host acknowledged stop returns400 and process/current API stay live",
+    "Current-host administrator stop returns accepted then daemon exits",
+    "Desktop exit79 and exactly one structured stopping/host-stop event",
+    "Non-desktop exit0 and no desktop stopping event"
+  ],
+  "native_source_check": {
+    "command": "cargo check --locked --manifest-path desktop/src-tauri/Cargo.toml --tests",
+    "result": "success",
+    "duration_seconds": 62,
+    "preexisting_warning": "macOS microphone delegate compares differently signed integer types"
+  },
+  "native_restart_policy": [
+    "Native checked request arms pending expected shutdown before POST",
+    "Failed request disarms pending only; confirmed event and normal quit survive",
+    "Private stdout confirmation and desktop exit79 independently preserve accepted stop",
+    "Explicit Restart Backend clears pending/confirmed intent"
+  ],
+  "limitations": [
+    "Source compiler and daemon fixture do not qualify installed native Backend monitor",
+    "No user host, user task, OS capture or provider query involved",
+    "No local delivery binary built"
+  ],
+  "paid_provider_queries": 0
+}

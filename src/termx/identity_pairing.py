@@ -11,7 +11,7 @@ import uuid
 from time import time
 
 from termx.audit import log_event
-from termx.identity import ABSOLUTE_TTL, AuthenticationError, SessionCredentials, _digest
+from termx.identity import AuthenticationError, _digest
 from termx.tokens import SCOPES
 
 PAIR_TTL = 300
@@ -94,14 +94,16 @@ class ManagedPairing:
                 if not legacy or not set(scopes)<=set(legacy['scopes']) or not self.tokens.revoke(legacy['id']):
                     raise AuthenticationError('legacy association changed')
             now = time()
+            policy=self.identity.session_policy.read(db)
             db.execute('''INSERT INTO sessions
-                (id,principal_id,device_name,strength,created,last_seen,expires,revoked,csrf_hash,adapter_id,grant_scopes)
-                VALUES (?,?,?,'explicit-device-pair',?,?,?,0,?,?,?)''',
-                (sid,principal.id,device_name[:128],now,now,now+ABSOLUTE_TTL,_digest(csrf),sponsor['adapter_id'],json.dumps(scopes)))
+                (id,principal_id,device_name,strength,created,last_seen,expires,revoked,csrf_hash,adapter_id,grant_scopes,idle_ttl_seconds)
+                VALUES (?,?,?,'explicit-device-pair',?,?,?,0,?,?,?,?)''',
+                (sid,principal.id,device_name[:128],now,now,now+policy['absolute_ttl_seconds'],_digest(csrf),sponsor['adapter_id'],json.dumps(scopes),policy['idle_ttl_seconds']))
             db.execute('INSERT INTO refresh_tokens VALUES (?,?,0)',(_digest(raw),sid))
             access = self.identity._issue(db,principal,sid)
+            credentials=self.identity._credentials(db,access,raw,csrf,sid)
         log_event('auth_device_paired',principal_id=principal.id,session_id=sid,legacy_association=bool(proof['legacy_id']))
-        return SessionCredentials(access,raw,csrf,sid)
+        return credentials
 
     def admit_socket(self, ticket, *, host_id, path):
         with self.identity._db() as db:

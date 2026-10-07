@@ -1,12 +1,44 @@
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
-import ExtensionManager from './ExtensionManager';
+import ExtensionManager,{matchesExtensionMetadata} from './ExtensionManager';
 import Managers from './Managers';
 import {request} from '../lib/api';
 vi.mock('../lib/api',()=>({request:vi.fn()}));const mocked=vi.mocked(request);afterEach(cleanup);beforeEach(()=>{mocked.mockReset()});
 const source={scope:'project',folder:'inspect',digest:'disk-one',markdown:'Original instructions',name:'Inspect',bytes:21};
 function defaults(path:string){if(path.includes('/compatibility'))return {sources:[]};if(path.endsWith('/skill-sources?project_id=p'))return {sources:[source],roots:[],diagnostics:[]};if(path.includes('/versions?'))return {versions:[]};return source}
 describe('extension sources and registries',()=>{
+ it('searches safe inventory metadata with all terms while excluding credentials and source drafts',()=>{
+  expect(matchesExtensionMetadata({name:'Inspect Code',scope:'project'},'PROJECT inspect')).toBe(true);
+  expect(matchesExtensionMetadata({name:'Inspect',scope:'user'},'project inspect')).toBe(false);
+  expect(matchesExtensionMetadata({id:'bundle',permissions:['filesystem.read']},'BUNDLE filesystem')).toBe(true);
+  expect(matchesExtensionMetadata({folder:'utility',source:'codex',path:'/compatible/utility'},'CODEX utility')).toBe(true);
+  expect(matchesExtensionMetadata({name:'Registry',credential:'private-secret',markdown:'private instructions'},'private')).toBe(false);
+ });
+ it('preserves the selected unsaved conflict draft and exact revision through a no-match search',async()=>{
+  mocked.mockImplementation(async(path,init)=>{
+   if(init?.method==='PUT')throw new Error('Skill changed on disk');
+   if(path.includes('/source?'))return {...source,markdown:'External current file',digest:'disk-two'};
+   return defaults(path) as any;
+  });
+  const data={};
+  const props={data,projectId:'p',onChanged:vi.fn()};const view=render(<ExtensionManager {...props}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('External current file');
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'My unsaved instruction'}});fireEvent.click(screen.getByText('Save source',{exact:true}));await screen.findByRole('heading',{name:'Source changed on disk'});
+  view.rerender(<ExtensionManager {...props} search="nothing matches"/>);
+  expect(screen.queryByRole('heading',{name:'Inspect'})).not.toBeInTheDocument();
+  expect(screen.getByText(/Search matches: 0 skill sources, 0 compatibility sources, 0 bundles, 0 registries and 0 loaded packages/)).toBeInTheDocument();expect(screen.getByLabelText('Skill instructions')).toHaveValue('My unsaved instruction');expect(screen.getByRole('region',{name:'Current skill source'})).toHaveTextContent('External current file');
+  view.rerender(<ExtensionManager {...props} search="project inspect"/>);
+  expect(screen.getByRole('heading',{name:'Inspect'})).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Use current revision with my draft',{exact:true}));fireEvent.click(screen.getByText('Save source',{exact:true}));await waitFor(()=>expect(mocked.mock.calls.filter(([,init])=>init?.method==='PUT')).toHaveLength(2));
+  expect(JSON.parse(String(mocked.mock.calls.filter(([,init])=>init?.method==='PUT')[1][1]?.body))).toMatchObject({markdown:'My unsaved instruction',expected_digest:'disk-two'});
+ });
+ it('filters installed bundles, registries and loaded packages without dropping their selected inventory',async()=>{
+  mocked.mockImplementation(async(path)=>path.endsWith('/packages')?{packages:[{id:'package-one',version:'2',filename:'package.json',permissions:['network.fetch']}]} as any:defaults(path) as any);
+  const props={data:{extensions:[{id:'installed-one',version:'1',permissions:['filesystem.read']}],registries:[{id:'registry-one',name:'Catalog registry',kind:'public_https',url:'https://registry.example/index'}]},projectId:'p',onChanged:vi.fn()};
+  const view=render(<ExtensionManager {...props}/>);fireEvent.click(screen.getByText('Installed immutable bundles'));fireEvent.click(screen.getByText('Public & private registries'));fireEvent.click(screen.getByRole('button',{name:'Browse packages'}));await screen.findByRole('heading',{name:'package-one · 2'});
+  for(const [term,title] of [['installed filesystem','installed-one · 1'],['public_https catalog','Catalog registry'],['network package','package-one · 2']]){view.rerender(<ExtensionManager {...props} search={term}/>);expect(screen.getByText(title,{exact:true}).tagName).toBe('H3')}
+  view.rerender(<ExtensionManager {...props} search="absent inventory"/>);expect(screen.queryByText('installed-one · 1',{exact:true})).not.toBeInTheDocument();expect(screen.queryByText('Catalog registry',{exact:true})).not.toBeInTheDocument();expect(screen.queryByText('package-one · 2',{exact:true})).not.toBeInTheDocument();
+ });
  it('preserves the unsaved skill after a real revision conflict and requires an explicit current-revision decision',async()=>{
   mocked.mockImplementation(async(path,init)=>{if(init?.method==='PUT')throw new Error('Skill changed on disk');if(path.includes('/source?'))return {...source,markdown:'External edit',digest:'disk-two'};return defaults(path) as any});
   render(<ExtensionManager data={{}} projectId="p" onChanged={vi.fn()}/>);fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('External edit');fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'My unsaved changes'}});fireEvent.click(screen.getByRole('button',{name:'Save source'}));await screen.findByRole('heading',{name:'Source changed on disk'});expect(screen.getByLabelText('Skill instructions')).toHaveValue('My unsaved changes');expect(screen.getByRole('region',{name:'Current skill source'})).toHaveTextContent('External edit');fireEvent.click(screen.getByRole('button',{name:'Use current revision with my draft'}));fireEvent.click(screen.getByRole('button',{name:'Save source'}));await waitFor(()=>expect(mocked.mock.calls.filter(([,init])=>init?.method==='PUT')).toHaveLength(2));expect(JSON.parse(String(mocked.mock.calls.filter(([,init])=>init?.method==='PUT')[1][1]?.body))).toMatchObject({markdown:'My unsaved changes',expected_digest:'disk-two',project_id:'p'});

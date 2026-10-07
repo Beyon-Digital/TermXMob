@@ -319,6 +319,8 @@ class EngineGateway:
 
         file_cfg = dict((custom_agent or {}).get("file") or {})
         skills = file_cfg.get("skills") or {}
+        if file_cfg.get('mcp_connections') and adapter.capabilities().mcp_native == 'unsupported':
+            raise ValueError(f'{engine} does not apply TermX per-session MCP bindings; use the Internal broker')
         mcp_bindings = self._resolve_mcp_bindings(file_cfg.get("mcp_connections") or [],project_id=mcp_project_id,authorize=mcp_authorize)
         mcp_snapshot=[{k:b.get(k) for k in ('connection_id','definition_digest','project_id','tools')} for b in mcp_bindings]
 

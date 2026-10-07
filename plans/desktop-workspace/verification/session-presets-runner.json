@@ -1,0 +1,153 @@
+{
+  "scope": "Actual preset ownership/session dispatch/immutable task config, configured native contract and actual qualified internal container execution; no paid provider calls",
+  "source_tests": [
+    "tests/test_workspace_presets.py",
+    "tests/test_custom_agent_authority.py",
+    "desktop/workspace/src/features/preset-selection.test.tsx"
+  ],
+  "targeted_backend": {
+    "passed": 87,
+    "skipped": 1,
+    "deselected": 1,
+    "seconds": 27.42,
+    "note": "Sandbox-only existing listener regression not rerun as host execution; isolated escalated run skipped actual restricted backend safely."
+  },
+  "preset_backend": {
+    "passed": 8,
+    "optional_container_skipped_in_default_run": 1,
+    "seconds": 6.54,
+    "includes": "Task and immutable preset snapshot commit/rollback atomically"
+  },
+  "actual_container": {
+    "passed": 1,
+    "seconds": 16.38,
+    "image": "termx-runner:workspace-presets-atomic",
+    "image_id": "sha256:99e2d9488bef27b573cfe8e5a9287888a6a117e72e227c9dbaa86d3b885ee8f6",
+    "qualification": [
+      "network none",
+      "nonroot65534",
+      "read-only root",
+      "cap-dropALL",
+      "immutable image",
+      "frozen instruction/tool snapshot",
+      "host provider/review brokerage",
+      "library mutation after admission does not retarget",
+      "exact returned artifact",
+      "completed review and teardown",
+      "current atomic task+preset worker source"
+    ],
+    "provider_queries": 0,
+    "image_pulls": 0
+  },
+  "rendered_session_picker": {
+    "production_asset": "index-B81eoZja.js",
+    "stylesheet_override": false,
+    "report": "/tmp/termx-session-presets-ui-proof-B81/report.json",
+    "fixture_adapter_calls": 1,
+    "provider_queries": 0,
+    "errors": [],
+    "flow": {
+      "new_session_picker": true,
+      "actual_owned_session_binding": true,
+      "active_selector_disabled": true,
+      "task_snapshot_frozen_after_library_edit": true,
+      "explicit_refresh_after_stop": true,
+      "clear_only_selected_session": true,
+      "other_session_unchanged": true,
+      "axe_100_200_violations": 0,
+      "native_select_method": "actual form select_option + exact selected value; OS native dropdown popup is not synthesized"
+    },
+    "composer_geometry": [
+      {
+        "zoom": 100,
+        "voice_expanded": false,
+        "controls": {
+          "Message": {
+            "x": 480.5,
+            "y": 708,
+            "width": 726,
+            "height": 58
+          },
+          "Send message": {
+            "x": 1174.5,
+            "y": 774,
+            "width": 32,
+            "height": 32
+          }
+        }
+      },
+      {
+        "zoom": 100,
+        "voice_expanded": true,
+        "controls": {
+          "Message": {
+            "x": 480.5,
+            "y": 708,
+            "width": 726,
+            "height": 58
+          },
+          "Send message": {
+            "x": 1174.5,
+            "y": 774,
+            "width": 32,
+            "height": 32
+          },
+          "Voice account": {
+            "x": 482.5,
+            "y": 577.1875,
+            "width": 353,
+            "height": 36
+          }
+        }
+      },
+      {
+        "zoom": 200,
+        "voice_expanded": false,
+        "controls": {
+          "Message": {
+            "x": 24,
+            "y": 304,
+            "width": 671,
+            "height": 58
+          },
+          "Send message": {
+            "x": 663,
+            "y": 370,
+            "width": 32,
+            "height": 32
+          }
+        }
+      },
+      {
+        "zoom": 200,
+        "voice_expanded": true,
+        "controls": {
+          "Message": {
+            "x": 24,
+            "y": 311,
+            "width": 671,
+            "height": 58
+          },
+          "Send message": {
+            "x": 663,
+            "y": 377,
+            "width": 32,
+            "height": 32
+          },
+          "Voice account": {
+            "x": 26,
+            "y": 271.1875,
+            "width": 325.5,
+            "height": 36
+          }
+        }
+      }
+    ],
+    "persistent_microphone_stop": {
+      "visible_after_fold_collapse": true,
+      "zoom": 200,
+      "browser_input": "synthetic Chromium device; no physical microphone"
+    }
+  },
+  "native": "Backend gateway capability/session binding contract tested; no new paid native SDK execution inferred"
+}

@@ -1,0 +1,11 @@
+# Final candidate coding consent — actual AQa production UI
+
+Passed against an immutable `index-AQa1VCFG.js` / `SafetyManager-DY8-dcPh.js` snapshot. [The report](coding-consent-rendered-AQa.json) preserves 64 file hashes, four dark/light100/200% states and20 actual Tab/Shift+Tab focus, absolute-bounds and uncovered-control checks. No page errors, horizontal overflow or axe WCAG2/2.1 AA violations occurred. Incomplete modal focus-guard/background and compact hidden-navigation contrast findings remain explicit; this is not a claim that incomplete findings vanished.
+
+A real managed AgentManager executed exactly two typed file effects after one human tool decision remembering the canonical conversation/device scope. The second durable source is `coding-policy`, not a model verdict. The actual inspector then changed only decision/expiry through CAS (version1→2), preserved binding/fingerprint, and revoked version2→3. This rerun exercises the final alternate-API and structured-credential backend fixes without treating routine file content as a credential or demanding repeated prompts.
+
+Decision, expiry, Save, Cancel and Revoke were actually focused with Tab/Shift+Tab return assertions and checked inside the viewport and against the center hit target in every state. Native picker values use `select_option`; no OS popup keyboard claim. [Dark200%](screenshots/coding-consent-AQa/coding-policy-dark-200.png) and [light200%](screenshots/coding-consent-AQa/coding-policy-light-200.png) were visually inspected with visible/uncovered controls and focus outlines. The populated modal scrolls normally at compact zoom.
+
+The [backend candidate audit](generic-consent-candidate-audit.md) records owner/current-policy/CAS/deny/queue/secret classification checks separately. The renderer uses scratch state, in-memory fixture credentials and a no-network deterministic provider. No paid model query, reviewer qualification, Figma mutation, installed native or physical input qualification occurred. AQa identity is exact; any later signed-out-listener build requires its own relevant evidence.
+
+Fixture: `tests/workspace_coding_policies_e2e.py`; original `/tmp/termx-coding-policies-AQa-proof`. HTML SHA256 `d4dbaeed31090f6b88a3669d043f2287bbebe881ebd3d2deea8436e2ad552ab8`. The prior Cfb report is preserved as historical candidate evidence.

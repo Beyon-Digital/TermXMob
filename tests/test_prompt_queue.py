@@ -152,3 +152,42 @@ def test_reading_anchor_is_durable_and_bound_to_its_canonical_conversation(queue
         workspace.update_session(owner,session['id'],revision=saved['revision'],changes={'scroll_anchor':{'id':'unknown-turn','offset':-15}})
     with pytest.raises(ValueError,match='Invalid'):
         workspace.update_session(owner,session['id'],revision=saved['revision'],changes={'scroll_anchor':{'id':turn['id'],'offset':float('nan')}})
+
+
+@pytest.mark.anyio
+async def test_queue_policy_revision_changes_block_without_dispatch_and_require_new_review(queued):
+    queue,workspace,origin,credentials,row,agent=queued
+    rule=workspace.agents.create_policy_rule(effect='allow',scope_type='project',scope_id=row['project_id'],action_type='tool',tool='read_file',fingerprint='fixture-target',expires_at=queue.clock()+300,consent_binding={'principal_id':origin.principal.id,'policy_version':origin.principal.policy_version})
+    item=queue.enqueue(origin.principal,row['id'],sid=origin.session_id,prompt='Inspect policy-bound target',request_id='policy-bind-01')
+    workspace.agents.edit_policy_consent(rule['id'],version=rule['version'],effect='deny',expires_at=queue.clock()+300,validate=lambda _:None)
+    await queue.tick()
+    blocked=queue.store.get('prompt_queue',item['id']);assert blocked['status']=='blocked' and not agent.calls
+    current=queue.current(origin.principal,item['id']);assert current['target_digest']!=item['target_digest']
+    queue.renew(origin.principal,item['id'],sid=origin.session_id,revision=blocked['revision'],target_digest=current['target_digest'])
+    await queue.tick();assert len(agent.calls)==1
+
+
+def test_queue_rule_binding_ignores_foreign_consent_and_contains_no_operation_details(queued):
+    queue,workspace,origin,credentials,row,agent=queued
+    before=queue.binding(origin.principal,row['id'])
+    workspace.agents.create_policy_rule(effect='allow',scope_type='project',scope_id=row['project_id'],action_type='tool',tool='read_file',fingerprint='secret-target',matcher={'private':'must-not-leave'},display='must-not-leave',consent_binding={'principal_id':'foreign'})
+    assert queue.binding(origin.principal,row['id'])==before
+    rule=workspace.agents.create_policy_rule(effect='allow',scope_type='host',scope_id=None,action_type='tool',tool='read_file',fingerprint='legacy-target',display='must-not-leave')
+    binding=queue.binding(origin.principal,row['id']);assert binding!=before and 'must-not-leave' not in str(binding)
+    workspace.agents.revoke_policy_rule(rule['id']);assert queue.binding(origin.principal,row['id'])!=binding
+
+
+def test_queue_reviewer_account_rotation_requires_new_binding_without_exposing_credentials(queued,tmp_path):
+    from termx.browser.storage import Records
+    from termx.agent.secrets import CredentialStore
+    queue,workspace,origin,credentials,row,agent=queued
+    records=Records(tmp_path/'browser');workspace.state.browser=SimpleNamespace(records=records)
+    workspace.state.credentials=CredentialStore(memory={'reviewer-fixture':'first-private-key'})
+    workspace.agents.put_provider('reviewer-fixture',kind='openai',name='Reviewer',base_url='https://fixture.invalid',model='fixture',capabilities=[],secret_configured=True)
+    records.put('reviewer-evaluation','evaluation',{'id':'evaluation','created_at':queue.clock()})
+    records.put('reviewer-config','active',{'provider_id':'reviewer-fixture','evaluation_id':'evaluation','model':'fixture','version':'v1','configuration_hash':'safe-revision'})
+    before=queue.binding(origin.principal,row['id'])
+    workspace.state.credentials.set('reviewer-fixture','rotated-private-key')
+    after=queue.binding(origin.principal,row['id']);assert after!=before
+    assert 'private-key' not in str(after) and 'fixture.invalid' not in str(after)
+    records.delete('reviewer-config','active');assert queue.binding(origin.principal,row['id'])!=after

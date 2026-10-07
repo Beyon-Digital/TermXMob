@@ -86,6 +86,33 @@ def test_native_resolver_denies_before_secrets_and_redacts_canonical_snapshot(tm
     with pytest.raises(PermissionError):gateway._resolve_mcp_bindings(links,project_id='one',authorize=lambda _:None)
 
 
+def test_codex_selected_mcp_rejected_before_native_start_or_false_applied_metadata(tmp_path):
+    from test_engines import _codex, _store
+    from termx.engines.types import EngineSessionBinding
+    async def run():
+        events=[];store=_store(tmp_path);gateway=EngineGateway(store,store.append_event)
+        log=tmp_path/'codex-wire.jsonl';engine=_codex(tmp_path,events,env_extra={'FAKE_CODEX_LOG':str(log)})
+        gateway.register(engine)
+        conn=definition(secret_refs=['mcp.scoped.env.TOKEN'])
+        gateway.mcp_resolver=lambda _:conn
+        lookups=[];gateway.credential_lookup=lambda ref:lookups.append(ref) or 'never-resolved'
+        cfg=EffectiveRunConfiguration(mcp_bindings=[{'connection_id':conn.id}])
+        try:
+            caps=engine.capabilities()
+            assert caps.mcp_native=='unsupported' and 'native-owned' in caps.notes['mcp_native']
+            with pytest.raises(ValueError,match='Internal broker'):
+                await gateway.create_task(engine='codex',cwd=str(tmp_path),prompt='no provider dispatch',custom_agent={'id':'preset','file':{'mcp_connections':[{'connection':conn.id,'tools':['add']}]}})
+            assert not lookups and store.list_tasks()==[]
+            assert engine._conn is None and not log.exists()
+            with pytest.raises(ValueError,match='Internal broker'):await engine.create_session(cfg)
+            binding=EngineSessionBinding.new('codex','prior-native-thread',status='idle')
+            with pytest.raises(ValueError,match='Internal broker'):await engine.attach(binding,cfg=cfg)
+            with pytest.raises(ValueError,match='Internal broker'):await engine.configure_session(binding,cfg)
+            assert binding.extensions_snapshot=={} and engine._conn is None and not events
+        finally:await gateway.shutdown();store.close()
+    asyncio.run(run())
+
+
 def test_current_caller_enrolled_project_and_cwd_authority(tmp_path):
     identity,state,client,owner=client_fixture(tmp_path)
     one=tmp_path/'one';two=tmp_path/'two';one.mkdir();two.mkdir()

@@ -154,9 +154,10 @@ class CodexEngine:
             fork="supported",
             subagents="unverified",
             skills_native="supported",  # `{type:"skill"}` turn input items
-            mcp_native="supported",     # codex config MCP; per-session TBD
+            mcp_native="unsupported",
             models=list(self._models),
             notes={
+                "mcp_native": "TermX per-session MCP bindings are unsupported; use the Internal broker. Existing Codex host configuration remains native-owned and is not a TermX-applied connection selection.",
                 "attachments": "image data URLs via the native turn/start input contract; model entitlement applies",
                 "tools_filter": "tool-name filtering is advisory only; enforcement via approvalPolicy + sandboxPolicy",
                 "auto_review": "managed tasks: command/file/permission approval requests use durable host broker; native sandbox fast paths remain native policy, not per-tool host hooks",
@@ -180,6 +181,8 @@ class CodexEngine:
                 'config_options':variants.get(default,{}).get('config_options',[]),'source':'codex:model/list'}
 
     def _turn_configuration(self,cfg):
+        if cfg.mcp_bindings:
+            raise ValueError('Codex does not apply TermX per-session MCP bindings; use the Internal broker')
         if cfg.mode not in {None,'ask','agent'}:raise ValueError('Unsupported Codex conversation mode')
         if set(cfg.config_options)-{'reasoning_effort'}:raise ValueError('Unsupported Codex config option')
         selected=next((m for m in self._model_rows if m['id']==cfg.model or m.get('model')==cfg.model),None) if cfg.model else next((m for m in self._model_rows if m.get('isDefault')),None)
@@ -240,8 +243,8 @@ class CodexEngine:
     # ---------------------------------------------------------------- session
 
     async def create_session(self, cfg: EffectiveRunConfiguration) -> EngineSessionBinding:
-        await self._ensure_conn()
         turn_configuration=self._turn_configuration(cfg)
+        await self._ensure_conn()
         params: dict[str, Any] = {
             "cwd": cfg.cwd or None,
             "serviceName": "termx",
@@ -283,6 +286,8 @@ class CodexEngine:
 
     async def attach(self, binding: EngineSessionBinding, *, cfg=None) -> EngineSessionBinding:
         """Re-attach to a persisted thread after host restart (native resume)."""
+        if cfg is not None:
+            self._turn_configuration(cfg)
         await self._ensure_conn()
         result = await self._conn.request(
             "thread/resume", {"threadId": binding.native_session_id}, timeout=30

@@ -1,0 +1,439 @@
+{
+  "proof": "actual-host-reviewed-cross-engine-context-fork",
+  "provider_queries": 0,
+  "native_engine_spawns": 0,
+  "errors": [],
+  "states": [
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "phase": "preview",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "phase": "edit",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "phase": "preview",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "phase": "edit",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "phase": "preview",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "phase": "edit",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "phase": "preview",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "phase": "edit",
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "keyboard_checks": [
+    {
+      "target": "Excluded turn",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Project files to transfer",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Transfer summary",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Preview transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Context transfer preview",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Edit transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Re-preview chosen context",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Create linked fork",
+      "tabs": 3,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Excluded turn",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Project files to transfer",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Transfer summary",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Preview transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Context transfer preview",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Edit transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Re-preview chosen context",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Create linked fork",
+      "tabs": 3,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Excluded turn",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Project files to transfer",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Transfer summary",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Preview transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Context transfer preview",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Edit transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Re-preview chosen context",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Create linked fork",
+      "tabs": 3,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Excluded turn",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Project files to transfer",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Transfer summary",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Preview transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Context transfer preview",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Edit transferred context",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Re-preview chosen context",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    },
+    {
+      "target": "Create linked fork",
+      "tabs": 3,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "outline_width": 2
+    }
+  ],
+  "commit_requests": 4,
+  "UI_asset_snapshot": {
+    "assets/BrowserApprovalPreview-D36AppxC.css": "4ecdbf9b298019e7eec3d3d6c468a146466b34c7deb011ca60d6697ebe5f76d0",
+    "assets/BrowserApprovalPreview-qRpSGyQc.js": "36ac32467f97b2b0c1570ce1fd68c95a061cd75232ffda187ad131ff888d9504",
+    "assets/BrowserSurface-CHDdogcP.js": "79144ae6ecc622cc7437a9c3d6d6a706a1dfcecd1c69d759cceab52cc1411ca8",
+    "assets/CaptureStatus-BFNwq3dT.js": "58c4a51d893be83c32f66446196f776a7bd650b698caebcde9ef363203153e5f",
+    "assets/ComputerSurface-BQR26yAi.js": "92f17344012ebbc95a45d87426f7c964694f3ad9a7963d34f449aec303bd8b95",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/Debugger-DUJYxGvf.js": "9cfd07aabaf45cbeef7432d52502a2bd8053f01f8086ec6f944cecdddb71c9c9",
+    "assets/Delivery-hUDE8HOu.js": "96c87ddf555bdfa3f98f078069c8a23ad99e85257e3690c02dfa9dd9b624ec2a",
+    "assets/Keybindings-CP3Avg2n.js": "61aba87fa417a4a5a369b3f12c77e4250dd029260de19fc527364d278aad712a",
+    "assets/Managers-B0Vr3Zba.css": "ae3e40d2a3e21802f1f4c2d515bbd3f3093d894b1365d50326bb5a49e4e3cc73",
+    "assets/Managers-BU2hpgiz.js": "a471283e2107780a5bd275ffc8c3b183b1eee29697690c19500e3cab425d1242",
+    "assets/Media-CLEo9att.js": "c2413f9aebc503bd7031f7ee2197593787276811c97ac7c49f58c622a5c89608",
+    "assets/Preview-BPP4t2o5.js": "00a86789c001be14d150295649a3bcb42fe9bd419950f19411fc57b0f5296b0f",
+    "assets/Runners-MOU7FBnM.js": "aecffafc1cd05858bfbab62fbb7044ca3f8c4c97f04c8017e65edfd5e72ee74a",
+    "assets/SafetyManager-k7QmNN02.js": "ec18e088114f56c16e7dd39652b94c8eb86bf7da858808512ee586cf85a94404",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/TerminalPanel-aQJbKH_A.js": "b0d7a853af24dcb3a33fe4fdea7de86c6ffd1c60de20d469ae657ffc243e1f6c",
+    "assets/Workbench-CRtMxrZi.js": "7d3758379dd69dfd7e09756fc0f9a0e3700981c1deee3bc76fc424251803d7b2",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-71svvUUR.js": "ecda549f1b8105da504034e1c112a360dc08f0af9e53a1c6b9dd85678165f328",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-BsFmnhas.js": "c75b70554315b32d1cff58e66070be84b983204434a24bb1a8e252a68609baf7",
+    "assets/index-BRkyqD1Q.js": "ee337c3acbf9c5e6ec801df696324f455c1cf18e3713e98cd1049a3195adb1dd",
+    "assets/index-CP122w_J.css": "1340284bfca4d7bcec4131f136a10eeb9bcede7bbe68adae6efebefb6dddb1e6",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/mermaid-MCJ5UELQ-DPm3CO5L.js": "9ef5dee3a6de2d9edb9f2c705de6378244e8ca7ed0a10862a979a17b29e41a88",
+    "assets/model-favorites-BofNgtT4.js": "e787ebfed5ca77af6e2d74863342c8c3b841779e69848842ef12cc1d56f56a02",
+    "assets/play-C_iVsAGA.js": "67dba521e00b3f3983a834efdb805df136a3d3fce7a3783d46f210bd14e9f613",
+    "assets/square-Cc7nRX9U.js": "b2ba7063ec6c7ec7b5d58216abcde7641d6832c9b9f1b4a254785f1f87bd55f2",
+    "assets/transfers-XZRXQafD.js": "8f052b72fcb67d151190d8fd5ff5aced29c52862f36286d1a4870887e288d9cc",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "9e825a37341764250fec72c350e286ecef57e81d1d119afea5fa95d30fd1e0a7"
+  },
+  "forks": [
+    "8a29f40b67b74625",
+    "6e8dcd1d37484b05",
+    "ec88dde09a66474b",
+    "f08bf946a12346ca"
+  ],
+  "native_select_method": "Explicit select_option after accessible control and exact installed fixture option observed; native picker key synthesis not claimed",
+  "original_unchanged": {
+    "engine_provider_model": true,
+    "turns_and_tasks": true,
+    "unsent_draft": true,
+    "no_transfer_in_source": true
+  },
+  "status": "passed",
+  "server_log_observation": {
+    "type": "starlette.requests.ClientDisconnect",
+    "count": 8,
+    "frames": [
+      "cross_web/request/_starlette.py:get_body",
+      "starlette/requests.py:body",
+      "starlette/requests.py:stream"
+    ],
+    "log_sha256": "1bff04ef5cfb8c104af144cb37a6edc60a74b8adafda9f6b2b376b7a68669000",
+    "scope": "Request body aborted during repeated navigation/close. Original log did not identify exact cancellation phase; zero server-exception claim is not made. Collector placement was corrected after this proof for future fixture runs."
+  },
+  "test_path": "tests/workspace_fork_context_e2e.py",
+  "limitations": [
+    "The installed target is an explicitly declared in-process fixture descriptor; no native engine process, authentication/subscription, resume or inference is qualified.",
+    "Native engine selection uses observed semantic select_option; native picker key synthesis is not claimed.",
+    "Source configuration/turn/task/draft invariants are asserted; UI scroll/revision timestamps are not promised unchanged."
+  ],
+  "screenshots": [
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/fork-dark-100-edit-BRky.png",
+      "sha256": "f20b94ca0ca251ea8c948bbc2ff399d6ab876477f5735434fa32c0a1f7d4ec44",
+      "visually_inspected": true
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/fork-dark-200-edit-BRky.png",
+      "sha256": "79cee04e64c43abd077be5ebc4838090bceb68d682f460088295854eee37bbac",
+      "visually_inspected": true
+    },
+    {
+      "path": "plans/desktop-workspace/verification/screenshots/fork-light-200-preview-BRky.png",
+      "sha256": "600a98bbea06840b29be834aabb16f40dca440b8e3c9f9d26c82cdb9d0651d5d",
+      "visually_inspected": true
+    }
+  ]
+}

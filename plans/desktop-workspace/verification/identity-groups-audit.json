@@ -1,0 +1,86 @@
+{
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "source_changes_pending_checkpoint": true,
+  "contracts": {
+    "groups": "Administrator-created canonical organizations/groups; individual and group host/project grants remain distinct. No automatic email/claim principal creation. Only configured issuer/exact claim-value mappings enroll existing canonical principals. OIDC and pinned custom signed assertions verify the configured bounded top-level group claim. Fresh membership evidence expires within60\u201386400seconds; missing configured claim clears that issuer membership.",
+    "live_authority": "Role, trust, project grant, membership or mapping removals bump current principal policy and revoke affected device sessions. Expired memberships no longer confer scopes, roles/project grants or collection authority. Session, current-principal, owned-resource, collection and live WS transport paths use current durable group policy. Individual project grants survive group expiry. Renewing an expired issuer membership revokes prior device sessions even when the freshly verified group identifiers match the expired rows.",
+    "organizations": "Organizations are canonical administrator-owned affiliation metadata attached to configured groups; tenant OS isolation is not inferred.",
+    "audit": "Administrator-only inspect/save/prune endpoints. Days, byte and record limits apply immediately on save, on bounded writes and a once-per-UTC-day expiry sweep on subsequent audit writes. Private atomic policy/log files, nested sensitive-key and URL credential redaction. Query uses bounded streaming/retained deque rather than whole-file text load; legacy reads cap64MiB and1000 records.",
+    "frontend": "Access children use existing manager form styling. Group revision reload preserves dirty draft, requires current conflict review before saving exactrevision. Retention removal requires explicit acknowledgement; no provider/account activation implied. Deferred replies across Lock/unlock and actual unmount cannot reset dirty group or retention drafts; locking clears retention acknowledgment."
+  },
+  "tests": [
+    {
+      "suite": "Identity/authz existing regressions",
+      "result": "50 passed",
+      "seconds": 57.63
+    },
+    {
+      "suite": "Groups, real TLS OIDC, pinned custom assertion, live socket before-effect removal, audit retention, guard/OIDC regressions",
+      "result": "14 passed",
+      "seconds": 13.23
+    },
+    {
+      "suite": "Audit logger/retention HTTP and bounds",
+      "result": "3 passed",
+      "seconds": 6.62
+    },
+    {
+      "suite": "IdentityGroupsManager/AuditRetentionManager frontend",
+      "result": "3 passed",
+      "seconds": 3.68
+    },
+    {
+      "suite": "Workspace TypeScript",
+      "result": "tsc --noEmit passed"
+    },
+    {
+      "suite": "Consolidated identity, authorization, live guard, real TLS OIDC, device pairing, session lifecycle, MCP authority, reasoning and audit",
+      "result": "102 passed",
+      "seconds": 311.58,
+      "note": "This process loaded group code before the additional expiry-renewal change; the following focused suites qualify that final change."
+    },
+    {
+      "suite": "Final group expiry renewal plus audit private-write failure cleanup, bounded malformed records and retention",
+      "result": "9 passed",
+      "seconds": 56.78
+    },
+    {
+      "suite": "Final administrator group expiry denies foreign-resource snapshot; fresh pinned assertion proof revokes old JWT and refresh",
+      "result": "1 passed",
+      "seconds": 7.25
+    },
+    {
+      "suite": "Access panels: dirty revision CAS, explicit prune acknowledgement, deferred lock/unlock response fences and actual unmount",
+      "result": "6 passed",
+      "seconds": 9.27
+    },
+    {
+      "suite": "Final Access signed-out fence and retained manager callbacks",
+      "result": "7 passed",
+      "seconds": 13.86
+    },
+    {
+      "suite": "Strict audit HTTP numeric limits",
+      "result": "1 passed",
+      "seconds": 28.21
+    }
+  ],
+  "limits": [
+    "Actual localhost TLS test IdP is certificate verified and uses PKCE/code/JWKS/nonce; no external enterprise account or paid provider query.",
+    "Source fixture and UI component tests do not qualify installed native SSO/group lifecycle or enterprise rollout.",
+    "Host groups authorize the declared trusted-shared-machine boundary; they do not isolate hostile OS tenants.",
+    "Counts overlap; not additive."
+  ],
+  "rendered_proof": {
+    "status": "passed",
+    "evidence": "identity-access-session-policy-rendered-CETSIarw.json",
+    "asset": "assets/index-CETSIarw.js",
+    "states": 12,
+    "scope": "Isolated production Access3surfaces: group/audit/devicepolicy; both themes and100/200%-equivalent CSS viewport with actual keyboard and effects.",
+    "limits": "Axe color-contrast incomplete; source-only/native-installed qualification is separate. Browser approval_preview.py changed unrelated to the exercised Access paths."
+  },
+  "frontend_snapshots": {
+    "rendered_groups_audit": "Root immutable CJW build reported passed; root owns its exact report/artifact hashes.",
+    "final_signed_out_listener": "Included in final source; targeted7 component tests passed. Exact final build qualification remains distinct."
+  }
+}

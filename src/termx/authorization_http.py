@@ -64,6 +64,42 @@ class AdapterTestInput(Input):
     project_id: str | None = None
 
 
+class OrganizationInput(Input):
+    label: str = Field(min_length=1,max_length=128)
+
+
+class GroupInput(OrganizationInput):
+    identifier: str | None = Field(default=None,max_length=64)
+    revision: int | None = Field(default=None,ge=1)
+    organization_id: str | None = Field(default=None,max_length=64)
+    role: Literal['viewer','operator','admin'] = 'viewer'
+    trusted_execution: bool = False
+
+
+class GroupMemberInput(Input):
+    principal_id: str = Field(min_length=1,max_length=64)
+    present: bool
+    expires: float | None = None
+
+
+class GroupMappingInput(Input):
+    issuer: str = Field(min_length=1,max_length=1024)
+    claim_value: str = Field(min_length=1,max_length=256)
+    present: bool
+
+
+class AuditRetentionInput(Input):
+    retention_days: int = Field(strict=True,ge=1,le=3650)
+    max_bytes: int = Field(strict=True,ge=65536,le=64*1024*1024)
+    max_events: int = Field(strict=True,ge=100,le=100000)
+
+
+class SessionPolicyInput(Input):
+    revision: int = Field(strict=True,ge=1)
+    idle_ttl_seconds: int = Field(strict=True,ge=600,le=30*86400)
+    absolute_ttl_seconds: int = Field(strict=True,ge=600,le=365*86400)
+
+
 def mount_authorization(app, state):
     router = APIRouter(prefix='/auth')
     identity, authz = state.identity, state.authorization
@@ -100,6 +136,60 @@ def mount_authorization(app, state):
     def principals(request: Request):
         current(request)
         return authz.list_principals()
+
+    @router.get('/admin/session-policy')
+    def session_policy(request:Request,response:Response):
+        current(request)
+        response.headers['Cache-Control']='no-store'
+        return identity.session_policy.inventory()
+
+    @router.put('/admin/session-policy')
+    def session_policy_update(request:Request,body:SessionPolicyInput):
+        try:
+            with identity._lock:
+                actor=current(request)
+                return identity.session_policy.update(**body.model_dump(),actor_id=actor.principal.id)
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+
+    @router.get('/admin/groups')
+    def groups(request:Request):
+        current(request)
+        return identity.groups.inventory()
+
+    def group_call(request,fn,*args,**kwargs):
+        try:
+            with identity._lock:
+                current(request)
+                return fn(*args,**kwargs)
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+
+    @router.post('/admin/organizations')
+    def organization(request:Request,body:OrganizationInput):
+        actor=current(request)
+        return group_call(request,identity.groups.organization,body.label,actor.principal.id)
+
+    @router.post('/admin/groups')
+    def save_group(request:Request,body:GroupInput):
+        actor=current(request)
+        return group_call(request,identity.groups.save,**body.model_dump(),actor_id=actor.principal.id)
+
+    @router.put('/admin/groups/{group_id}/members')
+    def group_member(group_id:str,request:Request,body:GroupMemberInput):
+        actor=current(request)
+        group_call(request,identity.groups.member,group_id,**body.model_dump(),actor_id=actor.principal.id)
+        return {'ok':True,'affected_sessions_revoked':True}
+
+    @router.put('/admin/groups/{group_id}/mappings')
+    def group_mapping(group_id:str,request:Request,body:GroupMappingInput):
+        actor=current(request)
+        group_call(request,identity.groups.mapping,group_id,**body.model_dump(),actor_id=actor.principal.id)
+        return {'ok':True}
+
+    @router.put('/admin/groups/{group_id}/projects/{project_id}')
+    def group_project(group_id:str,project_id:str,request:Request,body:GrantInput):
+        actor=current(request);state.projects.project(project_id)
+        group_call(request,identity.groups.grant,group_id,project_id,**body.model_dump(),actor_id=actor.principal.id)
+        return {'ok':True,'affected_sessions_revoked':True}
 
     @router.post('/admin/principals')
     async def create_principal(body: PrincipalInput, request: Request):
@@ -277,6 +367,31 @@ def mount_authorization(app, state):
     def audit(request: Request, limit: int=100):
         current(request)
         return read_events(min(max(limit,1),1000))
+
+    @router.get('/admin/audit/retention')
+    def audit_retention(request:Request):
+        current(request)
+        from termx.audit import retention_policy
+        return retention_policy()
+
+    @router.put('/admin/audit/retention')
+    def audit_retention_save(request:Request,body:AuditRetentionInput):
+        from termx.audit import set_retention_policy,prune_events
+        with identity._lock:
+            actor=current(request)
+            policy=set_retention_policy(body.model_dump())
+            result=prune_events(policy=policy)
+            log_event('audit_retention_changed',actor_id=actor.principal.id,**policy,removed_events=result['removed_events'])
+        return result
+
+    @router.post('/admin/audit/prune')
+    def audit_prune(request:Request):
+        from termx.audit import prune_events
+        with identity._lock:
+            actor=current(request)
+            result=prune_events()
+            log_event('audit_retention_pruned',actor_id=actor.principal.id,removed_events=result['removed_events'])
+        return result
 
     app.include_router(router)
     app.state.authorization_mounted = True

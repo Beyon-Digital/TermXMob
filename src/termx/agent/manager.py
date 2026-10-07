@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import mimetypes
 import uuid
@@ -44,6 +45,7 @@ from termx.agent.recovery import public_checkpoint, recovery_decision
 from termx.agent.runtime import ProviderHttpRuntime
 from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
+from termx.agent.tree_budget import TreeTimeExceeded
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
 from termx.agent.limits import DEFAULT_LIMITS, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
@@ -92,6 +94,8 @@ class AgentManager:
         from termx.agent.policies.engine import PolicyEngine
         from termx.sandbox import runner_for as default_runner_for
 
+        from termx.agent.tree_budget import TreeBudget
+        self.tree_budget = TreeBudget(self.store)
         self._sandbox_runners: dict[str, Any] = {}
         self._runner_for = runner_for or default_runner_for
         # One-shot capability grants recorded when a capability approval is
@@ -100,6 +104,7 @@ class AgentManager:
         self._one_shot_capability_grants: dict[tuple[str, str], set[str]] = {}
         self._policy_engine = PolicyEngine(
             self.store,
+            binding_lookup=self._coding_policy_binding,
             envelope=lambda profile: self._sandbox_runner(profile).capabilities().granted,
             grantable=lambda profile: self._sandbox_runner(profile).capabilities().grantable,
         )
@@ -116,6 +121,12 @@ class AgentManager:
             # Native engines own their recovery. Budget approvals are durable
             # safe boundaries and must remain paused across host restarts.
             if task.get("engine") not in (None, "internal"):
+                continue
+            if (task.get("runtime") or {}).get("tree_budget_resume") and task["status"] in ACTIVE_STATUSES:
+                pending_budget = any(a["kind"] == "budget" and a["status"] == "pending" for a in self.store.approvals(task["id"]))
+                if not pending_budget:
+                    runtime = task.get("runtime") or {}
+                    self._pause_budget(task["id"], list(runtime.get("history") or []), int(runtime.get("step") or 0), monotonic(), "shared_resume")
                 continue
             if task["status"] == "awaiting_approval" and any(
                 a["kind"] == "budget" and a["status"] == "pending"
@@ -331,6 +342,7 @@ class AgentManager:
                 custom_agent_snapshot=custom_agent,
             )
             task_id = task["id"]
+            self.tree_budget.bind(task_id)
             if worktree_spec is not None:
                 self.store.save_task_worktree(
                     task_id,
@@ -376,53 +388,59 @@ class AgentManager:
                 },
             )
         seed = self._conversation_seed(conversation)
+        upload_ids = [item["id"] for item in uploads]
+        # Provider planning is execution work too. Persist its phase before
+        # admission so an exhausted tree cannot bypass planning/plan approval.
+        self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids})
+        await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
+        ready = self._task(task_id)
+        if ready["status"] == "planning" and ready.get("mode") == "ask":
+            self._launch(task_id, self._drive(task_id))
+        return self.store.get_task(task_id, include_events=True) or ready
+
+    async def _prepare_task(self, task_id: str, *, cancel: asyncio.Event | None = None) -> None:
+        task = self._task(task_id)
+        runtime = task.get("runtime") or {}
+        seed = list(runtime.get("planning_seed") or [])
+        upload_ids = list(runtime.get("uploads") or [])
+        cancel = self._cancel.setdefault(task_id, cancel or asyncio.Event())
         try:
-            engine = ContextEngine(str(root))
-            manifest = await engine.snapshot()
+            engine = ContextEngine(task["cwd"])
+            manifest = await self._budget_await(task_id, _race_cancel(engine.snapshot(), cancel))
             self._context_engines[task_id] = engine
             self._metrics[task_id] = TaskMetrics()
             self._emit(task_id, "context.snapshot", {"snapshot": _snapshot_event(manifest)})
-            upload_ids = [item["id"] for item in uploads]
-            if mode == "ask":
-                # Ask mode is read-only and low-risk, so it starts immediately
-                # instead of waiting for plan approval.
-                history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
-                runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
-                self.store.update_task(task_id, runtime=runtime)
-                self._launch(task_id, self._drive(task_id))
-                return self.store.get_task(task_id, include_events=True) or task
-            planning = adapter.plan(prompt, str(root), manifest)
-            plan_started = monotonic()
-            if cancel is None:
-                plan, response_id = await planning
-            else:
-                try:
-                    plan, response_id = await _race_cancel(planning, cancel)
-                except asyncio.CancelledError:
-                    self._mark_cancelled(task_id)
-                    return self.store.get_task(task_id, include_events=True) or task
-            self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
             history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
-            runtime = {"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None}
-            task = self.store.update_task(
-                task_id,
-                status="awaiting_approval",
-                plan=plan,
+            if task.get("mode") == "ask":
+                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
+                return
+            provider = dict(self._provider(task["provider_id"]))
+            provider["model"] = str(task["model"])
+            adapter = self._adapter(provider)
+            plan_started = monotonic()
+            plan, response_id = await self._budget_await(task_id, _race_cancel(adapter.plan(task["prompt"], task["cwd"], manifest), cancel))
+            self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
+            self.store.update_task(task_id, status="awaiting_approval", plan=plan,
                 previous_response_id=response_id,
-                runtime=runtime,
-            )
+                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
             self._emit(task_id, "plan.ready", {"plan": plan})
-            approval = self.store.create_approval(
-                task_id,
-                "plan",
-                {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"},
-            )
+            approval = self.store.create_approval(task_id, "plan", {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"})
             self._emit(task_id, "approval.requested", {"approval": approval})
             self._emit(task_id, "task.status", {"status": "awaiting_approval"})
-            return self.store.get_task(task_id, include_events=True) or task
+        except TreeTimeExceeded:
+            self._pause_budget(task_id, seed, 0, monotonic(), "shared_max_seconds")
+        except asyncio.CancelledError:
+            self._mark_cancelled(task_id)
         except Exception as exc:
             self._fail(task_id, exc)
-            return self.store.get_task(task_id, include_events=True) or task
+        finally:
+            self._cancel.pop(task_id, None)
+
+    async def _resume_planning(self, task_id: str) -> None:
+        await self._prepare_task(task_id)
+        task = self._task(task_id)
+        if task["status"] == "planning" and task.get("mode") == "ask":
+            await self._drive(task_id)
 
     async def resolve_approval(
         self,
@@ -450,10 +468,26 @@ class AgentManager:
             if not reviewed or reviewed['status']!='needs_user' or reviewed['expires_at']<=time():
                 raise ValueError('Browser page, control or approval expired; take over and request a fresh observation')
         next_limits = None
+        renew_shared = True
         if approval["kind"] == "budget" and decision == "approved":
             step = int((task.get("runtime") or {}).get("step") or 0)
             suggested = approval["payload"]["suggested_limits"]
-            next_limits = resolve_limits(limits, {**task["limits"], **suggested})
+            shared=approval['payload'].get('tree_budget')
+            if shared:
+                current=self.tree_budget.snapshot(task_id)
+                if approval['payload'].get('reuse_grant') and not current['reason']:
+                    renew_shared=False
+                    suggested={'max_steps':current['max_steps'],'max_seconds':current['max_execution_seconds']}
+                elif current['version']!=shared['version']:
+                    # Another task already received the explicit tree grant.
+                    # This decision resumes within that existing allowance; it
+                    # cannot extend it or reset the shared time meter again.
+                    if current['reason']:raise ValueError('The shared allowance is exhausted again; inspect the newest tree budget request')
+                    renew_shared=False
+                    suggested={'max_steps':current['max_steps'],'max_seconds':current['max_execution_seconds']}
+            next_limits = resolve_limits(limits if renew_shared else None, {**task["limits"], **suggested})
+            if shared and next_limits['max_steps']<=current['used_steps']:
+                raise ValueError('The total tree step ceiling must exceed the already reserved calls')
             if next_limits["max_steps"] <= step:
                 raise ValueError("max_steps must exceed the completed tool count")
         if (
@@ -462,7 +496,18 @@ class AgentManager:
             and approval_id not in self._pending_approval_calls
         ):
             raise ValueError("approved tool request is no longer available")
-        approval = self.store.resolve_approval(approval_id, decision)
+        if remember and remember != 'once':
+            if remember not in (approval.get('payload') or {}).get('remember_options',[]):
+                raise ValueError('This approval does not permit the requested remembered scope')
+            intent_record=(self._pending_approval_calls.get(approval_id) or {}).get('intent') or {}
+            expected=intent_record.get('consent_binding') or {}
+            current=self._coding_policy_binding(task_id)
+            if expected and expected != current or current.get('unbound'):
+                raise PermissionError('Task authority changed; request fresh consent')
+        if approval["kind"] == "budget" and decision == "approved" and approval['payload'].get('tree_budget') and not escalation:
+            approval = self.tree_budget.approve(task_id, approval_id, next_limits, version=current['version'] if not renew_shared else shared['version'], renew=renew_shared)
+        else:
+            approval = self.store.resolve_approval(approval_id, decision)
         metrics = self._metrics.get(task_id)
         if metrics is not None and approval.get("resolved_at") and approval.get("created_at"):
             metrics.record_approval_wait(int((approval["resolved_at"] - approval["created_at"]) * 1000))
@@ -487,6 +532,7 @@ class AgentManager:
                     str(private_payload["child_approval_id"]),
                     decision,
                     remember=remember,
+                    limits=limits or next_limits,
                 )
             except (KeyError, ValueError):
                 pass
@@ -513,9 +559,10 @@ class AgentManager:
                 return approval
             runtime = dict(task.get("runtime") or {})
             runtime["started_at"] = None
+            runtime.pop("tree_budget_resume", None)
             self.store.update_task(task_id, limits=next_limits, runtime=runtime)
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
-            self._launch(task_id, self._drive(task_id))
+            self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
         elif approval["kind"] == "plan":
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
@@ -801,11 +848,20 @@ class AgentManager:
                 if cancel.is_set():
                     await self._cancelled(task_id)
                     return
-                reason = ("max_steps" if step >= limits["max_steps"] else
-                          "max_seconds" if monotonic() - started_at >= limits["max_seconds"] else None)
+                shared = self.tree_budget.snapshot(task_id)
+                reason = (shared['reason'] or ("max_steps" if step >= limits["max_steps"] else
+                          "max_seconds" if monotonic() - started_at >= limits["max_seconds"] else None))
                 if reason:
                     self._pause_budget(task_id, history, step, started_at, reason)
                     return
+                parked=(task.get('runtime') or {}).get('tree_pending_calls')
+                if parked:
+                    paused,history,step=await self._run_calls(task_id,[self._call(call) for call in parked],history,step,started_at,
+                        approved_first=bool((task.get('runtime') or {}).get('tree_approved_first')))
+                    if paused:return
+                    runtime={**(self._task(task_id).get('runtime') or {}),'history':history,'step':step}
+                    runtime.pop('tree_pending_calls',None);runtime.pop('tree_approved_first',None)
+                    self.store.update_task(task_id,runtime=runtime)
                 steering = self._steering.pop(task_id, [])
                 for message in steering:
                     history.append({"role": "user", "content": message})
@@ -951,7 +1007,7 @@ class AgentManager:
                         )
                     self._emit(task_id, event_type, payload)
 
-                turn = await _race_cancel(
+                turn = await self._budget_await(task_id, _race_cancel(
                     retrying(
                         _request,
                         emit=_emit_retry,
@@ -961,7 +1017,7 @@ class AgentManager:
                         may_retry=lambda: not first_token,
                     ),
                     cancel,
-                )
+                ))
                 stream_ms = int((monotonic() - turn_started) * 1000)
                 metrics.record_provider(stream_ms, turn.usage)
                 if stream_fn is not None:
@@ -1007,6 +1063,8 @@ class AgentManager:
                     return
                 runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at}
                 self.store.update_task(task_id, runtime=runtime)
+        except TreeTimeExceeded:
+            self._pause_budget(task_id,history,step,started_at,'shared_max_seconds')
         except asyncio.CancelledError:
             await self._cancelled(task_id)
         except Exception as exc:
@@ -1032,12 +1090,15 @@ class AgentManager:
                    "step": step, "started_at": started_at}
         self.store.update_task(task_id, status="awaiting_approval", runtime=runtime)
         chunk = self._limits(None)["max_steps"]
-        suggested = {"max_steps": min(100000, max(step + chunk, task["limits"]["max_steps"]))}
+        shared=self.tree_budget.snapshot(task_id) if reason.startswith('shared_') else None
+        suggested = {"max_steps": min(100000, max((shared['used_steps'] if shared else step) + chunk, (shared['max_steps'] if shared else task["limits"]["max_steps"])))}
+        if shared:suggested['max_seconds']=shared['max_execution_seconds']
         approval = self.store.create_approval(task_id, "budget", {
-            "title": "Continue this task with a renewed run budget",
+            "title": "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
+            **({'tree_budget':shared,'reuse_grant':reason=='shared_resume' and not shared['reason']} if shared else {}),
             "reason": reason, "completed_steps": step, "limits": task["limits"],
             "suggested_limits": suggested,
-            "consequence": "Continues from saved tool results; grants a fresh time budget",
+            "consequence": "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
         })
         self._emit(task_id, "task.budget.exhausted", approval["payload"])
         self._emit(task_id, "approval.requested", {"approval": approval})
@@ -1077,6 +1138,14 @@ class AgentManager:
                 for item in group:
                     if item.call.type!='function' or item.call.name not in broker_tools:
                         raise PermissionError('Restricted browser task cannot run process/computer tools; take over all granted tabs before resuming coding execution')
+            positions=[str(step+offset)+':'+hashlib.sha256(json.dumps(self._call_payload(entry.call),sort_keys=True).encode()).hexdigest() for offset,entry in enumerate(group)]
+            shared_reason=self.tree_budget.reserve(task_id,positions)
+            if shared_reason:
+                current=self._task(task_id)
+                runtime={**(current.get('runtime') or {}),'tree_pending_calls':[self._call_payload(call) for call in calls[index:]],'tree_approved_first':approved_first and index==0}
+                self.store.update_task(task_id,runtime=runtime)
+                self._pause_budget(task_id,history,step,started_at,shared_reason)
+                return True,history,step
             if len(group) > 1:
                 # A parallel-safe batch: registered read tools that never need
                 # approval, run concurrently. Output order stays call order.
@@ -1139,13 +1208,29 @@ class AgentManager:
                     index += 1
                     continue
             decision = entry.decision
+            if decision.intent is None and call.type=='function' and call.name in {'write_file','apply_patch'}:
+                from termx.auto_review import canonical_hash
+                exact=canonical_hash({'tool':call.name,'cwd':ctx.cwd,'arguments':call.arguments})
+                decision=self._policy_engine.decide_tool(call,ctx,fingerprint=exact,display=call.name+' · exact typed arguments',matcher={'arguments_digest':exact},base=decision,capabilities=('fs.workspace.write',),risk='consequential')
             authority=self.browser.records.get('agent-task-authority',task_id) if self.browser else None
             if authority and entry.spec and entry.spec.mutability!='read' and decision.approval_kind!='capability':
                 from termx.agent.action_review import proposal
                 from termx.auto_review import ReviewRequired,ActionBlocked
                 envelope,validate,hard_deny=proposal(self.browser,task_id,authority,call.name or call.type,call.arguments if call.type!='computer' else {'actions':call.actions},task['cwd'],call_id=task_id+':'+call.call_id,decision=decision,read_only=read_only)
+                consent=None
+                if decision.auto_resolved=='allow' and decision.matched_rule_id and decision.intent:
+                    matched=self.store.get_policy_rule(decision.matched_rule_id)
+                    version=matched['version'] if matched else None
+                    def current_consent():
+                        from termx.agent.policy import PolicyDecision
+                        current=self._policy_engine.evaluate(replace(decision.intent,consent_binding=self._coding_policy_binding(task_id)),PolicyDecision(False,True,'Consent revalidation','Exact operation'),ctx)
+                        row=self.store.get_policy_rule(decision.matched_rule_id)
+                        return bool(row and row['version']==version and current.auto_resolved=='allow' and current.matched_rule_id==decision.matched_rule_id)
+                    consent=current_consent
+                    base_validate=validate
+                    validate=lambda:base_validate() and current_consent()
                 try:
-                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,existing_consent=consent,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
                     self._emit(task_id,'tool.started',{'call':call.public()})
                     outcome=await self.browser.review.execute(envelope,permit['permit'],validate=validate,operation=lambda:self._invoke_tool(entry,ctx))
                 except ActionBlocked as exc:
@@ -1154,9 +1239,11 @@ class AgentManager:
                     if exc.record['status']!='needs_user':
                         outcome=ToolOutcome({'refused':True,'error':'Action already consumed, denied or invalidated; verify outcome before proposing another action'})
                     else:
-                        public={'title':'Action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':[]}
+                        eligible=decision.intent is not None and envelope.intended_effect not in {'unknown','send','publish','purchase','delete','credential','privilege','export','upload'} and 'secret' not in envelope.data_labels
+                        remember_options=list(self._policy_engine._remember_options(decision.intent,ctx.project_id,decision.intent.custom_agent_id)) if eligible else []
+                        public={'title':'Action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':remember_options,'policy_intent':decision.intent.to_public() if eligible else None,'policy_source':'Current typed tool / sandbox policy'}
                         approval=self.store.create_approval(task_id,'tool',public)
-                        self._pending_approval_calls[approval['id']]={**public,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
+                        self._pending_approval_calls[approval['id']]={**public,'intent':decision.intent.to_record() if eligible else None,'approval_kind':decision.approval_kind,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
                         self.store.update_task(task_id,status='awaiting_approval',runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
                         self._emit(task_id,'approval.requested',{'approval':approval});self._persist_metrics(task_id)
                         return True,history,step
@@ -1463,7 +1550,10 @@ class AgentManager:
         if preset and preset.get("tools") and call.name not in preset["tools"]:
             raise PermissionError("This tool is outside the task agent preset")
         started = monotonic()
-        outcome = await entry.spec.execute(call, ctx)
+        try:
+            outcome = await self._budget_await(ctx.task_id,entry.spec.execute(call,ctx))
+        except TreeTimeExceeded as exc:
+            raise RuntimeError('Shared execution time exhausted during a tool. Its result may be partial; inspect the checkpoint and actual state before explicitly retrying.') from exc
         metrics = ctx.metrics
         if metrics is not None:
             metrics.record_tool(call.name or call.type, int((monotonic() - started) * 1000))
@@ -1512,6 +1602,14 @@ class AgentManager:
                 ),
             }
         ]
+
+    def _coding_policy_binding(self, task_id: str) -> dict:
+        browser=getattr(self,'browser',None)
+        if browser is None: return {}  # legacy trusted local manager
+        row=browser.records.get('agent-task-authority',task_id)
+        if not row or not browser.session_valid(row['principal_id'],row['session_id'],row['policy_version']):
+            return {'unbound':True}
+        return {key:row[key] for key in ('principal_id','session_id','policy_version','conversation_id') if key in row}
 
     def _tool_context(self, task_id: str, task: dict[str, Any]) -> ToolContext:
         return ToolContext(
@@ -2182,12 +2280,13 @@ class AgentManager:
             "child_id": child_id,
             "child_approval_id": approval["id"],
         }
-        parent_approval = self.store.create_approval(task_id, "tool", public_payload)
+        parent_approval = self.store.create_approval(task_id, "budget" if approval['kind']=='budget' else "tool", public_payload)
         self._pending_approval_calls[parent_approval["id"]] = {
             "task_id": task_id,
             "child_id": child_id,
             "child_approval_id": approval["id"],
         }
+        self.tree_budget.stop(task_id)
         self.store.update_task(task_id, status="awaiting_approval")
         self._emit(task_id, "approval.requested", {"approval": parent_approval})
         self._emit(task_id, "task.status", {"status": "awaiting_approval"})
@@ -2232,11 +2331,28 @@ class AgentManager:
                     pass
         return event
 
+    async def _budget_await(self,task_id,operation):
+        pending=asyncio.ensure_future(operation)
+        try:
+            while not pending.done():
+                shared=await asyncio.to_thread(self.tree_budget.snapshot,task_id)
+                if shared['reason']=='shared_max_seconds':raise TreeTimeExceeded('Shared active execution seconds exhausted')
+                await asyncio.wait({pending},timeout=.1)
+            return await pending
+        finally:
+            if not pending.done():
+                pending.cancel();await asyncio.gather(pending,return_exceptions=True)
+
+    async def _meter_worker(self,task_id,operation):
+        self.tree_budget.start(task_id)
+        try:return await operation
+        finally:self.tree_budget.stop(task_id)
+
     def _launch(self, task_id: str, coroutine: Any) -> None:
         current = self._workers.get(task_id)
         if current is not None and not current.done():
             raise ValueError("task is already running")
-        worker = asyncio.create_task(coroutine, name=f"termx-agent-{task_id[:8]}")
+        worker = asyncio.create_task(self._meter_worker(task_id,coroutine), name=f"termx-agent-{task_id[:8]}")
         self._workers[task_id] = worker
         def finished(done: asyncio.Task[None]) -> None:
             if self._workers.get(task_id) is done:
@@ -2331,6 +2447,7 @@ class AgentManager:
             return
         if self._has_pending_approvals(task_id):
             return
+        if task_id in self._workers:self.tree_budget.start(task_id)
         self.store.update_task(task_id, status="running")
         self._emit(task_id, "task.status", {"status": "running"})
 

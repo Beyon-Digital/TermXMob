@@ -1,0 +1,46 @@
+{
+  "source_commit": "7d9a4b611a6316703ac4b081a3f128e620cb4a91",
+  "source_CI": {
+    "run": 37617471041,
+    "conclusion": "success",
+    "linux": {
+      "passed": 843,
+      "skipped": 136,
+      "seconds": 122.24
+    },
+    "macos": {
+      "passed": 874,
+      "skipped": 105,
+      "seconds": 172.86
+    },
+    "frontend": {
+      "tests": 62,
+      "files": 22,
+      "build": "pass"
+    }
+  },
+  "Windows_contracts": {
+    "run": 37617471208,
+    "conclusion": "success",
+    "passed": 208,
+    "skipped": 1,
+    "seconds": 152.53,
+    "native_private_storage_tests_passed": 3
+  },
+  "restricted_console": {
+    "actual_input_output": true,
+    "GetConsoleMode": 1,
+    "resize_columns_rows": [
+      120,
+      45
+    ],
+    "Ctrl_C_interrupt_keeps_process_alive": true,
+    "inside_write_allowed_outside_write_denied": true,
+    "host_environment_secret_excluded": true,
+    "descendants_reaped_before_root_grant_release": true,
+    "normal_host_token_refused": true,
+    "restricted_builtin_echo": true,
+    "unrestricted_ABI_baseline": "Test-only fixed echo fixture; never a production fallback."
+  },
+  "scope": "Actual Windows restricted write-confinement console and native private-storage contracts. This does not claim filesystem-read/network tenant isolation or installed GUI qualification. Later working-tree changes require final CI."
+}
