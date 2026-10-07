@@ -14,6 +14,7 @@ def secret(request):
 class CreateDebug(BaseModel):
     model_config = ConfigDict(extra="forbid")
     language: str = Field(max_length=32)
+    workspace_session: str | None = Field(default=None, max_length=200)
 
 
 class DebugCommand(BaseModel):
@@ -40,11 +41,18 @@ def mount_development(app, state):
         return state.authorization.require(secret(request), scope, project_id=project_id,
             resource_kind="debug" if resource_id else None, resource_id=resource_id)
 
-    def session(request, session_id):
+    def session(request, session_id, *, validate_target=True):
         item = state.debug.sessions.get(session_id)
         if item is None:
             raise HTTPException(404, "Debug session not found")
         require(request, "agent-run", item.project_id, item.id)
+        if validate_target and item.worktree_id:
+            try:
+                target = state.workspace.worktree_target(item.project_id, item.worktree_id)
+                if target['digest'] != item.worktree_digest or target['path'] != str(item.root):
+                    raise PermissionError('Debug checkout identity changed')
+            except (PermissionError, ValueError, KeyError, OSError) as exc:
+                raise HTTPException(409, 'Debug checkout is no longer enrolled; end this debug session') from exc
         return item
 
     @router.get("/debug/adapters")
@@ -52,13 +60,44 @@ def mount_development(app, state):
         require(request, "machine-view")
         return state.debug.capabilities()
 
+    @router.get('/projects/{project_id}/debug')
+    def debug_sessions(project_id: str, request: Request, workspace_session: str | None = None):
+        require(request, 'agent-run', project_id)
+        return [{'id': item.id, 'language': item.language, 'status': item.status,
+                 'cwd': str(item.root), 'workspace_session': item.workspace_session,
+                 'worktree_id': item.worktree_id}
+                for item in state.debug.sessions.values()
+                if item.project_id == project_id and item.status != 'terminated'
+                and (workspace_session is None or item.workspace_session == workspace_session)
+                and state.authorization.can(secret(request), 'agent-run', project_id=project_id,
+                                            resource_kind='debug', resource_id=item.id)]
+
     @router.post("/projects/{project_id}/debug")
     async def create(project_id: str, body: CreateDebug, request: Request):
         require(request, "agent-run", project_id)
         root = state.projects.project(project_id)["path"]
+        conversation = None
+        if body.workspace_session:
+            identity = state.identity.resolve(secret(request))
+            if not identity:
+                raise HTTPException(401, 'A managed session is required for conversation debugging')
+            try:
+                conversation = state.workspace.record(identity.principal, 'conversation', body.workspace_session, scope='agent-run')
+            except (PermissionError, KeyError, ValueError, OSError) as exc:
+                raise HTTPException(403, 'Conversation execution checkout is unavailable') from exc
+            if conversation['project_id'] != project_id:
+                raise HTTPException(403, 'Conversation belongs to another project')
+            if conversation.get('runner_id'):
+                raise HTTPException(409, 'Cloud debugging requires a runner adapter; local execution is unavailable for this conversation')
+            root = conversation['cwd']
         item = await state.debug.create(project_id, root, body.language)
+        if conversation:
+            item.workspace_session = conversation['id']
+            item.worktree_id = conversation.get('worktree_id')
+            item.worktree_digest = conversation.get('worktree_digest')
         state.authorization.claim(secret(request), "debug", item.id, project_id=project_id)
-        return {"id": item.id, "project_id": project_id, "language": item.language, "status": item.status}
+        return {"id": item.id, "project_id": project_id, "language": item.language, "status": item.status,
+                "cwd": str(item.root), "worktree_id": item.worktree_id, "workspace_session": item.workspace_session}
 
     @router.get("/debug/{session_id}/events")
     def events(session_id: str, request: Request, after: int = 0):
@@ -74,13 +113,13 @@ def mount_development(app, state):
             require(request, "host-admin")
         args = item.validate(body.command, body.arguments)
         try:
-            return await item.active.request(body.command, args)
+            return await item.request(body.command, args)
         except (ConnectionError, TimeoutError) as exc:
             raise HTTPException(503, "Debug adapter unavailable; reconnect or end this session") from exc
 
     @router.delete("/debug/{session_id}")
     async def close(session_id: str, request: Request):
-        await session(request, session_id).close()
+        await session(request, session_id, validate_target=False).close()
         return {"ok": True}
 
     def actor(request):

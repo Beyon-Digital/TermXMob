@@ -9,13 +9,13 @@ type FileChange={path:string;staged:boolean;index:string;worktree:string};
 type Prepared={id:string;operation:string;arguments:Record<string,unknown>;head:string;requires_confirmation:boolean};
 type ActionRecord={id:string;operation:string;arguments:string;head:string;status:string;created:number;result:string|null};
 type Pull={number:number;title:string;body:string;url:string;state:string;mergeable:string;headRefName:string;baseRefName:string;statusCheckRollup:{name?:string;context?:string;state?:string;status?:string;conclusion?:string;detailsUrl?:string;targetUrl?:string}[];comments:{body:string;url?:string}[];reviews:{body:string;state:string}[]};
-export default function Delivery({project,onError}:{project:Project|null;onError?:(error:unknown)=>void}){
+export default function Delivery({project,onError,initialWorktreeId}:{project:Project|null;onError?:(error:unknown)=>void;initialWorktreeId?:string|null}){
  const [status,setStatus]=useState<{branch?:string;files:FileChange[]}|null>(null),[trees,setTrees]=useState<Worktree[]>([]),[tree,setTree]=useState(''),[diff,setDiff]=useState(''),[path,setPath]=useState(''),[staged,setStaged]=useState(false),[patch,setPatch]=useState(''),[message,setMessage]=useState(''),[branch,setBranch]=useState(''),[base,setBase]=useState('main'),[title,setTitle]=useState(''),[body,setBody]=useState(''),[number,setNumber]=useState(''),[comment,setComment]=useState(''),[pull,setPull]=useState<Pull|null>(null),[prepared,setPrepared]=useState<Prepared|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [actions,setActions]=useState<ActionRecord[]>([]),[remotes,setRemotes]=useState<string[]>([]),[remote,setRemote]=useState('origin');
  const prefix=project?'/api/development/projects/'+project.id+'/delivery':'';
  const suffix=tree?'?worktree_id='+encodeURIComponent(tree):'';
  async function load(){if(!prefix)return;const data=await request<{status:{branch?:string;files:FileChange[]};worktrees:Worktree[];remotes?:string[]}>(prefix+suffix);setStatus(data.status);setTrees(data.worktrees);setRemotes(data.remotes||[]);if(data.remotes?.length&&!data.remotes.includes(remote))setRemote(data.remotes[0]);setActions(await request<ActionRecord[]>(prefix+'/actions'))}
- useEffect(()=>{setTree('');setPull(null);setDiff('');setPrepared(null)},[project?.id]);
+ useEffect(()=>{setTree(initialWorktreeId||'');setPull(null);setDiff('');setPrepared(null)},[project?.id,initialWorktreeId]);
  useEffect(()=>{void load().catch(report)},[project?.id,tree]);
  function report(reason:unknown){setError(reason instanceof Error?reason.message:String(reason));onError?.(reason)}
  async function act(action:()=>Promise<unknown>){setBusy(true);setError('');try{await action();await load()}catch(error){report(error)}finally{setBusy(false)}}

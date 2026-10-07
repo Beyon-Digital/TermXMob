@@ -110,6 +110,8 @@ jobs:
             x11-apps \
             wmctrl \
             openbox \
+            dbus-x11 \
+            gnome-keyring \
             imagemagick \
             xdotool
 
@@ -198,8 +200,27 @@ jobs:
       - name: Verify native bridge boundaries
         run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml
 
+      - name: Verify OS credential service on macOS and Windows
+        if: runner.os != 'Linux'
+        env:
+          TERMX_TEST_OS_KEYRING: '1'
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml os_keyring_synthetic_roundtrip -- --ignored --nocapture
+
+      - name: Verify isolated Linux OS credential service
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dbus-run-session -- bash -eu -c '
+            fixture_home=$(mktemp -d)
+            export XDG_DATA_HOME="$fixture_home"
+            trap "rm -rf -- $fixture_home" EXIT
+            printf "%s" "synthetic-keyring-fixture-password" | gnome-keyring-daemon --unlock --components=secrets
+            TERMX_TEST_OS_KEYRING=1 cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml os_keyring_synthetic_roundtrip -- --ignored --nocapture
+          '
+
       - name: Verify installed debug adapters
         env:
+          TERMX_RUNTIME_QUALIFICATION: '1'
           TERMX_JS_DEBUG_SERVER: ${{ github.workspace }}/desktop/build/runtime/js-debug/src/dapDebugServer.js
           TERMX_RUNTIME_ASSETS: ${{ github.workspace }}/desktop/build/runtime
         run: uv run --no-sync pytest -q tests/test_debug_workspace.py tests/test_workspace_runtime.py tests/test_lsp_navigation.py
@@ -214,7 +235,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: workspace-accessibility-${{ matrix.name }}
-          path: desktop/build/accessibility
+          path: |
+            desktop/build/accessibility
+            desktop/build/runtime-smoke.json
           if-no-files-found: ignore
 
       - name: Resolve release metadata

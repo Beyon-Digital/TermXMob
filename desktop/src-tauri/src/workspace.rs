@@ -708,3 +708,40 @@ mod bridge_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod platform_credentials_tests {
+    #[test]
+    #[ignore = "Requires an isolated, unlocked OS credential service"]
+    fn os_keyring_synthetic_roundtrip() {
+        assert_eq!(std::env::var("TERMX_TEST_OS_KEYRING").as_deref(), Ok("1"));
+        // Unique fixture namespace; this never reads a user's TermX entry.
+        let service = format!(
+            "termx-ci-fixture-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        );
+        let entry =
+            keyring::Entry::new(&service, "synthetic-account").expect("OS credential entry");
+        struct Cleanup(keyring::Entry);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = self.0.delete_credential();
+            }
+        }
+        let fixture = Cleanup(entry);
+        fixture
+            .0
+            .set_password("synthetic-noncredential-test-value")
+            .expect("OS credential write");
+        assert_eq!(
+            fixture.0.get_password().expect("OS credential read"),
+            "synthetic-noncredential-test-value"
+        );
+        fixture.0.delete_credential().expect("OS credential delete");
+        assert!(matches!(
+            fixture.0.get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
+    }
+}

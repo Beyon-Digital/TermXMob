@@ -199,7 +199,9 @@ def test_cors_env_override(monkeypatch) -> None:
     assert _preflight(client, "http://192.168.1.20:8081").status_code == 400
 
 
-def test_commands_and_preferences_roundtrip(tmp_path) -> None:
+def test_commands_and_preferences_roundtrip(tmp_path, monkeypatch) -> None:
+    from termx.desktop.webrtc import AiortcBackend
+    monkeypatch.setattr(AiortcBackend, "available", False)
     client = TestClient(create_app(AppState(), web_dir=None))
     item = data(
         client,

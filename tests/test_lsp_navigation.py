@@ -35,7 +35,10 @@ def test_real_language_definition_hover_and_completion(tmp_path,monkeypatch,lang
     else:
         binary=os.environ.get('TERMX_TS_LANGUAGE_SERVER') or shutil.which('typescript-language-server')
         command=(binary,'--stdio') if binary else lsp._command(language)
-    if not command:pytest.skip('Install the pinned language runtime to run the actual server integration')
+    if not command:
+        if os.environ.get('TERMX_RUNTIME_QUALIFICATION') == '1':
+            pytest.fail('Required packaged language runtime is missing: '+language)
+        pytest.skip('Install the pinned language runtime to run the actual server integration')
     monkeypatch.setattr(lsp,'_command',lambda requested:command)
     file=tmp_path/filename;file.write_text(content)
     if language=='typescript':(tmp_path/'tsconfig.json').write_text('{"compilerOptions":{"strict":true},"files":["main.ts"]}')
@@ -61,4 +64,39 @@ def test_real_language_definition_hover_and_completion(tmp_path,monkeypatch,lang
         finally:
             await socket.input.put(None)
             await asyncio.wait_for(serve,5)
+    asyncio.run(run())
+
+
+def test_language_messages_cannot_select_outside_files_or_symlinks(tmp_path):
+    root=tmp_path/'root';root.mkdir();outside=tmp_path/'private.txt';outside.write_text('Private')
+    (root/'outside.py').symlink_to(outside)
+    def raw(uri):return json.dumps({'jsonrpc':'2.0','method':'textDocument/hover','params':{'textDocument':{'uri':uri}}})
+    lsp._validate_client_message(raw((root/'new.py').as_uri()),str(root))
+    for uri in (outside.as_uri(),(root/'outside.py').as_uri(),'file://another-host/root/main.py'):
+        with pytest.raises((PermissionError,ValueError)):lsp._validate_client_message(raw(uri),str(root))
+    with pytest.raises(ValueError):lsp._validate_client_message(json.dumps({'method':'workspace/executeCommand','params':{'command':'arbitrary'}}),str(root))
+    with pytest.raises(PermissionError):lsp._validate_client_message(json.dumps({'method':'initialize','params':{'workspaceFolders':[{'uri':tmp_path.as_uri()}]}}),str(root))
+
+
+def test_live_language_authority_revocation_closes_existing_transport(tmp_path,monkeypatch):
+    import sys
+    monkeypatch.setattr(lsp,'_command',lambda language:(sys.executable,'-u','-c','import time; time.sleep(30)'))
+    async def run():
+        class CheckedSocket(Socket):
+            def __init__(self):super().__init__();self.closed=[]
+            async def close(self,**kwargs):self.closed.append(kwargs)
+        socket=CheckedSocket();calls=[];revoked=[False]
+        def authorize():
+            calls.append(True)
+            if revoked[0]:raise PermissionError('Project grant revoked')
+        worker=asyncio.create_task(lsp.serve(socket,str(tmp_path),'fixture',authorize=authorize))
+        await socket.notify('initialized',{})
+        for _ in range(100):
+            if len(calls)>=2:break
+            await asyncio.sleep(.01)
+        assert len(calls)>=2
+        revoked[0]=True
+        await socket.notify('textDocument/didOpen',{'textDocument':{'uri':(tmp_path/'main.py').as_uri(),'text':'Authorized draft'}})
+        await asyncio.wait_for(worker,5)
+        assert socket.closed[0]['code']==4403 and len(calls)>=3
     asyncio.run(run())

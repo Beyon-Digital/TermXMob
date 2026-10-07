@@ -118,6 +118,8 @@ class DebugSession:
     def __init__(self, project_id, root, language):
         self.id = uuid.uuid4().hex
         self.project_id, self.root, self.language = project_id, Path(root).resolve(), language
+        self.workspace_session = self.worktree_id = self.worktree_digest = None
+        self.attached = False
         self.events = deque(maxlen=2000)
         self.cursor = 0
         self.process = None
@@ -224,14 +226,34 @@ class DebugSession:
         if command == "setBreakpoints":
             args["source"] = {"path": self.scoped_path(args.get("source", {}).get("path", ""))}
         if command == "disconnect":
-            args["terminateDebuggee"] = True
+            args["terminateDebuggee"] = not self.attached
         return args
+
+    async def request(self, command, arguments):
+        if command == 'attach' and self.language == 'python':
+            # A debugpy --listen target already owns its DAP adapter. A second
+            # stdio adapter cannot attach to that client-facing listener.
+            port = arguments['connect']['port']
+            reader, writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', port), 5)
+            connection = DapConnection(self, reader, writer)
+            try:
+                await connection.request('initialize', self.initialize)
+            except BaseException:
+                await connection.close()
+                raise
+            self.connections.append(connection)
+            self.active = connection
+            self.attached = True
+            return await connection.request('attach', {'justMyCode': True})
+        if command == 'attach':
+            self.attached = True
+        return await self.active.request(command, arguments)
 
     async def close(self):
         for connection in self.connections:
             if not connection.task.done():
                 try:
-                    await asyncio.wait_for(connection.request('disconnect', {'terminateDebuggee': True}), 3)
+                    await asyncio.wait_for(connection.request('disconnect', {'terminateDebuggee': not self.attached}), 3)
                 except (Exception, asyncio.CancelledError):
                     pass
         for connection in self.connections:

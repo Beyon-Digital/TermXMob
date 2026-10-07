@@ -7,6 +7,11 @@ if __name__ == '__main__':
         import json
         from termx.desktop.runtime import probe
         print(json.dumps(probe()))
+    elif sys.argv[1:] == ['--runtime-smoke']:
+        import asyncio
+        import json
+        from termx.desktop.runtime_smoke import smoke
+        print(json.dumps(asyncio.run(smoke())))
     elif sys.argv[1:3] == ['--runtime-module', 'debugpy.adapter']:
         import runpy
         sys.argv = ['debugpy.adapter', *sys.argv[3:]]

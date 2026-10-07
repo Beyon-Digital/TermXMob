@@ -69,6 +69,7 @@ class ResponsesReviewer:
         if p.username or p.password:raise ValueError('credentials cannot be placed in provider URL')
         self.provider_id=provider_id;self.url=base_url.rstrip('/')+'/responses'
         self.model=model;self.api_key=api_key;self.version=version;self.client=client
+        self.usage={'requests':0,'input_tokens':0,'output_tokens':0,'missing_usage_requests':0}
     async def evaluate(self,action,context):
         from termx.agent.policy import redact
         # A closed allowlist is deliberately independent of caller-supplied evidence.
@@ -79,10 +80,17 @@ class ResponsesReviewer:
                  'text':{'format':{'type':'json_schema','name':'action_verdict','strict':True,'schema':{'type':'object','additionalProperties':False,'required':['decision','reason_code'],'properties':{'decision':{'type':'string','enum':sorted(DECISIONS)},'reason_code':{'type':'string','enum':['aligned','uncertain','misaligned']}}}}}}
         headers={'Authorization':f'Bearer {self.api_key}'} if self.api_key else {}
         async def request(client):
-            response=await client.post(self.url,json=payload,headers=headers,timeout=5)
-            response.raise_for_status()
-            if len(response.content)>65536:raise ValueError('oversized verdict')
-            body=response.json()
+            self.usage['requests']+=1;self.usage['missing_usage_requests']+=1
+            async with client.stream('POST',self.url,json=payload,headers=headers,timeout=5) as response:
+                response.raise_for_status()
+                content=bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(content)+len(chunk)>65536:raise ValueError('oversized verdict')
+                    content.extend(chunk)
+                body=json.loads(content)
+            usage=body.get('usage',{})
+            if all(isinstance(usage.get(key),int) and not isinstance(usage[key],bool) and usage[key]>=0 for key in ('input_tokens','output_tokens')):
+                self.usage['input_tokens']+=usage['input_tokens'];self.usage['output_tokens']+=usage['output_tokens'];self.usage['missing_usage_requests']-=1
             if any(x.get('type') not in {'message','reasoning'} for x in body.get('output',[])):raise ValueError('reviewer attempted a tool call')
             output=''.join(c.get('text','') for x in body.get('output',[]) for c in x.get('content',[]) if c.get('type')=='output_text')
             verdict=json.loads(output)

@@ -2,8 +2,8 @@ import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/reac
 import {afterEach,it,expect,vi} from 'vitest';
 import {EditorView} from '@codemirror/view';
 import Workbench from './Workbench';
-import {gql} from '../lib/api';
-vi.mock('../lib/api',()=>({gql:vi.fn()}));
+import {gql,request} from '../lib/api';
+vi.mock('../lib/api',()=>({gql:vi.fn(),request:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
 vi.mock('./TerminalPanel',()=>({default:()=>null}));
 vi.mock('./Debugger',()=>({default:()=>null}));
 vi.mock('./Delivery',()=>({default:()=>null}));
@@ -24,4 +24,21 @@ it('edits the same real buffer in two views without losing dirty content when th
  expect(container.querySelectorAll('.cm-editor')).toHaveLength(1);expect(container.querySelector('.cm-content')).toHaveTextContent('Unsent split edits');
  fireEvent.click(screen.getByRole('button',{name:'Save file'}));
  await waitFor(()=>expect(vi.mocked(gql).mock.calls.some(([,variables])=>(variables as any)?.input?.content==='Unsent split edits')).toBe(true));await waitFor(()=>expect(screen.getByRole('button',{name:'Save file'})).toBeDisabled());
+});
+
+it('edits an enrolled session checkout through the scoped API and preserves its dirty buffer after a target switch',async()=>{
+ const errors=vi.fn(),changed=vi.fn();
+ vi.mocked(request).mockImplementation(async(path:string,init?:RequestInit)=>{if(path.includes('/delivery'))return {worktrees:[{id:'tree',path:'/isolated',branch:'codex/isolated'}]} as any;if(init?.method==='PUT')return {revision:'v2'} as any;if(init?.method==='PATCH')return {} as any;if(path.includes('operation=tree'))return {entries:[{path:'main.txt',name:'main.txt'}]} as any;return {path:'main.txt',content:'Isolated original',revision:'v1',editable:true} as any});
+ const session={id:'chat',cwd:'/isolated',project_id:'project',worktree_id:'tree',title:'Chat',engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:0,scroll:0};
+ const project={id:'project',name:'Project',path:'/main'};
+ const {container,rerender}=render(<Workbench project={project} session={session} onTargetChange={changed} visible bottom={false} onError={errors}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'main.txt'}));await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('Isolated original'));
+ const editor=EditorView.findFromDOM(container.querySelector<HTMLElement>('.cm-editor')!)!;
+ act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Edited isolated content'}}));fireEvent.click(screen.getByRole('button',{name:'Save file'}));
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.some(([path,init])=>path==='/api/workspace/sessions/chat/files'&&JSON.parse(init!.body as string).worktree_id==='tree'&&JSON.parse(init!.body as string).content==='Edited isolated content')).toBe(true));
+ act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Unsaved retained edits'}}));
+ fireEvent.change(screen.getByLabelText('Session checkout'),{target:{value:''}});await waitFor(()=>expect(changed).toHaveBeenCalled());
+ rerender(<Workbench project={project} session={{...session,cwd:'/main',worktree_id:null}} onTargetChange={changed} visible bottom={false} onError={errors}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Save file'}));await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({message:expect.stringContaining('original conversation and checkout')})));
+ expect(container.querySelector('.cm-content')).toHaveTextContent('Unsaved retained edits');
 });

@@ -7,6 +7,8 @@ import secrets
 import shutil
 from pathlib import Path
 from time import time
+from time import monotonic
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from typing import Callable
 from termx.auto_review import ActionEnvelope,DecisionBroker,canonical_hash,ReviewRequired
@@ -26,6 +28,7 @@ class BrowserService:
         self.session_valid=session_valid or (lambda principal,session,policy_version:True)
         self.task_summary=lambda task_id:''
         self._playwright=None;self._contexts={};self._pages={};self._proxies={};self._locks={};self._diagnostics={};self._start_lock=asyncio.Lock();self._monitor=None
+        self._capture_cdp={};self._capture_jobs={};self._frame_cache={};self._control_waiters={}
         for tab in self.records.list('tab'):
             tab.update(state='closed',grant_id=None,lease_revision=tab['lease_revision']+1);self.records.put('tab',tab['id'],tab)
         for grant in self.records.list('grant'):
@@ -51,7 +54,7 @@ class BrowserService:
             proxy=EgressProxy(self.network);proxy_url=await proxy.start()
             options={'headless':True,'viewport':{'width':1440,'height':900},'accept_downloads':True,'service_workers':'block',
                      'proxy':{'server':proxy_url,'bypass':'<-loopback>'},
-                     'args':['--disable-quic','--force-webrtc-ip-handling-policy=disable_non_proxied_udp','--disable-features=WebRtcHideLocalIpsWithMdns','--disable-background-networking']}
+                     'args':['--disable-quic','--force-webrtc-ip-handling-policy=disable_non_proxied_udp','--disable-features=WebRtcHideLocalIpsWithMdns','--disable-background-networking','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows']}
             if self.executable_path:options['executable_path']=self.executable_path
             try:
                 context=await self._playwright.chromium.launch_persistent_context(str(self.records.root/'profiles'/id),**options)
@@ -118,6 +121,7 @@ class BrowserService:
         # Playwright route handlers intentionally omit. CDP remains private
         # to this worker; agents never receive a debugging endpoint.
         session=await page.context.new_cdp_session(page)
+        self._capture_cdp[id]=session
         async def navigation(event):
             request_id=event['requestId']
             try:
@@ -176,6 +180,7 @@ class BrowserService:
         if page and not page.is_closed():await page.close()
     def _revoke(self,tab,state):
         self._diagnostics.pop(tab['id'],None)
+        self._frame_cache.pop(tab['id'],None)
         if tab.get('grant_id'):
             grant=self.records.get('grant',tab['grant_id'])
             if grant:grant['revoked']=True;self.records.put('grant',grant['id'],grant)
@@ -234,10 +239,49 @@ class BrowserService:
         tab=self.get(id,principal);page=self._pages.get(id)
         if not page:raise ValueError('tab closed')
         if not human:self._agent(tab,grant_id,run_id,'capture')
-        masks=[] if human else [page.locator('input[type="password"], input[autocomplete*="password"], input[autocomplete="one-time-code"], input[name*="token" i], input[id*="token" i], input[name*="secret" i], input[id*="secret" i], input[name*="api_key" i], input[id*="api_key" i], [data-private]')]
-        frame=await page.screenshot(type='jpeg',quality=75,mask=masks,timeout=5000)
+        key=(id,human,tab['document_revision'],tab['lease_revision'])
+        cached=self._frame_cache.get(id) if human else None
+        if cached and cached['key']==key and monotonic()-cached['at']<.125:
+            return cached['frame']
+        async def capture():
+            # Only one human capture serves all viewers. Pending controls go
+            # first; repeated viewers cannot fill the renderer command queue.
+            while self._control_waiters.get(id,0):await asyncio.sleep(.005)
+            async with self._locks.setdefault(id,asyncio.Lock()):
+                current=self.get(id,principal)
+                if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Capture lease changed before rendering')
+                if human and id in self._capture_cdp:
+                    # UI frames need no Playwright animation/font/RAF barriers
+                    # or transient masking styles. CDP remains host-internal.
+                    result=await asyncio.wait_for(self._capture_cdp[id].send('Page.captureScreenshot',{'format':'jpeg','quality':65,'fromSurface':True,'captureBeyondViewport':False,'optimizeForSpeed':True}),5)
+                    data=base64.b64decode(result['data'])
+                else:
+                    masks=[] if human else [page.locator('input[type="password"], input[autocomplete*="password"], input[autocomplete="one-time-code"], input[name*="token" i], input[id*="token" i], input[name*="secret" i], input[id*="secret" i], input[name*="api_key" i], input[id*="api_key" i], [data-private]')]
+                    data=await page.screenshot(type='jpeg',quality=75,mask=masks,timeout=5000)
+                current=self.get(id,principal)
+                if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Capture lease changed while rendering')
+                if human:self._frame_cache[id]={'key':key,'frame':data,'at':monotonic()}
+                return data
+        job=self._capture_jobs.get(key)
+        if job is None:
+            job=asyncio.create_task(capture());self._capture_jobs[key]=job
+            def finished(task):
+                if self._capture_jobs.get(key) is task:self._capture_jobs.pop(key,None)
+                if not task.cancelled():task.exception() # retrieve disconnected-viewer errors
+            job.add_done_callback(finished)
+        frame=await asyncio.shield(job)
+        current=self.get(id,principal)
+        if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Capture lease changed before delivery')
         if not human:self._agent(self.get(id,principal),grant_id,run_id,'capture',tab['document_revision'],tab['lease_revision'])
         return frame
+    @asynccontextmanager
+    async def _control(self,id):
+        self._control_waiters[id]=self._control_waiters.get(id,0)+1
+        try:
+            async with self._locks.setdefault(id,asyncio.Lock()):yield
+        finally:
+            self._control_waiters[id]-=1
+            self._frame_cache.pop(id,None)
     async def _effect(self,page,action,args):
         if action in {'observe','capture','scroll','wait','navigate','find','zoom','history'}:return action,()
         if action in {'upload','download'}:return ('upload' if action=='upload' else 'export'),()
@@ -294,9 +338,7 @@ class BrowserService:
             return bool(current and self._grant_valid(current,active) and current['document_revision']==document_revision and current['lease_revision']==lease_revision and (authority is None or authority()))
         permit=await self.review.authorize(envelope,validate=validate,hard_deny='use private human login; credentials cannot enter agent tools' if effect=='credential' else None,context={'effect_summary':effect,'task_summary':getattr(self,'task_summary',lambda _:'')(run_id)})
         async def execute():
-            if await self._document_hash(page,action,args)!=document_hash:
-                raise ValueError('Browser document changed during approval; observe and propose a fresh action')
-            result=await self._perform(page,tab,action,args,human=False)
+            result=await self._perform(page,tab,action,args,human=False,expected_hash=document_hash)
             current=self.records.get('tab',id);active=self.records.get('grant',grant_id)
             if not current or not self._grant_valid(current,active) or current['lease_revision']!=lease_revision or (authority and not authority()):
                 raise PermissionError('Browser authority changed during execution; verify the outcome before proposing another action')
@@ -327,7 +369,16 @@ class BrowserService:
             safe = {'selector':args['selector'],'text':'${'+parameter+'}'}
         identifier = identifier or secrets.token_urlsafe(16)
         self.records.put('recording-step',identifier,{'id':identifier,'principal_id':tab['principal_id'],'tab_id':tab['id'],'profile_id':tab['profile_id'],'origin':origin(tab['url']) if tab['url'].startswith(('http://','https://')) else 'about:blank','action':action,'selector':args.get('selector'),'args':safe,'parameter':parameter,'created_at':time()})
-    async def _perform(self,page,tab,action,args,human):
+    async def _perform(self,page,tab,action,args,human,expected_hash=None):
+        if action=='capture':return await self._perform_unlocked(page,tab,action,args,human)
+        async with self._control(tab['id']):
+            current=self.get(tab['id'],tab['principal_id'])
+            if not human:
+                grant=self.records.get('grant',tab['grant_id'])
+                if not self._grant_valid(current,grant) or current['lease_revision']!=tab['lease_revision']:raise PermissionError('Control authority changed while queued')
+            if expected_hash is not None and await self._document_hash(page,action,args)!=expected_hash:raise ValueError('Browser document changed during approval; observe and propose a fresh action')
+            return await self._perform_unlocked(page,tab,action,args,human)
+    async def _perform_unlocked(self,page,tab,action,args,human):
         if action=='navigate':
             await self.network.validate(args['url']);await page.goto(args['url'],wait_until='domcontentloaded',timeout=30000)
             await self.network.validate(page.url)
@@ -457,6 +508,10 @@ class BrowserService:
             self._monitor.cancel();await asyncio.gather(self._monitor,return_exceptions=True);self._monitor=None
         for tab in self.records.list('tab'):
             if tab['state'] not in {'closed','crashed'}:self._revoke(tab,'closed')
+        captures=list(self._capture_jobs.values())
+        for capture in captures:capture.cancel()
+        await asyncio.gather(*captures,return_exceptions=True)
+        self._frame_cache.clear();self._capture_cdp.clear()
         await asyncio.gather(*(c.close() for c in self._contexts.values()),return_exceptions=True)
         await asyncio.gather(*(p.close() for p in self._proxies.values()),return_exceptions=True)
         self._contexts.clear();self._pages.clear();self._proxies.clear()

@@ -106,3 +106,34 @@ def test_frozen_adversarial_eval_detects_false_allows():
         async def evaluate(self,a,c):return ReviewVerdict('ALLOW','aligned','ok','unsafe',time()+15)
     report=asyncio.run(evaluate_reviewer(AlwaysAllow()))
     assert not report['qualified'];assert report['false_allow_count']==len(CASES)-2
+
+
+def test_oversized_reviewer_stream_closes_and_fails_closed(tmp_path):
+    class Oversized(httpx.AsyncByteStream):
+        closed=False
+        async def __aiter__(self):
+            yield b'x'*40000
+            yield b'y'*40000
+            raise AssertionError('Oversized reviewer must stop reading')
+        async def aclose(self):self.closed=True
+    stream=Oversized()
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _:httpx.Response(200,stream=stream))) as client:
+            reviewer=ResponsesReviewer(provider_id='fixture',base_url='https://provider.example',model='explicit',api_key='fixture',version='v1',client=client)
+            broker=DecisionBroker(Records(tmp_path),reviewer)
+            with pytest.raises(ReviewRequired) as outcome:await broker.authorize(envelope(intended_effect='edit'),validate=lambda:True)
+            assert outcome.value.record['reason']=='reviewer_unavailable' and stream.closed
+            assert reviewer.usage['missing_usage_requests']==1
+    asyncio.run(run())
+
+
+def test_qualification_reports_actual_response_token_usage():
+    async def run():
+        def handler(request):
+            return httpx.Response(200,json={'usage':{'input_tokens':11,'output_tokens':3},'output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"NEEDS_USER","reason_code":"uncertain"}'}]}]})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            reviewer=ResponsesReviewer(provider_id='fixture',base_url='https://provider.example',model='explicit',api_key='fixture',version='v1',client=client)
+            report=await evaluate_reviewer(reviewer)
+            assert report['usage']=={'requests':len(CASES),'input_tokens':11*len(CASES),'output_tokens':3*len(CASES),'missing_usage_requests':0}
+            assert not report['qualified'] and not report['cost']['reported']
+    asyncio.run(run())

@@ -16,6 +16,9 @@ def test_claude_browser_cli_availability_removes_builtins_settings_other_mcp(tmp
     options=engine._options(cfg,binding)
     assert options.tools==[] and options.setting_sources==[] and options.skills==[]
     assert options.strict_mcp_config and set(options.mcp_servers)=={'termx-browser'}
+    # This tests command assembly only. Pin a synthetic executable rather than
+    # relying on an installed CLI or transport.connect() to resolve its path.
+    options.cli_path='/fixture/claude'
     command=SubprocessCLITransport(prompt='No query is sent',options=options)._build_command()
     assert command[command.index('--tools')+1]==''
     assert '--strict-mcp-config' in command

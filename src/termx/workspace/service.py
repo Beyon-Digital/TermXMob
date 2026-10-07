@@ -53,8 +53,12 @@ class WorkspaceService:
                 if not project:
                     raise PermissionError('Authorized project is unavailable')
                 inside=Path(cwd).resolve().is_relative_to(Path(project['path']).resolve())
+                bound=self.store.get(resource_kind,resource_id) if resource_kind in {'conversation','task'} and resource_id else None
+                selected=self.worktree_target(project_id,bound.get('worktree_id')) if bound and bound.get('worktree_id') else None
+                if selected and bound.get('worktree_digest')!=selected['digest']:
+                    raise PermissionError('Enrolled worktree identity changed; renew the session target')
                 tracked=self.agents.task_worktree(resource_id) if resource_kind=='task' and resource_id else None
-                if not inside and not (tracked and tracked.get('status') in {'active','kept'} and Path(tracked['base_repo']).resolve()==Path(project['path']).resolve() and Path(tracked['worktree_path']).resolve()==Path(cwd).resolve()):
+                if not inside and not (selected and Path(cwd).resolve().is_relative_to(Path(selected['path']))) and not (tracked and tracked.get('status') in {'active','kept'} and Path(tracked['base_repo']).resolve()==Path(project['path']).resolve() and Path(tracked['worktree_path']).resolve()==Path(cwd).resolve()):
                     raise PermissionError('Folder is outside the authorized project or tracked task worktree')
             if authz:
                 return
@@ -78,7 +82,7 @@ class WorkspaceService:
         row = self.store.get(kind, identifier)
         if row is None or row['owner'] != principal.id:
             raise KeyError(identifier)
-        self.require(principal, scope, row.get('project_id'), row.get('cwd'),
+        self.require(principal, scope, row.get('project_id'), None if row.get('worktree_id') and scope in {'agent-view','agent-control'} else row.get('cwd'),
                      resource_kind=kind if kind in {'conversation','task'} else None,
                      resource_id=identifier if kind in {'conversation','task'} else None)
         return row
@@ -93,7 +97,50 @@ class WorkspaceService:
     @staticmethod
     def execution_target(row):
         """Delegations bind settings explicitly; later edits require fresh consent."""
-        return {key:row.get(key) for key in ('engine','provider_id','model','mode','workflow','extension_ids','runner_id','runner_credential_ref','project_id','cwd','run_limits')}
+        return {key:row.get(key) for key in ('engine','provider_id','model','mode','workflow','extension_ids','runner_id','runner_credential_ref','project_id','cwd','worktree_id','worktree_digest','worktree_branch','run_limits')}
+
+    def worktree_target(self,project_id,identifier):
+        """Resolve enrolled checkout IDs; caller paths never establish authority."""
+        if not isinstance(identifier,str) or not identifier or len(identifier)>200 or not project_id:
+            raise ValueError('Choose an enrolled worktree for this execution project')
+        projects=getattr(self.state,'projects',None);delivery=getattr(self.state,'delivery',None)
+        if not projects or not delivery:
+            raise ValueError('Git worktree service is unavailable')
+        project=projects.project(project_id)
+        root=Path(project['path']).resolve(strict=True)
+        row=next((item for item in delivery.worktrees(project_id) if item['id']==identifier),None)
+        if not row or Path(row['root']).resolve()!=root:
+            raise PermissionError('Worktree is not enrolled for this project')
+        target=Path(row['path']).resolve(strict=True)
+        from termx import git_ops
+        def common(folder):
+            value=git_ops._require_ok(git_ops._git(str(folder),'rev-parse','--git-common-dir')).strip()
+            return (folder/value).resolve(strict=True)
+        if not target.is_dir() or common(target)!=common(root):
+            raise PermissionError('Worktree no longer belongs to the enrolled repository')
+        listed=git_ops._require_ok(git_ops._git(str(root),'worktree','list','--porcelain'))
+        live={Path(line[9:]).resolve() for line in listed.splitlines() if line.startswith('worktree ')}
+        if target not in live:
+            raise PermissionError('Worktree was removed from the repository')
+        digest=hashlib.sha256(json.dumps({'id':identifier,'project':project_id,'root':str(root),'path':str(target),'common':str(common(root))},sort_keys=True).encode()).hexdigest()
+        branch=git_ops._require_ok(git_ops._git(str(target),'rev-parse','--abbrev-ref','HEAD')).strip()
+        return {**row,'path':str(target),'digest':digest,'branch':branch}
+
+    def session_files(self,principal,identifier,scope='files-read',expected_worktree=None):
+        row=self.record(principal,'conversation',identifier,scope=scope)
+        if row.get('runner_id'):
+            raise Conflict('Cloud files belong to the uploaded runner workspace; this editor targets local checkouts')
+        if expected_worktree!=row.get('worktree_id'):
+            raise Conflict('Execution checkout changed. Return to the original checkout before saving this buffer.')
+        from termx.project_files import ProjectFiles
+        root=row['cwd'];project=self.state.projects.project(row['project_id'])
+        class BoundFiles(ProjectFiles):
+            def project(self,project_id):
+                if project_id!=project['id']:
+                    raise PermissionError('Wrong execution project')
+                return {**project,'path':root}
+        files=object.__new__(BoundFiles);files.lock=self.state.projects.lock
+        return files,row['project_id']
 
     def validate_runner(self,principal,row):
         identifier=row.get('runner_id')
@@ -104,6 +151,8 @@ class WorkspaceService:
             if reference:
                 raise ValueError('A runner credential reference needs a selected runner')
             return
+        if row.get('worktree_id'):
+            raise ValueError('Choose the project checkout before cloud execution; a local worktree is not the uploaded runner snapshot')
         if row.get('engine')!='internal' or row.get('workflow'):
             raise ValueError('Dedicated cloud execution currently requires the TermX internal agent')
         if not reference or not row.get('provider_id') or not row.get('model'):
@@ -120,8 +169,13 @@ class WorkspaceService:
             raise PermissionError('Reviewed cloud agents require the isolated runner network policy')
 
     def create_session(self, principal, *, title='', project_id=None, cwd=None,
-                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None):
-        self.require(principal, 'agent-control', project_id, cwd)
+                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None):
+        self.require(principal, 'agent-control', project_id, None if worktree_id else cwd)
+        target=self.worktree_target(project_id,worktree_id) if worktree_id else None
+        if target:
+            if cwd and Path(cwd).resolve()!=Path(target['path']):
+                raise ValueError('Selected worktree supplies the execution folder')
+            cwd=target['path']
         run_limits=resolve_limits(run_limits)
         if engine != 'internal' and engine not in self.state.engines.engines():
             raise ValueError('Engine is not installed')
@@ -129,7 +183,7 @@ class WorkspaceService:
             raise ValueError('Unknown conversation mode')
         if workflow not in {None, 'browser'} or (workflow == 'browser' and engine != 'claude'):
             raise ValueError('Browser workflow requires a dedicated Claude conversation')
-        self.validate_runner(principal,{'engine':engine,'workflow':workflow,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'provider_id':provider_id,'model':model,'project_id':project_id})
+        self.validate_runner(principal,{'engine':engine,'workflow':workflow,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'provider_id':provider_id,'model':model,'project_id':project_id,'worktree_id':worktree_id})
         scratch=not project_id and not cwd
         if scratch:
             folder=self.scratch_root(principal.id)/uuid4().hex
@@ -142,7 +196,7 @@ class WorkspaceService:
                                                       cwd=cwd, provider_id=provider_id, model=model, mode=mode)
         row = self.store.create('conversation', principal.id,
                                {'engine': engine, 'cwd': cwd, 'draft_text': '', 'scroll': 0,
-                                'linked_from': None, 'transfer': None, 'extension_ids': [], 'workflow': workflow, 'group_id': project_id, 'scratch':scratch,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'run_limits':resolve_limits(run_limits)}, project_id, conversation['id'])
+                                'linked_from': None, 'transfer': None, 'extension_ids': [], 'workflow': workflow, 'group_id': project_id, 'scratch':scratch,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'worktree_id':worktree_id,'worktree_digest':target['digest'] if target else None,'run_limits':resolve_limits(run_limits)}, project_id, conversation['id'])
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'conversation', row['id'], project_id=project_id)
         self.store.log(principal.id, 'conversation', row['id'], 'created', {'engine': engine})
@@ -165,6 +219,13 @@ class WorkspaceService:
                         task['events'] = self.agents.events(task['id'],tail_limit=200)
                         task['approvals'] = self.agents.approvals(task['id'])
                 turn['task'] = task
+        if row.get('worktree_id'):
+            try:
+                row['worktree_branch']=self.worktree_target(row['project_id'],row['worktree_id'])['branch']
+                row['worktree_unavailable']=None
+            except (PermissionError,OSError,ValueError):
+                row['worktree_branch']=None
+                row['worktree_unavailable']='Selected worktree is unavailable; choose an enrolled checkout before running or editing'
         latest=self.agents.workspace_turns_page(identifier,descending=True,limit=1)
         last_task=self.agents.get_task(latest[0]['task_id']) if latest and latest[0].get('task_id') else None
         return {**row, **conversation, 'revision': row['revision'],'latest_status':(last_task or {}).get('status'),
@@ -189,9 +250,19 @@ class WorkspaceService:
 
     def update_session(self, principal, identifier, *, revision, changes):
         row = self.record(principal, 'conversation', identifier, scope='agent-control')
-        allowed = {'title','pinned','archived','draft_text','scroll','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits'}
+        allowed = {'title','pinned','archived','draft_text','scroll','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id'}
         if changes.keys() - allowed:
             raise ValueError('Unsupported session setting')
+        if 'worktree_id' in changes:
+            if row.get('runner_id'):
+                raise Conflict('Select local execution before choosing a host worktree')
+            if row['engine']!='internal' and self.agents.workspace_turns_page(identifier,limit=1):
+                raise Conflict('Native conversations keep their original checkout; create a new conversation for another worktree')
+            if not row.get('project_id'):
+                raise ValueError('Worktrees require an execution project')
+            target=self.worktree_target(row['project_id'],changes['worktree_id']) if changes['worktree_id'] else None
+            changes['cwd']=target['path'] if target else self.state.projects.project(row['project_id'])['path']
+            changes['worktree_digest']=target['digest'] if target else None
         if 'run_limits' in changes:
             changes['run_limits']=resolve_limits(changes['run_limits'])
         if 'group_id' in changes:
@@ -223,18 +294,18 @@ class WorkspaceService:
                 raise ValueError('Session setting exceeds its size limit')
         if changes.get('engine', row['engine']) != row['engine']:
             raise Conflict('Change engines using a reviewed linked fork')
-        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
+        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
             raise Conflict('Wait for the active turn before changing session settings')
         if 'mode' in changes and changes['mode'] not in {'ask','agent'}:
             raise ValueError('Unknown mode')
         with self.store.lock:
             if row['revision'] != revision:
                 raise Conflict('Session changed; reload before saving')
-            for key in ('draft_text','scroll','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits'):
+            for key in ('draft_text','scroll','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd'):
                 if key in changes:
                     row[key] = changes[key]
             meta = self.store.update('conversation', identifier, row, revision)
-            self.agents.update_conversation(identifier, **{k:v for k,v in changes.items() if k not in {'draft_text','scroll','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits'}})
+            self.agents.update_conversation(identifier, **{k:v for k,v in changes.items() if k not in {'draft_text','scroll','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest'}})
         self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':sorted(changes)})
         return self.session(principal, meta['id'])
 
@@ -300,7 +371,7 @@ class WorkspaceService:
             if source['revision'] != transfer['source_revision'] or source['updated_at'] != transfer['source_updated_at']:
                 raise Conflict('Source changed; review a fresh transfer')
             child = self.create_session(principal, title=source['title'], project_id=source.get('project_id'),
-                                        cwd=None if source.get('scratch') else source.get('cwd'), engine=transfer['engine'], model=model,
+                                        cwd=None if source.get('scratch') else source.get('cwd'),worktree_id=source.get('worktree_id'), engine=transfer['engine'], model=model,
                                         provider_id=provider_id, mode=source['mode'])
             self.store.update('conversation', child['id'], {**child,'linked_from':source['id'],'transfer':transfer})
             self.store.update('fork_preview', preview_id, {**preview,'consumed':True})
@@ -347,7 +418,7 @@ class WorkspaceService:
             try:
                 if row.get('runner_id') and any(hook.get('enabled') and hook.get('project_id') in {None,row.get('project_id')} for hook in self.store.list('hook',principal.id)):
                     raise ValueError('Cloud sessions cannot run host hooks; disable scoped hooks or select local execution')
-                await self.run_hooks(principal, row.get('project_id'), 'before_turn', row['cwd'])
+                await self.run_hooks(principal, row.get('project_id'), 'before_turn', row['cwd'],resource_id=identifier)
                 selected_extensions = row.get('extension_ids',[])
                 extension_context = self.state.extensions.execution_context(principal,selected_extensions,row.get('project_id'),row['cwd'],resource_id=identifier) if selected_extensions else []
                 if extension_context:
@@ -405,7 +476,7 @@ class WorkspaceService:
     def _dispatch_created(self,principal,row,key,tid,managed_session_id=None,delegation_id=None):
         if delegation_id:
             self.validate_delegation(principal,row,delegation_id)
-        self.store.create('task',principal.id,{'conversation_id':row['id'],'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'execution_location':'runner:'+row['runner_id']+'/workspace' if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
+        self.store.create('task',principal.id,{'conversation_id':row['id'],'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+'/workspace' if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'task', tid, project_id=row.get('project_id'))
         with self.store.lock:
@@ -434,8 +505,15 @@ class WorkspaceService:
             if artifact['kind']=='upload' and artifact['mime'].startswith('image/'):
                 if artifact['size']>2_000_000 or len(attachments)>=4:
                     raise ValueError('Original attachments exceed the current retry budget')
+                private=self.agents.get_artifact(task_id,artifact['id'])
+                if not private or not Path(private['path']).is_file():
+                    raise ValueError('Original image is unavailable; attach it again before retrying')
+                with Path(private['path']).open('rb') as image:
+                    data=image.read(2_000_001)
+                if len(data)!=artifact['size'] or hashlib.sha256(data).hexdigest()!=artifact['digest']:
+                    raise Conflict('Original image changed; attach a fresh image before retrying')
                 attachments.append({'name':'Original image '+str(len(attachments)+1),'mime':artifact['mime'],
-                    'data':base64.b64encode(Path(artifact['path']).read_bytes()).decode()})
+                    'data':base64.b64encode(data).decode()})
         return await self.send(principal,meta['conversation_id'],prompt=turn['prompt'],request_id=request_id,
             limits=task['limits'],attachments=attachments,managed_session_id=managed_session_id)
 
@@ -498,13 +576,13 @@ class WorkspaceService:
             'timeout_s':timeout_s,'capabilities':caps,'enabled':bool(enabled),
             'semantics':'sandboxed_host_lifecycle'},project_id)
 
-    async def run_hooks(self,principal,project_id,event,cwd):
+    async def run_hooks(self,principal,project_id,event,cwd,resource_id=None):
         for hook in self.store.list('hook',principal.id,project_id):
             if hook.get('project_id') != project_id or not hook['enabled'] or hook['event']!=event:
                 continue
-            self.require(principal,'agent-control',project_id,cwd)
+            self.require(principal,'agent-control',project_id,cwd,resource_kind='conversation' if resource_id else None,resource_id=resource_id)
             for scope in hook['capabilities']:
-                self.require(principal,scope,project_id,cwd)
+                self.require(principal,scope,project_id,cwd,resource_kind='conversation' if resource_id else None,resource_id=resource_id)
             if Path(hook['cwd']).resolve() != Path(cwd).resolve():
                 raise PermissionError('Hook cannot cross its project folder')
             started = time()
@@ -555,7 +633,7 @@ class WorkspaceService:
             principal = callback(row['owner']) if callback else None
             if principal:
                 worker = asyncio.create_task(self.run_hooks(principal,row.get('project_id'),
-                    'after_turn' if event['type']=='task.completed' else 'task_failed',row['cwd']))
+                    'after_turn' if event['type']=='task.completed' else 'task_failed',row['cwd'],resource_id=row.get('conversation_id')))
                 self._workers.add(worker)
                 worker.add_done_callback(self._hook_done)
 

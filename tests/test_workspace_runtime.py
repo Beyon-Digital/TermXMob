@@ -23,6 +23,9 @@ def test_frozen_runtime_resolves_bundled_node_language_and_browser(tmp_path, mon
     runtime.configure_bundle()
     assert runtime.os.environ['PLAYWRIGHT_BROWSERS_PATH']==str(tmp_path/'runtime/browsers')
     monkeypatch.delenv('PLAYWRIGHT_BROWSERS_PATH')
+    node.unlink()
+    monkeypatch.setattr(runtime.shutil, 'which', lambda _: '/unqualified/host/node')
+    assert runtime.node_binary() is None
 
 
 def test_frozen_debug_adapter_never_uses_sidecar_as_target_interpreter(monkeypatch):

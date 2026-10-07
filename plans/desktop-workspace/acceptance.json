@@ -13,7 +13,7 @@
       "id": "UX-02",
       "requirement": "Chat/Workbench/Browser layout moves preserve conversation/native IDs, active runs, drafts, scroll, dirty buffers and PTYs.",
       "status": "partial",
-      "evidence": "Docked views remain mounted; real CodeMirror split edits synchronize shared dirty buffer and save after split closes. Draft flush/unmount and stale metadata revision regressions pass; slow rendered switch at 200% is being retested. Native active-run/multiwindow/PTy retention proof remains open."
+      "evidence": "Mounted docked views, synchronized dirty split buffers, draft flush/unmount and stale metadata revisions pass. Conversation checkout controls now bind editor/save/search, PTY and language/debug targets; switching preserves dirty original-checkout buffers. Updated useful editor geometry at200% and installed native active-run/monitor proof remain open."
     },
     {
       "id": "CHAT-01",
@@ -24,8 +24,8 @@
     {
       "id": "CHAT-02",
       "requirement": "A cross-engine fork retains the original, previews transferred context, records linkage and never claims a native resume.",
-      "status": "partial",
-      "evidence": "Previewed digest-bound cross-engine fork creates linked canonical conversation and preserves source. Native adapters receive explicit attachment conversion, never claim cross-engine native resume. Durable/native attachment tests pass."
+      "status": "verified",
+      "evidence": "Digest-bound context preview creates a linked canonical conversation and preserves the original. Durable fork tests reject foreign turns, secrets, changed previews and duplicate commit; native attachment conversion passes without claiming cross-engine native resume."
     },
     {
       "id": "DATA-01",
@@ -48,14 +48,14 @@
     {
       "id": "AUTH-03",
       "requirement": "Local-password, real OIDC test provider and custom reference adapter all reach the same principal/session/authorization contract without route rewrites.",
-      "status": "partial",
-      "evidence": "Local password, generic OIDC and signed custom reference adapter share canonical managed sessions. tests/test_oidc_tls_interoperability.py uses real localhost TLS IdP HTTP discovery/authorization/token/JWKS with PKCE, nonce and exact HTTPS/native redirects; no MockTransport. Enterprise deployment validation remains pending."
+      "status": "verified",
+      "evidence": "Local-password, generic OIDC and signed custom reference adapter reach the same managed principal/session/authorization layer. Three actual localhost TLS IdP cases pass under the CI pytest entrypoint: discovery, authorization, PKCE/nonce, token/JWKS, exact HTTPS/native callback and replay rejection; no mock transport."
     },
     {
       "id": "AUTH-04",
       "requirement": "Reject wrong issuer/audience/algorithm, ID-token misuse, revoked sessions, stale groups and cross-host/project grants. Enforce shared-host isolation claims.",
-      "status": "partial",
-      "evidence": "Canonical identities and live project/resource grants reject stale/wrong host/token/session/groups; two-user isolation and viewer desktop control denial tested. Shared unrestricted OS user is explicitly a trusted-machine boundary; restricted execution needs isolated containers/VMs."
+      "status": "verified",
+      "evidence": "Current two-user project/resource and trusted shared-machine boundary tests reject wrong issuer/audience/algorithm/token type, revoked sessions, stale groups and cross-host grants. Restricted cloud execution uses a real nonroot network-none read-only container; shared unrestricted OS execution is explicitly a trusted-machine boundary."
     },
     {
       "id": "BROW-01",
@@ -96,8 +96,8 @@
     {
       "id": "MEM-01",
       "requirement": "Memory reads/writes/deletes/export obey provenance and project/user scopes; retention and hooks cannot leak cross-project context.",
-      "status": "partial",
-      "evidence": "Inspectable scoped memory has provenance, exclusions, revisions, retention and export. Hooks have project permission checks and bounded execution/audit. Durable and Manager behavior tests pass."
+      "status": "verified",
+      "evidence": "Durable memory tests cover provenance, project/user scopes, review/edit/delete/export, retention, exclusions and actual bounded hook execution. Revoked scopes and cross-project hooks cannot access excluded context."
     },
     {
       "id": "AUTO-01",
@@ -121,19 +121,19 @@
       "id": "GIT-01",
       "requirement": "Two parallel worktrees \u2192 edits/tests \u2192 stage/commit/push \u2192 PR/checks; conflicts, failed checks and cleanup are handled without discarding dirty user files.",
       "status": "partial",
-      "evidence": "Real two-worktree edits/commits, hunk roundtrip, local remote push, divergent FF-only pull and dirty cleanup refusal pass. Exact review binds index/content/branch/remote configuration; lost publication stays unknown and cannot replay. Workbench delivery surface implemented; live GitHub PR/checks still pending."
+      "evidence": "Two actual isolated worktrees, scoped edits/commits, hunk roundtrip, divergent fast-forward pull and dirty cleanup refusal pass. Reviewed production-port push and draft PR #28 creation completed, with actual failed backend and passing frontend checks visible. Session-selected worktree now governs files, execution, PTY, language tools and debugging; latest platform CI and rendered Git journey remain open."
     },
     {
       "id": "EXT-01",
       "requirement": "Registry install/update/rollback and permission diff work; unsupported format is honest; in-use removal is safe; no secrets in exported skill/plugin files.",
-      "status": "partial",
-      "evidence": "Versioned public/private registry, immutable install/update/rollback, provenance/permission diffs, active-use leases and explicit compatibility adapters implemented; durable tests pass. Actual source formats documented rather than universal marketplace claim."
+      "status": "verified",
+      "evidence": "Documented manifest adapters pass real fixture install/update/rollback, private registry, permission diff, immutable version lease and in-use removal tests; unsafe bundles and exported secrets are rejected. Universal proprietary marketplace compatibility is not claimed."
     },
     {
       "id": "EXT-02",
       "requirement": "Private registry and custom compatibility adapter are tested; hooks have correct scope, timeout, failure and audit behavior.",
-      "status": "partial",
-      "evidence": "Private registry/custom adapter fixtures and scoped bounded/audited hooks pass. Browser/window recording drafts use digest-bound separate tests before explicit immutable extension activation; real browser replay tested. Combined packaged activation flow remains a gate."
+      "status": "verified",
+      "evidence": "Private registry and custom compatibility adapter fixtures pass; actual hooks enforce project permissions, bounded execution, failure handling and audit. Browser recording drafts require digest-bound separate replay before extension activation."
     },
     {
       "id": "DOCK-01",
@@ -169,13 +169,13 @@
       "id": "PERF-01",
       "requirement": "Measure load, interaction, stream and memory budgets; test 10,000 messages, 500 sessions, multiple windows, noisy PTY logs and active browser control. These are test fixtures, not measured results.",
       "status": "partial",
-      "evidence": "Content-ready actual 500-session/10000-turn fixture measured 4413ms load, 277ms layout move, 12.7MiB JS heap, 643 DOM nodes and no duplicate run from second window. Frontend bounded-message test passes. Combined noisy PTY/active-browser proof now being added."
+      "evidence": "Actual500-session/10000-turn,two-window noisyPTY/livebrowser activity runs produce frame/control/heap/filter metrics with no errors or duplicate turn. Stack sampling exposed synchronous session projection and per-frame authority checks blocking the host loop; these are offloaded with live policy revalidation and the combined proof is rerunning."
     },
     {
       "id": "A11Y-01",
       "requirement": "Keyboard-only browsing/workspace flows, screen-reader labels and meaningful content, contrast, 200% zoom and reduced motion work in both themes.",
       "status": "partial",
-      "evidence": "Pinned axe4.10.3 actual host checks in dark/light at 100%/200%, reduced motion, zero initial violations/overflow and visible 2px focus. Extended real Workbench/editor check exposed slow-switch draft race, now fixed and rerunning. Broad browser/manager keyboard journey still open."
+      "evidence": "Eight actual loaded Chat/Workbench states in both themes at100%/200% passed axe, focus and overflow checks. Visual review found too little editor height at200%, fixed with adaptive bottom-panel bounds; useful editor dimensions are now required in the rerun. Broader browser/manager keyboard journey remains open."
     },
     {
       "id": "VIEW-01",
@@ -205,7 +205,7 @@
       "id": "REVIEW-04",
       "requirement": "Reviewer timeout, invalid JSON, unavailable account or stale decision never allow an unknown action. Report review error and preserve resumable state.",
       "status": "partial",
-      "evidence": "Invalid JSON, timeout/unavailable reviewer and stale result fail closed and preserve review error. Frozen adversarial fixtures and browser tests pass; live configured model qualification pending."
+      "evidence": "Malformed JSON, timeout/unavailable reviewer, stale decisions and oversized streamed reviewer responses fail closed. Oversized output stops reading at the bound and closes the response; resumable review error is retained. Live configured model qualification remains open."
     },
     {
       "id": "REVIEW-05",
@@ -223,7 +223,7 @@
       "id": "REVIEW-07",
       "requirement": "Evaluate and pin the smaller reviewer against a frozen representative/adversarial suite. Report false-allow cases, escalation rate, latency and cost. Zero escapes in release-blocking fixtures is necessary but not proof of general safety.",
       "status": "partial",
-      "evidence": "Frozen21-case qualification harness and model/account version pins implemented. No specific smaller reviewer is qualified yet; account unavailable and live latency/cost/false-allow report pending."
+      "evidence": "Frozen21-case model qualification and version pins exist; actual response token usage, latency and escalation are reported without invented cost. No smaller reviewer is qualified yet: real approved account/model and monetary-cost evaluation remain required."
     },
     {
       "id": "REVIEW-08",

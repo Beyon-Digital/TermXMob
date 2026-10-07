@@ -24,7 +24,7 @@ from termx.runners.worker import PROTOCOL, MAX_FRAME, TOOLS, frame
 class RunnerAgentService:
     def __init__(self,state):
         self.state=state;self.runners=state.runners;self.store=state.agent.store
-        self.qualified={};self.workers={};self.channels={};self.approvals={};self.rpc_tasks=set();self.control_tasks=set();self.review_waiters={}
+        self.qualified={};self.workers={};self.channels={};self.approvals={};self.rpc_tasks=set();self.rpc_owners={};self.control_tasks=set();self.review_waiters={}
         with self.runners.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS agent_jobs (task TEXT PRIMARY KEY,runner TEXT,owner TEXT,request_id TEXT,digest TEXT,provider TEXT,credential_ref TEXT,policy_version INTEGER,provider_fingerprint TEXT,status TEXT,UNIQUE(runner,request_id))')
     def owns(self,task):
@@ -143,7 +143,9 @@ class RunnerAgentService:
                 if len(raw)>MAX_FRAME+1 or not raw.endswith(b'\n') or total>64*1024*1024:raise ValueError('Runner output exceeds protocol budget')
                 value=json.loads(raw)
                 if value.get('type')=='rpc':
-                    work=asyncio.create_task(self._rpc(job,value));self.rpc_tasks.add(work);work.add_done_callback(self.rpc_tasks.discard)
+                    work=asyncio.create_task(self._rpc(job,value));self.rpc_tasks.add(work);self.rpc_owners[work]=task_id
+                    def rpc_done(done):self.rpc_tasks.discard(done);self.rpc_owners.pop(done,None)
+                    work.add_done_callback(rpc_done)
                 elif value.get('type')=='event':self._event(task_id,value)
                 elif value.get('type')=='ready':
                     task=self.store.get_task(task_id);self.store.update_task(task_id,runtime={**task['runtime'],'remote_task_id':value['remote_task_id']})
@@ -171,6 +173,9 @@ class RunnerAgentService:
             try:await self.runners.stop(job['owner'],job['runner'])
             except Exception:pass
         finally:
+            pending=[rpc for rpc in self.rpc_tasks if self.rpc_owners.get(rpc)==task_id]
+            for rpc in pending:rpc.cancel()
+            await asyncio.gather(*pending,return_exceptions=True)
             if process and process.returncode is None:process.kill();await process.wait()
             self.channels.pop(task_id,None);self.workers.pop(task_id,None)
             self.state.browser.review.invalidate(grant_id='runner-task:'+task_id)
@@ -198,12 +203,14 @@ class RunnerAgentService:
             payload={'approval':local}
         if kind=='approval.resolved':return # local control persists canonical approval
         self._emit(task_id,kind,payload)
-    def _adapter(self,provider):
+    def _adapter(self,provider,qualified_tools=None):
         adapter=self.state.agent._adapter(provider)
         from termx.agent.providers import OpenAIResponsesAdapter
         if isinstance(adapter,OpenAIResponsesAdapter):
             from termx.agent.tools import default_registry
-            tools=TOOLS
+            tools=set(qualified_tools or TOOLS)
+            from copy import copy
+            adapter=copy(adapter)
             # This adapter is a fresh task-local instance, so filtering cannot
             # alter another conversation's native/local registry.
             adapter._function_tools=lambda read_only,allow_subagents=False:[schema for schema in default_registry().provider_tools(read_only=read_only,allow_subagents=False) if schema['name'] in tools]
@@ -215,7 +222,8 @@ class RunnerAgentService:
             if method in {'plan','turn'}:
                 if args.get('cwd')!='/workspace':raise ValueError('Provider context must be the admitted remote workspace')
                 provider=self._account(job['provider'],job['credential_ref'],self.store.get_task(task_id)['model'])
-                adapter=self._adapter(provider)
+                runner=self.runners.row(job['owner'],job['runner'])
+                adapter=self._adapter(provider,self.qualified.get(runner['configuration']['image_id'],{}).get('tools'))
                 if method=='plan':result=await adapter.plan(str(args.get('prompt','')), '/workspace', args.get('manifest') or {})
                 else:
                     result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd='/workspace',manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),allow_computer=False,read_only=self.store.get_task(task_id)['mode']=='ask'))

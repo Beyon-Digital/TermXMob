@@ -28,11 +28,19 @@ class SessionInput(Input):
     runner_id: str | None=None
     runner_credential_ref: str | None=None
     run_limits: dict | None=None
+    worktree_id: str | None=None
 
 
 class SessionUpdate(Input):
     revision: int
     changes: dict
+
+
+class FileInput(Input):
+    path:str
+    content:str=Field(max_length=2*1024*1024)
+    revision:str
+    worktree_id:str|None=None
 
 
 class TurnInput(Input):
@@ -191,6 +199,30 @@ def mount_workspace(app,state):
     def update(request:Request,identifier:str,body:SessionUpdate):
         return call(workspace.update_session,principal(request),identifier,**body.model_dump())
 
+    @router.get('/sessions/{identifier}/files')
+    def files(request:Request,identifier:str,path:str='',operation:str='tree',query:str='',worktree_id:str|None=None):
+        bound,pid=call(workspace.session_files,principal(request),identifier,expected_worktree=worktree_id)
+        if operation=='tree':return call(bound.listing,pid,path)
+        if operation=='read':return call(bound.read,pid,path)
+        if operation=='search':return call(bound.search,pid,query)
+        raise HTTPException(400,'Unknown file operation')
+
+    @router.put('/sessions/{identifier}/files')
+    def save_file(request:Request,identifier:str,body:FileInput):
+        bound,pid=call(workspace.session_files,principal(request),identifier,'files-write',expected_worktree=body.worktree_id)
+        return call(bound.save,pid,body.path,body.content,body.revision)
+
+    @router.post('/sessions/{identifier}/terminal')
+    def create_terminal(request:Request,identifier:str):
+        actor=principal(request);row=call(workspace.record,actor,'conversation',identifier,scope='terminal-control')
+        if row.get('runner_id'):raise HTTPException(409,'The selected runner uses its own bounded execution port')
+        from termx.sessions import default_argv
+        from termx.config import validate_shell
+        shell=validate_shell(state.store.get().terminal.shell)
+        item=state.sessions.create(cwd=row['cwd'],shell=shell,argv=default_argv(shell),title='Workspace checkout',sandbox_profile='workspace')
+        state.authorization.claim_principal(actor,'terminal',item.id,project_id=row.get('project_id'))
+        return item.snapshot()
+
     @router.post('/sessions/{identifier}/turns')
     async def send(request:Request,identifier:str,body:TurnInput):
         raw=extract_passcode(authorization=request.headers.get('authorization')) or request.cookies.get(ACCESS_COOKIE)
@@ -303,7 +335,7 @@ def mount_workspace(app,state):
             metadata=workspace.store.get('task',tid) or {}
             result['execution_location']=metadata.get('execution_location') or value.get('cwd')
             result['runner_id']=metadata.get('runner_id')
-            result['worktree']=state.agent_store.task_worktree(tid)
+            result['worktree']=state.agent_store.task_worktree(tid) or ({'worktree_id':metadata['worktree_id'],'worktree_path':metadata.get('cwd'),'branch':metadata.get('worktree_branch'),'source':'session'} if metadata.get('worktree_id') else None)
             result['children']=[]
             if depth<8:
                 for child in state.agent_store.children(tid):

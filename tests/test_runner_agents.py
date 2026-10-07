@@ -256,3 +256,12 @@ def test_canonical_runner_uploads_and_events_never_adopt_remote_ids(tmp_path):
         assert events[-1]['payload']['artifacts'][0]['id']==artifacts[0]['id']
         await service.close();await state.agent.close();state.agent.store.close()
     asyncio.run(run())
+
+def test_remote_provider_advertises_only_qualified_coding_tools(tmp_path):
+    service,state,principal,_=fixture_state(tmp_path)
+    adapter=service._adapter(service._account('api','api'),['read_file','write_file'])
+    names={schema['name'] for schema in adapter._function_tools(False,allow_subagents=True)}
+    assert names=={'read_file','write_file'}
+    local=state.agent._adapter(service._account('api','api'))
+    assert 'browser_action' in {schema['name'] for schema in local._function_tools(False)}
+    asyncio.run(state.agent.close());state.agent.store.close()

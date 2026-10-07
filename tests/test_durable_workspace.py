@@ -553,3 +553,76 @@ async def test_saved_session_budgets_apply_to_dispatch_and_invalid_limits_do_not
     task=await service.send(owner,row['id'],prompt='Bounded run',request_id='session-saved-budget')
     assert task['limits']['max_steps']==3 and task['limits']['max_parallel_subagents']==1
     with pytest.raises(Conflict):service.update_session(owner,row['id'],revision=3,changes={'run_limits':{'max_steps':4}})
+
+@pytest.mark.anyio
+async def test_retry_reloads_private_image_artifact_without_exposing_path_and_verifies_integrity(workspace):
+    import base64
+    service,owner,path=workspace;row=session(workspace)
+    first=await service.send(owner,row['id'],prompt='Original image instruction',request_id='first-image-task')
+    image=b'fixture normalized image bytes';artifact=service.agents.save_artifact(first['id'],'upload','image/png',image)
+    assert 'path' not in service.agents.artifacts(first['id'])[0]
+    service.agents.update_task(first['id'],status='failed')
+    captured={};create=service.state.agent.create_task
+    async def dispatch(**kwargs):captured.update(kwargs);return await create(**kwargs)
+    service.state.agent.create_task=dispatch
+    retried=await service.retry(owner,first['id'],request_id='retry-image-new-task')
+    assert captured['attachments'][0]['data']==base64.b64encode(image).decode()
+    service.agents.update_task(retried['id'],status='completed')
+    private=service.agents.get_artifact(first['id'],artifact['id']);Path(private['path']).write_bytes(b'changed artifact')
+    with pytest.raises(Conflict):await service.retry(owner,first['id'],request_id='retry-image-tampered')
+
+@pytest.mark.anyio
+async def test_enrolled_worktree_owns_session_files_dispatch_and_schedule_target(workspace):
+    import subprocess,threading
+    from termx.development.delivery import DeliveryService
+    service,owner,path=workspace
+    root=path/'project';root.mkdir()
+    def git(*args):return subprocess.run(['git','-C',str(root),*args],check=True,capture_output=True,text=True).stdout
+    git('init','-b','main');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
+    (root/'main.txt').write_text('Main checkout\n');git('add','.');git('commit','-m','Fixture')
+    project={'id':'project-a','name':'Fixture','path':str(root)}
+    service.state.projects=SimpleNamespace(project=lambda identifier:project if identifier=='project-a' else (_ for _ in ()).throw(KeyError(identifier)),projects=lambda:[project],lock=threading.RLock())
+    from termx.authorization import AuthorizationService
+    service.state.authorization=AuthorizationService(service.state.identity)
+    owner=service.state.identity.create_principal('Trusted operator',list(owner.scopes))
+    service.state.authorization.set_role(owner.id,'operator',trusted_execution=True)
+    grant_scopes=['agent-view','agent-control','agent-run','files-read','files-write','terminal-control']
+    service.state.authorization.grant_project(owner.id,'project-a',grant_scopes)
+    delivery=DeliveryService(path/'delivery');service.state.delivery=delivery
+    result=delivery.effect('project-a',str(root),'worktree-create',{'branch':'codex/isolated','base':'main'})
+    row=service.create_session(owner,project_id='project-a',worktree_id=result['id'],provider_id='fixture',model='fixture')
+    assert row['cwd']==str(Path(result['path']).resolve()) and row['worktree_digest']
+    with pytest.raises(ValueError,match='local worktree'):service.update_session(owner,row['id'],revision=1,changes={'runner_id':'remote','runner_credential_ref':'fixture'})
+    files,pid=service.session_files(owner,row['id'],expected_worktree=result['id'])
+    current=files.read(pid,'main.txt');files.save(pid,'main.txt','Isolated edits\n',current['revision'])
+    service.state.authorization.grant_project(owner.id,'project-a',[scope for scope in grant_scopes if scope!='files-write'])
+    with pytest.raises(__import__('fastapi').HTTPException):service.session_files(owner,row['id'],'files-write',expected_worktree=result['id'])
+    service.state.authorization.grant_project(owner.id,'project-a',grant_scopes)
+    assert (root/'main.txt').read_text()=='Main checkout\n'
+    assert (Path(result['path'])/'main.txt').read_text()=='Isolated edits\n'
+    (Path(result['path'])/'outside').symlink_to(root/'main.txt')
+    with pytest.raises(__import__('fastapi').HTTPException):files.read(pid,'outside')
+    with pytest.raises(Conflict):service.session_files(owner,row['id'],expected_worktree=None)
+    with pytest.raises((PermissionError,KeyError,__import__('fastapi').HTTPException)):service.create_session(owner,project_id='other-project',worktree_id=result['id'])
+    with pytest.raises(ValueError):service.create_session(owner,project_id='project-a',worktree_id=result['id'],cwd=str(root))
+    automation=AutomationService(service,principal_lookup=service.principal_lookup)
+    goal=automation.goal(owner,conversation_id=row['id'],success_criteria='Isolated result',max_runs=2,limits=None)
+    grant=automation.grant(owner,goal_id=goal['id'],expires_at=time()+600,max_runs=2,limits=None)
+    assert grant['execution_target']['worktree_id']==result['id'] and grant['execution_target']['worktree_digest']==row['worktree_digest']
+    task=await service.send(owner,row['id'],prompt='Work in the isolated branch',request_id='isolated-worktree-run')
+    assert task['cwd']==row['cwd'] and service.store.get('task',task['id'])['worktree_id']==result['id']
+    with pytest.raises(Conflict):service.update_session(owner,row['id'],revision=service.store.get('conversation',row['id'])['revision'],changes={'worktree_id':None})
+    service.agents.update_task(task['id'],status='completed')
+    updated=service.update_session(owner,row['id'],revision=service.store.get('conversation',row['id'])['revision'],changes={'worktree_id':None})
+    assert updated['cwd']==str(root) and not updated['worktree_id']
+    with pytest.raises(PermissionError):service.validate_delegation(owner,updated,grant['id'])
+    selected=service.update_session(owner,row['id'],revision=updated['revision'],changes={'worktree_id':result['id']})
+    # A removed checkout cannot remain an execution target through stale enrollment.
+    import shutil
+    shutil.rmtree(result['path']);git('worktree','prune')
+    with pytest.raises(OSError):service.worktree_target('project-a',result['id'])
+    unavailable=service.session(owner,row['id'],turns=False)
+    assert unavailable['worktree_unavailable']
+    with pytest.raises(OSError):await service.send(owner,row['id'],prompt='Removed checkout must refuse',request_id='removed-worktree-run')
+    recovered=service.update_session(owner,row['id'],revision=selected['revision'],changes={'worktree_id':None})
+    assert recovered['cwd']==str(root)

@@ -194,6 +194,7 @@ class DesktopManager:
         token = object()
         self._stops.add(stop)
         self._active.add(token)
+        applied_input = False
 
         async def frames() -> None:
             last = time.monotonic()
@@ -369,6 +370,8 @@ class DesktopManager:
                     try:
                         target = pointer_target(self.display_id) if kind == "pointer" else None
                         await asyncio.to_thread(apply_event, payload, target)
+                        if kind != "release_all":
+                            applied_input = True
                     except InputError as exc:
                         await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         except WebSocketDisconnect:
@@ -381,10 +384,11 @@ class DesktopManager:
             pump.cancel()
             await asyncio.gather(pump, return_exceptions=True)
             self._pumps.discard(pump)
-            try:
-                await asyncio.to_thread(apply_event, {"type": "release_all"})
-            except Exception:
-                pass
+            if applied_input:
+                try:
+                    await asyncio.to_thread(apply_event, {"type": "release_all"})
+                except Exception:
+                    pass
             if not self._active:
                 # No viewer watching: stop capturing so the helper (and the macOS
                 # screen-recording indicator) is not left running.

@@ -777,6 +777,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         project_id: str,
         language: str,
         k: str | None = None,
+        workspace_session: str | None = None,
     ) -> None:
         header_k = websocket.headers.get("x-termx-passcode")
         authorization = websocket.headers.get("authorization")
@@ -795,10 +796,28 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             return
         try:
             root = state.projects.project(project_id)["path"]
-        except HTTPException:
+            if workspace_session:
+                origin=state.identity.resolve(token)
+                if not origin:
+                    raise HTTPException(401,'Managed workspace session required')
+                selected=state.workspace.record(origin.principal,'conversation',workspace_session,scope='files-read')
+                if selected.get('project_id')!=project_id or selected.get('runner_id'):
+                    raise HTTPException(403,'Language server target must be the selected local execution project')
+                state.workspace.record(origin.principal,'conversation',workspace_session,scope='agent-run')
+                root=selected['cwd']
+        except (HTTPException,PermissionError,KeyError,ValueError,OSError):
             await websocket.close(code=4404)
             return
-        await lsp.serve(websocket, str(root), language)
+        def authorize_language_message():
+            state.authorization.require(token,'agent-run',project_id=project_id)
+            state.authorization.require(token,'files-read',project_id=project_id)
+            if workspace_session:
+                current=state.identity.resolve(token)
+                if not current:raise PermissionError('Managed session revoked')
+                target=state.workspace.record(current.principal,'conversation',workspace_session,scope='files-read')
+                if target.get('project_id')!=project_id or target.get('runner_id') or Path(target['cwd']).resolve()!=Path(root).resolve():
+                    raise PermissionError('Language checkout changed; reconnect for the new target')
+        await lsp.serve(websocket, str(root), language,authorize=authorize_language_message)
 
     @app.websocket("/api/sessions/{session_id}/pty")
     async def pty_socket(

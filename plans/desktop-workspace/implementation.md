@@ -105,3 +105,35 @@ affected working content. Uncertain publication responses retain consumed IDs.
 Media provider streams and PDF expansion are bounded before oversized output
 allocation; provider/runner intent IDs persist across reloads without storing
 input content or credentials. Latest root Git/media verification: 15 passed.
+
+The clean current-source full backend run subsequently passed: **767 passed,
+87 skipped**, 287.54 seconds. Live draft PR #28 and exact reviewed push/PR-create
+completed through the production GitHub delivery port. The frontend GitHub check
+passed. Linux/macOS CI identified the pytest-command fixture import boundary;
+that import is corrected and all three actual TLS OIDC cases pass under the
+exact pytest entrypoint. Cross-platform packaging CI is rerunning at the fix.
+
+Latest integration adds conversation-bound worktree selection across file reads,
+saves/search, terminal creation, language-server roots, agent execution and debug
+sessions. Real Git regression proves scoped worktree edits leave the main checkout
+unchanged, denies symlink escape and revoked writes, and binds unattended grants
+to the exact checkout identity. Removed worktrees are rejected while the session
+can recover by selecting a live checkout.
+
+The installed debugger/Relay/transport regression passed **11 tests**: Python
+launch and direct loopback attach with breakpoint/variable inspection, JS/TS
+source-map stepping, exact conversation checkout and reconnect discovery,
+revoked projection rejection, and viewer input denial. Stopping Python attach
+detaches without terminating the user's process. Viewer-only sockets no longer
+release keys held by a controller during disconnect cleanup.
+
+Combined-load stack sampling found synchronous session-list projection and
+per-frame identity SQLite checks blocking the ASGI loop. Both now run on IO
+workers, retaining per-message live authority and final policy checks. The
+combined rendered activity proof is rerunning; previous multi-second stalls are
+not treated as meeting the performance gate.
+
+CI now exercises synthetic OS credential-store write/read/delete on all three
+platforms. Frozen runtime verification executes bundled Node, FFmpeg, all five
+language servers, debugpy and Chromium rather than only locating files. Actual
+development runtime smoke passed; frozen execution and signing remain CI gates.

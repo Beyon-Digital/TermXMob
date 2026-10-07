@@ -36,12 +36,12 @@ summaries.
 
 | Capability | Actual adapter | Verified path | Remaining |
 | --- | --- | --- | --- |
-| Python debug | debugpy stdio DAP | Real breakpoint/step/stack/variables | Frozen adapter plus separately installed host Python interpreter smoke |
+| Python debug | debugpy stdio DAP | Real launch/loopback attach/breakpoint/step/stack/variables; conversation checkout and reconnect | Frozen adapter plus separately installed host Python interpreter smoke |
 | JS/TS debug | Microsoft js-debug1.140.0 standalone loopback DAP; pinned artifact SHA | Real JS and TS source-map breakpoint/step/stack/variables | CI-packaged cross-platform runtime |
 | Python LSP | basedpyright | Real navigation/hover/completion | Packaged runtime smoke |
 | TypeScript LSP | typescript-language-server4.3.3/TypeScript5.9.3 | Real project navigation and formatting | Packaged runtime smoke |
-| Git delivery | Real Git, exact durable action, local isolated worktrees | Hunk/stage/commit/push, divergent FF-only pull, dirty cleanup, reviewed index/content/target and unknown outcome non-replay tests | Live GitHub PR/checks/conflict workflow |
-| GitHub | Existing host gh authorization, typed API payloads | Adapter protocol/confirmation fixtures | Live review/check state on actual repository |
+| Git delivery | Real Git, exact durable action, local isolated worktrees | Hunk/stage/commit/push, divergent FF-only pull, dirty cleanup, reviewed index/content/target and unknown outcome non-replay tests | Selected-worktree rendered workflow and cross-platform packaged checks |
+| GitHub | Existing host gh authorization, typed API payloads | Actual reviewed push/draft PR #28 creation and passing/failed check inspection | Full rendered review workflow |
 | Exact-window capture | macOS CoreGraphics + exact screencapture ID; Windows PrintWindow; X11 exact window ID | Actual owned macOS AppKit window captured; private/redaction/parameterized test-before-activate service tests pass | Windows/X11 installed capture and platform permission smoke |
 | Host preview | Separate exact-origin ephemeral Chromium worker | Actual host project server, render/input, isolation and revocation cleanup | Installed worker smoke |
 | Office/chart artifacts | python-docx/openpyxl/python-pptx/escaped SVG, immutable versions | Actual DOCX/XLSX/PPTX/CSV/SVG exports | Combined live voice-to-artifact flow |

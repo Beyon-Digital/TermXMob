@@ -17,7 +17,9 @@ def node_binary() -> str | None:
     bundled = bundle_root()
     if bundled:
         candidate = bundled / 'nodejs_wheel' / ('node.exe' if os.name == 'nt' else 'bin/node')
-        if candidate.is_file(): return str(candidate)
+        # A packaged installation must qualify its own binary. Host PATH must
+        # not mask an incomplete native distribution.
+        return str(candidate) if candidate.is_file() else None
     # The development extra supplies the same platform Node wheel packaged by CI.
     spec = importlib.util.find_spec('nodejs_wheel')
     if spec and spec.origin:

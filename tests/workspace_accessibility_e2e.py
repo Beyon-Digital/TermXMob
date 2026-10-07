@@ -84,7 +84,13 @@ def run(destination, axe_source):
                         page.locator('.file-row').filter(has_text='a11y.py').click()
                         page.locator('.cm-content').get_by_text('def greet(name):',exact=False).wait_for()
                         page.wait_for_timeout(250)
-                        workbench=page.evaluate("async()=>{const r=await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});return {violations:r.violations.map(x=>({id:x.id,impact:x.impact,description:x.description,nodes:x.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})),overflow:document.documentElement.scrollWidth>innerWidth}}")
+                        workbench=page.evaluate("async()=>{const r=await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});const editor=document.querySelector('.editor-host .cm-scroller'),box=editor.getBoundingClientRect(),style=getComputedStyle(editor);return {editor_viewport:{width:Math.round(box.width),height:Math.round(box.height),font_size:style.fontSize,line_height:style.lineHeight},violations:r.violations.map(x=>({id:x.id,impact:x.impact,description:x.description,nodes:x.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})),overflow:document.documentElement.scrollWidth>innerWidth}}")
+                        # A named editor with no practical space can pass axe. Keep
+                        # at least six text lines and a usable horizontal viewport.
+                        assert workbench['editor_viewport']['height']>=120,workbench['editor_viewport']
+                        assert workbench['editor_viewport']['width']>=240,workbench['editor_viewport']
+                        workbench['split_selector_visible']=page.get_by_role('combobox',name='Editor split layout').evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('.editor-tabs').getBoundingClientRect();return b.height>=24&&b.top>=p.top&&b.bottom<=p.bottom}")
+                        assert workbench['split_selector_visible'],'Editor split selector is clipped by its toolbar'
                         report['states'].append({'theme':theme,'zoom_percent':zoom,'layout':'workbench','reduced_motion':True,**workbench})
                         page.screenshot(path=str(destination/f'workbench-{theme}-{zoom}.png'))
                         page.keyboard.press('Control+1')

@@ -42,7 +42,7 @@ def run(destination):
             if monotonic()>deadline:raise RuntimeError('Temporary host did not start')
             sleep(.05)
         def host(coroutine):return asyncio.run_coroutine_threadsafe(coroutine,loops[0]).result(timeout=45)
-        page=None;pty=None;stress=None
+        page=None;other=None;pty=None;stress=None;heartbeat=None;watchdog_stop=threading.Event();watchdog=None;loop_clock={'last':monotonic()}
         try:
             with sync_playwright() as playwright:
                 browser=playwright.chromium.launch(headless=True,args=['--enable-precise-memory-info'])
@@ -66,6 +66,36 @@ def run(destination):
                 cookie=next(cookie['value'] for cookie in context.cookies() if cookie['name']=='termx_access')
                 managed=state.identity.resolve(cookie)
                 async def prepare():
+                    nonlocal heartbeat
+                    nonlocal watchdog
+                    report['browser_phases']={};report['host_loop_max_lag_ms']=0;report['host_lag_stacks']=[]
+                    def sample_host():
+                        while not watchdog_stop.wait(.1):
+                            delay=monotonic()-loop_clock['last']
+                            if delay<.2:continue
+                            frame=sys._current_frames().get(thread.ident);stack=[]
+                            while frame:
+                                stack.append(Path(frame.f_code.co_filename).name+':'+frame.f_code.co_name+':'+str(frame.f_lineno));frame=frame.f_back
+                            samples=report['host_lag_stacks'];samples.append({'pending_ms':round(delay*1000),'stack':stack[:12]})
+                            if len(samples)>300:del samples[:-300]
+                    watchdog=threading.Thread(target=sample_host,daemon=True);watchdog.start()
+                    def instrument(obj,name):
+                        original=getattr(obj,name)
+                        async def timed(*args,**kwargs):
+                            started=monotonic()
+                            try:return await original(*args,**kwargs)
+                            finally:
+                                values=report['browser_phases'].setdefault(name,[])
+                                values.append(round((monotonic()-started)*1000))
+                                if len(values)>500:del values[:-500]
+                        setattr(obj,name,timed)
+                    for phase in ('_document_hash','_perform','frame'):instrument(state.browser,phase)
+                    async def monitor_loop():
+                        last=monotonic()
+                        while True:
+                            await asyncio.sleep(.1);current=monotonic();loop_clock['last']=current
+                            report['host_loop_max_lag_ms']=max(report['host_loop_max_lag_ms'],round(max(0,current-last-.1)*1000));last=current
+                    heartbeat=asyncio.create_task(monitor_loop())
                     task=state.agent_store.create_task(prompt='Bounded fixture control authority',cwd=str(root),provider_id='fixture-no-inference',model='fixture',limits={'max_steps':100,'max_seconds':120},mode='agent')
                     state.agent_store.update_task(task['id'],status='running')
                     state.workspace.store.create('task',owner.id,{'conversation_id':conversation['id'],'cwd':str(root)},project['id'],task['id'])
@@ -75,6 +105,7 @@ def run(destination):
                         state.agent_store._db.execute('UPDATE conversation_turns SET task_id=? WHERE id=?',(task['id'],'fixture-turn-9999'));state.agent_store._db.commit()
                     profile=state.browser.create_profile(owner.id,project['id'],'Load fixture profile')
                     tab=await state.browser.create_tab(owner.id,managed.session_id,profile['id'],origin)
+                    instrument(state.browser._pages[tab['id']].mouse,'wheel')
                     grant=await state.browser.handoff(tab['id'],owner.id,managed.session_id,run_id=task['id'],origins=[origin],actions=['observe','capture','scroll'],expires_in=300,policy_version=owner.policy_version)
                     noisy="import time,sys\nfor i in range(5000):\n print(('Noisy fixture line %d '%i)+'x'*180,flush=True)\n time.sleep(.02)"
                     terminal=state.sessions.create(argv=[sys.executable,'-u','-c',noisy],cwd=str(root),title='Bounded noisy PTY fixture')
@@ -95,18 +126,28 @@ def run(destination):
                 other=context.new_page();attach_page(other);other.goto(f'http://127.0.0.1:{port}/?session={conversation["id"]}')
                 other.wait_for_function('(()=>{const e=document.querySelector("textarea[aria-label=Message]");return !!e&&!e.disabled})()',timeout=90000)
                 other.get_by_label('Terminal session').wait_for(timeout=90000);other.get_by_label('Terminal session').select_option(pty.id)
+                other.get_by_role('button',name='Commands',exact=True).click();other.get_by_role('button',name='Focus browser',exact=False).click()
                 other.get_by_text('Live browser connected',exact=True).wait_for(timeout=90000)
                 loops[0].call_soon_threadsafe(gate.set)
+                warmup_start=monotonic();warmup_deadline=warmup_start+45
+                while report['agent_actions']<2 and not stress.done() and monotonic()<warmup_deadline:page.wait_for_timeout(100)
+                report['control_warmup_ms']=round((monotonic()-warmup_start)*1000)
+                report['control_warmup_latencies_ms']=report['agent_action_latencies_ms'][:]
+                assert report['agent_actions']>=2,report
+                report['agent_actions']=0;report['agent_action_latencies_ms']=[]
+                report['terminal_frames']=0;report['terminal_bytes']=0;report['browser_frames']=0;report['browser_bytes']=0
+                workload_start=monotonic()
                 for i in range(10):
                     start=monotonic();page.get_by_label('Search conversations',exact=True).fill('fixture 123');page.get_by_text('Conversation fixture 123',exact=True).wait_for(timeout=15000)
                     page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
                     report['interactions'].append({'kind':'filter_500_sessions_with_streams','ms':round((monotonic()-start)*1000)})
                     page.get_by_label('Search conversations',exact=True).fill('');page.get_by_text('Conversation fixture 498',exact=True).wait_for(timeout=15000)
                     page.get_by_role('textbox',name='Message',exact=True).fill('Unsent simultaneous-load draft '+str(i));page.wait_for_timeout(80)
-                deadline=monotonic()+12
-                while report['agent_actions']<12 and not stress.done() and monotonic()<deadline:page.wait_for_timeout(200)
+                deadline=monotonic()+30
+                while (report['agent_actions']<12 or report['browser_frames']<12) and not stress.done() and monotonic()<deadline:page.wait_for_timeout(200)
                 if stress.done() and not stress.cancelled() and stress.exception():report['agent_action_error']=repr(stress.exception())
                 page.wait_for_timeout(500)
+                report['combined_workload_ms']=round((monotonic()-workload_start)*1000)
                 report['memory']=[view.evaluate('performance.memory?{used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize}:null') for view in (page,other)]
                 report['dom_nodes']=[view.locator('*').count() for view in (page,other)]
                 report['max_interaction_ms']=max(sample['ms'] for sample in report['interactions'])
@@ -119,12 +160,18 @@ def run(destination):
                 assert report['no_accidental_turn']
                 context.close();browser.close()
         except Exception:
+            if other and not other.is_closed():
+                try:other.screenshot(path=str(destination/'other-failure.png'));(destination/'other-failure.html').write_text(other.content())
+                except Exception:pass
             if page and not page.is_closed():
                 try:page.screenshot(path=str(destination/'failure.png'));(destination/'failure.html').write_text(page.content())
                 except Exception:pass
             raise
         finally:
+            watchdog_stop.set()
+            if watchdog:watchdog.join(timeout=1)
             if stress:loops[0].call_soon_threadsafe(stress.cancel)
+            if heartbeat:loops[0].call_soon_threadsafe(heartbeat.cancel)
             if pty:state.sessions.kill(pty.id)
             server.should_exit=True;thread.join(timeout=20);listener.close();site.shutdown();site.server_close()
             (destination/'report.json').write_text(json.dumps(report,indent=2))

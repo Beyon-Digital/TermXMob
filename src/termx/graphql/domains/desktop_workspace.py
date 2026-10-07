@@ -1,5 +1,7 @@
 """Relay Node identity and bounded connections over canonical workspace records."""
 from __future__ import annotations
+import asyncio
+import threading
 import base64
 import secrets
 from time import time
@@ -52,11 +54,14 @@ class WorkspaceTurnNode(relay.Node):
     def task(self,info:Info)->JSON|None:
         if not self.task_id:return None
         service=info.context.state.workspace
-        service.session(principal(info),self.session_id,turns=False)
+        service.record(principal(info),'conversation',self.session_id,scope='agent-view')
         task=service.agents.get_task(self.task_id)
         if not task:return None
         fields={'id','prompt','cwd','provider_id','model','status','limits','mode','parent_id','plan','result','error','engine','created_at','updated_at'}
         result={key:value for key,value in task.items() if key in fields}
+        metadata=service.store.get('task',self.task_id) or {}
+        for key in ('worktree_id','worktree_digest','worktree_branch','execution_location'):
+            if key in metadata:result[key]=metadata[key]
         if task['status'] in {'running','awaiting_approval','paused','cancelling','recovering','recovery_confirmation_required','planning'}:
             result['events']=service.agents.events(self.task_id,tail_limit=200)
             result['approvals']=service.agents.approvals(self.task_id)
@@ -137,36 +142,20 @@ class DesktopWorkspaceQueries:
     nodes:list[relay.Node]=relay.node()
 
     @strawberry.field
-    def workspace_sessions(self,info:Info,query:str='',archived:bool=False,project_id:str|None=None,first:int=50,after:str|None=None)->WorkspaceSessionConnection:
-        owner=principal(info);state=info.context.state
-        if not 1<=first<=100:fail(400,'Session page size must be between 1 and 100')
-        pages=getattr(state,'workspace_session_pages',None)
-        if pages is None:pages={};state.workspace_session_pages=pages
-        for identifier in list(pages):
-            if pages[identifier]['expires']<=time():pages.pop(identifier)
-        scope=(owner.id,owner.policy_version,query,archived,project_id)
-        offset=0
-        if after:
-            try:
-                identifier,position=base64.b64decode(after,validate=True).decode().split(':')
-                offset=int(position)+1
-                page=pages[identifier]
-                if page['scope']!=scope or offset<0:raise ValueError()
-            except (ValueError,UnicodeError,KeyError):fail(409,'Session cursor expired or changed scope; reload the list')
-        else:
-            if len(pages)>=64:pages.pop(min(pages,key=lambda key:pages[key]['expires']))
-            identifier=secrets.token_urlsafe(24)
-            page={'scope':scope,'expires':time()+120,'rows':state.workspace.sessions(owner,query=query,archived=archived,project_id=project_id)}
-            pages[identifier]=page
-        rows=page['rows'];visible=rows[offset:offset+first]
-        # Check current authority again: a cursor is never delegated consent.
-        edges=[]
-        for position,row in enumerate(visible,offset):
-            try:state.workspace.require(owner,'agent-view',row.get('project_id'),row.get('cwd'))
-            except PermissionError:fail(403,'Session authorization changed; reload the list')
-            edges.append(relay.Edge(node=session_node(row),cursor=base64.b64encode(f'{identifier}:{position}'.encode()).decode()))
-        return WorkspaceSessionConnection(edges=edges,page_info=WorkspacePageInfo(has_next_page=offset+first<len(rows),
-            has_previous_page=offset>0,start_cursor=edges[0].cursor if edges else None,end_cursor=edges[-1].cursor if edges else None))
+    async def workspace_sessions(self,info:Info,query:str='',archived:bool=False,project_id:str|None=None,first:int=50,after:str|None=None)->WorkspaceSessionConnection:
+        state=info.context.state
+        lock=getattr(state,'workspace_session_pages_lock',None)
+        if lock is None:
+            lock=threading.RLock();state.workspace_session_pages_lock=lock
+        owner=principal(info)
+        def project():
+            with lock:
+                return session_connection(info,owner,query,archived,project_id,first,after)
+        result=await asyncio.to_thread(project)
+        current=principal(info)
+        if current.id!=owner.id or current.policy_version!=owner.policy_version:
+            fail(403,'Session authorization changed; reload the list')
+        return result
 
     @strawberry.field
     def workspace_turns(self,info:Info,session_id:str,first:int|None=None,after:str|None=None,last:int|None=None,before:str|None=None)->WorkspaceTurnConnection:
@@ -182,3 +171,34 @@ class DesktopWorkspaceQueries:
         edges=[WorkspaceTurnEdge(cursor=cursor(session_id,row['sequence']),node=turn_node(row)) for row in visible]
         return WorkspaceTurnConnection(edges=edges,page_info=WorkspacePageInfo(has_next_page=bool(before) if backward else len(rows)>size,
             has_previous_page=len(rows)>size if backward else sequence>0,start_cursor=edges[0].cursor if edges else None,end_cursor=edges[-1].cursor if edges else None))
+
+def session_connection(info,owner,query,archived,project_id,first,after):
+    state=info.context.state
+    if not 1<=first<=100:fail(400,'Session page size must be between 1 and 100')
+    pages=getattr(state,'workspace_session_pages',None)
+    if pages is None:pages={};state.workspace_session_pages=pages
+    for identifier in list(pages):
+        if pages[identifier]['expires']<=time():pages.pop(identifier)
+    scope=(owner.id,owner.policy_version,query,archived,project_id)
+    offset=0
+    if after:
+        try:
+            identifier,position=base64.b64decode(after,validate=True).decode().split(':')
+            offset=int(position)+1
+            page=pages[identifier]
+            if page['scope']!=scope or offset<0:raise ValueError()
+        except (ValueError,UnicodeError,KeyError):fail(409,'Session cursor expired or changed scope; reload the list')
+    else:
+        if len(pages)>=64:pages.pop(min(pages,key=lambda key:pages[key]['expires']))
+        identifier=secrets.token_urlsafe(24)
+        page={'scope':scope,'expires':time()+120,'rows':state.workspace.sessions(owner,query=query,archived=archived,project_id=project_id)}
+        pages[identifier]=page
+    rows=page['rows'];visible=rows[offset:offset+first]
+    # Check current authority again: a cursor is never delegated consent.
+    edges=[]
+    for position,row in enumerate(visible,offset):
+        try:state.workspace.require(owner,'agent-view',row.get('project_id'),row.get('cwd'),resource_kind='conversation',resource_id=row['id'])
+        except PermissionError:fail(403,'Session authorization changed; reload the list')
+        edges.append(relay.Edge(node=session_node(row),cursor=base64.b64encode(f'{identifier}:{position}'.encode()).decode()))
+    return WorkspaceSessionConnection(edges=edges,page_info=WorkspacePageInfo(has_next_page=offset+first<len(rows),
+        has_previous_page=offset>0,start_cursor=edges[0].cursor if edges else None,end_cursor=edges[-1].cursor if edges else None))

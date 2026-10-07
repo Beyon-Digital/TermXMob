@@ -6,6 +6,12 @@ No external tab attachment, cookie import, CDP endpoint or agent arbitrary
 JavaScript is exposed. The processes share the trusted host OS account; hostile
 tenant OS isolation requires an external deployment boundary.
 
+Human viewers share an in-flight capture per tab. Pending controls have priority,
+and each viewer independently rechecks live authorization before capture and
+before delivery. Capture leases are checked again after rendering; private-mode
+or takeover changes discard the old frame. SQL-backed socket checks run in a
+worker so a large session projection cannot block the browser control loop.
+
 ## Enforcement matrix
 
 | Execution path | Enforced interception | Restricted browser handoff |

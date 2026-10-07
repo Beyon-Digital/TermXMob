@@ -266,13 +266,22 @@ def browser_router(state):
     @router.websocket('/tabs/{id}/view')
     async def interactive(websocket:WebSocket,id:str):
         try:
-            _,principal,_=identity(websocket,'desktop-control','browser-tab',id)
+            _,principal,_=await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
             service.get(id,principal)
             await websocket.accept()
             async def frames():
                 while True:
-                    identity(websocket,'desktop-control','browser-tab',id)
-                    data=await service.frame(id,principal,human=True)
+                    await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
+                    try:data=await service.frame(id,principal,human=True)
+                    except PermissionError:
+                        # A takeover/private transition discards the in-flight
+                        # image. Reauthorize and capture the new human lease.
+                        await asyncio.sleep(.01)
+                        continue
+                    # The SQL-backed live check can wait behind a collection
+                    # projection. Keep it off the renderer/control loop, and
+                    # recheck after capture without caching any authority.
+                    await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
                     await websocket.send_bytes(data)
                     tab=service.get(id,principal)
                     await websocket.send_json({'type':'state','tab':tab})
@@ -280,7 +289,7 @@ def browser_router(state):
             async def input():
                 while True:
                     payload=await websocket.receive_json()
-                    identity(websocket,'desktop-control','browser-tab',id)
+                    await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
                     body=HumanBody.model_validate(payload)
                     await service.human_action(id,principal,body.action,body.args)
             tasks=[asyncio.create_task(frames()),asyncio.create_task(input())]

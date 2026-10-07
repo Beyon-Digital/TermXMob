@@ -211,14 +211,18 @@ def test_native_tokens_and_bounded_device_migration():
     assert state.auth.check(new.json()["access_token"])
 
 
-def test_unconfigured_remote_closed_and_setup_local_only():
+def test_unconfigured_remote_closed_and_setup_local_only(tmp_path):
     state = AppState()
-    client = TestClient(create_app(state), base_url="https://localhost", client=("203.0.113.20", 50000))
+    # Authentication entry is public even when a clean checkout has no built UI.
+    # Supply the actual host/UI contract explicitly instead of depending on dist.
+    (tmp_path / "index.html").write_text('<meta name="termx-ui-contract" content="3"><main>Sign in</main>')
+    app = create_app(state, web_dir=tmp_path)
+    client = TestClient(app, base_url="https://localhost", client=("203.0.113.20", 50000))
     assert client.post("/graphql", json={"query": "{ sessions { id } }"}).status_code == 403
     assert client.get("/auth/methods").status_code == 200
     assert client.get("/").status_code == 200
     assert client.post("/auth/setup", headers=ORIGIN, json={"username": "intruder", "password": PASSWORD}).status_code == 403
-    local = TestClient(create_app(state), base_url="https://localhost")
+    local = TestClient(app, base_url="https://localhost")
     assert local.post("/auth/setup", headers={"Origin": "https://evil.example"}, json={"username": "intruder", "password": PASSWORD}).status_code == 403
     assert not state.identity.configured
 

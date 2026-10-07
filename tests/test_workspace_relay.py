@@ -43,3 +43,34 @@ def test_session_cursor_snapshot_survives_recent_order_changes(tmp_path):
     second=page(first['pageInfo']['endCursor'])
     ids=[edge['node']['canonical_id'] for part in [first,second] for edge in part['edges']]
     assert len(set(ids))==4 and set(ids)=={row['id'] for row in rows}
+
+
+def test_slow_projection_keeps_host_loop_responsive_and_rechecks_revocation(tmp_path,monkeypatch):
+    import threading
+    from termx.graphql.context import TermxContext
+    from termx.graphql.schema import schema
+    state=AppState();owner=state.identity.setup_owner('owner','strong-password-fixture')
+    token=asyncio.run(state.identity.login('local-password',{'username':'owner','password':'strong-password-fixture'},peer='local')).access_token
+    create_app(state)
+    state.workspace.create_session(owner,title='Private fixture',cwd=str(tmp_path))
+    entered,release=threading.Event(),threading.Event()
+    original=state.workspace.sessions
+    def slow(*args,**kwargs):
+        rows=original(*args,**kwargs)
+        entered.set()
+        assert release.wait(2),'Projection worker was never released'
+        return rows
+    monkeypatch.setattr(state.workspace,'sessions',slow)
+    async def run():
+        task=asyncio.create_task(schema.execute('{workspace_sessions{edges{node{canonical_id}}}}',context_value=TermxContext(state,token)))
+        try:
+            for _ in range(100):
+                if entered.is_set():break
+                await asyncio.sleep(.01)
+            assert entered.is_set() and not task.done(),'Session projection blocked the host event loop'
+            state.identity.disable(owner.id)
+        finally:
+            release.set()
+        result=await task
+        assert result.errors and not (result.data or {}).get('workspace_sessions')
+    asyncio.run(run())

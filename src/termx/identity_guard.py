@@ -33,10 +33,11 @@ class SessionGuard:
         protected = path.startswith(("/graphql", "/api/"))
         peer = (scope.get("client") or ("", 0))[0]
         service = self.state.identity
-        if protected and not self.state.auth.required and not loopback(peer):
+        managed = await asyncio.to_thread(lambda: service.configured)
+        required = self.state.auth.passcode is not None or managed
+        if protected and not required and not loopback(peer):
             await self._reject(scope, receive, send, 403, "configure authentication locally before remote access")
             return
-        managed = service.configured
         query = parse_qs(scope.get("query_string", b"").decode())
         query_token = query.get("k", [None])[0]
         if protected and managed and query_token and query_token.count(".") == 2:
@@ -59,7 +60,7 @@ class SessionGuard:
                 await self._reject(scope, receive, send, 403, "same-origin socket required")
                 return
             if scope["type"] == "http" and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
-                if not origin_ok or not service.valid_csrf(raw_cookie, headers.get("x-termx-csrf")):
+                if not origin_ok or not await asyncio.to_thread(service.valid_csrf, raw_cookie, headers.get("x-termx-csrf")):
                     await self._reject(scope, receive, send, 403, "same-origin request and CSRF token required")
                     return
             token = raw_cookie
@@ -68,23 +69,33 @@ class SessionGuard:
             await self.app(scope, receive, send)
             return
         token = token or query_token
-        initial_scopes = self.state.auth.scopes(token) if token or not self.state.auth.required else None
-        revoked = False
-        initial_identity = service.resolve(token)
-        initial_version = initial_identity.principal.policy_version if initial_identity else None
-
-        def invalid():
-            nonlocal initial_version
+        def inspect_current():
             current = service.resolve(token)
-            if current:
-                if initial_version is None:
-                    initial_version = current.principal.policy_version
-                elif initial_version != current.principal.policy_version:
-                    return True
-            if initial_scopes is None:
-                return False
-            scopes = self.state.auth.scopes(token)
-            return scopes is None or not set(initial_scopes) <= set(scopes)
+            scopes = list(current.principal.scopes) if current else self.state.auth.scopes(token)
+            return current, scopes
+
+        initial_identity, resolved_scopes = await asyncio.to_thread(inspect_current)
+        initial_scopes = resolved_scopes if token or not required else None
+        revoked = False
+        initial_version = initial_identity.principal.policy_version if initial_identity else None
+        validation_lock = asyncio.Lock()
+
+        async def invalid():
+            nonlocal initial_version, initial_scopes
+            # Each frame still resolves current durable session/principal state.
+            # Serialize snapshots without holding the event loop during SQLite IO.
+            async with validation_lock:
+                current, scopes = await asyncio.to_thread(inspect_current)
+                if token and initial_scopes is None:
+                    initial_scopes = scopes
+                if current:
+                    if initial_version is None:
+                        initial_version = current.principal.policy_version
+                    elif initial_version != current.principal.policy_version:
+                        return True
+                if initial_scopes is None:
+                    return False
+                return scopes is None or not set(initial_scopes) <= set(scopes)
 
         async def guarded_receive():
             nonlocal token, initial_scopes, revoked
@@ -98,9 +109,7 @@ class SessionGuard:
                         token = secret_from_params(payload.get("payload")) or token
                 except (ValueError, TypeError, AttributeError):
                     pass
-            if token and initial_scopes is None:
-                initial_scopes = self.state.auth.scopes(token)
-            if message.get("type") == "websocket.receive" and invalid():
+            if message.get("type") == "websocket.receive" and await invalid():
                 if not revoked:
                     await send({"type": "websocket.close", "code": 4401})
                 revoked = True
@@ -109,9 +118,7 @@ class SessionGuard:
 
         async def guarded_send(message):
             nonlocal initial_scopes, revoked
-            if token and initial_scopes is None:
-                initial_scopes = self.state.auth.scopes(token)
-            if message.get("type") == "websocket.send" and invalid():
+            if message.get("type") == "websocket.send" and await invalid():
                 if not revoked:
                     await send({"type": "websocket.close", "code": 4401})
                 revoked = True
@@ -128,7 +135,7 @@ class SessionGuard:
                     continue
                 if revoked:
                     return
-                if invalid():
+                if await invalid():
                     revoked = True
                     await send({"type": "websocket.close", "code": 4401})
                     return
