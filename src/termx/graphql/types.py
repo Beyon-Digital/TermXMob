@@ -794,6 +794,11 @@ class McpConnectionInfo(DictBacked):
     url: str | None
     enabled: bool | None
     owner: str | None
+    allowed_projects: list[str] | None
+    definition: JSON | None
+    definition_digest: str | None
+    credential_configured: bool | None
+    catalog: JSON | None
     auth: JSON | None
     secret_refs: list[str] | None
     approved_tools: list[str] | None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+from pathlib import Path
 from dataclasses import asdict
 from time import time
 from typing import Any
@@ -423,6 +424,7 @@ class AgentMutations:
             previous["engine"] if previous else "internal")
         if engine != "internal":
             try:
+                from termx.mcp.scope import authorize as authorize_mcp
                 task = await state.engines.create_task(
                     prompt=body.prompt,
                     cwd=body.cwd,
@@ -434,6 +436,7 @@ class AgentMutations:
                     mode=body.engine_mode,
                     config_options=body.config_options,
                     custom_agent=custom_agent,
+                    mcp_project_id=project_id,mcp_authorize=lambda conn:authorize_mcp(state,conn,'agent-run',credential=ctx.secret,project_id=project_id,cwd=body.cwd),
                     conversation_id=body.conversation_id or None,
                     limits=body.limits,
                     sandbox_profile=str(
@@ -481,6 +484,22 @@ class AgentMutations:
         )
         if not provider_id:
             raise HTTPException(status_code=400, detail="provider_id is required")
+        mcp_created=None
+        if ((custom_agent or {}).get('file') or {}).get('mcp_connections'):
+            live=state.identity.resolve(ctx.secret)
+            if not live:raise HTTPException(403,'MCP tools require a managed user session; sign in or pair this device')
+            if body.execution_mode=='worktree':raise HTTPException(400,'Use a workspace conversation to bind MCP to an enrolled worktree')
+            from termx.mcp.client import McpConnectionError
+            try:pinned=state.agent.mcp.preflight(live.principal,project_id,body.cwd,body.conversation_id,custom_agent)
+            except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+            except McpConnectionError as exc:raise HTTPException(409,str(exc)) from exc
+            except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+            def mcp_created(tid):
+                current=state.identity.resolve(ctx.secret)
+                if not current or current.session_id!=live.session_id or current.principal.id!=live.principal.id:raise HTTPException(401,'MCP originating session changed')
+                ctx.claim('task',tid,project_id)
+                state.workspace.store.create('task',live.principal.id,{'conversation_id':body.conversation_id,'cwd':str(Path(body.cwd).resolve()),'mcp_snapshot':pinned},project_id,tid)
+                state.browser.records.put('agent-task-authority',tid,{'id':tid,'principal_id':live.principal.id,'session_id':live.session_id,'project_id':project_id or '', 'policy_version':live.principal.policy_version})
         try:
             task = await state.agent.create_task(
                 prompt=body.prompt,
@@ -493,6 +512,7 @@ class AgentMutations:
                 execution_mode=body.execution_mode,
                 conversation_id=body.conversation_id or None,
                 custom_agent_id=custom_agent_id,
+                custom_agent_snapshot=custom_agent,on_created=mcp_created,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc

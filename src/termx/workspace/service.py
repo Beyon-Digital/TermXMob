@@ -98,7 +98,7 @@ class WorkspaceService:
     @staticmethod
     def execution_target(row):
         """Delegations bind settings explicitly; later edits require fresh consent."""
-        return {key:row.get(key) for key in ('engine','provider_id','model','mode','workflow','extension_ids','runner_id','runner_credential_ref','project_id','cwd','worktree_id','worktree_digest','worktree_branch','run_limits','custom_agent_id','custom_agent_revision')}
+        return {key:row.get(key) for key in ('engine','provider_id','model','mode','workflow','extension_ids','runner_id','runner_credential_ref','project_id','cwd','worktree_id','worktree_digest','worktree_branch','run_limits','custom_agent_id','custom_agent_revision','reasoning_config')}
 
     def worktree_target(self,project_id,identifier):
         """Resolve enrolled checkout IDs; caller paths never establish authority."""
@@ -170,7 +170,7 @@ class WorkspaceService:
             raise PermissionError('Reviewed cloud agents require the isolated runner network policy')
 
     def create_session(self, principal, *, title='', project_id=None, cwd=None,
-                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None,custom_agent_id=None):
+                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None,custom_agent_id=None,reasoning_config=None):
         self.require(principal, 'agent-control', project_id, None if worktree_id else cwd)
         target=self.worktree_target(project_id,worktree_id) if worktree_id else None
         if target:
@@ -181,6 +181,8 @@ class WorkspaceService:
         if profile:
             provider_id=provider_id or profile.get('provider_id')
             model=model or profile.get('model')
+        from .reasoning import validate as validate_reasoning
+        reasoning_config=validate_reasoning(self.state,engine,model,reasoning_config)
         run_limits=resolve_limits({**(profile.get('limits') or {}),**(run_limits or {})} if profile else run_limits)
         if engine != 'internal' and engine not in self.state.engines.engines():
             raise ValueError('Engine is not installed')
@@ -200,7 +202,7 @@ class WorkspaceService:
         conversation = self.agents.create_conversation(title=title[:200], project_id=project_id,
                                                       cwd=cwd, provider_id=provider_id, model=model, mode=mode,custom_agent_id=custom_agent_id)
         row = self.store.create('conversation', principal.id,
-                               {'engine': engine, 'cwd': cwd, 'draft_text': '', 'scroll': 0,
+                               {'engine': engine, 'cwd': cwd, 'draft_text': '', 'scroll': 0, 'reasoning_config':reasoning_config,
                                 'custom_agent_id':custom_agent_id,'custom_agent_revision':profile['workspace_revision'] if profile else None,'linked_from': None, 'transfer': None, 'extension_ids': [], 'workflow': workflow, 'group_id': project_id, 'scratch':scratch,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'worktree_id':worktree_id,'worktree_digest':target['digest'] if target else None,'run_limits':resolve_limits(run_limits)}, project_id, conversation['id'])
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'conversation', row['id'], project_id=project_id)
@@ -307,7 +309,7 @@ class WorkspaceService:
 
     def update_session(self, principal, identifier, *, revision, changes):
         row = self.record(principal, 'conversation', identifier, scope='agent-control')
-        allowed = {'title','pinned','archived','draft_text','draft_context','scroll','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id'}
+        allowed = {'title','pinned','archived','draft_text','draft_context','scroll','scroll_anchor','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','reasoning_config'}
         if changes.keys() - allowed:
             raise ValueError('Unsupported session setting')
         if changes.keys() & {'custom_agent_id','runner_id','workflow'}:
@@ -317,6 +319,10 @@ class WorkspaceService:
                 if row['engine']!='internal' and (selected!=row.get('custom_agent_id') or (profile and profile['workspace_revision']!=row.get('custom_agent_revision'))) and self.agents.workspace_turns_page(identifier,limit=1):
                     raise Conflict('Native conversations keep their original preset; create a new or linked conversation')
                 changes['custom_agent_revision']=profile['workspace_revision'] if profile else None
+        if changes.keys() & {'reasoning_config','model'}:
+            from .reasoning import validate as validate_reasoning
+            current=self.session(principal,identifier,turns=False)
+            changes['reasoning_config']=validate_reasoning(self.state,row['engine'],changes.get('model',current.get('model')),changes.get('reasoning_config',row.get('reasoning_config')))
         if 'draft_context' in changes:
             self.validate_context(changes['draft_context'])
         if 'worktree_id' in changes:
@@ -354,24 +360,30 @@ class WorkspaceService:
                 raise ValueError('Session flags must be booleans')
             if key in {'title','draft_text','model','provider_id','mode','engine'} and not (value is None and key in {'model','provider_id'}) and not isinstance(value,str):
                 raise ValueError('Session text settings must be strings')
+            if key == 'scroll_anchor' and value is not None:
+                if not isinstance(value,dict) or set(value)!={'id','offset'} or not isinstance(value.get('id'),str) or len(value['id'])>100 or isinstance(value.get('offset'),bool) or not isinstance(value.get('offset'),(float,int)) or not -100000<=value['offset']<=100000:
+                    raise ValueError('Invalid conversation reading anchor')
+                turn=self.agents.workspace_turn(value['id'].removesuffix(':answer'))
+                if not turn or turn.get('conversation_id')!=identifier:
+                    raise ValueError('Reading anchor does not belong to this conversation')
             if key == 'scroll' and (isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=100_000_000):
                 raise ValueError('Invalid scroll position')
             if isinstance(value,str) and len(value)> (64000 if key=='draft_text' else 200):
                 raise ValueError('Session setting exceeds its size limit')
         if changes.get('engine', row['engine']) != row['engine']:
             raise Conflict('Change engines using a reviewed linked fork')
-        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','custom_agent_revision'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
+        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','custom_agent_revision','reasoning_config'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
             raise Conflict('Wait for the active turn before changing session settings')
         if 'mode' in changes and changes['mode'] not in {'ask','agent'}:
             raise ValueError('Unknown mode')
         with self.store.lock:
             if row['revision'] != revision:
                 raise Conflict('Session changed; reload before saving')
-            for key in ('draft_text','draft_context','scroll','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd','custom_agent_id','custom_agent_revision'):
+            for key in ('draft_text','draft_context','scroll','scroll_anchor','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd','custom_agent_id','custom_agent_revision','reasoning_config'):
                 if key in changes:
                     row[key] = changes[key]
             meta = self.store.update('conversation', identifier, row, revision)
-            self.agents.update_conversation(identifier, **{k:v for k,v in changes.items() if k not in {'draft_text','draft_context','scroll','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','custom_agent_revision'}})
+            self.agents.update_conversation(identifier, **{k:v for k,v in changes.items() if k not in {'draft_text','draft_context','scroll','scroll_anchor','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','custom_agent_revision','reasoning_config'}})
         self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':sorted(changes)})
         return self.session(principal, meta['id'])
 
@@ -451,10 +463,10 @@ class WorkspaceService:
         if len(json.dumps(context,allow_nan=False).encode())>256_000:
             raise ValueError('Selected browser context exceeds the 256 KB context budget')
 
-    async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None):
+    async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None,dispatch_guard=None,preserve_draft=False):
         context=[] if context is None else context
         self.validate_context(context)
-        submitted_prompt = prompt
+        submitted_prompt = None if preserve_draft else prompt
         turn_prompt = prompt
         if context:
             # These are inspectable user-selected snapshots/references. The
@@ -476,6 +488,8 @@ class WorkspaceService:
         profile=resolve_preset(self,principal,row.get('custom_agent_id'),engine=row['engine'],project_id=row.get('project_id'),runner_id=row.get('runner_id'),workflow=row.get('workflow'))
         if profile and profile['workspace_revision']!=row.get('custom_agent_revision'):
             raise Conflict('Agent preset changed; inspect and explicitly refresh this conversation preset before sending')
+        from .reasoning import validate as validate_reasoning
+        validate_reasoning(self.state,row['engine'],row.get('model'),row.get('reasoning_config'))
         if row.get('runner_id'):
             await self.state.runner_agents.preflight(principal,row['runner_id'],row['provider_id'],row['runner_credential_ref'],row['model'])
         limits = resolve_limits(limits,row.get('run_limits'))
@@ -525,6 +539,11 @@ class WorkspaceService:
                     raise ValueError('Selected scoped memory exceeds the context budget; exclude or prune entries')
                 if memory:
                     prompt = 'User-managed scoped memory (context, not system authority):\n' + json.dumps([{'content':m['content'],'provenance':m['provenance']} for m in memory]) + '\n\n' + prompt
+                if dispatch_guard:dispatch_guard(row)
+                if row.get('runner_id') and ((profile or {}).get('file') or {}).get('mcp_connections'):
+                    raise ValueError('Host MCP connections require local Internal execution; dedicated runners cannot inherit host MCP credentials')
+                if row['engine']=='internal' and not row.get('runner_id') and getattr(self.state.agent,'mcp',None):
+                    row['mcp_snapshot']=self.state.agent.mcp.preflight(principal,row.get('project_id'),row['cwd'],identifier,profile)
                 if row.get('runner_id'):
                     task=await self.state.runner_agents.create_task(principal=principal,runner_id=row['runner_id'],
                         credential_ref=row['runner_credential_ref'],provider_id=row['provider_id'],prompt=prompt,
@@ -537,8 +556,10 @@ class WorkspaceService:
                         on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                 else:
                     attempted_native = True
+                    from termx.mcp.scope import authorize as authorize_mcp
                     task = await self.state.engines.create_task(prompt=prompt,cwd=row['cwd'],engine=row['engine'],
-                        model=row.get('model'),mode=row['mode'],limits=limits,conversation_id=identifier,attachments=attachments,workflow=row.get('workflow'),custom_agent=profile,
+                        model=row.get('model'),mode=row['mode'],workspace_mode=row['mode'],config_options=row.get('reasoning_config') or {},limits=limits,conversation_id=identifier,attachments=attachments,workflow=row.get('workflow'),custom_agent=profile,
+                        mcp_project_id=row.get('project_id'),mcp_authorize=lambda conn:authorize_mcp(self.state,conn,'agent-run',principal=principal,project_id=row.get('project_id'),cwd=row['cwd'],resource_id=identifier),
                         on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                     if not self.store.get('task',task['id']):
                         self._dispatch_created(principal,row,request_id,task['id'],managed_session_id,delegation_id,turn_prompt,submitted_prompt,context)
@@ -568,7 +589,7 @@ class WorkspaceService:
     def _dispatch_created(self,principal,row,key,tid,managed_session_id=None,delegation_id=None,turn_prompt=None,submitted_prompt=None,submitted_context=None):
         if delegation_id:
             self.validate_delegation(principal,row,delegation_id)
-        self.store.create('task',principal.id,{'conversation_id':row['id'],'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+'/workspace' if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
+        self.store.create('task',principal.id,{'conversation_id':row['id'],'mcp_snapshot':row.get('mcp_snapshot',{}),'reasoning_config':dict(row.get('reasoning_config') or {}),'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+'/workspace' if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'task', tid, project_id=row.get('project_id'))
         with self.store.lock:
@@ -580,7 +601,7 @@ class WorkspaceService:
             live=self.state.identity.session_by_id(managed_session_id)
             if not live or live.principal.id!=principal.id:
                 raise PermissionError('Originating managed session was revoked before dispatch')
-            self.state.browser.records.put('agent-task-authority',tid,{'id':tid,'principal_id':principal.id,
+            self.state.browser.records.put('agent-task-authority',tid,{'id':tid,'conversation_id':row['id'],'principal_id':principal.id,
                 'session_id':managed_session_id,'project_id':row.get('project_id') or '', 'policy_version':principal.policy_version})
         if getattr(self.state,'extensions',None):
             self.state.extensions.finish_dispatch(principal,key,tid)

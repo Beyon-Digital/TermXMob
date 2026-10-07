@@ -106,12 +106,14 @@ class ClaudeEngine:
 
     def _options(self, cfg: EffectiveRunConfiguration, binding: EngineSessionBinding) -> Any:
         from claude_agent_sdk import ClaudeAgentOptions
+        if cfg.mode not in {None,"ask","agent"}:raise ValueError("Unsupported Claude conversation mode")
+        if cfg.config_options:raise ValueError("Claude has not advertised model-specific reasoning options; use its native default")
         opts_kwargs: dict[str, Any] = {
             "cwd": cfg.cwd or None,
             "model": cfg.model or None,
             "can_use_tool": self._make_can_use_tool(binding),
             "include_partial_messages": True,
-            "permission_mode": "default",
+            "permission_mode": "plan" if cfg.mode=="ask" else "default",
         }
         if self._executable:
             opts_kwargs["cli_path"] = self._executable
@@ -217,7 +219,7 @@ class ClaudeEngine:
             if binding.get("auth_method") == "oauth":
                 continue
             if binding.get("url"):
-                out[name] = McpHttpServerConfig(type="http", url=str(binding["url"]))
+                out[name] = McpHttpServerConfig(type="http", url=str(binding["url"]),headers=dict(binding.get('headers') or {}))
             elif binding.get("command"):
                 cmd = binding["command"]
                 out[name] = McpStdioServerConfig(
@@ -275,7 +277,7 @@ class ClaudeEngine:
         state["binding"] = binding
         return binding
 
-    async def attach(self, binding: EngineSessionBinding) -> EngineSessionBinding:
+    async def attach(self, binding: EngineSessionBinding, *, cfg=None) -> EngineSessionBinding:
         """Native resume: options.resume = prior session id on next connect."""
         binding.status = "idle"
         binding.updated_at = time.time()

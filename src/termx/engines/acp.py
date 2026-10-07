@@ -560,7 +560,7 @@ class AcpEngine:
             profile_revision=cfg.agent_profile_revision,
             extensions_snapshot={
                 "skills": [s.get("id") for s in cfg.skills],
-                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask",
+                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask" or bool(cfg.tools.get("read_only")),
                 "mcp": [m.get("connection_id") for m in cfg.mcp_bindings],
             })
         binding.project_id = cfg.agent_id
@@ -726,7 +726,7 @@ class AcpEngine:
                 self._startup_timeout)
             state["config_options"] = [_model_dump(o) for o in resp.config_options]
         self._remember_configuration(state)
-        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask")
+        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask" or bool(cfg.tools.get("read_only")))
         configuration = self.session_configuration(binding)
         binding.extensions_snapshot["configuration"] = configuration
         self._emit(binding, "engine.session.info", configuration)
@@ -756,11 +756,11 @@ class AcpEngine:
             if binding.get("url") and binding.get("transport") == "sse":
                 if not self._agent_capabilities.get("mcpCapabilities", {}).get("sse"):
                     raise ValueError(f"{self.id} did not advertise SSE MCP support")
-                out.append(SseMcpServer(type="sse", name=name, url=str(binding["url"]), headers=[]))
+                out.append(SseMcpServer(type="sse", name=name, url=str(binding["url"]), headers=[EnvVariable(name=k,value=v) for k,v in (binding.get('headers') or {}).items()]))
             elif binding.get("url"):
                 if not self._agent_capabilities.get("mcpCapabilities", {}).get("http"):
                     raise ValueError(f"{self.id} did not advertise HTTP MCP support")
-                out.append(HttpMcpServer(type="http", name=name, url=str(binding["url"]), headers=[]))
+                out.append(HttpMcpServer(type="http", name=name, url=str(binding["url"]), headers=[EnvVariable(name=k,value=v) for k,v in (binding.get('headers') or {}).items()]))
             else:
                 cmd = binding.get("command") or []
                 if not cmd:

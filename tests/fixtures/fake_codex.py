@@ -99,6 +99,8 @@ def complete_normally(thread_id: str, turn_id: str, text: str) -> None:
 def handle(msg: dict) -> None:
     global seq
     seq += 1
+    if os.environ.get("FAKE_CODEX_LOG"):
+        with open(os.environ["FAKE_CODEX_LOG"],"a") as log:log.write(json.dumps(msg)+"\n")
     method = msg.get("method")
     req_id = msg.get("id")
     params = msg.get("params") or {}
@@ -148,8 +150,8 @@ def handle(msg: dict) -> None:
     if method == "model/list":
         reply(req_id, {"data": [
             {"id": "gpt-fake-1", "model": "gpt-fake-1", "displayName": "Fake 1",
-             "isDefault": True},
-            {"id": "gpt-fake-2", "model": "gpt-fake-2", "displayName": "Fake 2"},
+             "isDefault": True,"defaultReasoningEffort":"low","supportedReasoningEfforts":[{"reasoningEffort":"low","description":"Low"},{"reasoningEffort":"high","description":"High"}]},
+            {"id": "gpt-fake-2", "model": "gpt-fake-2", "displayName": "Fake 2","defaultReasoningEffort":"low","supportedReasoningEfforts":[{"reasoningEffort":"low","description":"Low"}]},
         ], "nextCursor": None})
         return
     if method == "thread/start":

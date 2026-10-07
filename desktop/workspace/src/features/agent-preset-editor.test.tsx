@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AgentPresetEditor } from './AgentPresetEditor';
+vi.mock('../lib/api',()=>({request:vi.fn(async()=>({data:{mcp_connections:[]}})),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
 afterEach(cleanup);
 const preset={id:'agent.review',name:'Review',instructions:'Inspect',engine:'internal',tools_mode:'explicit',tools:['read_file'],toolsets:['files'],deny_tools:['run_shell'],file_revision:'rev-3',limits:{max_steps:12},approval_mode:'standard',sandbox_profile:'agent',enabled:true};
 it('saves explicit tool and budget edits against the inspected revision without run identifiers', async()=>{

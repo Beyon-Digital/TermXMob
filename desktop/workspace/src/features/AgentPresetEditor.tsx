@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import McpPresetBindings,{type McpBinding} from './McpPresetBindings';
 
 type Preset = Record<string, any>;
 const budgets = [
@@ -20,6 +21,7 @@ export function AgentPresetEditor({ preset, onSave, onCancel }: {
     tools:(preset?.tools || []).join('\n'), toolsets:(preset?.toolsets || []).join('\n'),
     deny_tools:(preset?.deny_tools || []).join('\n'), approval_mode:preset?.approval_mode || 'standard',
     sandbox_profile:preset?.sandbox_profile || 'agent', enabled:preset?.enabled ?? true,
+    mcp_connections:structuredClone(preset?.mcp_connections||[]),
     allTools:preset ? preset.tools_mode === 'all' : false,
     ...Object.fromEntries(budgets.map(([key,,fallback]) => [key,preset?.limits?.[key] ?? fallback])) });
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -32,7 +34,7 @@ export function AgentPresetEditor({ preset, onSave, onCancel }: {
     try {
       const input:Preset={name:draft.name.trim(),description:draft.description,instructions:draft.instructions,
         engine:draft.engine.trim() || 'inherit',model:draft.model.trim(),
-        toolsets:split(draft.toolsets),deny_tools:split(draft.deny_tools),
+        mcp_connections:draft.mcp_connections,toolsets:split(draft.toolsets),deny_tools:split(draft.deny_tools),
         limits:Object.fromEntries(budgets.map(([key])=>[key,Number(draft[key])])),
         approval_mode:draft.approval_mode,sandbox_profile:draft.sandbox_profile,enabled:draft.enabled};
       if(!draft.allTools)input.tools=split(draft.tools);
@@ -54,6 +56,7 @@ export function AgentPresetEditor({ preset, onSave, onCancel }: {
       <p className="manager-help">Inherited tools may include future host-authorized tools. An explicit empty list permits no tools. Host policy and denied tool IDs still apply.</p>
       {!draft.allTools && field('tools','Allowed tool IDs (one per line)',true)}{field('toolsets','Toolset IDs (one per line)',true)}{field('deny_tools','Denied tool IDs (one per line)',true)}
     </fieldset>
+    <McpPresetBindings value={draft.mcp_connections as McpBinding[]} disabled={busy} onChange={bindings=>{change('mcp_connections',bindings);if(bindings.length&&!draft.allTools)change('tools',[...new Set([...split(draft.tools),'mcp_catalog','mcp_call'])].join('\n'))}}/>
     <fieldset className="provider-capabilities"><legend>Run budget</legend>{budgets.map(([key,label,,max])=><label key={key} className="manager-field"><span>{label}</span><Input type="number" min={1} max={max} step={1} required disabled={busy} value={draft[key]} onChange={event=>change(key,event.target.value)}/></label>)}</fieldset>
     <label className="manager-field"><span>Approval preference</span><select disabled={busy} value={draft.approval_mode} onChange={event=>change('approval_mode',event.target.value)}><option value="standard">Ask when required</option><option value="remember">Use remembered consent</option><option value="autonomous">Autonomous within host policy</option></select></label>
     <label className="manager-field"><span>Sandbox preference</span><select disabled={busy} value={draft.sandbox_profile} onChange={event=>change('sandbox_profile',event.target.value)}><option value="agent">Agent</option><option value="workspace">Workspace</option><option value="host">Host</option></select></label>

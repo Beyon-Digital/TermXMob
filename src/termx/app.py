@@ -150,6 +150,7 @@ class AppState:
         # Engine sessions resolve agent mcp_connections through the registry;
         # secret env values come from the credential store at spawn time.
         self.engines.mcp_resolver = lambda conn_id: self.mcp_registry().get(conn_id)
+        self.mcp_pool.definition_resolver = lambda conn_id: self.mcp_registry().get(conn_id)
         self.engines.credential_lookup = self.credentials.get
         self.notifications = NotificationCenter()
         self.notifications.bridge_agent(self.agent, self.agent_store)
@@ -332,7 +333,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         state.runners.start()
         state.previews.start()
         await state.runner_agents.startup_reconcile()
+        state.prompt_queue.start()
         yield
+        await state.prompt_queue.close()
         await state.automation.close()
         await state.runner_agents.close()
         await state.runners.close()
@@ -368,6 +371,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_development(app, state)
     from termx.workspace import mount_workspace
     mount_workspace(app, state)
+    from termx.mcp.task_broker import McpTaskBroker
+    state.agent.mcp = McpTaskBroker(state)
+    from termx.workspace.prompt_queue_http import mount_prompt_queue
+    from termx.workspace.project_pins import mount_project_pins
+    mount_prompt_queue(app, state)
+    mount_project_pins(app, state)
     from termx.media.http import mount_media
     mount_media(app, state)
     from termx.runners.http import mount_runners

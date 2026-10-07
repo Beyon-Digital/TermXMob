@@ -8,6 +8,7 @@ import { MemoryEditor } from './MemoryEditor';
 import { AgentPresetEditor } from './AgentPresetEditor';
 import { ManagedPairingForm } from './ManagedPairingForm';
 import ExtensionManager from './ExtensionManager';
+import McpManager from './McpManager';
 
 type Row = Record<string, any>;
 export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void }
@@ -44,8 +45,8 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
     let cancelled = false; setLoading(true); setError(''); setDraft({}); setPreview(null); setSelected('');
     async function load(): Promise<Row> {
       if (section === 'models') return gql('{ engines { id label installed version auth_state error capabilities } agent_providers { id name kind model base_url secret_configured capabilities } acp_registry }');
-      if (section === 'agents') return gql('{ custom_agents { id name description instructions engine model enabled tools tools_mode toolsets deny_tools limits approval_mode sandbox_profile file_revision } }');
-      if (section === 'connections') return gql('{ mcp_connections { id label transport url enabled trust approved_tools runtime auth_url_pending } }');
+      if (section === 'agents') return gql('{ custom_agents { id name description instructions engine model enabled tools tools_mode toolsets deny_tools limits approval_mode sandbox_profile file_revision mcp_connections } }');
+      if (section === 'connections') return {};
       if (section === 'memory') return request<Row>(`/api/workspace/memory${scoped(projectId)}`);
       if (section === 'hooks') { const [hooks, runs] = await Promise.all([request<Row>(`/api/workspace/hooks${scoped(projectId)}`), request<Row>(`/api/workspace/hook-runs${scoped(projectId)}`)]); return { ...hooks, ...runs } }
       if (section === 'automations') return request<Row>(`/api/workspace/automations${scoped(projectId)}`);
@@ -119,10 +120,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
 
       {section === 'extensions' && <ExtensionManager key={projectId||'global'} data={data} projectId={projectId} onChanged={()=>setVersion(v=>v+1)}/>}
 
-      {section === 'connections' && <><h2>Tool connections</h2>{(data.mcp_connections || []).filter(matches).map((connection:Row) => <Item key={connection.id} title={connection.label || connection.id} meta={`${connection.transport} · ${connection.runtime?.connected ? 'Connected' : 'Disconnected'} · ${connection.trust}`}>
-        {action(connection.runtime?.connected ? 'Disconnect' : 'Connect',()=>mutate(()=>gql(`mutation($id:String!){${connection.runtime?.connected ? 'disconnect_mcp_connection' : 'connect_mcp_connection'}(conn_id:$id)${connection.runtime?.connected ? '' : '{status auth_url note}'}}`,{id:connection.id}),'Connection updated'),true)}
-        {connection.trust !== 'trusted' && action('Trust reviewed connection',()=>mutate(()=>gql('mutation($id:String!){trust_mcp_connection(conn_id:$id)}',{id:connection.id}),'Connection trust saved'),true)}{connection.auth_url_pending && <a href={connection.auth_url_pending} target="_blank" rel="noopener noreferrer">Complete sign-in</a>}{action('Inspect permissions',()=>setPreview(connection),true)}{action('Remove',()=>mutate(()=>gql('mutation($id:String!){delete_mcp_connection(conn_id:$id)}',{id:connection.id}),'Connection removed'),true)}</Item>)}{preview && <Json value={preview} />}
-      <details open><summary>Add a connection</summary><div className="manager-form">{textarea('connection','Connection definition','{"id":"tools","label":"My tools","transport":"http","url":"https://…","enabled":true,"trust":"untrusted","approved_tools":[]}')}{action('Save connection',()=>mutate(()=>gql('mutation($input:McpConnectionInput!){create_mcp_connection(input:$input)}',{input:{data:jsonDraft('connection',{})}}),'Connection saved'))}<p className="manager-help">Credentials stay in the host secret store. Inspect allowed tools before granting trust; a connection being installed does not mean it is authorized.</p></div></details></>}
+      {section === 'connections' && <McpManager projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
 
       {section === 'access' && <>{me.principal?.id && me.session_id && me.host_id && <ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/>}<h2>Your sessions</h2><p className="manager-help">{data.access?.role || 'Member'} · {data.access?.runtime_boundary || 'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>
       {(data.sessions || []).map((session:Row) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>

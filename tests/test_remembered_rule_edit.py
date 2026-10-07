@@ -54,7 +54,7 @@ def test_changed_live_authority_cannot_edit_existing_rule(setup,mutation):
     elif mutation=='task':state.agent_store.update_task(envelope.run_id,status='completed')
     elif mutation=='authority':state.browser.records.delete('agent-task-authority',envelope.run_id)
     else:state.browser.records.put('review-rule',rule['id'],{**rule,'expires_at':time()-1})
-    assert edit(client,headers,rule).status_code==403
+    assert edit(client,headers,rule).status_code==(401 if mutation=='session' else 403)
     assert state.browser.records.get('review-rule',rule['id'])['decision']=='BLOCK'
 
 def test_foreign_admin_and_new_session_cannot_borrow_rule_scope(setup):

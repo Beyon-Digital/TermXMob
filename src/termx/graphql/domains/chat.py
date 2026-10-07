@@ -33,6 +33,7 @@ from termx.graphql import types as T
 from termx.mcp.client import McpConnectionError
 from termx.mcp.defs import ConnectionDef, ConnectionError_, validate_connection
 from termx.mcp.gateway import GatewayAuthError
+from termx.mcp.scope import authorize as authorize_mcp,validate_projects,definition_digest,validate_bindings
 
 Ctx = Info[TermxContext, None]
 
@@ -77,7 +78,7 @@ def _agent_file_from_input(body: CustomAgentInput) -> AgentFile:
         skills_include=list(skills.get("include") or []),
         skills_exclude=list(skills.get("exclude") or []),
         workflows=list(body.workflows or []),
-        mcp_connections=[dict(c) for c in (body.mcp_connections or [])],
+        mcp_connections=list(body.mcp_connections or []),
         delegation=dict(body.delegation or {}),
         approval_mode=body.approval_mode,
         sandbox_profile=body.sandbox_profile,
@@ -237,14 +238,22 @@ class ChatQueries:
 
     @strawberry.field
     @resolver
-    def mcp_connections(self, info: Ctx) -> list[T.McpConnectionInfo]:
+    def mcp_connections(self, info: Ctx,project_id: str | None = None) -> list[T.McpConnectionInfo]:
         ctx = info.context
-        ctx.require_host('agent-view')
+        if project_id:ctx.require_project('agent-view',project_id)
+        else:ctx.require_host('agent-view')
         status = ctx.state.mcp_pool.status()
         out = []
         for conn in ctx.state.mcp_registry().list():
+            if project_id:
+                try:authorize_mcp(ctx.state,conn,'agent-view',credential=ctx.secret,project_id=project_id)
+                except (PermissionError,HTTPException,ConnectionError_):continue
             d = conn.as_dict()
+            d['definition']=dict(d)
+            d['definition_digest']=definition_digest(conn)
+            d['credential_configured']=any(bool(ctx.state.credentials.get(ref)) for ref in [*conn.secret_refs,*conn.header_secret_refs.values(),*([conn.client_secret_ref] if conn.client_secret_ref else [])])
             d["runtime"] = status.get(conn.id, {"connected": False})
+            d['catalog']=ctx.state.mcp_pool.catalog(conn.id,project_id=project_id if project_id else (conn.allowed_projects[0] if conn.allowed_projects else None))
             if conn.id in ctx.state.mcp_auth_urls:
                 d["auth_url_pending"] = ctx.state.mcp_auth_urls[conn.id]
             out.append(d)
@@ -363,6 +372,7 @@ class ChatMutations:
         ctx.require_host('agent-control')
         try:
             definition=_agent_file_from_input(input)
+            definition.mcp_connections=validate_bindings(ctx.state,definition.mcp_connections)
             definition.slug=slugify(definition.slug or definition.name)
             if ctx.state.agent_store.get_custom_agent(definition.qid_id) or ctx.state.agent_registry.load(definition.slug):
                 raise HTTPException(409,'custom agent already exists; patch its current revision')
@@ -475,7 +485,8 @@ class ChatMutations:
         if "workflows" in updates:
             af.workflows = list(updates["workflows"])
         if "mcp_connections" in updates:
-            af.mcp_connections = [dict(c) for c in updates["mcp_connections"]]
+            try:af.mcp_connections = validate_bindings(ctx.state,updates["mcp_connections"])
+            except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         if "delegation" in updates:
             af.delegation = dict(updates["delegation"])
         try:
@@ -572,8 +583,12 @@ class ChatMutations:
         ctx.require_host('agent-control')
         try:
             conn = validate_connection(dict(input.data or {}))
+            validate_projects(ctx.state,conn)
         except ConnectionError_ as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        existing=ctx.state.mcp_registry().get(conn.id)
+        if existing and input.expected_digest != definition_digest(existing):
+            raise HTTPException(409,'MCP definition changed; reload before updating')
         if conn.transport in {"http", "sse"}:
             from termx.mcp.ssrf import SSRFError, validate_url
 
@@ -581,27 +596,74 @@ class ChatMutations:
                 validate_url(conn.url, lan=conn.lan)
             except SSRFError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        path = ctx.state.mcp_registry().save(conn)
+        try:path = ctx.state.mcp_registry().save(conn,expected_digest=input.expected_digest)
+        except ConnectionError_ as exc:raise HTTPException(409,str(exc)) from exc
         return {"connection": conn.as_dict(), "path": path}
 
     @strawberry.mutation
     @resolver
-    def trust_mcp_connection(self, info: Ctx, conn_id: str) -> JSON:
+    async def set_mcp_credential(self,info: Ctx,conn_id: str,binding: str,value: str | None,expected_digest: str,kind: str = 'env') -> JSON:
+        """Write-only host credential binding; null removes the exact binding."""
+        ctx=info.context;ctx.require_host('agent-control')
+        conn=_conn_or_404(ctx.state,conn_id)
+        if definition_digest(conn)!=expected_digest:raise HTTPException(409,'MCP definition changed; reload before updating')
+        if kind not in {'env','header','oauth_client_secret'}:raise HTTPException(400,'Unknown MCP credential binding kind')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}' if kind=='env' else r'[A-Za-z][A-Za-z0-9_-]{0,63}',binding):
+            raise HTTPException(400,'Invalid credential binding name')
+        if kind=='env' and (conn.transport!='stdio' or binding!=binding.upper()):raise HTTPException(400,'Environment bindings require stdio and uppercase variable names')
+        if kind=='header' and (conn.transport=='stdio' or binding.lower() in {'host','connection','content-length','cookie','origin','referer','transfer-encoding'}):raise HTTPException(400,'Invalid HTTP credential header')
+        if kind=='oauth_client_secret' and (conn.auth_method!='oauth' or binding!='client_secret'):raise HTTPException(400,'OAuth secret binding must be client_secret for an OAuth connection')
+        if value is not None and (not value or len(value)>16384 or any(c in value for c in '\r\n\0')):raise HTTPException(400,'Credential must be bounded single-line text')
+        ref=f'mcp.{conn.slug}.{kind}.{binding.upper() if kind=="env" else binding.lower()}'
+        from uuid import uuid4
+        conn.credential_revision=uuid4().hex
+        if kind=='env':
+            conn.secret_refs=[r for r in conn.secret_refs if r!=ref]
+            if value is not None:conn.secret_refs.append(ref)
+        elif kind=='header':
+            conn.header_secret_refs={k:v for k,v in conn.header_secret_refs.items() if k.lower()!=binding.lower()}
+            if value is not None:conn.header_secret_refs[binding]=ref
+        else:conn.client_secret_ref=ref if value is not None else None
+        # Tear down the old pooled transport before rotating credentials.
+        await ctx.state.mcp_pool.disconnect(conn.id)
+        ctx.require_host('agent-control')
+        registry=ctx.state.mcp_registry()
+        from termx.mcp.registry import _WRITE_LOCK
+        def persist():
+            with _WRITE_LOCK:
+                current=_conn_or_404(ctx.state,conn.id)
+                if definition_digest(current)!=expected_digest:raise HTTPException(409,'MCP definition changed; reload before updating')
+                ctx.require_host('agent-control')
+                try:
+                    if value is None:ctx.state.credentials.delete(ref)
+                    else:ctx.state.credentials.set(ref,value)
+                except RuntimeError:raise HTTPException(503,'The host credential store is unavailable; unlock or configure the operating-system credential store') from None
+                registry.save(conn,expected_digest=expected_digest)
+        await asyncio.to_thread(persist)
+        return {'connection':conn.as_dict(),'definition_digest':definition_digest(conn),'configured':value is not None,'binding':binding,'kind':kind}
+
+    @strawberry.mutation
+    @resolver
+    def trust_mcp_connection(self, info: Ctx, conn_id: str,expected_digest: str) -> JSON:
         """Explicit user consent: flip a def's ``trust`` to trusted on disk."""
         ctx = info.context
         ctx.require_host('agent-control')
         conn = _conn_or_404(ctx.state, conn_id)
+        if definition_digest(conn)!=expected_digest:raise HTTPException(409,'MCP definition changed; inspect the exact configuration before granting trust')
         conn.trust = "trusted"
-        ctx.state.mcp_registry().save(conn)
+        try:ctx.state.mcp_registry().save(conn,expected_digest=expected_digest)
+        except ConnectionError_:raise HTTPException(409,'MCP definition changed; reload before granting trust') from None
         return {"connection": conn.as_dict()}
 
     @strawberry.mutation
     @resolver
-    async def connect_mcp_connection(self, info: Ctx, conn_id: str) -> T.McpConnectResult:
+    async def connect_mcp_connection(self, info: Ctx, conn_id: str,project_id: str | None = None) -> T.McpConnectResult:
         ctx = info.context
-        ctx.require_host('agent-control')
+        ctx.require('agent-control')
+        ctx.require('agent-run')
         state = ctx.state
         conn = _conn_or_404(state, conn_id)
+        authorize_mcp(state,conn,'agent-run',credential=ctx.secret,project_id=project_id)
         if not conn.enabled:
             raise HTTPException(status_code=400, detail="connection is disabled")
         if not conn.trusted:
@@ -612,20 +674,26 @@ class ChatMutations:
         auth_url_ready = asyncio.Event()
 
         async def on_auth_url(url: str) -> None:
+            authorize_mcp(state,conn,'agent-run',credential=ctx.secret,project_id=project_id)
             state.mcp_auth_urls[conn.id] = url
             auth_url_ready.set()
 
         task = asyncio.create_task(
             state.mcp_pool.connect(
-                conn, on_auth_url=on_auth_url, loopback=state.mcp_loopback
+                conn, on_auth_url=on_auth_url, loopback=state.mcp_loopback,project_id=project_id
             )
         )
-        done, _ = await asyncio.wait(
-            {task, asyncio.create_task(auth_url_ready.wait())},
-            timeout=30.0,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        waiter=asyncio.create_task(auth_url_ready.wait())
+        try:
+            await asyncio.wait({task,waiter},timeout=30.0,return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            waiter.cancel();await asyncio.gather(waiter,return_exceptions=True)
         if auth_url_ready.is_set():
+            authorize_mcp(state,conn,'agent-run',credential=ctx.secret,project_id=project_id)
+            def finished(result):
+                state.mcp_auth_urls.pop(conn.id,None)
+                if not result.cancelled():result.exception()
+            task.add_done_callback(finished)
             return T.McpConnectResult.wrap(
                 {
                     "connection": conn.id,
@@ -634,11 +702,15 @@ class ChatMutations:
                     "note": "open this URL on the host to complete sign-in",
                 }
             )
+        if not task.done():
+            task.cancel();await asyncio.gather(task,return_exceptions=True)
+            raise HTTPException(502,'MCP connection startup timed out; no transport was retained')
         try:
             catalog = task.result()
         except Exception as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         state.mcp_auth_urls.pop(conn.id, None)
+        authorize_mcp(state,conn,'agent-run',credential=ctx.secret,project_id=project_id)
         return T.McpConnectResult.wrap(
             {
                 "connection": conn.id,
@@ -661,13 +733,15 @@ class ChatMutations:
     @strawberry.mutation
     @resolver
     async def call_mcp_tool(
-        self, info: Ctx, conn_id: str, tool: str, input: McpToolCallInput | None = None
+        self, info: Ctx, conn_id: str, tool: str, input: McpToolCallInput | None = None,project_id: str | None = None
     ) -> JSON:
         ctx = info.context
-        ctx.require_host('agent-control')
+        ctx.require('agent-control')
+        ctx.require('agent-run')
         conn = _conn_or_404(ctx.state, conn_id)
+        authorize_mcp(ctx.state,conn,'agent-run',credential=ctx.secret,project_id=project_id)
         fq = conn.id
-        catalog = ctx.state.mcp_pool.catalog(fq) or {}
+        catalog = ctx.state.mcp_pool.catalog(fq,project_id=project_id) or {}
         approved = conn.approved_tools
         tool_names = {t["name"] for t in catalog.get("tools", [])}
         if tool not in tool_names:
@@ -675,20 +749,34 @@ class ChatMutations:
         if "*" not in approved and tool not in approved:
             raise HTTPException(status_code=403, detail="tool not in approved_tools")
         try:
+            arguments=(input.arguments if input else None) or {}
+            import json
+            if not isinstance(arguments,dict) or len(json.dumps(arguments).encode())>64000:raise HTTPException(400,'Provide bounded MCP tool arguments')
             result = await ctx.state.mcp_pool.call_tool(
-                fq, tool, dict((input.arguments if input else None) or {})
+                fq, tool, dict(arguments),project_id=project_id,
+                authorize=lambda current:authorize_mcp(ctx.state,current,'agent-run',credential=ctx.secret,project_id=project_id)
             )
         except McpConnectionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PermissionError:raise HTTPException(403,'MCP connection project or tool authority changed') from None
         return {"result": result}
 
     @strawberry.mutation
     @resolver
-    def delete_mcp_connection(self, info: Ctx, conn_id: str) -> JSON:
+    async def delete_mcp_connection(self, info: Ctx, conn_id: str,expected_digest: str) -> JSON:
         ctx = info.context
         ctx.require_host('agent-control')
         conn = _conn_or_404(ctx.state, conn_id)
+        if definition_digest(conn)!=expected_digest:raise HTTPException(409,'MCP definition changed; reload before deleting')
         if not conn.path:
             raise HTTPException(status_code=409, detail="connection has no file to delete")
-        os.unlink(conn.path)
+        await ctx.state.mcp_pool.disconnect(conn.id)
+        def remove():
+            from termx.mcp.registry import _WRITE_LOCK
+            with _WRITE_LOCK:
+                ctx.require_host('agent-control')
+                current=_conn_or_404(ctx.state,conn.id)
+                if definition_digest(current)!=expected_digest:raise HTTPException(409,'MCP definition changed; reload before deleting')
+                os.unlink(conn.path)
+        await asyncio.to_thread(remove)
         return {"deleted": conn.id}

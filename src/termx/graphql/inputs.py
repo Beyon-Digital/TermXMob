@@ -294,6 +294,7 @@ class McpConnectionInput:
     """Free-form MCP connection definition (validated by validate_connection)."""
 
     data: JSON
+    expected_digest: str | None = None
 
 
 @strawberry.input

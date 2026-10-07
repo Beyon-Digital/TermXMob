@@ -80,7 +80,10 @@ def test_graphql_custom_agent_claims_and_live_private_lists(tmp_path):
     assert state.agent_store.get_custom_agent(identifier)['instructions']=='private text'
     alice_headers=headers('alice')
     identity.disable(alice.id)
-    denied(query(client,alice_headers,document),401)
+    disabled=client.post("/graphql",headers=alice_headers,json={"query":document})
+    assert disabled.status_code==401
+    assert "data" not in disabled.json()
+    assert "ALICE_ONLY" not in disabled.text
     denied(query(client,headers('bob'),'query($id:String!){custom_agent_export(agent_id:$id){markdown}}',{'id':private.qid_id}))
 
 

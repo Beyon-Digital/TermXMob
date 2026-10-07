@@ -157,7 +157,7 @@ def test_browser_http_profile_owner_revocation_and_cookie_csrf(tmp_path,monkeypa
     client.cookies.set('termx_access',credentials.access_token)
     assert client.post('/api/browser/profiles',json={'name':'csrf-bypass'}).status_code==403
     identity.revoke(credentials.session_id,identity.resolve(credentials.access_token).principal.id)
-    assert client.get('/api/browser/profiles',headers=token).status_code==403
+    assert client.get('/api/browser/profiles',headers=token).status_code==401
 
 @pytest.mark.skipif(not os.environ.get('PLAYWRIGHT_BROWSERS_PATH'),reason='managed Chromium artifact required')
 def test_internal_agent_browser_tools_approval_resume_and_no_shell_escape(tmp_path):

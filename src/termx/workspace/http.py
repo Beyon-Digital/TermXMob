@@ -1,6 +1,8 @@
 """Managed-session desktop contracts. Same-origin cookies use SessionGuard CSRF."""
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +27,7 @@ class SessionInput(Input):
     provider_id: str | None=None
     model: str | None=None
     mode: str='ask'
+    reasoning_config:dict[str,str]|None=None
     workflow: str | None=None
     runner_id: str | None=None
     runner_credential_ref: str | None=None
@@ -227,6 +230,16 @@ def mount_workspace(app,state):
     @router.get('/sessions/{identifier}')
     def session(request:Request,identifier:str,turns:bool=True):
         return call(workspace.session,principal(request),identifier,turns=turns)
+
+    @router.get('/sessions/{identifier}/reasoning')
+    async def reasoning(request:Request,identifier:str):
+        actor=await asyncio.to_thread(principal,request)
+        row=await asyncio.to_thread(call,workspace.session,actor,identifier,turns=False)
+        if row['engine']=='internal' or row.get('runner_id'):
+            return {'config_options':[],'model_configurations':{}}
+        configuration=await await_call(state.engines.configuration,row['engine'])
+        # Catalogue reads never start discovery or carry account credentials.
+        return {key:configuration[key] for key in ('models','default_model','model_configurations','config_options','stale','refreshed_at','refresh_error','source') if key in configuration}
 
     @router.patch('/sessions/{identifier}')
     def update(request:Request,identifier:str,body:SessionUpdate):
