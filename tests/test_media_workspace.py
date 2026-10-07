@@ -48,7 +48,8 @@ def test_image_conversion_has_bounded_size_no_metadata(tmp_path):
     assert input_context(service,'alice',text['id'])['text']=='Actual text'
 
 
-def test_image_generation_explicit_provider_protocol_and_dedup(tmp_path):
+@pytest.mark.parametrize('provider_kind',['openai','openai-compatible'])
+def test_image_generation_explicit_provider_protocol_and_dedup(tmp_path,provider_kind):
     from PIL import Image
     image=io.BytesIO();Image.new('RGB',(10,10),'blue').save(image,format='PNG')
     calls=[]
@@ -57,7 +58,7 @@ def test_image_generation_explicit_provider_protocol_and_dedup(tmp_path):
         assert request.url.path=='/v1/images/generations'
         assert request.headers['authorization']=='Bearer test-only'
         return httpx.Response(200,json={'data':[{'b64_json':base64.b64encode(image.getvalue()).decode()}]})
-    provider={'id':'configured','kind':'openai-compatible','base_url':'https://provider.example/v1','capabilities':['image','audio']}
+    provider={'id':'configured','kind':provider_kind,'base_url':'https://provider.example/v1','capabilities':['image','audio']}
     state=SimpleNamespace(agent_store=SimpleNamespace(get_provider=lambda _:provider),credentials=SimpleNamespace(get=lambda _:'test-only'))
     service=ArtifactService(tmp_path)
     client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -74,14 +75,15 @@ def test_image_generation_explicit_provider_protocol_and_dedup(tmp_path):
     assert len(calls)==1
 
 
-def test_provider_transcription_speech_entitlement_and_no_replay(tmp_path):
+@pytest.mark.parametrize('provider_kind',['openai','openai-compatible'])
+def test_provider_transcription_speech_entitlement_and_no_replay(tmp_path,provider_kind):
     calls=[]
     def handler(request):
         calls.append(request.url.path)
         if request.url.path.endswith('/transcriptions'):return httpx.Response(200,json={'text':'Converted speech'})
         if request.url.path.endswith('/speech'):return httpx.Response(200,content=b'audio-response')
         return httpx.Response(403,json={'error':'missing entitlement'})
-    provider={'id':'configured','kind':'openai-compatible','base_url':'https://provider.example/v1','capabilities':['audio','image']}
+    provider={'id':'configured','kind':provider_kind,'base_url':'https://provider.example/v1','capabilities':['audio','image']}
     state=SimpleNamespace(agent_store=SimpleNamespace(get_provider=lambda _:provider),credentials=SimpleNamespace(get=lambda _:'test-only'))
     service=ArtifactService(tmp_path)
     source=service.create('alice','project','input','Voice',blob=b'fixture-audio',mime='audio/wav')
@@ -188,3 +190,16 @@ def test_pdf_expansion_is_bounded_without_changing_other_parsers(tmp_path):
     item=service.create('alice','project','input','Expanded PDF',blob=blob.getvalue(),mime='application/pdf')
     with pytest.raises(HTTPException,match='PDF expanded contents'):input_context(service,'alice',item['id'])
     assert get_configuration()==original
+
+
+def test_subscription_account_is_not_used_for_media_or_billing_fallback(tmp_path):
+    calls=[]
+    provider={'id':'subscription','kind':'chatgpt','base_url':'https://provider.example/v1','capabilities':['audio','image']}
+    state=SimpleNamespace(agent_store=SimpleNamespace(get_provider=lambda _:provider),credentials=SimpleNamespace(get=lambda _:'fixture'))
+    service=ArtifactService(tmp_path);client=httpx.AsyncClient(transport=httpx.MockTransport(lambda request:calls.append(request)))
+    adapter=MediaProvider(state,service,client)
+    async def run():
+        with pytest.raises(HTTPException,match='configured compatible API account'):
+            await adapter.generate('owner','project',{'request_id':'subscription-media','provider_id':'subscription','operation':'speak','model':'explicit','prompt':'Hello','acknowledge_billing':True})
+        await client.aclose()
+    asyncio.run(run());assert calls==[];assert service.operations('owner','project')==[]

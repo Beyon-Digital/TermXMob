@@ -120,7 +120,7 @@ class PolicyEngine:
         )
         profile = "agent"
         if custom_agent_id:
-            custom = self._store.get_custom_agent(str(custom_agent_id))
+            custom = self._store.task_agent(getattr(ctx,"task",None) or {},custom_agent_id)
             if custom is not None and custom.get("sandbox_profile"):
                 profile = str(custom["sandbox_profile"])
         return replace(
@@ -225,7 +225,7 @@ class PolicyEngine:
         # 4. Custom-agent approval mode — `autonomous` auto-approves only
         # sandbox-contained non-sensitive classes; it never conjures missing
         # capabilities (step 1 already handled those).
-        mode = str((self._custom_agent(custom_agent_id) or {}).get("approval_mode") or "standard")
+        mode = str((self._store.task_agent(getattr(ctx,"task",None) or {},custom_agent_id) or {}).get("approval_mode") or "standard")
         if mode == "autonomous" and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
             return _PD(
                 True,

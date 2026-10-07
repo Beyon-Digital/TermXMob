@@ -23,3 +23,22 @@ def test_takeover_while_observation_in_flight_never_returns_private_context(tmp_
         with pytest.raises(PermissionError):await operation('tab','owner',grant_id='grant',run_id='task')
         assert 'private in-flight response' not in service.records.path.read_bytes().decode(errors='ignore')
     asyncio.run(run())
+
+def test_handoff_cannot_overwrite_a_private_takeover_while_title_is_in_flight(tmp_path):
+    async def run():
+        service=BrowserService(tmp_path,development_origins=['http://127.0.0.1:9999'])
+        tab={'id':'tab','principal_id':'owner','project_id':'project','profile_id':'profile','session_id':'sid','url':'http://127.0.0.1:9999','title':'Public','state':'human','document_revision':1,'lease_revision':1,'grant_id':None,'recording':False}
+        service.records.put('tab','tab',tab)
+        class Page:
+            url='http://127.0.0.1:9999'
+            async def title(self):
+                service.takeover('tab','owner',private=True)
+                return 'PRIVATE_TITLE_NEVER_PERSIST'
+        service._pages['tab']=Page()
+        with pytest.raises(PermissionError,match='changed during handoff'):
+            await service.handoff('tab','owner','sid',run_id='task',origins=[Page.url],actions=['observe'])
+        current=service.get('tab','owner')
+        assert current['state']=='private' and current['grant_id'] is None and current['lease_revision']==3
+        assert not service.records.list('grant')
+        assert 'PRIVATE_TITLE_NEVER_PERSIST' not in service.records.path.read_bytes().decode(errors='ignore')
+    asyncio.run(run())

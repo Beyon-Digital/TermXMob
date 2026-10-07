@@ -72,7 +72,7 @@ def sandbox_profile(ctx: Any) -> str:
     """
     agent_id = (getattr(ctx, "task", None) or {}).get("custom_agent_id")
     if agent_id and getattr(ctx, "store", None) is not None:
-        custom = ctx.store.get_custom_agent(str(agent_id))
+        custom = ctx.store.task_agent(ctx.task)
         if custom is not None and custom.get("sandbox_profile"):
             return str(custom["sandbox_profile"])
     return "agent"

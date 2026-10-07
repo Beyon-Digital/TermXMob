@@ -227,6 +227,9 @@ class AgentQueries:
         custom = None
         if custom_agent_id:
             custom = ctx.state.agent_store.get_custom_agent(custom_agent_id)
+            if custom is None:raise HTTPException(404,'custom agent not found')
+            from termx.graphql.domains.chat import _require_custom_agent
+            _require_custom_agent(ctx,custom)
         from termx.sandbox import runner_for
 
         profile = str((custom or {}).get("sandbox_profile") or "agent")
@@ -408,6 +411,11 @@ class AgentMutations:
         )
         if custom_agent_id and custom_agent is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
+        if custom_agent:
+            from termx.graphql.domains.chat import _require_custom_agent
+            _require_custom_agent(ctx,custom_agent)
+            if not custom_agent.get('enabled'):
+                raise HTTPException(409,'custom agent is disabled')
         attachments = body.attachments or []
         profile_engine = ((custom_agent or {}).get("file") or {}).get("engine")
         previous = state.agent_store.engine_session_for_conversation(body.conversation_id) if body.conversation_id else None

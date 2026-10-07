@@ -140,7 +140,7 @@ class ClaudeEngine:
             if not self.browser_service or not cfg.tools.get('browser_task_id'):
                 raise ValueError('Browser workflow needs a trusted task broker')
             from termx.browser.claude_mcp import controlled_server
-            broker_names={'mcp__termx-browser__'+name for name in ('browser_tabs','browser_observe','browser_action','browser_wait_for_handoff')}
+            broker_names={'mcp__termx-browser__'+name for name in ('browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff')}
             opts_kwargs.update(tools=[],strict_mcp_config=True,setting_sources=[],skills=[],
                 allowed_tools=[],
                 mcp_servers={'termx-browser':controlled_server(self.browser_service,cfg.tools['browser_task_id'],lambda record,identity:self._browser_review(binding,record,identity),read_only=cfg.mode=='ask')})
@@ -184,7 +184,8 @@ class ClaudeEngine:
                     from termx.agent.providers import ProviderCall
                     if not await self._browser_review(binding,exc.record,identity,proposal=ProviderCall('function',id,name,input).public()):raise PermissionError('Human declined')
                     permit=await service.review.authorize(envelope,validate=validate,hard_deny=hard)
-                await service.review.consume_external(envelope,permit['permit'],validate=validate)
+                from termx.engines.action_review import consume_reviewed
+                await consume_reviewed(self,binding,envelope,validate,permit,tool=tool,args=args,hard_deny=hard)
                 return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'allow','permissionDecisionReason':'Scoped host action permit consumed'}}
             except (ValueError,PermissionError,ActionBlocked):
                 return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny','permissionDecisionReason':'Action authority, target or approval is invalid; obtain fresh consent'}}
@@ -426,15 +427,25 @@ class ClaudeEngine:
         return True
 
     async def close(self, binding: EngineSessionBinding) -> None:
-        state = self._sessions.pop(binding.binding_id, None)
+        state = self._sessions.get(binding.binding_id)
+        if state:
+            reader = state.get("reader")
+            if reader is not None and reader is not asyncio.current_task():
+                reader.cancel()
+                await asyncio.gather(reader, return_exceptions=True)
+            if state.get("client"):
+                # Keep failed transports reachable for retry; shutdown must
+                # not report success and clear private barriers on failure.
+                transport = getattr(state['client'], '_transport', None)
+                process = getattr(transport, '_process', None) or state.get('shutdown_process')
+                if process is not None: state['shutdown_process'] = process
+                await state["client"].disconnect()
+                if process is not None and process.returncode is None:
+                    raise RuntimeError('Claude transport process remains active after disconnect')
+        self._sessions.pop(binding.binding_id, None)
         binding.status = "closed"
         binding.updated_at = time.time()
         self._bindings.pop(binding.binding_id, None)
-        if state and state.get("client"):
-            try:
-                await state["client"].disconnect()
-            except Exception:
-                pass
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         return []  # SDK session listing not exposed; honest empty.

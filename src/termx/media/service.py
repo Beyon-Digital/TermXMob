@@ -234,7 +234,7 @@ class MediaProvider:
         if not request.get('acknowledge_billing'):
             raise HTTPException(409, 'Confirm this provider/model usage before generation')
         provider = self.state.agent_store.get_provider(request['provider_id'])
-        if not provider or provider['kind'] != 'openai-compatible':
+        if not provider or provider['kind'] not in {'openai','openai-compatible'}:
             raise HTTPException(400, 'Select a configured compatible API account')
         operation = request['operation']
         capability = 'image' if operation.startswith('image') else 'audio'

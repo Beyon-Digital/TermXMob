@@ -31,3 +31,18 @@ def test_native_fixture_installer_digest_streams_without_reading_whole_asset(tmp
     package.write_bytes(b'installed-platform-asset'*100000)
     import hashlib
     assert module.file_digest(package) == hashlib.sha256(package.read_bytes()).hexdigest()
+
+
+def test_native_fixture_rejects_changed_installed_asset(tmp_path):
+    import pytest
+    module = harness()
+    binary, package = tmp_path/'fixture.exe', tmp_path/'fixture.msi'
+    binary.write_bytes(b'unchanged installed app')
+    package.write_bytes(b'unchanged installer')
+    report = {'binary_sha256': module.file_digest(binary), 'package_sha256': module.file_digest(package)}
+    module.verify_unchanged_assets(report, binary, package)
+    assert report['asset_verification']['unchanged']
+    binary.write_bytes(b'modified app')
+    with pytest.raises(AssertionError, match='assets changed'):
+        module.verify_unchanged_assets(report, binary, package)
+    assert report['asset_verification']['unchanged'] is False

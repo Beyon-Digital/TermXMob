@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import sys
 import threading
 from time import monotonic,sleep
 import uvicorn
@@ -29,13 +30,19 @@ def run(destination, axe_source):
     axe=Path(axe_source)
     if not axe.is_file():raise ValueError('Pass the pinned axe-core 4.10.3 axe.min.js path')
     report={'tool':'axe-core/4.10.3','states':[],'keyboard':[],'errors':[]}
+    # Qualify the same installed test interpreter's language-server adapter,
+    # not whichever unrelated or absent executable the user's shell selects.
+    os.environ['PATH']=str(Path(sys.executable).parent)+os.pathsep+os.environ.get('PATH','')
+    report['fixture_adapter_bin']=str(Path(sys.executable).parent)
     with tempfile.TemporaryDirectory(prefix='termx-a11y-proof-') as scratch:
         root=Path(scratch);os.environ['TERMX_CONFIG_DIR']=str(root/'config');os.environ['TERMX_AGENTS_DIR']=str(root/'agents');os.environ['TERMX_ENGINE_STARTUP_REFRESH']='0'
         from termx.app import AppState,create_app
         (root/'a11y.py').write_text('def greet(name):\n    # Visible syntax contrast fixture\n    return f"Hello {name}"\n')
         state=AppState(passcode=None);owner=state.identity.setup_owner('accessibility-owner','accessibility-fixture-password-123')
         project=state.projects.register(str(root),name='Accessibility fixture')
-        app=create_app(state,web_dir=Path(__file__).resolve().parents[1]/'desktop/workspace/dist')
+        from workspace_ui_snapshot import snapshot_ui
+        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))
+        report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         session=state.workspace.create_session(owner,title='Keyboard workspace fixture',project_id=project['id'],cwd=str(root))
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]
         server=uvicorn.Server(uvicorn.Config(app,log_level='error',lifespan='on'))
@@ -53,6 +60,7 @@ def run(destination, axe_source):
                     context=browser.new_context(viewport={'width':int(1440/scale),'height':int(900/scale)},device_scale_factor=scale,reduced_motion='reduce')
                     page=context.new_page();page.on('pageerror',lambda error:report['errors'].append(str(error)))
                     page.goto(f'http://127.0.0.1:{port}/?session='+session['id'])
+                    report['production_bundle']=page.evaluate('Array.from(document.scripts).map(s=>s.src).find(s=>s.includes("/assets/index-"))?.split("/").pop()')
                     page.get_by_label('Username',exact=True).fill('accessibility-owner');page.get_by_label('Password',exact=True).fill('accessibility-fixture-password-123')
                     page.get_by_role('button',name='Continue with password').click()
                     page.wait_for_function("""()=>{const t=document.querySelector('textarea[aria-label="Message"]'),b=document.querySelector('button[aria-label="Rename or move conversation"]');return !!t&&!t.disabled&&!!b&&!b.disabled}""",timeout=60000)
@@ -60,7 +68,8 @@ def run(destination, axe_source):
                     page.get_by_role('textbox',name='Message',exact=True).wait_for()
                     for theme in ('dark','light'):
                         current=page.locator('html').get_attribute('data-theme') or 'dark'
-                        if current!=theme:page.get_by_role('button',name='Appearance',exact=True).click()
+                        if current!=theme:
+                            page.get_by_role('button',name='Appearance',exact=True).click();page.get_by_role('radio',name=theme.title(),exact=True).check();page.get_by_role('button',name='Close',exact=True).click()
                         page.add_script_tag(path=str(axe))
                         assert page.evaluate('axe.version')=='4.10.3'
                         # Include WCAG AA contrast, names, landmarks and ARIA in the rendered DOM.
@@ -71,6 +80,7 @@ def run(destination, axe_source):
                         state_report['text_contrasts']={f'{fg}/{bg}':contrast(tokens[fg],tokens[bg]) for fg,bg in [('foreground','background'),('secondary','surface'),('accent','accent-soft'),('destructive','muted')]}
                         assert min(state_report['text_contrasts'].values())>=4.5,state_report['text_contrasts']
                         report['states'].append(state_report)
+                        assert not page.locator('.error-toast').is_visible(),'A host error is visible in the loaded workspace'
                         page.screenshot(path=str(destination/f'workspace-{theme}-{zoom}.png'))
                         page.keyboard.press('Control+1')
                         # Traverse actual controls using keyboard and verify a visible focus indicator.

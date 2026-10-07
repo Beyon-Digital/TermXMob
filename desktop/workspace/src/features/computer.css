@@ -1,0 +1,7 @@
+.computer-surface{overflow:auto}
+.computer-surface header{height:auto;min-height:48px;flex-wrap:wrap;flex-shrink:0}
+.computer-surface footer{flex-wrap:wrap;flex-shrink:0}
+.computer-surface footer .input{flex:1 1 180px}
+.computer-canvas{min-height:180px;color:#f0f3ed}
+.computer-canvas>div{color:#a8b4ac}
+.computer-surface>.inline-error{padding:12px;overflow-wrap:anywhere}

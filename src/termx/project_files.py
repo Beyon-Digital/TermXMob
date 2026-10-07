@@ -205,6 +205,8 @@ class ProjectFiles:
                 candidate = Path(directory, name)
                 relative = candidate.relative_to(root).as_posix()
                 if not content:
+                    try:self.resolve(project_id,relative)
+                    except (OSError,HTTPException):continue
                     if needle in (relative if case_sensitive else relative.casefold()):
                         results.append({"path": relative, "line": 1, "text": relative})
                     continue

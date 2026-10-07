@@ -212,6 +212,10 @@ class AgentStore:
                 meta TEXT NOT NULL DEFAULT '{}',
                 created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS task_agent_presets (
+                task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+                preset TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS custom_agents (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -500,21 +504,30 @@ class AgentStore:
         mode: str = "agent",
         parent_id: str | None = None,
         custom_agent_id: str | None = None,
+        custom_agent_snapshot: dict[str, Any] | None = None,
         engine: str = "internal",
         status: str = "planning",
     ) -> dict[str, Any]:
+        encoded=json.dumps(custom_agent_snapshot,sort_keys=True) if custom_agent_snapshot is not None else None
+        if custom_agent_snapshot is not None and custom_agent_snapshot.get('id')!=custom_agent_id:
+            raise ValueError('Task preset ID does not match its immutable configuration')
         now = time()
         task_id = uuid.uuid4().hex
         with self._lock:
-            self._db.execute(
-                """
-                INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, engine, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (task_id, prompt, cwd, provider_id, model, status, _json(limits), mode, parent_id, custom_agent_id, engine, now, now),
-            )
-            self._db.commit()
+            try:
+                self._db.execute(
+                    """
+                    INSERT INTO tasks
+                        (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, engine, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (task_id, prompt, cwd, provider_id, model, status, _json(limits), mode, parent_id, custom_agent_id, engine, now, now),
+                )
+                if encoded is not None:
+                    self._db.execute('INSERT INTO task_agent_presets VALUES (?,?)',(task_id,encoded))
+                self._db.commit()
+            except BaseException:
+                self._db.rollback();raise
         task = self.get_task(task_id)
         if task is None:  # pragma: no cover
             raise RuntimeError("task was not created")
@@ -1470,6 +1483,21 @@ class AgentStore:
         return next(turn for turn in conversation["turns"] if turn["id"] == turn_id)  # type: ignore[index]
 
     # Custom agents -------------------------------------------------------
+
+    def freeze_task_agent(self, task_id: str, preset: dict[str, Any]) -> None:
+        """Immutable admission config, distinct from the editable preset library."""
+        encoded=json.dumps(preset,sort_keys=True)
+        with self._lock:
+            old=self._db.execute('SELECT preset FROM task_agent_presets WHERE task_id=?',(task_id,)).fetchone()
+            if old and old[0]!=encoded:raise ValueError('Task agent preset is immutable')
+            self._db.execute('INSERT OR IGNORE INTO task_agent_presets VALUES (?,?)',(task_id,encoded));self._db.commit()
+
+    def task_agent(self, task: dict[str, Any], agent_id: str | None = None) -> dict[str, Any] | None:
+        with self._lock:
+            row=self._db.execute('SELECT preset FROM task_agent_presets WHERE task_id=?',(task.get('id'),)).fetchone()
+        if row:return json.loads(row[0])
+        identifier=agent_id or task.get('custom_agent_id')
+        return self.get_custom_agent(identifier) if identifier else None
 
     def create_custom_agent(
         self,

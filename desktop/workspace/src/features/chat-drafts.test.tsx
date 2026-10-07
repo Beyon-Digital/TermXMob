@@ -19,3 +19,40 @@ it('submits the exact inspected context refs with the turn',async()=>{const item
 it('preserves a new unsent instruction typed before the previous send response arrives',async()=>{const a={...row('slow-send'),draft_text:'Submitted instruction'};let release:(value:unknown)=>void=()=>{};vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:path.endsWith('/turns')?await new Promise(resolve=>{release=resolve}):{...a} as any);render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);fireEvent.click(screen.getByLabelText('Send message'));fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Next unsent instruction'}});release({id:'submitted-task'});await waitFor(()=>expect(screen.getByLabelText('Message')).toHaveValue('Next unsent instruction'))});
 
 it('saves the next draft after its own dispatch cleared the submitted draft without a false window conflict',async()=>{const a={...row('dispatch-clear'),draft_text:'Submitted instruction'};let release:(value:unknown)=>void=()=>{};const onError=vi.fn();vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;if(path.endsWith('/turns'))return await new Promise(resolve=>{release=value=>{a.draft_text='';resolve(value)}}) as any;if(init?.method==='PATCH'){Object.assign(a,JSON.parse(init.body as string).changes);a.revision++}return {...a} as any});render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={onError}/>);fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(submittingDrafts.has(a.id)).toBe(true));fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Follow-up while dispatching'}});await new Promise(resolve=>setTimeout(resolve,550));expect(a.draft_text).toBe('Submitted instruction');release({id:'task'});await waitFor(()=>expect(a.draft_text).toBe('Follow-up while dispatching'));expect(screen.getByLabelText('Message')).toHaveValue('Follow-up while dispatching');expect(onError).not.toHaveBeenCalled()});
+
+it('preserves local image attachments through panel replacement without sending them',async()=>{const a=row('image-draft');vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);const props={session:a,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const incoming={id:'local-image-transfer',text:'',attachments:[{name:'pending.png',mime:'image/png',data:'YWJj'}]};const panel=render(<Chat {...props} incoming={incoming}/>);expect(screen.getByText('pending.png')).toBeVisible();panel.unmount();render(<Chat {...props}/>);expect(screen.getByText('pending.png')).toBeVisible();expect(sessionDrafts.get(a.id)?.attachments).toEqual(incoming.attachments);expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false)});
+
+it('keeps images attached while a previous text-only dispatch is awaiting its response',async()=>{
+ const a={...row('slow-image'),draft_text:'Submitted text'};let release!:(value:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:path.endsWith('/turns')?await new Promise(resolve=>{release=resolve}):{...a} as any);
+ const props={session:a,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};
+ const {rerender}=render(<Chat {...props}/>);fireEvent.click(screen.getByLabelText('Send message'));
+ await waitFor(()=>expect(release).toBeDefined());
+ const images=[{name:'next.png',mime:'image/png',data:'bmV4dCBieXRlcw=='}];
+ rerender(<Chat {...props} incoming={{id:'image-during-response',text:'',attachments:images}}/>);
+ release({id:'accepted'});
+ await waitFor(()=>expect(screen.getByLabelText('Send message')).not.toBeDisabled());
+ expect(screen.getByText('next.png')).toBeVisible();expect(sessionDrafts.get(a.id)?.attachments).toEqual(images);
+ const first=JSON.parse(vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/turns'))![1]!.body as string);expect(first.attachments).toBeUndefined();
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'New instruction for the next image'}});fireEvent.click(screen.getByLabelText('Send message'));
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/turns'))).toHaveLength(2));
+ const next=JSON.parse(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/turns'))[1][1]!.body as string);
+ expect(next.prompt).toBe('New instruction for the next image');expect(next.attachments).toEqual(images);expect(next.request_id).not.toBe(first.request_id);
+ release({id:'next-accepted'});await waitFor(()=>expect(screen.queryByText('next.png')).toBeNull());
+});
+
+it('retries a lost image response with the exact same request key and bytes while preserving new images',async()=>{
+ const a={...row('retry-images'),draft_text:'Inspect sent image'},errors=vi.fn();let attempts=0;
+ vi.mocked(request).mockImplementation(async(path)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;if(path.endsWith('/turns')){if(attempts++===0)throw new Error('Response lost');a.draft_text='';return {id:'accepted'} as any}return {...a} as any});
+ const sent=[{name:'sent.png',mime:'image/png',data:'c2VudCBieXRlcw=='}],next={name:'new.png',mime:'image/png',data:'bmV3IGJ5dGVz'};
+ const props={session:a,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:errors};
+ const {rerender}=render(<Chat {...props} incoming={{id:'initial-retry-image',text:'',attachments:sent}}/>);
+ fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(errors).toHaveBeenCalled());await waitFor(()=>expect(screen.getByLabelText('Send message')).not.toBeDisabled());
+ rerender(<Chat {...props} incoming={{id:'next-retry-image',text:'',attachments:[next]}}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:''}});expect(screen.getByText(/A previous send needs retry/)).toBeVisible();
+ fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/turns'))).toHaveLength(2));
+ const bodies=vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/turns')).map(([,init])=>JSON.parse(init!.body as string));
+ expect(bodies[1]).toEqual(bodies[0]);expect(bodies[0].attachments).toEqual(sent);
+ await waitFor(()=>expect(screen.queryByText(/A previous send needs retry/)).toBeNull());expect(screen.getByLabelText('Message')).toHaveValue('');
+ expect(sessionDrafts.get(a.id)?.attachments).toEqual([...sent,next]);expect(screen.getByText('new.png')).toBeVisible();
+});

@@ -32,6 +32,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.3.0
+      '@fontsource-variable/geist-mono':
+        specifier: 5.2.8
+        version: 5.2.8
       '@lezer/highlight':
         specifier: 1.2.5
         version: 1.2.5
@@ -445,6 +448,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource-variable/geist-mono@5.2.8':
+    resolution: {integrity: sha512-KI5bj+hkkRiHttYHmccotUZ80ZuZyai+RwI1d7UId0clkx/jXxlo8qYK8j54WzmpBjtMoEMPyllV7faDcj+6RA==}
 
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
@@ -2174,6 +2180,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@fontsource-variable/geist-mono@5.2.8': {}
 
   '@fontsource-variable/geist@5.3.0': {}
 

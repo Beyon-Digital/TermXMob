@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import sys
 import time
 from typing import Any
@@ -64,6 +65,7 @@ class DesktopManager:
         self._pumps: set[asyncio.Task[None]] = set()
         self._stops: set[asyncio.Event] = set()
         self._active: set[object] = set()
+        self._views: dict[str, dict[str, Any]] = {}
         self._idle_task: asyncio.Task[None] | None = None
         self._fps = 0.0
         self._last_capture_ms = 0
@@ -181,19 +183,37 @@ class DesktopManager:
     def _metrics_payload(self) -> dict[str, Any]:
         return {"type": "metrics", "fps": int(round(self._fps)), "last_capture_ms": self._last_capture_ms}
 
-    async def attach(self, websocket: WebSocket, authorize_control=None) -> None:
+    def viewers(self, principal_id: str) -> list[dict[str, Any]]:
+        return [{'id': row['id'], 'state': 'paused' if row['paused'] else 'watching' if row['view_only'] else 'control'}
+                for row in self._views.copy().values() if row['principal_id'] == principal_id and not row['stop'].is_set()]
+
+    async def stop_viewer(self, identifier: str, principal_id: str) -> dict[str, bool]:
+        row = self._views.get(identifier)
+        if not row or not principal_id or row['principal_id'] != principal_id:
+            raise KeyError('Desktop capture not found')
+        row['stop'].set()
+        row['resume'].set()
+        await row['websocket'].close(code=1000)
+        return {'ok': True}
+
+    async def attach(self, websocket: WebSocket, authorize_control=None, *, principal_id=None, session_id=None) -> None:
         await self._cancel_idle_close()
         permissions = permission_snapshot()
         if permissions.get("screen_recording") == "denied":
             _prompt_once("screen_recording")
         await websocket.accept()
-        await websocket.send_text(json.dumps({"type": "hello", **self.snapshot()}))
+        view_only = True  # Every new connection begins watching, even if another controls.
+        await websocket.send_text(json.dumps({"type": "hello", **self.snapshot(), "view_only": view_only}))
         stop = asyncio.Event()
         resume = asyncio.Event()
         resume.set()
         token = object()
         self._stops.add(stop)
         self._active.add(token)
+        identifier = secrets.token_urlsafe(16)
+        viewer = {'id': identifier, 'principal_id': principal_id, 'session_id': session_id,
+                  'view_only': view_only, 'paused': False, 'stop': stop, 'resume': resume, 'websocket': websocket}
+        self._views[identifier] = viewer
         applied_input = False
 
         async def frames() -> None:
@@ -259,21 +279,34 @@ class DesktopManager:
                                      'display_create', 'display_delete', 'rtc'} or (
                     kind == 'control' and not bool(payload.get('view_only', True)))
                 if protected and authorize_control is not None and not authorize_control():
-                    await websocket.send_text(json.dumps({'type': 'denied', 'message': 'desktop-control permission required'}))
+                    view_only = True
+                    viewer['view_only'] = True
+                    await websocket.send_text(json.dumps({'type': 'denied', 'view_only': True, 'message': 'desktop-control permission required'}))
                     continue
                 if kind == "control":
-                    self.view_only = bool(payload.get("view_only", True))
+                    requested = bool(payload.get("view_only", True))
+                    if not requested and self._input_denied():
+                        view_only = True
+                        viewer['view_only'] = True
+                        _prompt_once('accessibility')
+                        await websocket.send_text(json.dumps({'type': 'denied', 'view_only': True,
+                            'message': 'Accessibility permission is required to control this Mac. Grant it to Termx in System Settings → Privacy & Security → Accessibility.'}))
+                        continue
+                    view_only = requested
+                    viewer['view_only'] = view_only
+                    self.view_only = view_only
                     if self.store is not None:
                         try:
                             self.store.set_view_only(self.view_only)
                         except Exception:
                             pass
-                    await websocket.send_text(json.dumps({"type": "control", "view_only": self.view_only}))
+                    await websocket.send_text(json.dumps({"type": "control", "view_only": view_only}))
                     continue
                 if kind == "pause":
                     if token in self._active:
                         self._active.discard(token)
                         resume.clear()
+                        viewer['paused'] = True
                         await websocket.send_text(json.dumps({"type": "paused"}))
                         if not self._active:
                             await self._schedule_idle_close(pause_grace())
@@ -282,6 +315,7 @@ class DesktopManager:
                     if token not in self._active:
                         self._active.add(token)
                         resume.set()
+                        viewer['paused'] = False
                         await self._cancel_idle_close()
                         await websocket.send_text(json.dumps({"type": "resumed"}))
                     continue
@@ -349,15 +383,18 @@ class DesktopManager:
                     elif action == "set":
                         await asyncio.to_thread(clipboard_set, str(payload.get("text") or ""))
                     continue
-                if self.view_only and kind in {"pointer", "key", "text"}:
+                if view_only and kind in {"pointer", "key", "text"}:
                     await websocket.send_text(json.dumps({"type": "denied", "message": "view-only"}))
                     continue
                 if kind in {"pointer", "key", "text"} and self._input_denied():
+                    view_only = True
+                    self._views[identifier]['view_only'] = True
                     _prompt_once("accessibility")
                     await websocket.send_text(
                         json.dumps(
                             {
                                 "type": "denied",
+                                "view_only": True,
                                 "message": (
                                     "Accessibility permission is required to control this Mac. "
                                     "Grant it to Termx in System Settings → Privacy & Security → Accessibility."
@@ -373,10 +410,13 @@ class DesktopManager:
                         if kind != "release_all":
                             applied_input = True
                     except InputError as exc:
-                        await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+                        view_only = True
+                        self._views[identifier]['view_only'] = True
+                        await websocket.send_text(json.dumps({"type": "denied", "view_only": True, "message": str(exc)}))
         except WebSocketDisconnect:
             pass
         finally:
+            self._views.pop(identifier, None)
             stop.set()
             resume.set()
             self._stops.discard(stop)

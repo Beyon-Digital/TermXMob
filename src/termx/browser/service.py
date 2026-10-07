@@ -28,18 +28,36 @@ class BrowserService:
         self.session_valid=session_valid or (lambda principal,session,policy_version:True)
         self.task_summary=lambda task_id:''
         self.task_live=lambda task_id:True # App gateway replaces this with its canonical task ledger.
+        self.claim_tab=lambda principal,tab:None # Router binds durable ownership for agent-created tabs.
         self._playwright=None;self._contexts={};self._pages={};self._proxies={};self._locks={};self._diagnostics={};self._start_lock=asyncio.Lock();self._monitor=None
-        self._capture_cdp={};self._capture_jobs={};self._frame_cache={};self._control_waiters={};self._closed_contexts=set();self._context_tabs={}
+        self._views={};self._permission_ports={};self._permission_origins=set();self._human_diagnostics={};self._capture_cdp={};self._capture_jobs={};self._frame_cache={};self._control_waiters={};self._closed_contexts=set();self._context_tabs={}
         for tab in self.records.list('tab'):
+            self._clear_private_capture(tab['id'])
             tab.update(state='closed',grant_id=None,lease_revision=tab['lease_revision']+1);self.records.put('tab',tab['id'],tab)
         for grant in self.records.list('grant'):
             grant['revoked']=True;self.records.put('grant',grant['id'],grant)
+        for profile in self.records.list('profile'):
+            if profile.get('ephemeral'):self._clear_profile_artifacts(profile['id'],remove=True)
     def profiles(self,principal):return [r for r in self.records.list('profile') if r['principal_id']==principal]
     def tabs(self,principal):return [r for r in self.records.list('tab') if r['principal_id']==principal]
     def get(self,tab_id,principal):
         tab=self.records.get('tab',tab_id)
         if not tab or tab['principal_id']!=principal:raise KeyError('tab not found')
         return tab
+    def viewer_start(self,id,principal,session_id,websocket):
+        self.get(id,principal)
+        key=secrets.token_urlsafe(16);self._views[key]={'id':key,'tab_id':id,'principal_id':principal,'session_id':session_id,'websocket':websocket}
+        return key
+    def viewer_finish(self,key):self._views.pop(key,None)
+    def viewing_tabs(self,principal):return {row['tab_id'] for row in self._views.copy().values() if row['principal_id']==principal}
+    async def stop_views(self,id,principal):
+        self.get(id,principal)
+        for row in list(self._views.values()):
+            if row['tab_id']==id and row['principal_id']==principal:
+                self._views.pop(row['id'],None)
+                try:await row['websocket'].close(code=1000)
+                except Exception:pass
+        return {'ok':True}
     def create_profile(self,principal,project,name,*,ephemeral=False):
         if not name.strip() or len(name)>100:raise ValueError('profile name required, at most 100 characters')
         id=secrets.token_urlsafe(16)
@@ -58,13 +76,21 @@ class BrowserService:
             from playwright.async_api import async_playwright
             if self._playwright is None:self._playwright=await async_playwright().start()
             proxy=EgressProxy(self.network);proxy_url=await proxy.start()
-            options={'headless':True,'viewport':{'width':1440,'height':900},'accept_downloads':True,'service_workers':'block',
+            options={'headless':True,'viewport':{'width':1440,'height':900},'accept_downloads':True,'service_workers':'block','permissions':[],
                      'proxy':{'server':proxy_url,'bypass':'<-loopback>'},
                      'args':['--disable-quic','--force-webrtc-ip-handling-policy=disable_non_proxied_udp','--disable-features=WebRtcHideLocalIpsWithMdns','--disable-background-networking','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows']}
             if self.executable_path:options['executable_path']=self.executable_path
             try:
                 context=await self._playwright.chromium.launch_persistent_context(str(self.records.root/'profiles'/id),**options)
+                await context.clear_permissions()
+                page=context.pages[0] if context.pages else await context.new_page()
+                permission_port=await context.new_cdp_session(page)
+                # Persistent Chromium profiles require explicit origin-specific
+                # denials. The permission port stays host-owned and is never
+                # exposed as CDP to the UI, agent or plugins.
+                self._permission_ports[id]=permission_port
             except BaseException:
+                if 'context' in locals():await context.close()
                 await proxy.close();raise
             self._contexts[id]=context;self._proxies[id]=proxy
             self._context_tabs[id]=set()
@@ -76,6 +102,8 @@ class BrowserService:
             return context
     def _context_closed(self,profile_id):
         self._closed_contexts.add(profile_id)
+        self._permission_ports.pop(profile_id,None)
+        self._permission_origins={entry for entry in self._permission_origins if entry[0]!=profile_id}
         # Page-close events can precede context-close. Only tabs belonging to
         # this runtime context qualify; explicitly closed tabs were removed.
         for tab_id in self._context_tabs.pop(profile_id,set()):
@@ -94,6 +122,13 @@ class BrowserService:
             destination=await self.network.validate(request.url)
             try:page=request.frame.page
             except Exception:page=None
+            if page:
+                profile_id=next((key for key,context in self._contexts.items() if context==page.context),None)
+                if profile_id and (profile_id,destination) not in self._permission_origins:
+                    port=self._permission_ports[profile_id]
+                    for name in ('microphone','camera'):
+                        await port.send('Browser.setPermission',{'permission':{'name':name},'setting':'denied','origin':destination})
+                    self._permission_origins.add((profile_id,destination))
             tab_id=next((id for id,p in self._pages.items() if p==page),None)
             tab=self.records.get('tab',tab_id) if tab_id else None
             if tab and tab['state']=='agent' and request.is_navigation_request() and request.frame==page.main_frame:
@@ -101,7 +136,7 @@ class BrowserService:
                 if not grant or destination not in grant['origins'] or not self._grant_valid(tab,grant):
                     self._revoke(tab,'human');return await route.abort('blockedbyclient')
             await route.continue_()
-        except (TargetDenied,ValueError,OSError):await route.abort('blockedbyclient')
+        except Exception:await route.abort('blockedbyclient')
     async def _adopt_popup(self,page,profile):
         # new_page also triggers event; only genuine opener is adopted.
         opener=await page.opener()
@@ -125,7 +160,8 @@ class BrowserService:
         def diagnostic(kind,value):
             tab=self.records.get('tab',id)
             grant=self.records.get('grant',tab['grant_id']) if tab and tab.get('grant_id') else None
-            if not tab or not self._grant_valid(tab,grant) or 'diagnostics' not in grant['actions']:return
+            if not tab or tab['state']=='private':return
+            if not ((self._grant_valid(tab,grant) and 'diagnostics' in grant['actions']) or self._diagnostic_consent_valid(tab)):return
             from termx.agent.policy import redact
             cache=self._diagnostics.setdefault(id,{'console':[],'network':[]})
             if kind=='console':item={'type':value.type,'text':redact(value.text)[:1000]}
@@ -178,14 +214,19 @@ class BrowserService:
             self.records.put('tab',id,tab)
             return
         tab['url']=page.url
-        try:tab['title']=await page.title()
-        except Exception:pass
         tab['document_revision']+=1
         self.records.put('tab',id,tab)
-        # Revisions invalidate previously observed actions, not the active grant.
+        revision=tab['document_revision']
+        # Invalidate the old document before awaiting renderer metadata. A
+        # private takeover while title is in flight must never write it back.
         if tab['grant_id']:self.review.invalidate(grant_id=tab['grant_id'])
-        if tab['state']!='private':
-            self.records.put('history',secrets.token_urlsafe(12),{'id':secrets.token_urlsafe(12),'principal_id':tab['principal_id'],'profile_id':tab['profile_id'],'origin':origin(page.url) if page.url.startswith(('https://','http://')) else 'about:blank','title':tab['title'],'url':page.url.split('?')[0].split('#')[0],'visited_at':time()})
+        try:title=await page.title()
+        except Exception:title=tab['title']
+        current=self.records.get('tab',id)
+        if not current or current['state']=='private' or current['document_revision']!=revision or current['lease_revision']!=tab['lease_revision']:return
+        current['title']=title;self.records.put('tab',id,current)
+        history_id=secrets.token_urlsafe(12)
+        self.records.put('history',history_id,{'id':history_id,'principal_id':tab['principal_id'],'profile_id':tab['profile_id'],'origin':origin(tab['url']) if tab['url'].startswith(('https://','http://')) else 'about:blank','title':title,'url':tab['url'].split('?')[0].split('#')[0],'visited_at':time()})
     def _closed(self,id,state='closed'):
         tab=self.records.get('tab',id)
         # A crashed renderer can subsequently emit close. Preserve recovery
@@ -209,6 +250,7 @@ class BrowserService:
         previous['recovered_tab_id']=recovered['id'];self.records.put('tab',id,previous)
         return recovered
     def _revoke(self,tab,state):
+        self._human_diagnostics.pop(tab['id'],None)
         self._diagnostics.pop(tab['id'],None)
         self._frame_cache.pop(tab['id'],None)
         if tab.get('grant_id'):
@@ -216,9 +258,32 @@ class BrowserService:
             if grant:grant['revoked']=True;self.records.put('grant',grant['id'],grant)
             self.review.invalidate(grant_id=tab['grant_id'])
         tab.update(state=state,grant_id=None,lease_revision=tab['lease_revision']+1,recording=False)
-        self.records.put('tab',tab['id'],tab);return tab
-    def takeover(self,id,principal,*,private=False):
-        return self._revoke(self.get(id,principal),'private' if private else 'human')
+        if state in {'closed','crashed'}:tab['closed_at']=time()
+        self.records.put('tab',tab['id'],tab)
+        self._clear_private_capture(tab['id'])
+        if state=='private':
+            from termx.desktop.recording import set_capture_private
+            private_lease=tab['lease_revision']
+            def current():
+                row=self.records.get('tab',tab['id'])
+                # Privacy is a host observation barrier, not a delegated tool
+                # grant. A second valid human viewer may still show these
+                # pixels after the initiating session expires. Only explicit
+                # resume/close/restart releases the barrier.
+                return bool(row and row['state']=='private' and row['lease_revision']==private_lease)
+            set_capture_private(self._private_capture_id(tab['id']),expires_at=float('inf'),valid=current)
+        return tab
+    def _private_capture_id(self,id):return 'browser:'+canonical_hash(str(self.records.root.resolve()))+':'+id
+    def _clear_private_capture(self,id):
+        from termx.desktop.recording import clear_capture_private
+        clear_capture_private(self._private_capture_id(id))
+    def takeover(self,id,principal,*,private=False,session_id=None,policy_version=None):
+        tab=self.get(id,principal)
+        if private:
+            grant=self.records.get('grant',tab.get('grant_id')) if tab.get('grant_id') else None
+            tab['private_session_id']=session_id or (grant or {}).get('session_id') or tab['session_id']
+            tab['private_policy_version']=policy_version if policy_version is not None else (grant or {}).get('policy_version',0)
+        return self._revoke(tab,'private' if private else 'human')
     def _grant_valid(self,tab,grant):
         try:
             return bool(grant and not grant['revoked'] and grant['expires_at']>time() and all(grant[key]==tab[key] for key in ('principal_id','project_id','profile_id')) and grant['tab_id']==tab['id'] and tab['grant_id']==grant['id'] and tab['lease_revision']==grant['lease_revision'] and tab['state']=='agent' and self.task_live(grant['run_id']) and self.session_valid(grant['principal_id'],grant['session_id'],grant['policy_version']))
@@ -235,13 +300,17 @@ class BrowserService:
         page=self._pages.get(id)
         if not page:raise ValueError('tab is unavailable')
         if origin(page.url) not in sites:raise ValueError('current page must be inside granted origins')
-        allowed={'navigate','observe','capture','click','type','scroll','wait','find','zoom','history','upload','download','diagnostics'}
+        allowed={'navigate','observe','capture','click','type','scroll','wait','find','zoom','history','upload','download','diagnostics','open_tab','close_tab'}
         if not actions or set(actions)-allowed:raise ValueError('unsupported action grant')
         if 'observe' not in actions:raise ValueError('handoff requires observation permission for its fresh context')
         if not 10<=expires_in<=3600:raise ValueError('grant duration must be 10 to 3600 seconds')
-        self._revoke(tab,'human');id_grant=secrets.token_urlsafe(16)
-        tab['url']=page.url
-        tab['title']=await page.title()
+        current=self.get(id,principal)
+        if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Control changed during handoff; review the current tab')
+        tab=self._revoke(current,'human');id_grant=secrets.token_urlsafe(16)
+        current_url=page.url;title=await page.title()
+        current=self.get(id,principal)
+        if current['lease_revision']!=tab['lease_revision'] or current['document_revision']!=tab['document_revision'] or current['state']!='human' or page.url!=current_url or not self.task_live(run_id) or not self.session_valid(principal,session,policy_version):raise PermissionError('Task, authority or page changed during handoff')
+        tab=current;tab['url']=current_url;tab['title']=title
         tab.update(state='agent',grant_id=id_grant)
         grant={'id':id_grant,'tab_id':id,'principal_id':principal,'session_id':session,'project_id':tab['project_id'],'run_id':run_id,'profile_id':tab['profile_id'],'origins':sites,'actions':sorted(set(actions)),'expires_at':time()+expires_in,'lease_revision':tab['lease_revision'],'policy_version':policy_version,'revoked':False}
         self.records.put('grant',id_grant,grant);self.records.put('tab',id,tab)
@@ -262,17 +331,23 @@ class BrowserService:
         if tab['state']=='private':raise PermissionError('Private login suspends context observation')
         if not human:self._agent(tab,grant_id,run_id,'observe')
         # Values are intentionally omitted; password/hidden inputs entirely excluded.
-        items=await page.evaluate('''() => Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,p')).slice(0,700).filter(e => !e.closest('[data-private]') && !['password','hidden'].includes(e.type) && !/password|secret|token|api.?key|otp|credential/i.test([e.name,e.id,e.autocomplete].join(' '))).map((e,i) => ({index:i,tag:e.tagName.toLowerCase(),role:e.getAttribute('role'),name:(e.getAttribute('aria-label') || e.innerText || e.getAttribute('placeholder') || '').slice(0,240),type:e.type || null,href:e.tagName==='A' ? e.href : null,disabled:!!e.disabled,box:(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))(e.getBoundingClientRect())}))''')
+        items=await page.evaluate("""() => {
+          const selector=e=>{const path=[];while(e&&e.nodeType===1){const tag=e.tagName.toLowerCase();const peers=(e.parentElement?Array.from(e.parentElement.children):[e]).filter(n=>n.tagName===e.tagName);path.unshift(tag+':nth-of-type('+(peers.indexOf(e)+1)+')');e=e.parentElement;}return path.join(' > ')};
+          return Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,p')).slice(0,700).filter(e => !e.closest('[data-private]') && !['password','hidden'].includes(e.type) && !/password|secret|token|api.?key|otp|credential/i.test([e.name,e.id,e.autocomplete].join(' '))).map((e,i) => ({index:i,tag:e.tagName.toLowerCase(),role:e.getAttribute('role'),selector:selector(e),frame:{kind:'main',path:[]},name:(e.getAttribute('aria-label') || e.labels?.[0]?.innerText || e.innerText || e.getAttribute('placeholder') || '').slice(0,240),type:e.type || null,href:e.tagName==='A' ? e.href.split('?')[0].split('#')[0] : null,disabled:!!e.disabled,box:(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))(e.getBoundingClientRect())})).filter(e=>e.box.width>0&&e.box.height>0);
+        }""")
+        for item in items:item['context_hash']=canonical_hash(item)
         current=self.get(id,principal)
         if current['state']=='private':raise PermissionError('Private login suspends context observation')
+        if current['document_revision']!=tab['document_revision'] or current['lease_revision']!=tab['lease_revision']:raise ValueError('Page changed during context observation')
         if not human:self._agent(current,grant_id,run_id,'observe',tab['document_revision'],tab['lease_revision'])
-        return {'tab_id':id,'url':tab['url'].split('?')[0],'title':tab['title'],'document_revision':tab['document_revision'],'lease_revision':tab['lease_revision'],'elements':items}
-    async def frame(self,id,principal,*,human=False,grant_id=None,run_id=None):
+        return {'tab_id':id,'url':tab['url'].split('?')[0],'title':tab['title'],'document_revision':tab['document_revision'],'lease_revision':tab['lease_revision'],'frame':{'kind':'main','path':[],'viewport':page.viewport_size},'elements':items,'annotations':self.annotations(id,principal)}
+    async def frame(self,id,principal,*,human=False,grant_id=None,run_id=None,redacted=False):
         tab=self.get(id,principal);page=self._pages.get(id)
         if not page:raise ValueError('tab closed')
         if not human:self._agent(tab,grant_id,run_id,'capture')
-        key=(id,human,tab['document_revision'],tab['lease_revision'])
-        cached=self._frame_cache.get(id) if human else None
+        if redacted and tab['state']=='private':raise PermissionError('Snapshot capture paused during private login')
+        key=(id,human,redacted,tab['document_revision'],tab['lease_revision'])
+        cached=self._frame_cache.get(id) if human and not redacted else None
         if cached and cached['key']==key and monotonic()-cached['at']<.125:
             return cached['frame']
         async def capture():
@@ -282,17 +357,18 @@ class BrowserService:
             async with self._locks.setdefault(id,asyncio.Lock()):
                 current=self.get(id,principal)
                 if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Capture lease changed before rendering')
-                if human and id in self._capture_cdp:
+                if human and not redacted and id in self._capture_cdp:
                     # UI frames need no Playwright animation/font/RAF barriers
                     # or transient masking styles. CDP remains host-internal.
                     result=await asyncio.wait_for(self._capture_cdp[id].send('Page.captureScreenshot',{'format':'jpeg','quality':65,'fromSurface':True,'captureBeyondViewport':False,'optimizeForSpeed':True}),5)
                     data=base64.b64decode(result['data'])
                 else:
-                    masks=[] if human else [page.locator('input[type="password"], input[autocomplete*="password"], input[autocomplete="one-time-code"], input[name*="token" i], input[id*="token" i], input[name*="secret" i], input[id*="secret" i], input[name*="api_key" i], input[id*="api_key" i], [data-private]')]
+                    masks=[] if human and not redacted else [f.locator('input[type="password"], input[autocomplete*="password"], input[autocomplete="one-time-code"], input[name*="token" i], input[id*="token" i], input[name*="secret" i], input[id*="secret" i], input[name*="api_key" i], input[id*="api_key" i], [data-private]') for f in getattr(page,'frames',[page])]
+                    if redacted:masks=[f.locator('input,textarea,select,[contenteditable],[data-private]') for f in getattr(page,'frames',[page])]
                     data=await page.screenshot(type='jpeg',quality=75,mask=masks,timeout=5000)
                 current=self.get(id,principal)
                 if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Capture lease changed while rendering')
-                if human:self._frame_cache[id]={'key':key,'frame':data,'at':monotonic()}
+                if human and not redacted:self._frame_cache[id]={'key':key,'frame':data,'at':monotonic()}
                 return data
         job=self._capture_jobs.get(key)
         if job is None:
@@ -304,6 +380,7 @@ class BrowserService:
         frame=await asyncio.shield(job)
         current=self.get(id,principal)
         if current['lease_revision']!=tab['lease_revision']:raise PermissionError('Capture lease changed before delivery')
+        if redacted and (current['state']=='private' or current['document_revision']!=tab['document_revision']):raise PermissionError('Snapshot target changed during capture')
         if not human:self._agent(self.get(id,principal),grant_id,run_id,'capture',tab['document_revision'],tab['lease_revision'])
         return frame
     @asynccontextmanager
@@ -379,8 +456,52 @@ class BrowserService:
             return result
         result=await self.review.execute(envelope,permit['permit'],validate=validate,operation=execute)
         return {'action_id':action_id,'result':result,'tab':self.get(id,principal)}
+    async def tab_lifecycle(self,id,principal,*,session_id,run_id,grant_id,action_id,action,args,document_revision,lease_revision,policy_version=0,authority=None):
+        """Explicit opt-in lifecycle scope; no ambient profile/session authority."""
+        if action not in {'open_tab','close_tab'}:raise ValueError('Unsupported tab lifecycle')
+        if not action_id or len(action_id)>128:raise ValueError('Action id required')
+        tab=self.get(id,principal);grant=self._agent(tab,grant_id,run_id,action,document_revision,lease_revision)
+        if grant['session_id']!=session_id or grant['policy_version']!=policy_version:raise PermissionError('Session or policy changed')
+        target=origin(args['url']) if action=='open_tab' else origin(tab['url'])
+        if target not in grant['origins']:raise PermissionError('Tab origin was not granted')
+        if action=='open_tab':await self.network.validate(args['url'])
+        document_hash=await self._document_hash(self._pages[id],'close_tab',{}) if action=='close_tab' else None
+        if document_hash:
+            previous=self.records.get('browser-action-document',action_id)
+            if previous and previous['hash']!=document_hash:
+                self.review.invalidate(grant_id=grant_id)
+                raise ValueError('Page changed during close approval; observe and propose a fresh action')
+            if not previous:self.records.put('browser-action-document',action_id,{'id':action_id,'hash':document_hash})
+        # Closing may discard a site's unsaved state: always exact human review.
+        effect='navigate' if action=='open_tab' else 'unknown'
+        envelope=ActionEnvelope(action_id,principal,session_id,tab['project_id'],run_id,'browser.'+action,canonical_hash(args),target,effect,grant_id,policy_version,document_revision,lease_revision,tab['profile_id'])
+        def validate():
+            current=self.records.get('tab',id)
+            return bool(current and self._grant_valid(current,self.records.get('grant',grant_id)) and current['document_revision']==document_revision and current['lease_revision']==lease_revision and (authority is None or authority()))
+        permit=await self.review.authorize(envelope,validate=validate,context={'effect_summary':'Close tab may discard unsaved page changes' if action=='close_tab' else 'Open a tab within the exact approved origins','task_summary':self.task_summary(run_id)})
+        async def execute():
+            if action=='close_tab':
+                async with self._control(id):
+                    if not validate() or await self._document_hash(self._pages[id],'close_tab',{})!=document_hash:raise ValueError('Page changed during close approval; propose a fresh action')
+                    await self.close_tab(id,principal)
+                if not self.task_live(run_id) or not self.session_valid(principal,session_id,policy_version) or (authority and not authority()):raise PermissionError('Task authority changed during close; verify the tab state')
+                return {'closed':id}
+            child=await self.create_tab(principal,session_id,tab['profile_id'],args['url'])
+            try:
+                if not validate():raise PermissionError('Source handoff changed while opening the tab')
+                self.claim_tab(principal,child)
+                remaining=int(grant['expires_at']-time())
+                if remaining<10:raise PermissionError('Handoff expires before new tab can receive control')
+                result=await self.handoff(child['id'],principal,session_id,run_id=run_id,origins=grant['origins'],actions=grant['actions'],expires_in=min(remaining,3600),policy_version=policy_version)
+                if not validate():raise PermissionError('Source handoff changed during tab creation')
+                return {'tab':result['tab'],'observation':result['observation']}
+            except BaseException:
+                await self.close_tab(child['id'],principal)
+                raise
+        return await self.review.execute(envelope,permit['permit'],validate=validate,operation=execute)
     async def human_action(self,id,principal,action,args):
         tab=self.get(id,principal);page=self._pages.get(id)
+        if action=='diagnostics':return await self.human_diagnostics(id,principal,args.get('view','performance'))
         if tab['state']=='agent':self._revoke(tab,'human')
         if not page:raise ValueError('tab closed')
         result = await self._perform(page,tab,action,args,human=True)
@@ -463,7 +584,7 @@ class BrowserService:
             view=args.get('view','performance')
             if view in {'console','network'}:return {view:list(self._diagnostics.get(tab['id'],{}).get(view,[]))}
             if view=='dom':
-                dom=await page.evaluate('''()=>{const clone=document.documentElement.cloneNode(true);clone.querySelectorAll('script,style,input,textarea,[data-private]').forEach(e=>e.remove());clone.querySelectorAll('*').forEach(e=>Array.from(e.attributes).forEach(a=>{if(a.name.startsWith('on')||/token|password|secret|value|srcdoc/i.test(a.name))e.removeAttribute(a.name)}));return clone.outerHTML.slice(0,20000)}''')
+                dom=await page.evaluate('''()=>{const clone=document.documentElement.cloneNode(true);clone.querySelectorAll('script,style,input,textarea,select,[contenteditable],[data-private]').forEach(e=>e.remove());clone.querySelectorAll('*').forEach(e=>Array.from(e.attributes).forEach(a=>{if(a.name.startsWith('on')||/token|password|secret|value|srcdoc/i.test(a.name))e.removeAttribute(a.name)}));return clone.outerHTML.slice(0,20000)}''')
                 from termx.agent.policy import redact
                 return {'dom':redact(dom),'truncated':len(dom)>=20000}
             if view!='performance':raise ValueError('Unknown developer diagnostic view')
@@ -497,13 +618,88 @@ class BrowserService:
             self.records.put('download',ref,{'id':ref,'principal_id':tab['principal_id'],'tab_id':id,'profile_id':tab['profile_id'],'filename':Path(download.suggested_filename).name[:200],'size':(folder/ref).stat().st_size,'approved':tab['state']=='human','created_at':time()})
         except Exception:
             await download.cancel();(folder/ref).unlink(missing_ok=True)
+    def _diagnostic_consent_valid(self,tab):
+        consent=self._human_diagnostics.get(tab['id'])
+        return bool(consent and tab['state']!='private' and consent['expires_at']>time() and consent['lease_revision']==tab['lease_revision'] and self.session_valid(tab['principal_id'],consent['session_id'],consent['policy_version']))
+    def diagnostic_consent(self,id,principal,session_id,policy_version,enabled):
+        tab=self.get(id,principal)
+        if tab['state']=='private':raise PermissionError('Developer observation paused during private login')
+        self._diagnostics.pop(id,None)
+        if enabled:self._human_diagnostics[id]={'session_id':session_id,'policy_version':policy_version,'lease_revision':tab['lease_revision'],'expires_at':time()+600}
+        else:self._human_diagnostics.pop(id,None)
+        return {'enabled':bool(enabled),'expires_at':time()+600 if enabled else None}
+    async def human_diagnostics(self,id,principal,view):
+        tab=self.get(id,principal)
+        if not self._diagnostic_consent_valid(tab):raise PermissionError('Enable developer observation for this tab first')
+        value=await self._perform(self._pages[id],tab,'diagnostics',{'view':view},human=True)
+        if not self._diagnostic_consent_valid(self.get(id,principal)):raise PermissionError('Developer observation expired during capture')
+        return value
+    def annotations(self,id,principal):
+        tab=self.get(id,principal)
+        if tab['state']=='private':raise PermissionError('Annotations paused during private login')
+        comparisons=self.records.list('annotation-comparison')
+        return [{**a,'stale':a['document_revision']!=tab['document_revision'],'comparisons':sorted([c for c in comparisons if c['annotation_id']==a['id'] and c['principal_id']==principal],key=lambda c:c['created_at'])[-20:]} for a in self.records.list('annotation') if a['tab_id']==id and a['principal_id']==principal]
+    def resolve_annotation(self,id,principal,ref,*,resolved,revision,authority=lambda:True):
+        tab=self.get(id,principal);note=self.records.get('annotation',ref)
+        if not note or note['principal_id']!=principal or note['tab_id']!=id:raise KeyError('annotation')
+        if tab['state']=='private' or not authority():raise PermissionError('Annotation authority is unavailable')
+        if tab['document_revision']!=revision:raise ValueError('Page changed; refresh annotations before resolving')
+        # Resolution updates the discussion state, never its frozen reference.
+        note.update(resolved=bool(resolved),resolved_at=time() if resolved else None)
+        return self.records.put('annotation',ref,note)
+    async def compare_annotation(self,id,principal,ref,*,revision,include_screenshot=False,authority=lambda:True):
+        note=self.records.get('annotation',ref)
+        if not note or note['principal_id']!=principal or note['tab_id']!=id:raise KeyError('annotation')
+        if not authority():raise PermissionError('Annotation authority expired')
+        snapshot=await self.observe(id,principal,human=True)
+        if snapshot['document_revision']!=revision:raise ValueError('Page changed; refresh annotations before comparing')
+        same_page=snapshot['url'].split('#')[0]==note['url']
+        element=next((item for item in snapshot['elements'] if item['selector']==note.get('selector')),None) if same_page else None
+        # A selector on a different page is never silently treated as the old
+        # target. A fresh, explicit screenshot can still show the current page.
+        after=await self.annotate_context(id,principal,revision=revision,comment='Comparison snapshot',selector=element['selector'] if element else None,context_hash=element['context_hash'] if element else None,region=note.get('region') if same_page else None,include_screenshot=include_screenshot,authority=authority)
+        self.records.delete('annotation',after['id'])
+        value={'id':secrets.token_urlsafe(16),'annotation_id':ref,'principal_id':principal,'tab_id':id,'profile_id':note['profile_id'],'created_at':time(),'same_page':same_page,'target_available':bool(element or (same_page and note.get('region'))),'changed':not same_page or (bool(note.get('element')) and (not element or element['context_hash']!=note['element']['context_hash'])),'before':{key:note.get(key) for key in ('url','document_revision','lease_revision','frame','element','region','screenshot')},'after':{key:after.get(key) for key in ('url','document_revision','lease_revision','frame','element','region','screenshot')}}
+        return self.records.put('annotation-comparison',value['id'],value)
+    async def annotate_context(self,id,principal,*,revision,comment,selector=None,region=None,context_hash=None,include_screenshot=False,authority=lambda:True):
+        if not authority():raise PermissionError('Annotation authority expired')
+        if not comment.strip() or len(comment)>2000:raise ValueError('Annotation requires at most 2000 characters')
+        snapshot=await self.observe(id,principal,human=True)
+        if snapshot['document_revision']!=revision:raise ValueError('Annotation target is stale; refresh Page controls')
+        if selector and region:raise ValueError('Choose one element or region')
+        element=None
+        if selector:
+            element=next((item for item in snapshot['elements'] if item['selector']==selector),None)
+            if not element or not context_hash or element['context_hash']!=context_hash:raise ValueError('Element changed; select it again from Page controls')
+        if region:
+            viewport=snapshot['frame']['viewport']
+            if set(region)!={'x','y','width','height'} or any(isinstance(v,bool) or not isinstance(v,(int,float)) or not __import__('math').isfinite(v) for v in region.values()):raise ValueError('A region requires finite viewport coordinates')
+            if region['x']<0 or region['y']<0 or region['width']<=0 or region['height']<=0 or region['x']+region['width']>viewport['width'] or region['y']+region['height']>viewport['height']:raise ValueError('Region must be inside the current viewport')
+        screenshot=None
+        if include_screenshot:
+            data=await self.frame(id,principal,human=True,redacted=True)
+            ref=secrets.token_urlsafe(16);folder=self.records.root/'annotation-frames';folder.mkdir(exist_ok=True,mode=0o700)
+            file=folder/ref;file.write_bytes(data);os.chmod(file,0o600)
+            screenshot={'id':ref,'mime_type':'image/jpeg','url':f'/api/browser/tabs/{id}/annotation-frames/{ref}','redaction':'all form fields, editable content and marked private regions across frames','document_revision':revision,'lease_revision':snapshot['lease_revision']}
+            self.records.put('annotation-frame',ref,{'id':ref,'principal_id':principal,'tab_id':id,'profile_id':self.get(id,principal)['profile_id'],'document_revision':revision})
+        current=self.get(id,principal)
+        try:permitted=authority()
+        except PermissionError:permitted=False
+        if not permitted or current['state']=='private' or current['document_revision']!=revision or current['lease_revision']!=snapshot['lease_revision']:
+            if screenshot:
+                (self.records.root/'annotation-frames'/screenshot['id']).unlink(missing_ok=True);self.records.delete('annotation-frame',screenshot['id'])
+            if not permitted:raise PermissionError('Annotation authority expired during capture')
+            raise ValueError('Annotation target changed during capture')
+        value=self.annotate(id,principal,revision=revision,comment=comment,selector=selector,region=region)
+        value.update(frame=snapshot['frame'],lease_revision=snapshot['lease_revision'],element=element,screenshot=screenshot)
+        return self.records.put('annotation',value['id'],value)
     def annotate(self,id,principal,*,revision,comment,selector=None,region=None):
         tab=self.get(id,principal)
         if tab['state']=='private':raise PermissionError('annotations and capture paused in private login')
         if revision!=tab['document_revision']:raise ValueError('annotation target is stale')
         if not comment.strip() or len(comment)>2000:raise ValueError('annotation requires at most 2000 characters')
         ref=secrets.token_urlsafe(16)
-        return self.records.put('annotation',ref,{'id':ref,'principal_id':principal,'tab_id':id,'profile_id':tab['profile_id'],'document_revision':revision,'url':tab['url'].split('?')[0],'comment':comment,'selector':selector,'region':region,'created_at':time()})
+        return self.records.put('annotation',ref,{'id':ref,'principal_id':principal,'tab_id':id,'profile_id':tab['profile_id'],'document_revision':revision,'url':tab['url'].split('?')[0].split('#')[0],'comment':comment,'selector':selector,'region':region,'created_at':time()})
     def recording(self,id,principal,enabled):
         tab=self.get(id,principal)
         if tab['state']=='private':raise PermissionError('recording disabled during private login')
@@ -526,15 +722,23 @@ class BrowserService:
         if context:await context.close()
         proxy=self._proxies.pop(id,None)
         if proxy:await proxy.close()
-        shutil.rmtree(self.records.root/'profiles'/id,ignore_errors=True)
-        for kind in ('history','download','upload','annotation','recording-step'):
-            for row in self.records.list(kind):
-                if row.get('profile_id')==id:
-                    self.records.delete(kind,row['id'])
-                    if kind in {'download','upload'}:
-                        (self.records.root/('downloads' if kind=='download' else 'uploads')/row['id']).unlink(missing_ok=True)
-        if remove:self.records.delete('profile',id)
+        self._permission_ports.pop(id,None)
+        self._permission_origins={entry for entry in self._permission_origins if entry[0]!=id}
+        self._clear_profile_artifacts(id,remove=remove)
         return {'ok':True}
+    def _clear_profile_artifacts(self,id,*,remove=False):
+            shutil.rmtree(self.records.root/'profiles'/id,ignore_errors=True)
+            for kind in ('history','download','upload','annotation','annotation-frame','annotation-comparison','recording-step'):
+                for row in self.records.list(kind):
+                    if row.get('profile_id')==id:
+                        self.records.delete(kind,row['id'])
+                        if kind=='annotation-frame':(self.records.root/'annotation-frames'/row['id']).unlink(missing_ok=True)
+                        if kind in {'download','upload'}:
+                            (self.records.root/('downloads' if kind=='download' else 'uploads')/row['id']).unlink(missing_ok=True)
+            if remove:
+                self.records.delete('profile',id)
+                for row in self.records.list('tab'):
+                    if row.get('profile_id')==id:self.records.delete('tab',row['id'])
     async def close(self):
         if self._monitor:
             self._monitor.cancel();await asyncio.gather(self._monitor,return_exceptions=True);self._monitor=None
@@ -545,6 +749,7 @@ class BrowserService:
         for capture in captures:capture.cancel()
         await asyncio.gather(*captures,return_exceptions=True)
         self._frame_cache.clear();self._capture_cdp.clear()
+        self._permission_ports.clear();self._permission_origins.clear()
         await asyncio.gather(*(c.close() for c in self._contexts.values()),return_exceptions=True)
         await asyncio.gather(*(p.close() for p in self._proxies.values()),return_exceptions=True)
         self._contexts.clear();self._pages.clear();self._proxies.clear()

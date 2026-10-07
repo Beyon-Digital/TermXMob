@@ -92,7 +92,7 @@ def test_responses_reviewer_no_tools_no_raw_args_and_strict_output():
         def handler(request):
             import json
             body=json.loads(request.content);captured.append(body)
-            return httpx.Response(200,json={'output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"ALLOW","reason_code":"aligned"}'}]}]})
+            return httpx.Response(200,json={'model':'fixture-identity-v1','output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"ALLOW","reason_code":"aligned"}'}]}]})
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             reviewer=ResponsesReviewer(provider_id='local',base_url='http://localhost:9999',model='configured-small',api_key='',version='pinned',client=client)
             verdict=await reviewer.evaluate(envelope(intended_effect='edit'),{'cookies':'secret','effect_summary':'Change display'})
@@ -130,7 +130,7 @@ def test_oversized_reviewer_stream_closes_and_fails_closed(tmp_path):
 def test_qualification_reports_actual_response_token_usage():
     async def run():
         def handler(request):
-            return httpx.Response(200,json={'usage':{'input_tokens':11,'output_tokens':3},'output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"NEEDS_USER","reason_code":"uncertain"}'}]}]})
+            return httpx.Response(200,json={'model':'fixture-identity-v1','usage':{'input_tokens':11,'output_tokens':3},'output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"NEEDS_USER","reason_code":"uncertain"}'}]}]})
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             reviewer=ResponsesReviewer(provider_id='fixture',base_url='https://provider.example',model='explicit',api_key='fixture',version='v1',client=client)
             report=await evaluate_reviewer(reviewer)

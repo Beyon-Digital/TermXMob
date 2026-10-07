@@ -1,0 +1,36 @@
+name: macOS hosted native GUI feasibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'desktop/scripts/macos_gui_feasibility.py'
+      - 'tests/test_macos_gui_fixture.py'
+      - '.github/workflows/macos-gui-feasibility.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-gui-feasibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owned-window-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise one owned native window with actual runner UI permissions
+        run: python3 desktop/scripts/macos_gui_feasibility.py --output desktop/build/macos-gui-feasibility
+      - name: Upload actual native GUI feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-gui-feasibility-${{ matrix.os }}
+          path: desktop/build/macos-gui-feasibility
+          if-no-files-found: error

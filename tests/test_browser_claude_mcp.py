@@ -96,7 +96,7 @@ def test_real_mcp_protocol_browser_review_resume_once_and_read_only(tmp_path):
                     group.start_soon(sdk.run,*server_streams,sdk.create_initialization_options())
                     async with ClientSession(*client_streams) as client:
                         await client.initialize()
-                        assert {t.name for t in (await client.list_tools()).tools}=={'browser_tabs','browser_observe','browser_action','browser_wait_for_handoff'}
+                        assert {t.name for t in (await client.list_tools()).tools}=={'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff'}
                         snapshot=json.loads((await client.call_tool('browser_observe',{'tab_id':tab['id']})).content[0].text)
                         result=await client.call_tool('browser_action',{'tab_id':tab['id'],'action':'click','args':{'selector':'#send'},'document_revision':snapshot['document_revision'],'lease_revision':snapshot['lease_revision']})
                         assert not result.is_error

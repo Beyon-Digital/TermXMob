@@ -129,7 +129,7 @@ class _SessionClient:
             outcome = _cancelled_outcome()
             return RequestPermissionResponse(outcome=outcome)
         if self._engine.browser_service:
-            from termx.engines.action_review import authorize
+            from termx.engines.action_review import authorize,consume_reviewed
             from acp.schema import AllowedOutcome
             call = _model_dump(tool_call)
             try:
@@ -138,7 +138,7 @@ class _SessionClient:
                     option = next((option for option in opts if option.get('kind') == 'allow_once'), None)
                     if not option: raise PermissionError('ACP runner did not offer a single-use approval')
                     envelope, validate, permit = checked
-                    await self._engine.browser_service.review.consume_external(envelope, permit['permit'], validate=validate)
+                    await consume_reviewed(self._engine,binding,envelope,validate,permit,tool='native_permission',args=call)
                     self._review_calls[str(call.get('toolCallId') or call.get('tool_call_id') or '')] = envelope.action_id
                     return RequestPermissionResponse(outcome=AllowedOutcome(outcome='selected', option_id=option.get('optionId') or option.get('option_id')))
             except (PermissionError, ValueError):
@@ -227,11 +227,11 @@ class _SessionClient:
             value = entry.get("value") if isinstance(entry, dict) else getattr(entry, "value", None)
             if name and value is not None:
                 env_map[str(name)] = str(value)
-        from termx.engines.action_review import authorize
+        from termx.engines.action_review import authorize,consume_reviewed
         checked = await authorize(self._engine, binding, 'run_shell', {'command': command, 'args': args or [], 'cwd': run_cwd, 'env': [str(entry) for entry in env or []]}, uuid.uuid4().hex)
         if checked:
             envelope, validate, permit = checked
-            await self._engine.browser_service.review.consume_external(envelope, permit['permit'], validate=validate)
+            await consume_reviewed(self._engine,binding,envelope,validate,permit,tool='run_shell',args={'command':command,'args':args or [],'cwd':run_cwd,'env':[str(entry) for entry in env or []]})
         proc = await asyncio.create_subprocess_exec(
             command, *(args or []),
             stdout=asyncio.subprocess.PIPE,
@@ -943,10 +943,7 @@ class AcpEngine:
         return False
 
     async def close(self, binding: EngineSessionBinding) -> None:
-        state = self._sessions.pop(binding.binding_id, None)
-        binding.status = "closed"
-        binding.updated_at = time.time()
-        self._bindings.pop(binding.binding_id, None)
+        state = self._sessions.get(binding.binding_id)
         if state is not None:
             self._cancel_permissions(binding)
             watch = state.get("process_watch")
@@ -957,18 +954,28 @@ class AcpEngine:
             if turn is not None and not turn.done():
                 turn.cancel()
                 await asyncio.gather(turn, return_exceptions=True)
+            failure = None
             client = state.get("client")
             if client is not None:
                 try:
                     await client.cleanup()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    failure = exc
             ctx = state.get("ctx")
             if ctx is not None:
                 try:
                     await ctx.__aexit__(None, None, None)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    failure = failure or exc
+            if failure is not None:
+                raise RuntimeError('ACP transport shutdown failed') from failure
+            process = state.get('proc')
+            if process is not None and process.returncode is None:
+                raise RuntimeError('ACP transport process remains active after shutdown')
+        self._sessions.pop(binding.binding_id, None)
+        binding.status = "closed"
+        binding.updated_at = time.time()
+        self._bindings.pop(binding.binding_id, None)
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         # Spawn a transient agent and ask — ACP list is capability-gated.

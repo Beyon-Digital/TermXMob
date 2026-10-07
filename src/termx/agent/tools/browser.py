@@ -9,7 +9,7 @@ from termx.browser.tools import BROWSER_TOOL_SCHEMAS,BrowserToolAdapter
 def decide(call,ctx):
     # BrowserService performs async policy preflight and holds resumable human
     # approval before any effect. Generic shell approvals cannot authorize it.
-    if call.name=='browser_action' and ctx.read_only:
+    if call.name in {'browser_action','browser_open_tab','browser_close_tab'} and ctx.read_only:
         return PolicyDecision(False,False,'Ask mode is read-only','Browser input requires Agent mode')
     return PolicyDecision(True,False,'Browser grant broker','Task-scoped built-in browser only')
 
@@ -56,7 +56,7 @@ async def execute(call,ctx):
             current=ctx.store.get_task(ctx.task_id)
             if current and current['status']=='paused':ctx.store.update_task(ctx.task_id,status=previous['status'])
         ctx.emit('task.handoff.resumed',{'call_id':call.call_id,'tab_id':requested_tab})
-    if ctx.read_only and call.name=='browser_action':return ToolOutcome({'refused':True,'error':'Ask mode cannot send browser input'})
+    if ctx.read_only and call.name in {'browser_action','browser_open_tab','browser_close_tab'}:return ToolOutcome({'refused':True,'error':'Ask mode cannot send browser input'})
     if not service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']):return ToolOutcome({'refused':True,'error':'Browser task authority expired or was revoked'})
     result=await BrowserToolAdapter(service).execute(call.name,call.arguments,task_id=ctx.task_id,principal_id=binding['principal_id'],session_id=binding['session_id'],call_id=ctx.task_id+':'+call.call_id,authority=lambda:service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']))
     return ToolOutcome(result if isinstance(result,dict) else {'tabs':result})
@@ -64,5 +64,5 @@ async def execute(call,ctx):
 def register(registry):
     for tool in BROWSER_TOOL_SCHEMAS:
         name=tool['name']
-        registry.register(ToolSpec(name,tool['description'],tool['parameters'],'external' if name=='browser_action' else 'read',False,'never',execute,decide,expose_read_only=name!='browser_action'))
+        registry.register(ToolSpec(name,tool['description'],tool['parameters'],'external' if name in {'browser_action','browser_open_tab','browser_close_tab'} else 'read',False,'never',execute,decide,expose_read_only=name not in {'browser_action','browser_open_tab','browser_close_tab'}))
     registry.register(ToolSpec('browser_wait_for_handoff','Wait for the user to hand a built-in tab to this task before starting browser work.',{'type':'object','properties':{'seconds':{'type':'integer','minimum':1,'maximum':300}},'additionalProperties':False},'read',False,'never',execute,decide,expose_read_only=False))

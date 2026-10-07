@@ -17,12 +17,28 @@ _PRIVATE = {}
 _LOCK = threading.RLock()
 _PRIVACY_REVISION = 0
 
+def set_capture_private(identifier, *, expires_at, valid):
+    """Shared host observation barrier, never an execution grant."""
+    global _PRIVACY_REVISION
+    with _LOCK:
+        _PRIVATE[identifier]=(expires_at,valid)
+        _PRIVACY_REVISION+=1
+
+def clear_capture_private(identifier):
+    global _PRIVACY_REVISION
+    with _LOCK:
+        if identifier in _PRIVATE:
+            _PRIVATE.pop(identifier,None)
+            _PRIVACY_REVISION+=1
 
 def assert_agent_capture_allowed():
+    global _PRIVACY_REVISION
     with _LOCK:
         for identifier, (expires, valid) in list(_PRIVATE.items()):
-            if expires <= time() or not valid(): _PRIVATE.pop(identifier, None)
-        if _PRIVATE: raise PermissionError('Computer observation is paused while a private window capture session is active')
+            if expires <= time() or not valid():
+                _PRIVATE.pop(identifier, None)
+                _PRIVACY_REVISION+=1
+        if _PRIVATE: raise PermissionError('Computer observation is paused while a private browser or window capture session is active')
 
 
 def capture_privacy_revision():
@@ -45,18 +61,35 @@ class WindowRecordingService:
             with _LOCK:
                 if row['id'] in _PRIVATE: _PRIVACY_REVISION += 1
                 _PRIVATE.pop(row['id'], None)
-            row.update(stopped=True, recording=False, private=False)
+            # A crashed client may still display its last private preview.
+            # Reconstruct observation suppression without reviving consent.
+            row.update(stopped=True, recording=False)
             records.put('window-capture', row['id'], row)
+            if row['private']: self._retain_private(row['id'])
+
+    def _retain_private(self, identifier):
+        def current():
+            row = self.records.get('window-capture', identifier)
+            return bool(row and row['private'])
+        set_capture_private(identifier, expires_at=float('inf'), valid=current)
+
+    def _expire(self, row):
+        if not row['stopped'] or row['recording']:
+            row.update(stopped=True, recording=False, revision=row['revision'] + 1)
+            self.records.put('window-capture', row['id'], row)
+        # Expiry removes execution authority, never consent to observe pixels
+        # which an independent human window may still retain.
+        if row['private']: self._retain_private(row['id'])
 
     def close(self):
         for row in self.records.list('window-capture'):
-            if not row['stopped']: self.stop(row['id'], row['principal_id'])
+            if not row['stopped'] or row['private']: self.stop(row['id'], row['principal_id'])
 
     def get(self, identifier, principal):
         row = self.records.get('window-capture', identifier)
         if not row or row['principal_id'] != principal: raise KeyError(identifier)
         if row['stopped'] or row['expires_at'] <= time() or not self.session_valid(principal, row['session_id'], row['policy_version']):
-            self.stop(identifier, principal)
+            self._expire(row)
             raise PermissionError('Capture consent expired or was revoked; start a new session')
         return row
 
@@ -74,10 +107,11 @@ class WindowRecordingService:
         if private is not None:
             row['private'] = bool(private)
             if private: row['recording'] = False
-            with _LOCK:
-                _PRIVACY_REVISION += 1
-                if private: _PRIVATE[identifier] = (row['expires_at'], lambda: self.session_valid(principal, row['session_id'], row['policy_version']))
-                else: _PRIVATE.pop(identifier, None)
+            # Persist the private flag before registering its observation
+            # barrier so concurrent Computer workers cannot prune it.
+            self.records.put('window-capture', identifier, row)
+            if private: self._retain_private(identifier)
+            else: clear_capture_private(identifier)
             if private:
                 for review in self.records.list('review'):
                     if review['principal_id'] == principal and review.get('effect') == 'unknown' and review['status'] in {'needs_user', 'approved_once', 'permitted'}:

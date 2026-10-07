@@ -183,7 +183,7 @@ class AgentManager:
         name: str,
         base_url: str,
         model: str,
-        capabilities: list[str],
+        capabilities: list[str] | None,
         api_key: str | None = None,
     ) -> dict[str, Any]:
         current = self.store.get_provider(provider_id)
@@ -193,9 +193,18 @@ class AgentManager:
             raise ValueError("provider kind must be openai or openai-compatible")
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("provider URL must use HTTP or HTTPS")
-        allowed = [item for item in capabilities if item in {"shell", "functions", "computer"}]
-        if not allowed:
-            allowed = ["shell"]
+        # These are account declarations, not a probe of model entitlement or
+        # permission to invoke a billed operation. Preserve declarations on
+        # credential rotation when the caller omits this optional field.
+        declared = capabilities if capabilities is not None else (
+            current.get("capabilities", ["shell"]) if current else ["shell"]
+        )
+        supported = {"shell", "functions", "computer", "image", "audio"}
+        if not isinstance(declared, list) or len(declared) > len(supported) or any(
+            not isinstance(item, str) or item not in supported for item in declared
+        ):
+            raise ValueError("provider capabilities must declare shell, functions, computer, image or audio")
+        allowed = list(dict.fromkeys(declared)) or ["shell"]
         configured = bool(self.credentials.get(provider_id))
         if api_key:
             self.credentials.set(provider_id, api_key)
@@ -247,12 +256,13 @@ class AgentManager:
         execution_mode: str | None = None,
         conversation_id: str | None = None,
         custom_agent_id: str | None = None,
+        custom_agent_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("task prompt is required")
         custom_agent = (
-            self.store.get_custom_agent(custom_agent_id) if custom_agent_id else None
+            dict(custom_agent_snapshot) if custom_agent_snapshot else self.store.get_custom_agent(custom_agent_id) if custom_agent_id else None
         )
         if custom_agent_id and custom_agent is None:
             raise ValueError("custom agent not found")
@@ -318,6 +328,7 @@ class AgentManager:
                 mode=mode,
                 parent_id=parent_id,
                 custom_agent_id=custom_agent["id"] if custom_agent is not None else None,
+                custom_agent_snapshot=custom_agent,
             )
             task_id = task["id"]
             if worktree_spec is not None:
@@ -1049,6 +1060,11 @@ class AgentManager:
         groups = self._scheduler.schedule(calls, ctx)
         index = 0
         for group in groups:
+            preset=self.store.task_agent(task)
+            if preset and preset.get('tools'):
+                for entry in group:
+                    name=entry.call.name or ('run_shell' if entry.call.type=='shell' else entry.call.type)
+                    if name not in preset['tools']:raise PermissionError('This tool is outside the task agent preset')
             # A controlled browser grant must not be bypassed via arbitrary
             # shell, runbook, subagent, computer or Git process tools. Typed
             # project file/search operations remain available for code context.
@@ -1057,7 +1073,7 @@ class AgentManager:
                 grant['run_id']==task_id and not grant['revoked'] and grant['expires_at']>time()
                 for grant in self.browser.records.list('grant')))
             if active_browser:
-                broker_tools={'browser_tabs','browser_observe','browser_action','browser_wait_for_handoff','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
+                broker_tools={'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
                 for item in group:
                     if item.call.type!='function' or item.call.name not in broker_tools:
                         raise PermissionError('Restricted browser task cannot run process/computer tools; take over all granted tabs before resuming coding execution')
@@ -1088,7 +1104,7 @@ class AgentManager:
                 continue
             entry = group[0]
             call = entry.call
-            if call.name in {'browser_tabs','browser_observe','browser_action'}:
+            if call.name in {'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab'}:
                 from termx.auto_review import ReviewRequired,ActionBlocked
                 self._emit(task_id,'tool.started',{'call':call.public()})
                 try:
@@ -1443,6 +1459,9 @@ class AgentManager:
             raise asyncio.CancelledError
         if entry.spec is None:
             raise ValueError(f"unsupported provider tool: {call.name or call.type}")
+        preset=self.store.task_agent(ctx.task)
+        if preset and preset.get("tools") and call.name not in preset["tools"]:
+            raise PermissionError("This tool is outside the task agent preset")
         started = monotonic()
         outcome = await entry.spec.execute(call, ctx)
         metrics = ctx.metrics
@@ -1894,6 +1913,8 @@ class AgentManager:
             cancel=cancel,
             on_created=lambda child_id: attach(child_id, child_queue),
             parent_id=task_id,
+            custom_agent_id=task.get("custom_agent_id"),
+            custom_agent_snapshot=self.store.task_agent(task),
         )
         child_id = child["id"]
         if child_execution=='worktree':

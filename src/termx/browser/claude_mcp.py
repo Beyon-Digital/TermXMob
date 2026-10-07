@@ -11,7 +11,7 @@ def controlled_server(service,task_id,pending_review,*,read_only=False):
     from claude_agent_sdk import create_sdk_mcp_server,tool
     adapter=BrowserToolAdapter(service)
     async def execute(name,args):
-        if read_only and name=='browser_action':raise PermissionError('Ask mode does not allow browser input')
+        if read_only and name in {'browser_action','browser_open_tab','browser_close_tab'}:raise PermissionError('Ask mode does not allow browser input')
         binding=service.records.get('browser-task',task_id)
         if not binding or not service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']):
             raise PermissionError('Hand a built-in tab to this task before using browser tools')

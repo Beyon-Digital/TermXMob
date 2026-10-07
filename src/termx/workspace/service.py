@@ -22,6 +22,7 @@ from termx.agent.store import ACTIVE_STATUSES
 from termx.config import config_dir
 from termx.identity import Principal
 from termx.workspace.store import Conflict, WorkspaceStore
+from termx.workspace.presets import resolve_preset,available_presets
 
 
 class WorkspaceService:
@@ -97,7 +98,7 @@ class WorkspaceService:
     @staticmethod
     def execution_target(row):
         """Delegations bind settings explicitly; later edits require fresh consent."""
-        return {key:row.get(key) for key in ('engine','provider_id','model','mode','workflow','extension_ids','runner_id','runner_credential_ref','project_id','cwd','worktree_id','worktree_digest','worktree_branch','run_limits')}
+        return {key:row.get(key) for key in ('engine','provider_id','model','mode','workflow','extension_ids','runner_id','runner_credential_ref','project_id','cwd','worktree_id','worktree_digest','worktree_branch','run_limits','custom_agent_id','custom_agent_revision')}
 
     def worktree_target(self,project_id,identifier):
         """Resolve enrolled checkout IDs; caller paths never establish authority."""
@@ -169,14 +170,18 @@ class WorkspaceService:
             raise PermissionError('Reviewed cloud agents require the isolated runner network policy')
 
     def create_session(self, principal, *, title='', project_id=None, cwd=None,
-                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None):
+                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None,custom_agent_id=None):
         self.require(principal, 'agent-control', project_id, None if worktree_id else cwd)
         target=self.worktree_target(project_id,worktree_id) if worktree_id else None
         if target:
             if cwd and Path(cwd).resolve()!=Path(target['path']):
                 raise ValueError('Selected worktree supplies the execution folder')
             cwd=target['path']
-        run_limits=resolve_limits(run_limits)
+        profile=resolve_preset(self,principal,custom_agent_id,engine=engine,project_id=project_id,runner_id=runner_id,workflow=workflow)
+        if profile:
+            provider_id=provider_id or profile.get('provider_id')
+            model=model or profile.get('model')
+        run_limits=resolve_limits({**(profile.get('limits') or {}),**(run_limits or {})} if profile else run_limits)
         if engine != 'internal' and engine not in self.state.engines.engines():
             raise ValueError('Engine is not installed')
         if mode not in {'ask', 'agent'}:
@@ -193,10 +198,10 @@ class WorkspaceService:
         else:
             cwd = str(Path(cwd).resolve(strict=True)) if cwd else None
         conversation = self.agents.create_conversation(title=title[:200], project_id=project_id,
-                                                      cwd=cwd, provider_id=provider_id, model=model, mode=mode)
+                                                      cwd=cwd, provider_id=provider_id, model=model, mode=mode,custom_agent_id=custom_agent_id)
         row = self.store.create('conversation', principal.id,
                                {'engine': engine, 'cwd': cwd, 'draft_text': '', 'scroll': 0,
-                                'linked_from': None, 'transfer': None, 'extension_ids': [], 'workflow': workflow, 'group_id': project_id, 'scratch':scratch,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'worktree_id':worktree_id,'worktree_digest':target['digest'] if target else None,'run_limits':resolve_limits(run_limits)}, project_id, conversation['id'])
+                                'custom_agent_id':custom_agent_id,'custom_agent_revision':profile['workspace_revision'] if profile else None,'linked_from': None, 'transfer': None, 'extension_ids': [], 'workflow': workflow, 'group_id': project_id, 'scratch':scratch,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'worktree_id':worktree_id,'worktree_digest':target['digest'] if target else None,'run_limits':resolve_limits(run_limits)}, project_id, conversation['id'])
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'conversation', row['id'], project_id=project_id)
         self.store.log(principal.id, 'conversation', row['id'], 'created', {'engine': engine})
@@ -302,9 +307,16 @@ class WorkspaceService:
 
     def update_session(self, principal, identifier, *, revision, changes):
         row = self.record(principal, 'conversation', identifier, scope='agent-control')
-        allowed = {'title','pinned','archived','draft_text','draft_context','scroll','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id'}
+        allowed = {'title','pinned','archived','draft_text','draft_context','scroll','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id'}
         if changes.keys() - allowed:
             raise ValueError('Unsupported session setting')
+        if changes.keys() & {'custom_agent_id','runner_id','workflow'}:
+            selected=changes.get('custom_agent_id',row.get('custom_agent_id'))
+            profile=resolve_preset(self,principal,selected,engine=row['engine'],project_id=row.get('project_id'),runner_id=changes.get('runner_id',row.get('runner_id')),workflow=changes.get('workflow',row.get('workflow')))
+            if 'custom_agent_id' in changes:
+                if row['engine']!='internal' and (selected!=row.get('custom_agent_id') or (profile and profile['workspace_revision']!=row.get('custom_agent_revision'))) and self.agents.workspace_turns_page(identifier,limit=1):
+                    raise Conflict('Native conversations keep their original preset; create a new or linked conversation')
+                changes['custom_agent_revision']=profile['workspace_revision'] if profile else None
         if 'draft_context' in changes:
             self.validate_context(changes['draft_context'])
         if 'worktree_id' in changes:
@@ -348,18 +360,18 @@ class WorkspaceService:
                 raise ValueError('Session setting exceeds its size limit')
         if changes.get('engine', row['engine']) != row['engine']:
             raise Conflict('Change engines using a reviewed linked fork')
-        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
+        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','custom_agent_revision'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
             raise Conflict('Wait for the active turn before changing session settings')
         if 'mode' in changes and changes['mode'] not in {'ask','agent'}:
             raise ValueError('Unknown mode')
         with self.store.lock:
             if row['revision'] != revision:
                 raise Conflict('Session changed; reload before saving')
-            for key in ('draft_text','draft_context','scroll','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd'):
+            for key in ('draft_text','draft_context','scroll','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd','custom_agent_id','custom_agent_revision'):
                 if key in changes:
                     row[key] = changes[key]
             meta = self.store.update('conversation', identifier, row, revision)
-            self.agents.update_conversation(identifier, **{k:v for k,v in changes.items() if k not in {'draft_text','draft_context','scroll','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest'}})
+            self.agents.update_conversation(identifier, **{k:v for k,v in changes.items() if k not in {'draft_text','draft_context','scroll','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','custom_agent_revision'}})
         self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':sorted(changes)})
         return self.session(principal, meta['id'])
 
@@ -461,11 +473,14 @@ class WorkspaceService:
         if not row.get('cwd'):
             raise ValueError('Select an authorized project folder before running a turn')
         self.validate_runner(principal,row)
+        profile=resolve_preset(self,principal,row.get('custom_agent_id'),engine=row['engine'],project_id=row.get('project_id'),runner_id=row.get('runner_id'),workflow=row.get('workflow'))
+        if profile and profile['workspace_revision']!=row.get('custom_agent_revision'):
+            raise Conflict('Agent preset changed; inspect and explicitly refresh this conversation preset before sending')
         if row.get('runner_id'):
             await self.state.runner_agents.preflight(principal,row['runner_id'],row['provider_id'],row['runner_credential_ref'],row['model'])
         limits = resolve_limits(limits,row.get('run_limits'))
         digest = hashlib.sha256(json.dumps({'session':identifier,'prompt':prompt,'limits':limits,
-                                           'attachments':attachments or [],'context':context},sort_keys=True).encode()).hexdigest()
+                                           'attachments':attachments or [],'context':context,'custom_agent_id':row.get('custom_agent_id'),'custom_agent_revision':row.get('custom_agent_revision')},sort_keys=True).encode()).hexdigest()
         lock = self._send_locks.setdefault(identifier, asyncio.Lock())
         async with lock:
             current=self.session(principal,identifier,turns=False)
@@ -514,16 +529,16 @@ class WorkspaceService:
                     task=await self.state.runner_agents.create_task(principal=principal,runner_id=row['runner_id'],
                         credential_ref=row['runner_credential_ref'],provider_id=row['provider_id'],prompt=prompt,
                         model=row['model'],mode=row['mode'],limits=limits,conversation_id=identifier,request_id=request_id,
-                        attachments=attachments,on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
+                        attachments=attachments,custom_agent=profile,on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                 elif row['engine'] == 'internal':
                     task = await self.state.agent.create_task(prompt=prompt,cwd=row['cwd'],
                         provider_id=row.get('provider_id') or '', model=row.get('model'),mode=row['mode'],
-                        limits=limits,attachments=attachments,conversation_id=identifier,
+                        limits=limits,attachments=attachments,conversation_id=identifier,custom_agent_id=row.get('custom_agent_id'),custom_agent_snapshot=profile,
                         on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                 else:
                     attempted_native = True
                     task = await self.state.engines.create_task(prompt=prompt,cwd=row['cwd'],engine=row['engine'],
-                        model=row.get('model'),mode=row['mode'],limits=limits,conversation_id=identifier,attachments=attachments,workflow=row.get('workflow'),
+                        model=row.get('model'),mode=row['mode'],limits=limits,conversation_id=identifier,attachments=attachments,workflow=row.get('workflow'),custom_agent=profile,
                         on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                     if not self.store.get('task',task['id']):
                         self._dispatch_created(principal,row,request_id,task['id'],managed_session_id,delegation_id,turn_prompt,submitted_prompt,context)

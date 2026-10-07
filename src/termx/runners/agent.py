@@ -89,7 +89,7 @@ class RunnerAgentService:
             provider=self._account(job['provider'],job['credential_ref'],self.store.get_task(job['task'])['model'])
             return runner['expires']>time() and self.runners.authority(runner) and self._fingerprint(provider,job['credential_ref'])==job['provider_fingerprint'] and runner['status']=='ready'
         except Exception:return False
-    async def create_task(self,principal,runner_id,credential_ref,prompt,model=None,mode='agent',limits=None,conversation_id=None,request_id=None,on_created=None,attachments=None,provider_id=None):
+    async def create_task(self,principal,runner_id,credential_ref,prompt,model=None,mode='agent',limits=None,conversation_id=None,request_id=None,on_created=None,attachments=None,provider_id=None,custom_agent=None):
         if not request_id or not re.fullmatch(r'[A-Za-z0-9._-]{8,128}',request_id):raise HTTPException(400,'A stable request ID is required')
         if not prompt or len(prompt)>100000:raise HTTPException(400,'Provide a bounded prompt')
         if mode not in {'ask','agent'}:raise HTTPException(400,'Choose Ask or Agent mode')
@@ -98,12 +98,21 @@ class RunnerAgentService:
         provider_id=provider_id or credential_ref
         admission=await self.preflight(principal,runner_id,provider_id,credential_ref,model)
         runner,provider=admission['runner'],admission['provider']
-        bounded=self.state.agent._limits(limits)
+        preset=None
+        if custom_agent:
+            if admission['capabilities'].get('agent_presets')!='snapshot-v1':raise HTTPException(409,'Install a runner image with immutable agent preset support')
+            workspace=getattr(self.state,'workspace',None)
+            if not workspace:raise HTTPException(409,'Managed preset authority is unavailable')
+            from termx.workspace.presets import resolve_preset
+            preset=resolve_preset(workspace,principal,custom_agent['id'],engine='internal',project_id=runner['project'],runner_id=runner_id)
+            if preset['workspace_revision']!=custom_agent.get('workspace_revision'):raise HTTPException(409,'Agent preset changed before runner admission')
+            if not set(preset.get('tools') or []).issubset(set(admission['capabilities']['tools'])):raise HTTPException(409,'Runner image does not support this preset tool set')
+        bounded=self.state.agent._limits({**(preset.get('limits') or {}),**(limits or {})} if preset else limits)
         bounded['max_seconds']=min(bounded['max_seconds'],int(runner['expires']-time()),3600)
         bounded['shell_timeout_s']=min(bounded['shell_timeout_s'],bounded['max_seconds'])
         if bounded['max_seconds']<1:raise HTTPException(409,'Runner lease expired')
-        original_limits=self.state.agent._limits(limits)
-        request={'prompt':prompt,'model':provider['model'],'mode':mode,'limits':bounded,'attachments':attachments,'conversation_id':conversation_id,'provider_id':provider_id,'credential_ref':credential_ref}
+        original_limits=self.state.agent._limits({**(preset.get('limits') or {}),**(limits or {})} if preset else limits)
+        request={'prompt':prompt,'model':provider['model'],'mode':mode,'limits':bounded,'attachments':attachments,'conversation_id':conversation_id,'provider_id':provider_id,'credential_ref':credential_ref,'custom_agent':preset}
         digest=canonical_hash({**request,'limits':original_limits})
         with self.runners.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -112,7 +121,7 @@ class RunnerAgentService:
                 if old['digest']!=digest:raise HTTPException(409,'Request ID belongs to a different task')
                 return self.store.get_task(old['task'],include_events=True)
             if db.execute("SELECT 1 FROM jobs WHERE runner=? AND status='running'",(runner_id,)).fetchone():raise HTTPException(409,'Dedicated runner already has an active job')
-            task=self.store.create_task(prompt=prompt,cwd='/workspace',provider_id=provider_id,model=provider['model'],limits=bounded,mode=mode,engine='runner')
+            task=self.store.create_task(prompt=prompt,cwd='/workspace',provider_id=provider_id,model=provider['model'],limits=bounded,mode=mode,engine='runner',custom_agent_id=preset['id'] if preset else None,custom_agent_snapshot=preset)
             runtime={'runner_id':runner_id,'runner_protocol':PROTOCOL,'runner_request_id':request_id,'conversation_id':conversation_id,'remote_root':'/workspace','owner':principal.id}
             self.store.update_task(task['id'],runtime=runtime)
             for name,mime,data in images:self.store.save_artifact(task['id'],'upload',mime,data)
@@ -156,7 +165,7 @@ class RunnerAgentService:
             command=['docker']+(['--host',config['endpoint']] if config.get('endpoint') else ['--context',config['context']])
             process=await asyncio.create_subprocess_exec(*command,'exec','-i',runner['container'],'python','-I','-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,limit=MAX_FRAME+2)
             self.channels[task_id]=process
-            await self._send(task_id,{'type':'start','protocol':PROTOCOL,'provider':{'id':job['provider'],'model':request['model']},'prompt':request['prompt'],'mode':request['mode'],'limits':request['limits'],'attachments':request['attachments']})
+            await self._send(task_id,{'type':'start','protocol':PROTOCOL,'provider':{'id':job['provider'],'model':request['model']},'prompt':request['prompt'],'mode':request['mode'],'limits':request['limits'],'attachments':request['attachments'],'custom_agent':request.get('custom_agent')})
             reader=asyncio.create_task(read());watcher=asyncio.create_task(monitor())
             try:
                 done,_=await asyncio.wait({reader,watcher},timeout=request['limits']['max_seconds'],return_when=asyncio.FIRST_COMPLETED)
@@ -208,7 +217,7 @@ class RunnerAgentService:
         from termx.agent.providers import OpenAIResponsesAdapter
         if isinstance(adapter,OpenAIResponsesAdapter):
             from termx.agent.tools import default_registry
-            tools=set(qualified_tools or TOOLS)
+            tools=set(TOOLS if qualified_tools is None else qualified_tools)
             from copy import copy
             adapter=copy(adapter)
             # This adapter is a fresh task-local instance, so filtering cannot
@@ -223,7 +232,10 @@ class RunnerAgentService:
                 if args.get('cwd')!='/workspace':raise ValueError('Provider context must be the admitted remote workspace')
                 provider=self._account(job['provider'],job['credential_ref'],self.store.get_task(task_id)['model'])
                 runner=self.runners.row(job['owner'],job['runner'])
-                adapter=self._adapter(provider,self.qualified.get(runner['configuration']['image_id'],{}).get('tools'))
+                qualified=self.qualified.get(runner['configuration']['image_id'],{}).get('tools') or TOOLS
+                preset=self.store.task_agent(self.store.get_task(task_id))
+                permitted=set(qualified).intersection(preset['tools']) if preset and preset.get('tools') else set(qualified)
+                adapter=self._adapter(provider,permitted)
                 if method=='plan':result=await adapter.plan(str(args.get('prompt','')), '/workspace', args.get('manifest') or {})
                 else:
                     result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd='/workspace',manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),allow_computer=False,read_only=self.store.get_task(task_id)['mode']=='ask'))
@@ -243,7 +255,9 @@ class RunnerAgentService:
     async def _review(self,job,identifier,args):
         task_id=job['task'];task=self.store.get_task(task_id);call=args.get('call') or {};tool=call.get('name');arguments=call.get('arguments') or {};state=args.get('state') or []
         if tool not in TOOLS or call.get('type')!='function' or not isinstance(arguments,dict) or not isinstance(state,list):raise ValueError('Unqualified remote tool')
-        effect='observe' if tool in {'read_file','list_files','search_project','git_status','git_diff'} else 'edit' if tool in {'write_file','apply_patch'} else 'unknown'
+        preset=self.store.task_agent(task)
+        if preset and preset.get('tools') and tool not in preset['tools']:raise ValueError('Tool is outside the frozen runner preset')
+        effect='observe'  if tool in {'read_file','list_files','search_project','git_status','git_diff'} else 'edit' if tool in {'write_file','apply_patch'} else 'unknown'
         hard=None
         if task['mode']=='ask' and effect!='observe':hard='Ask mode cannot mutate the runner workspace'
         if len(state)>200:hard='Too many reviewed file targets'

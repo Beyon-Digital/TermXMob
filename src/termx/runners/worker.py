@@ -33,7 +33,7 @@ def capabilities():
     registry=default_registry()
     return {'protocol':PROTOCOL,'engine':'internal','credential_transport':'host-stdio-broker',
             'review':'host-bound-fingerprint-v1','tools':sorted(TOOLS.intersection(registry.names())),
-            'root':'/workspace','network':'none','version':'0.3.0'}
+            'root':'/workspace','network':'none','version':'0.3.0','agent_presets':'snapshot-v1'}
 
 def frame(value):
     raw=json.dumps(value,separators=(',',':'),allow_nan=False).encode()
@@ -185,6 +185,8 @@ class ReviewedManager(AgentManager):
         super()._fail(task_id,exc)
     async def _invoke_tool(self,entry,ctx):
         call=entry.call
+        preset=self.store.task_agent(ctx.task)
+        if preset and preset.get('tools') and call.name not in preset['tools']:return ToolOutcome({'refused':True,'error':'Tool is outside the frozen runner preset'})
         if entry.spec is None or call.name not in self._tools.names():return ToolOutcome({'refused':True,'error':'Tool is not qualified for this dedicated runner'})
         before=file_state(call,ctx.cwd)
         request={'call':asdict(call),'state':before,'read_only':ctx.read_only}
@@ -228,9 +230,16 @@ async def run():
         channel.phase='event:'+event['type']
         channel.send({'type':'event','event':event,'task':store.get_task(task_id)})
     manager._listeners.add(event)
+    preset=start.get('custom_agent')
+    if preset:
+        if not isinstance(preset,dict) or not isinstance(preset.get('id'),str) or not set(preset.get('tools') or []).issubset(capabilities()['tools']):raise ValueError('Unqualified worker preset')
+        # The container boundary supplies confinement. A host preset cannot
+        # switch the worker to a host sandbox or carry host-native skills.
+        preset={key:preset.get(key) for key in ('id','name','instructions','tools','limits','workspace_revision')}
+        preset.update(sandbox_profile='agent',approval_mode='standard')
     listener=asyncio.create_task(channel.listen())
     try:
-        task=await manager.create_task(prompt=start['prompt'],cwd=str(root),provider_id=provider['id'],model=provider['model'],mode=start.get('mode','agent'),limits=start.get('limits'),attachments=start.get('attachments'))
+        task=await manager.create_task(prompt=start['prompt'],cwd=str(root),provider_id=provider['id'],model=provider['model'],mode=start.get('mode','agent'),limits=start.get('limits'),attachments=start.get('attachments'),custom_agent_snapshot=preset,custom_agent_id=preset['id'] if preset else None)
         channel.task_id=task['id'];channel.send({'type':'ready','remote_task_id':task['id']})
         while not channel.closed.is_set():
             task=store.get_task(channel.task_id)

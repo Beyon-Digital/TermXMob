@@ -101,6 +101,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            gstreamer1.0-plugins-good \
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
@@ -319,6 +320,10 @@ jobs:
         with:
           projectPath: desktop/src-tauri
           tauriScript: tauri
+          # Intel CI reached accepted notarization, then hdiutil detach timed
+          # out in DiskArbitration. One bounded rebuild retry preserves all
+          # signing/bundling checks; a second failure still fails the job.
+          retryAttempts: ${{ runner.os == 'macOS' && 1 || 0 }}
           args: --verbose ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }} --bundles ${{ matrix.bundles }}
           tagName: ${{ steps.release.outputs.tag }}
           releaseName: ${{ steps.release.outputs.tag != '' && format('Termx {0}', steps.release.outputs.tag) || '' }}

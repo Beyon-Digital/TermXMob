@@ -365,6 +365,9 @@ class CodexEngine:
     async def shutdown(self) -> None:
         if self._conn:
             await self._conn.close()
+            process = getattr(self._conn, '_proc', None)
+            if process is not None and process.returncode is None:
+                raise RuntimeError('Codex transport process remains active after shutdown')
         self._initialized = False
 
     # ----------------------------------------------------------------- events
@@ -455,13 +458,13 @@ class CodexEngine:
             return ({"decision": "decline"} if kind != "elicitation"
                     else {"action": "decline", "content": None})
         if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"} and self.browser_service:
-            from termx.engines.action_review import authorize
+            from termx.engines.action_review import authorize,consume_reviewed
             from termx.auto_review import ActionBlocked
             try:
                 checked = await authorize(self, binding, 'run_shell' if method == 'item/commandExecution/requestApproval' else 'native_permission', params, str(params.get('approvalId') or params.get('itemId') or uuid.uuid4().hex))
                 if checked:
                     envelope, validate, permit = checked
-                    await self.browser_service.review.consume_external(envelope, permit['permit'], validate=validate)
+                    await consume_reviewed(self,binding,envelope,validate,permit,tool='run_shell' if method=='item/commandExecution/requestApproval' else 'native_permission',args=params)
                     self._review_items[(binding.binding_id, params.get('itemId'))] = envelope
                     return {'permissions': params.get('permissions', {}), 'scope': 'turn'} if method == 'item/permissions/requestApproval' else {'decision': 'accept'}
             except (PermissionError, ActionBlocked):

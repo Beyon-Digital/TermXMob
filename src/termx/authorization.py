@@ -185,6 +185,19 @@ class AuthorizationService:
                 raise HTTPException(409,'resource already claimed')
             db.execute('INSERT OR IGNORE INTO resource_owners VALUES (?,?,?,?)',(kind,resource_id,live.id,project_id))
 
+    def resource_owner(self, kind: str, resource_id: str) -> dict | None:
+        """Read ledger provenance only; this neither claims nor grants access.
+
+        Server callers must use current require_* policy before publishing or
+        executing resources. Missing rows have no invented legacy owner.
+        """
+        if not kind or len(kind)>64 or not resource_id or len(resource_id)>256:
+            raise ValueError('invalid resource identity')
+        with self.identity._db() as db:
+            row=db.execute('SELECT kind,resource_id,principal_id,project_id FROM resource_owners WHERE kind=? AND resource_id=?',
+                           (kind,resource_id)).fetchone()
+        return dict(row) if row else None
+
     def require_creation_principal(self, principal, action: str):
         live = self.identity.principal_by_id(principal.id)
         if not live or action not in live.scopes:

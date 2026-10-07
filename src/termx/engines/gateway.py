@@ -679,16 +679,19 @@ class EngineGateway:
                 marked += 1
         return marked
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, *, strict: bool = False) -> None:
         await self.catalogue.stop()
         registry = getattr(self, "acp_registry", None)
         if registry:
             await registry.stop()
+        failed = False
         for adapter in self._adapters.values():
             try:
                 await adapter.shutdown()
             except Exception:
-                pass
+                failed = True
+        if strict and failed:
+            raise RuntimeError('Native execution shutdown failed; private observation barriers remain active')
 
 
 def _approval_title(method: str, params: dict[str, Any]) -> str:

@@ -69,6 +69,14 @@ def file_digest(path):
     return digest.hexdigest()
 
 
+def verify_unchanged_assets(report, binary, package):
+    """Reject a fixture that modified the installed executable or installer."""
+    observed = {'binary_sha256': file_digest(binary), 'package_sha256': file_digest(package)}
+    unchanged = all(observed[name] == report[name] for name in observed)
+    report['asset_verification'] = {**observed, 'unchanged': unchanged}
+    assert unchanged, 'Native qualification assets changed during the installed fixture'
+
+
 class NativeDriver:
     def __init__(self, binary, driver, native_driver, environment, output):
         self.binary = binary
@@ -239,7 +247,10 @@ def main():
         'binary_sha256':file_digest(args.binary),
         'package_sha256':file_digest(args.package),
         'ipc_mocked':False,'provider_account_used':False,'steps':{},
-        'limitations':['Native OIDC TLS/webview journey and macOS GUI require separate direct qualification']}
+        'limitations':[
+            'Native OIDC TLS/webview journey and macOS GUI require separate direct qualification',
+            'This lifecycle fixture does not request microphone permission, capture audio hardware or exercise a paid provider account'
+        ]}
     with tempfile.TemporaryDirectory(prefix='termx-native-gui-') as directory:
         root = Path(directory)
         driver = NativeDriver(args.binary.resolve(),args.driver.resolve(),args.native_driver,
@@ -339,6 +350,7 @@ def main():
             wait(lambda:driver.element('.sign-in'),'logout remains revoked after restart')
             report['steps']['native_logout_clears_os_refresh'] = True
             driver.screenshot('signed-out')
+            verify_unchanged_assets(report, args.binary, args.package)
             report['passed'] = True
         except Exception as error:
             report['passed'] = False

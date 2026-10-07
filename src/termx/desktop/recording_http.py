@@ -57,17 +57,27 @@ def mount_window_recording(app, state):
         def snapshot():
             rows = []
             for candidate in service.records.list('window-capture'):
-                if candidate['principal_id'] != session.principal.id or candidate['stopped']: continue
+                if candidate['principal_id'] != session.principal.id or (candidate['stopped'] and not candidate['private']): continue
                 if not state.authorization.can(token, 'desktop-view', resource_kind='window-capture', resource_id=candidate['id']): continue
                 try: current = service.get(candidate['id'], session.principal.id)
-                except (KeyError, PermissionError): continue
+                except (KeyError, PermissionError):
+                    current = service.records.get('window-capture', candidate['id'])
+                    if not current or not current['private']: continue
                 rows.append({'id': current['id'], 'kind': 'window', 'state': 'private' if current['private'] else 'recording' if current['recording'] else 'preview',
+                    'expired': bool(current['stopped']),
                     'stop_allowed': state.authorization.can(token, 'desktop-control', resource_kind='window-capture', resource_id=current['id'])})
             for tab in state.browser.records.list('tab'):
-                if tab['principal_id'] != session.principal.id or not tab['recording'] or tab['state'] in {'private', 'closed', 'crashed'}: continue
+                if tab['principal_id'] != session.principal.id or tab['state'] in {'closed', 'crashed'}: continue
+                viewed = tab['id'] in state.browser.viewing_tabs(session.principal.id)
+                agent = tab['state'] == 'agent' and state.browser._grant_valid(tab, state.browser.records.get('grant',tab.get('grant_id')))
+                developer = state.browser._diagnostic_consent_valid(tab)
+                private=tab['state']=='private'
+                if not (viewed or agent or tab['recording'] or developer or private): continue
                 kwargs = {'project_id': tab['project_id'] or None, 'resource_kind': 'browser-tab', 'resource_id': tab['id']}
                 if state.authorization.can(token, 'desktop-view', **kwargs):
-                    rows.append({'id': tab['id'], 'kind': 'tab', 'state': 'recording', 'stop_allowed': state.authorization.can(token, 'desktop-control', **kwargs)})
+                    rows.append({'id': tab['id'], 'kind': 'tab', 'state': 'private' if private else 'agent' if agent else 'recording' if tab['recording'] else 'developer' if developer else 'watching', 'stop_allowed': state.authorization.can(token, 'desktop-control', **kwargs) if agent or tab['recording'] or developer else viewed if private else True})
+            for row in state.desktop.viewers(session.principal.id):
+                rows.append({**row,'kind':'computer','stop_allowed':True})
             return rows
         rows = await asyncio.to_thread(snapshot)
         actor(request)
@@ -75,6 +85,11 @@ def mount_window_recording(app, state):
         # This metadata query performs no capture, grants no consent and exposes
         # no private window names, tab URLs, recorded values or screenshots.
         return {'captures': rows}
+
+    @router.delete('/viewers/{identifier}')
+    async def stop_viewer(identifier:str,request:Request):
+        _,session=actor(request)
+        return await state.desktop.stop_viewer(identifier,session.principal.id)
 
     @router.post('/captures')
     async def start(request: Request, body: Start):

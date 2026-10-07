@@ -336,6 +336,15 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         await state.runner_agents.close()
         await state.runners.close()
         await state.previews.close()
+        # Keep every private observation barrier in place until both internal
+        # and native execution workers have stopped. Stores remain available
+        # to their final callbacks and the subsequent browser cleanup.
+        # Fail closed: close failures or cancellation timeouts must not remove
+        # private observation barriers while a worker may still execute.
+        await asyncio.wait_for(state.agent.close(), timeout=3.0)
+        if any(not worker.done() for worker in state.agent._workers.values()):
+            raise RuntimeError('Internal workers remain active; private observation barriers remain in place')
+        await asyncio.wait_for(state.engines.shutdown(strict=True), timeout=10.0)
         state.window_recording.close()
         await state.browser.close()
         await state.workspace.close()
@@ -343,7 +352,6 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         await state.chatgpt.close()
         await state.mcp_pool.shutdown()
         await state.mcp_loopback.stop()
-        await state.engines.shutdown()
         await shutdown_state(state)
 
     app = FastAPI(title="termx", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -897,7 +905,13 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         except HTTPException:
             await websocket.close(code=4403)
             return
-        await state.desktop.attach(websocket, authorize_control=lambda: state.authorization.can(token, "desktop-control"))
+        managed_session = state.identity.resolve(token)
+        await state.desktop.attach(
+            websocket,
+            authorize_control=lambda: state.authorization.can(token, "desktop-control"),
+            principal_id=managed_session.principal.id if managed_session else None,
+            session_id=managed_session.session_id if managed_session else None,
+        )
 
     vendor = PACKAGE_STATIC / "vendor"
 
@@ -910,7 +924,10 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             raise HTTPException(status_code=404)
         return FileResponse(path)
 
-    html_headers = {"Cache-Control": "no-store"}
+    html_headers = {
+        "Cache-Control": "no-store",
+        "Permissions-Policy": 'microphone=(self), camera=(), display-capture=()',
+    }
     from termx.workspace.ui_contract import compatibility, unavailable
 
     @app.get('/workspace-version.json')

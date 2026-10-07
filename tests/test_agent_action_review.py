@@ -56,3 +56,29 @@ def test_unknown_shell_parks_exact_human_approval_and_revocation_blocks_executio
             assert not (tmp_path/'outcome.txt').exists()
         finally:await manager.close();store.close()
     asyncio.run(run())
+
+def test_model_pin_change_after_permit_parks_exact_internal_write_then_resumes_once(tmp_path):
+    from test_agent import _FanOutAdapter,_fn,build_manager,wait_for_pending_approval,wait_for_status
+    async def run():
+        adapter=_FanOutAdapter({'Edit code':([[_fn('exact-write','write_file',path='once.py',content='VALUE = 1\n')]],0.)})
+        manager,store=build_manager(tmp_path,adapter);service=BrowserService(tmp_path/'browser');manager.browser=service
+        class Reviewer:
+            version='qualified-v1';expected_model='snapshot-A';calls=0
+            async def evaluate(self,*_):
+                self.calls+=1;return ReviewVerdict('ALLOW','aligned','Typed edit',self.version,time()+15)
+        reviewer=Reviewer();service.review.reviewer=reviewer;original=service.review.authorize
+        async def swap(*args,**kwargs):
+            row=await original(*args,**kwargs)
+            if row.get('decision_source')=='model':reviewer.expected_model='snapshot-B'
+            return row
+        service.review.authorize=swap
+        try:
+            task=await manager.create_task(prompt='Edit code',cwd=str(tmp_path),provider_id='fake',on_created=lambda id:service.records.put('agent-task-authority',id,{'id':id,'principal_id':'owner','session_id':'sid','project_id':'project','policy_version':1}))
+            await manager.resolve_approval(task['id'],task['approvals'][0]['id'],'approved')
+            _,approval=await wait_for_pending_approval(store,task['id'],'tool')
+            assert not (tmp_path/'once.py').exists() and approval['payload']['browser_review']['status']=='needs_user'
+            await manager.resolve_approval(task['id'],approval['id'],'approved');await wait_for_status(store,task['id'],'completed')
+            assert (tmp_path/'once.py').read_text()=='VALUE = 1\n' and reviewer.calls==1
+            assert len([row for row in service.records.list('review') if row['status']=='completed'])==1
+        finally:await manager.close();store.close()
+    asyncio.run(run())

@@ -39,7 +39,7 @@ def test_snapshot_rejects_unbounded_or_ambiguous_admin_inputs(field,value):
 @pytest.mark.parametrize('usage',[{'input_tokens':True,'output_tokens':10},{'input_tokens':1_000_000_001,'output_tokens':0},{'input_tokens':100,'output_tokens':10,'input_tokens_details':{'cached_tokens':101}},{'input_tokens':100,'output_tokens':10,'input_tokens_details':{'cached_tokens':True}}])
 def test_invalid_usage_cannot_claim_a_complete_cost_but_does_not_alter_verdict(usage):
     async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request:httpx.Response(200,json={'usage':usage,'output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"ALLOW","reason_code":"aligned"}'}]}]}))) as client:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request:httpx.Response(200,json={'model':'fixture-identity-v1','usage':usage,'output':[{'type':'message','content':[{'type':'output_text','text':'{"decision":"ALLOW","reason_code":"aligned"}'}]}]}))) as client:
             reviewer=ResponsesReviewer(provider_id='fixture',base_url='https://fixture.example',model='small',api_key='fixture',version='v1',client=client)
             assert (await reviewer.evaluate(envelope(intended_effect='edit'),{})).decision=='ALLOW'
             assert not estimate_cost(reviewer.usage,PricingSnapshot(**PRICING),provider_id='fixture',model='small')['reported']
@@ -50,7 +50,7 @@ def test_qualification_usage_delta_counts_cached_tokens_without_prior_requests()
         expected={case:decision for case,_,_,decision in CASES}
         def response(request):
             action=json.loads(json.loads(request.content)['input'])['action']
-            return httpx.Response(200,json={'usage':{'input_tokens':100,'output_tokens':10,'input_tokens_details':{'cached_tokens':40}},'output':[{'type':'message','content':[{'type':'output_text','text':json.dumps({'decision':expected.get(action['action_id'],'ALLOW'),'reason_code':'aligned'})}]}]})
+            return httpx.Response(200,json={'model':'fixture-identity-v1','usage':{'input_tokens':100,'output_tokens':10,'input_tokens_details':{'cached_tokens':40}},'output':[{'type':'message','content':[{'type':'output_text','text':json.dumps({'decision':expected.get(action['action_id'],'ALLOW'),'reason_code':'aligned'})}]}]})
         async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
             reviewer=ResponsesReviewer(provider_id='fixture',base_url='https://fixture.example',model='small',api_key='fixture',version='v1',client=client)
             await reviewer.evaluate(envelope(intended_effect='edit'),{})
@@ -77,7 +77,7 @@ def fixture(tmp_path,monkeypatch):
         def __init__(self,**kwargs):
             def response(request):
                 action=json.loads(json.loads(request.content)['input'])['action']
-                return httpx.Response(200,json={'usage':{'input_tokens':100,'output_tokens':10,'input_tokens_details':{'cached_tokens':40}},'output':[{'type':'message','content':[{'type':'output_text','text':json.dumps({'decision':expected.get(action['action_id'],'ALLOW'),'reason_code':'aligned'})}]}]})
+                return httpx.Response(200,json={'model':'fixture-identity-v1','usage':{'input_tokens':100,'output_tokens':10,'input_tokens_details':{'cached_tokens':40}},'output':[{'type':'message','content':[{'type':'output_text','text':json.dumps({'decision':expected.get(action['action_id'],'ALLOW'),'reason_code':'aligned'})}]}]})
             super().__init__(**kwargs,client=httpx.AsyncClient(transport=httpx.MockTransport(response)))
     monkeypatch.setattr(router,'ResponsesReviewer',FixtureReviewer)
     return state,TestClient(create_app(state),base_url='https://localhost'),{'Authorization':'Bearer '+token}
@@ -98,7 +98,7 @@ def test_frozen_reports_export_without_secrets_and_account_switch_invalidates_ac
     assert client.post('/api/browser/reviewer',headers=headers,json={key:body[key] for key in ('provider_id','model','version')}).status_code==400
     calls=[]
     async def effect():calls.append(True)
-    with pytest.raises(ValueError):asyncio.run(state.browser.review.execute(action,permit['permit'],validate=lambda:True,operation=effect))
+    with pytest.raises(ReviewRequired):asyncio.run(state.browser.review.execute(action,permit['permit'],validate=lambda:True,operation=effect))
     with pytest.raises(ValueError):asyncio.run(state.browser.review.consume_external(action,permit['permit'],validate=lambda:True))
     with pytest.raises(ReviewRequired):asyncio.run(state.browser.review.authorize(action,validate=lambda:True))
     assert not calls
@@ -168,5 +168,5 @@ def test_model_cannot_be_confused_with_host_rules_by_using_the_same_version_name
     valid=False
     calls=[]
     async def effect():calls.append(True)
-    with pytest.raises(ValueError):asyncio.run(broker.execute(action,permit['permit'],validate=lambda:True,operation=effect))
+    with pytest.raises(ReviewRequired):asyncio.run(broker.execute(action,permit['permit'],validate=lambda:True,operation=effect))
     assert not calls and broker.records.get('review',action.action_id)['status']=='needs_user'

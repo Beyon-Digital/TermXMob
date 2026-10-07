@@ -29,6 +29,7 @@ class SessionInput(Input):
     runner_credential_ref: str | None=None
     run_limits: dict | None=None
     worktree_id: str | None=None
+    custom_agent_id:str|None=None
 
 
 class SessionUpdate(Input):
@@ -184,6 +185,11 @@ def mount_workspace(app,state):
         except (ValueError,OSError) as exc:
             raise HTTPException(400,str(exc)) from None
 
+    @router.get('/presets')
+    def presets(request:Request,project_id:str|None=None,engine:str|None=None,runner_id:str|None=None):
+        from termx.workspace.presets import available_presets
+        return {'presets':call(available_presets,workspace,principal(request),project_id=project_id,engine=engine,runner_id=runner_id)}
+
     @router.get('/sessions')
     def sessions(request:Request,query:str='',archived:bool=False,project_id:str|None=None):
         return {'sessions':call(workspace.sessions,principal(request),query=query,archived=archived,project_id=project_id)}
@@ -206,6 +212,11 @@ def mount_workspace(app,state):
         if operation=='tree':return call(bound.listing,pid,path)
         if operation=='read':return call(bound.read,pid,path)
         if operation=='search':return call(bound.search,pid,query)
+        if operation=='quick-open':
+            if len(query)>200:raise HTTPException(400,'File name search exceeds 200 characters')
+            result=call(bound.search,pid,query,content=False)
+            call(workspace.session_files,principal(request),identifier,expected_worktree=worktree_id)
+            return result
         raise HTTPException(400,'Unknown file operation')
 
     @router.put('/sessions/{identifier}/files')

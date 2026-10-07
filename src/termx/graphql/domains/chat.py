@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from strawberry.scalars import JSON
 from strawberry.types import Info
 
-from termx.agents.files import AgentFile, AgentFileError, validate_config_options
+from termx.agents.files import AgentFile, AgentFileError, validate_config_options, slugify
 from termx.agents.registry import RevisionConflict
 from termx.graphql.context import TermxContext
 from termx.graphql.errors import resolver
@@ -94,6 +94,37 @@ def _slug_for_agent(state: Any, agent_id: str) -> str | None:
     return None
 
 
+def _require_custom_agent(ctx, row, scope='agent-view'):
+    ctx.require(scope)
+    policy=ctx.state.authorization
+    owner=policy.resource_owner('custom_agent',row['id'])
+    if owner:
+        ctx.require_resource(scope,'custom_agent',row['id'])
+        return
+    if policy.can(ctx.secret,'host-admin'):
+        ctx.require_host(scope)
+        return
+    policy.require_creation(ctx.secret,scope)
+    # Legacy installed definitions are shared explicitly, never assigned an
+    # invented owner. Newly created/imported definitions have other sources
+    # and become private through their resource ledger claims.
+    file=row.get('file') or {}
+    extra=(file.get('x_termx_extra') or {}) if isinstance(file,dict) else {}
+    metadata=[row,file,extra]
+    scoped=any(isinstance(item,dict) and any(item.get(key) for key in
+        ('owner','owner_id','principal_id','project_id')) for item in metadata)
+    if scope!='agent-view' or not row.get('enabled') or row.get('source') not in {'device','bundled'} or scoped:
+        raise HTTPException(403,'custom agent is private or not shared')
+
+
+def _claim_custom_agent_before_write(ctx, definition):
+    # Reload authority at the final file boundary, and reserve the canonical
+    # identity before it can be published with a caller-supplied source label.
+    ctx.require_host('agent-control')
+    ctx.claim('custom_agent',definition.qid_id)
+    ctx.require_host('agent-control')
+
+
 def _conn_or_404(state: Any, conn_id: str) -> ConnectionDef:
     conn = state.mcp_registry().get(conn_id)
     if conn is None:
@@ -131,24 +162,34 @@ class ChatQueries:
     @resolver
     def custom_agents(self, info: Ctx) -> list[T.HostCustomAgent]:
         ctx = info.context
-        ctx.require_host('agent-view')
-        return T.HostCustomAgent.wrap_all(ctx.state.agent_store.list_custom_agents())
+        ctx.require('agent-view')
+        ctx.state.authorization.require_creation(ctx.secret,'agent-view')
+        visible=[]
+        for row in ctx.state.agent_store.list_custom_agents():
+            try:_require_custom_agent(ctx,row)
+            except HTTPException as error:
+                if error.status_code==403:continue
+                raise
+            visible.append(row)
+        return T.HostCustomAgent.wrap_all(visible)
 
     @strawberry.field
     @resolver
     def custom_agent(self, info: Ctx, agent_id: str) -> T.HostCustomAgent:
         ctx = info.context
-        ctx.require_host('agent-view')
         agent = ctx.state.agent_store.get_custom_agent(agent_id)
         if agent is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
+        _require_custom_agent(ctx,agent)
         return T.HostCustomAgent.wrap(agent)
 
     @strawberry.field
     @resolver
     def custom_agent_export(self, info: Ctx, agent_id: str) -> T.CustomAgentFile:
         ctx = info.context
-        ctx.require_host('agent-view')
+        row=ctx.state.agent_store.get_custom_agent(agent_id)
+        if row is None:raise HTTPException(404,'custom agent not found')
+        _require_custom_agent(ctx,row)
         slug = _slug_for_agent(ctx.state, agent_id)
         raw = ctx.state.agent_registry.read_raw(slug) if slug else None
         if raw is None:
@@ -218,6 +259,10 @@ class ChatMutations:
         ctx = info.context
         ctx.require('agent-control')
         ctx.state.authorization.require_creation(ctx.secret, 'agent-control')
+        if input.custom_agent_id:
+            selected=ctx.state.agent_store.get_custom_agent(input.custom_agent_id)
+            if selected is None:raise HTTPException(404,'custom agent not found')
+            _require_custom_agent(ctx,selected)
         if input.project_id:
             ctx.require_project('agent-control', input.project_id)
         if input.cwd:
@@ -253,6 +298,10 @@ class ChatMutations:
         existing = ctx.state.agent_store.get_conversation(conversation_id)
         if existing and input.project_id is not None and input.project_id != existing.get('project_id'):
             ctx.require_host('host-admin')
+        if input.custom_agent_id:
+            selected=ctx.state.agent_store.get_custom_agent(input.custom_agent_id)
+            if selected is None:raise HTTPException(404,'custom agent not found')
+            _require_custom_agent(ctx,selected)
         updates = {
             key: value
             for key, value in {
@@ -313,7 +362,16 @@ class ChatMutations:
         ctx = info.context
         ctx.require_host('agent-control')
         try:
-            agent = ctx.state.agent_registry.save(_agent_file_from_input(input))
+            definition=_agent_file_from_input(input)
+            definition.slug=slugify(definition.slug or definition.name)
+            if ctx.state.agent_store.get_custom_agent(definition.qid_id) or ctx.state.agent_registry.load(definition.slug):
+                raise HTTPException(409,'custom agent already exists; patch its current revision')
+            existing=ctx.state.authorization.resource_owner('custom_agent',definition.qid_id)
+            live=ctx.state.identity.resolve(ctx.secret)
+            if existing and (not live or existing['principal_id']!=live.principal.id):
+                raise HTTPException(409,'custom agent identity already claimed')
+            agent = ctx.state.agent_registry.save(definition,
+                before_write=lambda row: _claim_custom_agent_before_write(ctx,row))
         except (ValueError, AgentFileError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         row = ctx.state.agent_store.get_custom_agent(agent.qid_id)
@@ -327,6 +385,9 @@ class ChatMutations:
         ctx = info.context
         ctx.require_host('agent-control')
         state = ctx.state
+        row=state.agent_store.get_custom_agent(agent_id)
+        if row is None:raise HTTPException(404,'custom agent not found')
+        _require_custom_agent(ctx,row,'agent-control')
         slug = _slug_for_agent(state, agent_id)
         if slug is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
@@ -425,6 +486,9 @@ class ChatMutations:
         ctx = info.context
         ctx.require_host('agent-control')
         state = ctx.state
+        row=state.agent_store.get_custom_agent(agent_id)
+        if row is None:raise HTTPException(404,'custom agent not found')
+        _require_custom_agent(ctx,row,'agent-control')
         slug = _slug_for_agent(state, agent_id)
         if slug is not None and state.agent_registry.delete(slug):
             return T.Deleted.wrap({"deleted": agent_id})
@@ -438,8 +502,12 @@ class ChatMutations:
         ctx = info.context
         ctx.require_host('agent-control')
         state = ctx.state
+        row=state.agent_store.get_custom_agent(agent_id)
+        if row is None:raise HTTPException(404,'custom agent not found')
+        _require_custom_agent(ctx,row)
         slug = _slug_for_agent(state, agent_id)
-        dup = state.agent_registry.duplicate(slug) if slug else None
+        dup = state.agent_registry.duplicate(slug,
+            before_write=lambda row: _claim_custom_agent_before_write(ctx,row)) if slug else None
         if dup is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
         row = state.agent_store.get_custom_agent(dup.qid_id)
@@ -454,7 +522,8 @@ class ChatMutations:
         ctx.require_host('agent-control')
         try:
             agent = ctx.state.agent_registry.import_markdown(
-                input.markdown, source=input.source or "import"
+                input.markdown, source=input.source or "import",
+                before_write=lambda row: _claim_custom_agent_before_write(ctx,row),
             )
         except (ValueError, AgentFileError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

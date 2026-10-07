@@ -40,7 +40,9 @@ class HumanBody(Body):action:str;args:dict=Field(default_factory=dict)
 class AgentBody(Body):
     action_id:str;grant_id:str;run_id:str;action:str;args:dict=Field(default_factory=dict);document_revision:int;lease_revision:int
 class AnnotationBody(Body):
-    revision:int;comment:str;selector:str|None=None;region:dict|None=None
+    revision:int;comment:str=Field(min_length=1,max_length=2000);selector:str|None=None;region:dict|None=None;context_hash:str|None=None;include_screenshot:bool=False
+class AnnotationCompareBody(Body):revision:int;include_screenshot:bool=False
+class AnnotationResolveBody(Body):revision:int;resolved:bool
 class RecordingBody(Body):enabled:bool
 class DraftBody(Body):name:str
 class DraftEditBody(Body):content:str=Field(max_length=100_000)
@@ -59,13 +61,18 @@ class RuleBody(Body):action_id:str;decision:Literal['ALLOW','BLOCK'];expires_in:
 def browser_router(state):
     router=APIRouter(prefix='/api/browser',route_class=Route)
     service=state.browser
+    def claim_agent_tab(principal,tab):
+        live=state.identity.principal_by_id(principal)
+        if not live:raise PermissionError('Principal disabled during tab creation')
+        state.authorization.claim_principal(live,'browser-tab',tab['id'],tab['project_id'] or None)
+    service.claim_tab=claim_agent_tab
     from termx.browser.skills import BrowserSkills
     skills=BrowserSkills(service)
     def binding(provider):
         return account_revision(service.records,provider,state.credentials.get(provider['id']) or '')
     def eligible(report,provider,model,version,revision=None):
         digest=hashlib.sha256((provider['base_url']+model+version).encode()).hexdigest() if provider else ''
-        return bool(provider and provider['model']==model and report and report['qualified']
+        return bool(provider and provider['model']==model and report and report['qualified'] and report.get('model_identity',{}).get('pinned')
                     and report.get('configuration_hash')==digest and report.get('account_revision')==(revision or binding(provider))
                     and time()-report['created_at']<=30*86400)
     def current_reviewer():
@@ -79,7 +86,7 @@ def browser_router(state):
     persisted=current_reviewer()
     if persisted:
         provider,config=persisted
-        service.review.reviewer=ResponsesReviewer(provider_id=config['provider_id'],base_url=provider['base_url'],model=config['model'],api_key=state.credentials.get(config['provider_id']) or '',version=config['version'])
+        service.review.reviewer=ResponsesReviewer(provider_id=config['provider_id'],base_url=provider['base_url'],model=config['model'],api_key=state.credentials.get(config['provider_id']) or '',version=config['version'],expected_model=config['qualified_model'])
         service.review.reviewer.account_revision=config['account_revision']
     def identity(request,scope='desktop-view',kind=None,id=None,project=None):
         token=extract_passcode(request.headers.get('x-termx-passcode'),request.headers.get('authorization'))
@@ -157,7 +164,7 @@ def browser_router(state):
         return await service.handoff(id,principal,session,run_id=body.run_id,origins=body.origins,actions=body.actions,expires_in=body.expires_in,policy_version=revision(token))
     @router.post('/tabs/{id}/takeover')
     async def takeover(id:str,request:Request,body:TakeoverBody):
-        (_,principal,_),_=tab_identity(request,id,'desktop-control');return service.takeover(id,principal,private=body.private)
+        (token,principal,session),_=tab_identity(request,id,'desktop-control');return service.takeover(id,principal,private=body.private,session_id=session,policy_version=revision(token))
     @router.post('/tabs/{id}/human')
     async def human(id:str,request:Request,body:HumanBody):
         (_,principal,_),_=tab_identity(request,id,'desktop-control');return await service.human_action(id,principal,body.action,body.args)
@@ -177,11 +184,58 @@ def browser_router(state):
         return await service.action(id,principal,session_id=session,policy_version=revision(token),authority=authority,**body.model_dump())
     @router.post('/tabs/{id}/annotations')
     async def annotations(id:str,request:Request,body:AnnotationBody):
-        (_,principal,_),_=tab_identity(request,id);return service.annotate(id,principal,**body.model_dump())
+        (token,principal,_),_=tab_identity(request,id,'desktop-control')
+        policy_version=revision(token)
+        def authority():
+            try:
+                tab_identity(request,id,'desktop-control')
+                return revision(token)==policy_version
+            except (HTTPException,PermissionError,KeyError):return False
+        return await service.annotate_context(id,principal,authority=authority,**body.model_dump())
     @router.get('/tabs/{id}/annotations')
     async def annotation_list(id:str,request:Request):
         (_,principal,_),tab=tab_identity(request,id)
-        return [{**a,'stale':a['document_revision']!=tab['document_revision']} for a in service.records.list('annotation') if a['tab_id']==id and a['principal_id']==principal]
+        return service.annotations(id,principal)
+    def annotation_authority(request,id):
+        (token,principal,_),_=tab_identity(request,id,'desktop-control');version=revision(token)
+        def current():
+            try:
+                tab_identity(request,id,'desktop-control')
+                return revision(token)==version
+            except (HTTPException,PermissionError,KeyError):return False
+        return principal,current
+    @router.post('/tabs/{id}/annotations/{ref}/compare')
+    async def annotation_compare(id:str,ref:str,request:Request,body:AnnotationCompareBody):
+        principal,authority=annotation_authority(request,id)
+        return await service.compare_annotation(id,principal,ref,authority=authority,**body.model_dump())
+    @router.post('/tabs/{id}/annotations/{ref}/resolve')
+    async def annotation_resolve(id:str,ref:str,request:Request,body:AnnotationResolveBody):
+        principal,authority=annotation_authority(request,id)
+        return service.resolve_annotation(id,principal,ref,authority=authority,**body.model_dump())
+    @router.get('/tabs/{id}/annotation-frames/{ref}')
+    async def annotation_frame(id:str,ref:str,request:Request):
+        (_,principal,_),tab=tab_identity(request,id)
+        if tab['state']=='private':raise PermissionError('Snapshot preview paused during private login')
+        value=service.records.get('annotation-frame',ref)
+        if not value or value['principal_id']!=principal or value['tab_id']!=id:raise KeyError('frame')
+        return FileResponse(service.records.root/'annotation-frames'/value['id'],media_type='image/jpeg',headers={'Cache-Control':'no-store'})
+    @router.post('/tabs/{id}/diagnostics')
+    async def enable_diagnostics(id:str,request:Request,body:RecordingBody):
+        (token,principal,session),_=tab_identity(request,id,'desktop-control')
+        return service.diagnostic_consent(id,principal,session,revision(token),body.enabled)
+    @router.get('/tabs/{id}/diagnostics/{view}')
+    async def diagnostics(id:str,view:str,request:Request):
+        (_,principal,_),_=tab_identity(request,id)
+        return await service.human_diagnostics(id,principal,view)
+    @router.delete('/profiles/{id}/history')
+    async def clear_history(id:str,request:Request):
+        _,principal,_=identity(request,'desktop-control','browser-profile',id)
+        profile=service.records.get('profile',id)
+        if not profile or profile['principal_id']!=principal:raise KeyError('profile')
+        identity(request,'desktop-control',project=profile['project_id'])
+        for item in service.records.list('history'):
+            if item['profile_id']==id and item['principal_id']==principal:service.records.delete('history',item['id'])
+        return {'ok':True}
     @router.post('/tabs/{id}/recording')
     async def recording(id:str,request:Request,body:RecordingBody):
         (_,principal,_),_=tab_identity(request,id,'desktop-control');return service.recording(id,principal,body.enabled)
@@ -272,9 +326,9 @@ def browser_router(state):
         if not report:
             raise ValueError('current provider/model/version must pass qualification first')
         key=state.credentials.get(body.provider_id) or ''
-        service.review.reviewer=ResponsesReviewer(provider_id=body.provider_id,base_url=provider['base_url'],model=body.model,api_key=key,version=body.version)
+        service.review.reviewer=ResponsesReviewer(provider_id=body.provider_id,base_url=provider['base_url'],model=body.model,api_key=key,version=body.version,expected_model=report['model_identity']['qualified_model'])
         service.review.reviewer.account_revision=report['account_revision']
-        config={'id':'active',**body.model_dump(),'evaluation_id':report['id'],'configuration_hash':report['configuration_hash'],'account_revision':report['account_revision'],'activated_at':time()}
+        config={'id':'active','qualified_model':report['model_identity']['qualified_model'],**body.model_dump(),'evaluation_id':report['id'],'configuration_hash':report['configuration_hash'],'account_revision':report['account_revision'],'activated_at':time()}
         service.records.put('reviewer-config','active',config);return config
     @router.delete('/reviewer')
     async def disable_reviewer(request:Request):
@@ -308,35 +362,52 @@ def browser_router(state):
     @router.get('/audit')
     async def audit(request:Request):
         _,principal,_=identity(request);return [r for r in service.records.events() if r.get('principal_id')==principal]
+    @router.post('/tabs/{id}/view/stop')
+    async def stop_view(id:str,request:Request):
+        _,principal,_=identity(request,'desktop-view','browser-tab',id)
+        return await service.stop_views(id,principal)
+    @router.post('/tabs/{id}/capture/stop')
+    async def stop_tab_capture(id:str,request:Request):
+        _,principal,_=identity(request,'desktop-view','browser-tab',id)
+        tab=service.get(id,principal)
+        if tab['state']=='agent' or tab['recording'] or service._diagnostic_consent_valid(tab):
+            identity(request,'desktop-control','browser-tab',id)
+            if tab['state']=='agent':service.takeover(id,principal)
+            tab=service.get(id,principal);tab['recording']=False;service.records.put('tab',id,tab)
+            service._human_diagnostics.pop(id,None);service._diagnostics.pop(id,None)
+        return await service.stop_views(id,principal)
     @router.websocket('/tabs/{id}/view')
     async def interactive(websocket:WebSocket,id:str):
+        viewer=None
         try:
-            _,principal,_=await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
+            token,principal,session_id=await asyncio.to_thread(identity,websocket,'desktop-view','browser-tab',id)
             service.get(id,principal)
-            await websocket.accept()
+            await websocket.accept();viewer=service.viewer_start(id,principal,session_id,websocket)
             async def frames():
                 while True:
-                    await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
+                    await asyncio.to_thread(identity,websocket,'desktop-view','browser-tab',id)
                     try:data=await service.frame(id,principal,human=True)
                     except PermissionError:
-                        # A takeover/private transition discards the in-flight
-                        # image. Reauthorize and capture the new human lease.
-                        await asyncio.sleep(.01)
-                        continue
-                    # The SQL-backed live check can wait behind a collection
-                    # projection. Keep it off the renderer/control loop, and
-                    # recheck after capture without caching any authority.
-                    await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
+                        await asyncio.sleep(.01);continue
+                    await asyncio.to_thread(identity,websocket,'desktop-view','browser-tab',id)
                     await websocket.send_bytes(data)
                     tab=service.get(id,principal)
-                    await websocket.send_json({'type':'state','tab':tab})
+                    control=await asyncio.to_thread(state.authorization.can,token,'desktop-control',project_id=tab['project_id'] or None,resource_kind='browser-tab',resource_id=id)
+                    await websocket.send_json({'type':'state','tab':tab,'can_control':control})
                     await asyncio.sleep(.125)
             async def input():
                 while True:
                     payload=await websocket.receive_json()
-                    await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
-                    body=HumanBody.model_validate(payload)
-                    await service.human_action(id,principal,body.action,body.args)
+                    try:
+                        await asyncio.to_thread(identity,websocket,'desktop-control','browser-tab',id)
+                    except HTTPException:
+                        await websocket.send_json({'type':'denied','message':'Browser control permission is denied or revoked. You may watch while view permission remains.'});continue
+                    try:body=HumanBody.model_validate(payload)
+                    except ValueError:
+                        await websocket.send_json({'type':'error','message':'Invalid browser control request.'});continue
+                    try:await service.human_action(id,principal,body.action,body.args)
+                    except (ValueError,PermissionError) as error:
+                        await websocket.send_json({'type':'error','message':str(error)[:500]})
             tasks=[asyncio.create_task(frames()),asyncio.create_task(input())]
             try:
                 done,_=await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
@@ -345,7 +416,15 @@ def browser_router(state):
                 for task in tasks:task.cancel()
                 await asyncio.gather(*tasks,return_exceptions=True)
         except (WebSocketDisconnect,asyncio.CancelledError):pass
-        except Exception:
-            try:await websocket.close(code=4403)
+        except HTTPException as error:
+            try:await websocket.close(code=4401 if error.status_code==401 else 4403,reason='Sign-in expired' if error.status_code==401 else 'Browser view permission denied or revoked')
             except Exception:pass
+        except (KeyError,ValueError):
+            try:await websocket.close(code=4404,reason='Built-in tab closed or unavailable')
+            except Exception:pass
+        except Exception:
+            try:await websocket.close(code=1011,reason='Browser worker unavailable; reconnect or reopen the tab')
+            except Exception:pass
+        finally:
+            if viewer:service.viewer_finish(viewer)
     return router

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Managers from './Managers';
 import { request } from '../lib/api';
@@ -7,6 +7,12 @@ const mocked = vi.mocked(request);
 afterEach(cleanup);
 beforeEach(() => mocked.mockReset());
 describe('workspace managers', () => {
+ it('saves explicit media capabilities and preserves existing declarations when editing without a new key', async()=>{
+  const provider={id:'existing',name:'Existing API',kind:'openai-compatible',base_url:'https://api.example/v1',model:'future-default',secret_configured:true,capabilities:['shell','image']};
+  mocked.mockImplementation(async(path,init)=>{if(path==='/auth/me')return {principal:{scopes:['host-admin']}} as any;const payload=JSON.parse(String(init?.body||'{}'));return payload.query?.includes('save_agent_provider')?{data:{save_agent_provider:{id:payload.variables.input.id}}}:{data:{engines:[],agent_providers:[provider],acp_registry:[]}} as any});
+  const changed=vi.fn();render(<Managers section="models" projectId={null} sessionId={null} onCapabilitiesChanged={changed}/>);fireEvent.click(await screen.findByRole('button',{name:'Edit account'}));const edit=within(screen.getByRole('form',{name:'Edit provider account'}));expect(edit.getByLabelText('Image generation and editing')).toBeChecked();fireEvent.click(edit.getByLabelText('Audio transcription and speech'));fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+  await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>String(init?.body).includes('save_agent_provider'))).toBe(true));const mutation=mocked.mock.calls.find(([,init])=>String(init?.body).includes('save_agent_provider'))!;expect(JSON.parse(String(mutation[1]?.body)).variables.input).toMatchObject({id:'existing',api_key:null,capabilities:['shell','image','audio'],model:'future-default'});expect(screen.queryByText('active engine',{exact:false})).not.toBeInTheDocument();await waitFor(()=>expect(changed).toHaveBeenCalledOnce());
+ });
  it('keeps excluded memory inspectable and preserves its scope and revision on inclusion', async () => {
   mocked.mockImplementation(async (path) => path === '/auth/me' ? { principal:{scopes:[]} } : { memory:[{id:'fact',revision:3,content:'Project decision',provenance:'review',project_id:'project',retention_days:30,excluded:true}] } as any);
   render(<Managers section="memory" projectId="project" sessionId={null}/>);

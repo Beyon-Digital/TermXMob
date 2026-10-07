@@ -56,4 +56,27 @@ async def execute(engine, binding, tool, args, identifier, callback):
     authorization = await authorize(engine, binding, tool, args, identifier)
     if not authorization: return await callback()
     envelope, validate, permit = authorization
-    return await engine.browser_service.review.execute(envelope, permit['permit'], validate=validate, operation=callback)
+    try:return await engine.browser_service.review.execute(envelope, permit['permit'], validate=validate, operation=callback)
+    except ReviewRequired as exc:
+        permit=await reapprove_changed_reviewer(engine,binding,envelope,validate,exc.record,tool=tool,args=args)
+        return await engine.browser_service.review.execute(envelope,permit['permit'],validate=validate,operation=callback)
+
+async def reapprove_changed_reviewer(engine,binding,envelope,validate,record,*,tool,args,hard_deny=None):
+    """Park an unchanged, live native action before any effect or consumption."""
+    service=engine.browser_service
+    current=service.records.get('review',envelope.action_id)
+    if not current or record['id']!=envelope.action_id or current['fingerprint']!=envelope.fingerprint() or current['status']!='needs_user' or record['status']!='needs_user' or hard_deny or not validate():raise PermissionError('Native action authority or target changed')
+    identity=service.records.get('agent-task-authority',envelope.run_id)
+    if not identity or identity['principal_id']!=envelope.principal_id or identity['session_id']!=envelope.session_id:raise PermissionError('Native task authority changed')
+    custom=getattr(engine,'_browser_review',None)
+    if custom:
+        allowed=await custom(binding,record,identity,proposal=ProviderCall('function',record['id'],tool,args).public())
+    else:allowed=await wait_review(engine,binding,record,identity,tool=tool,args=args)
+    if not allowed:raise PermissionError('Human declined the changed reviewer action')
+    return await service.review.authorize(envelope,validate=validate,hard_deny=hard_deny)
+
+async def consume_reviewed(engine,binding,envelope,validate,permit,*,tool,args,hard_deny=None):
+    try:await engine.browser_service.review.consume_external(envelope,permit['permit'],validate=validate)
+    except ReviewRequired as exc:
+        permit=await reapprove_changed_reviewer(engine,binding,envelope,validate,exc.record,tool=tool,args=args,hard_deny=hard_deny)
+        await engine.browser_service.review.consume_external(envelope,permit['permit'],validate=validate)

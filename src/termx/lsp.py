@@ -175,7 +175,11 @@ async def _stop(process: asyncio.subprocess.Process) -> None:
 async def serve(websocket: WebSocket, root: str, language: str,authorize:Callable[[],None]|None=None) -> None:
     command = _command(language)
     if command is None:
-        await websocket.close(code=4404, reason="Language server unavailable")
+        # Acceptance preserves an actionable close code in real browser clients.
+        # Admission remains live and authorized before any handshake succeeds.
+        if authorize:await asyncio.to_thread(authorize)
+        await websocket.accept()
+        await websocket.close(code=4404, reason="Language server unavailable. Install the configured language runtime.")
         return
     kwargs: dict[str, Any] = {
         "cwd": root,

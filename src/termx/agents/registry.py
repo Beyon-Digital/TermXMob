@@ -15,7 +15,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..discovery.safety import slugify
 from .files import AgentFile, AgentFileError, parse_agent_file, serialize_agent
@@ -133,6 +133,7 @@ class AgentRegistry:
         source: str = "user",
         migrated_at: float | None = None,
         agent_id: str | None = None,
+        before_write: Callable[[AgentFile], None] | None = None,
     ) -> AgentFile:
         if not agent.name.strip():
             raise AgentFileError("custom agent name is required")
@@ -146,6 +147,10 @@ class AgentRegistry:
             if actual != expected_revision:
                 raise RevisionConflict(agent.slug, expected_revision, actual)
         content = serialize_agent(agent)
+        # Server entry points can bind canonical ownership before either the
+        # authoritative file or its database projection becomes discoverable.
+        if before_write is not None:
+            before_write(agent)
         token = f"write-{time.time_ns()}"
         self._write_token = token
         try:
@@ -172,7 +177,8 @@ class AgentRegistry:
             self._store.delete_custom_agent(row["id"])
         return existed or row is not None
 
-    def duplicate(self, slug: str, *, name: str | None = None) -> AgentFile | None:
+    def duplicate(self, slug: str, *, name: str | None = None,
+                  before_write: Callable[[AgentFile], None] | None = None) -> AgentFile | None:
         src = self.load(slug)
         if src is None:
             return None
@@ -185,10 +191,11 @@ class AgentRegistry:
         dup.slug = new_slug
         dup.name = name or f"{src.name} (copy)"
         dup.revision = ""
-        return self.save(dup, source="user")
+        return self.save(dup, source="user", before_write=before_write)
 
     def import_markdown(
-        self, text: str, *, source: str = "import"
+        self, text: str, *, source: str = "import",
+        before_write: Callable[[AgentFile], None] | None = None,
     ) -> AgentFile:
         parsed = parse_agent_file(text)
         parsed.slug = slugify(parsed.slug or parsed.name)
@@ -197,7 +204,7 @@ class AgentRegistry:
             while self._path_for(f"{base}-{i}").exists():
                 i += 1
             parsed.slug = f"{base}-{i}"
-        return self.save(parsed, source=source)
+        return self.save(parsed, source=source, before_write=before_write)
 
     # ------------------------------------------------------------ sync
 
