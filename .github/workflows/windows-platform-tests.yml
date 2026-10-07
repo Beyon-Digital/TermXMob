@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        id: checkout
       - name: Verify native owner DACL before bootstrap storage
         shell: pwsh
         run: |
@@ -35,11 +36,15 @@ jobs:
           & $testBinary
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: astral-sh/setup-uv@v5
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         with:
           enable-cache: true
       - name: Install source test dependencies
+        id: dependencies
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: uv sync --locked --group dev --extra development --extra media --extra webrtc
       - name: Verify actual private storage, authority and restricted console contracts
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.dependencies.outcome == 'success' }}
         env:
           TERMX_RUNTIME_QUALIFICATION: '1'
         run: >-

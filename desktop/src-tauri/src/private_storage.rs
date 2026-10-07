@@ -320,8 +320,17 @@ mod windows {
                 &mut control,
                 &mut revision,
             ))?;
-            if control & 0x1000 == 0 || acl.is_null() || (*acl).count != 3 {
+            if acl.is_null() {
                 return Err(denied());
+            }
+            if control & 0x1000 == 0 || (*acl).count != 3 {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "Native Windows DACL verification: control={control:#x}, ACE count={}",
+                        (*acl).count
+                    ),
+                ));
             }
             let mut seen = std::collections::HashSet::new();
             for index in 0..3 {
@@ -332,7 +341,13 @@ mod windows {
                 }
                 let header = &*ace.cast::<AceHeader>();
                 if header.kind != 0 || header.flags & 0x10 != 0 || header.size < 16 {
-                    return Err(denied());
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!(
+                            "Native Windows DACL verification: ACE type={}, flags={:#x}, size={}",
+                            header.kind, header.flags, header.size
+                        ),
+                    ));
                 }
                 let entry = &*ace.cast::<AllowAce>();
                 if entry.mask & 0x001f01ff != 0x001f01ff {
