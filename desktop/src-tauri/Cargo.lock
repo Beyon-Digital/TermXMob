@@ -4753,6 +4753,7 @@ dependencies = [
  "base64 0.22.1",
  "cc",
  "core-foundation 0.10.1",
+ "gtk",
  "keyring",
  "libc",
  "log",
@@ -4768,6 +4769,9 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "ureq",
+ "webkit2gtk",
+ "webview2-com",
+ "windows",
  "windows-sys 0.59.0",
 ]
 

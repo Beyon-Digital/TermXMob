@@ -5,6 +5,7 @@ mod config;
 mod input_macos;
 mod logging;
 mod menu;
+mod media_permission;
 mod permissions;
 mod private_storage;
 mod tray;

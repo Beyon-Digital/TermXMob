@@ -37,6 +37,10 @@ features = ["windows-native"]
 version = "=3.6.3"
 features = ["linux-native-sync-persistent", "crypto-rust", "vendored"]
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "=0.18.2"
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
@@ -45,6 +49,8 @@ core-foundation = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
+webview2-com = "=0.38.2"
+windows = { version = "=0.61.3", features = ["Win32_System_Com"] }
 
 [profile.release]
 codegen-units = 1

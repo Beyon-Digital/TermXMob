@@ -70,6 +70,7 @@
           "libxrandr2",
           "libgbm1",
           "libasound2 | libasound2t64",
+          "gstreamer1.0-plugins-good",
           "wmctrl",
           "xdotool",
           "imagemagick"
@@ -84,6 +85,7 @@
           "atk",
           "at-spi2-atk",
           "cups-libs",
+          "gstreamer1-plugins-good",
           "libdrm",
           "libxkbcommon",
           "libXcomposite",

@@ -32,8 +32,17 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     #[cfg(not(target_os = "macos"))]
     let builder = builder.menu(crate::menu::app_menu(app)?);
     let window = builder.build()?;
+    let info = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info());
+    crate::media_permission::install(&window, info.as_ref().map(|info| info.port).unwrap_or(0))?;
     crate::workspace::restore_placement(app, &window);
     crate::workspace::track_placement(app, &window);
+    if let Some(info) = info {
+        if let Ok(url) = info.window_url().parse() {
+            window.navigate(url)?;
+        }
+    }
     Ok(window)
 }
 
@@ -64,6 +73,12 @@ pub fn toggle_main_window(app: &AppHandle) {
 pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
     let window = main_window(app).or_else(|| create_main_window(app).ok());
     if let Some(window) = window {
+        #[cfg(target_os = "macos")]
+        if crate::media_permission::install(&window, info.port).is_err() {
+            logging::desktop(app, "Could not configure microphone consent for workspace");
+            let _ = window.close();
+            return;
+        }
         if let Ok(url) = info.window_url().parse() {
             let _ = window.navigate(url);
         }
@@ -72,6 +87,11 @@ pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
         }
     }
     if let Some(connect) = app.get_webview_window("connect") {
+        #[cfg(target_os = "macos")]
+        if crate::media_permission::install(&connect, info.port).is_err() {
+            let _ = connect.close();
+            return;
+        }
         if let Ok(url) = connect_url(info).parse() {
             let _ = connect.navigate(url);
         }
@@ -143,6 +163,10 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
             .resizable(true);
     match builder.build() {
         Ok(window) => {
+            if crate::media_permission::install(&window, info.port).is_err() {
+                let _ = window.close();
+                return;
+            }
             let _ = window.show();
         }
         Err(error) => {
