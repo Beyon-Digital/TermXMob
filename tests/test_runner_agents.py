@@ -59,28 +59,62 @@ def test_qualified_image_boundary_and_explicit_account(tmp_path):
         await service.close();await state.agent.close();state.agent.store.close()
     asyncio.run(run())
 
-def test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_eof(tmp_path):
+@pytest.mark.parametrize('invalid_frame',[frame({'type':'invalid-host-control'}),b'{invalid json\n',frame(['not-an-object'])])
+def test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_eof(tmp_path,invalid_frame):
     root=tmp_path/'remote-invalid';root.mkdir();target=root/'hello.txt';target.write_text('unchanged')
     async def run():
         env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-invalid')}
         process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
         process.stdin.write(frame({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Bounded protocol refusal','mode':'agent','limits':{'max_seconds':10,'max_steps':2}}))
-        events=[]
+        events=[];last_task=None
         try:
             async with asyncio.timeout(15):
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
                     if value['type']=='rpc':
                         assert value['method']=='plan'
-                        process.stdin.write(frame({'type':'invalid-host-control'}));break
+                        process.stdin.write(invalid_frame);break
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
-                    if value['type']=='event':events.append(value['event']['type'])
+                    if value['type']=='event':
+                        events.append(value['event']['type']);last_task=value['task']
                     assert value['type']!='rpc'
                 await asyncio.wait_for(process.wait(),3)
                 assert process.returncode==0,(await process.stderr.read()).decode()
-            assert 'runner.failure' in events and not any(event.startswith('tool.') for event in events)
+            assert events.count('runner.failure')==1 and not any(event.startswith('tool.') for event in events)
+            assert 'task.cancelled' not in events and last_task['status']=='failed'
+            assert last_task['error']=='Host runner control protocol failed'
             assert target.read_text()=='unchanged'
+        finally:
+            if process.returncode is None:process.kill()
+            await process.wait()
+    asyncio.run(run())
+
+@pytest.mark.parametrize('control',['cancel','eof'])
+def test_worker_normal_cancellation_of_pending_broker_is_not_protocol_failure(tmp_path,control):
+    root=tmp_path/'remote-cancel';root.mkdir();target=root/'hello.txt';target.write_text('unchanged')
+    async def run():
+        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-cancel')}
+        process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
+        process.stdin.write(frame({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Bounded cancellation','mode':'agent','limits':{'max_seconds':10,'max_steps':2}}))
+        events=[];last_task=None
+        try:
+            async with asyncio.timeout(15):
+                while raw:=await process.stdout.readline():
+                    value=json.loads(raw)
+                    if value['type']=='rpc':
+                        assert value['method']=='plan'
+                        if control=='cancel':process.stdin.write(frame({'type':'cancel'}))
+                        else:process.stdin.close()
+                        break
+                while raw:=await process.stdout.readline():
+                    value=json.loads(raw)
+                    if value['type']=='event':events.append(value['event']['type']);last_task=value['task']
+                    assert value['type']!='rpc'
+                await asyncio.wait_for(process.wait(),3)
+                assert process.returncode==0,(await process.stderr.read()).decode()
+            assert events.count('task.cancelled')==1 and 'runner.failure' not in events
+            assert last_task['status']=='cancelled' and target.read_text()=='unchanged'
         finally:
             if process.returncode is None:process.kill()
             await process.wait()

@@ -1,0 +1,33 @@
+{
+  "source_commit": "8c3021128cf0e82eddf1aecaca029785e627e7c6",
+  "source_run": 37669184846,
+  "status": "failed",
+  "frontend": {
+    "passed": 243,
+    "files": 64,
+    "production_build": "passed"
+  },
+  "backend": {
+    "linux": {
+      "passed": 1029,
+      "skipped": 147,
+      "failed": 1,
+      "seconds": 177.88
+    },
+    "macos": {
+      "passed": 1061,
+      "skipped": 115,
+      "failed": 1,
+      "seconds": 287.99
+    },
+    "windows_contracts": {
+      "run": 37669184858,
+      "passed": 207,
+      "skipped": 1,
+      "failed": 1,
+      "seconds": 172.78
+    }
+  },
+  "failure": "All three platforms: test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_eof. Invalid control safely cancels with no effect and exits without stdin EOF, but required runner.failure event is lost after planning cancellation integration.",
+  "disposition": "Narrow runner Channel/ReviewedManager correction preserves invalid-protocol failure vs ordinary cancellation across the planning guard. Five real subprocess refusal/cancel/EOF cases and complete runner15-pass/1-opt-in-Docker-skip slice pass. Replacement full source CI pending; failed checkpoint is retained as evidence."
+}

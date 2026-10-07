@@ -56,7 +56,7 @@ def file_state(call,cwd):
     return state
 
 class Channel:
-    def __init__(self):self.pending={};self.task_id=None;self.manager=None;self.closed=asyncio.Event();self.phase='startup';self._reader_stopped=threading.Event();self._diagnostics_stopped=threading.Event();self._incoming=None
+    def __init__(self):self.pending={};self.task_id=None;self.manager=None;self.control_error=None;self.closed=asyncio.Event();self.phase='startup';self._reader_stopped=threading.Event();self._diagnostics_stopped=threading.Event();self._incoming=None
     def send(self,value):sys.stdout.buffer.write(frame(value));sys.stdout.buffer.flush()
     async def rpc(self,method,arguments):
         self.phase='rpc:'+method
@@ -67,6 +67,11 @@ class Channel:
     async def listen(self):
         try:
             await self._receive()
+        except Exception:
+            # Invalid protocol and failed transport are failures even when the
+            # cancellation guard wins the race against an outstanding RPC.
+            # Never publish the untrusted frame or parser exception text.
+            self.control_error=RuntimeError('Host runner control protocol failed')
         finally:
             self.closed.set();self._reader_stopped.set()
             for future in list(self.pending.values()):
@@ -176,6 +181,12 @@ class ReviewedManager(AgentManager):
                 return decision
             registry.register(replace(spec,decide=delegated))
         self._tools=registry;self._scheduler=CallScheduler(registry)
+    def _mark_cancelled(self,task_id):
+        if self.channel.control_error is not None:
+            if self.store.get_task(task_id)['status']!='failed':
+                self._fail(task_id,self.channel.control_error)
+        else:
+            super()._mark_cancelled(task_id)
     def _fail(self,task_id,exc):
         # Installed-code diagnostics are scoped to the canonical task. Never
         # include tracebacks, arguments, environment or provider credentials.
@@ -247,7 +258,13 @@ async def run():
                 channel.send({'type':'finished','task':task});break
             await asyncio.sleep(.05)
     finally:
-        channel.stop();await manager.close();listener.cancel();await asyncio.gather(listener,return_exceptions=True);store.close();projects.close()
+        channel.stop();await manager.close();listener.cancel();await asyncio.gather(listener,return_exceptions=True)
+        # A task may already have paused or reached a terminal state when its
+        # listener rejects a frame. Keep the protocol failure explicit without
+        # depending on another agent-loop cancellation callback being scheduled.
+        if channel.control_error is not None and channel.task_id and store.get_task(channel.task_id)['status']!='failed':
+            manager._fail(channel.task_id,channel.control_error)
+        store.close();projects.close()
 
 if __name__=='__main__':
     if '--capabilities' in sys.argv:print(json.dumps(capabilities()))
