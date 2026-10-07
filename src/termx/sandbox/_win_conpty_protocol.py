@@ -19,8 +19,16 @@ class Decoder:
         while (boundary := self.buffer.find(b'\n')) >= 0:
             if boundary > MAX_FRAME: raise ValueError('Restricted console frame exceeds limit')
             raw = bytes(self.buffer[:boundary]); del self.buffer[:boundary+1]
-            value = json.loads(raw, parse_constant=_invalid_constant)
+            try:value = json.loads(raw, parse_constant=_invalid_constant)
+            except (RecursionError, UnicodeError) as error:
+                raise ValueError('Invalid console frame encoding or nesting') from error
             if not isinstance(value, dict): raise ValueError('Restricted console frame must be an object')
+            pending=[(value,0)]
+            while pending:
+                node,depth=pending.pop()
+                if depth>16:raise ValueError('Console frame nesting exceeds limit')
+                if isinstance(node,dict):pending.extend((item,depth+1) for item in node.values())
+                elif isinstance(node,list):pending.extend((item,depth+1) for item in node)
             values.append(value)
         if len(self.buffer) > MAX_FRAME: raise ValueError('Restricted console frame exceeds limit')
         return values

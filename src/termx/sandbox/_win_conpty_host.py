@@ -15,7 +15,7 @@ import threading
 import time
 from termx.sandbox import _win_shim as win
 from termx.sandbox._win_conpty_protocol import Decoder, encode, validate_response
-from termx.sandbox._win_conpty_security import verify_child_token
+from termx.sandbox._win_conpty_security import verify_child_token, job_process_snapshot
 
 kernel = win._kernel32
 
@@ -148,7 +148,11 @@ class RestrictedConPTY:
                     elif kind=='exit':self._returncode=int(value['code']);self._console_state=value.get('diagnostics') or {}
                     elif kind=='error':self._failure=str(value.get('error') or 'broker failure')+'; '+str(value.get('category'))+'; '+str(value.get('winerror'));self._ready.set()
                     else:raise ValueError('Unknown restricted console response')
-        except (ValueError,KeyError,OSError) as error:self._failure=str(error)
+        except (ValueError,KeyError,OSError) as error:
+            self._failure=str(error)
+            # A corrupt transport never leaves a live console taking input.
+            with self._state:
+                if self._job:kernel.TerminateJobObject(self._job,1)
         finally:
             self._reader_error=ctypes.get_last_error();self._ready.set();self._publish(b'')
     def _read_stderr(self):
@@ -205,6 +209,7 @@ class RestrictedConPTY:
         with self._state:return {'exit_code':self._returncode,'alive':self.alive(),
             'reader_error':self._reader_error,'resume_count':self._resume_count,
             'job_active':win._job_process_count(self._job) if self._job else 0,
+            'processes':job_process_snapshot(self._job) if self._job else [],
             'console':self._console_state,'broker_error':self._failure,
             'broker_phase':self._phase,
             'broker_stderr':self._stderr.decode('utf-8',errors='replace')}

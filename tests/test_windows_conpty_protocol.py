@@ -70,3 +70,8 @@ def test_console_output_limit_is_exact_worker_chunk_size():
     assert validate_response({'type':'data','data':base64.b64encode(data).decode()},True)==data
     with pytest.raises(ValueError):
         validate_response({'type':'data','data':base64.b64encode(data+b'x').decode()},True)
+
+
+def test_console_frame_nesting_and_invalid_utf8_fail_as_transport_errors():
+    for data in (b'{"nested":'+b'['*2000+b'0'+b']'*2000+b'}\n',b'{"text":"\xff"}\n'):
+        with pytest.raises(ValueError):Decoder().feed(data)

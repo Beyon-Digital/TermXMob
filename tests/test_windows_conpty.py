@@ -41,7 +41,8 @@ def test_actual_conpty_input_resize_interrupt_and_write_boundary(tmp_path, monke
     workspace=tmp_path/'project'; workspace.mkdir()
     outside=tmp_path/'outside.txt'
     script=workspace/'console_fixture.py'
-    script.write_text('''import ctypes, ctypes.wintypes as wt, os, time
+    script.write_text('''open('fixture-entered.txt','w').write('first instruction')
+import ctypes, ctypes.wintypes as wt, os, time
 from pathlib import Path
 k=ctypes.WinDLL('kernel32',use_last_error=True)
 k.GetStdHandle.argtypes=[wt.DWORD];k.GetStdHandle.restype=wt.HANDLE
@@ -69,7 +70,9 @@ while True:
     backend=runner(tmp_path)
     terminal=backend.spawn_terminal(spec(workspace,script),31,96)
     try:
-        initial=capture(terminal,'READY>')
+        try:initial=capture(terminal,'READY>')
+        except AssertionError as error:
+            raise AssertionError(f'{error}; fixture_entered={(workspace/"fixture-entered.txt").exists()}') from error
         assert b'CONSOLE_MODE=1' in initial and b'HOST_SECRET=False' in initial
         assert b'OUTSIDE_WRITE_DENIED' in initial and b'OUTSIDE_WRITE_ALLOWED' not in initial
         assert (workspace/'allowed.txt').read_text()=='approved write' and not outside.exists()
@@ -106,14 +109,18 @@ def test_console_broker_refuses_normal_host_token_before_shell_effect(tmp_path):
 
 def test_actual_conpty_job_kill_reaps_descendants_before_root_release(tmp_path):
     workspace=tmp_path/'project';workspace.mkdir();script=workspace/'descendants.py'
-    script.write_text('''import subprocess,sys,time
+    script.write_text('''open('fixture-entered.txt','w').write('first instruction')
+import subprocess,sys,time
 from pathlib import Path
 child=subprocess.Popen([sys.executable,'-u','-c',"from pathlib import Path;import time;time.sleep(8);Path('escaped-child.txt').write_text('not reaped')"])
 Path('child.pid').write_text(str(child.pid));print('TREE_READY',flush=True);time.sleep(60)
 ''')
     backend=runner(tmp_path);terminal=backend.spawn_terminal(spec(workspace,script),24,80)
     try:
-        capture(terminal,'TREE_READY');terminal.kill(15);terminal.wait(15)
+        try:capture(terminal,'TREE_READY')
+        except AssertionError as error:
+            raise AssertionError(f'{error}; fixture_entered={(workspace/"fixture-entered.txt").exists()}') from error
+        terminal.kill(15);terminal.wait(15)
         assert terminal._done.is_set() and not terminal.alive()
         from termx.sandbox import windows_runner
         assert not any(Path(path)==workspace for path in windows_runner._LABEL_HELD)
@@ -129,4 +136,40 @@ Path('child.pid').write_text(str(child.pid));print('TREE_READY',flush=True);time
                 code=wt.DWORD();assert api.GetExitCodeProcess(handle,ctypes.byref(code));assert code.value!=259
             finally:api.CloseHandle(handle)
         assert not (workspace/'escaped-child.txt').exists()
+    finally:terminal.kill()
+
+
+def test_actual_restricted_builtin_console_output(tmp_path):
+    workspace=tmp_path/'project';workspace.mkdir()
+    cmd=str(Path(os.environ.get('SystemRoot',r'C:\Windows'))/'System32'/'cmd.exe')
+    request=SpawnSpec(profile='workspace',argv=(cmd,'/d','/c','echo TERMX_BUILTIN_CONSOLE_OK'),
+        cwd=str(workspace),workspace_root=str(workspace),writable_roots=(str(workspace),),
+        pty=True,purpose='terminal',task_id='builtin-console-fixture',network='outbound',
+        granted_capabilities=('net.outbound:any',))
+    terminal=runner(tmp_path).spawn_terminal(request,24,80)
+    try:
+        assert b'TERMX_BUILTIN_CONSOLE_OK' in capture(terminal,'TERMX_BUILTIN_CONSOLE_OK')
+        assert terminal.wait(15)==0
+    finally:terminal.kill()
+
+
+def test_diagnostic_host_conpty_baseline_for_owned_builtin_only(tmp_path,monkeypatch):
+    """ABI comparison only. This deliberately has NO sandbox qualification claim.
+
+    The only effect is the fixed echo fixture; production never selects this
+    path and the separate normal-token refusal test remains enforced.
+    """
+    import subprocess
+    from termx.sandbox import _win_conpty_security
+    from termx.sandbox._win_conpty import LocalConPTY
+    monkeypatch.setattr(_win_conpty_security,'verify_child_token',lambda process,expected:None)
+    cmd=str(Path(os.environ.get('SystemRoot',r'C:\Windows'))/'System32'/'cmd.exe')
+    environment={'SystemRoot':os.environ.get('SystemRoot',r'C:\Windows'),
+        'TMP':str(tmp_path),'TEMP':str(tmp_path),'USERPROFILE':str(tmp_path)}
+    terminal=LocalConPTY(command=subprocess.list2cmdline([cmd,'/d','/c','echo TERMX_HOST_ABI_BASELINE_OK']),
+        cwd=str(tmp_path),env=environment,job_limits={'active_process_limit':8},
+        user_mode=False,rows=24,cols=80,release=lambda:None)
+    try:
+        assert b'TERMX_HOST_ABI_BASELINE_OK' in capture(terminal,'TERMX_HOST_ABI_BASELINE_OK')
+        assert terminal.wait(15)==0
     finally:terminal.kill()

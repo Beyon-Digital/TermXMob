@@ -1,8 +1,11 @@
 """Verify a console process before its first instruction runs."""
 import ctypes
 import ctypes.wintypes as wt
+from pathlib import Path
 from termx.sandbox import _win_shim as win
 kernel = win._kernel32
+kernel.OpenProcess.argtypes = [wt.DWORD,wt.BOOL,wt.DWORD]
+kernel.OpenProcess.restype = wt.HANDLE
 win._advapi32.ConvertSidToStringSidW.argtypes = [wt.LPVOID, ctypes.POINTER(wt.LPWSTR)]
 win._advapi32.ConvertSidToStringSidW.restype = wt.BOOL
 def _check(ok):
@@ -52,3 +55,27 @@ def verify_child_token(process, expected):
             raise PermissionError('Console child token privileges differ from its restricted parent')
     finally: kernel.CloseHandle(child)
 
+
+def job_process_snapshot(job):
+    """Bounded names/PIDs from this owned job only; never argv or environment."""
+    class Processes(ctypes.Structure):
+        _fields_=[('assigned',wt.DWORD),('count',wt.DWORD),('ids',ctypes.c_size_t*128)]
+    data=Processes();length=wt.DWORD()
+    ok=kernel.QueryInformationJobObject(job,9,ctypes.byref(data),ctypes.sizeof(data),ctypes.byref(length))
+    if not ok and ctypes.get_last_error()!=234:return [{'query_error':ctypes.get_last_error()}]
+    kernel.QueryFullProcessImageNameW.argtypes=[wt.HANDLE,wt.DWORD,wt.LPWSTR,ctypes.POINTER(wt.DWORD)]
+    kernel.QueryFullProcessImageNameW.restype=wt.BOOL
+    rows=[]
+    for pid in data.ids[:min(data.count,32)]:
+        row={'pid':int(pid)};handle=kernel.OpenProcess(0x1000,False,pid)
+        if handle:
+            try:
+                image=ctypes.create_unicode_buffer(32768);size=wt.DWORD(len(image))
+                if kernel.QueryFullProcessImageNameW(handle,0,image,ctypes.byref(size)):
+                    row['name']=Path(image.value).name[:256]
+                code=wt.DWORD()
+                if kernel.GetExitCodeProcess(handle,ctypes.byref(code)):row['exit_code']=code.value
+            finally:kernel.CloseHandle(handle)
+        else:row['query_error']=ctypes.get_last_error()
+        rows.append(row)
+    return rows

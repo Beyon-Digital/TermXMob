@@ -15,6 +15,8 @@ on:
       - 'desktop/src-tauri/src/config.rs'
       - 'tests/test_windows_conpty.py'
       - 'tests/test_windows_conpty_protocol.py'
+      - 'tests/test_owned_windows_window.py'
+      - 'src/termx/desktop/windows.py'
       - 'desktop/backend_entry.py'
       - 'desktop/termx-backend.spec'
       - 'tests/test_runner_agents.py'
@@ -52,6 +54,8 @@ jobs:
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.dependencies.outcome == 'success' }}
         env:
           TERMX_RUNTIME_QUALIFICATION: '1'
+          TERMX_TEST_NATIVE_WINDOW: '1'
+          TERMX_NATIVE_WINDOW_EVIDENCE: ${{ runner.temp }}/termx-owned-window-evidence
         run: >-
           uv run --no-sync pytest -q
           tests/test_identity.py tests/test_private_files.py
@@ -60,3 +64,11 @@ jobs:
           tests/test_engines.py tests/test_engine_catalogue.py tests/test_engines_acp.py
           tests/test_runner_agents.py tests/test_windows_conpty.py tests/test_windows_conpty_protocol.py
           tests/test_git_stream_boundary.py
+          tests/test_owned_windows_window.py
+      - name: Upload owned PrintWindow evidence
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: owned-printwindow-${{ github.sha }}
+          path: ${{ runner.temp }}/termx-owned-window-evidence
+          if-no-files-found: ignore
