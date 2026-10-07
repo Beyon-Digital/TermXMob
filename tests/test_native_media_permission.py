@@ -28,7 +28,8 @@ def test_bundle_mic_prerequisites_and_actual_native_permission_handlers():
     assert 'uri.is_null()' in policy
     assert 'args.PermissionKind(&mut kind).is_err()' in policy
     assert 'args.Uri(&mut uri).is_err()' in policy
-    assert 'permission_owner.close()' in policy
+    assert 'permission_owner.destroy()' in policy
+    assert 'completed.replace(true)' in policy
     bridge = (native/'macos/media_permission.m').read_text()
     assert 'WKPermissionDecisionGrant' not in bridge
     assert 'WKPermissionDecisionPrompt' in bridge and 'WKPermissionDecisionDeny' in bridge

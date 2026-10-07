@@ -35,7 +35,12 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let info = app
         .try_state::<Backend>()
         .and_then(|backend| backend.info());
-    crate::media_permission::install(&window, info.as_ref().map(|info| info.port).unwrap_or(0))?;
+    if let Err(error) =
+        crate::media_permission::install(&window, info.as_ref().map(|info| info.port).unwrap_or(0))
+    {
+        let _ = window.destroy();
+        return Err(error);
+    }
     crate::workspace::restore_placement(app, &window);
     crate::workspace::track_placement(app, &window);
     if let Some(info) = info {
@@ -76,7 +81,7 @@ pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
         #[cfg(target_os = "macos")]
         if crate::media_permission::install(&window, info.port).is_err() {
             logging::desktop(app, "Could not configure microphone consent for workspace");
-            let _ = window.close();
+            let _ = window.destroy();
             return;
         }
         if let Ok(url) = info.window_url().parse() {
@@ -89,7 +94,7 @@ pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
     if let Some(connect) = app.get_webview_window("connect") {
         #[cfg(target_os = "macos")]
         if crate::media_permission::install(&connect, info.port).is_err() {
-            let _ = connect.close();
+            let _ = connect.destroy();
             return;
         }
         if let Ok(url) = connect_url(info).parse() {
@@ -164,7 +169,7 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
     match builder.build() {
         Ok(window) => {
             if crate::media_permission::install(&window, info.port).is_err() {
-                let _ = window.close();
+                let _ = window.destroy();
                 return;
             }
             let _ = window.show();

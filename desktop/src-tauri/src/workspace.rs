@@ -924,7 +924,7 @@ pub fn workspace_detach(
         .build()
         .map_err(|_| "Could not open workspace window")?;
     if crate::media_permission::install(&detached, port).is_err() {
-        let _ = detached.close();
+        let _ = detached.destroy();
         return Err("Could not configure native microphone consent".into());
     }
     restore_placement(&app, &detached);

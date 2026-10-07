@@ -34,7 +34,7 @@ pub fn install(window: &WebviewWindow, port: u16) -> tauri::Result<()> {
         if !installed {
             log::error!("Could not install native media permission delegate");
             // Fail closed rather than retain Wry's unconditional Grant handler.
-            let _ = owner.close();
+            let _ = owner.destroy();
         }
     })
 }
@@ -69,7 +69,11 @@ pub fn install(window: &WebviewWindow, _port: u16) -> tauri::Result<()> {
             }
             dialog.set_default_response(gtk::ResponseType::No);
             let request = request.clone(); let view = view.clone(); let app = app.clone();
+            let completed = std::cell::Cell::new(false);
             dialog.connect_response(move |dialog, response| {
+                // GtkWindow::close can emit a second DeleteEvent response.
+                // Complete the retained permission exactly once.
+                if completed.replace(true) { return; }
                 let current = view.uri().and_then(|uri| tauri::Url::parse(&uri).ok());
                 if response == gtk::ResponseType::Yes
                     && current.as_ref().map(|url| workspace_url(&app, url)).unwrap_or(false) {
@@ -99,7 +103,7 @@ pub fn install(window: &WebviewWindow, _port: u16) -> tauri::Result<()> {
                 view.add_PermissionRequested(
                     &PermissionRequestedEventHandler::create(Box::new(move |_, args| {
                         let Some(args) = args else {
-                            let _ = permission_owner.close();
+                            let _ = permission_owner.destroy();
                             return Ok(());
                         };
                         let deny = || {
@@ -107,7 +111,7 @@ pub fn install(window: &WebviewWindow, _port: u16) -> tauri::Result<()> {
                                 log::error!(
                                     "Native permission denial failed; closing workspace window"
                                 );
-                                let _ = permission_owner.close();
+                                let _ = permission_owner.destroy();
                                 return Err(error);
                             }
                             Ok(())
@@ -145,7 +149,7 @@ pub fn install(window: &WebviewWindow, _port: u16) -> tauri::Result<()> {
         };
         if result.is_err() {
             log::error!("Could not install native microphone permission policy");
-            let _ = owner.close();
+            let _ = owner.destroy();
         }
     })
 }
