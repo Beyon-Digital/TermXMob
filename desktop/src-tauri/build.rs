@@ -23,5 +23,24 @@ fn main() {
         println!("cargo:rerun-if-changed=macos/capture_bridge.h");
         println!("cargo:rerun-if-changed=macos/media_permission.m");
     }
-    tauri_build::build()
+    // The served loopback workspace is a remote URL to Tauri. Its guarded
+    // application commands therefore need explicit ACL entries as well as
+    // the invoke handlers; core:default alone only grants core plugin APIs.
+    let manifest = tauri_build::AppManifest::new().commands(&[
+        "workspace_login",
+        "workspace_resume_sso",
+        "workspace_request",
+        "workspace_logout",
+        "workspace_lock_state",
+        "workspace_unlock",
+        "workspace_unlock_oidc",
+        "workspace_detach",
+        "workspace_redock",
+        "workspace_redock_accept",
+        "workspace_redock_commit",
+        "workspace_redock_cancel",
+        "workspace_binary",
+    ]);
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
+        .expect("Failed to build the guarded workspace command ACL")
 }

@@ -1,0 +1,47 @@
+{
+  "source_commit": "ac3874ac1d5b10b12dee8ef573937201062edffd",
+  "tree_sha": "b950ebc7c2e1fd974b478c29893a1059bb2695c4",
+  "pr_checkout_sha": "592a397e4fdea84de6b36411c44a291f209122b4",
+  "pr_checkout_content_matches_head_tree": true,
+  "base_sha": "b307428f761332068a84090fb63b1b1a576e074d",
+  "source_ci": {
+    "run": 37683713671,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37683713671",
+    "status": "passed",
+    "frontend": {
+      "passed": 245,
+      "files": 64
+    },
+    "linux": {
+      "passed": 1048,
+      "skipped": 147,
+      "seconds": 189.31
+    },
+    "macos": {
+      "passed": 1080,
+      "skipped": 115,
+      "seconds": 378.45
+    }
+  },
+  "windows_contracts": {
+    "run": 37683713807,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37683713807",
+    "status": "passed",
+    "passed": 247,
+    "skipped": 1,
+    "seconds": 162.77,
+    "native_dacl_passed": 3,
+    "owned_printwindow_artifact_digest": "sha256:48a5dc570f27c222c0b31584a3ba09f263726732975b23c524ea1b5f7e5b0ed5"
+  },
+  "qualification_limit": "Source/Win32 contracts only. Earlier02 artifact run failed Windows source, Linux bundling and Linux installed GUI. Fresh current-source artifact and installed-Mac qualification remain gates; paid/live media/reviewer account selection remains pending.",
+  "native_compile": {
+    "run": 37683713660,
+    "status": "passed",
+    "platforms": [
+      "ubuntu-22.04",
+      "windows-2022",
+      "macos-14"
+    ],
+    "qualification_limit": "Compiled before the native ACL candidate; new AppManifest must pass fresh compilation and installed lifecycle."
+  }
+}

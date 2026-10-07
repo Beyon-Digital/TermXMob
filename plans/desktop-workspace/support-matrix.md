@@ -72,8 +72,12 @@ Source checkpoint `02f987be049075298ebd17da5a0e9d035b22d39a` passes245 frontend,
 native compile checks. The exact-source artifact run37677911211 found eight
 additional failures in the full Windows suite (1048 passed,126 skipped); Windows
 sidecar, installers and installed-MSI checks did not run. The [failure record](verification/windows-installer-02f987b-failures.json)
-preserves that boundary. Subsequent Windows byte-revision, skill-root and fixture
-repairs require their own exact-source Windows and installer qualification.
+preserves that boundary. The subsequentac3874a source checkpoint passes245 frontend,1048 Linux,1080
+macOS and247 expanded Windows tests, plus three Windows storage checks. Its PR
+checkout tree matches the published tree. Native ACL, Linux AV closure and Intel
+headless-DMG follow-ups still require fresh compiled/installed qualification;
+[the failed02 artifact outcomes](verification/artifact-02f987b-outcome.json) are
+preserved separately.
 
 [Rollout notes](rollout-notes.md) document private stopped-host snapshots,
 managed-auth migration and owner recovery prerequisites. Automatic schema

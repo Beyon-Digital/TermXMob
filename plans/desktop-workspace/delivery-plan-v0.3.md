@@ -20,7 +20,9 @@ TermX gets one independent React DOM desktop/web workspace. Tauri and external b
 
 ## 2. Current baseline: reuse it, verify it, keep unfinished work separate
 
-The published green checkpoint is `02f987be049075298ebd17da5a0e9d035b22d39a`, on [draft PR28](https://github.com/Beyon-Digital/TermXMob/pull/28). [CI evidence](verification/ci-02f987b.json):245 frontend tests,1035 Linux backend tests and1067 macOS backend tests passed. Focused Windows contracts, native platform compilation and hosted macOS GUI feasibility passed. This includes the final parent/child budget relay and compact approval dialogs; Czw/BIq rendered evidence retains its immutable asset identities. This is source qualification. The [exact-source artifact run](https://github.com/Beyon-Digital/TermXMob/actions/runs/37677911211) then found eight full-Windows-suite failures, stopping Windows packaging. Their [separate failure record](verification/windows-installer-02f987b-failures.json) and scoped repairs do not retroactively promote Windows installation. The PR macOS installed workflow exercised fixtures only.
+The published green source checkpoint is `ac3874ac1d5b10b12dee8ef573937201062edffd`, on [draft PR28](https://github.com/Beyon-Digital/TermXMob/pull/28). [CI evidence](verification/ci-ac3874a.json):245 frontend tests,1048 Linux backend tests,1080 macOS backend tests and247 expanded Windows contracts pass, plus three Windows native storage tests and all three native compile targets. The PR merge-checkout tree exactly matches the published source tree. Czw/BIq rendered evidence retains its immutable asset identities.
+
+The earlier02 [artifact run](verification/artifact-02f987b-outcome.json) failed Windows full-source checks, Linux AppImage and installed-DEB checks, and Intel DMG construction; ARM bundling succeeded independently. Windows source repairs now pass. Scoped native-command ACL, AV library closure and headless Intel DMG follow-ups still require fresh compilation and exact-source installer qualification. The preserved [installed-DEB report](verification/installed-native-02f987b/report.json) and failure screenshot do not count as a completed native lifecycle. PR macOS installed jobs exercised fixtures only.
 
 The companion mobile changes are on [draft PR26](https://github.com/Beyon-Digital/termx-app/pull/26), with green CI. Three unrelated untracked mobile probes remain untouched.
 
@@ -122,6 +124,6 @@ Every mandatory HTML requirement has a mapped implementation, reachable UX state
 
 A package with missing installed/live evidence remains pending. An unsupported badge, mock provider, structural Figma check, source compile or old green CI cannot stand in for that missing evidence.
 
-**Current action: complete exact-source installer and installed-app qualification, then close entitled live-provider gates. The user selected each session’s current chosen provider; inspected saved sessions have no selected provider/model or numeric evaluation cap, so the clarification remains pending. Live checks must preserve that selection without billing or model fallback.**
+**Current action: qualify the native ACL, Linux AV closure and Intel CI bundling repairs, then complete exact-source installers, installed-app and entitled live-provider gates. The user selected each session’s current chosen provider; inspected saved sessions have no selected provider/model or numeric evaluation cap, so the clarification remains pending. Live checks must preserve that selection without billing or model fallback.**
 
 [Rollout and recovery notes](rollout-notes.md) cover stopped-host snapshots, managed-auth migration, owner recovery prerequisites and explicit downgrade limits. They are operator instructions, not a performed restoration test.

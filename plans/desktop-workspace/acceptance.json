@@ -109,7 +109,7 @@
       "id": "AGENT-01",
       "requirement": "Parent/child task tree, cancellation/steering, fan-out limits, aggregation and concurrency budgets work without hidden shared-directory writes.",
       "status": "verified",
-      "evidence": "Actual AgentManager aggregation/cancellation/steering/fanout/concurrency tests in tests/test_agent.py pass. tests/test_child_isolation.py uses simultaneous real Git worktrees and nonGit snapshots: children write the same relative filename in separate roots, parent remains unchanged, isolation paths are visible, symlink/size failures fail closed. Limits are per-task steps/time and bounded tree concurrency; no pooled monetary counter is claimed."
+      "evidence": "Actual coordinator aggregation/cancellation/steering/fanout tests and simultaneous real Git worktree/nonGit snapshot isolation pass. A durable parent/child pool atomically reserves exact tool-call positions and sums active provider/worker seconds, including initial planning; human waits pause both meters and child watchdogs. Versioned grant/renewal receipts, root ceilings, sibling isolation, crash orphan renewal and restart continuation have real coordinator/HTTP/SQLite proof. verification/shared-tree-budget-rendered.md qualifies13 actual paused/planning/running/restart states and31 keyboard checks with retained parent drafts. Budget units are tool reservations and active seconds; token/billed currency accounting remains separately disclosed."
     },
     {
       "id": "DEV-01",

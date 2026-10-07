@@ -9,6 +9,75 @@ import sys
 import pytest
 
 
+def sidecar_module():
+    script = Path(__file__).resolve().parents[1] / 'desktop/scripts/build_sidecar.py'
+    spec = importlib.util.spec_from_file_location('sidecar_linux_fixture', script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_linux_private_library_staging_refuses_escaped_or_conflicting_aliases(tmp_path, monkeypatch):
+    module = sidecar_module()
+    monkeypatch.setattr(module.shutil, 'which', lambda name: '/fixture/patchelf')
+    source = tmp_path / 'wheel/av.libs';source.mkdir(parents=True)
+    library = source / 'libxcb-5ddf6756.so.1.1.0';library.write_bytes(b'\x7fELFfixture')
+    built = tmp_path / 'dist';internal = built / '_internal';internal.mkdir(parents=True)
+    (internal / library.name).write_bytes(b'\x7fELFconflicting wheel')
+    with pytest.raises(SystemExit, match='disagrees'):
+        module.stage_linux_av_libraries(built, source)
+    assert (internal / library.name).read_bytes() == b'\x7fELFconflicting wheel'
+    if os.name != 'nt':
+        (internal / library.name).unlink()
+        outside = tmp_path / 'outside.so';outside.write_bytes(b'\x7fELFoutside')
+        library.unlink();library.symlink_to(outside)
+        with pytest.raises(SystemExit, match='escapes its installed'):
+            module.stage_linux_av_libraries(built, source)
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='actual ELF loader closure requires Linux')
+def test_linux_av_helpers_resolve_exact_hashed_dependencies_without_bootloader(tmp_path):
+    compiler = shutil.which('cc');patcher = shutil.which('patchelf')
+    if not compiler or not patcher:
+        pytest.skip('Linux compiler and patchelf required for actual ELF closure')
+    module = sidecar_module();source = tmp_path / 'wheel/av.libs';source.mkdir(parents=True)
+    dependency = 'libxcb-5ddf6756.so.1.1.0';helper = 'libxcb-shm-0be6dfbf.so.0.0.0'
+    dep_c = tmp_path / 'dependency.c';dep_c.write_text('int exact_dependency(void) {return 37;}\n')
+    help_c = tmp_path / 'helper.c';help_c.write_text('extern int exact_dependency(void); int effect(void) {return exact_dependency();}\n')
+    subprocess.run([compiler, '-shared', '-fPIC', str(dep_c), '-Wl,-soname,'+dependency,
+                    '-o', str(source / dependency)], check=True, capture_output=True)
+    subprocess.run([compiler, '-shared', '-fPIC', str(help_c), '-L'+str(source),
+                    '-l:'+dependency, '-Wl,-soname,'+helper, '-o', str(source / helper)],
+                   check=True, capture_output=True)
+    subprocess.run([patcher, '--set-rpath', '$ORIGIN/other', str(source / helper)], check=True)
+    env = dict(os.environ);env.pop('LD_LIBRARY_PATH', None)
+    before = subprocess.run(['ldd', str(source / helper)], env=env, check=True,
+                            capture_output=True, text=True).stdout
+    assert dependency+' => not found' in before
+    built = tmp_path / 'dist';internal = built / '_internal';internal.mkdir(parents=True)
+    # A different media wheel's library must never replace the exact DT_NEEDED.
+    other = internal / 'libxcb-ad31f5a3.so.1.1.0';other.write_bytes(b'different wheel untouched')
+    module.stage_linux_av_libraries(built, source)
+    module.stage_linux_av_libraries(built, source)  # stage-only retries remain safe.
+    staged = internal / 'av.libs' / helper
+    after = subprocess.run(['ldd', str(staged)], env=env, check=True,
+                           capture_output=True, text=True).stdout
+    assert 'not found' not in after and str(internal / 'av.libs' / dependency) in after
+    needed = subprocess.run([patcher, '--print-needed', str(staged)], check=True,
+                            capture_output=True, text=True).stdout.splitlines()
+    assert dependency in needed and other.name not in needed
+    paths = subprocess.run([patcher, '--print-rpath', str(staged)], check=True,
+                           capture_output=True, text=True).stdout.strip().split(':')
+    assert paths == ['$ORIGIN/other', '$ORIGIN']
+    assert other.read_bytes() == b'different wheel untouched'
+    assert (internal / dependency).resolve() == internal / 'av.libs' / dependency
+    # Run in a new process with no freezer or global LD_LIBRARY_PATH assistance.
+    loaded = subprocess.run([sys.executable, '-c',
+        'import ctypes,sys; x=ctypes.CDLL(sys.argv[1]); assert x.effect()==37', str(staged)],
+        env=env, check=True, capture_output=True)
+    assert loaded.returncode == 0
+
+
 @pytest.mark.skipif(os.name == 'nt', reason='macOS bundle staging is not used on Windows')
 def test_macos_runtime_staging_preserves_complete_framework_and_relative_links(tmp_path):
     script = Path(__file__).resolve().parents[1] / 'desktop/scripts/build_sidecar.py'

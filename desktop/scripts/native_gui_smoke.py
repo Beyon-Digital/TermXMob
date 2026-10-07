@@ -186,8 +186,23 @@ class NativeDriver:
         if self.log:self.log.close();self.log=None
 
 
+def signin_alert(driver):
+    # Read only rendered public failure text, never credential inputs or IPC
+    # payloads. A rejected native command is a real failure, not a reason to
+    # fall back to browser authentication or repeatedly click a disabled form.
+    text = driver.script('return document.querySelector(\'.sign-in [role="alert"]\')?.textContent?.trim().slice(0,500) || ""')
+    if text:
+        raise AssertionError('Native sign-in screen reports: '+str(text)[:500])
+
+
 def assert_workspace(driver):
-    wait(lambda:driver.element('.workspace-root'), 'authenticated native workspace')
+    def ready():
+        element = driver.element('.workspace-root')
+        if element:
+            return element
+        signin_alert(driver)
+        return None
+    wait(ready, 'authenticated native workspace')
     result = driver.api('/auth/me')
     assert result['status'] == 200 and result['body']['session_id']
     assert not driver.script('return /[?&]k=/.test(location.href)'), 'Credential in native window URL'
@@ -196,6 +211,10 @@ def assert_workspace(driver):
 
 def password_signin(driver, username, password, setup=False):
     wait(lambda:driver.element('.sign-in'), 'password entry screen')
+    def available():
+        signin_alert(driver)
+        return driver.script('const button=document.querySelector(\'.sign-in button[type="submit"]\');return !!button&&!button.disabled')
+    wait(available, 'native password form ready')
     driver.type('input[autocomplete="username"]',username)
     driver.type('input[type="password"][autocomplete]',password)
     driver.click('//button[normalize-space()="'+('Create owner account' if setup else 'Continue with password')+'"]','xpath')

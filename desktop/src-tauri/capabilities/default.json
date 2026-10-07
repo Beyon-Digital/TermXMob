@@ -8,7 +8,20 @@
     "workspace-*"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "allow-workspace-login",
+    "allow-workspace-resume-sso",
+    "allow-workspace-request",
+    "allow-workspace-logout",
+    "allow-workspace-lock-state",
+    "allow-workspace-unlock",
+    "allow-workspace-unlock-oidc",
+    "allow-workspace-detach",
+    "allow-workspace-redock",
+    "allow-workspace-redock-accept",
+    "allow-workspace-redock-commit",
+    "allow-workspace-redock-cancel",
+    "allow-workspace-binary"
   ],
   "remote": {
     "urls": [

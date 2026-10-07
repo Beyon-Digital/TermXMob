@@ -45,6 +45,11 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - name: Install Linux ELF qualification tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf
       - name: Test
         run: uv run --locked --extra development --extra media pytest -q
 
