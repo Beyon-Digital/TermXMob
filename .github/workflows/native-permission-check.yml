@@ -44,6 +44,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libssl-dev
       - name: Compile actual platform native media policy
+        env:
+          # This job checks sources only. Frozen runtime staging and packaged
+          # assets are hard-gated by desktop.yml, never replaced by dummy files.
+          TAURI_CONFIG: '{"bundle":{"resources":null}}'
         run: cargo check --locked --manifest-path desktop/src-tauri/Cargo.toml
       - uses: astral-sh/setup-uv@v5
       - name: Verify bundle prerequisites and compiled macOS policy
