@@ -1,0 +1,39 @@
+{
+  "source_commit": "f7acef93726b5859c8a18bc27fdf83b9f3f6e398",
+  "source_ci": {
+    "run": 37682709526,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37682709526",
+    "status": "passed",
+    "frontend": {
+      "passed": 245,
+      "files": 64
+    },
+    "linux": {
+      "passed": 1046,
+      "skipped": 147,
+      "seconds": 200.42
+    },
+    "macos": {
+      "passed": 1078,
+      "skipped": 115,
+      "seconds": 256.11
+    }
+  },
+  "windows_contracts": {
+    "run": 37682709731,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37682709731",
+    "status": "failed",
+    "passed": 244,
+    "skipped": 1,
+    "failed": 1,
+    "seconds": 167.02,
+    "native_dacl_passed": 3,
+    "failure": "Normal CLI banner Unicode QR raised UnicodeEncodeError on redirected cp1252 output before readiness. Identity, preset byte CAS, skill source mapping/refusal and real TLS registry repair cases passed."
+  },
+  "next_scoped_repair": {
+    "behavior": "Encoding-aware banner keeps Unicode QR on compatible output and prints the connection link on incompatible output. General banner text is escaped to the output encoding rather than terminating host startup. Owned daemon fixture explicitly exercises cp1252.",
+    "focused_local_passed": 4,
+    "seconds": 10.19
+  },
+  "qualification_limit": "The four local banner/owned-daemon checks are not actual Windows qualification. Fresh expanded Windows and exact package qualification remain mandatory; no release/updater publication."
+}

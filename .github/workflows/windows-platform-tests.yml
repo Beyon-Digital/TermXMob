@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'src/termx/private_files.py'
+      - 'src/termx/cli.py'
       - 'src/termx/identity*.py'
       - 'src/termx/sandbox/*win*.py'
       - 'src/termx/sessions.py'
@@ -26,6 +27,7 @@ on:
       - 'tests/test_git_stream_boundary.py'
       - 'tests/test_private_files.py'
       - 'tests/test_desktop_host_stop_cli.py'
+      - 'tests/test_cli_banner.py'
       - 'tests/test_agent_registry_newlines.py'
       - 'tests/test_https_registries.py'
       - 'tests/test_mcp_authority.py'
@@ -74,7 +76,7 @@ jobs:
           tests/test_runner_agents.py tests/test_windows_conpty.py tests/test_windows_conpty_protocol.py
           tests/test_git_stream_boundary.py
           tests/test_owned_windows_window.py
-          tests/test_desktop_host_stop_cli.py tests/test_agent_registry_newlines.py
+          tests/test_desktop_host_stop_cli.py tests/test_cli_banner.py tests/test_agent_registry_newlines.py
           tests/test_https_registries.py tests/test_mcp_authority.py
           tests/test_skill_sources.py tests/test_workspace_preset_tools_edit.py
       - name: Upload owned PrintWindow evidence

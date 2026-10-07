@@ -18,7 +18,8 @@ def test_explicit_host_stop_has_intentional_desktop_exit_status(tmp_path, deskto
         port = listener.getsockname()[1]
     environment = dict(os.environ, TERMX_CONFIG_DIR=str(tmp_path/'config'),
                        TERMX_AGENTS_DIR=str(tmp_path/'agents'),
-                       TERMX_ENGINE_STARTUP_REFRESH='0', TERMX_DESKTOP='0', PYTHONUNBUFFERED='1')
+                       TERMX_ENGINE_STARTUP_REFRESH='0', TERMX_DESKTOP='0', PYTHONUNBUFFERED='1',
+                       PYTHONIOENCODING='cp1252')
     command = [sys.executable, '-m', 'termx', '--host', '127.0.0.1', '--port', str(port),
                '--passcode', 'owned-host-stop-fixture', '--web-dir', str(tmp_path/'web')]
     if desktop:

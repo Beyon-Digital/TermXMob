@@ -118,8 +118,12 @@ def watch_parent(parent_pid: int, request_shutdown: Any, interval: float = 2.0) 
 
 
 def print_banner(urls: list[str], tunnel_url: str | None, passcode: str | None) -> None:
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+
     def out(line: str = "") -> None:
-        print(line, flush=True)
+        # Redirected Windows output can use cp1252 even though the interactive
+        # console supports Unicode. Display must not terminate a ready host.
+        print(line.encode(encoding, errors='backslashreplace').decode(encoding), flush=True)
 
     out()
     out("termx")
@@ -133,7 +137,13 @@ def print_banner(urls: list[str], tunnel_url: str | None, passcode: str | None) 
         out("  passcode off")
     qr_target = connect_url(tunnel_url or (urls[-1] if urls else "http://127.0.0.1:8787"), passcode)
     out()
-    out(qr_ascii(qr_target))
+    qr = qr_ascii(qr_target)
+    try:
+        qr.encode(encoding)
+    except UnicodeEncodeError:
+        out('  Open the connection link below.')
+    else:
+        out(qr)
     out(f"  scan {qr_target}")
     out()
 
