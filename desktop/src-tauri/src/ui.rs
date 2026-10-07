@@ -31,7 +31,10 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .resizable(true);
     #[cfg(not(target_os = "macos"))]
     let builder = builder.menu(crate::menu::app_menu(app)?);
-    builder.build()
+    let window = builder.build()?;
+    crate::workspace::restore_placement(app, &window);
+    crate::workspace::track_placement(app, &window);
+    Ok(window)
 }
 
 pub fn show_main_window(app: &AppHandle) {
@@ -88,19 +91,11 @@ pub fn on_backend_failed(app: &AppHandle, message: &str) {
 }
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
-    let _ = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show();
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 fn connect_url(info: &ReadyInfo) -> String {
-    format!(
-        "http://127.0.0.1:{}/_/connect.html?k={}",
-        info.port, info.passcode
-    )
+    format!("http://127.0.0.1:{}/?manager=access", info.port)
 }
 
 pub fn open_connect_window(app: &AppHandle) {
@@ -116,12 +111,19 @@ pub fn open_connect_window_qr(app: &AppHandle) {
 }
 
 fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
-    let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
-        notify(app, "Termx is starting", "Connection details are not ready yet.");
+    let Some(info) = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info())
+    else {
+        notify(
+            app,
+            "Termx is starting",
+            "Connection details are not ready yet.",
+        );
         return;
     };
     let url = if reveal_qr {
-        format!("{}&qr=1", connect_url(&info))
+        format!("{}&show_connection=1", connect_url(&info))
     } else {
         connect_url(&info)
     };
@@ -133,11 +135,12 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
         let _ = window.set_focus();
         return;
     }
-    let builder = WebviewWindowBuilder::new(app, "connect", WebviewUrl::External(url.parse().unwrap()))
-        .title("Termx — Machine Status")
-        .inner_size(440.0, 760.0)
-        .min_inner_size(360.0, 520.0)
-        .resizable(true);
+    let builder =
+        WebviewWindowBuilder::new(app, "connect", WebviewUrl::External(url.parse().unwrap()))
+            .title("Termx — Machine Status")
+            .inner_size(440.0, 760.0)
+            .min_inner_size(360.0, 520.0)
+            .resizable(true);
     match builder.build() {
         Ok(window) => {
             let _ = window.show();
@@ -149,18 +152,23 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
 }
 
 pub fn copy_connect_link(app: &AppHandle) {
-    let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
-        notify(app, "Termx is starting", "Connection details are not ready yet.");
+    let Some(info) = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info())
+    else {
+        notify(
+            app,
+            "Termx is starting",
+            "Connection details are not ready yet.",
+        );
         return;
     };
-    let link = match gql_app(app, "{ connect_info { connect_url } }", None)
-        .and_then(|value| {
-            value
-                .pointer("/connect_info/connect_url")
-                .and_then(|item| item.as_str())
-                .map(str::to_string)
-        })
-    {
+    let link = match gql_app(app, "{ connect_info { connect_url } }", None).and_then(|value| {
+        value
+            .pointer("/connect_info/connect_url")
+            .and_then(|item| item.as_str())
+            .map(str::to_string)
+    }) {
         Some(link) => link,
         None => info.window_url(),
     };
@@ -171,7 +179,10 @@ pub fn copy_connect_link(app: &AppHandle) {
 }
 
 pub fn open_in_browser(app: &AppHandle) {
-    let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
+    let Some(info) = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info())
+    else {
         return;
     };
     let url = info.window_url();
@@ -217,7 +228,9 @@ pub fn permission_event(app: &AppHandle, which: &str) {
                     crate::permissions::request_screen_recording();
                 });
                 let handle = app.clone();
-                let _ = handle.clone().run_on_main_thread(move || open_permission_settings(&handle));
+                let _ = handle
+                    .clone()
+                    .run_on_main_thread(move || open_permission_settings(&handle));
             }
         }
         "accessibility" => {
@@ -233,7 +246,9 @@ pub fn permission_event(app: &AppHandle, which: &str) {
                     crate::permissions::request_accessibility();
                 });
                 let handle = app.clone();
-                let _ = handle.clone().run_on_main_thread(move || open_accessibility_settings(&handle));
+                let _ = handle
+                    .clone()
+                    .run_on_main_thread(move || open_accessibility_settings(&handle));
             }
         }
         "open_settings" => open_permission_settings(app),
@@ -406,7 +421,9 @@ fn onboarding_ready(app: &AppHandle) {
     config::set_onboarded(app);
     let handle = app.clone();
     app.dialog()
-        .message("This machine is ready.\n\nScan the QR code or copy the link to connect your phone.")
+        .message(
+            "This machine is ready.\n\nScan the QR code or copy the link to connect your phone.",
+        )
         .title("Termx — Machine ready")
         .buttons(MessageDialogButtons::OkCustom("Show QR & link".to_string()))
         .show(move |_| {
@@ -425,7 +442,11 @@ fn open_permission_settings_when_settled(app: &AppHandle, screen_recording: bool
         for _ in 0..20 {
             std::thread::sleep(std::time::Duration::from_millis(1500));
             let status = crate::permissions::status();
-            if if screen_recording { status.screen_recording } else { status.accessibility } {
+            if if screen_recording {
+                status.screen_recording
+            } else {
+                status.accessibility
+            } {
                 return;
             }
         }

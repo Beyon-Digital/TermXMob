@@ -25,7 +25,10 @@ class Subscription:
     @strawberry.subscription
     async def activity_events(self, info: Ctx) -> AsyncGenerator[T.ActivityEvent, None]:
         ctx = info.context
-        ctx.require("machine-view")
+        ctx.require_host('machine-view')
+        # Host-wide activity/notification streams contain other users' resources.
+        if ctx.state.identity.configured and ctx.state.identity.resolve(ctx.secret):
+            ctx.require_host('host-admin')
         from termx.activity import activity_snapshot
 
         state = ctx.state
@@ -46,7 +49,7 @@ class Subscription:
         self, info: Ctx, task_id: str, after: int = 0
     ) -> AsyncGenerator[T.TaskEventEnvelope, None]:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_resource('agent-view', 'task', task_id)
         state = ctx.state
         if state.agent_store.get_task(task_id) is None:
             fail(404, "task not found")
@@ -75,7 +78,10 @@ class Subscription:
     @strawberry.subscription
     async def notification_events(self, info: Ctx) -> AsyncGenerator[T.HostNotification, None]:
         ctx = info.context
-        ctx.require("machine-view")
+        ctx.require_host('machine-view')
+        # Host-wide activity/notification streams contain other users' resources.
+        if ctx.state.identity.configured and ctx.state.identity.resolve(ctx.secret):
+            ctx.require_host('host-admin')
         state = ctx.state
         queue = state.notifications.subscribe()
         try:

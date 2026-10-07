@@ -39,7 +39,7 @@ class FilesQueries:
     @resolver
     def fs(self, info: Ctx, path: str | None = None, files: bool = False) -> T.FsListing:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_path('files-read', path or str(__import__('pathlib').Path.home()))
         try:
             return T.FsListing.wrap(list_dir_entries(path, include_files=files))
         except ValueError as exc:
@@ -49,13 +49,14 @@ class FilesQueries:
     @resolver
     def projects(self, info: Ctx) -> list[T.Project]:
         info.context.require("files-read")
-        return T.Project.wrap_all(info.context.state.projects.projects())
+        return T.Project.wrap_all([p for p in info.context.state.projects.projects()
+            if info.context.state.authorization.can(info.context.secret, 'files-read', project_id=p['id'])])
 
     @strawberry.field
     @resolver
     def project(self, info: Ctx, project_id: str) -> T.Project:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_project('files-read', project_id)
         try:
             return T.Project.wrap(ctx.state.projects.project(project_id))
         except (KeyError, ValueError) as exc:
@@ -67,14 +68,14 @@ class FilesQueries:
         self, info: Ctx, project_id: str, path: str = "", offset: int = 0, limit: int = 200
     ) -> T.ProjectTree:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_project('files-read', project_id)
         return T.ProjectTree.wrap(ctx.state.projects.listing(project_id, path, offset, limit))
 
     @strawberry.field
     @resolver
     def project_file(self, info: Ctx, project_id: str, path: str) -> T.ProjectFile:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_project('files-read', project_id)
         return T.ProjectFile.wrap(ctx.state.projects.read(project_id, path))
 
     @strawberry.field
@@ -83,7 +84,7 @@ class FilesQueries:
         self, info: Ctx, project_id: str, input: FileSearchInput
     ) -> T.SearchResults:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_project('files-read', project_id)
         results = ctx.state.projects.search(
             project_id, input.query, content=input.content, case_sensitive=input.case_sensitive
         )
@@ -93,14 +94,14 @@ class FilesQueries:
     @resolver
     def project_previews(self, info: Ctx, project_id: str) -> list[T.ProjectPreview]:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_project('files-read', project_id)
         return T.ProjectPreview.wrap_all(ctx.state.projects.previews(project_id))
 
     @strawberry.field
     @resolver
     def lsp_servers(self, info: Ctx, project_id: str) -> JSON:
         ctx = info.context
-        ctx.require("files-read")
+        ctx.require_project('files-read', project_id)
         ctx.state.projects.project(project_id)
         return {"servers": lsp.server_snapshot()}
 
@@ -108,28 +109,28 @@ class FilesQueries:
     @resolver
     def git_status(self, info: Ctx, project_id: str) -> T.GitStatus:
         ctx = info.context
-        ctx.require("git-read")
+        ctx.require_project('git-read', project_id)
         return T.GitStatus.wrap(git_ops.status(_project_root(ctx, project_id)))
 
     @strawberry.field
     @resolver
     def git_diff(self, info: Ctx, project_id: str, path: str, staged: bool = False) -> JSON:
         ctx = info.context
-        ctx.require("git-read")
+        ctx.require_project('git-read', project_id)
         return git_ops.diff(_project_root(ctx, project_id), path, staged=staged)
 
     @strawberry.field
     @resolver
     def git_branches(self, info: Ctx, project_id: str) -> JSON:
         ctx = info.context
-        ctx.require("git-read")
+        ctx.require_project('git-read', project_id)
         return git_ops.branches(_project_root(ctx, project_id))
 
     @strawberry.field
     @resolver
     def ports(self, info: Ctx, project_id: str | None = None) -> T.PortsResult:
         ctx = info.context
-        ctx.require("machine-view")
+        ctx.require_host('machine-view')
         from termx.activity import _project_for
         from termx.processes import listeners, supported
 
@@ -148,7 +149,7 @@ class FilesQueries:
     @resolver
     def processes(self, info: Ctx, project_id: str | None = None) -> T.ProcessesResult:
         ctx = info.context
-        ctx.require("machine-view")
+        ctx.require_host('machine-view')
         from termx.activity import _project_for
         from termx.processes import supported, termx_processes
 
@@ -175,7 +176,7 @@ class FilesMutations:
     @resolver
     def register_project(self, info: Ctx, input: ProjectInput) -> T.Project:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_host('files-write')
         try:
             project = ctx.state.projects.register(input.path, input.name)
         except (ValueError, OSError) as exc:
@@ -187,14 +188,14 @@ class FilesMutations:
     @resolver
     def rename_project(self, info: Ctx, project_id: str, name: str) -> T.Project:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_project('files-write', project_id)
         return T.Project.wrap(ctx.state.projects.update_project(project_id, name))
 
     @strawberry.mutation
     @resolver
     def forget_project(self, info: Ctx, project_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_project('files-write', project_id)
         ctx.state.projects.forget(project_id)
         return T.Ok.wrap({"ok": True})
 
@@ -202,7 +203,7 @@ class FilesMutations:
     @resolver
     def save_project_file(self, info: Ctx, project_id: str, input: FileSaveInput) -> JSON:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_project('files-write', project_id)
         result = ctx.state.projects.save(
             project_id, input.path, input.content, input.revision
         )
@@ -218,7 +219,7 @@ class FilesMutations:
     @resolver
     def project_file_action(self, info: Ctx, project_id: str, input: FileActionInput) -> JSON:
         ctx = info.context
-        ctx.require("terminal-control")
+        ctx.require_project('terminal-control', project_id)
         result = ctx.state.projects.mutate(
             project_id, input.action, input.path, input.destination, input.revision
         )
@@ -231,21 +232,21 @@ class FilesMutations:
     @resolver
     def git_stage(self, info: Ctx, project_id: str, input: GitStageInput) -> JSON:
         ctx = info.context
-        ctx.require("git-write")
+        ctx.require_project('git-write', project_id)
         return git_ops.stage(_project_root(ctx, project_id), input.paths or [], input.stage)
 
     @strawberry.mutation
     @resolver
     def git_stage_hunk(self, info: Ctx, project_id: str, input: GitHunkInput) -> JSON:
         ctx = info.context
-        ctx.require("git-write")
+        ctx.require_project('git-write', project_id)
         return git_ops.stage_hunk(_project_root(ctx, project_id), input.patch, input.stage)
 
     @strawberry.mutation
     @resolver
     def git_commit(self, info: Ctx, project_id: str, message: str) -> JSON:
         ctx = info.context
-        ctx.require("git-write")
+        ctx.require_project('git-write', project_id)
         result = git_ops.commit(_project_root(ctx, project_id), message)
         log_event("git_commit", project_id=project_id)
         return result
@@ -254,7 +255,7 @@ class FilesMutations:
     @resolver
     def git_branch(self, info: Ctx, project_id: str, input: GitBranchInput) -> JSON:
         ctx = info.context
-        ctx.require("git-write")
+        ctx.require_project('git-write', project_id)
         result = git_ops.switch_branch(
             _project_root(ctx, project_id), input.name, input.create
         )
@@ -265,7 +266,7 @@ class FilesMutations:
     @resolver
     def git_remote_op(self, info: Ctx, project_id: str, operation: str) -> JSON:
         ctx = info.context
-        ctx.require("git-write")
+        ctx.require_project('git-write', project_id)
         root = _project_root(ctx, project_id)
         if operation == "fetch":
             return git_ops.fetch(root)
@@ -282,7 +283,7 @@ class FilesMutations:
         self, info: Ctx, project_id: str, input: PreviewInput
     ) -> T.ProjectPreview:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_project('files-write', project_id)
         result = ctx.state.projects.add_preview(project_id, input.name, input.url)
         log_event("project_preview_create", project_id=project_id)
         return T.ProjectPreview.wrap(result)
@@ -291,7 +292,7 @@ class FilesMutations:
     @resolver
     def delete_project_preview(self, info: Ctx, project_id: str, preview_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_project('files-write', project_id)
         ctx.state.projects.delete_preview(project_id, preview_id)
         return T.Ok.wrap({"ok": True})
 
@@ -301,7 +302,7 @@ class FilesMutations:
         self, info: Ctx, project_id: str, input: PreviewFromPortInput
     ) -> T.PreviewFromPortResult:
         ctx = info.context
-        ctx.require("files-write")
+        ctx.require_project('files-write', project_id)
         from termx.processes import listeners
 
         match = next((entry for entry in listeners() if entry["port"] == input.port), None)

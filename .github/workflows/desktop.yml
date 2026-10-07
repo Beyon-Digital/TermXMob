@@ -78,6 +78,20 @@ jobs:
         with:
           enable-cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Build dedicated workspace
+        working-directory: desktop/workspace
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm build
+
       - name: Install Tauri CLI
         run: npm install --global @tauri-apps/cli@^2
 
@@ -91,7 +105,13 @@ jobs:
             librsvg2-dev \
             patchelf \
             rpm \
-            file
+            file \
+            xvfb \
+            x11-apps \
+            wmctrl \
+            openbox \
+            imagemagick \
+            xdotool
 
       - name: Import macOS signing material
         if: runner.os == 'macOS'
@@ -145,16 +165,57 @@ jobs:
             Sort-Object FullName -Descending | Select-Object -First 1
           if ($signtool) { "TERMX_SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV }
 
-      - name: Build web export and Python sidecar
+      - name: Install Chromium system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
+          uv run --no-sync python -m playwright install-deps chromium
+
+      - name: Build complete workspace runtime and Python sidecar
         env:
           TERMX_MACOS_SIGN_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
           UV_PYTHON_PREFERENCE: only-managed
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          uv sync --group packaging --group dev
-          uv run pytest -q
-          uv run --group packaging python desktop/scripts/build_sidecar.py
+          uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
+          uv run --no-sync pytest -q
+          uv run --no-sync python desktop/scripts/prepare_runtime.py
+          uv run --no-sync python desktop/scripts/build_sidecar.py
+          uv run --no-sync python desktop/scripts/verify_runtime.py
+
+      - name: Verify exact owned X11 window capture
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            openbox >/tmp/termx-ci-window-manager.log 2>&1 &
+            window_manager=$!
+            trap "kill $window_manager 2>/dev/null || true" EXIT
+            TERMX_TEST_NATIVE_WINDOW=1 uv run --no-sync pytest -q tests/test_owned_x11_window.py
+          '
+
+      - name: Verify native bridge boundaries
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Verify installed debug adapters
+        env:
+          TERMX_JS_DEBUG_SERVER: ${{ github.workspace }}/desktop/build/runtime/js-debug/src/dapDebugServer.js
+          TERMX_RUNTIME_ASSETS: ${{ github.workspace }}/desktop/build/runtime
+        run: uv run --no-sync pytest -q tests/test_debug_workspace.py tests/test_workspace_runtime.py tests/test_lsp_navigation.py
+
+      - name: Verify rendered workspace accessibility
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/desktop/build/runtime/browsers
+        run: uv run --no-sync python tests/workspace_accessibility_e2e.py desktop/build/accessibility desktop/workspace/node_modules/axe-core/axe.min.js
+
+      - name: Upload workspace accessibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-accessibility-${{ matrix.name }}
+          path: desktop/build/accessibility
+          if-no-files-found: ignore
 
       - name: Resolve release metadata
         id: release
@@ -181,7 +242,7 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ] && [ -n "$APPLE_CERT" ]; then signed="yes"; fi
           if [ "${{ runner.os }}" = "Windows" ] && [ -n "$WINDOWS_CERT" ]; then signed="yes"; fi
           if [ "$signed" = "yes" ]; then
-            echo "note=**Code-signed build.**" >> "$GITHUB_OUTPUT"
+            echo "note=**Platform signing configured.** Installer signatures still require artifact verification." >> "$GITHUB_OUTPUT"
           else
             echo "note=**Unsigned developer build.** macOS builds are ad-hoc signed; Windows may show SmartScreen." >> "$GITHUB_OUTPUT"
           fi
@@ -196,6 +257,19 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match desktop/src-tauri/tauri.conf.json version $version"
             exit 1
           fi
+
+      - name: Configure repository updater endpoint
+        shell: bash
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          path="desktop/src-tauri/tauri.conf.json"
+          data=json.load(open(path))
+          data["plugins"]["updater"]["endpoints"]=[f"https://github.com/{os.environ['RELEASE_REPOSITORY']}/releases/latest/download/latest.json"]
+          open(path,"w").write(json.dumps(data,indent=2)+"\n")
+          PY
 
       - name: Build installers
         uses: tauri-apps/tauri-action@v0
@@ -278,6 +352,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           TARGET: ${{ matrix.target }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
@@ -312,9 +387,9 @@ jobs:
               tauri signer sign -p "" "$out"
             gh release upload "$TAG" "$out" "$out.sig" --clobber
             python3 - "$payload" "$out.sig" "$platform" "$version" "$TAG" "$RUNNER_TEMP/updater-$platform.json" <<'PY'
-          import json, sys
+          import json, os, sys
           name, sig, platform, version, tag, output = sys.argv[1:7]
-          url = f"https://github.com/Psyborgs-git/TermXMob/releases/download/{tag}/{name}"
+          url = f"https://github.com/{os.environ['RELEASE_REPOSITORY']}/releases/download/{tag}/{name}"
           entry = {"signature": open(sig).read().strip(), "url": url}
           manifest = {"version": version, "notes": f"Termx {tag}", "platforms": {platform: entry}}
           open(output, "w").write(json.dumps(manifest, indent=2))
@@ -335,9 +410,9 @@ jobs:
             exit 0
           fi
           python3 - "$(basename "$file")" "$sig" "$platform" "$version" "$TAG" "$RUNNER_TEMP/updater-$platform.json" <<'PY'
-          import json, sys
+          import json, os, sys
           name, sig, platform, version, tag, output = sys.argv[1:7]
-          url = f"https://github.com/Psyborgs-git/TermXMob/releases/download/{tag}/{name}"
+          url = f"https://github.com/{os.environ['RELEASE_REPOSITORY']}/releases/download/{tag}/{name}"
           entry = {"signature": open(sig).read().strip(), "url": url}
           manifest = {"version": version, "notes": f"Termx {tag}", "platforms": {platform: entry}}
           open(output, "w").write(json.dumps(manifest, indent=2))

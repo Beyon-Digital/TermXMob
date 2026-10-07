@@ -8,6 +8,7 @@ mod menu;
 mod permissions;
 mod tray;
 mod ui;
+mod workspace;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -65,6 +66,15 @@ fn main() {
     }
 
     let builder = tauri::Builder::default()
+        .manage(workspace::NativeSession::default())
+        .invoke_handler(tauri::generate_handler![
+            workspace::workspace_login,
+            workspace::workspace_resume_sso,
+            workspace::workspace_request,
+            workspace::workspace_logout,
+            workspace::workspace_detach,
+            workspace::workspace_binary
+        ])
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -92,7 +102,9 @@ fn main() {
             menu::sync_autostart(&handle);
             logging::desktop(&handle, "setup: autostart syncing");
             let log_handle = handle.clone();
-            if let Some(path) = broker::start(handle.clone(), move |line| logging::desktop(&log_handle, line)) {
+            if let Some(path) = broker::start(handle.clone(), move |line| {
+                logging::desktop(&log_handle, line)
+            }) {
                 logging::desktop(&handle, &format!("privileged broker ready at {path}"));
             }
             let backend = backend::Backend::new(handle.clone());

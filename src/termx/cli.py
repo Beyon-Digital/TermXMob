@@ -35,7 +35,9 @@ def default_web_dir() -> Path:
         return bundled
     cwd = Path.cwd()
     for candidate in (
+        cwd / "desktop" / "workspace" / "dist",
         cwd / "desktop" / "web",
+        cwd.parent / "desktop" / "workspace" / "dist",
         cwd.parent / "desktop" / "web",
         cwd / "web",
     ):
@@ -234,10 +236,10 @@ async def _serve(args: argparse.Namespace) -> None:
         if args.desktop:
             urls = http_urls(actual_port, args.host)
             notify.ready(actual_port, urls, tunnel_url)
-            body = connect_url(tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}"), args.passcode)
+            body = connect_url(tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}"), None if state.identity.configured else args.passcode)
             notify.notify("Termx is running", body, kind="ready", url=tunnel_url or urls[0])
         else:
-            print_banner(http_urls(actual_port, args.host), tunnel_url, args.passcode)
+            print_banner(http_urls(actual_port, args.host), tunnel_url, None if state.identity.configured else args.passcode)
         await serve_task
     except (asyncio.CancelledError, KeyboardInterrupt):
         server.should_exit = True

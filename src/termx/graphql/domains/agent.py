@@ -40,14 +40,14 @@ class AgentQueries:
     @strawberry.field
     @resolver
     def agent_configuration(self, info: Ctx) -> JSON:
-        info.context.require("ai-settings")
+        info.context.require_host('ai-settings')
         return asdict(info.context.state.store.get().agent)
 
     @strawberry.field
     @resolver
     async def engine_configuration(self, info: Ctx, engine_id: str,
                                    cwd: str | None = None) -> JSON:
-        info.context.require("agent-view")
+        info.context.require_path('agent-view', cwd) if cwd else info.context.require_host('agent-view')
         try:
             return await info.context.state.engines.configuration(engine_id, cwd)
         except (KeyError, ValueError) as exc:
@@ -56,7 +56,7 @@ class AgentQueries:
     @strawberry.field
     @resolver
     def engine_task_configuration(self, info: Ctx, task_id: str) -> JSON:
-        info.context.require("agent-view")
+        info.context.require_resource('agent-view', 'task', task_id)
         try:
             return info.context.state.engines.task_configuration(task_id)
         except ValueError as exc:
@@ -124,7 +124,7 @@ class AgentQueries:
     @strawberry.field
     @resolver
     def engine_diagnostics(self, info: Ctx) -> JSON:
-        info.context.require("host-admin")
+        info.context.require_host('host-admin')
         report = env_diff_report(dict(os.environ))
         report["resolutions"] = {
             name: resolve_executable(name) for name in ("codex", "devin", "grok", "claude")
@@ -135,13 +135,13 @@ class AgentQueries:
     @resolver
     def agent_tasks(self, info: Ctx, limit: int = 100) -> list[T.AgentTask]:
         info.context.require("agent-view")
-        return T.AgentTask.wrap_all(info.context.state.agent_store.list_tasks(limit=limit))
+        return T.AgentTask.wrap_all(info.context.visible('agent-view', 'task', info.context.state.agent_store.list_tasks(limit=limit)))
 
     @strawberry.field
     @resolver
     def agent_task(self, info: Ctx, task_id: str) -> T.AgentTask:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_resource('agent-view', 'task', task_id)
         task = ctx.state.agent_store.get_task(task_id, include_events=True)
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
@@ -151,7 +151,7 @@ class AgentQueries:
     @resolver
     def agent_task_worktree(self, info: Ctx, task_id: str) -> T.TaskWorktree:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_resource('agent-view', 'task', task_id)
         try:
             return T.TaskWorktree.wrap(ctx.state.agent.task_worktree(task_id))
         except KeyError as exc:
@@ -162,7 +162,7 @@ class AgentQueries:
     def agent_task_export(self, info: Ctx, task_id: str) -> JSON:
         """The export payload as data (the raw file download stays REST)."""
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_resource('agent-view', 'task', task_id)
         task = ctx.state.agent_store.export_task(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
@@ -171,7 +171,7 @@ class AgentQueries:
     @strawberry.field
     @resolver
     def agent_storage(self, info: Ctx) -> T.AgentStorageStatus:
-        info.context.require("ai-settings")
+        info.context.require_host('ai-settings')
         return T.AgentStorageStatus.wrap(info.context.state.agent_store.storage_status())
 
     @strawberry.field
@@ -187,7 +187,7 @@ class AgentQueries:
         from termx.agent.policies.models import rule_public
 
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         rules = ctx.state.agent_store.list_policy_rules(
             scope_type=scope_type,
             scope_id=scope_id,
@@ -204,7 +204,7 @@ class AgentQueries:
         from termx.agent.policies.models import rule_public
 
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_project('agent-view', project_id)
         scopes: list[tuple[str, str]] = [("host", "")]
         if custom_agent_id:
             scopes.append(("custom_agent", custom_agent_id))
@@ -245,14 +245,14 @@ class AgentMutations:
     @strawberry.mutation
     @resolver
     async def refresh_acp_registry(self, info: Ctx) -> JSON:
-        info.context.require("host-admin")
+        info.context.require_host('host-admin')
         return await info.context.state.engines.acp_registry.refresh()
 
     @strawberry.mutation
     @resolver
     async def install_acp_runner(self, info: Ctx, registry_id: str) -> JSON:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         registry = ctx.state.engines.acp_registry
         try:
             engine_id, executable, args, entry = await registry.install(registry_id)
@@ -294,7 +294,7 @@ class AgentMutations:
         # Launch settings select host executables, so only the host admin may
         # change them. Credentials remain environment/secure-store owned.
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         try:
             if not isinstance(input, dict):
                 raise ValueError("agent configuration must be an object")
@@ -314,7 +314,7 @@ class AgentMutations:
     @resolver
     async def refresh_engine_catalogue(self, info: Ctx, engine_id: str | None = None,
                                        cwd: str | None = None) -> JSON:
-        info.context.require("agent-view")
+        info.context.require_host('agent-view')
         try:
             return await info.context.state.engines.catalogue.refresh(engine_id, cwd)
         except (KeyError, ValueError) as exc:
@@ -323,7 +323,7 @@ class AgentMutations:
     @strawberry.mutation
     @resolver
     async def authenticate_engine(self, info: Ctx, engine_id: str, method_id: str) -> JSON:
-        info.context.require("agent-run")
+        info.context.require_host('agent-run')
         try:
             adapter = info.context.state.engines.adapter(engine_id)
             authenticate = getattr(adapter, "authenticate", None)
@@ -337,7 +337,7 @@ class AgentMutations:
     @resolver
     def save_agent_provider(self, info: Ctx, input: AgentProviderInput) -> T.AgentProvider:
         ctx = info.context
-        ctx.require("ai-settings")
+        ctx.require_host('ai-settings')
         try:
             provider = ctx.state.agent.save_provider(
                 provider_id=input.id,
@@ -357,7 +357,7 @@ class AgentMutations:
     @resolver
     def delete_agent_provider(self, info: Ctx, provider_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("ai-settings")
+        ctx.require_host('ai-settings')
         try:
             deleted = ctx.state.agent.delete_provider(provider_id)
         except ValueError as exc:
@@ -371,7 +371,7 @@ class AgentMutations:
     @resolver
     async def test_agent_provider(self, info: Ctx, provider_id: str) -> JSON:
         ctx = info.context
-        ctx.require("ai-settings")
+        ctx.require_host('ai-settings')
         try:
             return await ctx.state.agent.test_provider(provider_id)
         except KeyError as exc:
@@ -386,6 +386,9 @@ class AgentMutations:
         ctx.require("agent-run")
         state = ctx.state
         body = input
+        project_id = ctx.require_path('agent-run', body.cwd)
+        if body.conversation_id:
+            ctx.require_resource('agent-control', 'conversation', body.conversation_id)
         conversation = (
             state.agent_store.get_conversation(body.conversation_id)
             if body.conversation_id
@@ -445,6 +448,7 @@ class AgentMutations:
                     context_refs=body.context_refs,
                     attachment_refs=[{"ref": item.name} for item in attachments],
                 )
+            ctx.claim('task', task['id'], project_id)
             log_event("agent_task_create", task_id=task["id"], engine=engine)
             return T.AgentTask.wrap(task)
         if body.engine_mode is not None or body.config_options is not None:
@@ -497,6 +501,7 @@ class AgentMutations:
                 context_refs=body.context_refs,
                 attachment_refs=[{"ref": item.name} for item in attachments],
             )
+        ctx.claim('task', task['id'], project_id)
         log_event("agent_task_create", task_id=task["id"], provider_id=body.provider_id)
         return T.AgentTask.wrap(task)
 
@@ -504,7 +509,7 @@ class AgentMutations:
     @resolver
     def delete_agent_task(self, info: Ctx, task_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
         try:
             deleted = ctx.state.agent.delete_task(task_id)
         except ValueError as exc:
@@ -519,12 +524,18 @@ class AgentMutations:
         self, info: Ctx, task_id: str, approval_id: str, input: AgentApprovalInput
     ) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
         if input.decision not in _APPROVAL_DECISIONS:
             raise HTTPException(status_code=422, detail="decision must be approved, denied or cancel")
         if input.remember is not None and input.remember not in _APPROVAL_REMEMBER:
             raise HTTPException(status_code=422, detail=f"remember must be one of {sorted(_APPROVAL_REMEMBER)}")
         try:
+            runners=getattr(ctx.state,'runner_agents',None)
+            if runners and runners.owns(task_id):
+                if input.decision=='cancel':return runners.cancel(task_id)
+                if input.remember or input.limits:
+                    raise HTTPException(409,'Runner decisions are exact once; renew the explicit runner grant to change budgets or policy')
+                return await runners.resolve_approval(task_id,approval_id,input.decision)
             resolved = await ctx.state.engines.resolve_approval(
                 task_id, approval_id, input.decision,
                 remember=input.remember, content=input.content,
@@ -544,8 +555,11 @@ class AgentMutations:
     @resolver
     async def steer_agent_task(self, info: Ctx, task_id: str, message: str) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
         try:
+            runners=getattr(ctx.state,'runner_agents',None)
+            if runners and runners.owns(task_id):
+                return runners.steer(task_id,message)
             steered = await ctx.state.engines.steer(task_id, message)
             if steered is not None:
                 return steered
@@ -559,8 +573,11 @@ class AgentMutations:
     @resolver
     async def cancel_agent_task(self, info: Ctx, task_id: str) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
         try:
+            runners=getattr(ctx.state,'runner_agents',None)
+            if runners and runners.owns(task_id):
+                return runners.cancel(task_id)
             cancelled = await ctx.state.engines.cancel(task_id)
             if cancelled is not None:
                 return cancelled
@@ -572,7 +589,9 @@ class AgentMutations:
     @resolver
     async def recover_agent_task(self, info: Ctx, task_id: str, confirm: bool = False) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
+        if getattr(ctx.state,'runner_agents',None) and ctx.state.runner_agents.owns(task_id):
+            raise HTTPException(409,'Inspect the runner outcome, then explicitly retry in its selected workspace session; cloud tasks never replay on the local host')
         try:
             return await ctx.state.agent.recover_task(task_id, confirm=confirm)
         except KeyError as exc:
@@ -584,7 +603,9 @@ class AgentMutations:
     @resolver
     async def takeover_agent_task(self, info: Ctx, task_id: str) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
+        if getattr(ctx.state,'runner_agents',None) and ctx.state.runner_agents.owns(task_id):
+            raise HTTPException(409,'This network-isolated coding runner has no Computer control surface; steer or cancel the exact remote task')
         try:
             return await ctx.state.agent.takeover(task_id)
         except KeyError as exc:
@@ -596,7 +617,7 @@ class AgentMutations:
         self, info: Ctx, task_id: str, input: WorktreeActionInput
     ) -> T.TaskWorktree:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'task', task_id)
         from termx.agent.worktrees import WorktreeConfirmRequired
 
         try:
@@ -627,7 +648,7 @@ class AgentMutations:
         self, info: Ctx, input: AgentRetentionInput | None = None
     ) -> T.AgentStoragePruneResult:
         ctx = info.context
-        ctx.require("ai-settings")
+        ctx.require_host('ai-settings')
         input = input or AgentRetentionInput()
         ctx.state.agent_store.set_retention_policy(
             retention_days=input.retention_days,
@@ -651,7 +672,7 @@ class AgentMutations:
         from termx.agent.policies.models import rule_public
 
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         try:
             rule = ctx.state.agent_store.create_policy_rule(
                 effect=input.effect,
@@ -681,7 +702,7 @@ class AgentMutations:
         from termx.agent.policies.models import rule_public
 
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         updates = {
             key: value
             for key, value in {
@@ -704,7 +725,7 @@ class AgentMutations:
     @resolver
     def revoke_agent_policy(self, info: Ctx, rule_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         try:
             ctx.state.agent_store.revoke_policy_rule(rule_id)
         except KeyError as exc:

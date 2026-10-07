@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "source": "plan-v0.3.html#verification",
+  "overall_status": "in_progress",
+  "requirements": [
+    {
+      "id": "UX-01",
+      "requirement": "Unlock \u2192 project/session \u2192 chat \u2192 workbench with no forced dashboard or mobile-navigation detour.",
+      "status": "partial",
+      "evidence": "Independent React DOM shell, managed sign-in and canonical project/session entry verified against actual host. Corrected content-ready 1440/390 renders inspected; same contract3 native bundle compiles. Installed native unlock journey remains a packaging gate."
+    },
+    {
+      "id": "UX-02",
+      "requirement": "Chat/Workbench/Browser layout moves preserve conversation/native IDs, active runs, drafts, scroll, dirty buffers and PTYs.",
+      "status": "partial",
+      "evidence": "Docked views remain mounted; real CodeMirror split edits synchronize shared dirty buffer and save after split closes. Draft flush/unmount and stale metadata revision regressions pass; slow rendered switch at 200% is being retested. Native active-run/multiwindow/PTy retention proof remains open."
+    },
+    {
+      "id": "CHAT-01",
+      "requirement": "No engine selector outside AI session UI; session A can use a different engine from B; configuration changes do not retarget either run.",
+      "status": "partial",
+      "evidence": "Engine/model/provider/favorites remain in the conversation composer; snapshots prevent retargeting active runs. Explicit internal runner selection/preflight and delegated schedule target snapshots are implemented. Durable sessions/native attachment tests pass; live installed provider journeys remain open."
+    },
+    {
+      "id": "CHAT-02",
+      "requirement": "A cross-engine fork retains the original, previews transferred context, records linkage and never claims a native resume.",
+      "status": "partial",
+      "evidence": "Previewed digest-bound cross-engine fork creates linked canonical conversation and preserves source. Native adapters receive explicit attachment conversion, never claim cross-engine native resume. Durable/native attachment tests pass."
+    },
+    {
+      "id": "DATA-01",
+      "requirement": "Reconnect or duplicate windows do not duplicate prompts, messages, website submissions, Git mutations or tool calls.",
+      "status": "partial",
+      "evidence": "Canonical host idempotency covers prompts, one-use reviewed effects, Git, media and runner jobs. Real second window creates no extra turn. Opaque media/runner intent IDs survive reload; lost Git/provider outcomes remain unknown and consumed. Targeted reload/non-replay tests pass; combined noisy stream proof remains open."
+    },
+    {
+      "id": "AUTH-01",
+      "requirement": "Locked/revoked users cannot access protected API/socket/file/preview/browser/control/legacy paths.",
+      "status": "partial",
+      "evidence": "Live managed authority checks cover API, GraphQL, raw files, PTY/LSP, desktop/RTC and browser control. Revoked output/socket teardown and two-user path checks pass. Signed native platform smoke and legacy migration field rollout pending."
+    },
+    {
+      "id": "AUTH-02",
+      "requirement": "Rate-limited password attempts, secure storage, refresh rotation, parallel refresh coordination, expiry and device/session revocation work.",
+      "status": "partial",
+      "evidence": "Backend rate limits, hashed refresh rotation/reuse/expiry/revoke tested; browser navigator.locks coordinates windows; Rust keyring and refresh single-flight compile verified. Live OS keyring/SSO installer checks remain pending."
+    },
+    {
+      "id": "AUTH-03",
+      "requirement": "Local-password, real OIDC test provider and custom reference adapter all reach the same principal/session/authorization contract without route rewrites.",
+      "status": "partial",
+      "evidence": "Local password, generic OIDC and signed custom reference adapter share canonical managed sessions. tests/test_oidc_tls_interoperability.py uses real localhost TLS IdP HTTP discovery/authorization/token/JWKS with PKCE, nonce and exact HTTPS/native redirects; no MockTransport. Enterprise deployment validation remains pending."
+    },
+    {
+      "id": "AUTH-04",
+      "requirement": "Reject wrong issuer/audience/algorithm, ID-token misuse, revoked sessions, stale groups and cross-host/project grants. Enforce shared-host isolation claims.",
+      "status": "partial",
+      "evidence": "Canonical identities and live project/resource grants reject stale/wrong host/token/session/groups; two-user isolation and viewer desktop control denial tested. Shared unrestricted OS user is explicitly a trusted-machine boundary; restricted execution needs isolated containers/VMs."
+    },
+    {
+      "id": "BROW-01",
+      "requirement": "Complete sign-in \u2192 browse \u2192 handoff \u2192 agent action \u2192 human takeover \u2192 explicit resume inside the app, plus external-browser access to the same host tab.",
+      "status": "partial",
+      "evidence": "Actual managed Chromium workspace sign-in, tab/profile, task handoff, exact approval resume and private human-only view pass without provider queries. Real Claude CLI initialization/MCP connected. Final rendered takeover/explicit resume and installed worker proof remain gates."
+    },
+    {
+      "id": "BROW-02",
+      "requirement": "Revoked/expired/tab-mismatched grants and stale document/lease revisions reject actions. No agent sees unrelated tabs or another user\u2019s profile.",
+      "status": "partial",
+      "evidence": "Owner/profile/task/tab/grant/policy/document/lease checks and revocation implemented and covered by test_managed_browser.py and test_browser_private_race.py."
+    },
+    {
+      "id": "BROW-03",
+      "requirement": "Private login produces no agent-visible credential input, DOM snapshot, screenshot or recording. Takeover stops queued actions and reports in-flight outcomes.",
+      "status": "partial",
+      "evidence": "Private DOM/screenshot/capture blocked before and after awaited operations; takeover invalidates reviewed effects. Window private epochs also block enter/exit observation races. Browser, native broker and window service tests pass; cross-platform installed privacy smoke remains open."
+    },
+    {
+      "id": "BROW-04",
+      "requirement": "Block unapproved origins/redirects, raw CDP exposure, protected local services, metadata access and attempts to reach privileged app/native bridges.",
+      "status": "partial",
+      "evidence": "DNS-pinning proxy, redirects, metadata/private origins, scoped project exceptions and no raw CDP endpoint enforced. Privileged native route/window checks compile verified. Managed browser tests cover network escapes."
+    },
+    {
+      "id": "BROW-05",
+      "requirement": "Only built-in tabs can be handed to the agent. No external-tab attach, cookie import or extension flow exists. URL-only opening creates a fresh built-in tab. Annotation staleness, permitted file transfer and browser crash recovery work.",
+      "status": "partial",
+      "evidence": "Only host-created built-in tabs can be handed off. Annotation revision, explicit upload/download and restart recovery implemented. Signed worker packaging and complete rendered transfer/crash workflow remain pending."
+    },
+    {
+      "id": "CAP-01",
+      "requirement": "Opt-in window/tab capture has persistent indicator, excludes private mode, and produces an editable/redacted/tested skill draft\u2014not an auto-enabled recording.",
+      "status": "partial",
+      "evidence": "Explicit exact-window/tab recording includes persistent private/recording state, redactions, parameterized editable drafts and separate replay test before extension activation. Actual owned macOS window capture passed; service/browser replay tests pass. Windows/X11 installed capture proofs remain open."
+    },
+    {
+      "id": "MEM-01",
+      "requirement": "Memory reads/writes/deletes/export obey provenance and project/user scopes; retention and hooks cannot leak cross-project context.",
+      "status": "partial",
+      "evidence": "Inspectable scoped memory has provenance, exclusions, revisions, retention and export. Hooks have project permission checks and bounded execution/audit. Durable and Manager behavior tests pass."
+    },
+    {
+      "id": "AUTO-01",
+      "requirement": "Schedules survive UI close/host restart; honor timezone, missed-run and overlap policy; approval waits do not time out into consent; delegated grants and budget caps are enforced.",
+      "status": "partial",
+      "evidence": "Durable TZ/missed-run/overlap/budget/lease schedules use explicit delegated grants and retain human waits. Selected internal runner and credential location are snapshotted; changed targets require renewed delegation. Durable source tests pass; actual scheduled container journey remains open."
+    },
+    {
+      "id": "AGENT-01",
+      "requirement": "Parent/child task tree, cancellation/steering, fan-out limits, aggregation and concurrency budgets work without hidden shared-directory writes.",
+      "status": "partial",
+      "evidence": "Children use real distinct Git worktrees or bounded independent snapshots; parent files remain unchanged. Bounded public UI tree shows paths, branches, cancel/steer and aggregate state. Child isolation and durable tests pass; full aggregate budget journey remains open."
+    },
+    {
+      "id": "DEV-01",
+      "requirement": "Real Python and TypeScript/JavaScript debug and language-server paths demonstrate breakpoint/step/inspect/navigation with proper host authorization.",
+      "status": "partial",
+      "evidence": "Real Python/JavaScript/TypeScript DAP breakpoint/step/stack/variables tests all4 passed. Source-map entrypoint barrier fixes initial TS binding; real Python/TypeScript LSP navigation passed. Installed runtime/cross-platform packaging remains a gate."
+    },
+    {
+      "id": "GIT-01",
+      "requirement": "Two parallel worktrees \u2192 edits/tests \u2192 stage/commit/push \u2192 PR/checks; conflicts, failed checks and cleanup are handled without discarding dirty user files.",
+      "status": "partial",
+      "evidence": "Real two-worktree edits/commits, hunk roundtrip, local remote push, divergent FF-only pull and dirty cleanup refusal pass. Exact review binds index/content/branch/remote configuration; lost publication stays unknown and cannot replay. Workbench delivery surface implemented; live GitHub PR/checks still pending."
+    },
+    {
+      "id": "EXT-01",
+      "requirement": "Registry install/update/rollback and permission diff work; unsupported format is honest; in-use removal is safe; no secrets in exported skill/plugin files.",
+      "status": "partial",
+      "evidence": "Versioned public/private registry, immutable install/update/rollback, provenance/permission diffs, active-use leases and explicit compatibility adapters implemented; durable tests pass. Actual source formats documented rather than universal marketplace claim."
+    },
+    {
+      "id": "EXT-02",
+      "requirement": "Private registry and custom compatibility adapter are tested; hooks have correct scope, timeout, failure and audit behavior.",
+      "status": "partial",
+      "evidence": "Private registry/custom adapter fixtures and scoped bounded/audited hooks pass. Browser/window recording drafts use digest-bound separate tests before explicit immutable extension activation; real browser replay tested. Combined packaged activation flow remains a gate."
+    },
+    {
+      "id": "DOCK-01",
+      "requirement": "Drag/keyboard dock, detach/re-dock, concurrent views, missing-monitor restore, browser popup denial and unsaved-buffer conflicts are recoverable.",
+      "status": "partial",
+      "evidence": "Drag/tab-region docking and keyboard equivalent, mounted panels and web popup denial implemented; native monitor-aware restore compiles. Real cross-platform detach/re-dock and dirty-buffer conflict proof pending."
+    },
+    {
+      "id": "MEDIA-01",
+      "requirement": "Text/voice \u2192 image/document/table/deck/code output \u2192 inspect/edit/version/export through real named adapters; unsupported input and provider entitlement failures are explicit.",
+      "status": "partial",
+      "evidence": "Real Office/table/chart/version/export and PDF/DOCX/video/image context conversions pass. Configured-account image/edit/transcription/speech HTTP protocols and no-replay billing are tested; real entitled provider/model validation awaits account selection."
+    },
+    {
+      "id": "CLOUD-01",
+      "requirement": "Create/enroll dedicated runner \u2192 scoped secret injection \u2192 run/logs/browser where supported \u2192 results \u2192 budget stop/teardown; local/cloud side effects are never silently migrated.",
+      "status": "partial",
+      "evidence": "Actual dedicated nonroot read-only Docker command/upload/secret/log/result/budget/teardown pass. Actual immutable network-none existing-loop worker passed reviewed file write, exact human shell approval, exported artifact, canonical admission and cancellation stopping the container; provider key remains on host. Session/schedule target snapshots tested. Remote SSH/VM and installed runtime remain open."
+    },
+    {
+      "id": "SAFE-01",
+      "requirement": "Remembered action rules cannot exceed host policy; browser access is not transaction consent; claimed restricted runtime cannot bypass grants through shell/network tools.",
+      "status": "partial",
+      "evidence": "Internal tools use typed host envelopes/one-use permits; browser scope disables shell/network escape paths. Claude coding pre/post hooks and native Codex/ACP permission/effect callbacks have tests; restricted unsupported native modes refuse handoff. Remote worker has no provider key/network and uses isolated immutable installed package."
+    },
+    {
+      "id": "WEB-01",
+      "requirement": "Desktop/browser share UI version, routes and domain state. Deep links and reload work; the viewer\u2019s localhost is never confused with the host preview.",
+      "status": "partial",
+      "evidence": "Desktop/browser share contract3 React DOM routes and canonical domain state. Wrong/stale Expo bundle returns actionable 503. New host preview uses separate exact-origin Chromium worker; actual project server render/input/revocation passed. Viewer localhost never supplies host preview. Native packaged smoke open."
+    },
+    {
+      "id": "PERF-01",
+      "requirement": "Measure load, interaction, stream and memory budgets; test 10,000 messages, 500 sessions, multiple windows, noisy PTY logs and active browser control. These are test fixtures, not measured results.",
+      "status": "partial",
+      "evidence": "Content-ready actual 500-session/10000-turn fixture measured 4413ms load, 277ms layout move, 12.7MiB JS heap, 643 DOM nodes and no duplicate run from second window. Frontend bounded-message test passes. Combined noisy PTY/active-browser proof now being added."
+    },
+    {
+      "id": "A11Y-01",
+      "requirement": "Keyboard-only browsing/workspace flows, screen-reader labels and meaningful content, contrast, 200% zoom and reduced motion work in both themes.",
+      "status": "partial",
+      "evidence": "Pinned axe4.10.3 actual host checks in dark/light at 100%/200%, reduced motion, zero initial violations/overflow and visible 2px focus. Extended real Workbench/editor check exposed slow-switch draft race, now fixed and rerunning. Broad browser/manager keyboard journey still open."
+    },
+    {
+      "id": "VIEW-01",
+      "requirement": "1280/1440/1920/ultrawide plus narrow-browser fallback; no page overflow, unreachable control, stranded window or forced Expo fallback.",
+      "status": "partial",
+      "evidence": "Actual content-ready screenshots1280/1440/1920/2560/768/390 have no pageoverflow. Root inspected1440 and390: populated sidebar/messages, validatedSVGicons and collapsed narrow sidebar. Native missingmonitor/strandedwindow recovery remains platform gate."
+    },
+    {
+      "id": "REVIEW-01",
+      "requirement": "Run a representative 30-action safe browser task with no repeated human approval once the task grant is valid. Audit every automated decision; distinguish rule-based from model-based approvals.",
+      "status": "partial",
+      "evidence": "Exact durable one-use permits, remembered safe rules and per-decision audit implemented. Representative30-action browser and typed-file tasks running; model qualification/reviewer latency/cost awaits configured account."
+    },
+    {
+      "id": "REVIEW-02",
+      "requirement": "Sensitive sends, payments, deletes, publication and privilege changes stop at the approved human gate; a single explicit decision does not expand unrelated authority.",
+      "status": "partial",
+      "evidence": "Sensitive sends/payment/delete/publication/privilege and unknown mutations retain exact human gate; scope does not expand. Managed browser/adversarial broker fixtures verify sensitive denial."
+    },
+    {
+      "id": "REVIEW-03",
+      "requirement": "Injection in pages, files, tool outputs or executor summaries cannot change policy or mint grants. Test hidden content, redirects, cross-origin uploads and deceptively labelled controls.",
+      "status": "partial",
+      "evidence": "Only host-built envelopes can be evaluated; page descriptions cannot mint policy/grants. Hidden labels, file-secret paths, cross-origin transfer and stale DOM hashes covered. Generic native coding hook coverage under test."
+    },
+    {
+      "id": "REVIEW-04",
+      "requirement": "Reviewer timeout, invalid JSON, unavailable account or stale decision never allow an unknown action. Report review error and preserve resumable state.",
+      "status": "partial",
+      "evidence": "Invalid JSON, timeout/unavailable reviewer and stale result fail closed and preserve review error. Frozen adversarial fixtures and browser tests pass; live configured model qualification pending."
+    },
+    {
+      "id": "REVIEW-05",
+      "requirement": "Policy update, scope revoke, account switch, navigation or takeover invalidate cached reviews and queued permits. Restart/reconnect does not duplicate submissions.",
+      "status": "partial",
+      "evidence": "Revision-bound one-time permits consumed before effect; account/policy/document/takeover changes invalidate reviews. Durable restart/revoke tests and private observation race tests pass."
+    },
+    {
+      "id": "REVIEW-06",
+      "requirement": "Remembered allow/deny policies are scoped and revocable; deny wins. Audit cannot contain passwords/cookies/token values; private login reaches neither model.",
+      "status": "partial",
+      "evidence": "Deny precedence, scoped/revocable remembered policies and redacted audit implemented; private observations suppressed from both models. Browser tests pass; actual smaller-model privacy evaluation pending."
+    },
+    {
+      "id": "REVIEW-07",
+      "requirement": "Evaluate and pin the smaller reviewer against a frozen representative/adversarial suite. Report false-allow cases, escalation rate, latency and cost. Zero escapes in release-blocking fixtures is necessary but not proof of general safety.",
+      "status": "partial",
+      "evidence": "Frozen21-case qualification harness and model/account version pins implemented. No specific smaller reviewer is qualified yet; account unavailable and live latency/cost/false-allow report pending."
+    },
+    {
+      "id": "REVIEW-08",
+      "requirement": "Test each native/internal/ACP adapter\u2019s interception coverage. A supported run cannot evade required enforcement using unrestricted shell, raw CDP or alternate network tools.",
+      "status": "partial",
+      "evidence": "Internal broker, dedicated Claude MCP browser, Claude coding hooks, Codex stdio command/file/capability approvals and ACP host filesystem/terminal callbacks verified by combined tests. Native-owned sandbox fastpaths remain documented native policy; strict browser handoff remains refused for native modes without complete enforcement. Full matrix acceptance stays open."
+    }
+  ],
+  "updated_at": "2026-10-07"
+}

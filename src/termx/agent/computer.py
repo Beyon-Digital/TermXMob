@@ -15,7 +15,12 @@ class ComputerController:
         self.display_id = display_id
 
     async def screenshot(self) -> bytes:
-        return await asyncio.to_thread(grab_jpeg, self.display_id)
+        from termx.desktop.recording import capture_privacy_revision
+        revision = capture_privacy_revision()
+        frame = await asyncio.to_thread(grab_jpeg, self.display_id)
+        if capture_privacy_revision() != revision:
+            raise PermissionError('Private capture changed while computer observation was in flight')
+        return frame
 
     async def execute(
         self,
@@ -55,6 +60,8 @@ class ComputerController:
         *,
         cancel: asyncio.Event | None = None,
     ) -> None:
+        from termx.desktop.recording import assert_agent_capture_allowed
+        assert_agent_capture_allowed()
         kind = str(action.get("type") or "")
         if kind in {"screenshot", ""}:
             return

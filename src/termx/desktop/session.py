@@ -181,7 +181,7 @@ class DesktopManager:
     def _metrics_payload(self) -> dict[str, Any]:
         return {"type": "metrics", "fps": int(round(self._fps)), "last_capture_ms": self._last_capture_ms}
 
-    async def attach(self, websocket: WebSocket) -> None:
+    async def attach(self, websocket: WebSocket, authorize_control=None) -> None:
         await self._cancel_idle_close()
         permissions = permission_snapshot()
         if permissions.get("screen_recording") == "denied":
@@ -254,6 +254,12 @@ class DesktopManager:
                 except json.JSONDecodeError:
                     continue
                 kind = payload.get("type")
+                protected = kind in {'pointer', 'key', 'text', 'release_all', 'clipboard',
+                                     'display_create', 'display_delete', 'rtc'} or (
+                    kind == 'control' and not bool(payload.get('view_only', True)))
+                if protected and authorize_control is not None and not authorize_control():
+                    await websocket.send_text(json.dumps({'type': 'denied', 'message': 'desktop-control permission required'}))
+                    continue
                 if kind == "control":
                     self.view_only = bool(payload.get("view_only", True))
                     if self.store is not None:

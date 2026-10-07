@@ -34,13 +34,13 @@ class WorkspaceQueries:
     def sessions(self, info: Ctx) -> list[T.SessionInfo]:
         info.context.require("terminal-view")
         return T.SessionInfo.wrap_all(
-            [s.snapshot() for s in info.context.state.sessions.list()]
+            info.context.visible('terminal-view', 'terminal', [s.snapshot() for s in info.context.state.sessions.list()])
         )
 
     @strawberry.field
     @resolver
     def workspace(self, info: Ctx) -> T.Workspace:
-        info.context.require("machine-view")
+        info.context.require_host('machine-view')
         workspace = info.context.state.store.get_workspace()
         return T.Workspace.wrap(
             {
@@ -53,7 +53,7 @@ class WorkspaceQueries:
     @resolver
     def preferences(self, info: Ctx) -> T.Preferences:
         ctx = info.context
-        ctx.require("machine-view")
+        ctx.require_host('machine-view')
         prefs = ctx.state.store.get().terminal
         return T.Preferences.wrap(
             {
@@ -66,7 +66,7 @@ class WorkspaceQueries:
     @strawberry.field
     @resolver
     def commands(self, info: Ctx) -> list[T.SavedCommand]:
-        info.context.require("machine-view")
+        info.context.require_host('machine-view')
         return T.SavedCommand.wrap_all(
             [item.public() for item in info.context.state.store.list_commands()]
         )
@@ -75,7 +75,7 @@ class WorkspaceQueries:
     @resolver
     def directories(self, info: Ctx) -> T.DirectoriesResult:
         ctx = info.context
-        ctx.require("machine-view")
+        ctx.require_host('machine-view')
         prefs = ctx.state.store.get().terminal
         return T.DirectoriesResult.wrap(
             {
@@ -103,6 +103,7 @@ class WorkspaceMutations:
             cwd = validate_cwd(input.cwd or prefs.cwd)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        project_id = ctx.require_path('terminal-control', cwd)
         try:
             session = ctx.state.sessions.create(
                 cols=input.cols,
@@ -115,13 +116,14 @@ class WorkspaceMutations:
             )
         except TerminalError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        ctx.claim('terminal', session.id, project_id)
         return T.SessionInfo.wrap(session.snapshot())
 
     @strawberry.mutation
     @resolver
     def rename_session(self, info: Ctx, session_id: str, title: str) -> T.SessionInfo:
         ctx = info.context
-        ctx.require("terminal-control")
+        ctx.require_resource('terminal-control', 'terminal', session_id)
         session = ctx.state.sessions.rename(session_id, title)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -131,7 +133,7 @@ class WorkspaceMutations:
     @resolver
     def delete_session(self, info: Ctx, session_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("terminal-control")
+        ctx.require_resource('terminal-control', 'terminal', session_id)
         if not ctx.state.sessions.kill(session_id):
             raise HTTPException(status_code=404, detail="session not found")
         return T.Ok.wrap({"ok": True})
@@ -140,7 +142,7 @@ class WorkspaceMutations:
     @resolver
     def save_workspace(self, info: Ctx, sessions: list[WorkspaceSessionInput]) -> T.Workspace:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         saved = ctx.state.store.save_workspace(
             [
                 WorkspaceSession(title=item.title, shell=item.shell, cwd=item.cwd)
@@ -158,7 +160,7 @@ class WorkspaceMutations:
     @resolver
     def restore_workspace(self, info: Ctx) -> T.WorkspaceRestoreResult:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         # Return host-owned live sessions unchanged. Replaying persisted specs
         # on every new client connection duplicated PTYs and then compounded
         # the duplicates when the client saved its next workspace snapshot.
@@ -204,7 +206,7 @@ class WorkspaceMutations:
     @resolver
     def set_preferences(self, info: Ctx, input: PreferencesInput) -> T.Preferences:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         try:
             prefs = ctx.state.store.update_terminal(shell=input.shell, cwd=input.cwd)
         except ValueError as exc:
@@ -215,7 +217,7 @@ class WorkspaceMutations:
     @resolver
     def create_command(self, info: Ctx, input: CommandInput) -> T.SavedCommand:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         try:
             item = ctx.state.store.add_command(input.name, input.command, input.confirm)
         except ValueError as exc:
@@ -227,7 +229,7 @@ class WorkspaceMutations:
     @resolver
     def patch_command(self, info: Ctx, command_id: str, input: CommandPatchInput) -> T.SavedCommand:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         try:
             item = ctx.state.store.patch_command(
                 command_id, input.name, input.command, input.confirm
@@ -242,7 +244,7 @@ class WorkspaceMutations:
     @resolver
     def delete_command(self, info: Ctx, command_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         if not ctx.state.store.delete_command(command_id):
             raise HTTPException(status_code=404, detail="command not found")
         log_event("command_delete", command_id=command_id)
@@ -252,7 +254,7 @@ class WorkspaceMutations:
     @resolver
     def reorder_commands(self, info: Ctx, order: list[str]) -> list[T.SavedCommand]:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         items = ctx.state.store.reorder_commands(order)
         return T.SavedCommand.wrap_all([item.public() for item in items])
 
@@ -260,7 +262,7 @@ class WorkspaceMutations:
     @resolver
     def create_directory(self, info: Ctx, input: DirectoryInput) -> T.SavedDirectory:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         try:
             item = ctx.state.store.add_directory(input.name, input.path)
         except ValueError as exc:
@@ -272,7 +274,7 @@ class WorkspaceMutations:
     @resolver
     def delete_directory(self, info: Ctx, directory_id: str) -> T.Ok:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         if not ctx.state.store.delete_directory(directory_id):
             raise HTTPException(status_code=404, detail="directory not found")
         log_event("directory_delete", directory_id=directory_id)
@@ -282,7 +284,7 @@ class WorkspaceMutations:
     @resolver
     def use_directory(self, info: Ctx, directory_id: str) -> T.UseDirectoryResult:
         ctx = info.context
-        ctx.require("host-admin")
+        ctx.require_host('host-admin')
         try:
             item = ctx.state.store.use_directory(directory_id)
         except KeyError:

@@ -35,6 +35,7 @@ class EngineGateway:
         self._store = store
         self._emit = emit
         self._adapters: dict[str, EngineAdapter] = {}
+        self.browser_service = None
         # set by AppState: resolve connection.<id> -> ConnectionDef-like obj
         self.mcp_resolver: Any = None
         self.credential_lookup: Any = None  # ref -> secret
@@ -54,7 +55,16 @@ class EngineGateway:
     # ------------------------------------------------------------ registry
 
     def register(self, adapter: EngineAdapter) -> None:
+        if self.browser_service is not None:
+            adapter.browser_service = self.browser_service
         self._adapters[adapter.descriptor().id] = adapter
+
+    def set_browser_service(self, service) -> None:
+        self.browser_service = service
+        from termx.agent.policy import redact
+        service.task_summary = lambda task_id: redact(str((self._store.get_task(task_id) or {}).get('prompt', '')))[:1600]
+        for adapter in self._adapters.values():
+            adapter.browser_service = service
 
     def adapter(self, engine: str) -> EngineAdapter:
         try:
@@ -243,7 +253,12 @@ class EngineGateway:
         limits: dict[str, Any] | None = None,
         sandbox_profile: str = "agent",
         approval_mode: str = "standard",
+        attachments: list[dict[str, Any]] | None = None,
+        workflow: str | None = None,
+        on_created: Callable[[str],None] | None = None,
     ) -> dict[str, Any]:
+        from termx.engines.attachments import image_attachments
+        attachments = image_attachments(attachments)
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("task prompt is required")
@@ -251,6 +266,10 @@ class EngineGateway:
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
         adapter = self.adapter(engine)
+        if workflow not in {None,'browser'}:
+            raise ValueError('Unknown native workflow')
+        if workflow=='browser' and (engine!='claude' or not getattr(adapter,'browser_service',None)):
+            raise ValueError('This engine cannot enforce a broker-only browser session; choose Claude browser workflow or Internal')
         defaults = self.settings().engines.get(engine, {}) if self.settings else {}
         if config_options is not None and not isinstance(config_options, dict):
             raise ValueError("config_options must be an object")
@@ -301,6 +320,7 @@ class EngineGateway:
                 "review_required": tools_resolution.review_required,
                 "limits": limits or {},
             },
+            workflow=workflow,
         )
         if (cfg.mode or cfg.config_options) and not hasattr(adapter, "configure_session"):
             raise ValueError(f"{engine} does not expose ACP mode/config selectors")
@@ -314,6 +334,9 @@ class EngineGateway:
             else None
         )
         if existing and existing["engine"] == engine:
+            previous_workflow=(existing.get('payload') or {}).get('extensions_snapshot',{}).get('workflow')
+            if previous_workflow!=workflow:
+                raise ValueError('Browser and coding tool availability cannot change within a native session; create a linked conversation')
             # Host defaults apply to new sessions. Omitted selections on a
             # follow-up preserve the live agent's current configuration.
             cfg.mode = mode or file_cfg.get("engine_mode")
@@ -373,6 +396,16 @@ class EngineGateway:
             status="running",
         )
         task_id = task["id"]
+        if on_created:on_created(task_id)
+        cfg.tools['managed_task_id']=task_id
+        if workflow=='browser':
+            # Trusted identity is bound later by the explicit browser handoff.
+            # This field is never accepted from model tool arguments.
+            cfg.tools['browser_task_id']=task_id
+        if attachments:
+            import base64
+            for item in attachments:
+                self._store.save_artifact(task_id, 'upload', item['mime'], base64.b64decode(item['data']))
 
         if binding is None:
             try:
@@ -445,7 +478,10 @@ class EngineGateway:
                 f'You are the "{custom_agent["name"]}" agent. Follow these '
                 f"instructions:\n{instructions}\n\nTask: {prompt}"
             )
-            await adapter.send(binding, text)
+            if attachments:
+                await adapter.send(binding, text, attachments=attachments)
+            else:
+                await adapter.send(binding, text)
         except Exception as exc:
             self._store.update_task(task_id, status="failed", error=str(exc))
             self._emit(task_id, "task.failed", {"message": str(exc)})
@@ -511,6 +547,8 @@ class EngineGateway:
         resolved = self._store.resolve_approval(
             approval_id, "approved" if decision in {"approved", "approve"} else decision)
         self._emit(task_id, "approval.resolved", {"approval": resolved})
+        if payload.get('engine_method')=='browser.review':
+            self._store.update_task(task_id,status='running')
         if binding is not None and token:
             wire_decision = {
                 "approved": "approve",
@@ -562,6 +600,12 @@ class EngineGateway:
                     buf.append(str(item["text"]))
         elif event.type == "engine.turn.completed":
             self._finish_turn(binding_id, task_id, event.payload)
+        elif event.type=='engine.approval.expired':
+            for approval in self._store.approvals(task_id):
+                if approval['status']=='pending' and approval['payload'].get('engine_request_id')==event.payload.get('request_id'):
+                    resolved=self._store.resolve_approval(approval['id'],'denied')
+                    self._emit(task_id,'approval.resolved',{'approval':resolved})
+            self._store.update_task(task_id,status='running')
         elif event.type == "engine.session.lost":
             self._store.update_engine_session(binding_id, status="lost")
             task = self._store.get_task(task_id)
@@ -613,6 +657,7 @@ class EngineGateway:
             },
         )
         self._emit(task_id, "approval.requested", {"approval": approval})
+        if method=='browser.review':self._store.update_task(task_id,status='awaiting_approval')
         return str(approval["id"])
 
     # ------------------------------------------------------------ lifecycle

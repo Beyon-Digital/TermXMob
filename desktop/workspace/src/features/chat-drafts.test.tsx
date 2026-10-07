@@ -1,0 +1,13 @@
+import {render,screen,fireEvent,cleanup,waitFor} from '@testing-library/react';
+import {afterEach,it,expect,vi} from 'vitest';
+import Chat from './Chat';
+import {sessionDrafts} from '../lib/drafts';
+import {request,type Session} from '../lib/api';
+vi.mock('../lib/api',()=>({gql:vi.fn(async()=>({engine_models:[]})),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
+afterEach(()=>{cleanup();sessionDrafts.clear();vi.clearAllMocks()});
+const row=(id:string):Session=>({id,title:id,engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,turns:[]});
+it('preserves and flushes a draft when switching faster than the autosave delay',async()=>{const a=row('a'),b=row('b');vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;const current=path.includes('/a')?a:b;if(init?.method==='PATCH'){Object.assign(current,JSON.parse(init.body as string).changes);current.revision++}return {...current} as any});const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const {rerender}=render(<Chat session={{...a}} {...props}/>);fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Unsent work'}});rerender(<Chat session={{...b}} {...props}/>);rerender(<Chat session={{...a}} {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Unsent work');await waitFor(()=>expect(a.draft_text).toBe('Unsent work'))});
+
+it('retains unsent text through a real panel unmount and stale metadata remount',async()=>{const a=row('unmount');vi.mocked(request).mockImplementation(async(path,init)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);const props={session:{...a},engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const panel=render(<Chat {...props}/>);fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Draft while loading Workbench'}});panel.unmount();render(<Chat {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Draft while loading Workbench')});
+
+it('never discards a saved local draft because unrelated metadata advanced the revision',()=>{const a={...row('advanced'),revision:99};sessionDrafts.set(a.id,{text:'Preserve through zoom and layout',saved:'Preserve through zoom and layout',dirty:false,revision:2});render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);expect(screen.getByLabelText('Message')).toHaveValue('Preserve through zoom and layout')});

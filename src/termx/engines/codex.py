@@ -84,6 +84,8 @@ class CodexEngine:
         self._initialized = False
         self._account: dict[str, Any] = {}
         self._models: list[str] = []
+        self.browser_service = None
+        self._review_items = {}
 
     # ------------------------------------------------------------------ probe
 
@@ -153,7 +155,10 @@ class CodexEngine:
             mcp_native="supported",     # codex config MCP; per-session TBD
             models=list(self._models),
             notes={
+                "attachments": "image data URLs via the native turn/start input contract; model entitlement applies",
                 "tools_filter": "tool-name filtering is advisory only; enforcement via approvalPolicy + sandboxPolicy",
+                "auto_review": "managed tasks: command/file/permission approval requests use durable host broker; native sandbox fast paths remain native policy, not per-tool host hooks",
+                "restricted_browser": "refused: no verified mechanism removes every alternate native tool",
             },
         )
 
@@ -215,6 +220,9 @@ class CodexEngine:
         approval = _codex_approval_policy(cfg.approval_mode)
         if approval:
             params["approvalPolicy"] = approval
+        if cfg.tools.get('managed_task_id') and self.browser_service:
+            params['approvalsReviewer'] = 'user'
+            params['approvalPolicy'] = 'untrusted'
         result = await self._conn.request(
             "thread/start", {k: v for k, v in params.items() if v is not None}, timeout=30
         )
@@ -230,6 +238,7 @@ class CodexEngine:
             account_scope=self._auth_detail(),
             extensions_snapshot={
                 "skills": [s.get("id") for s in cfg.skills],
+                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask",
                 "mcp": [m.get("connection_id") for m in cfg.mcp_bindings],
             },
         )
@@ -252,11 +261,18 @@ class CodexEngine:
         self._bindings[binding.binding_id] = binding
         return binding
 
+    async def configure_session(self, binding, cfg):
+        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask")
+
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
         await self._ensure_conn()
+        from termx.engines.attachments import image_attachments
         inputs: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        inputs.extend({"type":"image", "url":f"data:{item['mime']};base64,{item['data']}"} for item in image_attachments(attachments))
         params: dict[str, Any] = {"threadId": binding.native_session_id, "input": inputs}
+        if binding.extensions_snapshot.get('managed_task_id') and self.browser_service:
+            params.update(approvalsReviewer='user', approvalPolicy='untrusted')
         result = await self._conn.request("turn/start", params, timeout=30)
         turn = (result or {}).get("turn") or {}
         binding.native_turn_id = turn.get("id")
@@ -306,6 +322,10 @@ class CodexEngine:
         if fut.done():
             return
         approved = decision in ("approve", "approve_always")
+        if method == "browser.review":
+            from termx.engines.action_review import respond_review
+            respond_review(self, binding, entry, approved)
+            return
         if method in ("item/commandExecution/requestApproval",
                       "item/fileChange/requestApproval"):
             wire = {
@@ -393,6 +413,10 @@ class CodexEngine:
         if mapped and binding:
             native: dict[str, Any] = {}
             item = params.get("item") or {}
+            if method == 'item/completed' and self.browser_service:
+                reviewed = self._review_items.pop((binding.binding_id, item.get('id')), None)
+                if reviewed:
+                    self.browser_service.review.complete_external(reviewed.action_id, success=item.get('status') not in {'failed', 'declined', 'cancelled'})
             if isinstance(item, dict) and item.get("id"):
                 native["item_id"] = item["id"]
             if params.get("itemId"):
@@ -430,6 +454,18 @@ class CodexEngine:
         if binding is None or self._approval_sink is None:
             return ({"decision": "decline"} if kind != "elicitation"
                     else {"action": "decline", "content": None})
+        if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"} and self.browser_service:
+            from termx.engines.action_review import authorize
+            from termx.auto_review import ActionBlocked
+            try:
+                checked = await authorize(self, binding, 'run_shell' if method == 'item/commandExecution/requestApproval' else 'native_permission', params, str(params.get('approvalId') or params.get('itemId') or uuid.uuid4().hex))
+                if checked:
+                    envelope, validate, permit = checked
+                    await self.browser_service.review.consume_external(envelope, permit['permit'], validate=validate)
+                    self._review_items[(binding.binding_id, params.get('itemId'))] = envelope
+                    return {'permissions': params.get('permissions', {}), 'scope': 'turn'} if method == 'item/permissions/requestApproval' else {'decision': 'accept'}
+            except (PermissionError, ActionBlocked):
+                return {'permissions': {}, 'scope': 'turn'} if method == 'item/permissions/requestApproval' else {'decision': 'decline'}
         token = f"engreq_{uuid.uuid4().hex[:16]}"
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()

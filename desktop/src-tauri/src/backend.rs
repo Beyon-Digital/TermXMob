@@ -23,7 +23,7 @@ pub struct ReadyInfo {
 
 impl ReadyInfo {
     pub fn window_url(&self) -> String {
-        format!("http://127.0.0.1:{}/?k={}", self.port, self.passcode)
+        format!("http://127.0.0.1:{}/", self.port)
     }
 }
 
@@ -83,7 +83,11 @@ impl Backend {
     }
 
     pub fn port(&self) -> u16 {
-        self.0.config.lock().map(|config| config.port).unwrap_or(config::DEFAULT_PORT)
+        self.0
+            .config
+            .lock()
+            .map(|config| config.port)
+            .unwrap_or(config::DEFAULT_PORT)
     }
 
     pub fn start(&self) {
@@ -98,7 +102,12 @@ impl Backend {
             manager.stop();
             manager.0.restarts.store(0, Ordering::SeqCst);
             manager.0.stop_requested.store(false, Ordering::SeqCst);
-            manager.0.state.lock().map(|mut state| *state = State::Starting).ok();
+            manager
+                .0
+                .state
+                .lock()
+                .map(|mut state| *state = State::Starting)
+                .ok();
             manager.run_session();
         });
     }
@@ -171,7 +180,10 @@ impl Backend {
                 urls: vec![format!("http://127.0.0.1:{port}")],
                 tunnel: None,
             };
-            logging::desktop(&self.0.app, &format!("adopted existing backend on port {port}"));
+            logging::desktop(
+                &self.0.app,
+                &format!("adopted existing backend on port {port}"),
+            );
             self.handle_ready(info);
             return;
         }
@@ -249,28 +261,26 @@ impl Backend {
 
     fn spawn_monitor(&self) {
         let manager = self.clone();
-        thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_millis(250));
-                if manager.0.quitting.load(Ordering::SeqCst) {
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_millis(250));
+            if manager.0.quitting.load(Ordering::SeqCst) {
+                return;
+            }
+            let status = {
+                let mut guard = manager.0.child.lock().unwrap();
+                match guard.as_mut() {
+                    Some(child) => child.try_wait(),
+                    None => return,
+                }
+            };
+            match status {
+                Ok(None) => continue,
+                Ok(Some(status)) => {
+                    let expected = manager.0.stop_requested.load(Ordering::SeqCst);
+                    manager.on_exit(status.code(), expected);
                     return;
                 }
-                let status = {
-                    let mut guard = manager.0.child.lock().unwrap();
-                    match guard.as_mut() {
-                        Some(child) => child.try_wait(),
-                        None => return,
-                    }
-                };
-                match status {
-                    Ok(None) => continue,
-                    Ok(Some(status)) => {
-                        let expected = manager.0.stop_requested.load(Ordering::SeqCst);
-                        manager.on_exit(status.code(), expected);
-                        return;
-                    }
-                    Err(_) => return,
-                }
+                Err(_) => return,
             }
         });
     }
@@ -281,7 +291,10 @@ impl Backend {
         if let Ok(mut info) = self.0.info.lock() {
             *info = None;
         }
-        if expected || self.0.quitting.load(Ordering::SeqCst) || self.0.stop_requested.load(Ordering::SeqCst) {
+        if expected
+            || self.0.quitting.load(Ordering::SeqCst)
+            || self.0.stop_requested.load(Ordering::SeqCst)
+        {
             if let Ok(mut state) = self.0.state.lock() {
                 *state = State::Idle;
             }
@@ -378,7 +391,10 @@ impl Backend {
                 ui::permission_event(&self.0.app, which);
             }
             Some("update") => {
-                let action = value.get("action").and_then(Value::as_str).unwrap_or("check");
+                let action = value
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("check");
                 crate::menu::run_update(&self.0.app, action);
             }
             Some("notify") => {
@@ -530,7 +546,13 @@ pub fn gql(port: u16, passcode: &str, query: &str, variables: Option<Value>) -> 
 pub fn gql_app(app: &AppHandle, query: &str, variables: Option<Value>) -> Option<Value> {
     let backend = app.try_state::<Backend>()?;
     let info = backend.info()?;
-    gql(info.port, &info.passcode, query, variables)
+    crate::workspace::gql_native(app, info.port, query, variables.clone()).or_else(|| {
+        if crate::workspace::legacy_allowed(info.port) {
+            gql(info.port, &info.passcode, query, variables)
+        } else {
+            None
+        }
+    })
 }
 
 fn is_termx(port: u16) -> bool {
@@ -538,7 +560,10 @@ fn is_termx(port: u16) -> bool {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_millis(800))
         .build();
-    match agent.post(&url).send_json(json!({ "query": "{ health { app } }" })) {
+    match agent
+        .post(&url)
+        .send_json(json!({ "query": "{ health { app } }" }))
+    {
         Ok(response) if (200..300).contains(&response.status()) => {
             let value: Option<Value> = response.into_json().ok();
             value

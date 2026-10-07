@@ -126,32 +126,36 @@ def test_send_signal_int() -> None:
 def test_send_signal_int_reaches_foreground_job() -> None:
     async def inner() -> None:
         mgr = SessionManager()
-        session = mgr.create(argv=["bash", "-i"])
-        sink = _Collector()
-        session.subscribe(sink)
-        # Quoted marker: the pty echoes typed input, so only the command's own
-        # output contains the unquoted needle.
-        session.write(b"echo TM''XRDY\n")
-        assert b"TMXRDY" in await _wait_echo(sink, b"TMXRDY")
+        # This kernel job-control proof must not execute the user's shell rc
+        # or terminal-integration hooks, which can delay/consume test input.
+        session = mgr.create(argv=["bash", "--noprofile", "--norc", "-i"])
+        try:
+            sink = _Collector()
+            session.subscribe(sink)
+            # Quoted marker: the pty echoes typed input, so only the command's own
+            # output contains the unquoted needle.
+            session.write(b"echo TM''XRDY\n")
+            assert b"TMXRDY" in await _wait_echo(sink, b"TMXRDY")
 
-        leader_pgrp = os.getpgid(session.proc.pid)
-        session.write(b"sleep 60\n")
-        for _ in range(80):
-            if os.tcgetpgrp(session.master_fd) != leader_pgrp:
-                break
-            await asyncio.sleep(0.05)
-        fg_pgrp = os.tcgetpgrp(session.master_fd)
-        assert fg_pgrp != leader_pgrp, "sleep did not take the pty foreground"
+            leader_pgrp = os.getpgid(session.proc.pid)
+            session.write(b"sleep 60\n")
+            for _ in range(80):
+                if os.tcgetpgrp(session.master_fd) != leader_pgrp:
+                    break
+                await asyncio.sleep(0.05)
+            fg_pgrp = os.tcgetpgrp(session.master_fd)
+            assert fg_pgrp != leader_pgrp, "sleep did not take the pty foreground"
 
-        assert session.send_signal("int") is True
-        for _ in range(80):
-            if os.tcgetpgrp(session.master_fd) == leader_pgrp:
-                break
-            await asyncio.sleep(0.05)
-        assert os.tcgetpgrp(session.master_fd) == leader_pgrp, "SIGINT did not reach the foreground job"
-        session.write(b"echo TM''XDONE\n")
-        assert b"TMXDONE" in await _wait_echo(sink, b"TMXDONE")
-        mgr.kill(session.id)
+            assert session.send_signal("int") is True
+            for _ in range(80):
+                if os.tcgetpgrp(session.master_fd) == leader_pgrp:
+                    break
+                await asyncio.sleep(0.05)
+            assert os.tcgetpgrp(session.master_fd) == leader_pgrp, "SIGINT did not reach the foreground job"
+            session.write(b"echo TM''XDONE\n")
+            assert b"TMXDONE" in await _wait_echo(sink, b"TMXDONE")
+        finally:
+            mgr.kill(session.id)
 
     asyncio.run(inner())
 

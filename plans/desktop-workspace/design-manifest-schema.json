@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TermX desktop design manifest v0.3",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "product",
+    "status",
+    "tokens",
+    "components",
+    "screens",
+    "figma",
+    "parity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.3"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "figma_node_id",
+          "layer",
+          "status",
+          "implementation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "figma_node_id": {
+            "type": "string",
+            "pattern": "^[0-9]+:[0-9]+$"
+          },
+          "layer": {
+            "enum": [
+              "atom",
+              "molecule",
+              "organism",
+              "pattern"
+            ]
+          },
+          "implementation": {
+            "const": "not-started"
+          }
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "figma_node_id",
+          "status",
+          "theme",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^DX-[0-9]{2}$"
+          },
+          "theme": {
+            "enum": [
+              "Light",
+              "Dark"
+            ]
+          },
+          "figma_node_id": {
+            "type": "string",
+            "pattern": "^[0-9]+:[0-9]+$"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "parity": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "required"
+        ],
+        "properties": {
+          "required": {
+            "const": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ wheels/
 
 # Node
 node_modules/
+*.tsbuildinfo
 # The exported web bundle keeps its fonts under assets/node_modules/*/build/;
 # ignoring any of those paths ships packaged builds with no icon font.
 !desktop/web/assets/**
@@ -37,3 +38,5 @@ desktop/src-tauri/resources/backend.pid
 
 # Local desktop signing credentials
 desktop/signing.env
+# CI-pinned runtime package integrity must be versioned.
+!desktop/runtime/package-lock.json

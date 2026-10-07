@@ -72,12 +72,13 @@ class CoreQueries:
         ctx.require("host-admin")
         state = ctx.state
         target, tunnel_url = _connect_target(state)
+        public_passcode = None if state.identity.configured else state.auth.passcode
         return T.ConnectInfo.wrap(
             {
                 "urls": http_urls(state.port),
                 "tunnel_url": tunnel_url,
-                "passcode": state.auth.passcode,
-                "connect_url": connect_url(target, state.auth.passcode),
+                "passcode": public_passcode or "",
+                "connect_url": connect_url(target, public_passcode),
                 "qr_svg": "/api/connect/qr.svg",
             }
         )
@@ -231,12 +232,18 @@ class CoreMutations:
     def pair(self, info: Ctx, input: PairInput | None = None) -> T.PairResult:
         ctx = info.context
         state = ctx.state
-        if state.auth.passcode is not None and not hmac.compare_digest(
+        if state.identity.configured:
+            ctx.require("host-admin")
+            if time() >= state.identity.migration_deadline:
+                raise HTTPException(status_code=409, detail="device migration has ended; use managed sessions")
+        elif state.auth.passcode is not None and not hmac.compare_digest(
             ctx.secret or "", state.auth.passcode
         ):
             raise HTTPException(status_code=401, detail="invalid passcode")
         input = input or PairInput()
         expires_at = time() + input.expires_in_s if input.expires_in_s else None
+        if state.identity.configured:
+            expires_at = min(expires_at or state.identity.migration_deadline, state.identity.migration_deadline)
         token = state.tokens.issue(
             input.scopes, device_name=input.device_name, expires_at=expires_at
         )

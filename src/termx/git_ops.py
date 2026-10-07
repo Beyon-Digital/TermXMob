@@ -159,6 +159,18 @@ def pull(root: str) -> dict[str, Any]:
     return status(root)
 
 
-def push(root: str) -> dict[str, Any]:
-    _require_ok(_git(root, "push", timeout=120))
+def push(root: str, remote: str | None = None, branch: str | None = None) -> dict[str, Any]:
+    args = ['push']
+    if remote is not None or branch is not None:
+        if not isinstance(remote,str) or not isinstance(branch,str) or remote.startswith('-'):
+            raise HTTPException(400, 'Select a configured remote and a local branch')
+        remotes = _require_ok(_git(root,'remote')).splitlines()
+        if remote not in remotes:
+            raise HTTPException(400, 'Remote is not configured for this project')
+        _require_ok(_git(root,'check-ref-format','--branch',branch))
+        _require_ok(_git(root,'show-ref','--verify','refs/heads/'+branch))
+        # New branches/worktrees need explicit upstream enrollment. No force or
+        # implicit HEAD migration; the exact remote/ref is in the review.
+        args += ['--set-upstream',remote,branch]
+    _require_ok(_git(root, *args, timeout=120))
     return status(root)

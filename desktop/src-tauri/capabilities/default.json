@@ -1,7 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Termx window capability. Remote pages served by the local backend intentionally receive no Tauri IPC access.",
-  "windows": ["main", "connect"],
-  "permissions": ["core:default"]
+  "description": "Trusted TermX workspace bridge. Native commands independently verify current local host URL and workspace window; browser remote content receives no native capability.",
+  "windows": [
+    "main",
+    "connect",
+    "workspace-*"
+  ],
+  "permissions": [
+    "core:default"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*"
+    ]
+  }
 }

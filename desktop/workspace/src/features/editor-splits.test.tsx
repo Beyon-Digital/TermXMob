@@ -1,0 +1,27 @@
+import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/react';
+import {afterEach,it,expect,vi} from 'vitest';
+import {EditorView} from '@codemirror/view';
+import Workbench from './Workbench';
+import {gql} from '../lib/api';
+vi.mock('../lib/api',()=>({gql:vi.fn()}));
+vi.mock('./TerminalPanel',()=>({default:()=>null}));
+vi.mock('./Debugger',()=>({default:()=>null}));
+vi.mock('./Delivery',()=>({default:()=>null}));
+vi.mock('./Preview',()=>({default:()=>null}));
+vi.mock('../lib/lsp',()=>({LanguageClient:class{async open(){}async change(){}close(){}},fileUri:()=>'',positionAt:()=>({line:0,character:0})}));
+afterEach(()=>{cleanup();vi.clearAllMocks()});
+it('edits the same real buffer in two views without losing dirty content when the split closes',async()=>{
+ vi.mocked(gql).mockImplementation(async(query:string)=>{if(query.includes('project_tree'))return {project_tree:{entries:[{name:'main.txt',path:'main.txt',directory:false}]}} as any;if(query.includes('save_project_file'))return {save_project_file:{revision:'v2'}} as any;if(query.includes('project_file'))return {project_file:{path:'main.txt',content:'Original content',revision:'v1',editable:true}} as any;return {save_project_file:{revision:'v2'}} as any});
+ const {container}=render(<Workbench project={{id:'project',name:'Project',path:'/fixture'}} visible bottom={false} onError={()=>{}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'main.txt'}));
+ await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('Original content'));
+ fireEvent.change(screen.getByLabelText('Editor split layout'),{target:{value:'vertical'}});
+ await waitFor(()=>expect(container.querySelectorAll('.cm-editor')).toHaveLength(2));
+ const editors=container.querySelectorAll<HTMLElement>('.cm-editor');const secondary=EditorView.findFromDOM(editors[1])!;
+ act(()=>secondary.dispatch({changes:{from:0,to:secondary.state.doc.length,insert:'Unsent split edits'}}));
+ await waitFor(()=>expect(EditorView.findFromDOM(editors[0])!.state.doc.toString()).toBe('Unsent split edits'));
+ fireEvent.change(screen.getByLabelText('Editor split layout'),{target:{value:'none'}});
+ expect(container.querySelectorAll('.cm-editor')).toHaveLength(1);expect(container.querySelector('.cm-content')).toHaveTextContent('Unsent split edits');
+ fireEvent.click(screen.getByRole('button',{name:'Save file'}));
+ await waitFor(()=>expect(vi.mocked(gql).mock.calls.some(([,variables])=>(variables as any)?.input?.content==='Unsent split edits')).toBe(true));await waitFor(()=>expect(screen.getByRole('button',{name:'Save file'})).toBeDisabled());
+});

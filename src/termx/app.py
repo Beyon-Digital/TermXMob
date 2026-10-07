@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, JSONResponse
 
 
 from termx.agent.manager import AgentManager, AdapterFactory
@@ -22,7 +22,9 @@ from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.audit import log_event
 from termx.auth import Auth, extract_passcode
+from termx.identity import AuthenticationService
 from termx.config import (
+    config_dir,
     ConfigStore,
     validate_cwd,
     validate_shell,
@@ -69,9 +71,16 @@ class AppState:
         agent_store: AgentStore | None = None,
         credentials: CredentialStore | None = None,
         adapter_factory: AdapterFactory | None = None,
+        identity: AuthenticationService | None = None,
     ) -> None:
         self.tokens = TokenStore()
-        self.auth = Auth(passcode, token_store=self.tokens)
+        self.identity = identity or AuthenticationService()
+        if identity is None and not self.identity.has_runtime_configuration and os.environ.get("TERMX_AUTH_ADAPTERS_FILE"):
+            from termx.identity_adapters import load_configured_adapters
+            load_configured_adapters(self.identity, os.environ["TERMX_AUTH_ADAPTERS_FILE"])
+        self.auth = Auth(passcode, token_store=self.tokens, identity=self.identity)
+        from termx.authorization import AuthorizationService
+        self.authorization = AuthorizationService(self.identity, self.auth)
         self.store = ConfigStore()
         self.sessions = SessionManager()
         # A saved workspace is only a cold-start recovery plan. It is never a
@@ -146,6 +155,10 @@ class AppState:
         self.notifications.bridge_agent(self.agent, self.agent_store)
         self.port = port
         self.request_shutdown = None
+        from termx.development.debug import DebugService
+        from termx.development.delivery import DeliveryService
+        self.debug = DebugService()
+        self.delivery = DeliveryService(config_dir() / "workspace-delivery")
 
     def mcp_registry(self) -> ConnectionRegistry:
         dirs = [os.path.join(self.agents_root, "mcp")]
@@ -163,12 +176,16 @@ class AppState:
             p["id"]: p["path"] for p in self.projects.projects() if p.get("path")
         }
         roots = default_roots(projects, user_agents_dir=self.agents_root)
+        if getattr(self, "extensions", None):
+            from termx.discovery.roots import ScanRoot
+            roots.extend(ScanRoot(path=path, source="bundled", trusted=True,
+                                  label="Installed workspace extension") for path in self.extensions.active_roots())
         entries, report = DiscoveryIndex(roots).scan()
         states = self.agent_store.all_extension_states()
         out: dict[str, Any] = {}
         for qid, entry in entries.items():
             st = states.get(qid, {})
-            entry.enabled = bool(st.get("enabled", False))
+            entry.enabled = bool(st.get("enabled", entry.source == "bundled"))
             if st.get("trusted"):
                 entry.trusted = True
             out[qid] = entry.as_dict()
@@ -310,7 +327,18 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             log_event("agent_registry_sync_error")
         for task_id in state.agent.pending_recoveries():
             asyncio.create_task(state.agent.recover_task(task_id))
+        state.automation.start()
+        state.runners.start()
+        state.previews.start()
+        await state.runner_agents.startup_reconcile()
         yield
+        await state.automation.close()
+        await state.runner_agents.close()
+        await state.runners.close()
+        await state.previews.close()
+        state.window_recording.close()
+        await state.browser.close()
+        await state.workspace.close()
         state.forwards.stop_all()
         await state.chatgpt.close()
         await state.mcp_pool.shutdown()
@@ -320,6 +348,40 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     app = FastAPI(title="termx", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.termx = state
+    from termx.identity_guard import SessionGuard
+    from termx.identity_http import mount_identity
+
+    app.add_middleware(SessionGuard, state=state)
+    mount_identity(app, state)
+    from termx.authorization_http import mount_authorization
+    from termx.development.http import mount_development
+    mount_authorization(app, state)
+    mount_development(app, state)
+    from termx.workspace import mount_workspace
+    mount_workspace(app, state)
+    from termx.media.http import mount_media
+    mount_media(app, state)
+    from termx.runners.http import mount_runners
+    mount_runners(app, state)
+    from termx.runners.agent_http import mount_runner_agents
+    mount_runner_agents(app, state)
+    from termx.browser.service import BrowserService
+    from termx.browser.router import browser_router
+
+    def browser_session_valid(principal_id, session_id, policy_version):
+        with state.identity._db() as db:
+            row = db.execute("SELECT * FROM sessions WHERE id=? AND principal_id=?", (session_id, principal_id)).fetchone()
+            principal = state.identity._live_principal(db, row)
+            return principal is not None and principal.policy_version == policy_version
+
+    state.browser = BrowserService(config_dir() / "browser", session_valid=browser_session_valid)
+    state.agent.browser = state.browser
+    state.engines.set_browser_service(state.browser)
+    app.include_router(browser_router(state))
+    from termx.desktop.recording_http import mount_window_recording
+    mount_window_recording(app, state)
+    from termx.development.preview import mount_previews
+    mount_previews(app, state)
     cors_origins = [
         item.strip() for item in os.environ.get("TERMX_CORS_ORIGINS", "").split(",") if item.strip()
     ]
@@ -371,7 +433,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> Response:
         _require_scope(state, provided(x_termx_passcode, authorization, k), "host-admin")
         target, _tunnel = _connect_target()
-        svg = qr_svg(connect_url(target, state.auth.passcode))
+        svg = qr_svg(connect_url(target, None if state.identity.configured else state.auth.passcode))
         return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
 
@@ -420,6 +482,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     ) -> FileResponse:
         secret = provided(x_termx_passcode, authorization, k)
         _require_scope(state, secret, "agent-view")
+        state.authorization.require(secret, "agent-view", resource_kind="task", resource_id=task_id)
         artifact = state.agent_store.get_artifact(task_id, artifact_id)
         if artifact is None:
             raise HTTPException(status_code=404, detail="artifact not found")
@@ -542,6 +605,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         k: str | None = Query(default=None),
     ) -> FileResponse:
         _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
+        state.authorization.require_path(provided(x_termx_passcode, authorization, k), "files-read", path, state.projects.projects())
         try:
             resolved = Path(path).expanduser().resolve(strict=True)
         except OSError as exc:
@@ -561,6 +625,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
         _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
+        state.authorization.require_path(provided(x_termx_passcode, authorization, k), "files-write", dir, state.projects.projects())
         name = Path(unquote(x_termx_name or "")).name.strip()
         if not name or name in {".", ".."}:
             raise HTTPException(status_code=400, detail="file name required")
@@ -612,6 +677,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         k: str | None = Query(default=None),
     ) -> FileResponse:
         _require_scope(state, provided(x_termx_passcode, authorization, k), "files-read")
+        state.authorization.require(provided(x_termx_passcode, authorization, k), "files-read", project_id=project_id)
         target = state.projects.resolve(project_id, path)
         if not target.is_file():
             raise HTTPException(status_code=404, detail="not a file")
@@ -628,6 +694,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         k: str | None = Query(default=None),
     ) -> dict[str, object]:
         _require_scope(state, provided(x_termx_passcode, authorization, k), "files-write")
+        state.authorization.require(provided(x_termx_passcode, authorization, k), "files-write", project_id=project_id)
         name = Path(unquote(x_termx_name or "")).name.strip()
         if not name or name in {".", ".."}:
             raise HTTPException(status_code=400, detail="file name required")
@@ -721,6 +788,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             await websocket.close(code=4403)
             return
         try:
+            state.authorization.require(token, "agent-run", project_id=project_id)
+            state.authorization.require(token, "files-read", project_id=project_id)
+        except HTTPException:
+            await websocket.close(code=4403)
+            return
+        try:
             root = state.projects.project(project_id)["path"]
         except HTTPException:
             await websocket.close(code=4404)
@@ -740,6 +813,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             await websocket.close(code=4401)
             return
         if not state.auth.allows(token, "terminal-control"):
+            await websocket.close(code=4403)
+            return
+        try:
+            state.authorization.require(token, "terminal-control", resource_kind="terminal", resource_id=session_id)
+        except HTTPException:
             await websocket.close(code=4403)
             return
         session = state.sessions.get(session_id)
@@ -795,7 +873,12 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         if not state.auth.allows(token, "desktop-view"):
             await websocket.close(code=4403)
             return
-        await state.desktop.attach(websocket)
+        try:
+            state.authorization.require(token, "desktop-view")
+        except HTTPException:
+            await websocket.close(code=4403)
+            return
+        await state.desktop.attach(websocket, authorize_control=lambda: state.authorization.can(token, "desktop-control"))
 
     vendor = PACKAGE_STATIC / "vendor"
 
@@ -809,6 +892,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         return FileResponse(path)
 
     html_headers = {"Cache-Control": "no-store"}
+    from termx.workspace.ui_contract import compatibility, unavailable
+
+    @app.get('/workspace-version.json')
+    def workspace_version():
+        return JSONResponse(compatibility(), headers=html_headers)
 
     @app.get("/_/embed.html")
     def embed() -> FileResponse:
@@ -823,20 +911,25 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         return FileResponse(PACKAGE_STATIC / "connect.html", media_type="text/html", headers=html_headers)
 
     dist = web_dir if web_dir and web_dir.is_dir() else None
+    if dist is None:
+        checkout_bundle = Path(__file__).resolve().parents[2] / 'desktop' / 'workspace' / 'dist'
+        if checkout_bundle.is_dir():
+            dist = checkout_bundle
     index_html = (dist / "index.html") if dist else None
-    fallback = PACKAGE_STATIC / "index.html"
+    compatible_bundle = bool(index_html and index_html.is_file() and re.search(
+        r'<meta\s+name=["\']termx-ui-contract["\']\s+content=["\']3["\']', index_html.read_text()))
 
     @app.get("/")
-    def root() -> FileResponse:
-        if index_html is not None and index_html.is_file():
+    def root():
+        if compatible_bundle:
             return FileResponse(index_html, headers=html_headers)
-        return FileResponse(fallback, headers=html_headers)
+        return unavailable()
 
-    if dist is not None:
+    if dist is not None and compatible_bundle:
 
         @app.get("/{path:path}")
         def spa(path: str) -> FileResponse:
-            if path.startswith("api/") or path.startswith("_/"):
+            if path.startswith(("api/", "_/", "auth/", "graphql")):
                 raise HTTPException(status_code=404)
             target = (dist / path).resolve()
             try:
@@ -846,14 +939,14 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             if target.is_file():
                 return FileResponse(target)
             if index_html is not None and index_html.is_file():
-                return FileResponse(index_html)
-            return FileResponse(fallback)
+                return FileResponse(index_html, headers=html_headers)
+            return unavailable()
     else:
 
         @app.get("/{path:path}")
-        def spa_fallback(path: str) -> FileResponse:
-            if path.startswith("api/") or path.startswith("_/"):
+        def spa_fallback(path: str):
+            if path.startswith(("api/", "_/", "auth/", "graphql")):
                 raise HTTPException(status_code=404)
-            return FileResponse(fallback)
+            return unavailable()
 
     return app

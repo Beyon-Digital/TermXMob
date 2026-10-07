@@ -1,0 +1,13 @@
+# Enrollment resolves the locally built artifact to an immutable sha256 image ID.
+# Build from repository root. No provider keys enter this image or container.
+FROM python:3.14-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends git ripgrep && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir uv==0.11.14
+WORKDIR /opt/termx
+COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
+RUN uv sync --frozen --no-dev --no-editable --compile-bytecode
+ENV PATH="/opt/termx/.venv/bin:$PATH"
+WORKDIR /workspace
+USER 65534:65534
+ENTRYPOINT ["python", "-I", "-m", "termx.runners.worker"]

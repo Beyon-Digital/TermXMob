@@ -166,7 +166,7 @@ def _broker_event(event: dict[str, Any], target: str | None) -> bool:
                 }
             )
         display_id = int(target) if target and str(target).isdigit() else None
-        px, py = _pointer_points(float(event.get("x") or 0), float(event.get("y") or 0), display_id)
+        px, py = ((float(event.get("x") or 0), float(event.get("y") or 0)) if event.get('absolute') else _pointer_points(float(event.get("x") or 0), float(event.get("y") or 0), display_id))
         return broker.send_input(
             {
                 "kind": "mouse",
@@ -239,8 +239,8 @@ def _pointer(event: dict[str, Any], target: str | None = None) -> None:
     if _xtest_pointer(x, y, action, button, event):
         return
     if probe.input_backend == "xdotool":
-        px = int(x) if x > 1 else None
-        py = int(y) if y > 1 else None
+        px = int(x) if x > 1 or event.get('absolute') else None
+        py = int(y) if y > 1 or event.get('absolute') else None
         if px is None or py is None:
             geom = subprocess.run(["xdotool", "getdisplaygeometry"], capture_output=True, text=True, check=False)
             parts = (geom.stdout or "1920 1080").split()
@@ -545,7 +545,7 @@ def _win_pointer(event: dict[str, Any], x: float, y: float, action: str, button:
     _ensure_windows_dpi_awareness()
     INPUT, MOUSEINPUT, _KEYBDINPUT = _win_input_structs()
     user32 = ctypes.windll.user32
-    if x <= 1 and y <= 1:
+    if x <= 1 and y <= 1 and not event.get('absolute'):
         left, top, width, height = _windows_virtual_desktop()
         px = int(left + max(0.0, min(1.0, x)) * max(width - 1, 1))
         py = int(top + max(0.0, min(1.0, y)) * max(height - 1, 1))
@@ -884,7 +884,7 @@ def _xtest_pointer(x: float, y: float, action: str, button: int, event: dict[str
     adapter = _xtest()
     if adapter is None:
         return False
-    if x <= 1 and y <= 1:
+    if x <= 1 and y <= 1 and not event.get('absolute'):
         px = max(0.0, min(1.0, x)) * max(adapter.width - 1, 1)
         py = max(0.0, min(1.0, y)) * max(adapter.height - 1, 1)
     else:
@@ -957,7 +957,7 @@ def _mac_pointer(
         _cg_scroll(event or {})
         return
     dragging = bool((event or {}).get("down"))
-    _cg_pointer(x, y, action, button, dragging=dragging, target=target)
+    _cg_pointer(x, y, action, button, dragging=dragging, target=target, **({'absolute': True} if event.get('absolute') else {}))
 
 
 def _cg_display_bounds(cg: Any, display_id: int | None) -> tuple[float, float, float, float]:
@@ -989,6 +989,7 @@ def _cg_pointer(
     button: int,
     dragging: bool = False,
     target: str | None = None,
+    absolute: bool = False,
 ) -> None:
     try:
         import ctypes
@@ -998,7 +999,7 @@ def _cg_pointer(
         cg = ctypes.CDLL(path)
         display_id = int(target) if target and str(target).isdigit() else None
         bounds = _cg_display_bounds(cg, display_id)
-        px, py = map_normalized(x, y, bounds) if x <= 1 and y <= 1 else (x, y)
+        px, py = map_normalized(x, y, bounds) if x <= 1 and y <= 1 and not absolute else (x, y)
 
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]

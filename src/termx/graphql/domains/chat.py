@@ -112,14 +112,14 @@ class ChatQueries:
         if archived in {"1", "true", "all"}:
             flag = None if archived == "all" else True
         return T.HostConversation.wrap_all(
-            ctx.state.agent_store.list_conversations(archived=flag)
+            ctx.visible('agent-view', 'conversation', ctx.state.agent_store.list_conversations(archived=flag))
         )
 
     @strawberry.field
     @resolver
     def conversation(self, info: Ctx, conversation_id: str) -> T.HostConversation:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_resource('agent-view', 'conversation', conversation_id)
         conversation = ctx.state.agent_store.get_conversation(
             conversation_id, include_turns=True
         )
@@ -131,14 +131,14 @@ class ChatQueries:
     @resolver
     def custom_agents(self, info: Ctx) -> list[T.HostCustomAgent]:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         return T.HostCustomAgent.wrap_all(ctx.state.agent_store.list_custom_agents())
 
     @strawberry.field
     @resolver
     def custom_agent(self, info: Ctx, agent_id: str) -> T.HostCustomAgent:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         agent = ctx.state.agent_store.get_custom_agent(agent_id)
         if agent is None:
             raise HTTPException(status_code=404, detail="custom agent not found")
@@ -148,7 +148,7 @@ class ChatQueries:
     @resolver
     def custom_agent_export(self, info: Ctx, agent_id: str) -> T.CustomAgentFile:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         slug = _slug_for_agent(ctx.state, agent_id)
         raw = ctx.state.agent_registry.read_raw(slug) if slug else None
         if raw is None:
@@ -165,7 +165,7 @@ class ChatQueries:
         enabled: bool | None = None,
     ) -> T.ExtensionsResult:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         entries, report = ctx.state.extension_scan()
         items = list(entries.values())
         if kind:
@@ -180,7 +180,7 @@ class ChatQueries:
     @resolver
     def extension(self, info: Ctx, qid: str) -> T.ExtensionEntry:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         entries, _ = ctx.state.extension_scan()
         entry = entries.get(qid)
         if entry is None:
@@ -198,7 +198,7 @@ class ChatQueries:
     @resolver
     def mcp_connections(self, info: Ctx) -> list[T.McpConnectionInfo]:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         status = ctx.state.mcp_pool.status()
         out = []
         for conn in ctx.state.mcp_registry().list():
@@ -216,7 +216,14 @@ class ChatMutations:
     @resolver
     def create_conversation(self, info: Ctx, input: ConversationInput) -> T.HostConversation:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require('agent-control')
+        ctx.state.authorization.require_creation(ctx.secret, 'agent-control')
+        if input.project_id:
+            ctx.require_project('agent-control', input.project_id)
+        if input.cwd:
+            actual_project = ctx.require_path('agent-control', input.cwd)
+            if input.project_id and input.project_id != actual_project:
+                raise HTTPException(403, 'conversation path/project mismatch')
         conversation = ctx.state.agent_store.create_conversation(
             title=input.title,
             project_id=input.project_id,
@@ -229,6 +236,7 @@ class ChatMutations:
             archived=input.archived,
             draft=input.draft,
         )
+        ctx.claim('conversation', conversation['id'], conversation.get('project_id'))
         return T.HostConversation.wrap(conversation)
 
     @strawberry.mutation
@@ -237,7 +245,14 @@ class ChatMutations:
         self, info: Ctx, conversation_id: str, input: ConversationPatchInput
     ) -> T.HostConversation:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'conversation', conversation_id)
+        if input.project_id:
+            ctx.require_project('agent-control', input.project_id)
+        if input.cwd:
+            ctx.require_path('agent-control', input.cwd)
+        existing = ctx.state.agent_store.get_conversation(conversation_id)
+        if existing and input.project_id is not None and input.project_id != existing.get('project_id'):
+            ctx.require_host('host-admin')
         updates = {
             key: value
             for key, value in {
@@ -263,7 +278,7 @@ class ChatMutations:
     @resolver
     def delete_conversation(self, info: Ctx, conversation_id: str) -> T.Deleted:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'conversation', conversation_id)
         if not ctx.state.agent_store.delete_conversation(conversation_id):
             raise HTTPException(status_code=404, detail="conversation not found")
         return T.Deleted.wrap({"deleted": conversation_id})
@@ -274,7 +289,9 @@ class ChatMutations:
         self, info: Ctx, conversation_id: str, input: ConversationTurnInput
     ) -> T.ConversationTurn:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_resource('agent-control', 'conversation', conversation_id)
+        if input.task_id:
+            ctx.require_resource('agent-view', 'task', input.task_id)
         try:
             turn = ctx.state.agent_store.add_conversation_turn(
                 conversation_id,
@@ -294,7 +311,7 @@ class ChatMutations:
     @resolver
     def create_custom_agent(self, info: Ctx, input: CustomAgentInput) -> T.HostCustomAgent:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         try:
             agent = ctx.state.agent_registry.save(_agent_file_from_input(input))
         except (ValueError, AgentFileError) as exc:
@@ -308,7 +325,7 @@ class ChatMutations:
         self, info: Ctx, agent_id: str, input: CustomAgentPatchInput
     ) -> T.HostCustomAgent:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         state = ctx.state
         slug = _slug_for_agent(state, agent_id)
         if slug is None:
@@ -406,7 +423,7 @@ class ChatMutations:
     @resolver
     def delete_custom_agent(self, info: Ctx, agent_id: str) -> T.Deleted:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         state = ctx.state
         slug = _slug_for_agent(state, agent_id)
         if slug is not None and state.agent_registry.delete(slug):
@@ -419,7 +436,7 @@ class ChatMutations:
     @resolver
     def duplicate_custom_agent(self, info: Ctx, agent_id: str) -> T.HostCustomAgent:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         state = ctx.state
         slug = _slug_for_agent(state, agent_id)
         dup = state.agent_registry.duplicate(slug) if slug else None
@@ -434,7 +451,7 @@ class ChatMutations:
         self, info: Ctx, input: CustomAgentImportInput
     ) -> T.HostCustomAgent:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         try:
             agent = ctx.state.agent_registry.import_markdown(
                 input.markdown, source=input.source or "import"
@@ -448,7 +465,7 @@ class ChatMutations:
     @resolver
     def rescan_extensions(self, info: Ctx) -> T.ExtensionsResult:
         ctx = info.context
-        ctx.require("agent-view")
+        ctx.require_host('agent-view')
         ctx.state.agent_registry.sync()
         entries, report = ctx.state.extension_scan()
         return T.ExtensionsResult.wrap(
@@ -461,7 +478,7 @@ class ChatMutations:
         self, info: Ctx, qid: str, input: ExtensionStateInput
     ) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         entries, _ = ctx.state.extension_scan()
         if qid not in entries:
             raise HTTPException(status_code=404, detail="extension not found")
@@ -474,7 +491,7 @@ class ChatMutations:
     @resolver
     def create_mcp_connection(self, info: Ctx, input: McpConnectionInput) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         try:
             conn = validate_connection(dict(input.data or {}))
         except ConnectionError_ as exc:
@@ -494,7 +511,7 @@ class ChatMutations:
     def trust_mcp_connection(self, info: Ctx, conn_id: str) -> JSON:
         """Explicit user consent: flip a def's ``trust`` to trusted on disk."""
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         conn = _conn_or_404(ctx.state, conn_id)
         conn.trust = "trusted"
         ctx.state.mcp_registry().save(conn)
@@ -504,7 +521,7 @@ class ChatMutations:
     @resolver
     async def connect_mcp_connection(self, info: Ctx, conn_id: str) -> T.McpConnectResult:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         state = ctx.state
         conn = _conn_or_404(state, conn_id)
         if not conn.enabled:
@@ -557,7 +574,7 @@ class ChatMutations:
     @resolver
     async def disconnect_mcp_connection(self, info: Ctx, conn_id: str) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         await ctx.state.mcp_pool.disconnect(
             conn_id if conn_id.startswith("connection.") else f"connection.{conn_id}"
         )
@@ -569,7 +586,7 @@ class ChatMutations:
         self, info: Ctx, conn_id: str, tool: str, input: McpToolCallInput | None = None
     ) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         conn = _conn_or_404(ctx.state, conn_id)
         fq = conn.id
         catalog = ctx.state.mcp_pool.catalog(fq) or {}
@@ -591,7 +608,7 @@ class ChatMutations:
     @resolver
     def delete_mcp_connection(self, info: Ctx, conn_id: str) -> JSON:
         ctx = info.context
-        ctx.require("agent-control")
+        ctx.require_host('agent-control')
         conn = _conn_or_404(ctx.state, conn_id)
         if not conn.path:
             raise HTTPException(status_code=409, detail="connection has no file to delete")

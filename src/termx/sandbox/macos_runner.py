@@ -172,7 +172,7 @@ _SYSTEM_READ_LITERALS = (
     "/Library/Preferences/com.apple.dt.Xcode.plist",
     "/Library/Preferences/com.apple.dt.XcodeHelper.plist",
 )
-_SYSTEM_EXEC_ROOTS = ("/usr", "/bin", "/sbin", "/opt", "/Applications", "/System")
+_SYSTEM_EXEC_ROOTS = ("/usr", "/bin", "/sbin", "/opt", "/Applications", "/System", "/Library/Developer")
 _DEV_WRITE = ('/dev/null', '/dev/tty', '/dev/ptmx', '/dev/dtracehelper')
 
 # Per-tree rlimit defaults mirroring linux-ns where macOS can express them.

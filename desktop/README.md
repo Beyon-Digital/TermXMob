@@ -7,12 +7,22 @@ native lifecycle, tray/menu, notifications, permissions onboarding, and installe
 ```
 Termx.app / Termx.exe / termx.AppImage
 └── Tauri shell (Rust)
-    ├── chooses/adopts a backend port and passcode
+    ├── chooses/adopts a backend port and retains native bootstrap authority
     ├── spawns Resources/backend/termx-backend --desktop --port N --passcode ...
     ├── reads JSON events from sidecar stdout (ready / notify)
-    ├── loads http://127.0.0.1:N/?k=<passcode> in the system webview
+    ├── loads http://127.0.0.1:N/ with the dedicated workspace UI
+    ├── native origin-checked bridge signs in and holds access tokens in Rust memory
+    ├── OS credential storage holds rotating refresh tokens scoped to host identity
     └── on quit: POST /api/shutdown → wait → kill process tree
 ```
+
+The workspace URL contains no passcode or JWT. The bootstrap credential is
+available only to the native shell for an unconfigured local host; managed sign-in
+never falls back to it after a permission denial. Password and completed OIDC
+sign-in become the same managed session. A shared native bridge serializes refresh
+rotation across workspace windows, stores refresh secrets in the OS credential
+store, and uses HttpOnly access cookies for authenticated sockets. Detaching a
+window opens a credential-free session/panel URL against the same backend.
 
 ## Layout
 
@@ -21,14 +31,18 @@ Termx.app / Termx.exe / termx.AppImage
 | `bootstrap/` | Tiny loading page shown until the backend is ready |
 | `backend_entry.py` | PyInstaller entrypoint |
 | `termx-backend.spec` | Onedir spec (web export, static files, macOS helpers) |
-| `scripts/build_sidecar.py` | Export web → PyInstaller → stage/sign for Tauri |
+| `workspace/` | Dedicated desktop/browser React workspace; Expo remains mobile |
+| `runtime/` | Pinned language-server packages and release runtime provenance |
+| `scripts/prepare_runtime.py` | Stage pinned Chromium, verified js-debug, and language assets |
+| `scripts/build_sidecar.py` | Package the workspace/runtime with Python → stage/sign for Tauri |
 | `scripts/sign_macos_sidecar.sh` | Sign every Mach-O in the sidecar (inner→outer) |
 | `src-tauri/` | Rust shell |
 
 ## Releasing from GitHub Actions
 
-`.github/workflows/desktop.yml` builds and publishes installers on GitHub — nothing is
-built or uploaded from a local machine.
+`.github/workflows/desktop.yml` builds and publishes Rust delivery binaries and
+installers on GitHub. Source checks and isolated Python/container tests run locally;
+Rust delivery binaries are built only in CI.
 
 Trigger options:
 
@@ -71,10 +85,9 @@ therefore uses two runners:
 - `macos-15` → Apple Silicon (M-series) → `Termx_<version>_aarch64.dmg`
 - `macos-15-intel` → Intel (x86_64) → `Termx_<version>_x64.dmg`
 
-`macos-15-intel` is GitHub's supported Intel label (available through August 2027).
-If your plan or org does not provide it, run the workflow with **include_intel =
-false**; Apple Silicon users are unaffected and Intel users can build from source.
-`macos-26-intel` is a newer alternative label if you want the latest image.
+`macos-15-intel` is the Intel label configured in this workflow. If the account
+cannot use that runner, run with **include_intel = false** while arranging an
+available Intel CI runner for the same target. Delivery builds remain in CI.
 
 Windows (`windows-latest`) and Linux (`ubuntu-22.04`) run on x64, which is what
 virtually all desktop users download.
@@ -217,22 +230,20 @@ required to publish.
   commits signed helper binaries; the release workflow also builds them fresh on the
   runner, so releases never depend on that commit.
 
-## Local build
+## Workspace development and release packaging
 
-Prerequisites: Rust, `uv`, and PyInstaller via the packaging group.
-The web UI is prebuilt in `desktop/web` (committed); refresh it from the private
-client repo with `desktop/scripts/update_web_ui.sh` when the client changes.
+The dedicated UI is built from `desktop/workspace`, with the same generated bundle served to native desktop and external browsers. `desktop/scripts/update_web_ui.sh` builds this workspace; it never clones or modifies the mobile Expo repository.
 
 ```bash
-uv sync --group packaging
-uv run --group packaging python desktop/scripts/build_sidecar.py
-
-cd desktop/src-tauri
-cargo tauri build                 # release installers
-cargo tauri build --debug --bundles app   # fast local .app for testing
+pnpm --dir desktop/workspace install --frozen-lockfile
+pnpm --dir desktop/workspace test
+pnpm --dir desktop/workspace build
+uv run termx --host 127.0.0.1 --port 8787
 ```
 
-The sidecar stage lives in `desktop/src-tauri/resources/backend/` (gitignored).
+Rust delivery binaries and installers are built only through `.github/workflows/desktop.yml`. That workflow installs the frozen Python development/media/webrtc extras, prepares matching Chromium and pinned js-debug/language assets, then packages `desktop/workspace/dist` into the sidecar. Its frozen runtime smoke check must pass before the installer is published. Source checking with `cargo check` is separate from a delivery build.
+
+The sidecar stage lives in `desktop/src-tauri/resources/backend/` (gitignored). See [runtime/README.md](runtime/README.md) for package versions, integrity, host prerequisites and remaining platform verification.
 
 ## Platform artifacts
 
@@ -364,3 +375,9 @@ Hardware- and GUI-only paths that CI cannot assert:
   relaunch, confirm stale sidecar cleanup.
 - Upgrade/uninstall through the produced installers; user data remains in the config
   directory.
+
+## Linux window capture and recording dependencies
+
+Exact application-window capture requires an X11 session, `wmctrl` for enumeration, ImageMagick `import` for exact-window pixels and `xdotool` for scoped input. Debian/RPM installers declare these runtime packages. AppImage users need to install them through their distribution package manager. A normal desktop window manager supplies EWMH window metadata; CI starts Openbox inside Xvfb and captures only a uniquely named `xmessage` fixture created by the test. CI-only fixture packages are `xvfb`, `openbox` and `x11-apps`.
+
+A pure Wayland session requires a portal adapter and explicit OS consent for window capture. The current X11 adapter reports that boundary and never substitutes a full-desktop crop. macOS exact-window capture requires Screen Recording permission on the actual device. Headless Chromium accessibility tests do not require that native capture permission.

@@ -1,0 +1,659 @@
+const assetPathPrefix = "https://www.figma.com/api/mcp/asset/98d4bfad-b5d9-48fc-b34b-b24cdf25c389";
+const imgFrame = `${assetPathPrefix}/f6959.svg`;
+const imgFrame1 = `${assetPathPrefix}/3eb60.svg`;
+const imgFrame2 = `${assetPathPrefix}/c5fe8.svg`;
+const imgFrame3 = `${assetPathPrefix}/4fb85.svg`;
+const imgFrame4 = `${assetPathPrefix}/6efce.svg`;
+const imgFrame5 = `${assetPathPrefix}/3dd9f.svg`;
+const imgFrame6 = `${assetPathPrefix}/5011d.svg`;
+const imgFrame7 = `${assetPathPrefix}/252c5.svg`;
+const imgFrame8 = `${assetPathPrefix}/91050.svg`;
+const imgFrame9 = `${assetPathPrefix}/094e1.svg`;
+const imgFrame10 = `${assetPathPrefix}/a1773.svg`;
+const imgFrame11 = `${assetPathPrefix}/df8e3.svg`;
+const imgFrame12 = `${assetPathPrefix}/85436.svg`;
+const imgFrame13 = `${assetPathPrefix}/3026d.svg`;
+const imgFrame14 = `${assetPathPrefix}/e7233.svg`;
+const imgFrame15 = `${assetPathPrefix}/92e4c.svg`;
+const imgFrame16 = `${assetPathPrefix}/1f8ed.svg`;
+const imgFrame17 = `${assetPathPrefix}/ede27.svg`;
+
+export default function Dx01ChatFocus() {
+  return (
+    <div className="bg-[var(--background,#151716)] content-stretch flex gap-[var(--space-0,0px)] items-start p-[var(--space-0,0px)] relative size-full" data-node-id="6:2" data-name="DX-01 · Chat · Focus">
+      <div className="bg-[var(--sidebar,#111312)] content-stretch flex flex-col gap-[8px] h-[900px] items-start px-[var(--space-12,12px)] py-[16px] relative shrink-0 w-[244px]" data-node-id="6:3" data-name="Organism/Sidebar/Projects">
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[42px] items-center justify-between overflow-clip relative shrink-0 w-[220px]" data-node-id="I6:3;5:66" data-name="Brand">
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:67" data-name="Atom/Text/Heading">
+            <p className="[word-break:break-word] font-['Geist:SemiBold'] font-semibold leading-[30px] relative shrink-0 text-[22px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:67;4:11">
+              TermX
+            </p>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 size-[32px]" data-node-id="I6:3;5:69" data-name="Action/left">
+            <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:69;4:153" data-name="Atom/Icon/left">
+              <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:69;4:153;4:76" data-name="Frame">
+                <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:76" data-name="Nav/New chat">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:76;4:183" data-name="Atom/Icon/plus">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:76;4:183;4:17" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame1} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:76;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:76;4:186;4:5">
+              New chat
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:84" data-name="Nav/Search workspace">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:84;4:183" data-name="Atom/Icon/search">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:84;4:183;4:35" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame2} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:84;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:84;4:186;4:5">
+              Search workspace
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[var(--space-8,8px)] h-[48px] items-start justify-end overflow-clip relative shrink-0 w-[220px]" data-node-id="I6:3;5:93" data-name="Section title">
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:94" data-name="Atom/Text/Caption">
+            <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:3;5:94;4:3">
+              PROJECTS
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:96" data-name="Nav/TermX">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:96;4:189" data-name="Atom/Icon/folder">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:96;4:189;4:32" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:96;4:192" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:96;4:192;4:5">
+              TermX
+            </p>
+          </div>
+        </div>
+        <div className="bg-[var(--muted,#262c28)] content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center pl-[var(--space-24,24px)] pr-[var(--space-8,8px)] py-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:104" data-name="Nav/Verify checkout">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:104;4:189" data-name="Atom/Icon/chat">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:104;4:189;4:29" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:104;4:192" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:104;4:192;4:5">
+              Verify checkout
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center pl-[var(--space-24,24px)] pr-[var(--space-8,8px)] py-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:112" data-name="Nav/Desktop workspace">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:112;4:183" data-name="Atom/Icon/chat">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:112;4:183;4:29" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:112;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:112;4:186;4:5">
+              Desktop workspace
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center pl-[var(--space-24,24px)] pr-[var(--space-8,8px)] py-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:120" data-name="Nav/Browser research">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:120;4:183" data-name="Atom/Icon/chat">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:120;4:183;4:29" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:120;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:120;4:186;4:5">
+              Browser research
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:128" data-name="Nav/LedgerMind">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:128;4:183" data-name="Atom/Icon/folder">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:128;4:183;4:32" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:128;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:128;4:186;4:5">
+              LedgerMind
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:136" data-name="Nav/Outinfluence">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:136;4:183" data-name="Atom/Icon/folder">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:136;4:183;4:32" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame3} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:136;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:136;4:186;4:5">
+              Outinfluence
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[var(--space-8,8px)] h-[48px] items-start justify-end overflow-clip relative shrink-0 w-[220px]" data-node-id="I6:3;5:144" data-name="Recent">
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:145" data-name="Atom/Text/Caption">
+            <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:3;5:145;4:3">
+              RECENT
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:147" data-name="Nav/Notes from yesterday">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:147;4:183" data-name="Atom/Icon/chat">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:147;4:183;4:29" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:147;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:147;4:186;4:5">
+              Notes from yesterday
+            </p>
+          </div>
+        </div>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:155" data-name="Nav/Release checklist">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:155;4:183" data-name="Atom/Icon/chat">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:155;4:183;4:29" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame4} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:155;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:155;4:186;4:5">
+              Release checklist
+            </p>
+          </div>
+        </div>
+        <div className="flex-[1_0_0] min-h-px relative w-[220px]" data-node-id="I6:3;5:163" data-name="Flexible space" />
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:164" data-name="Nav/Automations">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:164;4:183" data-name="Atom/Icon/clock">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:164;4:183;4:97" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame5} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:164;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:3;5:164;4:186;4:5">
+              Automations
+            </p>
+          </div>
+        </div>
+        <a className="content-stretch cursor-pointer flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:173" data-name="Nav/Dedicated runners">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:173;4:183" data-name="Atom/Icon/cloud">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:173;4:183;4:94" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame6} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:173;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] text-left whitespace-nowrap" data-node-id="I6:3;5:173;4:186;4:5">
+              Dedicated runners
+            </p>
+          </div>
+        </a>
+        <a className="content-stretch cursor-pointer flex gap-[var(--space-8,8px)] h-[36px] items-center p-[var(--space-8,8px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[216px]" data-node-id="I6:3;5:181" data-name="Nav/Settings & extensions">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:181;4:183" data-name="Atom/Icon/settings">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:181;4:183;4:60" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame7} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:181;4:186" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] text-left whitespace-nowrap" data-node-id="I6:3;5:181;4:186;4:5">{`Settings & extensions`}</p>
+          </div>
+        </a>
+        <div className="content-stretch flex gap-[var(--space-8,8px)] h-[48px] items-center overflow-clip relative shrink-0 w-[220px]" data-node-id="I6:3;5:192" data-name="Signed-in identity">
+          <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:3;5:193" data-name="Atom/Icon/lock">
+            <div className="relative shrink-0 size-[20px]" data-node-id="I6:3;5:193;4:56" data-name="Frame">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame8} />
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:3;5:197" data-name="Atom/Text/UI">
+            <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:3;5:197;4:5">
+              Jai · This Mac
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="content-stretch flex flex-col gap-[var(--space-0,0px)] h-[900px] items-start overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[1196px]" data-node-id="6:198" data-name="Workspace">
+        <div className="bg-[var(--background,#151716)] content-stretch flex h-[56px] items-center justify-between pl-[24px] pr-[16px] relative shrink-0 w-[1196px]" data-node-id="6:199" data-name="Organism/WorkspaceHeader">
+          <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center overflow-clip relative shrink-0 w-[420px]" data-node-id="I6:199;5:468" data-name="Breadcrumb">
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:199;5:469" data-name="Atom/Text/UI">
+              <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:199;5:469;4:5">
+                This Mac
+              </p>
+            </div>
+            <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:199;5:471" data-name="Atom/Icon/chevron">
+              <div className="relative shrink-0 size-[20px]" data-node-id="I6:199;5:471;4:23" data-name="Frame">
+                <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame9} />
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:199;5:474" data-name="Atom/Text/UI">
+              <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:199;5:474;4:5">
+                TermX
+              </p>
+            </div>
+            <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:199;5:476" data-name="Atom/Icon/chevron">
+              <div className="relative shrink-0 size-[20px]" data-node-id="I6:199;5:476;4:23" data-name="Frame">
+                <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame9} />
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:199;5:479" data-name="Atom/Text/UI">
+              <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:199;5:479;4:5">
+                Verify checkout
+              </p>
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center overflow-clip relative shrink-0 w-[450px]" data-node-id="I6:199;5:481" data-name="Layout controls">
+            <div className="bg-[var(--muted,#262c28)] content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[78px]" data-node-id="I6:199;5:482" data-name="Action/Chat">
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:199;5:482;4:128" data-name="Atom/Text/UI">
+                <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:199;5:482;4:128;4:5">
+                  Chat
+                </p>
+              </div>
+            </div>
+            <a className="content-stretch cursor-pointer flex gap-[var(--space-8,8px)] h-[36px] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[100px]" data-node-id="I6:199;5:485" data-name="Action/Workbench">
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:199;5:485;4:128" data-name="Atom/Text/UI">
+                <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] text-left whitespace-nowrap" data-node-id="I6:199;5:485;4:128;4:5">
+                  Workbench
+                </p>
+              </div>
+            </a>
+            <a className="content-stretch cursor-pointer flex gap-[var(--space-8,8px)] h-[36px] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[88px]" data-node-id="I6:199;5:488" data-name="Action/Browser">
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:199;5:488;4:128" data-name="Atom/Text/UI">
+                <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] text-left whitespace-nowrap" data-node-id="I6:199;5:488;4:128;4:5">
+                  Browser
+                </p>
+              </div>
+            </a>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 size-[32px]" data-node-id="I6:199;5:491" data-name="Action/left">
+              <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:199;5:491;4:153" data-name="Atom/Icon/left">
+                <div className="relative shrink-0 size-[20px]" data-node-id="I6:199;5:491;4:153;4:76" data-name="Frame">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame} />
+                </div>
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 size-[32px]" data-node-id="I6:199;5:498" data-name="Action/right">
+              <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:199;5:498;4:153" data-name="Atom/Icon/right">
+                <div className="relative shrink-0 size-[20px]" data-node-id="I6:199;5:498;4:153;4:80" data-name="Frame">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame10} />
+                </div>
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 size-[32px]" data-node-id="I6:199;5:505" data-name="Action/bottom">
+              <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:199;5:505;4:153" data-name="Atom/Icon/bottom">
+                <div className="relative shrink-0 size-[20px]" data-node-id="I6:199;5:505;4:153;4:84" data-name="Frame">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame11} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="content-stretch flex flex-col gap-[var(--space-16,16px)] h-[816px] items-center overflow-clip p-[var(--space-32,32px)] relative shrink-0 w-[1196px]" data-node-id="6:264" data-name="Content">
+          <div className="content-stretch flex flex-col gap-[var(--space-8,8px)] h-[62px] items-start overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[752px]" data-node-id="6:272" data-name="Session heading">
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:273" data-name="Atom/Text/Heading">
+              <p className="[word-break:break-word] font-['Geist:SemiBold'] font-semibold leading-[30px] relative shrink-0 text-[22px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:273;4:11">
+                Verify the checkout changes
+              </p>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:275" data-name="Atom/Text/Caption">
+              <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-pre" data-node-id="I6:275;4:3">{`TermX project  /  Session  /  Ready to continue`}</p>
+            </div>
+          </div>
+          <div className="bg-[var(--muted,#262c28)] content-stretch flex flex-col gap-[var(--space-4,4px)] h-[80px] items-start overflow-clip p-[var(--space-16,16px)] relative rounded-[var(--radius-12,12px)] shrink-0 w-[752px]" data-node-id="6:277" data-name="User message">
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0 w-[720px]" data-node-id="6:278" data-name="Atom/Text/Body">
+              <div className="[word-break:break-word] flex-[1_0_0] font-['Geist:Regular'] font-normal leading-[0] min-w-px relative text-[14px] text-[color:var(--foreground,#f0f3ed)]" data-node-id="I6:278;4:7">
+                <p className="leading-[22px] mb-0">Check the checkout flow, fix anything broken, and prepare the release.</p>
+                <p className="leading-[22px]">Stop before publishing.</p>
+              </div>
+            </div>
+          </div>
+          <div className="content-stretch flex flex-col gap-[var(--space-16,16px)] h-[178px] items-start overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[752px]" data-node-id="6:280" data-name="Assistant response">
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:281" data-name="Atom/Text/Heading">
+              <p className="[word-break:break-word] font-['Geist:SemiBold'] font-semibold leading-[30px] relative shrink-0 text-[22px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:281;4:11">
+                The checkout fix is ready.
+              </p>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0 w-[736px]" data-node-id="6:283" data-name="Atom/Text/Reading">
+              <div className="[word-break:break-word] flex-[1_0_0] font-['Geist:Regular'] font-normal leading-[0] min-w-px relative text-[16px] text-[color:var(--foreground,#f0f3ed)]" data-node-id="I6:283;4:9">
+                <p className="leading-[26px] mb-0">I fixed the empty-cart edge case and added a regression test.</p>
+                <p className="leading-[26px]">I’m checking the browser flow before we publish.</p>
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] h-[40px] items-center overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[752px]" data-node-id="6:285" data-name="Changed files">
+              <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="6:286" data-name="Atom/Icon/file">
+                <div className="relative shrink-0 size-[20px]" data-node-id="I6:286;4:101" data-name="Frame">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame12} />
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:289" data-name="Atom/Text/UI">
+                <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:289;4:5">
+                  checkout.tsx
+                </p>
+              </div>
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:291" data-name="Atom/Text/Caption">
+                <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--accent,#92d4a3)] whitespace-pre" data-node-id="I6:291;4:3">{`+18  −6`}</p>
+              </div>
+              <div className="bg-[var(--muted,#262c28)] content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[132px]" data-node-id="6:293" data-name="Action/Review changes">
+                <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:293;4:116" data-name="Atom/Text/UI">
+                  <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:293;4:116;4:5">
+                    Review changes
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="content-stretch flex flex-col gap-[var(--space-0,0px)] h-[100px] items-start overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[752px]" data-node-id="6:297" data-name="Progress">
+            <div className="content-stretch flex gap-[var(--space-12,12px)] h-[44px] items-center p-[var(--space-8,8px)] relative shrink-0 w-[752px]" data-node-id="6:298" data-name="Molecule/ToolEvent">
+              <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:298;4:196" data-name="Atom/Icon/check">
+                <div className="relative shrink-0 size-[20px]" data-node-id="I6:298;4:196;4:53" data-name="Frame">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame13} />
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:298;4:199" data-name="Atom/Text/UI">
+                <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:298;4:199;4:5">
+                  Code changes verified
+                </p>
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-12,12px)] h-[44px] items-center p-[var(--space-8,8px)] relative shrink-0 w-[752px]" data-node-id="6:307" data-name="Molecule/ToolEvent">
+              <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:307;4:196" data-name="Atom/Icon/clock">
+                <div className="relative shrink-0 size-[20px]" data-node-id="I6:307;4:196;4:97" data-name="Frame">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame14} />
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:307;4:199" data-name="Atom/Text/UI">
+                <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:307;4:199;4:5">
+                  Browser check running
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex-[1_0_0] min-h-px relative w-[752px]" data-node-id="6:313" data-name="Flexible space" />
+          <div className="content-stretch flex gap-[var(--space-8,8px)] h-[28px] items-center overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[752px]" data-node-id="6:314" data-name="Quiet automation status">
+            <div className="bg-[var(--accent-soft,#213c2a)] content-stretch flex gap-[var(--space-8,8px)] h-[28px] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[154px]" data-node-id="6:315" data-name="Atom/StatusBadge">
+              <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:315;4:173" data-name="Atom/Text/Caption">
+                <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--accent,#92d4a3)] whitespace-nowrap" data-node-id="I6:315;4:173;4:3">
+                  Auto Review active
+                </p>
+              </div>
+            </div>
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:319" data-name="Atom/Text/Caption">
+              <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:319;4:3">
+                Routine actions continue. Publishing still needs you.
+              </p>
+            </div>
+          </div>
+          <div className="bg-[var(--surface,#1d201e)] border border-[var(--border,#343d37)] border-solid content-stretch flex flex-col gap-[var(--space-12,12px)] h-[132px] items-start p-[var(--space-12,12px)] relative rounded-[var(--radius-16,16px)] shrink-0 w-[752px]" data-node-id="6:321" data-name="Organism/SessionComposer">
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0 w-[728px]" data-node-id="I6:321;4:202" data-name="Atom/Text/Body">
+              <p className="[word-break:break-word] flex-[1_0_0] font-['Geist:Regular'] font-normal leading-[22px] min-w-px relative text-[14px] text-[color:var(--secondary,#a8b4ac)]" data-node-id="I6:321;4:202;4:7">
+                Ask a follow-up or give the next task…
+              </p>
+            </div>
+            <div className="flex-[1_0_0] min-h-px relative w-[728px]" data-node-id="I6:321;4:204" data-name="Flexible spacer" />
+            <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center justify-between overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[728px]" data-node-id="I6:321;4:205" data-name="Session controls">
+              <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[640px]" data-node-id="I6:321;4:206" data-name="Attachments and session engine">
+                <div className="content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 size-[32px]" data-node-id="I6:321;4:207" data-name="Action/attach">
+                  <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:321;4:207;4:153" data-name="Atom/Icon/attach">
+                    <div className="relative shrink-0 size-[20px]" data-node-id="I6:321;4:207;4:153;4:66" data-name="Frame">
+                      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame15} />
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 w-[134px]" data-node-id="I6:321;4:213" data-name="Atom/Button">
+                  <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:321;4:213;4:128" data-name="Atom/Text/UI">
+                    <p className="[word-break:break-word] font-['Geist:Medium'] font-medium leading-[20px] relative shrink-0 text-[13px] text-[color:var(--foreground,#f0f3ed)] whitespace-nowrap" data-node-id="I6:321;4:213;4:128;4:5">
+                      Codex · Default
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="content-stretch flex gap-[var(--space-8,8px)] h-[36px] items-center overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[72px]" data-node-id="I6:321;4:216" data-name="Send controls">
+                <div className="content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-8,8px)] shrink-0 size-[32px]" data-node-id="I6:321;4:217" data-name="Action/mic">
+                  <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:321;4:217;4:153" data-name="Atom/Icon/mic">
+                    <div className="relative shrink-0 size-[20px]" data-node-id="I6:321;4:217;4:153;4:69" data-name="Frame">
+                      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame16} />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-[var(--accent,#92d4a3)] content-stretch flex gap-[var(--space-8,8px)] items-center justify-center p-[var(--space-0,0px)] relative rounded-[var(--radius-16,16px)] shrink-0 size-[32px]" data-node-id="I6:321;4:224" data-name="Action/arrow">
+                  <div className="content-stretch flex items-center p-[var(--space-0,0px)] relative shrink-0 size-[20px]" data-node-id="I6:321;4:224;4:153" data-name="Atom/Icon/arrow">
+                    <div className="relative shrink-0 size-[20px]" data-node-id="I6:321;4:224;4:153;4:20" data-name="Frame">
+                      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgFrame17} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-0,0px)] h-[18px] items-start justify-center overflow-clip p-[var(--space-0,0px)] relative shrink-0 w-[752px]" data-node-id="6:357" data-name="Composer hint">
+            <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="6:358" data-name="Atom/Text/Caption">
+              <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:358;4:3">
+                Enter to send · Shift + Enter for a new line
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-[var(--sidebar,#111312)] content-stretch flex h-[28px] items-center justify-between px-[20px] relative shrink-0 w-[1196px]" data-node-id="6:265" data-name="Organism/StatusBar">
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:265;5:516" data-name="Atom/Text/Caption">
+            <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-nowrap" data-node-id="I6:265;5:516;4:3">
+              Connected · This Mac
+            </p>
+          </div>
+          <div className="content-stretch flex gap-[var(--space-8,8px)] items-center p-[var(--space-0,0px)] relative shrink-0" data-node-id="I6:265;5:518" data-name="Atom/Text/Caption">
+            <p className="[word-break:break-word] font-['Geist:Regular'] font-normal leading-[18px] relative shrink-0 text-[12px] text-[color:var(--secondary,#a8b4ac)] whitespace-pre" data-node-id="I6:265;5:518;4:3">{`Sandbox: project   ·   2 tasks running`}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+These styles are contained in the design: TermX / Heading: Font(family: "Geist", style: SemiBold, size: 22, weight: 600, lineHeight: 30, letterSpacing: 0), TermX / UI: Font(family: "Geist", style: Medium, size: 13, weight: 500, lineHeight: 20, letterSpacing: 0), TermX / Caption: Font(family: "Geist", style: Regular, size: 12, weight: 400, lineHeight: 18, letterSpacing: 0), TermX / Body: Font(family: "Geist", style: Regular, size: 14, weight: 400, lineHeight: 22, letterSpacing: 0), TermX / Reading: Font(family: "Geist", style: Regular, size: 16, weight: 400, lineHeight: 26, letterSpacing: 0).
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## Organism/Sidebar/Projects
+**Node ID:** 5:65
+
+TermX shell composed from atomic text, icon and navigation instances. Engine selection is session-owned.
+
+## Atom/Text/Heading
+**Node ID:** 4:10
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## State=Default
+**Node ID:** 4:152
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/IconButton
+**Node ID:** 4:168
+
+Editable states; semantic themes inherit from screen.
+
+## Atom/Icon/left
+**Node ID:** 4:75
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## State=Default
+**Node ID:** 4:182
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Molecule/NavigationRow
+**Node ID:** 4:194
+
+Editable states; semantic themes inherit from screen.
+
+## Atom/Icon/plus
+**Node ID:** 4:16
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Text/UI
+**Node ID:** 4:4
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/search
+**Node ID:** 4:34
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Text/Caption
+**Node ID:** 4:2
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## State=Selected
+**Node ID:** 4:188
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/folder
+**Node ID:** 4:31
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/chat
+**Node ID:** 4:28
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/clock
+**Node ID:** 4:96
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/cloud
+**Node ID:** 4:93
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/settings
+**Node ID:** 4:59
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/lock
+**Node ID:** 4:55
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Organism/WorkspaceHeader
+**Node ID:** 5:467
+
+TermX shell composed from atomic text, icon and navigation instances. Engine selection is session-owned.
+
+## Atom/Icon/chevron
+**Node ID:** 4:22
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Variant=Ghost, State=Default
+**Node ID:** 4:127
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Button
+**Node ID:** 4:151
+
+Editable states; semantic themes inherit from screen.
+
+## Atom/Icon/right
+**Node ID:** 4:79
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/bottom
+**Node ID:** 4:83
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Text/Body
+**Node ID:** 4:6
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Text/Reading
+**Node ID:** 4:8
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/file
+**Node ID:** 4:100
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Variant=Secondary, State=Default
+**Node ID:** 4:115
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Molecule/ToolEvent
+**Node ID:** 4:195
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/check
+**Node ID:** 4:52
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## State=Allowed
+**Node ID:** 4:172
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/StatusBadge
+**Node ID:** 4:181
+
+Editable states; semantic themes inherit from screen.
+
+## Size=Wide
+**Node ID:** 4:201
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Organism/SessionComposer
+**Node ID:** 4:259
+
+Editable states; semantic themes inherit from screen.
+
+## Atom/Icon/attach
+**Node ID:** 4:65
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/mic
+**Node ID:** 4:68
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Atom/Icon/arrow
+**Node ID:** 4:19
+
+TermX v0.3 desktop. Editable component; compose rather than detach.
+
+## Organism/StatusBar
+**Node ID:** 5:515
+
+TermX shell composed from atomic text, icon and navigation instances. Engine selection is session-owned.
+
+Images and SVGs will be stored as constants, e.g. const image = `${assetPathPrefix}/<asset file name>`, where assetPathPrefix is declared once at the top of the code and every asset URL interpolates it. These constants will be used in the code as the source for the image, ex: <img src={image} />. Image assets are stored on a remote server for 7 days and can be fetched using the provided URLs until they expire.

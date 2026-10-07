@@ -1,0 +1,10 @@
+import {describe,it,expect,vi,beforeEach} from 'vitest';
+import {SessionCache,listSessions} from './workspace-data';
+import {gql} from './api';
+vi.mock('./api',()=>({gql:vi.fn()}));
+beforeEach(()=>vi.clearAllMocks());
+const snapshot={id:'conversation',title:'Test',engine:'internal',revision:1};
+describe('bounded workspace cursor data',()=>{
+ it('fetches a500 session sidebar in bounded pages',async()=>{vi.mocked(gql).mockImplementation(async(_query,variables)=>{const page=variables?.after?Number(variables.after):0;return {workspace_sessions:{edges:Array.from({length:100},(_,i)=>({node:{snapshot:{...snapshot,id:String(page*100+i)}}})),pageInfo:{hasNextPage:page<4,endCursor:String(page+1)}}} as any});expect(await listSessions()).toHaveLength(500);expect(gql).toHaveBeenCalledTimes(5)});
+ it('opens the latest200 of10,000 messages without blocking on history and polls only the tail',async()=>{vi.mocked(gql).mockImplementation(async(query,variables)=>{if(query.includes('nodes('))return {nodes:[{snapshot},{task:{id:'latest-task',status:'running'}}]} as any;const start=query.includes('last:200')?(variables?.before?Number(variables.before)-201:9800):10000;const count=query.includes('last:200')?200:0;return {workspace_turns:{edges:Array.from({length:count},(_,i)=>({cursor:String(start+i+1),node:{canonical_id:'turn-'+(start+i),sequence:start+i+1,prompt:'Message '+i,task_id:null}})),pageInfo:{hasNextPage:false,hasPreviousPage:start>0,startCursor:String(start+1),endCursor:count?String(start+count):null}}} as any});const cache=new SessionCache();const first=await cache.read('conversation');expect(first.turns).toHaveLength(200);expect(first.turns?.[0].sequence).toBe(9801);expect(first.hasEarlier).toBe(true);expect(gql).toHaveBeenCalledTimes(2);vi.mocked(gql).mockClear();await cache.read('conversation');expect(gql).toHaveBeenCalledTimes(2);expect(vi.mocked(gql).mock.calls[1][1]?.after).toBe('10000');const history=await cache.history('conversation');expect(history.turns).toHaveLength(400)});
+});

@@ -605,12 +605,18 @@ class AgentStore:
             "created_at": created,
         }
 
-    def events(self, task_id: str, after: int = 0) -> list[dict[str, Any]]:
+    def events(self, task_id: str, after: int = 0, *, tail_limit: int | None = None) -> list[dict[str, Any]]:
         with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence",
-                (task_id, max(0, after)),
-            ).fetchall()
+            if tail_limit is None:
+                rows = self._db.execute(
+                    "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence",
+                    (task_id, max(0, after)),
+                ).fetchall()
+            else:
+                rows = list(reversed(self._db.execute(
+                    "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence DESC LIMIT ?",
+                    (task_id, max(0, after), min(max(tail_limit, 1), 1000)),
+                ).fetchall()))
         return [
             {
                 "id": row["id"],
@@ -1355,6 +1361,24 @@ class AgentStore:
             )
             self._db.commit()
         return cursor.rowcount > 0
+
+    def workspace_turn(self, identifier: str) -> dict | None:
+        with self._lock:
+            row = self._db.execute('SELECT * FROM conversation_turns WHERE id=?', (identifier,)).fetchone()
+            return dict(row) if row else None
+
+    def active_conversation_tasks(self, identifier: str) -> list[dict]:
+        """Bound work to live tasks without materializing historical turns."""
+        placeholders=','.join('?' for _ in ACTIVE_STATUSES)
+        with self._lock:
+            rows=self._db.execute('SELECT DISTINCT tasks.* FROM tasks JOIN conversation_turns ON conversation_turns.task_id=tasks.id WHERE conversation_turns.conversation_id=? AND tasks.status IN ('+placeholders+') ORDER BY tasks.created_at', (identifier,*sorted(ACTIVE_STATUSES))).fetchall()
+            return [self._task(row) for row in rows]
+
+    def workspace_turns_page(self, identifier: str, *, after_sequence: int = 0, before_sequence: int | None = None, descending: bool = False, limit: int = 51) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute('SELECT * FROM conversation_turns WHERE conversation_id=? AND sequence>? AND sequence<? ORDER BY sequence '+('DESC' if descending else 'ASC')+' LIMIT ?',
+                                    (identifier, after_sequence, before_sequence if before_sequence is not None else 2**63-1, min(max(limit, 1), 201))).fetchall()
+            return [dict(row) for row in rows]
 
     def add_conversation_turn(
         self,

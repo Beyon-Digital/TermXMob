@@ -1,0 +1,420 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "css_viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "device_scale_factor": 1.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.08,
+        "secondary/surface": 7.66,
+        "accent/accent-soft": 6.98,
+        "destructive/muted": 6.8
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "css_viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "device_scale_factor": 1.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.03,
+        "secondary/surface": 5.39,
+        "accent/accent-soft": 5.52,
+        "destructive/muted": 5.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "css_viewport": {
+        "width": 720,
+        "height": 450
+      },
+      "device_scale_factor": 2.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-current=\"page\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button aria-current=\"page\">",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                "nav > button:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                "nav > button:nth-child(3)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                "nav > button:nth-child(4)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.08,
+        "secondary/surface": 7.66,
+        "accent/accent-soft": 6.98,
+        "destructive/muted": 6.8
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "css_viewport": {
+        "width": 720,
+        "height": 450
+      },
+      "device_scale_factor": 2.0,
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete_rules": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-current=\"page\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button aria-current=\"page\">",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".layout-tabs > button:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".layout-tabs > button:nth-child(3)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".layout-tabs > button:nth-child(4)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element",
+              "html": "<button>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": null,
+                    "bgColor": null,
+                    "contrastRatio": 0,
+                    "fontSize": "0.0pt (0px)",
+                    "fontWeight": "normal",
+                    "messageKey": "bgOverlap",
+                    "expectedContrastRatio": "4.5:1",
+                    "shadowColor": null
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element's background color could not be determined because it is overlapped by another element"
+                }
+              ]
+            },
+            {
+              "target": [
+                ".welcome-mark"
+              ],
+              "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"welcome-mark\">\u2318</div>",
+              "checks": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "messageKey": "nonBmp"
+                  },
+                  "relatedNodes": [],
+                  "impact": "serious",
+                  "message": "Element content contains only non-text characters"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_contrasts": {
+        "foreground/background": 16.03,
+        "secondary/surface": 5.39,
+        "accent/accent-soft": 5.52,
+        "destructive/muted": 5.4
+      }
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "focus": {
+        "tag": "BUTTON",
+        "name": "Rename or move conversation",
+        "outline": "solid",
+        "width": "2px"
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "focus": {
+        "tag": "BUTTON",
+        "name": "Rename or move conversation",
+        "outline": "solid",
+        "width": "2px"
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "focus": {
+        "tag": "BUTTON",
+        "name": "Rename or move conversation",
+        "outline": "solid",
+        "width": "2px"
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "focus": {
+        "tag": "BUTTON",
+        "name": "Rename or move conversation",
+        "outline": "solid",
+        "width": "2px"
+      }
+    }
+  ],
+  "errors": []
+}

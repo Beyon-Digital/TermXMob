@@ -82,6 +82,7 @@ class AgentManager:
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
         self._computer = ComputerController()
         self._tools = default_registry()
+        self.browser = None  # AppState attaches the managed broker after mounting.
         self._scheduler = CallScheduler(self._tools)
         self._http = ProviderHttpRuntime()
         self._metrics: dict[str, TaskMetrics] = {}
@@ -432,6 +433,11 @@ class AgentManager:
             raise ValueError("task is not awaiting approval")
         if approval["status"] != "pending":
             raise ValueError("approval is already resolved")
+        browser_pending=self._pending_approval_calls.get(approval_id) or {}
+        if browser_pending.get('browser_review_id') and decision!='denied' and self.browser:
+            reviewed=self.browser.records.get('review',browser_pending['browser_review_id'])
+            if not reviewed or reviewed['status']!='needs_user' or reviewed['expires_at']<=time():
+                raise ValueError('Browser page, control or approval expired; take over and request a fresh observation')
         next_limits = None
         if approval["kind"] == "budget" and decision == "approved":
             step = int((task.get("runtime") or {}).get("step") or 0)
@@ -451,6 +457,14 @@ class AgentManager:
             metrics.record_approval_wait(int((approval["resolved_at"] - approval["created_at"]) * 1000))
         self._emit(task_id, "approval.resolved", {"approval": approval})
         private_payload = self._pending_approval_calls.pop(approval_id, None)
+        if private_payload and private_payload.get('browser_review_id') and self.browser:
+            binding=self.browser.records.get('agent-task-authority',task_id) or self.browser.records.get('browser-task',task_id)
+            if binding:
+                reviewed=self.browser.records.get('review',private_payload['browser_review_id'])
+                # Takeover/revocation already invalidates the browser permit.
+                # A denial must still settle the agent's parked approval.
+                if reviewed and reviewed['status']=='needs_user':
+                    self.browser.review.decide(private_payload['browser_review_id'],principal_id=binding['principal_id'],approve=decision!='denied')
         if private_payload is not None and "child_approval_id" in private_payload:
             # A sub-agent's consequential action was escalated to this parent;
             # relay the decision AND the remember scope — the durable rule is
@@ -1035,6 +1049,18 @@ class AgentManager:
         groups = self._scheduler.schedule(calls, ctx)
         index = 0
         for group in groups:
+            # A controlled browser grant must not be bypassed via arbitrary
+            # shell, runbook, subagent, computer or Git process tools. Typed
+            # project file/search operations remain available for code context.
+            binding=self.browser.records.get('browser-task',task_id) if self.browser else None
+            active_browser=bool(binding and binding.get('restricted') and any(
+                grant['run_id']==task_id and not grant['revoked'] and grant['expires_at']>time()
+                for grant in self.browser.records.list('grant')))
+            if active_browser:
+                broker_tools={'browser_tabs','browser_observe','browser_action','browser_wait_for_handoff','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
+                for item in group:
+                    if item.call.type!='function' or item.call.name not in broker_tools:
+                        raise PermissionError('Restricted browser task cannot run process/computer tools; take over all granted tabs before resuming coding execution')
             if len(group) > 1:
                 # A parallel-safe batch: registered read tools that never need
                 # approval, run concurrently. Output order stays call order.
@@ -1062,6 +1088,24 @@ class AgentManager:
                 continue
             entry = group[0]
             call = entry.call
+            if call.name in {'browser_tabs','browser_observe','browser_action'}:
+                from termx.auto_review import ReviewRequired,ActionBlocked
+                self._emit(task_id,'tool.started',{'call':call.public()})
+                try:
+                    outcome=await self._invoke_tool(entry,ctx)
+                except ActionBlocked as exc:
+                    outcome=ToolOutcome({'refused':True,'error':exc.record['reason'],'review_id':exc.record['id']})
+                except ReviewRequired as exc:
+                    public_payload={'title':'Browser action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':[]}
+                    approval=self.store.create_approval(task_id,'tool',public_payload)
+                    self._pending_approval_calls[approval['id']]={**public_payload,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
+                    runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at}
+                    self.store.update_task(task_id,status='awaiting_approval',runtime=runtime)
+                    self._emit(task_id,'approval.requested',{'approval':approval});self._emit(task_id,'task.status',{'status':'awaiting_approval'})
+                    self._persist_metrics(task_id)
+                    return True,history,step
+                self._emit(task_id,'tool.finished',outcome.finished_payload(call));history.extend(outcome.output_items(call));step+=1;index+=1
+                continue
             if read_only:
                 if call.type == "computer":
                     raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
@@ -1079,6 +1123,29 @@ class AgentManager:
                     index += 1
                     continue
             decision = entry.decision
+            authority=self.browser.records.get('agent-task-authority',task_id) if self.browser else None
+            if authority and entry.spec and entry.spec.mutability!='read' and decision.approval_kind!='capability':
+                from termx.agent.action_review import proposal
+                from termx.auto_review import ReviewRequired,ActionBlocked
+                envelope,validate,hard_deny=proposal(self.browser,task_id,authority,call.name or call.type,call.arguments if call.type!='computer' else {'actions':call.actions},task['cwd'],call_id=task_id+':'+call.call_id,decision=decision,read_only=read_only)
+                try:
+                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    self._emit(task_id,'tool.started',{'call':call.public()})
+                    outcome=await self.browser.review.execute(envelope,permit['permit'],validate=validate,operation=lambda:self._invoke_tool(entry,ctx))
+                except ActionBlocked as exc:
+                    outcome=ToolOutcome({'refused':True,'error':exc.record['reason'],'review_id':exc.record['id']})
+                except ReviewRequired as exc:
+                    if exc.record['status']!='needs_user':
+                        outcome=ToolOutcome({'refused':True,'error':'Action already consumed, denied or invalidated; verify outcome before proposing another action'})
+                    else:
+                        public={'title':'Action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':[]}
+                        approval=self.store.create_approval(task_id,'tool',public)
+                        self._pending_approval_calls[approval['id']]={**public,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
+                        self.store.update_task(task_id,status='awaiting_approval',runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
+                        self._emit(task_id,'approval.requested',{'approval':approval});self._persist_metrics(task_id)
+                        return True,history,step
+                self._emit(task_id,'tool.finished',outcome.finished_payload(call));history.extend(outcome.output_items(call));step+=1;index+=1
+                continue
             if decision.auto_resolved and not (approved_first and index == 0):
                 # A remembered rule or the Agent's own mode resolved this call.
                 # The audit trail is the point — every auto-resolution is an
@@ -1792,24 +1859,47 @@ class AgentManager:
 
         def attach(child_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
             self._subscribers[child_id].add(queue)
+            if self.browser:
+                authority=self.browser.records.get('agent-task-authority',task_id)
+                if authority:self.browser.records.put('agent-task-authority',child_id,{**authority,'id':child_id,'delegated_by':task_id})
 
         child_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+        child_mode='ask' if str(call.arguments.get('mode') or '').strip().lower()=='ask' else 'agent'
+        child_cwd=task['cwd'];child_execution='direct';isolation={'kind':'read-only','path':child_cwd}
+        snapshot_path=None
+        if child_mode=='agent':
+            if await asyncio.to_thread(worktrees.git_root,child_cwd):
+                child_execution='worktree'
+                child_prompt+='\n\nExecution uses an isolated Git checkout at the project HEAD. Parent uncommitted files are not shared; request missing context explicitly. Keep changes in this checkout for review.'
+            else:
+                from termx.agent.child_isolation import snapshot
+                snapshot_path=self.store.artifact_dir/'delegations'/uuid.uuid4().hex
+                try:
+                    isolation=await asyncio.to_thread(snapshot,Path(child_cwd),snapshot_path,excluded=[self.store.path,self.store.artifact_dir])
+                except (ValueError,OSError) as exc:return {'ok':False,'error':str(exc)}
+                child_cwd=str(snapshot_path)
+                child_prompt+='\n\nExecution uses an independent project snapshot. Keep all edits here; they are retained for review and never automatically copied into the parent project.'
         child = await self.create_task(
             prompt=child_prompt,
-            cwd=task["cwd"],
+            cwd=child_cwd,
             provider_id=task["provider_id"],
             limits={
                 "max_steps": min(24, parent_limits["max_steps"]),
                 "max_seconds": min(900, parent_limits["max_seconds"]),
                 "shell_timeout_s": parent_limits["shell_timeout_s"],
             },
-            mode="ask" if str(call.arguments.get("mode") or "").strip().lower() == "ask" else "agent",
+            mode=child_mode,
+            execution_mode=child_execution,
             model=str(task.get("model") or "") or None,
             cancel=cancel,
             on_created=lambda child_id: attach(child_id, child_queue),
             parent_id=task_id,
         )
         child_id = child["id"]
+        if child_execution=='worktree':
+            record=self.store.task_worktree(child_id)
+            isolation={'kind':'worktree','path':child['cwd'],'branch':record['branch'],'base_ref':record['base_ref'],'base_path':task['cwd'],'automatic_apply':False}
+        self._emit(child_id,'task.isolation',isolation)
         handle = _SubagentHandle(
             parent_id=task_id,
             child_id=child_id,
@@ -1831,7 +1921,7 @@ class AgentManager:
         self._emit(
             task_id,
             "subagent.started",
-            {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id},
+            {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id,'isolation':isolation},
         )
         if child["status"] in {"completed", "failed", "cancelled"}:
             self.unsubscribe(child_id, child_queue)

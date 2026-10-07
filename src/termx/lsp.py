@@ -38,6 +38,10 @@ _SPECS = {
 
 
 def _command(language: str) -> tuple[str, ...] | None:
+    from termx.desktop.runtime import language_command
+    bundled = language_command(language)
+    if bundled:
+        return bundled
     spec = _SPECS.get(language)
     if spec is None:
         return None

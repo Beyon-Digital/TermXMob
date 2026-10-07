@@ -1,13 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_all
 
 ROOT = Path(SPECPATH).parent
 
 datas = [
     (str(ROOT / "src" / "termx" / "static"), "termx/static"),
-    (str(ROOT / "desktop" / "web"), "web"),
+    (os.environ.get("TERMX_PACKAGE_WEB_DIR", str(ROOT / "desktop" / "workspace" / "dist")), "web"),
+    (str(ROOT / "desktop" / "build" / "runtime"), "runtime"),
 ]
 
 if ROOT.joinpath("helpers", "macos", "bin").is_dir():
@@ -20,12 +22,18 @@ hiddenimports = [
     *collect_submodules("anyio"),
 ]
 
-for optional in ("aiortc", "av", "numpy"):
+binaries = []
+# Browser driver, Node, FFmpeg, office schemas and debugger data are runtime assets.
+for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_wheel", "debugpy", "imageio_ffmpeg", "openpyxl", "PIL", "pypdf", "docx", "pptx"):
+
     try:
         __import__(optional)
     except ImportError:
         continue
-    hiddenimports.extend(collect_submodules(optional))
+    package_data, package_binaries, package_imports = collect_all(optional)
+    datas.extend(package_data)
+    binaries.extend(package_binaries)
+    hiddenimports.extend(package_imports)
 
 excludes = [
     "tkinter",
@@ -38,7 +46,7 @@ excludes = [
 a = Analysis(
     [str(ROOT / "desktop" / "backend_entry.py")],
     pathex=[str(ROOT / "src")],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

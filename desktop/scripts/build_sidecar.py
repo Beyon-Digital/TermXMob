@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the PyInstaller onedir sidecar and stage it for the Tauri bundle.
 
-The web UI ships prebuilt in desktop/web (see desktop/scripts/update_web_ui.sh).
+The dedicated workspace is built from desktop/workspace; runtime assets are staged in CI.
 
 Usage (from the repository root):
     uv run --group packaging python desktop/scripts/build_sidecar.py
@@ -20,14 +20,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DESKTOP = ROOT / "desktop"
-WEB = DESKTOP / "web"
+WEB = DESKTOP / "workspace" / "dist"
 STAGE = DESKTOP / "src-tauri" / "resources" / "backend"
 BUILD = DESKTOP / "build"
 EXE_NAME = "termx-backend.exe" if os.name == "nt" else "termx-backend"
 
 
 def run(argv: list[str], cwd: Path | None = None) -> None:
-    print(f"+ {' '.join(argv)}", flush=True)
+    shown = argv.copy()
+    if "/p" in shown:
+        shown[shown.index("/p") + 1] = "<redacted>"
+    print(f"+ {' '.join(shown)}", flush=True)
     subprocess.run(argv, cwd=str(cwd or ROOT), check=True)
 
 
@@ -35,11 +38,17 @@ def verify_web(web_dir: Path) -> None:
     if not (web_dir / "index.html").is_file():
         raise SystemExit(
             f"web UI bundle not found at {web_dir}."
-            " Run desktop/scripts/update_web_ui.sh to refresh it from the client repository."
+            " Run pnpm --dir desktop/workspace build to build the dedicated workspace."
         )
 
+    import re
+    index = (web_dir / "index.html").read_text(encoding="utf-8")
+    if not re.search(r'<meta\s+name=[\"\']termx-ui-contract[\"\']\s+content=[\"\']3[\"\']', index):
+        raise SystemExit("Web UI contract 3 missing; rebuild desktop/workspace")
 
-def build_sidecar(stage_only: bool = False) -> None:
+
+def build_sidecar(stage_only: bool = False, web_dir: Path = WEB) -> None:
+    os.environ["TERMX_PACKAGE_WEB_DIR"] = str(web_dir.resolve())
     if not stage_only:
         for path in (BUILD / "dist", BUILD / "work"):
             shutil.rmtree(path, ignore_errors=True)
@@ -83,8 +92,7 @@ def sign_windows() -> None:
         return
     signtool = os.environ.get("TERMX_SIGNTOOL") or shutil.which("signtool")
     if not signtool:
-        print("signtool not found; skipping Windows sidecar signing")
-        return
+        raise SystemExit("Windows signing requested but signtool is unavailable")
     cert_path = Path(certificate)
     temp_cert = None
     if not cert_path.is_file():
@@ -126,7 +134,9 @@ def main() -> None:
     parser.add_argument("--skip-build", action="store_true", help="only stage/sign an existing build")
     args = parser.parse_args()
     verify_web(args.web_dir)
-    build_sidecar(stage_only=args.skip_build)
+    if not args.skip_build and not (BUILD / "runtime" / "manifest.json").is_file():
+        raise SystemExit("Runtime assets missing; run desktop/scripts/prepare_runtime.py first")
+    build_sidecar(stage_only=args.skip_build, web_dir=args.web_dir)
     sign_macos()
     sign_windows()
     print("sidecar ready")

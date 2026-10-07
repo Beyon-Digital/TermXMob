@@ -26,7 +26,7 @@ entitlements_for() {
   case "$1" in
     */helpers/macos/bin/termx-capture*) echo "$HELPER_ENTITLEMENTS/termx-capture.entitlements" ;;
     */helpers/macos/bin/termx-virtual-display*) echo "$HELPER_ENTITLEMENTS/termx-virtual-display.entitlements" ;;
-    */termx-backend) [ -f "$ENTITLEMENTS" ] && echo "$ENTITLEMENTS" || true ;;
+    */termx-backend|*/node|*/nodejs_wheel/bin/node|*/chrome|*/Chromium|*/chrome-headless-shell|*/Chromium\ Helper*) [ -f "$ENTITLEMENTS" ] && echo "$ENTITLEMENTS" || true ;;
     *) true ;;
   esac
 }
@@ -51,7 +51,7 @@ sign_one() {
 }
 
 sign_all() {
-  find "$TARGET" -type f "$@" ! -path "*.framework/*" -print | while IFS= read -r file; do
+  find "$TARGET" -type f "$@" -print | while IFS= read -r file; do
     if is_macho "$file"; then
       sign_one "$file"
     fi
@@ -93,26 +93,27 @@ normalize_framework() {
   fi
 }
 
-sign_frameworks() {
-  find "$TARGET" -type d -name "*.framework" -print | while IFS= read -r framework; do
-    normalize_framework "$framework"
+sign_bundles() {
+  # Chromium ships nested helpers/frameworks. Sign children before their containers.
+  find "$TARGET" -depth -type d \( -name "*.framework" -o -name "*.app" \) -print | while IFS= read -r bundle; do
     if [ "$IDENTITY" = "-" ]; then
-      "$CODESIGN" --force --sign - "$framework"
+      "$CODESIGN" --force --sign - "$bundle"
     else
-      "$CODESIGN" --force --options runtime --timestamp --sign "$IDENTITY" "$framework"
+      "$CODESIGN" --force --options runtime --timestamp --sign "$IDENTITY" "$bundle"
     fi
-    "$CODESIGN" --verify --strict "$framework"
+    "$CODESIGN" --verify --strict "$bundle"
   done
 }
 
-# Libraries first, then frameworks, then a catch-all for anything unusual.
+# Normalize PyInstaller framework copies before signing their inner code.
+find "$TARGET" -depth -type d -name "*.framework" -print | while IFS= read -r framework; do
+  normalize_framework "$framework"
+done
 sign_all -name "*.so"
 sign_all -name "*.dylib"
-sign_frameworks
-find "$TARGET" -type f ! -name "*.so" ! -name "*.dylib" ! -path "*.framework/*" -print |
+find "$TARGET" -type f ! -name "*.so" ! -name "*.dylib" -print |
   while IFS= read -r file; do
-    if is_macho "$file"; then
-      sign_one "$file"
-    fi
+    if is_macho "$file"; then sign_one "$file"; fi
   done
+sign_bundles
 echo "signed sidecar at $TARGET ($IDENTITY)"

@@ -24,9 +24,6 @@ from termx.graphql.errors import fail
 if TYPE_CHECKING:
     from termx.app import AppState
 
-_UNSET = object()
-
-
 class TermxContext(BaseContext):
     def __init__(
         self,
@@ -38,23 +35,47 @@ class TermxContext(BaseContext):
         self.state = state
         self.secret = secret
         self.request = request
-        self._scopes: Any = _UNSET
 
     @property
     def scopes(self) -> list[str] | None:
-        if self._scopes is _UNSET:
-            self._scopes = self.state.auth.scopes(self.secret)
-        return self._scopes
+        # Subscriptions share this context for their entire lifetime. Never
+        # keep authority cached after logout, expiry or a policy change.
+        return self.state.auth.scopes(self.secret)
 
     @property
     def authenticated(self) -> bool:
         return self.scopes is not None
 
     def require(self, scope: str) -> None:
-        if self.scopes is None:
+        scopes = self.scopes
+        if scopes is None:
             fail(401, "invalid passcode")
-        if scope not in self.scopes:
+        if scope not in scopes:
             fail(403, f"missing scope: {scope}")
+
+    def require_resource(self, scope: str, kind: str, resource_id: str) -> None:
+        self.require(scope)
+        self.state.authorization.require(self.secret, scope, resource_kind=kind, resource_id=resource_id)
+
+    def require_project(self, scope: str, project_id: str) -> None:
+        self.require(scope)
+        self.state.authorization.require(self.secret, scope, project_id=project_id)
+
+    def require_host(self, scope: str) -> None:
+        self.require(scope)
+        self.state.authorization.require(self.secret, scope)
+        if scope == 'machine-view' and self.state.identity.resolve(self.secret):
+            self.state.authorization.require(self.secret, 'host-admin')
+
+    def require_path(self, scope: str, path: str) -> str | None:
+        self.require(scope)
+        return self.state.authorization.require_path(self.secret, scope, path, self.state.projects.projects())
+
+    def claim(self, kind: str, resource_id: str, project_id: str | None = None) -> None:
+        self.state.authorization.claim(self.secret, kind, resource_id, project_id)
+
+    def visible(self, scope: str, kind: str, rows: list[dict]) -> list[dict]:
+        return [row for row in rows if self.state.authorization.can(self.secret, scope, resource_kind=kind, resource_id=row['id'])]
 
     def client_host(self) -> str:
         client = getattr(self.request, "client", None)
@@ -62,6 +83,9 @@ class TermxContext(BaseContext):
 
     def require_passcode(self) -> str:
         """Demand the literal passcode credential (used by /api/pair parity)."""
+        if self.state.identity.configured:
+            self.require("host-admin")
+            return self.secret or ""
         if not self.secret or not hmac.compare_digest(
             self.state.auth.passcode or "", self.secret.strip()
         ):
