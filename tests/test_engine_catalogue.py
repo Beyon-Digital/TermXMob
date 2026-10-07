@@ -200,11 +200,19 @@ def test_registry_index_is_cached_and_detected_agents_use_the_generic_acp_adapte
         "distribution": {"npx": {"package": "@example/known-acp@1.2.3", "args": ["--acp"]}},
     }]})
     monkeypatch.setattr(registry_module, "resolve_executable", lambda _name: sys.executable)
+    # Windows qualifies npm packages by their actual package/bin manifest,
+    # because a shell .cmd shim cannot be spawned as a native executable.
+    package = tmp_path / "node_modules" / "@example" / "known-acp"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text(json.dumps({"bin": {"known-acp": "cli.js"}}))
+    (package / "cli.js").write_text("// Installed fixture package; discovery never executes it.\n")
+    monkeypatch.setattr(manager, "_npm_root", lambda: tmp_path / "node_modules")
     manager._auto_register_detected()
     entry = manager.as_dict()["agents"][0]
     assert entry["installed"] and not entry["registered"]
     assert isinstance(gateway.adapter("known-acp"), RegistryAcpEngine)
-    assert gateway.adapter("known-acp")._launch_config["args"] == ["--acp"]
+    import os
+    assert gateway.adapter("known-acp")._launch_config["args"] == ([str(package / "cli.js"), "--acp"] if os.name == "nt" else ["--acp"])
     store.close()
 
 

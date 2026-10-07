@@ -21,6 +21,7 @@ import subprocess
 import stat
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,82 @@ def test_agent_profile_runs_seatbelt_backend(tmp_path):
     assert caps.identity_isolation == (caps.backend == "macos-helper")
     assert "net.outbound:any" in caps.grantable
     assert "net.outbound:any" not in caps.granted
+
+
+@requires_seatbelt
+@pytest.mark.parametrize("shell", ["/bin/bash", "/bin/zsh"])
+def test_workspace_pty_enforces_roots_and_preserves_input_output(tmp_path, monkeypatch, shell):
+    from termx.sessions import Session
+    from termx.terminals import PosixTerminal
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TERMX_PRIVATE_FIXTURE", "NEVER_INHERIT_THIS")
+    ws = tmp_path / "workspace"; ws.mkdir()
+    secret = tmp_path / "outside.txt"; secret.write_text("PRIVATE_OUTSIDE_CONTENT")
+    session = Session(id="mac-pty", title="workspace", created_at=time.time(), cols=80, rows=24,
+        argv=[shell], cwd=str(ws), shell=shell, sandbox_profile="workspace")
+    argv, env = session._restricted_launch()
+    assert "sandbox-exec" in argv[0]
+    assert "TERMX_PRIVATE_FIXTURE" not in env
+    assert "sandbox-home" in env["HOME"]
+    assert env["TMPDIR"].startswith(env["HOME"] + "/")
+    if shell.endswith("zsh"):
+        assert env["TERMX_ZDOTDIR"] == env["HOME"]
+    terminal = PosixTerminal(argv, str(ws), env, 24, 80)
+    try:
+        if shell.endswith("zsh"):
+            ready=b"";deadline=time.monotonic()+5
+            while b"\x1b[?2004h" not in ready and time.monotonic()<deadline:
+                ready+=terminal.read(.1) or b""
+        command = f'printf "HOME_IS_%s\\n" "$HOME"; echo allowed > created.txt; cat "{secret}" 2>/dev/null || echo DENIED; echo PTY_READY\n'
+        terminal.write(command.encode())
+        out = b""; deadline = time.monotonic() + 15
+        while b"\r\nPTY_READY\r\n" not in out and time.monotonic() < deadline:
+            out += terminal.read(.1) or b""
+        assert b"HOME_IS_/" in out and b"DENIED" in out, out[-1000:]
+        assert b"PRIVATE_OUTSIDE_CONTENT" not in out
+        assert (ws / "created.txt").read_text().strip() == "allowed"
+        if shell.endswith("zsh"):
+            while b"\x1b[?2004h" not in out and time.monotonic()<deadline:
+                out+=terminal.read(.1) or b""
+        terminal.write(b"sleep 30\n")
+        deadline=time.monotonic()+5
+        while os.tcgetpgrp(terminal.master_fd)==terminal.proc.pid and time.monotonic()<deadline:
+            terminal.read(.1)
+        assert os.tcgetpgrp(terminal.master_fd)!=terminal.proc.pid
+        assert terminal.send_signal("int")
+        # zsh resets its line editor after the foreground job is interrupted;
+        # enter the next command once that actual prompt is available.
+        if shell.endswith("zsh"):
+            ready=b""; deadline=time.monotonic()+5
+            while b"\x1b[?2004h" not in ready and time.monotonic()<deadline:
+                ready+=terminal.read(.1) or b""
+        terminal.write(b"echo AFTER_INTERRUPT\n")
+        out = b""; deadline = time.monotonic() + 10
+        while b"\r\nAFTER_INTERRUPT\r\n" not in out and time.monotonic() < deadline:
+            out += terminal.read(.1) or b""
+        assert b"\r\nAFTER_INTERRUPT\r\n" in out, out[-500:]
+        terminal.write(b"exit\nexit\n")
+        out = b""; deadline = time.monotonic() + 10
+        while terminal.proc.poll() is None and time.monotonic() < deadline:
+            out += terminal.read(.1) or b""
+        assert terminal.proc.poll() is not None, out[-1000:]
+    finally:
+        if terminal.proc.poll() is None:
+            terminal.kill()
+        if terminal.master_fd >= 0:os.close(terminal.master_fd)
+
+
+@requires_seatbelt
+def test_pty_never_downgrades_helper_or_loopback_policy(tmp_path):
+    ws = tmp_path / "ws"; ws.mkdir()
+    runner = _runner(tmp_path, "workspace")
+    with pytest.raises(SandboxFailure, match="profile"):
+        runner.spawn_argv(_spec(ws, "true", profile="agent"))
+    with pytest.raises(SandboxFailure, match="loopback"):
+        runner.spawn_argv(_spec(ws, "true", profile="workspace", network="localhost"))
+    runner._helper = True
+    with pytest.raises(SandboxFailure, match="PTY"):
+        runner.spawn_argv(_spec(ws, "true", profile="workspace"))
 
 
 @requires_seatbelt

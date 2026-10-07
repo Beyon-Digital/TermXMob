@@ -108,16 +108,18 @@ def test_real_worker_reuses_agent_loop_and_checks_post_review_file(tmp_path,chan
         process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
         def send(value):process.stdin.write(frame(value))
         send({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Write hello.txt with after','mode':'agent','limits':{'max_seconds':20,'max_steps':4}})
-        turns=0;reviewed=False;events=[];finished=None
+        turns=0;reviewed=False;events=[];finished=None;phase='await-startup-frame';methods=[]
         try:
             async with asyncio.timeout(30):
                 while raw:=await process.stdout.readline():
                     value=json.loads(raw)
+                    phase='frame:'+str(value.get('type'))
                     if value['type']=='event':
                         events.append(value['event'])
+                        phase='event:'+str(value['event'].get('type'))
                         if value['event']['type']=='approval.requested':send({'type':'approval','approval_id':value['event']['payload']['approval']['id'],'decision':'approved'})
                     elif value['type']=='rpc':
-                        method=value['method'];arguments=value['arguments']
+                        method=value['method'];arguments=value['arguments'];methods.append(method);phase='rpc:'+method
                         if method=='plan':result=[{'summary':'Write hello','steps':['Write file'],'tools':['shell'],'risks':[]},'plan-1']
                         elif method=='turn':
                             turns+=1
@@ -132,6 +134,13 @@ def test_real_worker_reuses_agent_loop_and_checks_post_review_file(tmp_path,chan
                         send({'type':'rpc-result','id':value['id'],'result':result})
                     elif value['type']=='finished':finished=value['task'];break
                 assert finished is not None,(await process.stderr.read()).decode()
+        except TimeoutError:
+            if process.returncode is None:process.kill()
+            await process.wait()
+            stderr=await asyncio.wait_for(process.stderr.read(16384),2)
+            raise AssertionError(json.dumps({'worker_timeout_seconds':30,'phase':phase,'provider_turns':turns,
+                'reviewed':reviewed,'rpc_methods':methods[-16:],'event_types':[event['type'] for event in events[-16:]],
+                'returncode':process.returncode,'stderr':stderr.decode('utf-8','replace')})) from None
         finally:
             if process.returncode is None:process.kill()
             await process.wait()

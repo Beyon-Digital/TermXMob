@@ -122,11 +122,16 @@ class AuthenticationService:
     def __init__(self, path: Path | None = None, *, adapters: tuple[AuthenticationPort, ...] = ()) -> None:
         self.path = path or config_dir() / "identity.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        from termx.private_files import protect_private_path
+        if os.name == 'nt':
+            # SQLite journals inherit this directory's ACL; protect it before
+            # any private signing key or password hash can reach disk.
+            protect_private_path(self.path.parent, directory=True)
         self._lock = threading.RLock()
         # Create with restrictive permissions before sqlite opens the file.
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)
-        os.chmod(self.path, 0o600)
+        protect_private_path(self.path)
         with self._db() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);

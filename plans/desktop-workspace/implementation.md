@@ -11,18 +11,18 @@ in progress: partial implementation and adapter fixtures are not full acceptance
 The exact 38 requirements, current evidence and outstanding gates are tracked in
 [acceptance.json](acceptance.json).
 
-| Family | Implemented | Remaining acceptance |
+| Family | Implemented and exercised | Remaining plan acceptance |
 | --- | --- | --- |
-| PAR-01 access | Canonical principals, local password/OIDC/custom adapters, managed JWT/refresh, roles/project/resource guards, adapter staged activation, native keyring bridge | Cross-platform installed keyring/SSO and rollout smoke |
-| PAR-02 chat | Independent React DOM chat, canonical durable sessions, session-only engine/model selection, streaming, context, linked forks, latest-turn pagination | Final rendered continuation/performance and live provider journeys |
-| PAR-03 memory | Provenance, exclusions, scoped versions, retention/export, bounded lifecycle hooks | Final combined isolation/runtime proof |
-| PAR-04 execution | Goals, delegated schedules, timezone/missed/overlap rules, leases/budgets, isolated child worktrees/snapshots, supervision | Actual delegated cloud schedule and full aggregate budget journey |
-| PAR-05 coding | CodeMirror buffers, PTY/xterm, diagnostics/navigation/completion/formatting, real debugpy and Microsoft js-debug DAP | Installed runtime smoke |
-| PAR-06 delivery | Worktrees, hunk/stage/commit/push, exact one-time publication, typed GitHub PR/review/checks port | Live PR/checks/conflict and cleanup workflow |
-| PAR-07 browser/Computer | Host Chromium tabs/profiles, rendered canvas, scoped handoff/takeover/private mode, annotations/transfers, browser skill drafts, Computer watch/control | Rendered explicit resume, cross-platform capture and signed worker packaging |
-| PAR-08 managers | Registry/manifest adapters, private sources, install/update/rollback, permission diffs, active-use leases, configured model/agent/MCP managers | Combined extension/capture qualification journey |
-| PAR-09 desktop | Arbitrary docking/tab groups, keyboard shortcuts, persistent layouts, detach, monitor-aware native restore, themes | Extended loaded-editor a11y proof, real platform windows/monitors |
-| PAR-10 creation/runners | Versioned document/table/chart/deck/code exports, image/audio protocol adapters, bounded media conversion, real dedicated containers/secret injection/logs/results/teardown | Real entitled image/audio/reviewer account, remote VM proof and packaged runtime qualification |
+| PAR-01 access | Canonical principals, local password/real TLS OIDC/custom adapter, JWT/refresh, roles/project/resource guards, native keyring bridge; live revoke/legacy tests and real Linux/Windows OS credential store | Installed native first-boot/restart/revoke integration |
+| PAR-02 chat | Independent React DOM chat, durable session-only engine/model selection, streaming, context, linked forks, receipt recovery; simultaneous engine configuration isolation | Native active-run/window continuation integration |
+| PAR-03 memory | Provenance, exclusions, scoped versions, retention/export and bounded lifecycle hooks | None in MEM-01; integrator adapters retain their own qualification |
+| PAR-04 execution | Durable goals/schedules, timezone/missed/overlap rules, delegated target/budget/leases, isolated child worktrees/snapshots, supervision; actual network-none container worker | None in AUTO-01/AGENT-01/CLOUD-01 for the named qualified container adapter |
+| PAR-05 coding | CodeMirror buffers, restricted PTY/xterm, diagnostics/navigation/completion/formatting; actual Python/JS/TS breakpoint/step/inspection and language navigation | Native installed coding/runtime integration; DEV-01 behavior verified |
+| PAR-06 delivery | Real Git worktrees/hunk/stage/commit/push, exact durable publication and typed GitHub PR/checks; actual draft PR28 created | Final rendered two-worktree/terminal/conflict/cleanup journey |
+| PAR-07 browser/Computer | Real host Chromium tabs/profiles, scoped task handoff/takeover/private login, annotations/transfers/crash recovery; exact-window and tab recording/redaction/replay | Globally persistent recording indicator and final rendered proof; Windows exact-window capture remains a platform limit |
+| PAR-08 managers | Real registry/custom adapters/private sources, install/update/rollback/permission diff/in-use leases; model/agent/MCP/memory/hooks/automation/access managers | Final broader keyboard/contrast/zoom proof |
+| PAR-09 desktop | Arbitrary docking/tab groups/keyboard, persistent layouts, native detach and monitor-aware restoration; acknowledgement-based state-safe re-dock | Installed native detach/re-dock/missing-monitor proof and final accessibility closure |
+| PAR-10 creation/runners | Versioned Office/table/chart/deck/code exports, media conversions and explicit image/audio protocols; real dedicated container/secret/logs/results/budget/teardown | Real entitled image/edit/transcription/speech account and frozen smaller-reviewer evaluation with latency/cost |
 
 The native desktop and browser use the same contract3 independent workspace
 bundle. Expo remains the mobile client. An absent/incompatible workspace bundle
@@ -42,8 +42,8 @@ returns an actionable error; it is never replaced with the Expo desktop UI.
   distinctly. No configured smaller model has yet completed live qualification.
 - Internal tools and the dedicated Claude browser MCP workflow have enforceable
   paths. Native Codex/ACP restricted browser/cloud workflows remain explicitly
-  unavailable until interception is proved. Unsupported adapter capability is
-  an outstanding acceptance gate, not delivered parity.
+  unavailable until interception is proved. Unsupported adapter capability remains explicit in the support matrix; a
+  supported run cannot silently bypass enforcement or change adapters.
 - Provider accounts/models and charge acknowledgement are explicit. No silent
   subscription/API fallback or paid validation has occurred. Uncertain media
   outcomes survive restart and cannot be replayed automatically.
@@ -172,3 +172,25 @@ and native review contracts passed45tests with one optional CLI case skipped.
 Active-task rendered browser proof passed all14workflow flags with zero UI errors
 and no paid provider queries. New native recovery passed six geometry source tests
 and cargo check --tests; actual multi-monitor GUI validation remains open.
+
+Current source integration fixes
+
+- Exact simultaneous-engine regression passes with actual canonical runs. Focused
+  live authorization/identity/preview checks:55passed,1optional skip.
+- Linux subagent benchmark now assigns parent/child responses to their own prompts
+  and explicitly waits for both children. It no longer relies on a timing-sensitive
+  shared response queue; six benchmark tests pass.
+- macOS restricted interactive terminals now use the same Seatbelt policy, private
+  HOME, filtered environment and filesystem roots as agent execution. Actual Bash
+  and Zsh interruption/resume and outside-root denial pass.
+- macOS external Chromium bypasses PyInstaller's partial Mach-O cache and stages
+  the complete runtime with relative framework links. The platform Tauri config
+  uses whole-directory copying, preserving these links in the installed app.
+  Signing defers designated app/framework executables until nested code is signed.
+  Two packaging regressions pass, including actual small C-generated Mach-O helper/
+  framework/app strict-signature checks and embedded JIT entitlement inspection.
+  These fixtures do not prove the complete Chromium installer; that remains CI work.
+- Current Windows CI is not green:15full-suite failures exposed platform fixture
+  assumptions, missing timezone data, private-file ACL gaps and two worker timeouts.
+  Dedicated adapter verification passed12checks (all debug paths) and failed two
+  file-URI comparisons. Fixes and actual platform checks are being integrated.

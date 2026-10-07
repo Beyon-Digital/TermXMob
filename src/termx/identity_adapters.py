@@ -220,7 +220,8 @@ def load_configured_adapters(service: AuthenticationService, path) -> None:
     import os
     from pathlib import Path
     config_path = Path(path)
-    if os.name != "nt" and config_path.stat().st_mode & 0o077:
+    from termx.private_files import private_path_permissions
+    if not private_path_permissions(config_path):
         raise ValueError("authentication adapter configuration must be owner-readable only")
     config = json.loads(config_path.read_text())
     prepared = prepare_adapter_configuration(service, config)

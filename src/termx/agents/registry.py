@@ -73,11 +73,14 @@ class AgentRegistry:
 
     def _atomic_write(self, path: Path, content: str) -> None:
         self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        from termx.private_files import protect_private_path
+        if os.name == 'nt':
+            protect_private_path(self._dir, directory=True)
         fd, tmp = tempfile.mkstemp(dir=str(self._dir), prefix=".write-")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                protect_private_path(Path(tmp))
                 fh.write(content)
-            os.chmod(tmp, 0o600)
             if path.exists():
                 bak = path.with_suffix(path.suffix + ".bak")
                 try:
@@ -85,7 +88,7 @@ class AgentRegistry:
                 except OSError:
                     pass
             os.replace(tmp, str(path))
-            os.chmod(str(path), 0o600)
+            protect_private_path(path)
         finally:
             try:
                 os.unlink(tmp)

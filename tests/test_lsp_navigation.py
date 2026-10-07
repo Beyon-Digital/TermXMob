@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import url2pathname
 import pytest
 from fastapi import WebSocketDisconnect
@@ -15,7 +15,9 @@ def local_file_identity(uri):
     parts = urlsplit(uri)
     assert parts.scheme == 'file' and parts.netloc in {'', 'localhost'}
     assert not parts.query and not parts.fragment
-    return Path(url2pathname(parts.path)).resolve()
+    # Windows url2pathname recognizes the drive before its own URL decoding;
+    # LSP servers legitimately percent-encode the colon in file:///c%3A/....
+    return Path(url2pathname(unquote(parts.path))).resolve()
 
 class Socket:
     def __init__(self):self.input=asyncio.Queue();self.output=asyncio.Queue()

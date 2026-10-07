@@ -174,15 +174,22 @@ jobs:
           uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
           uv run --no-sync python -m playwright install-deps chromium
 
+      - name: Install complete backend and packaging dependencies
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+        run: uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
+
+      - name: Verify complete backend suite
+        run: uv run --no-sync pytest -q
+
       - name: Build complete workspace runtime and Python sidecar
+        shell: bash
         env:
           TERMX_MACOS_SIGN_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
           UV_PYTHON_PREFERENCE: only-managed
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
-          uv run --no-sync pytest -q
           uv run --no-sync python desktop/scripts/prepare_runtime.py
           uv run --no-sync python desktop/scripts/build_sidecar.py
           uv run --no-sync python desktop/scripts/verify_runtime.py
@@ -312,7 +319,7 @@ jobs:
         with:
           projectPath: desktop/src-tauri
           tauriScript: tauri
-          args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }} --bundles ${{ matrix.bundles }}
+          args: --verbose ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }} --bundles ${{ matrix.bundles }}
           tagName: ${{ steps.release.outputs.tag }}
           releaseName: ${{ steps.release.outputs.tag != '' && format('Termx {0}', steps.release.outputs.tag) || '' }}
           releaseDraft: ${{ steps.release.outputs.draft }}
@@ -345,6 +352,74 @@ jobs:
             displays need an IddCx driver. Linux capture needs the tools listed in
             `desktop/README.md`. Each platform's `SHA256SUMS-<platform>.txt` is
             attached for verification.
+
+      - name: Install pinned native GUI driver
+        if: ${{ !cancelled() && runner.os != 'macOS' && (hashFiles('desktop/src-tauri/target/release/bundle/deb/*.deb') != '' || hashFiles('desktop/src-tauri/target/release/bundle/msi/*.msi') != '') }}
+        run: cargo install tauri-driver --version 2.1.0 --locked
+
+      - name: Verify installed Linux native workspace
+        if: ${{ !cancelled() && runner.os == 'Linux' && hashFiles('desktop/src-tauri/target/release/bundle/deb/*.deb') != '' }}
+        shell: bash
+        run: |
+          sudo apt-get install -y webkit2gtk-driver
+          package=$(find desktop/src-tauri/target/release/bundle/deb -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$package"
+          sudo dpkg -i "$package"
+          package_name=$(dpkg-deb --field "$package" Package)
+          installed_binary=$(dpkg -L "$package_name" | awk '/\/bin\/termx-desktop$/ {print; exit}')
+          test -x "$installed_binary"
+          export TERMX_GUI_PACKAGE="$package" TERMX_GUI_BINARY="$installed_binary"
+          dbus-run-session -- bash -eu -c '
+            fixture_keyring=$(mktemp -d)
+            export XDG_DATA_HOME="$fixture_keyring"
+            trap "rm -rf -- $fixture_keyring" EXIT
+            printf "%s" "synthetic-native-gui-keyring-password" | gnome-keyring-daemon --unlock --components=secrets
+            xvfb-run -a -s "-screen 0 1024x768x24" bash -eu -c '\''
+              openbox >/tmp/termx-native-gui-window-manager.log 2>&1 &
+              window_manager=$!
+              trap "kill $window_manager 2>/dev/null || true" EXIT
+              uv run --no-sync python desktop/scripts/native_gui_smoke.py \
+                --binary "$TERMX_GUI_BINARY" --package "$TERMX_GUI_PACKAGE" \
+                --driver "$HOME/.cargo/bin/tauri-driver" \
+                --native-driver "$(command -v WebKitWebDriver)" \
+                --output desktop/build/native-gui
+            '\''
+          '
+
+      - name: Verify installed Windows native workspace
+        if: ${{ !cancelled() && runner.os == 'Windows' && hashFiles('desktop/src-tauri/target/release/bundle/msi/*.msi') != '' }}
+        shell: pwsh
+        run: |
+          $output = Join-Path $PWD 'desktop/build/native-gui'
+          New-Item -ItemType Directory -Force $output | Out-Null
+          $package = Get-ChildItem 'desktop/src-tauri/target/release/bundle/msi/*.msi' | Select-Object -First 1
+          if (!$package) { throw 'Built MSI package missing' }
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', $package.FullName, '/qn', '/norestart', '/L*V', (Join-Path $output 'msi-install.log')) -Wait -PassThru
+          if ($install.ExitCode -notin @(0, 3010)) { throw "MSI install failed: $($install.ExitCode)" }
+          $binary = Get-ChildItem (Join-Path $env:ProgramFiles 'Termx') -Filter 'termx-desktop.exe' -Recurse | Select-Object -First 1
+          if (!$binary) { throw 'Installed Termx executable missing' }
+          $runtime = Get-ChildItem "${env:ProgramFiles(x86)}/Microsoft/EdgeWebView/Application/*/msedgewebview2.exe" |
+            Sort-Object { [version](($_.VersionInfo.ProductVersion -split ' ')[0]) } -Descending | Select-Object -First 1
+          if (!$runtime) { throw 'Installed WebView2 runtime missing' }
+          $version = ($runtime.VersionInfo.ProductVersion -split ' ')[0]
+          $archive = Join-Path $env:RUNNER_TEMP 'termx-matched-edgedriver.zip'
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$version/edgedriver_win64.zip" -OutFile $archive
+          $driverDirectory = Join-Path $env:RUNNER_TEMP 'termx-matched-edgedriver'
+          Expand-Archive $archive -DestinationPath $driverDirectory -Force
+          uv run --no-sync python desktop/scripts/native_gui_smoke.py `
+            --binary $binary.FullName --package $package.FullName `
+            --driver (Join-Path $env:USERPROFILE '.cargo/bin/tauri-driver.exe') `
+            --native-driver (Join-Path $driverDirectory 'msedgedriver.exe') `
+            --output $output
+          if ($LASTEXITCODE -ne 0) { throw 'Installed native GUI qualification failed' }
+
+      - name: Upload installed native GUI evidence
+        if: always() && runner.os != 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-native-gui-${{ matrix.name }}
+          path: desktop/build/native-gui
+          if-no-files-found: ignore
 
       - name: Add checksums to the release
         if: steps.release.outputs.tag != ''

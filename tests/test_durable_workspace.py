@@ -118,6 +118,56 @@ async def test_duplicate_prompt_returns_same_task_and_context_is_session_local(w
 
 
 @pytest.mark.anyio
+async def test_two_engines_keep_independent_active_run_configuration(workspace):
+    service, owner, path = workspace
+    first = session(workspace)
+    second = service.create_session(owner, title='Native chat', project_id='project-a',
+                                    cwd=str(path), engine='fixture-acp', model='native-model')
+    calls = []
+    original_agent = service.state.agent.create_task
+    original_native = service.state.engines.create_task
+
+    async def internal(**kwargs):
+        calls.append(('internal', dict(kwargs)))
+        return await original_agent(**kwargs)
+
+    async def native(**kwargs):
+        calls.append(('native', dict(kwargs)))
+        return await original_native(**kwargs)
+
+    service.state.agent.create_task = internal
+    service.state.engines.create_task = native
+    a, b = await asyncio.gather(
+        service.send(owner, first['id'], prompt='Internal work', request_id='engine-internal'),
+        service.send(owner, second['id'], prompt='Native work', request_id='engine-native'))
+    assert a['id'] != b['id']
+    assert a['engine'] == 'internal' and b['engine'] == 'fixture-acp'
+    dispatched = dict(calls)
+    assert dispatched['internal']['provider_id'] == 'fixture'
+    assert dispatched['internal']['model'] == 'fixture'
+    assert dispatched['native']['engine'] == 'fixture-acp'
+    assert dispatched['native']['model'] == 'native-model'
+    assert dispatched['internal']['conversation_id'] == first['id']
+    assert dispatched['native']['conversation_id'] == second['id']
+
+    # Changing another chat's configuration cannot retarget either live task.
+    idle = session(workspace)
+    service.update_session(owner, idle['id'], revision=idle['revision'],
+                           changes={'provider_id': 'different-account', 'model': 'new-model'})
+    for row in (first, second):
+        current = service.session(owner, row['id'])
+        with pytest.raises(Conflict, match='active turn'):
+            service.update_session(owner, row['id'], revision=current['revision'],
+                                   changes={'model': 'retargeted-model'})
+    assert service.agents.get_task(a['id'])['model'] == 'fixture'
+    assert service.agents.get_task(b['id'])['model'] == 'native-model'
+    assert service.session(owner, first['id'])['provider_id'] == 'fixture'
+    assert service.session(owner, second['id'])['engine'] == 'fixture-acp'
+    assert len(service.session(owner, first['id'])['turns']) == 1
+    assert len(service.session(owner, second['id'])['turns']) == 1
+
+
+@pytest.mark.anyio
 async def test_reviewed_cross_engine_fork_transfers_public_context_only_once(workspace):
     service,owner,path=workspace
     original=session(workspace)

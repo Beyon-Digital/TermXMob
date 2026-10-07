@@ -650,6 +650,33 @@ class MacOSRunner:
             process_tree_kill=True,
         )
 
+    def spawn_argv(self, spec: SpawnSpec) -> list[str]:
+        """Resolve an enforced Seatbelt command for the terminal-owned PTY.
+
+        The helper protocol transports pipes, not PTY handles. A configured
+        restricted-user helper therefore refuses this path rather than
+        silently weakening its identity boundary to the invoking user.
+        """
+        spec.validate()
+        if spec.profile != self._profile:
+            raise SandboxFailure("invalid_profile", "PTY profile does not match runner")
+        if self._helper:
+            raise SandboxFailure("unsupported_pty", "The restricted-user helper does not support PTY attachment")
+        if spec.network == "localhost":
+            raise SandboxFailure("unsupported_network", "loopback-only networking is not enforceable by the macos backend")
+        home = Path(spec.home).resolve() if spec.home else self._sandbox_home(spec)
+        tmp_dir = home / "tmp"
+        home.mkdir(parents=True, exist_ok=True, mode=0o700)
+        tmp_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        env = spec.env or build_environment(spec.profile, home=str(home), tmp_dir=str(tmp_dir))
+        env["HOME"] = str(home)
+        env["TMPDIR"] = str(tmp_dir)
+        env["PATH"] = self._sandbox_path(env.get("PATH", ""), spec, home, tmp_dir)
+        # The PTY owner supplies this same dictionary to Popen; the private
+        # environment must agree with the exact roots in the kernel policy.
+        spec.env.update(env)
+        return _seatbelt_argv(spec, home, tmp_dir)
+
     async def spawn(self, spec: SpawnSpec) -> StreamedProcess | _HelperProcess:
         spec.validate()
         if spec.profile != self._profile:

@@ -178,10 +178,13 @@ class CredentialStore:
     def _windows_set(self, provider_id: str, secret: str) -> None:
         path = self._windows_path(provider_id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        from termx.private_files import protect_private_path
+        protect_private_path(path.parent, directory=True)
         encrypted = self._protect(secret.encode("utf-8"), decrypt=False)
         fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".credential-")
         try:
             with os.fdopen(fd, "wb") as handle:
+                protect_private_path(Path(temporary))
                 handle.write(encrypted)
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -189,8 +192,7 @@ class CredentialStore:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
-        if os.name == "posix":  # pragma: no cover - Windows branch
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        protect_private_path(path)
 
     def _windows_get(self, provider_id: str) -> str | None:
         try:

@@ -1,4 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 
 export const nativeWorkspace = () => isTauri();
 export async function nativeLogin(username: string, password: string, setup = false) {
@@ -17,6 +19,50 @@ export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 
   const child = window.open(url.toString(), '_blank', 'popup,width=1100,height=780');
   if (!child) throw new Error('Popup blocked. Allow popups for this workspace or use the in-app split.');
   return 'browser-window';
+}
+
+export type NativePanel = 'chat' | 'workbench' | 'browser' | 'computer';
+export type NativeRedockEvent = { id: string; source: string; ownerId: string; sessionId: string | null; panel: NativePanel; payload: unknown };
+export const isDetachedWindow = () => nativeWorkspace() && getCurrentWindow().label.startsWith('workspace-');
+export async function listenNativeRedock(handler: (event: NativeRedockEvent) => void): Promise<UnlistenFn> {
+  if (!nativeWorkspace()) return () => {};
+  return getCurrentWindow().listen<NativeRedockEvent>('termx-native-redock', event => handler(event.payload));
+}
+export const acceptRedock = (id: string) => invoke<void>('workspace_redock_accept', { id });
+export const commitRedock = (id: string) => invoke<void>('workspace_redock_commit', { id });
+export const cancelRedock = (id: string) => invoke<void>('workspace_redock_cancel', { id });
+export const rejectRedock = cancelRedock;
+export async function requestRedock(sessionId: string, panel: NativePanel, payload: unknown): Promise<string> {
+  if (!isDetachedWindow()) throw new Error('Only a detached native workspace can return to the main window');
+  const accepted = new Set<string>(), cancelled = new Set<string>();
+  let pendingId: string | undefined, finish: (() => void) | undefined;
+  const releases: UnlistenFn[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // Subscribe before IPC: the main window can safely persist and acknowledge
+    // before the request's native return crosses back into this renderer.
+    releases.push(await getCurrentWindow().listen<{ id: string }>('termx-native-redock-accepted', event => {
+      accepted.add(event.payload.id); if (pendingId === event.payload.id) finish?.();
+    }));
+    releases.push(await getCurrentWindow().listen<{ id: string }>('termx-native-redock-cancelled', event => {
+      cancelled.add(event.payload.id); if (pendingId === event.payload.id) finish?.();
+    }));
+    pendingId = await invoke<string>('workspace_redock', { sessionId, panel, payload });
+    if (!accepted.has(pendingId) && !cancelled.has(pendingId)) {
+      await new Promise<void>((resolve, reject) => {
+        finish = resolve;
+        timer = setTimeout(() => reject(new Error('Main workspace did not acknowledge the handoff; this window remains open')), 45_000);
+      });
+    }
+    if (cancelled.has(pendingId)) throw new Error('Main workspace could not safely accept the handoff; this window remains open');
+    return pendingId;
+  } catch (error) {
+    if (pendingId) await cancelRedock(pendingId).catch(() => {});
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+    releases.forEach(release => release());
+  }
 }
 
 export async function nativeBinary(path:string,init:RequestInit={}):Promise<{status:number;body:Uint8Array;mime:string}>{

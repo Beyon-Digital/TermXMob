@@ -1,0 +1,3523 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "handoff",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              "textarea[placeholder=\"https://example.com\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "observe",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 471
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "takeover",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 674
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "private",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 674
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "resume",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 674
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "capture-in-chat",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "manager-memory",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "textarea[placeholder=\"\"]"
+            ],
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".message-user > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".message-author"
+            ],
+            [
+              ".brand-mark"
+            ],
+            [
+              ".message-author > small"
+            ],
+            [
+              ".message-assistant > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "manager-account",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".message-user > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".message-author"
+            ],
+            [
+              ".brand-mark"
+            ],
+            [
+              ".message-author > small"
+            ],
+            [
+              ".message-assistant > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "handoff",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              "textarea[placeholder=\"https://example.com\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "observe",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 531
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "takeover",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 734
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "private",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 734
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "resume",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "browser_page_height": 734
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "capture-in-chat",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "manager-memory",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "textarea[placeholder=\"\"]"
+            ],
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".message-user > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".message-author"
+            ],
+            [
+              ".brand-mark"
+            ],
+            [
+              ".message-author > small"
+            ],
+            [
+              ".message-assistant > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "manager-account",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".message-user > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".message-author"
+            ],
+            [
+              ".brand-mark"
+            ],
+            [
+              ".message-author > small"
+            ],
+            [
+              ".message-assistant > .message-content > .space-y-4.whitespace-normal.\\[\\&\\>\\*\\:first-child\\]\\:mt-0 > p"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "handoff",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              "textarea[placeholder=\"https://example.com\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "observe",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "takeover",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "private",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "resume",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "capture-in-chat",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".task-meta"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "manager-memory",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "manager-account",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "handoff",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              "textarea[placeholder=\"https://example.com\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "observe",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "takeover",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "private",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "resume",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "browser_page_height": 320
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "capture-in-chat",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "manager-memory",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "manager-account",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".dock-conversation > .dock-pane-header[draggable=\"true\"] > .active"
+            ],
+            [
+              "select[aria-label=\"Dock conversation\"]"
+            ],
+            [
+              ".task-meta"
+            ],
+            [
+              ".task-meta > .button-sm.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".font-medium"
+            ],
+            [
+              ".badge"
+            ],
+            [
+              "button[aria-label=\"Rename or move conversation\"]"
+            ],
+            [
+              ".session-context > span"
+            ],
+            [
+              ".session-tools:nth-child(1) > summary"
+            ],
+            [
+              ".session-tools:nth-child(2) > summary"
+            ],
+            [
+              "textarea[aria-label=\"Message\"]"
+            ],
+            [
+              ".composer-hint"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Message",
+      "focus": {
+        "label": "Message",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 726,
+        "height": 58,
+        "visible_width": 726,
+        "visible_height": 58,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Send message",
+      "focus": {
+        "label": "Send message",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 32,
+        "height": 32,
+        "visible_width": 32,
+        "visible_height": 32,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Allow once",
+      "focus": {
+        "label": "Allow once",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 94.734375,
+        "height": 36,
+        "visible_width": 94.734375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create a browser profile",
+      "focus": {
+        "label": "Create a browser profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 173.6875,
+        "height": 36,
+        "visible_width": 173.6875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "New profile name",
+      "focus": {
+        "label": "New profile name",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 320,
+        "height": 36,
+        "visible_width": 320,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create profile",
+      "focus": {
+        "label": "Create profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 110.59375,
+        "height": 36,
+        "visible_width": 110.59375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 561.546875,
+        "height": 36,
+        "visible_width": 561.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Let agent use",
+      "focus": {
+        "label": "Let agent use",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 110.578125,
+        "height": 36,
+        "visible_width": 110.578125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Ask about page",
+      "focus": {
+        "label": "Ask about page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(146, 212, 163)",
+        "background": "rgb(33, 60, 42)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.98
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(146, 212, 163)",
+        "background": "rgb(38, 44, 40)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.26
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 272,
+        "height": 36,
+        "visible_width": 272,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Managed page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "managed page input",
+      "actual_input_verified": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Private login",
+      "focus": {
+        "label": "Private login",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 103.78125,
+        "height": 36,
+        "visible_width": 103.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Control page with keyboard",
+      "focus": {
+        "label": "Control page with keyboard",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 195.96875,
+        "height": 36,
+        "visible_width": 195.96875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Private page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "private managed page keyboard",
+      "no_context_observation": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Resume agent",
+      "focus": {
+        "label": "Resume agent",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(38, 44, 40)",
+        "width": 115.359375,
+        "height": 36,
+        "visible_width": 115.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.13
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(146, 212, 163)",
+        "background": "rgb(38, 44, 40)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.26
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Record safe task steps",
+      "focus": {
+        "label": "Record safe task steps",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 272,
+        "height": 36,
+        "visible_width": 272,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Open capture controls",
+      "focus": {
+        "label": "Open capture controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 50.078125,
+        "height": 24,
+        "visible_width": 50.078125,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Managers",
+      "focus": {
+        "label": "Managers",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 220,
+        "height": 36,
+        "visible_width": 220,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Memory",
+      "focus": {
+        "label": "Memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 183,
+        "height": 37,
+        "visible_width": 183,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Fact or decision",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 640,
+        "height": 94,
+        "visible_width": 640,
+        "visible_height": 94,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Source or reason",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Save memory",
+      "focus": {
+        "label": "Save memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Models & engines",
+      "focus": {
+        "label": "Models & engines",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 183,
+        "height": 37,
+        "visible_width": 183,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Add provider account",
+      "focus": {
+        "label": "Add provider account",
+        "outline": "auto",
+        "outline_width": "1px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 870,
+        "height": 17,
+        "visible_width": 870,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Account ID",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Display name",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Let agent use",
+      "focus": {
+        "label": "Let agent use",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 110.578125,
+        "height": 36,
+        "visible_width": 110.578125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Ask about page",
+      "focus": {
+        "label": "Ask about page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(17, 108, 70)",
+        "background": "rgb(227, 241, 230)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.52
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(17, 108, 70)",
+        "background": "rgb(233, 236, 231)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.41
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 272,
+        "height": 36,
+        "visible_width": 272,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Managed page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "managed page input",
+      "actual_input_verified": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Private login",
+      "focus": {
+        "label": "Private login",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 103.78125,
+        "height": 36,
+        "visible_width": 103.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Control page with keyboard",
+      "focus": {
+        "label": "Control page with keyboard",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 195.96875,
+        "height": 36,
+        "visible_width": 195.96875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Private page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "private managed page keyboard",
+      "no_context_observation": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Resume agent",
+      "focus": {
+        "label": "Resume agent",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(233, 236, 231)",
+        "width": 115.359375,
+        "height": 36,
+        "visible_width": 115.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.01
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(17, 108, 70)",
+        "background": "rgb(233, 236, 231)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.41
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Record safe task steps",
+      "focus": {
+        "label": "Record safe task steps",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 272,
+        "height": 36,
+        "visible_width": 272,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Open capture controls",
+      "focus": {
+        "label": "Open capture controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 50.078125,
+        "height": 24,
+        "visible_width": 50.078125,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Managers",
+      "focus": {
+        "label": "Managers",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 220,
+        "height": 36,
+        "visible_width": 220,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Memory",
+      "focus": {
+        "label": "Memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 183,
+        "height": 37,
+        "visible_width": 183,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Fact or decision",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 640,
+        "height": 94,
+        "visible_width": 640,
+        "visible_height": 94,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Source or reason",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Save memory",
+      "focus": {
+        "label": "Save memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Models & engines",
+      "focus": {
+        "label": "Models & engines",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 183,
+        "height": 37,
+        "visible_width": 183,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Add provider account",
+      "focus": {
+        "label": "Add provider account",
+        "outline": "auto",
+        "outline_width": "1px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 870,
+        "height": 17,
+        "visible_width": 870,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Account ID",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Display name",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 640,
+        "height": 36,
+        "visible_width": 640,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Let agent use",
+      "focus": {
+        "label": "Let agent use",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 110.578125,
+        "height": 36,
+        "visible_width": 110.578125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Ask about page",
+      "focus": {
+        "label": "Ask about page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(146, 212, 163)",
+        "background": "rgb(33, 60, 42)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.98
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(146, 212, 163)",
+        "background": "rgb(38, 44, 40)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.26
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Managed page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 701,
+        "height": 42,
+        "visible_width": 701,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "managed page input",
+      "actual_input_verified": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Private login",
+      "focus": {
+        "label": "Private login",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 103.78125,
+        "height": 36,
+        "visible_width": 103.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Control page with keyboard",
+      "focus": {
+        "label": "Control page with keyboard",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 195.96875,
+        "height": 36,
+        "visible_width": 195.96875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Private page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 701,
+        "height": 42,
+        "visible_width": 701,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "private managed page keyboard",
+      "no_context_observation": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Resume agent",
+      "focus": {
+        "label": "Resume agent",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(38, 44, 40)",
+        "width": 115.359375,
+        "height": 36,
+        "visible_width": 115.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.13
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(146, 212, 163)",
+        "background": "rgb(38, 44, 40)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.26
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Record safe task steps",
+      "focus": {
+        "label": "Record safe task steps",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Open capture controls",
+      "focus": {
+        "label": "Open capture controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 50.078125,
+        "height": 24,
+        "visible_width": 50.078125,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(233, 189, 112)",
+        "background": "rgb(58, 47, 29)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.47
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Managers",
+      "focus": {
+        "label": "Managers",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 196,
+        "height": 36,
+        "visible_width": 196,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Memory",
+      "focus": {
+        "label": "Memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 145,
+        "height": 37,
+        "visible_width": 145,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Fact or decision",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 468,
+        "height": 94,
+        "visible_width": 468,
+        "visible_height": 67.3125,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Source or reason",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Save memory",
+      "focus": {
+        "label": "Save memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Models & engines",
+      "focus": {
+        "label": "Models & engines",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 145,
+        "height": 37,
+        "visible_width": 145,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Add provider account",
+      "focus": {
+        "label": "Add provider account",
+        "outline": "auto",
+        "outline_width": "1px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 468,
+        "height": 17,
+        "visible_width": 468,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Account ID",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Display name",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 35.90625,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Let agent use",
+      "focus": {
+        "label": "Let agent use",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 110.578125,
+        "height": 36,
+        "visible_width": 110.578125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Ask about page",
+      "focus": {
+        "label": "Ask about page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(17, 108, 70)",
+        "background": "rgb(227, 241, 230)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.52
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(17, 108, 70)",
+        "background": "rgb(233, 236, 231)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.41
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Managed page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 701,
+        "height": 42,
+        "visible_width": 701,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "managed page input",
+      "actual_input_verified": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Private login",
+      "focus": {
+        "label": "Private login",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 103.78125,
+        "height": 36,
+        "visible_width": 103.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Control page with keyboard",
+      "focus": {
+        "label": "Control page with keyboard",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 195.96875,
+        "height": 36,
+        "visible_width": 195.96875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Private page input bridge",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 701,
+        "height": 42,
+        "visible_width": 701,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "private managed page keyboard",
+      "no_context_observation": true,
+      "escape_restored_controls": true
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Resume agent",
+      "focus": {
+        "label": "Resume agent",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(233, 236, 231)",
+        "width": 115.359375,
+        "height": 36,
+        "visible_width": 115.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.01
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Hand over & observe",
+      "focus": {
+        "label": "Hand over & observe",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 153.265625,
+        "height": 36,
+        "visible_width": 153.265625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Take over",
+      "focus": {
+        "label": "Take over",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(17, 108, 70)",
+        "background": "rgb(233, 236, 231)",
+        "width": 86.25,
+        "height": 36,
+        "visible_width": 86.25,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.41
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Record safe task steps",
+      "focus": {
+        "label": "Record safe task steps",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Open capture controls",
+      "focus": {
+        "label": "Open capture controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 50.078125,
+        "height": 24,
+        "visible_width": 50.078125,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Stop capture",
+      "focus": {
+        "label": "Stop capture",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(138, 89, 16)",
+        "background": "rgb(252, 241, 220)",
+        "width": 92.984375,
+        "height": 24,
+        "visible_width": 92.984375,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Managers",
+      "focus": {
+        "label": "Managers",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 196,
+        "height": 36,
+        "visible_width": 196,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Memory",
+      "focus": {
+        "label": "Memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 145,
+        "height": 37,
+        "visible_width": 145,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Fact or decision",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 468,
+        "height": 94,
+        "visible_width": 468,
+        "visible_height": 94,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Source or reason",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Save memory",
+      "focus": {
+        "label": "Save memory",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Models & engines",
+      "focus": {
+        "label": "Models & engines",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 145,
+        "height": 37,
+        "visible_width": 145,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Add provider account",
+      "focus": {
+        "label": "Add provider account",
+        "outline": "auto",
+        "outline_width": "1px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 468,
+        "height": 17,
+        "visible_width": 468,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Account ID",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Display name",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 468,
+        "height": 36,
+        "visible_width": 468,
+        "visible_height": 35.90625,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    }
+  ],
+  "errors": [],
+  "paid_provider_queries": 0,
+  "limitations": [
+    "Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation."
+  ],
+  "fixture_provider_turns": 2,
+  "task_status_before_cleanup": "running"
+}

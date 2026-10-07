@@ -47,6 +47,15 @@ def verify_web(web_dir: Path) -> None:
         raise SystemExit("Web UI contract 3 missing; rebuild desktop/workspace")
 
 
+def stage_macos_runtime(built: Path, runtime: Path) -> None:
+    """Copy complete external bundles without flattening framework symlinks."""
+    target = built / "_internal" / "runtime"
+    if not (runtime / "manifest.json").is_file():
+        raise SystemExit("Prepared macOS runtime manifest is missing")
+    shutil.rmtree(target, ignore_errors=True)
+    shutil.copytree(runtime, target, symlinks=True)
+
+
 def build_sidecar(stage_only: bool = False, web_dir: Path = WEB) -> None:
     os.environ["TERMX_PACKAGE_WEB_DIR"] = str(web_dir.resolve())
     if not stage_only:
@@ -70,9 +79,11 @@ def build_sidecar(stage_only: bool = False, web_dir: Path = WEB) -> None:
     binary = built / EXE_NAME
     if not binary.is_file():
         raise SystemExit(f"PyInstaller did not produce {binary}")
+    if sys.platform == "darwin" and not stage_only:
+        stage_macos_runtime(built, BUILD / "runtime")
     shutil.rmtree(STAGE, ignore_errors=True)
     STAGE.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(built, STAGE)
+    shutil.copytree(built, STAGE, symlinks=sys.platform == "darwin")
     print(f"staged sidecar at {STAGE}")
 
 

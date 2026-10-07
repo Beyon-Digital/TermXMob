@@ -67,12 +67,17 @@ fn main() {
 
     let builder = tauri::Builder::default()
         .manage(workspace::NativeSession::default())
+        .manage(workspace::RedockCoordinator::default())
         .invoke_handler(tauri::generate_handler![
             workspace::workspace_login,
             workspace::workspace_resume_sso,
             workspace::workspace_request,
             workspace::workspace_logout,
             workspace::workspace_detach,
+            workspace::workspace_redock,
+            workspace::workspace_redock_accept,
+            workspace::workspace_redock_commit,
+            workspace::workspace_redock_cancel,
             workspace::workspace_binary
         ])
         .plugin(tauri_plugin_notification::init())

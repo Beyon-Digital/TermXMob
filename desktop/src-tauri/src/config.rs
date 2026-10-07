@@ -39,9 +39,19 @@ pub fn random_passcode() -> String {
 }
 
 pub fn data_dir(app: &AppHandle) -> PathBuf {
+    if let Some(directory) = desktop_directory_override(std::env::var_os("TERMX_DESKTOP_DATA_DIR"))
+    {
+        return directory;
+    }
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("termx-desktop"))
+}
+
+fn desktop_directory_override(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && path.parent().is_some())
 }
 
 pub fn config_dir(app: &AppHandle) -> PathBuf {
@@ -49,6 +59,9 @@ pub fn config_dir(app: &AppHandle) -> PathBuf {
 }
 
 pub fn log_dir(app: &AppHandle) -> PathBuf {
+    if desktop_directory_override(std::env::var_os("TERMX_DESKTOP_DATA_DIR")).is_some() {
+        return data_dir(app).join("logs");
+    }
     app.path()
         .app_log_dir()
         .unwrap_or_else(|_| data_dir(app).join("logs"))
@@ -85,6 +98,11 @@ pub fn save(app: &AppHandle, config: &DesktopConfig) {
 }
 
 pub fn migrate_legacy(app: &AppHandle) {
+    // An explicitly selected portable directory starts independently. Never
+    // copy another profile's tokens/configuration into it implicitly.
+    if desktop_directory_override(std::env::var_os("TERMX_DESKTOP_DATA_DIR")).is_some() {
+        return;
+    }
     let destination = config_dir(app);
     if destination.exists() {
         return;
@@ -108,10 +126,32 @@ pub fn migrate_legacy(app: &AppHandle) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn desktop_data_override_requires_an_absolute_directory() {
+        let absolute = std::env::temp_dir().join("termx-isolated-native-fixture");
+        assert_eq!(
+            desktop_directory_override(Some(absolute.clone().into_os_string())),
+            Some(absolute)
+        );
+        for invalid in ["", "relative", "../other-profile"] {
+            assert!(desktop_directory_override(Some(invalid.into())).is_none());
+        }
+        assert!(desktop_directory_override(None).is_none());
+    }
+}
+
 pub fn prepare_dirs(app: &AppHandle) {
-    let _ = fs::create_dir_all(data_dir(app));
-    let _ = fs::create_dir_all(config_dir(app));
-    let _ = fs::create_dir_all(log_dir(app));
+    for directory in [data_dir(app), config_dir(app), log_dir(app)] {
+        let _ = fs::create_dir_all(&directory);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&directory, fs::Permissions::from_mode(0o700));
+        }
+    }
     migrate_legacy(app);
 }
 

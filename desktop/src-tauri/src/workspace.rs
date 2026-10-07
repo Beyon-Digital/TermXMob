@@ -2,10 +2,11 @@
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 
@@ -20,6 +21,25 @@ struct MemorySession {
 }
 #[derive(Default)]
 pub struct NativeSession(Mutex<MemorySession>);
+#[derive(Default)]
+pub struct RedockCoordinator(Mutex<BTreeMap<String, RedockPending>>);
+struct RedockPending {
+    source: String,
+    owner: String,
+    session_id: Option<String>,
+    created: Instant,
+    accepted: bool,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RedockEvent {
+    id: String,
+    source: String,
+    owner_id: String,
+    session_id: Option<String>,
+    panel: String,
+    payload: Value,
+}
 #[derive(Serialize)]
 pub struct NativeResponse {
     status: u16,
@@ -610,6 +630,268 @@ fn detached_label(panel: &str, session: Option<&str>, slot: usize) -> String {
         .unwrap_or_else(|| "unassigned".into());
     format!("workspace-{panel}-{context}-{slot}")
 }
+fn valid_session_id(session_id: &Option<String>) -> bool {
+    session_id.as_ref().map_or(true, |id| {
+        !id.is_empty()
+            && id.len() <= 128
+            && id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '-' || character == '_'
+            })
+    })
+}
+fn valid_handoff(payload: &Value, session_id: &Option<String>) -> bool {
+    payload["version"] == 1
+        && session_id
+            .as_deref()
+            .is_some_and(|id| payload["sessionId"] == id)
+        && payload["buffers"]
+            .as_array()
+            .is_some_and(|rows| rows.len() <= 100)
+        && (payload["draft"].is_null() || payload["draft"].is_object())
+        && serde_json::to_vec(payload).is_ok_and(|bytes| bytes.len() <= 16 * 1024 * 1024)
+}
+fn pending_live(item: &RedockPending, source: &str, owner: &str, accepted: bool) -> bool {
+    item.source == source
+        && item.owner == owner
+        && (!accepted || item.accepted)
+        && item.created.elapsed() < Duration::from_secs(60)
+}
+fn redock_authority(
+    app: &AppHandle,
+    port: u16,
+    session_id: &Option<String>,
+) -> Result<String, String> {
+    let state = app.state::<NativeSession>();
+    let mut session = state
+        .0
+        .lock()
+        .map_err(|_| "Session coordinator unavailable")?;
+    if session.expires <= now() + 20 {
+        refresh(app, port, &mut session)?;
+    }
+    let current = call(port, "/auth/me", "GET", None, Some(&session.access), None)?;
+    if current.status != 200 {
+        return Err("Sign in again before returning this workspace".into());
+    }
+    if let Some(identifier) = session_id {
+        let resource = call(
+            port,
+            &format!("/api/workspace/sessions/{identifier}?turns=false"),
+            "GET",
+            None,
+            Some(&session.access),
+            None,
+        )?;
+        if resource.status != 200 {
+            return Err("Conversation authority changed; the detached window remains open".into());
+        }
+    }
+    current.body["principal"]["id"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "Current workspace owner unavailable".into())
+}
+#[tauri::command]
+pub async fn workspace_redock(
+    app: AppHandle,
+    window: WebviewWindow,
+    session_id: Option<String>,
+    panel: String,
+    payload: Value,
+) -> Result<String, String> {
+    let port = trusted(&app, &window)?;
+    if !window.label().starts_with("workspace-")
+        || !valid_session_id(&session_id)
+        || !["chat", "workbench", "browser", "computer"].contains(&panel.as_str())
+        || !valid_handoff(&payload, &session_id)
+    {
+        return Err("Invalid or oversized detached workspace handoff".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let main = app
+            .get_webview_window("main")
+            .ok_or("Main workspace unavailable; detached window remains open")?;
+        trusted(&app, &main)?;
+        let owner = redock_authority(&app, port, &session_id)?;
+        let id = format!(
+            "{:016x}{:016x}",
+            rand::random::<u64>(),
+            rand::random::<u64>()
+        );
+        let state = app.state::<RedockCoordinator>();
+        {
+            let mut pending = state
+                .0
+                .lock()
+                .map_err(|_| "Handoff coordinator unavailable")?;
+            pending.retain(|_, item| item.created.elapsed() < Duration::from_secs(60));
+            if pending.len() >= 16 || pending.values().any(|item| item.source == window.label()) {
+                return Err("A workspace handoff is already pending".into());
+            }
+            pending.insert(
+                id.clone(),
+                RedockPending {
+                    source: window.label().into(),
+                    owner: owner.clone(),
+                    session_id: session_id.clone(),
+                    created: Instant::now(),
+                    accepted: false,
+                },
+            );
+        }
+        let event = RedockEvent {
+            id: id.clone(),
+            source: window.label().into(),
+            owner_id: owner,
+            session_id,
+            panel,
+            payload,
+        };
+        restore_placement(&app, &main);
+        let deliver = main
+            .show()
+            .and_then(|_| main.unminimize())
+            .and_then(|_| main.set_focus())
+            .and_then(|_| app.emit_to("main", "termx-native-redock", event));
+        if deliver.is_err() {
+            if let Ok(mut pending) = state.0.lock() {
+                pending.remove(&id);
+            }
+            return Err(
+                "Main workspace could not accept the handoff; detached window remains open".into(),
+            );
+        }
+        Ok(id)
+    })
+    .await
+    .map_err(|_| "Workspace handoff worker unavailable")?
+}
+#[tauri::command]
+pub async fn workspace_redock_accept(
+    app: AppHandle,
+    window: WebviewWindow,
+    id: String,
+) -> Result<(), String> {
+    let port = trusted(&app, &window)?;
+    if window.label() != "main" {
+        return Err("Only the main workspace can accept a handoff".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<RedockCoordinator>();
+        let (owner, session_id) = {
+            let pending = state
+                .0
+                .lock()
+                .map_err(|_| "Handoff coordinator unavailable")?;
+            let item = pending
+                .get(&id)
+                .filter(|item| item.created.elapsed() < Duration::from_secs(60))
+                .ok_or("Handoff expired; detached window remains open")?;
+            (item.owner.clone(), item.session_id.clone())
+        };
+        if redock_authority(&app, port, &session_id)? != owner {
+            return Err("Handoff owner changed".into());
+        }
+        let mut pending = state
+            .0
+            .lock()
+            .map_err(|_| "Handoff coordinator unavailable")?;
+        let item = pending.get_mut(&id).ok_or("Handoff cancelled")?;
+        if item.owner != owner || item.created.elapsed() >= Duration::from_secs(60) {
+            return Err("Handoff expired or changed; detached window remains open".into());
+        }
+        item.accepted = true;
+        if app
+            .emit_to(
+                &item.source,
+                "termx-native-redock-accepted",
+                json!({"id":id}),
+            )
+            .is_err()
+        {
+            item.accepted = false;
+            return Err("Detached workspace unavailable; its state has not been closed".into());
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| "Workspace acceptance worker unavailable")?
+}
+#[tauri::command]
+pub async fn workspace_redock_commit(
+    app: AppHandle,
+    window: WebviewWindow,
+    id: String,
+) -> Result<(), String> {
+    let port = trusted(&app, &window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<RedockCoordinator>();
+        let (owner, session_id) = {
+            let pending = state
+                .0
+                .lock()
+                .map_err(|_| "Handoff coordinator unavailable")?;
+            let item = pending
+                .get(&id)
+                .filter(|item| {
+                    item.source == window.label()
+                        && item.accepted
+                        && item.created.elapsed() < Duration::from_secs(60)
+                })
+                .ok_or("Handoff has not been acknowledged; window remains open")?;
+            (item.owner.clone(), item.session_id.clone())
+        };
+        if redock_authority(&app, port, &session_id)? != owner {
+            return Err("Handoff owner changed; window remains open".into());
+        }
+        // Cancellation or timeout may occur while live host authority is checked.
+        // Hold the coordinator through close so neither can race the effect.
+        let mut pending = state
+            .0
+            .lock()
+            .map_err(|_| "Handoff coordinator unavailable")?;
+        if !pending
+            .get(&id)
+            .is_some_and(|item| pending_live(item, window.label(), &owner, true))
+        {
+            return Err("Handoff cancelled or expired; window remains open".into());
+        }
+        window
+            .close()
+            .map_err(|_| "Could not close detached workspace; its state remains available")?;
+        pending.remove(&id);
+        Ok(())
+    })
+    .await
+    .map_err(|_| "Workspace return worker unavailable")?
+}
+#[tauri::command]
+pub fn workspace_redock_cancel(
+    app: AppHandle,
+    window: WebviewWindow,
+    id: String,
+) -> Result<(), String> {
+    trusted(&app, &window)?;
+    let state = app.state::<RedockCoordinator>();
+    let mut pending = state
+        .0
+        .lock()
+        .map_err(|_| "Handoff coordinator unavailable")?;
+    if pending
+        .get(&id)
+        .is_some_and(|item| item.source == window.label() || window.label() == "main")
+    {
+        if let Some(item) = pending.remove(&id) {
+            let _ = app.emit_to(
+                &item.source,
+                "termx-native-redock-cancelled",
+                json!({"id":id}),
+            );
+        }
+    }
+    Ok(())
+}
 #[tauri::command]
 pub fn workspace_detach(
     app: AppHandle,
@@ -619,12 +901,7 @@ pub fn workspace_detach(
 ) -> Result<String, String> {
     let port = trusted(&app, &window)?;
     if !["chat", "workbench", "browser", "computer"].contains(&panel.as_str())
-        || session_id.as_ref().is_some_and(|s| {
-            s.len() > 128
-                || !s
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        })
+        || !valid_session_id(&session_id)
     {
         return Err("Invalid detached workspace request".into());
     }
@@ -800,6 +1077,38 @@ pub fn track_placement(app: &AppHandle, window: &WebviewWindow) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn handoff_state_is_bounded_and_bound_to_the_exact_conversation() {
+        let id = Some("session-1".into());
+        let mut state = json!({"version":1,"sessionId":"session-1","buffers":[],"draft":null});
+        assert!(valid_handoff(&state, &id));
+        assert!(!valid_handoff(&state, &Some("session-2".into())));
+        assert!(!valid_handoff(&state, &None));
+        state["buffers"] = json!(vec![json!({}); 101]);
+        assert!(!valid_handoff(&state, &id));
+        state["buffers"] = json!([]);
+        state["extra"] = json!("x".repeat(16 * 1024 * 1024));
+        assert!(!valid_handoff(&state, &id));
+        assert!(!valid_session_id(&Some("../other".into())));
+        assert!(!valid_session_id(&Some("".into())));
+    }
+    #[test]
+    fn handoff_close_requires_live_acknowledgement_source_owner_and_deadline() {
+        let mut item = RedockPending {
+            source: "workspace-chat-session-1-0".into(),
+            owner: "owner-1".into(),
+            session_id: Some("session-1".into()),
+            created: Instant::now(),
+            accepted: false,
+        };
+        assert!(!pending_live(&item, &item.source, &item.owner, true));
+        item.accepted = true;
+        assert!(pending_live(&item, &item.source, &item.owner, true));
+        assert!(!pending_live(&item, "main", &item.owner, true));
+        assert!(!pending_live(&item, &item.source, "owner-2", true));
+        item.created = Instant::now() - Duration::from_secs(61);
+        assert!(!pending_live(&item, &item.source, &item.owner, true));
+    }
     #[test]
     fn detached_placement_keys_are_stable_and_do_not_overwrite_main_or_each_other() {
         let first = detached_label("chat", Some("session-1"), 0);

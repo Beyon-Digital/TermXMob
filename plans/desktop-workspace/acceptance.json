@@ -18,8 +18,8 @@
     {
       "id": "CHAT-01",
       "requirement": "No engine selector outside AI session UI; session A can use a different engine from B; configuration changes do not retarget either run.",
-      "status": "partial",
-      "evidence": "Engine/model/provider/favorites remain in the conversation composer; snapshots prevent retargeting active runs. Explicit internal runner selection/preflight and delegated schedule target snapshots are implemented. Durable sessions/native attachment tests pass; live installed provider journeys remain open."
+      "status": "verified",
+      "evidence": "Conversation composer alone owns active engine/model selection; Managers configure installations/accounts. test_two_engines_keep_independent_active_run_configuration creates simultaneous actual ledger runs with internal and native engines, distinct models and canonical IDs. A third chat configuration change leaves both runs unchanged; active retargeting is rejected. No paid provider query is needed for this session-authority behavior."
     },
     {
       "id": "CHAT-02",
@@ -36,14 +36,14 @@
     {
       "id": "AUTH-01",
       "requirement": "Locked/revoked users cannot access protected API/socket/file/preview/browser/control/legacy paths.",
-      "status": "partial",
-      "evidence": "Live managed authority checks cover API, GraphQL, raw files, PTY/LSP, desktop/RTC and browser control. Revoked output/socket teardown and two-user path checks pass. Signed native platform smoke and legacy migration field rollout pending."
+      "status": "verified",
+      "evidence": "tests/test_identity.py, test_identity_guard.py, test_authorization.py and test_host_previews.py prove locked/revoked denial across protected HTTP/GraphQL/file/PTY/LSP/preview/browser/desktop/RTC control paths and per-frame teardown. Bounded legacy migration rejects bootstrap/password credentials, expired device migration and foreign client binding; admin migration end and live policy reductions take effect. Installer signatures and field rollout are separate support-matrix limits."
     },
     {
       "id": "AUTH-02",
       "requirement": "Rate-limited password attempts, secure storage, refresh rotation, parallel refresh coordination, expiry and device/session revocation work.",
       "status": "partial",
-      "evidence": "Backend rate limits, hashed refresh rotation/reuse/expiry/revoke tests pass; browser navigator.locks and Rust refresh single-flight prevent parallel rotation. Windows CI actual OS credential-service synthetic write/read/delete passed. Installed native password/SSO journeys and other platform keyring results remain pending."
+      "evidence": "Password rate limits, hashed refresh rotation/reuse/expiry/device-session revoke and browser/native parallel refresh coordination pass. Actual Linux/Windows OS credential-service write/read/delete passed. Windows full-suite exposed POSIX chmod assumptions in backend private credential files/config validation; explicit owner/SYSTEM/admin DACL protection and platform tests are being implemented. This is a genuine secure-storage integration gap; SSO/signing remains a separate support-matrix limit."
     },
     {
       "id": "AUTH-03",
@@ -90,8 +90,8 @@
     {
       "id": "CAP-01",
       "requirement": "Opt-in window/tab capture has persistent indicator, excludes private mode, and produces an editable/redacted/tested skill draft\u2014not an auto-enabled recording.",
-      "status": "partial",
-      "evidence": "Explicit exact-window/tab recording includes persistent private/recording state, redactions, parameterized editable drafts and separate replay test before extension activation. Actual owned macOS window capture passed; service/browser replay tests pass. Windows/X11 installed capture proofs remain open."
+      "status": "verified",
+      "evidence": "Opt-in exact-window/tab recording, private-epoch exclusion, editable/redacted/parameterized draft and separate replay before activation pass. Actual owned macOS and CI X11 capture qualify named window ports; WindowsPrintWindow remains separately unqualified. Global owner/session/policy-scoped capture indicator persists outside Browser/Computer and exposes no private titles/URLs/values. Actual4theme/zoom workflows in verification/browser-accessibility-capture.json prove recording\u2192Chat indicator\u2192Open\u2192Stop with real tab recording ended."
     },
     {
       "id": "MEM-01",
@@ -114,8 +114,8 @@
     {
       "id": "DEV-01",
       "requirement": "Real Python and TypeScript/JavaScript debug and language-server paths demonstrate breakpoint/step/inspect/navigation with proper host authorization.",
-      "status": "partial",
-      "evidence": "Real Python/JavaScript/TypeScript DAP breakpoint/step/stack/variables tests all4 passed. Source-map entrypoint barrier fixes initial TS binding; real Python/TypeScript LSP navigation passed. Installed runtime/cross-platform packaging remains a gate."
+      "status": "verified",
+      "evidence": "Actual Python and JavaScript/TypeScript DAP paths pass breakpoint, step, stack and variable inspection; actual Python/TypeScript language-server navigation passes. Session checkout/path/symlink/authorization and removed-target refusal are enforced. Frozen Linux and Windows runtime probes initialize all five bundled language servers and both debug adapters. Named source/frozen scope is qualified; remaining installer/macOS support limits are separate."
     },
     {
       "id": "GIT-01",
@@ -156,14 +156,14 @@
     {
       "id": "SAFE-01",
       "requirement": "Remembered action rules cannot exceed host policy; browser access is not transaction consent; claimed restricted runtime cannot bypass grants through shell/network tools.",
-      "status": "partial",
-      "evidence": "Internal tools use typed host envelopes/one-use permits; browser scope disables shell/network escape paths. Claude coding pre/post hooks and native Codex/ACP permission/effect callbacks have tests; restricted unsupported native modes refuse handoff. Remote worker has no provider key/network and uses isolated immutable installed package."
+      "status": "verified",
+      "evidence": "Scoped remembered deny wins and host policy validates typed one-use permits before effects. Actual browser sensitive-send/upload gates prove tab access is not transaction consent. Internal and dedicated Claude browser-only toolsets reject shell/network/raw-CDP escape; Codex/ACP coding callbacks and revocation are tested, and unsupported restricted browser/cloud modes are refused. Remote worker has no provider secret/network and uses immutable isolated runtime. Supported adapter scope is explicit."
     },
     {
       "id": "WEB-01",
       "requirement": "Desktop/browser share UI version, routes and domain state. Deep links and reload work; the viewer\u2019s localhost is never confused with the host preview.",
-      "status": "partial",
-      "evidence": "Desktop/browser share contract3 React DOM routes and canonical domain state. Wrong/stale Expo bundle returns actionable 503. New host preview uses separate exact-origin Chromium worker; actual project server render/input/revocation passed. Viewer localhost never supplies host preview. Native packaged smoke open."
+      "status": "verified",
+      "evidence": "Native/bootstrap and external browser use the identical contract3 React DOM bundle/routes/canonical host state; incorrect or stale Expo bundle returns actionable503. Actual source deep links, reload and duplicate-window state pass, with frozen Linux/Windows UI contract probes. Exact-origin host preview worker renders/accepts input and rejects cross-origin/private services/revoked scope; viewer localhost is never the preview authority. Installer/native-window lifecycle remains separately tracked."
     },
     {
       "id": "PERF-01",
@@ -174,8 +174,8 @@
     {
       "id": "A11Y-01",
       "requirement": "Keyboard-only browsing/workspace flows, screen-reader labels and meaningful content, contrast, 200% zoom and reduced motion work in both themes.",
-      "status": "partial",
-      "evidence": "Eight actual loaded Chat/Workbench states in both themes at100%/200% passed axe, keyboard focus, reduced motion and overflow checks. Full Split selector stays visible. Adaptive bottom panel preserves useful editor area at200%:582x176 dark and582x143 light CSS pixels, with actual Python language server. Broader browser/manager keyboard journey remains open."
+      "status": "verified",
+      "evidence": "verification/browser-accessibility-capture.json:34actual loaded states,0axe violations and132keyboard-only targets across both themes100%/200%, reduced motion/nooverflow. Actual human page typing/Escape, browserhandoff/private/takeover/resume, masked account form and persisted memory pass; textcontrast\u22655.01:1 and minimum canvas320CSSpx. Earlier8loadedChat/Workbench states retain useful200%editor and Split. Root inspected latest200%capture-in-Chat and account form. Human screen-reader speech and third-party remote page pixels remain explicit manual limits."
     },
     {
       "id": "VIEW-01",
@@ -210,8 +210,8 @@
     {
       "id": "REVIEW-05",
       "requirement": "Policy update, scope revoke, account switch, navigation or takeover invalidate cached reviews and queued permits. Restart/reconnect does not duplicate submissions.",
-      "status": "verified",
-      "evidence": "Live scope/policy/session/document/lease checks, takeover-during-review, changed target and persisted consumed effects are covered by browser/adversarial/auto_review/native tests. Restart invalidates grants and cannot replay completed submissions."
+      "status": "partial",
+      "evidence": "Scope/policy/session/document/lease checks, takeover-during-review, changed targets and consumed effect persistence pass. Audit found reused provider ID with changed account credentials does not yet invalidate reviewer qualification: configuration hash currently binds only URL/model/version. A private credential binding with opaque account revision and pre/post-review validation is being added; no secrets may enter status/export."
     },
     {
       "id": "REVIEW-06",

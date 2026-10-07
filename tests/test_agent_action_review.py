@@ -21,7 +21,9 @@ def test_thirty_typed_writes_reviewed_without_repeated_user_prompts_and_hard_den
         try:
             task=await manager.create_task(prompt='Edit code',cwd=str(tmp_path),provider_id='fake',limits={'max_steps':32},on_created=lambda id:service.records.put('agent-task-authority',id,{'id':id,'principal_id':'owner','session_id':'sid','project_id':'project','policy_version':1}))
             await manager.resolve_approval(task['id'],task['approvals'][0]['id'],'approved')
-            await wait_for_status(store,task['id'],'completed')
+            # This performs thirty real files and durable review/audit commits;
+            # the single-effect helper's 3s deadline is not an IO budget.
+            await wait_for_status(store,task['id'],'completed',timeout=30)
             assert reviewer.calls==30 and all((tmp_path/f'file{i}.py').read_text()==f'VALUE = {i}\n' for i in range(30))
             assert not [a for a in store.approvals(task['id']) if a['kind']=='tool']
             assert len([r for r in service.records.list('review') if r['status']=='completed'])==30

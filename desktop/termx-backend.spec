@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_submodules, collect_all
 
@@ -9,8 +10,13 @@ ROOT = Path(SPECPATH).parent
 datas = [
     (str(ROOT / "src" / "termx" / "static"), "termx/static"),
     (os.environ.get("TERMX_PACKAGE_WEB_DIR", str(ROOT / "desktop" / "workspace" / "dist")), "web"),
-    (str(ROOT / "desktop" / "build" / "runtime"), "runtime"),
 ]
+# Chromium's complete macOS .app/framework layout must survive unchanged.
+# PyInstaller otherwise processes individual Mach-O files in a partial cache
+# bundle and codesign rejects its missing framework components. Stage the full
+# external runtime after COLLECT, before signing and frozen execution checks.
+if sys.platform != "darwin":
+    datas.append((str(ROOT / "desktop" / "build" / "runtime"), "runtime"))
 
 if ROOT.joinpath("helpers", "macos", "bin").is_dir():
     datas.append((str(ROOT / "helpers" / "macos" / "bin"), "helpers/macos/bin"))
@@ -24,7 +30,7 @@ hiddenimports = [
 
 binaries = []
 # Browser driver, Node, FFmpeg, office schemas and debugger data are runtime assets.
-for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_wheel", "debugpy", "imageio_ffmpeg", "openpyxl", "PIL", "pypdf", "docx", "pptx"):
+for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_wheel", "debugpy", "imageio_ffmpeg", "openpyxl", "PIL", "pypdf", "docx", "pptx", "tzdata"):
 
     try:
         __import__(optional)

@@ -103,6 +103,16 @@ async def _debugpy() -> dict:
 async def smoke() -> dict:
     runtime.configure_bundle()
     report = {'ui_contract':3,'frozen':bool(getattr(sys,'frozen',False)), 'executed':{}}
+    # Windows has no system IANA database: the frozen package must retain
+    # tzdata, not merely pass source scheduler tests before packaging.
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo('America/New_York')
+    winter = datetime(2026, 1, 15, tzinfo=zone).utcoffset()
+    summer = datetime(2026, 7, 15, tzinfo=zone).utcoffset()
+    if winter.total_seconds() != -18000 or summer.total_seconds() != -14400:
+        raise RuntimeError('Packaged timezone/DST database unavailable')
+    report['executed']['timezone'] = {'iana':True,'dst':True}
     node = runtime.node_binary()
     if not node:
         raise RuntimeError('Packaged Node executable unavailable')

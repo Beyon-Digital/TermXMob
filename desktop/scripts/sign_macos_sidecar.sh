@@ -26,7 +26,7 @@ entitlements_for() {
   case "$1" in
     */helpers/macos/bin/termx-capture*) echo "$HELPER_ENTITLEMENTS/termx-capture.entitlements" ;;
     */helpers/macos/bin/termx-virtual-display*) echo "$HELPER_ENTITLEMENTS/termx-virtual-display.entitlements" ;;
-    */termx-backend|*/node|*/nodejs_wheel/bin/node|*/chrome|*/Chromium|*/chrome-headless-shell|*/Chromium\ Helper*) [ -f "$ENTITLEMENTS" ] && echo "$ENTITLEMENTS" || true ;;
+    */termx-backend|*/node|*/nodejs_wheel/bin/node|*/chrome|*/Chromium|*/chrome-headless-shell|*/Chromium\ Helper*|*/Google\ Chrome\ for\ Testing|*/Google\ Chrome\ for\ Testing\ Helper*) [ -f "$ENTITLEMENTS" ] && echo "$ENTITLEMENTS" || true ;;
     *) true ;;
   esac
 }
@@ -50,9 +50,28 @@ sign_one() {
   fi
 }
 
+is_bundle_main() (
+  candidate="$1"
+  ancestor="$(dirname "$candidate")"
+  while [ "$ancestor" != / ] && [ "$ancestor" != . ]; do
+    case "$ancestor" in
+      *.app)
+        executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$ancestor/Contents/Info.plist" 2>/dev/null || true)"
+        [ "$candidate" = "$ancestor/Contents/MacOS/$executable" ] && exit 0
+        ;;
+      *.framework)
+        base="$(basename "$ancestor" .framework)"
+        [ "$(basename "$candidate")" = "$base" ] && exit 0
+        ;;
+    esac
+    ancestor="$(dirname "$ancestor")"
+  done
+  exit 1
+)
+
 sign_all() {
   find "$TARGET" -type f "$@" -print | while IFS= read -r file; do
-    if is_macho "$file"; then
+    if is_macho "$file" && ! is_bundle_main "$file"; then
       sign_one "$file"
     fi
   done
@@ -87,19 +106,36 @@ normalize_framework() {
     rm -f "$framework/$base"
     ln -s "Versions/Current/$base" "$framework/$base"
   fi
-  if [ -d "$framework/Resources" ] && [ ! -L "$framework/Resources" ]; then
-    rm -rf "$framework/Resources"
-    ln -s "Versions/Current/Resources" "$framework/Resources"
-  fi
+  for component in Resources Headers Modules Helpers Libraries XPCServices; do
+    if [ -e "$framework/Versions/$version_dir/$component" ] && [ ! -L "$framework/$component" ]; then
+      rm -rf "$framework/$component"
+      ln -s "Versions/Current/$component" "$framework/$component"
+    fi
+  done
 }
 
 sign_bundles() {
   # Chromium ships nested helpers/frameworks. Sign children before their containers.
   find "$TARGET" -depth -type d \( -name "*.framework" -o -name "*.app" \) -print | while IFS= read -r bundle; do
-    if [ "$IDENTITY" = "-" ]; then
-      "$CODESIGN" --force --sign - "$bundle"
+    ent=""
+    case "$bundle" in
+      *.app)
+        executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist" 2>/dev/null || true)"
+        ent="$(entitlements_for "$bundle/Contents/MacOS/$executable")"
+        ;;
+    esac
+    # Signing an app's main executable signs its enclosing app implicitly.
+    # Delay that operation until all nested helpers/frameworks are signed.
+    if [ -n "$ent" ] && [ -f "$ent" ]; then
+      if [ "$IDENTITY" = "-" ]; then
+        "$CODESIGN" --force --entitlements "$ent" --sign - "$bundle"
+      else
+        "$CODESIGN" --force --entitlements "$ent" --options runtime --timestamp --sign "$IDENTITY" "$bundle"
+      fi
+    elif [ "$IDENTITY" = "-" ]; then
+      "$CODESIGN" --force --preserve-metadata=entitlements --sign - "$bundle"
     else
-      "$CODESIGN" --force --options runtime --timestamp --sign "$IDENTITY" "$bundle"
+      "$CODESIGN" --force --preserve-metadata=entitlements --options runtime --timestamp --sign "$IDENTITY" "$bundle"
     fi
     "$CODESIGN" --verify --strict "$bundle"
   done
@@ -113,7 +149,7 @@ sign_all -name "*.so"
 sign_all -name "*.dylib"
 find "$TARGET" -type f ! -name "*.so" ! -name "*.dylib" -print |
   while IFS= read -r file; do
-    if is_macho "$file"; then sign_one "$file"; fi
+    if is_macho "$file" && ! is_bundle_main "$file"; then sign_one "$file"; fi
   done
 sign_bundles
 echo "signed sidecar at $TARGET ($IDENTITY)"

@@ -139,8 +139,8 @@ def test_registry_crud_and_conflict(store, tmp_path):
                           engine="codex", tools=["shell"]))
     assert af.slug == "one"
     assert Path(reg.agents_dir, "one.agent.md").exists()
-    mode = oct(os.stat(reg._path_for("one")).st_mode & 0o777)
-    assert mode == "0o600"
+    from termx.private_files import private_path_permissions
+    assert private_path_permissions(reg._path_for("one"))
     row = store.get_custom_agent("agent.one")
     assert row and row["engine"] == "codex" and row["file_path"]
     # revision conflict

@@ -49,6 +49,33 @@ def mount_window_recording(app, state):
         import asyncio
         return {**service.port.capability(), 'windows': await asyncio.to_thread(service.port.list) if service.port.capability()['supported'] else []}
 
+    @router.get('/status')
+    async def capture_status(request: Request):
+        import asyncio
+        token, session = actor(request)
+        policy = state.authorization.revision(token)
+        def snapshot():
+            rows = []
+            for candidate in service.records.list('window-capture'):
+                if candidate['principal_id'] != session.principal.id or candidate['stopped']: continue
+                if not state.authorization.can(token, 'desktop-view', resource_kind='window-capture', resource_id=candidate['id']): continue
+                try: current = service.get(candidate['id'], session.principal.id)
+                except (KeyError, PermissionError): continue
+                rows.append({'id': current['id'], 'kind': 'window', 'state': 'private' if current['private'] else 'recording' if current['recording'] else 'preview',
+                    'stop_allowed': state.authorization.can(token, 'desktop-control', resource_kind='window-capture', resource_id=current['id'])})
+            for tab in state.browser.records.list('tab'):
+                if tab['principal_id'] != session.principal.id or not tab['recording'] or tab['state'] in {'private', 'closed', 'crashed'}: continue
+                kwargs = {'project_id': tab['project_id'] or None, 'resource_kind': 'browser-tab', 'resource_id': tab['id']}
+                if state.authorization.can(token, 'desktop-view', **kwargs):
+                    rows.append({'id': tab['id'], 'kind': 'tab', 'state': 'recording', 'stop_allowed': state.authorization.can(token, 'desktop-control', **kwargs)})
+            return rows
+        rows = await asyncio.to_thread(snapshot)
+        actor(request)
+        if state.authorization.revision(token) != policy: raise HTTPException(403, 'Capture authority changed')
+        # This metadata query performs no capture, grants no consent and exposes
+        # no private window names, tab URLs, recorded values or screenshots.
+        return {'captures': rows}
+
     @router.post('/captures')
     async def start(request: Request, body: Start):
         token, session = actor(request, 'desktop-control')

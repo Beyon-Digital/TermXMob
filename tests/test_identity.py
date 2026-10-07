@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 from time import time
 
@@ -14,6 +15,7 @@ from _gql import data, err_status
 from termx.app import AppState, create_app
 from termx.auth import Auth
 from termx.identity import AuthenticationError, AuthenticationService, Identity
+from termx.private_files import private_path_permissions, protect_private_path
 from termx.graphql.context import TermxContext
 
 PASSWORD = "test-only-password-123"
@@ -37,7 +39,9 @@ def test_passwords_refresh_secrets_and_key_permissions(tmp_path):
     assert PASSWORD.encode() not in contents
     assert credentials.refresh_token.encode() not in contents
     assert credentials.csrf_token.encode() not in contents
-    assert service.path.stat().st_mode & 0o777 == 0o600
+    assert private_path_permissions(service.path)
+    if os.name != 'nt':
+        assert service.path.stat().st_mode & 0o777 == 0o600
     recovered = AuthenticationService(service.path)
     assert recovered.resolve(credentials.access_token)
     assert recovered.host_id == service.host_id
@@ -401,7 +405,7 @@ def test_configuration_activation_atomic_and_requires_admin_file(tmp_path):
     config = {"version": 1, "adapters": [{"id": "company", "kind": "oidc", "label": "Company SSO",
             "issuer": "https://idp.example", "client_id": "client-id", "redirect_uri": "https://localhost/auth/oidc/company/callback"}],
             "bindings": [{"issuer": "https://idp.example", "subject": "immutable-123", "principal_id": principal.id}]}
-    path.write_text(json.dumps(config)); path.chmod(0o600)
+    path.write_text(json.dumps(config)); protect_private_path(path)
     load_configured_adapters(service, path)
     assert service.principal_for(Identity("https://idp.example", "immutable-123", "oidc")).id == principal.id
     assert any(method["flow"] == "redirect" for method in service.methods())
@@ -410,7 +414,13 @@ def test_configuration_activation_atomic_and_requires_admin_file(tmp_path):
     with pytest.raises(ValueError, match="unknown principal"):
         load_configured_adapters(other, path)
     assert "company" not in other.adapters
-    path.chmod(0o644)
+    if os.name == 'nt':
+        # The explicit Everyone allow demonstrates a genuine unsafe Windows
+        # DACL rather than pretending chmod's read-only bit controls ACLs.
+        import subprocess
+        subprocess.run(['icacls', str(path), '/grant', '*S-1-1-0:(R)'], check=True, capture_output=True)
+    else:
+        path.chmod(0o644)
     with pytest.raises(ValueError, match="owner-readable"):
         load_configured_adapters(other, path)
 

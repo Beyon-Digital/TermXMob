@@ -35,3 +35,9 @@
 .composer-context{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;max-height:180px;overflow:auto}.context-chip{display:flex;align-items:flex-start;border:1px solid var(--border);border-radius:7px;padding:4px 4px 4px 8px;max-width:100%;background:var(--muted)}.context-chip details{min-width:0;max-width:100%}.context-chip summary{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}.context-chip p{font-size:11px;margin:4px 0;color:var(--secondary);overflow-wrap:anywhere}.context-chip pre{max-height:110px;max-width:100%;overflow:auto;white-space:pre-wrap;font-size:11px}.context-chip button{flex-shrink:0}
 
 .session-row>button .status-dot{flex:0 0 6px;width:6px;min-width:6px}
+.composer textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+.sign-in{--accent-foreground:#FFFFFF}
+.sign-in{height:auto;min-height:100dvh}
+input::placeholder,textarea::placeholder{color:var(--secondary);opacity:1}
+.redock-cover{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:var(--background);color:var(--foreground);padding:32px;text-align:center}
+.capture-status{display:flex;align-items:center;gap:6px;flex-shrink:0;padding:0 6px;background:var(--warning-soft);color:var(--warning);border-radius:6px}.capture-status .button{color:var(--warning);height:24px}.capture-status span{font-size:11px}

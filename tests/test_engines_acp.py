@@ -261,7 +261,7 @@ def test_acp_live_callbacks_use_same_client_and_correct_terminal_schema(tmp_path
     asyncio.run(run())
     responses = [m["result"] for m in map(json.loads, log.read_text().splitlines()) if "result" in m]
     assert any(r.get("exitCode") == 0 for r in responses)
-    assert any(r.get("output") == "callback output\n" for r in responses)
+    assert any(r.get("output", "").splitlines() == ["callback output"] for r in responses)
     initialize = next(m for m in map(json.loads, log.read_text().splitlines()) if m.get("method") == "initialize")
     assert initialize["params"]["clientCapabilities"]["session"]["configOptions"]["boolean"] == {}
 
@@ -538,7 +538,7 @@ def test_acp_cancel_timeout_closes_unresponsive_agent(tmp_path):
 
 
 def test_acp_relative_file_boundary_and_terminal_output_tail(tmp_path):
-    (tmp_path / "sample.txt").write_text("one\ntwo\n")
+    (tmp_path / "sample.txt").write_bytes(b"one\ntwo\n")
     async def run():
         engine = _engine([], [])
         binding = await engine.create_session(EffectiveRunConfiguration(cwd=str(tmp_path)))

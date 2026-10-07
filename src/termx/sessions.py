@@ -121,7 +121,7 @@ def with_shell_integration(argv: list[str], env: dict[str, str]) -> list[str]:
     name = os.path.basename(argv[0]).lower()
     if name == "zsh":
         root = shell_integration_dir()
-        env["TERMX_ZDOTDIR"] = env.get("ZDOTDIR") or str(Path.home())
+        env["TERMX_ZDOTDIR"] = env.get("ZDOTDIR") or env.get("HOME") or str(Path.home())
         env["ZDOTDIR"] = str(root)
         return argv
     if name == "bash":

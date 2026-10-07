@@ -219,8 +219,12 @@ def mount_workspace(app,state):
         if row.get('runner_id'):raise HTTPException(409,'The selected runner uses its own bounded execution port')
         from termx.sessions import default_argv
         from termx.config import validate_shell
+        from termx.terminals import TerminalError
         shell=validate_shell(state.store.get().terminal.shell)
-        item=state.sessions.create(cwd=row['cwd'],shell=shell,argv=default_argv(shell),title='Workspace checkout',sandbox_profile='workspace')
+        try:
+            item=state.sessions.create(cwd=row['cwd'],shell=shell,argv=default_argv(shell),title='Workspace checkout',sandbox_profile='workspace')
+        except TerminalError as exc:
+            raise HTTPException(503,str(exc)) from None
         state.authorization.claim_principal(actor,'terminal',item.id,project_id=row.get('project_id'))
         return item.snapshot()
 
