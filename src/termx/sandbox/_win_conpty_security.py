@@ -61,7 +61,7 @@ def job_process_snapshot(job):
     class Processes(ctypes.Structure):
         _fields_=[('assigned',wt.DWORD),('count',wt.DWORD),('ids',ctypes.c_size_t*128)]
     data=Processes();length=wt.DWORD()
-    ok=kernel.QueryInformationJobObject(job,9,ctypes.byref(data),ctypes.sizeof(data),ctypes.byref(length))
+    ok=kernel.QueryInformationJobObject(job,3,ctypes.byref(data),ctypes.sizeof(data),ctypes.byref(length))
     if not ok and ctypes.get_last_error()!=234:return [{'query_error':ctypes.get_last_error()}]
     kernel.QueryFullProcessImageNameW.argtypes=[wt.HANDLE,wt.DWORD,wt.LPWSTR,ctypes.POINTER(wt.DWORD)]
     kernel.QueryFullProcessImageNameW.restype=wt.BOOL

@@ -128,6 +128,13 @@ class LocalConPTY:
             _check(kernel.UpdateProcThreadAttribute(attributes, 0, 0x00020016,
                 console, ctypes.sizeof(wt.HANDLE), None, None))
             startup = _STARTUPINFOEX(); startup.StartupInfo.cb = ctypes.sizeof(startup)
+            # A daemon/broker already has redirected protocol stdio. Explicit
+            # null standard handles let ConPTY initialize real console handles
+            # instead of inheriting those unrelated streams into the client.
+            startup.StartupInfo.dwFlags = win._STARTF_USESTDHANDLES
+            startup.StartupInfo.hStdInput = None
+            startup.StartupInfo.hStdOutput = None
+            startup.StartupInfo.hStdError = None
             startup.lpAttributeList = ctypes.cast(attributes, wt.LPVOID)
             process = win._PROCESS_INFORMATION()
             flags = win._CREATE_SUSPENDED | win._CREATE_UNICODE_ENVIRONMENT | 0x00080000
