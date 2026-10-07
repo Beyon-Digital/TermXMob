@@ -78,7 +78,10 @@ class AgentRegistry:
             protect_private_path(self._dir, directory=True)
         fd, tmp = tempfile.mkstemp(dir=str(self._dir), prefix=".write-")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            # Revision hashes bind the exact UTF-8 source bytes. Windows' text
+            # default translates LF to CRLF, otherwise making the just-returned
+            # save revision stale against the file we actually wrote.
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
                 protect_private_path(Path(tmp))
                 fh.write(content)
             if path.exists():

@@ -1,0 +1,82 @@
+{
+  "source_commit": "02f987be049075298ebd17da5a0e9d035b22d39a",
+  "source_run": 37676937344,
+  "source_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37676937344",
+  "status": "passed",
+  "frontend": {
+    "passed": 245,
+    "files": 64,
+    "production_build_seconds": 7.87
+  },
+  "backend": {
+    "linux": {
+      "passed": 1035,
+      "skipped": 147,
+      "seconds": 194.96
+    },
+    "macos": {
+      "passed": 1067,
+      "skipped": 115,
+      "seconds": 319.46
+    }
+  },
+  "windows_contracts": {
+    "run": 37676937302,
+    "passed": 212,
+    "skipped": 1,
+    "seconds": 210.83,
+    "native_dacl_passed": 3
+  },
+  "platform_checks": [
+    {
+      "run": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37676937302",
+      "status": "completed",
+      "conclusion": "success",
+      "sha": "02f987be049075298ebd17da5a0e9d035b22d39a",
+      "jobs": [
+        {
+          "name": "actual-windows-contracts",
+          "conclusion": "success",
+          "started": "2026-10-07T19:45:54Z",
+          "completed": "2026-10-07T19:50:08Z"
+        }
+      ]
+    },
+    {
+      "run": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37676937318",
+      "status": "completed",
+      "conclusion": "success",
+      "sha": "02f987be049075298ebd17da5a0e9d035b22d39a",
+      "jobs": [
+        {
+          "name": "source-compile (macos-14)",
+          "conclusion": "success",
+          "started": "2026-10-07T19:46:01Z",
+          "completed": "2026-10-07T19:46:54Z"
+        },
+        {
+          "name": "source-compile (windows-2022)",
+          "conclusion": "success",
+          "started": "2026-10-07T19:45:56Z",
+          "completed": "2026-10-07T19:47:28Z"
+        },
+        {
+          "name": "source-compile (ubuntu-22.04)",
+          "conclusion": "success",
+          "started": "2026-10-07T19:45:56Z",
+          "completed": "2026-10-07T19:47:48Z"
+        }
+      ]
+    }
+  ],
+  "native_gui_feasibility": {
+    "run": 37676937313,
+    "platforms": [
+      "macos-15",
+      "macos-15-intel"
+    ],
+    "status": "passed",
+    "installed_termx_exercised": false
+  },
+  "qualification_limit": "Source/contract/compile qualification only. PR installed-macOS job tests fixtures and skips actual installation; separate artifact-only and workflow_dispatch installed-app jobs must qualify exact delivery packages."
+}

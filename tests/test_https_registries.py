@@ -31,6 +31,11 @@ def tls(tmp_path):
             status,headers,body=responses.get(self.path,(404,{},b''))
             self.send_response(status)
             for k,v in headers.items():self.send_header(k,v)
+            # Send a complete HTTP message, rather than using an abrupt TLS
+            # socket shutdown as the body delimiter. Keep explicit malformed
+            # lengths intact for the refusal cases below.
+            if not any(k.lower()=='content-length' for k in headers):
+                self.send_header('Content-Length',str(len(body)))
             self.end_headers();self.wfile.write(body)
         def log_message(self,*args):pass
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
@@ -97,6 +102,30 @@ def test_default_transport_denies_protected_dns_and_credentials_in_url(monkeypat
         with pytest.raises(ValueError):checked_url(url)
     bad=ssl.create_default_context();bad.check_hostname=False
     with pytest.raises(ValueError,match='verification'):HTTPSRegistryTransport(context=bad)
+
+
+def test_real_tls_rejects_untrusted_certificate_and_wrong_hostname(tls):
+    url,transport,responses,requests=tls
+    responses['/index']=(200,{},b'{"format":"termx-registry/v1","packages":[]}')
+    untrusted=HTTPSRegistryTransport(resolver=lambda host,port:['127.0.0.1'])
+    for client,target in ((untrusted,url+'/index'),(transport,url.replace('localhost','127.0.0.1')+'/index')):
+        with pytest.raises(ValueError,match='SSLCertVerificationError'):
+            client.fetch(target,credential='private-fixture-secret')
+    assert requests==[], 'No HTTP credential may reach an unverified TLS peer'
+
+
+def test_real_tls_incomplete_body_never_becomes_catalog(workspace,tls):
+    ws,owner,path=workspace;url,transport,responses,requests=tls
+    service=ExtensionService(ws,path/'bundles');service.transport=transport
+    raw=b'{"format":"termx-registry/v1","packages":[]}'
+    responses['/index']=(200,{'Content-Length':str(len(raw)+10)},raw)
+    registry=service.registry(owner,name='Incomplete TLS',kind='public_https',url=url+'/index')
+    # Windows may surface the peer's premature TLS shutdown as a transport
+    # error; either path must refuse the incomplete message without parsing it.
+    with pytest.raises(ValueError,match='incomplete|HTTPS transport failed'):
+        service.registry_packages(owner,registry['id'])
+    assert requests==[('/index',None)]
+    assert not ws.store.list('extension_preview') and not ws.store.list('extension')
 
 def test_dependencies_are_reviewed_exactly_and_dispatch_expands_grants(workspace,tls):
     ws,owner,path=workspace;url,transport,responses,_=tls

@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
+import os
 import pytest
+import termx.workspace.skill_sources as source_module
 from fastapi import HTTPException
 from termx.authorization import AuthorizationService
 from termx.workspace.extensions import ExtensionService
@@ -8,8 +10,16 @@ from termx.workspace.skill_sources import SkillSourceService,validate_markdown
 from termx.workspace.store import Conflict
 from test_durable_workspace import workspace
 
+@pytest.fixture(params=['platform','checked-path'])
+def skill_io(request,monkeypatch):
+    if request.param=='checked-path':
+        # Exercise the Windows path-checked implementation on every host
+        # without changing global os.name or pathlib's native path class.
+        operations=vars(os).copy();operations['name']='nt'
+        monkeypatch.setattr(source_module,'os',SimpleNamespace(**operations))
+
 @pytest.fixture
-def sources(workspace):
+def sources(workspace,skill_io):
     service,owner,path=workspace
     project=path/'project';project.mkdir()
     service.state.agents_root=path/'user-agents'
@@ -78,9 +88,12 @@ def test_project_grants_and_live_revocation_do_not_borrow_host_admin(sources):
     with pytest.raises((PermissionError,HTTPException)):skills.read(user,scope='project',project_id='p',name='inspect')
 
 
-def test_compatibility_import_is_read_only_and_never_inherits_trust(sources):
+def test_compatibility_import_is_read_only_and_never_inherits_trust(sources,monkeypatch):
     skills,extensions,owner,project=sources
     skills.compatibility_home=project.parent/'isolated-home'
+    # Windows test projects live beneath the user's home. Global compatibility
+    # isolation must never rewrite that explicitly enrolled project root.
+    monkeypatch.setattr(Path,'home',classmethod(lambda cls:project.parent))
     legacy=project/'.claude/skills/LegacySkill';legacy.mkdir(parents=True)
     (legacy/'SKILL.md').write_text(TEXT+' Compatibility')
     entries=skills.compatibility(owner,'p')
@@ -93,3 +106,15 @@ def test_compatibility_import_is_read_only_and_never_inherits_trust(sources):
     assert preview['bundle']['id']=='legacyskill'
     assert extensions.export(owner,'legacyskill')['files']['skills/legacyskill/SKILL.md']==saved['markdown']
     assert (legacy/'SKILL.md').read_text()==TEXT+' Compatibility'
+
+def test_missing_source_inventory_and_unsafe_file_exports_are_bounded(sources):
+    skills,_,owner,project=sources
+    assert skills.list(owner,'p')['sources']==[]
+    save(skills,owner)
+    path=project/'.agents/skills/inspect/SKILL.md'
+    for text in ('x'*512001,'password=embedded-secret-value'):
+        path.write_bytes(text.encode('utf-8'))
+        with pytest.raises(ValueError):skills.read(owner,scope='project',project_id='p',name='inspect')
+        index=skills.list(owner,'p')
+        assert index['sources']==[] and index['diagnostics']
+        with pytest.raises(ValueError):skills.publish_preview(owner,scope='project',project_id='p',name='inspect',version='1')

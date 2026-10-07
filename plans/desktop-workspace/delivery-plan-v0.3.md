@@ -20,21 +20,21 @@ TermX gets one independent React DOM desktop/web workspace. Tauri and external b
 
 ## 2. Current baseline: reuse it, verify it, keep unfinished work separate
 
-The published green checkpoint is `44320592c6880721f82d6369b1942a031f8ec825`, on [draft PR28](https://github.com/Beyon-Digital/TermXMob/pull/28). [CI evidence](verification/ci-4432059.json):243 frontend tests,1034 Linux backend tests and1066 macOS backend tests passed. Windows contracts, native platform compilation and hosted macOS GUI feasibility passed. This is source qualification; the PR macOS installed workflow exercised fixtures only. Parent/child budget relay and compact approval dialog follow-ups are undergoing their own rendered and coherent CI checks.
+The published green checkpoint is `02f987be049075298ebd17da5a0e9d035b22d39a`, on [draft PR28](https://github.com/Beyon-Digital/TermXMob/pull/28). [CI evidence](verification/ci-02f987b.json):245 frontend tests,1035 Linux backend tests and1067 macOS backend tests passed. Focused Windows contracts, native platform compilation and hosted macOS GUI feasibility passed. This includes the final parent/child budget relay and compact approval dialogs; Czw/BIq rendered evidence retains its immutable asset identities. This is source qualification. The [exact-source artifact run](https://github.com/Beyon-Digital/TermXMob/actions/runs/37677911211) then found eight full-Windows-suite failures, stopping Windows packaging. Their [separate failure record](verification/windows-installer-02f987b-failures.json) and scoped repairs do not retroactively promote Windows installation. The PR macOS installed workflow exercised fixtures only.
 
 The companion mobile changes are on [draft PR26](https://github.com/Beyon-Digital/termx-app/pull/26), with green CI. Three unrelated untracked mobile probes remain untouched.
 
-There is substantial implementation and rendered evidence already available. It should be reviewed against the specification, not rewritten merely because it exists. Newer uncommitted work must be treated as a candidate patch, not as part of the green checkpoint:
+There is substantial implementation and rendered evidence already available. It should be reviewed against the specification, not rewritten merely because it exists. The table distinguishes published implementation, rendered proofs and the remaining installed/live gates:
 
 | Area | Current evidence boundary | Work to review before resuming |
 | --- | --- | --- |
 | Managed sessions, browser, coding, artifacts and layouts | Published source; multiple actual host/rendered proofs | Confirm full HTML requirements, migration and declared adapter limits |
 | Queue, session controls, pins and scoped MCP | Published source; exact rendered queue/MCP flows | Preserve reading anchor, preset refresh and current-policy invalidation fixes |
 | Lock/reload continuity | Actual Buw flow restored the same PTY/task and dirty file/chat/artifact drafts | Keep source/hash distinction; review newer fresh-inventory gate |
-| Generic remembered approvals | New candidate source; actual Cfb approve→inspect→edit→revoke proof and owner isolation tests | Review alternate API routes, deny precedence and immutable scope together |
-| Model favorites | New candidate source; mounted session/second-window and four-theme/zoom surface checks | Review preference ownership and manager placement |
-| Groups/organizations, audit retention and device lifetime policy | New candidate backend/components; targeted transport/revocation/retention tests and actual CJW group/audit proof | Review semantics, migration, UI and full integration |
-| Shared parent/child execution budget | Candidate integrated with the coordinator;24 targeted coordinator/regression tests and4 component tests pass | One durable pool counts reserved tool calls and summed active-worker execution seconds. Human approval waits pause active time; crash-orphaned leases require explicit versioned renewal. Token usage and billed cost are separate and are not claimed as measured. |
+| Generic remembered approvals | Published source; actual Cfb approve→inspect→edit→revoke proof and owner isolation tests | Review alternate API routes, deny precedence and immutable scope together |
+| Model favorites | Published source; mounted session/second-window and four-theme/zoom surface checks | Review preference ownership and manager placement |
+| Groups/organizations, audit retention and device lifetime policy | Published backend/components; targeted transport/revocation/retention tests and actual CJW group/audit proof | Review semantics, migration, UI and full integration |
+| Shared parent/child execution budget | Published coordinator integration;24 targeted coordinator/regression tests and4 component tests pass | One durable pool counts reserved tool calls and summed active-worker execution seconds. Human approval waits pause active time; crash-orphaned leases require explicit versioned renewal. Token usage and billed cost are separate and are not claimed as measured. |
 | Figma | Original11 screens/66 components preserved;95 advanced states/234 verified edges | Editable contract/state coverage verified; final runtime and native gates remain separately scoped |
 | Installed desktop and live providers | Unqualified | Exact-build installer tests and explicitly configured real-account validation |
 
@@ -122,4 +122,6 @@ Every mandatory HTML requirement has a mapped implementation, reachable UX state
 
 A package with missing installed/live evidence remains pending. An unsupported badge, mock provider, structural Figma check, source compile or old green CI cannot stand in for that missing evidence.
 
-**Current action: qualify the final parent/child budget and compact approval journeys, then build exact-source installers and complete installed/live adapter gates. The user selected each session’s current chosen provider; live checks must use that selection without billing or model fallback.**
+**Current action: complete exact-source installer and installed-app qualification, then close entitled live-provider gates. The user selected each session’s current chosen provider; inspected saved sessions have no selected provider/model or numeric evaluation cap, so the clarification remains pending. Live checks must preserve that selection without billing or model fallback.**
+
+[Rollout and recovery notes](rollout-notes.md) cover stopped-host snapshots, managed-auth migration, owner recovery prerequisites and explicit downgrade limits. They are operator instructions, not a performed restoration test.

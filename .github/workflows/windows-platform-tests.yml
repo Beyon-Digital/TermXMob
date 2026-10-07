@@ -10,6 +10,9 @@ on:
       - 'src/termx/sessions.py'
       - 'src/termx/git_ops.py'
       - 'src/termx/agent/secrets.py'
+      - 'src/termx/agents/registry.py'
+      - 'src/termx/workspace/https_registry.py'
+      - 'src/termx/workspace/skill_sources.py'
       - 'src/termx/runners/*.py'
       - 'desktop/src-tauri/src/private_storage.rs'
       - 'desktop/src-tauri/src/config.rs'
@@ -22,6 +25,12 @@ on:
       - 'tests/test_runner_agents.py'
       - 'tests/test_git_stream_boundary.py'
       - 'tests/test_private_files.py'
+      - 'tests/test_desktop_host_stop_cli.py'
+      - 'tests/test_agent_registry_newlines.py'
+      - 'tests/test_https_registries.py'
+      - 'tests/test_mcp_authority.py'
+      - 'tests/test_skill_sources.py'
+      - 'tests/test_workspace_preset_tools_edit.py'
       - '.github/workflows/windows-platform-tests.yml'
 
 permissions:
@@ -65,6 +74,9 @@ jobs:
           tests/test_runner_agents.py tests/test_windows_conpty.py tests/test_windows_conpty_protocol.py
           tests/test_git_stream_boundary.py
           tests/test_owned_windows_window.py
+          tests/test_desktop_host_stop_cli.py tests/test_agent_registry_newlines.py
+          tests/test_https_registries.py tests/test_mcp_authority.py
+          tests/test_skill_sources.py tests/test_workspace_preset_tools_edit.py
       - name: Upload owned PrintWindow evidence
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@v4

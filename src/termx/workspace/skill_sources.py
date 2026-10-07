@@ -7,6 +7,7 @@ are read-only and can be imported explicitly into a managed .agents root.
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import os
 import re
@@ -71,7 +72,7 @@ def directory(base,parts,*,create=False):
     """
     base=Path(base)
     if base.is_symlink() or getattr(base,'is_junction',lambda:False)():
-        raise ValueError('Skill source root cannot be a symlink or junction')
+        raise OSError(errno.ELOOP,'Skill source root cannot be a symlink or junction',str(base))
     if create:
         base.mkdir(parents=True,exist_ok=True,mode=0o700)
     if os.name=='posix':
@@ -90,9 +91,10 @@ def directory(base,parts,*,create=False):
         for part in parts:
             path=path/part
             if path.is_symlink() or getattr(path,'is_junction',lambda:False)():
-                raise ValueError('Skill source cannot traverse a link or junction')
+                raise OSError(errno.ELOOP,'Skill source cannot traverse a link or junction',str(path))
             if create:path.mkdir(exist_ok=True,mode=0o700)
-            if not path.is_dir():raise ValueError('Skill directory is unavailable')
+            if not path.exists():raise FileNotFoundError(errno.ENOENT,'Skill directory is unavailable',str(path))
+            if not path.is_dir():raise NotADirectoryError(errno.ENOTDIR,'Skill source must be a directory',str(path))
         yield path,None
 
 
@@ -102,7 +104,7 @@ def read_at(path,fd):
     prior=None
     if fd is None:
         if file.is_symlink() or getattr(file,'is_junction',lambda:False)() or os.path.normcase(str(file.resolve()))!=os.path.normcase(str(file.absolute())):
-            raise ValueError('Skill source cannot traverse a symlink or junction')
+            raise OSError(errno.ELOOP,'Skill source cannot traverse a symlink or junction',str(file))
         prior=file.stat(follow_symlinks=False)
     handle=os.open('SKILL.md',flags,dir_fd=fd) if fd is not None else os.open(path/'SKILL.md',flags)
     try:
@@ -262,8 +264,11 @@ class SkillSourceService:
         for root in roots:
             if not root.compat or root.kinds!=('skills',):continue
             path=Path(root.path)
-            if path.is_relative_to(Path.home()) and self.compatibility_home!=Path.home():path=self.compatibility_home/path.relative_to(Path.home())
+            # An enrolled project may itself live under the account's home
+            # (including Windows Temp). Only global compatibility roots are
+            # relocated to the configured compatibility home.
             project=next((pid for pid,p in projects.items() if path.is_relative_to(Path(p))),None)
+            if project is None and path.is_relative_to(Path.home()) and self.compatibility_home!=Path.home():path=self.compatibility_home/path.relative_to(Path.home())
             if project:
                 anchor=Path(projects[project])
             elif global_allowed:anchor=self.compatibility_home

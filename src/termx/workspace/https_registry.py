@@ -144,6 +144,8 @@ class HTTPSRegistryTransport:
                     if received>MAX_BYTES:
                         raise ValueError('Registry payload exceeds its byte budget')
                 raw=b''.join(chunks)
+                if size is not None and received!=int(size):
+                    raise ValueError('Registry response body is incomplete')
                 try:
                     result=json.loads(raw.decode('utf-8'))
                 except (UnicodeError,ValueError,RecursionError):

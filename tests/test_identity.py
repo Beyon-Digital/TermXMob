@@ -77,7 +77,8 @@ def test_authority_is_live_and_context_does_not_cache(tmp_path):
 
 @pytest.mark.parametrize("changes", [
     {"iss": "wrong"}, {"aud": "wrong"}, {"aud": ["extra", "placeholder"]},
-    {"token_type": "id"}, {"sid": "wrong"}, {"sub": "wrong"}, {"exp": 1}, {"iat": int(time()) + 1000},
+    {"token_type": "id"}, {"sid": "wrong"}, {"sub": "wrong"}, {"exp": 1},
+    pytest.param("future-iat", id="future-issued-at"),
 ])
 def test_token_contract_rejects_wrong_claims(tmp_path, changes):
     service = AuthenticationService(tmp_path / "auth.sqlite3")
@@ -85,6 +86,10 @@ def test_token_contract_rejects_wrong_claims(tmp_path, changes):
     credentials = login(service)
     header = jwt.get_unverified_header(credentials.access_token)
     claims = jwt.decode(credentials.access_token, options={"verify_signature": False})
+    # Build time-dependent invalid claims at execution, not collection: the
+    # Windows complete suite can take longer than the intended future offset.
+    if changes == "future-iat":
+        changes = {"iat": int(time()) + 1000}
     claims.update(changes)
     with service._db() as db:
         secret = db.execute("SELECT secret FROM signing_keys WHERE id=?", (header["kid"],)).fetchone()[0]

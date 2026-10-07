@@ -67,6 +67,18 @@ runtimes, media/office extras, frozen Python sidecar and platform installer. The
 frozen runtime probe is a required packaging check. Artifact-only dispatch leaves
 release_tag empty; it does not publish an updater or a release.
 
+Source checkpoint `02f987be049075298ebd17da5a0e9d035b22d39a` passes245 frontend,
+1035 Linux and1067 macOS tests, plus the earlier focused Windows contracts and
+native compile checks. The exact-source artifact run37677911211 found eight
+additional failures in the full Windows suite (1048 passed,126 skipped); Windows
+sidecar, installers and installed-MSI checks did not run. The [failure record](verification/windows-installer-02f987b-failures.json)
+preserves that boundary. Subsequent Windows byte-revision, skill-root and fixture
+repairs require their own exact-source Windows and installer qualification.
+
+[Rollout notes](rollout-notes.md) document private stopped-host snapshots,
+managed-auth migration and owner recovery prerequisites. Automatic schema
+downgrade and actual snapshot restoration remain unqualified.
+
 A configured signing identity is not evidence of a valid signature. CI/device
 proof must cover installer signatures, native keyring/SSO, platform capture,
 monitor restore and packaged debug/browser/media paths. These gates remain open.
