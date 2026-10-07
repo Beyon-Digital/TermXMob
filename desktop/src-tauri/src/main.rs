@@ -6,6 +6,7 @@ mod input_macos;
 mod logging;
 mod menu;
 mod permissions;
+mod private_storage;
 mod tray;
 mod ui;
 mod workspace;
@@ -96,9 +97,9 @@ fn main() {
     builder
         .setup(|app| {
             let handle = app.handle().clone();
+            config::prepare_dirs(&handle)?;
             logging::desktop(&handle, "setup: start");
-            config::prepare_dirs(&handle);
-            let desktop_config = config::load(&handle);
+            let desktop_config = config::load(&handle)?;
             logging::desktop(&handle, "setup: config loaded");
             ui::create_main_window(&handle)?;
             logging::desktop(&handle, "setup: window created");
@@ -112,7 +113,7 @@ fn main() {
             }) {
                 logging::desktop(&handle, &format!("privileged broker ready at {path}"));
             }
-            let backend = backend::Backend::new(handle.clone());
+            let backend = backend::Backend::new(handle.clone())?;
             app.manage(backend.clone());
             backend.start();
             ui::first_run_onboarding(&handle, desktop_config.onboarded);

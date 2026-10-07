@@ -9,7 +9,11 @@ on:
       - 'src/termx/sandbox/*win*.py'
       - 'src/termx/sessions.py'
       - 'src/termx/agent/secrets.py'
+      - 'src/termx/runners/*.py'
+      - 'desktop/src-tauri/src/private_storage.rs'
+      - 'desktop/src-tauri/src/config.rs'
       - 'tests/test_windows_conpty.py'
+      - 'tests/test_runner_agents.py'
       - 'tests/test_private_files.py'
       - '.github/workflows/windows-platform-tests.yml'
 
@@ -22,6 +26,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Verify native owner DACL before bootstrap storage
+        shell: pwsh
+        run: |
+          $testBinary = Join-Path $env:RUNNER_TEMP 'termx-private-storage-tests.exe'
+          rustc --edition 2021 --test desktop/src-tauri/src/private_storage.rs -o $testBinary
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $testBinary
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true

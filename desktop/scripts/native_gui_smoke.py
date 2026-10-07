@@ -256,6 +256,11 @@ def main():
             data_dir = config_files[0].parent
             if os.name != 'nt':
                 assert data_dir.stat().st_mode & 0o077 == 0, 'Native fixture directory is not private'
+                assert config_files[0].stat().st_mode & 0o077 == 0, 'Native bootstrap file is not private'
+            else:
+                from termx.private_files import private_path_permissions
+                assert private_path_permissions(data_dir), 'Native directory must have a protected owner DACL'
+                assert private_path_permissions(config_files[0]), 'Native bootstrap file must have a protected owner DACL'
             report['steps']['isolated_native_configuration'] = True
             # Every host account and cached browser cookie is fixture-specific.
             driver.call('DELETE','/cookie')

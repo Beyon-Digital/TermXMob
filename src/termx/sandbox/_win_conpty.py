@@ -8,12 +8,22 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wt
 import queue
+from pathlib import Path
+import os
+import subprocess
 import threading
 import time
 
 from termx.sandbox import _win_shim as win
 
 kernel = win._kernel32
+kernel.CreateProcessW.argtypes = [wt.LPCWSTR, wt.LPWSTR, wt.LPVOID, wt.LPVOID,
+    wt.BOOL, wt.DWORD, wt.LPVOID, wt.LPCWSTR, wt.LPVOID, wt.LPVOID]
+kernel.CreateProcessW.restype = wt.BOOL
+kernel.IsProcessInJob.argtypes = [wt.HANDLE, wt.HANDLE, ctypes.POINTER(wt.BOOL)]
+kernel.IsProcessInJob.restype = wt.BOOL
+win._advapi32.ConvertSidToStringSidW.argtypes = [wt.LPVOID, ctypes.POINTER(wt.LPWSTR)]
+win._advapi32.ConvertSidToStringSidW.restype = wt.BOOL
 
 
 class _COORD(ctypes.Structure):
@@ -54,6 +64,7 @@ class RestrictedConPTY:
         self._console = None
         self._job = None
         self._process = None
+        self._broker = None
         self._returncode = None
         self._closing = threading.Event()
         self._done = threading.Event()
@@ -65,10 +76,13 @@ class RestrictedConPTY:
         try:
             self._launch(command, cwd, env, job_limits, user_mode, rows, cols)
         except BaseException:
-            reaped = self._process is None
-            if self._process:
-                kernel.TerminateProcess(self._process, 1)
-                reaped = kernel.WaitForSingleObject(self._process, 5000) == 0
+            reaped = True
+            if self._job: kernel.TerminateJobObject(self._job, 1)
+            for process in (self._process, self._broker):
+                if process:
+                    kernel.TerminateProcess(process, 1)
+                    reaped = (kernel.WaitForSingleObject(process, 5000) == 0) and reaped
+            if self._job: reaped = reaped and win._job_process_count(self._job) == 0
             self._closing.set()
             self._close_handles()
             if reaped: release()
@@ -94,6 +108,29 @@ class RestrictedConPTY:
         attributes = None
         initialized = False
         try:
+            # Secondary Logon cannot carry the extended ConPTY attributes.
+            # Start a restricted parent suspended, then let the documented
+            # PARENT_PROCESS attribute inherit its token and Job Object. The
+            # parent is never resumed; no unrestricted process executes.
+            plain = win._STARTUPINFO(); plain.cb = ctypes.sizeof(plain)
+            parent = win._PROCESS_INFORMATION()
+            broker_executable = str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32' / 'cmd.exe')
+            broker_command = subprocess.list2cmdline([broker_executable, '/d', '/c', 'exit', '0'])
+            broker_flags = win._CREATE_SUSPENDED | win._CREATE_UNICODE_ENVIRONMENT | 0x08000000
+            environment = win._env_block(env)
+            argv = ctypes.create_unicode_buffer(broker_command)
+            if not win._advapi32.CreateProcessWithTokenW(token, 0, broker_executable, argv, broker_flags,
+                environment, cwd, ctypes.byref(plain), ctypes.byref(parent)):
+                first_error = win._last_error()
+                argv = ctypes.create_unicode_buffer(broker_command)
+                if not win._advapi32.CreateProcessAsUserW(token, broker_executable, argv, None, None, False,
+                    broker_flags, environment, cwd, ctypes.byref(plain), ctypes.byref(parent)):
+                    raise OSError(f'Restricted console parent launch failed: {first_error}; {win._last_error()}')
+            self._broker = self._owned(parent.hProcess)
+            parent_thread = self._owned(parent.hThread)
+            self._prepare_job(limits)
+            _check(kernel.AssignProcessToJobObject(self._job, self._broker))
+            kernel.CloseHandle(parent_thread); self._handles.remove(parent_thread)
             input_read, self._input = win._inheritable_pipe()
             self._owned(input_read); self._owned(self._input)
             self._output_read, output_write = win._inheritable_pipe()
@@ -108,50 +145,97 @@ class RestrictedConPTY:
             for handle in (input_read, output_write):
                 kernel.CloseHandle(handle); self._handles.remove(handle)
             length = ctypes.c_size_t()
-            kernel.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(length))
+            kernel.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(length))
             _check(length.value > 0)
             attributes = ctypes.create_string_buffer(length.value)
-            _check(kernel.InitializeProcThreadAttributeList(attributes, 1, 0, ctypes.byref(length)))
+            _check(kernel.InitializeProcThreadAttributeList(attributes, 2, 0, ctypes.byref(length)))
             initialized = True
             _check(kernel.UpdateProcThreadAttribute(attributes, 0, 0x00020016,
                 console, ctypes.sizeof(wt.HANDLE), None, None))
+            parent_handle = wt.HANDLE(self._broker)
+            _check(kernel.UpdateProcThreadAttribute(attributes, 0, 0x00020000,
+                ctypes.byref(parent_handle), ctypes.sizeof(parent_handle), None, None))
             startup = _STARTUPINFOEX(); startup.StartupInfo.cb = ctypes.sizeof(startup)
             startup.lpAttributeList = ctypes.cast(attributes, wt.LPVOID)
             process = win._PROCESS_INFORMATION()
-            environment = win._env_block(env)
             flags = win._CREATE_SUSPENDED | win._CREATE_UNICODE_ENVIRONMENT | 0x00080000
             argv = ctypes.create_unicode_buffer(command)
-            if not win._advapi32.CreateProcessWithTokenW(token, 0, None, argv, flags,
-                environment, cwd, ctypes.byref(startup), ctypes.byref(process)):
-                # A failed API may alter argv. Restore the original command.
-                argv = ctypes.create_unicode_buffer(command)
-                _check(win._advapi32.CreateProcessAsUserW(token, None, argv, None, None, False,
-                    flags, environment, cwd, ctypes.byref(startup), ctypes.byref(process)))
+            _check(kernel.CreateProcessW(None, argv, None, None, False, flags,
+                environment, cwd, ctypes.byref(startup), ctypes.byref(process)))
             self._process = self._owned(process.hProcess)
             thread = self._owned(process.hThread); self.pid = process.dwProcessId
-            self._job = self._owned(kernel.CreateJobObjectW(None, None)); _check(self._job)
-            info = win._JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-            info.BasicLimitInformation.LimitFlags = win._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            if limits.get('active_process_limit'):
-                info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-                info.BasicLimitInformation.ActiveProcessLimit = int(limits['active_process_limit'])
-            if limits.get('process_memory_bytes'):
-                info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_PROCESS_MEMORY
-                info.ProcessMemoryLimit = int(limits['process_memory_bytes'])
-            if limits.get('job_memory_bytes'):
-                info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_JOB_MEMORY
-                info.JobMemoryLimit = int(limits['job_memory_bytes'])
-            if limits.get('job_time_100ns'):
-                info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_JOB_TIME
-                info.BasicLimitInformation.PerJobUserTimeLimit = int(limits['job_time_100ns'])
-            _check(kernel.SetInformationJobObject(self._job, win._JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
-                ctypes.byref(info), ctypes.sizeof(info)))
-            _check(kernel.AssignProcessToJobObject(self._job, self._process))
+            self._verify_child_token(token)
+            member = wt.BOOL()
+            _check(kernel.IsProcessInJob(self._process, self._job, ctypes.byref(member)))
+            if not member.value: raise PermissionError('Restricted console did not inherit its Job Object')
             if kernel.ResumeThread(thread) == 0xffffffff: raise win._last_error()
             kernel.CloseHandle(thread); self._handles.remove(thread)
         finally:
             if initialized: kernel.DeleteProcThreadAttributeList(attributes)
             if token: kernel.CloseHandle(token)
+
+    def _prepare_job(self, limits):
+        self._job = self._owned(kernel.CreateJobObjectW(None, None)); _check(self._job)
+        info = win._JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = win._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if limits.get('active_process_limit'):
+            info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            info.BasicLimitInformation.ActiveProcessLimit = int(limits['active_process_limit'])
+        if limits.get('process_memory_bytes'):
+            info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            info.ProcessMemoryLimit = int(limits['process_memory_bytes'])
+        if limits.get('job_memory_bytes'):
+            info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_JOB_MEMORY
+            info.JobMemoryLimit = int(limits['job_memory_bytes'])
+        if limits.get('job_time_100ns'):
+            info.BasicLimitInformation.LimitFlags |= win._JOB_OBJECT_LIMIT_JOB_TIME
+            info.BasicLimitInformation.PerJobUserTimeLimit = int(limits['job_time_100ns'])
+        _check(kernel.SetInformationJobObject(self._job, win._JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(info), ctypes.sizeof(info)))
+
+    def _verify_child_token(self, expected):
+        child = wt.HANDLE()
+        _check(win._advapi32.OpenProcessToken(self._process, 8, ctypes.byref(child)))
+        try:
+            length = wt.DWORD()
+            restricted = wt.DWORD()
+            _check(win._advapi32.GetTokenInformation(child, 21, ctypes.byref(restricted),
+                ctypes.sizeof(restricted), ctypes.byref(length)))
+            if not restricted.value: raise PermissionError('Console child token is not filtered')
+            def token_sid(token, kind):
+                needed = wt.DWORD()
+                win._advapi32.GetTokenInformation(token, kind, None, 0, ctypes.byref(needed))
+                _check(needed.value >= ctypes.sizeof(win._TOKEN_MANDATORY_LABEL))
+                buffer = ctypes.create_string_buffer(needed.value)
+                _check(win._advapi32.GetTokenInformation(token, kind, buffer, len(buffer), ctypes.byref(needed)))
+                # TOKEN_USER and TOKEN_MANDATORY_LABEL both start with the
+                # same SID_AND_ATTRIBUTES structure; buffer owns its SID.
+                label = win._TOKEN_MANDATORY_LABEL.from_buffer(buffer)
+                sid = wt.LPWSTR()
+                _check(win._advapi32.ConvertSidToStringSidW(label.Label.Sid, ctypes.byref(sid)))
+                try: return sid.value
+                finally: kernel.LocalFree(ctypes.cast(sid, wt.LPVOID))
+            if token_sid(child, win._TOKEN_INTEGRITY_LEVEL) != win._LOW_IL_SID:
+                raise PermissionError('Console child token integrity changed')
+            if token_sid(child, 1) != token_sid(expected, 1):
+                raise PermissionError('Console child identity differs from its restricted parent')
+            # The child may never recover a host privilege through parent
+            # selection. Compare the complete LUID+attribute list, not a flag
+            # also set on ordinary UAC-filtered medium-integrity tokens.
+            def privileges(token):
+                needed = wt.DWORD()
+                win._advapi32.GetTokenInformation(token, 3, None, 0, ctypes.byref(needed))
+                _check(needed.value >= ctypes.sizeof(wt.DWORD))
+                data = ctypes.create_string_buffer(needed.value)
+                _check(win._advapi32.GetTokenInformation(token, 3, data, len(data), ctypes.byref(needed)))
+                count = wt.DWORD.from_buffer(data).value
+                if 4 + count * ctypes.sizeof(win._LUID_AND_ATTRIBUTES) > len(data):
+                    raise PermissionError('Console token privilege buffer is invalid')
+                entries = (win._LUID_AND_ATTRIBUTES * count).from_buffer(data, 4)
+                return sorted((item.Luid.HighPart, item.Luid.LowPart, item.Attributes) for item in entries)
+            if privileges(child) != privileges(expected):
+                raise PermissionError('Console child token privileges differ from its restricted parent')
+        finally: kernel.CloseHandle(child)
 
     def _pump(self):
         buffer, count = ctypes.create_string_buffer(8192), wt.DWORD()

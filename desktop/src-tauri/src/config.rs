@@ -75,26 +75,24 @@ pub fn pid_path(app: &AppHandle) -> PathBuf {
     data_dir(app).join("backend.pid")
 }
 
-pub fn load(app: &AppHandle) -> DesktopConfig {
+pub fn load(app: &AppHandle) -> std::io::Result<DesktopConfig> {
     let path = desktop_config_path(app);
+    crate::private_storage::file(&path)?;
     if let Ok(text) = fs::read_to_string(&path) {
         if let Ok(config) = serde_json::from_str::<DesktopConfig>(&text) {
-            return config;
+            return Ok(config);
         }
     }
     let config = DesktopConfig::default();
-    save(app, &config);
-    config
+    save(app, &config)?;
+    Ok(config)
 }
 
-pub fn save(app: &AppHandle, config: &DesktopConfig) {
+pub fn save(app: &AppHandle, config: &DesktopConfig) -> std::io::Result<()> {
     let path = desktop_config_path(app);
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(text) = serde_json::to_string_pretty(config) {
-        let _ = fs::write(path, text);
-    }
+    crate::private_storage::file(&path)?;
+    let text = serde_json::to_string_pretty(config).map_err(std::io::Error::other)?;
+    fs::write(path, text)
 }
 
 pub fn migrate_legacy(app: &AppHandle) {
@@ -143,22 +141,19 @@ mod tests {
     }
 }
 
-pub fn prepare_dirs(app: &AppHandle) {
+pub fn prepare_dirs(app: &AppHandle) -> std::io::Result<()> {
     for directory in [data_dir(app), config_dir(app), log_dir(app)] {
-        let _ = fs::create_dir_all(&directory);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&directory, fs::Permissions::from_mode(0o700));
-        }
+        crate::private_storage::directory(&directory)?;
     }
     migrate_legacy(app);
+    Ok(())
 }
 
-pub fn set_onboarded(app: &AppHandle) {
-    let mut config = load(app);
+pub fn set_onboarded(app: &AppHandle) -> std::io::Result<()> {
+    let mut config = load(app)?;
     if !config.onboarded {
         config.onboarded = true;
-        save(app, &config);
+        save(app, &config)?;
     }
+    Ok(())
 }

@@ -286,7 +286,10 @@ pub fn permission_dialog(app: &AppHandle) {
                 });
                 let _ = prompt;
             }
-            config::set_onboarded(&handle);
+            if config::set_onboarded(&handle).is_err() {
+                notify(&handle, "Termx", "Native workspace configuration is not private");
+                return;
+            }
             let status = crate::permissions::status();
             if !status.screen_recording {
                 open_permission_settings(&handle);
@@ -333,7 +336,10 @@ fn onboarding_welcome(app: AppHandle) {
             } else {
                 // Skipping still completes first run — the pairing window opens
                 // so the machine is reachable without a nagging wizard.
-                config::set_onboarded(&app);
+                if config::set_onboarded(&app).is_err() {
+                    notify(&app, "Termx", "Native workspace configuration is not private");
+                    return;
+                }
                 open_connect_window(&app);
             }
         });
@@ -418,7 +424,14 @@ fn onboarding_autostart(app: &AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn onboarding_ready(app: &AppHandle) {
-    config::set_onboarded(app);
+    if config::set_onboarded(app).is_err() {
+        notify(
+            app,
+            "Termx",
+            "Native workspace configuration is not private",
+        );
+        return;
+    }
     let handle = app.clone();
     app.dialog()
         .message(

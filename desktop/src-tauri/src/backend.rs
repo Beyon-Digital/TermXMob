@@ -53,8 +53,8 @@ struct Inner {
 pub struct Backend(Arc<Inner>);
 
 impl Backend {
-    pub fn new(app: AppHandle) -> Self {
-        let config = config::load(&app);
+    pub fn new(app: AppHandle) -> std::io::Result<Self> {
+        let config = config::load(&app)?;
         let manager = Self(Arc::new(Inner {
             app,
             config: Mutex::new(config),
@@ -67,7 +67,7 @@ impl Backend {
             adopted: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
         }));
-        manager
+        Ok(manager)
     }
 
     pub fn info(&self) -> Option<ReadyInfo> {

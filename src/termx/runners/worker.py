@@ -12,6 +12,7 @@ import os
 import sys
 import uuid
 import tempfile
+import threading
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -55,17 +56,67 @@ def file_state(call,cwd):
     return state
 
 class Channel:
-    def __init__(self):self.pending={};self.task_id=None;self.manager=None;self.closed=asyncio.Event()
+    def __init__(self):self.pending={};self.task_id=None;self.manager=None;self.closed=asyncio.Event();self.phase='startup';self._reader_stopped=threading.Event();self._diagnostics_stopped=threading.Event();self._incoming=None
     def send(self,value):sys.stdout.buffer.write(frame(value));sys.stdout.buffer.flush()
     async def rpc(self,method,arguments):
+        self.phase='rpc:'+method
         identifier=uuid.uuid4().hex;future=asyncio.get_running_loop().create_future();self.pending[identifier]=future
         self.send({'type':'rpc','id':identifier,'method':method,'arguments':arguments})
         try:return await asyncio.wait_for(future,600)
         finally:self.pending.pop(identifier,None)
     async def listen(self):
+        try:
+            await self._receive()
+        finally:
+            self.closed.set();self._reader_stopped.set()
+            for future in list(self.pending.values()):
+                if not future.done():future.set_exception(RuntimeError('Host runner control channel closed'))
+            if self.manager is not None and self.task_id is not None:self.manager.cancel(self.task_id)
+
+    async def next_frame(self):
+        if self._incoming is None:
+            # os.read avoids BufferedReader's mutex during interpreter teardown.
+            # Keep the sole stdin reader outside asyncio's non-daemon executor.
+            loop=asyncio.get_running_loop();queue=asyncio.Queue(maxsize=32);self._incoming=queue
+            self._input_slots=threading.BoundedSemaphore(32)
+            def deliver(value):
+                if self._reader_stopped.is_set():self._input_slots.release()
+                else:
+                    if queue.full():
+                        while not queue.empty():queue.get_nowait();self._input_slots.release()
+                        queue.put_nowait(ValueError('Runner control queue exceeded'));self._reader_stopped.set()
+                    else:queue.put_nowait(value)
+            def dispatch(value):
+                while not self._reader_stopped.is_set():
+                    if self._input_slots.acquire(timeout=.25):break
+                else:return
+                try:loop.call_soon_threadsafe(deliver,value)
+                except RuntimeError:self._input_slots.release();self._reader_stopped.set()
+            def read():
+                buffered=b''
+                try:
+                    while not self._reader_stopped.is_set():
+                        chunk=os.read(0,min(65536,MAX_FRAME+1-len(buffered)))
+                        if self._reader_stopped.is_set():return
+                        if not chunk:
+                            dispatch(ValueError('Incomplete runner frame') if buffered else b'');return
+                        buffered+=chunk
+                        while b'\n' in buffered:
+                            line,buffered=buffered.split(b'\n',1)
+                            if len(line)>MAX_FRAME:dispatch(ValueError('Runner frame exceeds limit'));return
+                            dispatch(line+b'\n')
+                        if len(buffered)>MAX_FRAME:dispatch(ValueError('Runner frame exceeds limit'));return
+                except BaseException as error:dispatch(error)
+            threading.Thread(target=read,name='runner-stdio',daemon=True).start()
+        value=await self._incoming.get()
+        self._input_slots.release()
+        if isinstance(value,BaseException):raise value
+        return value
+
+    async def _receive(self):
         while True:
-            raw=await asyncio.to_thread(sys.stdin.buffer.readline,MAX_FRAME+2)
-            if not raw:self.closed.set();return
+            raw=await self.next_frame()
+            if not raw:return
             if len(raw)>MAX_FRAME+1 or not raw.endswith(b'\n'):raise ValueError('Invalid runner frame')
             value=json.loads(raw);kind=value.get('type')
             if kind=='rpc-result':
@@ -78,6 +129,26 @@ class Channel:
             elif kind=='approval' and self.task_id:
                 asyncio.create_task(self.manager.resolve_approval(self.task_id,value['approval_id'],value['decision'],remember=None,limits=value.get('limits')))
             else:raise ValueError('Unknown runner control frame')
+
+    def diagnostics(self):
+        if os.environ.get('TERMX_RUNNER_DIAGNOSTICS')!='1':return
+        def watch():
+            # Test/qualification-only: no locals, source text, arguments, env or
+            # credentials. At most four bounded stack-location samples.
+            for _ in range(4):
+                if self._diagnostics_stopped.wait(5):return
+                stacks=[]
+                for identifier,current in sys._current_frames().items():
+                    if identifier==threading.get_ident():continue
+                    locations=[]
+                    for _ in range(12):
+                        if current is None:break
+                        locations.append(Path(current.f_code.co_filename).name+':'+current.f_code.co_name+':'+str(current.f_lineno));current=current.f_back
+                    stacks.append(locations)
+                sys.stderr.write(json.dumps({'runner_phase':self.phase,'thread_locations':stacks})[:12000]+'\n');sys.stderr.flush()
+        threading.Thread(target=watch,name='runner-diagnostics',daemon=True).start()
+
+    def stop(self):self._reader_stopped.set();self._diagnostics_stopped.set()
 
 class BrokerAdapter:
     def __init__(self,channel):self.channel=channel
@@ -130,7 +201,11 @@ class ReviewedManager(AgentManager):
             raise
 
 async def run():
-    raw=await asyncio.to_thread(sys.stdin.buffer.readline,MAX_FRAME+2)
+    if os.name=='nt':
+        import msvcrt
+        msvcrt.setmode(0,os.O_BINARY);msvcrt.setmode(1,os.O_BINARY)
+    channel=Channel()
+    raw=await channel.next_frame()
     if len(raw)>MAX_FRAME+1 or not raw.endswith(b'\n'):raise ValueError('Invalid startup frame')
     start=json.loads(raw)
     if start.get('type')!='start' or start.get('protocol')!=PROTOCOL:raise ValueError('Unsupported engine port')
@@ -145,10 +220,12 @@ async def run():
     projects=ProjectFiles();projects.register(str(root))
     store=AgentStore(data/'ledger')
     provider=start['provider'];store.put_provider(provider['id'],kind='openai-compatible',name='Host broker',base_url='https://broker.invalid',model=provider['model'],capabilities=['shell'],secret_configured=False)
-    channel=Channel();manager=ReviewedManager(channel,store,CredentialStore(memory={}),SimpleNamespace(),adapter_factory=lambda *_:BrokerAdapter(channel),runner_for=lambda profile,**kwargs:HostSandboxRunner(profile=profile),project_files=projects)
+    manager=ReviewedManager(channel,store,CredentialStore(memory={}),SimpleNamespace(),adapter_factory=lambda *_:BrokerAdapter(channel),runner_for=lambda profile,**kwargs:HostSandboxRunner(profile=profile),project_files=projects)
+    channel.diagnostics()
     channel.manager=manager
     def event(task_id,event):
         channel.task_id=task_id
+        channel.phase='event:'+event['type']
         channel.send({'type':'event','event':event,'task':store.get_task(task_id)})
     manager._listeners.add(event)
     listener=asyncio.create_task(channel.listen())
@@ -161,7 +238,7 @@ async def run():
                 channel.send({'type':'finished','task':task});break
             await asyncio.sleep(.05)
     finally:
-        await manager.close();listener.cancel();await asyncio.gather(listener,return_exceptions=True);store.close();projects.close()
+        channel.stop();await manager.close();listener.cancel();await asyncio.gather(listener,return_exceptions=True);store.close();projects.close()
 
 if __name__=='__main__':
     if '--capabilities' in sys.argv:print(json.dumps(capabilities()))

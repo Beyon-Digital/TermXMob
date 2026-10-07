@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import sys
+import shlex
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from time import time
@@ -57,6 +59,33 @@ def test_qualified_image_boundary_and_explicit_account(tmp_path):
         await service.close();await state.agent.close();state.agent.store.close()
     asyncio.run(run())
 
+def test_worker_invalid_control_cancels_pending_broker_and_exits_without_stdin_eof(tmp_path):
+    root=tmp_path/'remote-invalid';root.mkdir();target=root/'hello.txt';target.write_text('unchanged')
+    async def run():
+        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated-invalid')}
+        process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
+        process.stdin.write(frame({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Bounded protocol refusal','mode':'agent','limits':{'max_seconds':10,'max_steps':2}}))
+        events=[]
+        try:
+            async with asyncio.timeout(15):
+                while raw:=await process.stdout.readline():
+                    value=json.loads(raw)
+                    if value['type']=='rpc':
+                        assert value['method']=='plan'
+                        process.stdin.write(frame({'type':'invalid-host-control'}));break
+                while raw:=await process.stdout.readline():
+                    value=json.loads(raw)
+                    if value['type']=='event':events.append(value['event']['type'])
+                    assert value['type']!='rpc'
+                await asyncio.wait_for(process.wait(),3)
+                assert process.returncode==0,(await process.stderr.read()).decode()
+            assert 'runner.failure' in events and not any(event.startswith('tool.') for event in events)
+            assert target.read_text()=='unchanged'
+        finally:
+            if process.returncode is None:process.kill()
+            await process.wait()
+    asyncio.run(run())
+
 def test_canonical_admission_request_dedup_and_restart_no_replay(tmp_path):
     service,state,principal,_=fixture_state(tmp_path)
     dispatched=[]
@@ -103,8 +132,10 @@ def test_consumed_review_binds_file_state_and_authority(tmp_path):
 @pytest.mark.parametrize('change_after_review',[False,True])
 def test_real_worker_reuses_agent_loop_and_checks_post_review_file(tmp_path,change_after_review):
     root=tmp_path/'remote';root.mkdir();target=root/'hello.txt';target.write_text('before')
+    argv=[sys.executable,'-c',"from pathlib import Path; print(Path('hello.txt').read_text())"]
+    verify_command=subprocess.list2cmdline(argv) if os.name=='nt' else ' '.join(shlex.quote(arg) for arg in argv)
     async def run():
-        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated')}
+        env={**os.environ,'TERMX_RUNNER_TEST_ROOT':str(root),'TERMX_CONFIG_DIR':str(tmp_path/'isolated'),'TERMX_RUNNER_DIAGNOSTICS':'1'}
         process=await asyncio.create_subprocess_exec(sys.executable,'-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,limit=8*1024*1024+2)
         def send(value):process.stdin.write(frame(value))
         send({'type':'start','protocol':1,'provider':{'id':'api','model':'fixture'},'prompt':'Write hello.txt with after','mode':'agent','limits':{'max_seconds':20,'max_steps':4}})
@@ -123,7 +154,7 @@ def test_real_worker_reuses_agent_loop_and_checks_post_review_file(tmp_path,chan
                         if method=='plan':result=[{'summary':'Write hello','steps':['Write file'],'tools':['shell'],'risks':[]},'plan-1']
                         elif method=='turn':
                             turns+=1
-                            result={'response_id':'turn-'+str(turns),'text':'done' if turns>2 else '', 'calls':[] if turns>2 else [{'type':'function','call_id':'shell-1','name':'run_shell','arguments':{'command':'cat hello.txt','purpose':'Verify the written file'},'actions':[],'safety_checks':[]}] if turns==2 else [{'type':'function','call_id':'write-1','name':'write_file','arguments':{'path':'hello.txt','content':'after','expected_revision':__import__('termx.project_files',fromlist=['ProjectFiles']).ProjectFiles.revision(b'before')},'actions':[],'safety_checks':[]}], 'usage':{},'output_items':[]}
+                            result={'response_id':'turn-'+str(turns),'text':'done' if turns>2 else '', 'calls':[] if turns>2 else [{'type':'function','call_id':'shell-1','name':'run_shell','arguments':{'command':verify_command,'purpose':'Verify the written file'},'actions':[],'safety_checks':[]}] if turns==2 else [{'type':'function','call_id':'write-1','name':'write_file','arguments':{'path':'hello.txt','content':'after','expected_revision':__import__('termx.project_files',fromlist=['ProjectFiles']).ProjectFiles.revision(b'before')},'actions':[],'safety_checks':[]}], 'usage':{},'output_items':[]}
                         elif method=='review':
                             reviewed=True
                             assert arguments['state']==([[str(target),__import__('hashlib').sha256(b'before').hexdigest()]] if arguments['call']['name']=='write_file' else [])
@@ -134,12 +165,17 @@ def test_real_worker_reuses_agent_loop_and_checks_post_review_file(tmp_path,chan
                         send({'type':'rpc-result','id':value['id'],'result':result})
                     elif value['type']=='finished':finished=value['task'];break
                 assert finished is not None,(await process.stderr.read()).decode()
+                phase='await-normal-worker-exit-with-host-input-open'
+                await asyncio.wait_for(process.wait(),3)
+                assert process.returncode==0,(await process.stderr.read()).decode()
         except TimeoutError:
+            prekill_returncode=process.returncode
             if process.returncode is None:process.kill()
             await process.wait()
             stderr=await asyncio.wait_for(process.stderr.read(16384),2)
             raise AssertionError(json.dumps({'worker_timeout_seconds':30,'phase':phase,'provider_turns':turns,
                 'reviewed':reviewed,'rpc_methods':methods[-16:],'event_types':[event['type'] for event in events[-16:]],
+                'prekill_returncode':prekill_returncode,'alive_before_fixture_kill':prekill_returncode is None,
                 'returncode':process.returncode,'stderr':stderr.decode('utf-8','replace')})) from None
         finally:
             if process.returncode is None:process.kill()

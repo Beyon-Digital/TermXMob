@@ -1,0 +1,25 @@
+{
+  "commit": "58e0732f4dc02d69f36eb18c27d324a9d58a61c3",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37607370648",
+  "conclusion": "success",
+  "linux_backend": {
+    "passed": 808,
+    "skipped": 132,
+    "seconds": 131.24
+  },
+  "macos_backend": {
+    "passed": 839,
+    "skipped": 101,
+    "seconds": 215.17
+  },
+  "workspace": {
+    "passed": 62,
+    "files": 22,
+    "build": "passed"
+  },
+  "limits": [
+    "Linux exact-window capture job skipped in this PR workflow.",
+    "Separate Windows platform workflow failed two ConPTY launches and two runner-worker fixtures; corrections require platform qualification.",
+    "This source CI does not prove installed native GUI or complete installer packaging."
+  ]
+}
