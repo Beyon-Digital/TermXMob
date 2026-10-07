@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from termx.identity_adapters import OidcAdapter, OidcConfig
 from termx.identity import AuthenticationService
 from termx.authorization import ROLES
-from tests.test_authorization import client_fixture
+from test_authorization import client_fixture
 
 @pytest.fixture
 def tls_idp(tmp_path):
