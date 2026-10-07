@@ -67,11 +67,22 @@ def ui_script(pid: int) -> str:
     if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
         raise ValueError('An owned positive fixture PID is required')
     return f'''tell application "System Events"
+repeat 20 times
+try
 set ownedProcess to first application process whose unix id is {pid}
 tell ownedProcess
 set frontmost to true
+if (count of windows) > 0 then
 click button "Exercise owned fixture" of window 1
+return "Owned native action completed"
+end if
 end tell
+on error failureText number failureNumber
+if failureText contains "not allowed" or failureText contains "not authorized" then error failureText number failureNumber
+end try
+delay 0.25
+end repeat
+error "Owned native window did not expose its fixture button"
 end tell'''
 
 
@@ -147,10 +158,10 @@ def main():
                         # Only diagnostics about the owned action, never other windows/accounts.
                         report['osascript_diagnostic'] = (action.stderr or action.stdout)[-1600:]
                         deadline = monotonic()+5
-                        observed = read_state(ready)
+                        observed = read_state(ready) or {}
                         while not observed.get('clicked') and monotonic() < deadline:
                             sleep(.1)
-                            observed = read_state(ready)
+                            observed = read_state(ready) or {}
                         report['ui_control_available'] = action.returncode == 0 and bool(observed.get('clicked'))
                         if not report['ui_control_available']:
                             report['unavailable_reason'] = 'Actual owned native button action was denied or unobserved; see osascript diagnostic'
