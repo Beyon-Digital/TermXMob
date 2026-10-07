@@ -19,6 +19,10 @@ kernel.CreateProcessW.argtypes = [wt.LPCWSTR, wt.LPWSTR, wt.LPVOID, wt.LPVOID,
 kernel.CreateProcessW.restype = wt.BOOL
 kernel.IsProcessInJob.argtypes = [wt.HANDLE, wt.HANDLE, ctypes.POINTER(wt.BOOL)]
 kernel.IsProcessInJob.restype = wt.BOOL
+kernel.SetConsoleCtrlHandler.argtypes = [wt.LPVOID,wt.BOOL]
+kernel.SetConsoleCtrlHandler.restype = wt.BOOL
+kernel.GetConsoleCP.argtypes = []
+kernel.GetConsoleCP.restype = wt.UINT
 win._advapi32.ConvertSidToStringSidW.argtypes = [wt.LPVOID, ctypes.POINTER(wt.LPWSTR)]
 win._advapi32.ConvertSidToStringSidW.restype = wt.BOOL
 
@@ -140,6 +144,10 @@ class LocalConPTY:
             flags = win._CREATE_SUSPENDED | win._CREATE_UNICODE_ENVIRONMENT | 0x00080000
             argv = ctypes.create_unicode_buffer(command)
             environment = win._env_block(env)
+            # Ctrl+C ignore is inherited independently of handler callbacks.
+            # Reset it in this isolated broker, never in the daemon. A frozen
+            # CREATE_NO_WINDOW broker has no console/ignore state to reset.
+            if kernel.GetConsoleCP():_check(kernel.SetConsoleCtrlHandler(None,False))
             self._progress('creating-client')
             _check(kernel.CreateProcessW(None, argv, None, None, False, flags,
                 environment, cwd, ctypes.byref(startup), ctypes.byref(process)))
