@@ -37,7 +37,18 @@ def test_managed_viewers_start_watch_only_control_is_connection_scoped_and_globa
             except KeyError:pass
             else:raise AssertionError('Foreign stop accepted')
             assert client.delete('/api/desktop/recording/viewers/'+controlled['id'],headers=headers).status_code==200
-            assert first.receive()['code']==1000
+            # Capture status already queued before the explicit stop remains
+            # readable before the close frame; it is not a post-stop effect.
+            for _ in range(8):
+                stopped=first.receive()
+                if stopped['type']=='websocket.close':
+                    assert stopped['code']==1000
+                    break
+                assert stopped['type']=='websocket.send' and 'text' in stopped and not stopped.get('bytes')
+                import json
+                status=json.loads(stopped['text'])
+                assert status['type']=='error' and status['message']=='Fixture: no physical capture requested'
+            else:raise AssertionError('Stopped viewer did not close')
             assert [r['state'] for r in client.get('/api/desktop/recording/status',headers=headers).json()['captures'] if r['kind']=='computer']==['watching']
         assert not events # A view-only connection closing must not release another controller's keys.
 
