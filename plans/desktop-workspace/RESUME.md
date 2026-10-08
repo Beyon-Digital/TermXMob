@@ -77,6 +77,18 @@ Windows now passes backend suite, native bridge, debug adapters, browser contrac
 
 **CI is a scarce resource (user instruction 2026-10-08): do not dispatch or push to iterate by guessing.** Each full artifact run is about 1h20m. Resolve causes locally or with a cheap targeted check first. Steps 5 and 6 below remain open; no installed-platform, live-provider or reviewer row has been promoted. The Mac installed-GUI workflow must not run against this failed source run.
 
+### Windows installed GUI root-caused and repaired locally (source `77e56d6`, evidence `verification/windows-artifact-77e56d6.json`)
+
+The whole `DevToolsActivePort` failure reduced to three independent causes, all proven and fixed on the Windows qualification box:
+
+- **Driver session:** elevated WebView2 ignores `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (documented upstream), so msedgedriver's `--remote-debugging-port=0` never reached the browser process. The workflow now writes the documented elevated escape — per-exe `HKLM\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments\termx-desktop.exe` — before the smoke and removes it in a finally block.
+- **Terminal transport deadline:** fixture defect. ConPTY redraws the next `cmd.exe` prompt with a CUP escape instead of a line break, gluing the echoed marker to the prompt line. The fixture now treats CSI sequences as line boundaries; the strict line-equality assertion is unchanged.
+- **Detach deadlock (real product bug):** `workspace_detach` was a synchronous command running inside the webview's `WebMessageReceived` COM call, and WebView2 cannot deliver the second controller-creation callback into that apartment (wry#583 / wry#1665; upstream fix PR #1666 is unmerged). Reproduced interactively without the driver: real-user detach produced a permanently blank window. The command is now `async`, which is wry's documented workaround; a locally rebuilt exe returns the label in ~0.4 s and both webviews initialize.
+
+Full unmodified `native_gui_smoke.py` against a locally rebuilt `termx-desktop.exe` (same source, GNU toolchain) + the MSI-installed backend reports **passed:true for all 11 steps**. No assertion was weakened or deleted. One nit remains: fixture `TemporaryDirectory` cleanup can raise `PermissionError` on `agent.sqlite3-shm` when the backend still holds the WAL (intermittent, non-blocking).
+
+**Still not proven:** the CI-built MSVC artifact itself (local proof used a GNU build of identical source; the change is a one-keyword signature change) and the workflow policy edit on the actual runner. One `artifactqualification_scope=windows` run is the next evidence, dispatched only after the push-time gates on `77e56d6` pass.
+
 Work happened in worktree branch `worktree-v03-packaging-repair`, pushed to the PR branch by fast-forward. The main checkout still holds identical uncommitted copies of these files; they can be discarded after `git pull`.
 
 ## Resume sequence
