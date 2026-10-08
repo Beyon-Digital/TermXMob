@@ -1,0 +1,28 @@
+{
+  "source_commit": "b9fc453a5d6e69084522092d3c083709f27bcff5",
+  "source_gates": "main CI 37804406783, Windows contracts 37804406764, native compile 37804406713, macOS feasibility 37804406702, macOS installed fixture 37804408321: all success",
+  "artifact_run": {
+    "run": 37806173225,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37806173225",
+    "inputs": {"release_tag": "", "draft": true, "artifactqualification_scope": "windows", "include_intel": false},
+    "scope_note": "Partial intermediate check only: Windows job, no Mac or Linux. Not a qualification run.",
+    "windows_steps_passed": [
+      "Verify complete backend suite",
+      "Verify native bridge boundaries",
+      "Verify installed debug adapters",
+      "Verify installed browser grant and recovery contracts",
+      "Verify rendered workspace accessibility",
+      "Build installers (MSI and NSIS)"
+    ],
+    "windows_step_failed": "Verify installed Windows native workspace",
+    "failure": "session not created: DevToolsActivePort file doesn't exist (raised by msedgedriver during POST /session; no GUI scenario step ran)",
+    "diagnostics_observed": {
+      "installed_app": "healthy: setup, main window created, tray ready, backend spawned and ready on port 8787 (termx-desktop.log, termx-backend.log)",
+      "processes_alive_at_failure": ["tauri-driver.exe", "msedgedriver.exe", "msedgewebview2.exe x2", "termx-backend.exe"],
+      "webdriver_log": "empty"
+    },
+    "hypothesis_tested_and_refuted": "Removing the WEBVIEW2_USER_DATA_FOLDER override did not change the failure.",
+    "open": "The cause is in the msedgedriver to WebView2 handshake (the remote debugging port or its profile directory is not where the driver looks). Not yet determined. Next evidence needed: command lines of the msedgewebview2.exe processes, any DevToolsActivePort file location, msedgedriver and WebView2 runtime versions.",
+    "windows_installed_gui": "NOT qualified"
+  }
+}
