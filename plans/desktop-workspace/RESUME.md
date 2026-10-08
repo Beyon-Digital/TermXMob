@@ -58,7 +58,9 @@ The user's answer was: **use the current active/chosen provider for the session*
 
 Run 37693649699 finished all-failed (Intel failed at Build installers). Frozen packaging repairs were reviewed and published with the Linux fixture fix (`delete_session(session_id:$id)`, validated against the real schema by a new test) as `4ec21f5`, then `31fcd1c` (first push failed CI on a `desktop` package import; fixed). Remote HEAD `31fcd1c270618833110859964db1d27f9e2974d5`. Gates on it passed: main CI, Windows contracts, native compile, macOS feasibility. Evidence: `verification/ci-31fcd1c.json`.
 
-One artifact-only run dispatched: https://github.com/Beyon-Digital/TermXMob/actions/runs/37708359897 (scope all, Intel included, empty release tag, draft true). Do not dispatch another until it finishes. Steps 5 and 6 below remain open; no installed-platform, live-provider or reviewer row has been promoted.
+Artifact-only run https://github.com/Beyon-Digital/TermXMob/actions/runs/37708359897 (scope all, Intel included, empty release tag, draft true) finished overall **failure**. Mac ARM and Intel both passed end to end: container creation, final DMG Accepted, stapled, validated (hashes in `ci-31fcd1c.json`). Linux got through sign-in, monitor recovery, terminal transport and detached window, then timed out waiting for the detached placement file. Windows failed at WebDriver session creation (`DevToolsActivePort file doesn't exist`), the first time the Windows installed GUI has run. Neither cause is determined.
+
+**CI is a scarce resource (user instruction 2026-10-08): do not dispatch or push to iterate by guessing.** Each full artifact run is about 1h20m. Resolve causes locally or with a cheap targeted check first. Steps 5 and 6 below remain open; no installed-platform, live-provider or reviewer row has been promoted. The Mac installed-GUI workflow must not run against this failed source run.
 
 Work happened in worktree branch `worktree-v03-packaging-repair`, pushed to the PR branch by fast-forward. The main checkout still holds identical uncommitted copies of these files; they can be discarded after `git pull`.
 
