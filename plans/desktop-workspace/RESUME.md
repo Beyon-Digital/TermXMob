@@ -54,6 +54,14 @@ No active test session remains from the packaging agent. Its read-only artifact 
 
 The user's answer was: **use the current active/chosen provider for the session**. Actual TermX session metadata and the effective resolver contain no selected API provider/model, media capability/pricing, reviewer model or spending cap. Native CLI/ChatGPT subscription access does not establish media API entitlement. No paid/live provider call has been made. The precise provider/model and numeric cap follow-up remains unanswered. Do not invent a fallback or treat elapsed time as approval.
 
+## Update after resume (2026-10-08)
+
+Run 37693649699 finished all-failed (Intel failed at Build installers). Frozen packaging repairs were reviewed and published with the Linux fixture fix (`delete_session(session_id:$id)`, validated against the real schema by a new test) as `4ec21f5`, then `31fcd1c` (first push failed CI on a `desktop` package import; fixed). Remote HEAD `31fcd1c270618833110859964db1d27f9e2974d5`. Gates on it passed: main CI, Windows contracts, native compile, macOS feasibility. Evidence: `verification/ci-31fcd1c.json`.
+
+One artifact-only run dispatched: https://github.com/Beyon-Digital/TermXMob/actions/runs/37708359897 (scope all, Intel included, empty release tag, draft true). Do not dispatch another until it finishes. Steps 5 and 6 below remain open; no installed-platform, live-provider or reviewer row has been promoted.
+
+Work happened in worktree branch `worktree-v03-packaging-repair`, pushed to the PR branch by fast-forward. The main checkout still holds identical uncommitted copies of these files; they can be discarded after `git pull`.
+
 ## Resume sequence
 
 1. Inspect current Git state in both named checkouts and these companion notes. Recheck Intel CI status. Do not discard frozen local repairs or sibling probes.

@@ -1,0 +1,27 @@
+{
+  "source_commit": "31fcd1c270618833110859964db1d27f9e2974d5",
+  "note": "Run outcomes only; per-suite counts were not extracted and are not claimed here.",
+  "superseded_attempt": {
+    "source_commit": "4ec21f5",
+    "result": "main CI 37707354795 and Windows 37707354653 failed: tests imported the desktop package, which bare pytest cannot resolve. Fixed in 31fcd1c by loading helpers by script path."
+  },
+  "source_gates": {
+    "main_ci": {"run": 37707562846, "conclusion": "success"},
+    "windows_platform_contracts": {"run": 37707562810, "conclusion": "success"},
+    "native_microphone_compile": {"run": 37707562752, "conclusion": "success"},
+    "macos_hosted_native_gui_feasibility": {"run": 37707562770, "conclusion": "success"},
+    "installed_macos_workspace_qualification_fixture": {"run": 37707562867, "conclusion": "success"}
+  },
+  "artifact_run": {
+    "run": 37708359897,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37708359897",
+    "inputs": {"release_tag": "", "draft": true, "artifactqualification_scope": "all", "include_intel": true},
+    "status_at_dispatch": "in_progress"
+  },
+  "previous_artifact_run": {
+    "run": 37693649699,
+    "source_commit": "1094609da6b390ec46438f9cd32f5cb3dfa1acad",
+    "conclusion": "failure",
+    "jobs": {"macos-arm64": "failure", "macos-x86_64": "failure (Build installers)", "linux": "failure", "windows": "failure"}
+  }
+}
