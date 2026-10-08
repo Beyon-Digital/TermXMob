@@ -1,7 +1,10 @@
-from desktop.scripts.artifact_matrix import build_matrix
 from pathlib import Path
+import sys
 import yaml
 import pytest
+
+sys.path.insert(0, str(Path(__file__).parents[1] / 'desktop/scripts'))
+from artifact_matrix import build_matrix  # noqa: E402
 
 
 @pytest.mark.parametrize('scope,expected', [('all', ['macos-arm64','macos-x86_64','windows','linux']), ('macos-and-windows',['macos-arm64','macos-x86_64','windows'])])

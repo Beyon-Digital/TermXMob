@@ -1,13 +1,16 @@
 """Injected-command evidence; real signed DMG qualification remains macOS CI."""
-from desktop.scripts import create_ci_dmg as module
 import json
 import os
 from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import sys
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).parents[1] / 'desktop/scripts'))
+import create_ci_dmg as module  # noqa: E402
 
 SHA = '1094609da6b390ec46438f9cd32f5cb3dfa1acad'
 IDENTITY = 'synthetic-private-signing-port'
