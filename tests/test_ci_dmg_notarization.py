@@ -1,6 +1,8 @@
 """Synthetic command-contract evidence; no Apple account or local installer build."""
 import importlib.util
 import json
+import os
+import stat
 from pathlib import Path
 import subprocess
 
@@ -16,7 +18,7 @@ SECRET = 'synthetic-private-key-must-never-appear'
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, monkeypatch):
     directory = tmp_path / 'bundle'
     directory.mkdir()
     package = directory / 'Termx_0.2.6_aarch64.dmg'
@@ -24,12 +26,25 @@ def fixture(tmp_path):
     key = tmp_path / 'AuthKey.p8'
     key.write_text(SECRET)
     key.chmod(0o600)
+    if os.name == 'nt':
+        # This suite models the macOS-only helper, not Windows key ACLs. NTFS
+        # stat/chmod cannot expose POSIX600; fake only this synthetic key's mode.
+        real_stat = Path.stat
+        def synthetic_key_stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if path == key:
+                fields = list(result)
+                fields[0] = (fields[0] & ~0o777) | 0o600
+                return os.stat_result(fields)
+            return result
+        monkeypatch.setattr(Path, 'stat', synthetic_key_stat)
     return {'directory': directory, 'package': package, 'receipt': tmp_path / 'evidence/receipt.json', 'credentials': {'APPLE_API_KEY_PATH': str(key), 'APPLE_API_KEY': 'SYNTHETIC1', 'APPLE_API_ISSUER': '1c198985-8948-4444-9d22-90f7e1df6491'}}
 
 
 class Commands:
-    def __init__(self, fixture, *, submit=None, wait=None, fail=None, mutate=None):
+    def __init__(self, fixture, *, submit=None, wait=None, info=None, fail=None, mutate=None):
         self.fixture, self.submit, self.wait, self.fail, self.mutate = fixture, list(submit or []), list(wait or []), fail, mutate
+        self.info = list(info or [])
         self.calls = []
 
     def __call__(self, argv, timeout):
@@ -51,6 +66,10 @@ class Commands:
             if self.wait:
                 return subprocess.CompletedProcess(argv, *self.wait.pop(0))
             return subprocess.CompletedProcess(argv, 0, json.dumps({'id': SUBMISSION, 'status': 'Accepted'}), '')
+        if argv[:3] == ['xcrun', 'notarytool', 'info']:
+            if self.info:
+                return subprocess.CompletedProcess(argv, *self.info.pop(0))
+            return subprocess.CompletedProcess(argv, 0, json.dumps({'id': SUBMISSION, 'status': 'In Progress'}), '')
         if argv[:3] == ['xcrun', 'stapler', 'staple']:
             self.fixture['package'].write_bytes(self.fixture['package'].read_bytes() + b'-ticket')
         return subprocess.CompletedProcess(argv, 0, '', '')
@@ -165,6 +184,8 @@ def test_ambiguous_or_unsafe_package_and_key_fail_before_apple_call(fixture, kin
         other.write_bytes(original)
         fixture['package'].symlink_to(other)
     else:
+        if os.name == 'nt':
+            pytest.skip('Actual POSIX chmod privacy qualification requires a POSIX filesystem; synthetic orchestration still runs on Windows')
         Path(fixture['credentials']['APPLE_API_KEY_PATH']).chmod(0o644)
     runner = Commands(fixture)
     with pytest.raises(module.TicketError):
@@ -213,7 +234,7 @@ def test_deadline_exhaustion_before_effect_fails_closed(fixture):
     assert not runner.calls and not fixture['receipt'].exists()
 
 
-@pytest.mark.parametrize('diagnostic', ['rejected: the wait timeout was exceeded', 'invalid submission: the wait timeout was exceeded', 'arbitrary timeout in private diagnostic', 'HTTP 503 rejected: the wait timeout was exceeded'])
+@pytest.mark.parametrize('diagnostic', ['rejected: the wait timeout was exceeded', 'invalid submission: the wait timeout was exceeded', 'HTTP 503 rejected: the wait timeout was exceeded'])
 def test_rejected_or_unrecognized_timeout_is_not_a_retry_signal(fixture, diagnostic):
     runner = Commands(fixture, wait=[(1, '', diagnostic)])
     with pytest.raises(module.TicketError, match='wait failed'):
@@ -253,3 +274,46 @@ def test_present_unknown_submission_status_is_not_pending(fixture):
     with pytest.raises(module.TicketError, match='unknown status'):
         execute(fixture, runner)
     assert len(runner.calls) == 2 and not fixture['receipt'].exists()
+
+
+def test_unknown_wait_error_reconciles_only_known_id_to_structured_accepted(fixture):
+    runner = Commands(fixture, wait=[(1, SECRET, 'Error: Timeout reached.')], info=[(0, json.dumps({'id': SUBMISSION, 'status': 'Accepted'}), '')])
+    result = execute(fixture, runner)
+    assert result['notarization_status'] == 'Accepted'
+    assert len([argv for argv, _ in runner.calls if argv[:3] == ['xcrun', 'notarytool', 'submit']]) == 1
+    assert next(argv for argv, _ in runner.calls if argv[:3] == ['xcrun', 'notarytool', 'info'])[3] == SUBMISSION
+    diagnostic = json.loads((fixture['receipt'].parent / 'submission.json').read_text())
+    assert diagnostic['submission_id'] == SUBMISSION and diagnostic['qualified'] is True
+    assert diagnostic['pre_ticket_sha256'] == result['pre_ticket_sha256']
+    assert SECRET not in json.dumps(diagnostic)
+    assert fixture['credentials']['APPLE_API_KEY_PATH'] not in json.dumps(diagnostic)
+
+
+@pytest.mark.parametrize('info', [
+    (0, json.dumps({'id': SUBMISSION, 'status': 'Invalid'}), ''),
+    (0, json.dumps({'id': SUBMISSION, 'status': 'Rejected'}), ''),
+    (0, json.dumps({'status': 'Accepted'}), ''),
+    (0, json.dumps({'id': '192a73f6-3f6d-47d6-8c65-84f11d776fa3', 'status': 'Accepted'}), ''),
+    (0, 'malformed-' + SECRET, ''), (1, SECRET, '401 authentication ' + SECRET),
+])
+def test_nonzero_wait_reconciliation_requires_exact_structured_server_authority(fixture, info):
+    runner = Commands(fixture, wait=[(1, '', 'unknown private failure')], info=[info])
+    with pytest.raises(module.TicketError) as error:
+        execute(fixture, runner)
+    assert SECRET not in str(error.value)
+    assert not fixture['receipt'].exists()
+    diagnostic = json.loads((fixture['receipt'].parent / 'submission.json').read_text())
+    assert diagnostic['submission_id'] == SUBMISSION and diagnostic['qualified'] is False
+    assert len([argv for argv, _ in runner.calls if argv[:3] == ['xcrun', 'notarytool', 'submit']]) == 1
+    assert not any(argv[:2] == ['xcrun', 'stapler'] for argv, _ in runner.calls)
+
+
+def test_wait_auth_error_keeps_safe_pending_receipt_without_info_or_retry(fixture):
+    runner = Commands(fixture, wait=[(1, SECRET, '401 unauthorized timeout ' + SECRET)])
+    with pytest.raises(module.TicketError):
+        execute(fixture, runner)
+    diagnostic = json.loads((fixture['receipt'].parent / 'submission.json').read_text())
+    assert diagnostic['qualified'] is False and diagnostic['submission_id'] == SUBMISSION
+    assert diagnostic['phases'][-1]['category'] == 'authentication-failure'
+    assert SECRET not in json.dumps(diagnostic)
+    assert not any(argv[:3] == ['xcrun', 'notarytool', 'info'] for argv, _ in runner.calls)

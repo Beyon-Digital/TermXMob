@@ -128,3 +128,23 @@ def test_native_workspace_ready_still_verifies_managed_session_and_url():
             assert path == '/auth/me'
             return {'status':200,'body':{'session_id':'synthetic-managed-session'}}
     assert module.assert_workspace(Driver()) == {'session_id':'synthetic-managed-session'}
+
+
+def test_native_terminal_cleanup_mutation_validates_against_actual_schema():
+    from graphql import parse, validate
+    from termx.graphql.schema import schema
+    module = harness()
+    calls = []
+    class Driver:
+        def api(self,path,method='GET',body=None):
+            calls.append((path,method,body))
+            if path.endswith('/terminal'):
+                return {'status':200,'body':{'id':'synthetic-terminal'}}
+            return {'status':200,'body':{'data':{'delete_session':{'ok':True}}}}
+        def call(self,method,path,data=None,session=True):
+            return {'ok':True,'connected':True,'bytes':1}
+    module.terminal_transport(Driver(),'synthetic-session')
+    cleanup = [body for path,method,body in calls if path == '/graphql']
+    assert len(cleanup) == 1 and cleanup[0]['variables'] == {'id':'synthetic-terminal'}
+    errors = validate(schema._schema, parse(cleanup[0]['query']))
+    assert not errors, [error.message for error in errors]

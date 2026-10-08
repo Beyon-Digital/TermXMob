@@ -244,7 +244,7 @@ socket.onclose=event=>{if(!settled)finish({ok:false,error:'Native terminal socke
         return {'authenticated_webview_socket':True,'restricted_console_output_bytes':result['bytes']}
     finally:
         removed = driver.api('/graphql','POST',{'query':
-            'mutation($id:String!){deleteSession(sessionId:$id){ok}}',
+            'mutation($id:String!){delete_session(session_id:$id){ok}}',
             'variables':{'id':terminal_id}})
         assert removed['status'] == 200 and not removed['body'].get('errors'), str(removed)
 

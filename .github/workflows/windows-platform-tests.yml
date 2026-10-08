@@ -23,6 +23,12 @@ on:
       - 'src/termx/desktop/windows.py'
       - 'desktop/backend_entry.py'
       - 'desktop/termx-backend.spec'
+      - 'desktop/scripts/notarize_ci_dmg.py'
+      - 'desktop/scripts/create_ci_dmg.py'
+      - 'desktop/scripts/artifact_matrix.py'
+      - 'tests/test_ci_dmg_notarization.py'
+      - 'tests/test_ci_dmg_container.py'
+      - 'tests/test_artifact_matrix.py'
       - 'tests/test_runner_agents.py'
       - 'tests/test_git_stream_boundary.py'
       - 'tests/test_private_files.py'
@@ -74,6 +80,7 @@ jobs:
           tests/test_chatgpt.py tests/test_discovery_agents.py
           tests/test_engines.py tests/test_engine_catalogue.py tests/test_engines_acp.py
           tests/test_runner_agents.py tests/test_windows_conpty.py tests/test_windows_conpty_protocol.py
+          tests/test_ci_dmg_notarization.py tests/test_ci_dmg_container.py tests/test_artifact_matrix.py
           tests/test_git_stream_boundary.py
           tests/test_owned_windows_window.py
           tests/test_desktop_host_stop_cli.py tests/test_cli_banner.py tests/test_agent_registry_newlines.py

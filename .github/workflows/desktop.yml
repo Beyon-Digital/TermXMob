@@ -12,6 +12,14 @@ on:
         required: false
         type: boolean
         default: false
+      artifactqualification_scope:
+        description: "Artifact-only platforms; releases always build all platforms."
+        required: false
+        type: choice
+        default: all
+        options:
+          - all
+          - macos-and-windows
       include_intel:
         description: "Also build the macOS Intel (x86_64) DMG on the macos-15-intel runner"
         required: false
@@ -36,25 +44,17 @@ jobs:
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
     steps:
+      - uses: actions/checkout@v4
       - id: set
         name: Resolve build matrix
         shell: bash
         env:
           INCLUDE_INTEL: ${{ github.event_name != 'workflow_dispatch' || inputs.include_intel }}
+          ARTIFACT_EVENT: ${{ github.event_name }}
+          ARTIFACT_RELEASE_TAG: ${{ inputs.release_tag }}
+          ARTIFACT_QUALIFICATION_SCOPE: ${{ inputs.artifactqualification_scope || 'all' }}
         run: |
-          MATRIX=$(python3 - <<'PY'
-          import json, os
-
-          include = [
-              {"name": "macos-arm64", "platform": "macos-15", "target": "aarch64-apple-darwin", "bundles": "dmg"},
-              {"name": "windows", "platform": "windows-latest", "target": "", "bundles": "msi,nsis"},
-              {"name": "linux", "platform": "ubuntu-22.04", "target": "", "bundles": "deb,rpm,appimage"},
-          ]
-          if os.environ.get("INCLUDE_INTEL") == "true":
-              include.insert(1, {"name": "macos-x86_64", "platform": "macos-15-intel", "target": "x86_64-apple-darwin", "bundles": "dmg"})
-          print(json.dumps({"include": include}))
-          PY
-          )
+          MATRIX=$(python3 desktop/scripts/artifact_matrix.py)
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   build:
@@ -95,7 +95,9 @@ jobs:
           pnpm build
 
       - name: Install Tauri CLI
-        run: npm install --global @tauri-apps/cli@^2
+        run: |
+          npm install --global @tauri-apps/cli@2.12.1
+          tauri --version
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -303,12 +305,16 @@ jobs:
         shell: bash
         env:
           RELEASE_REPOSITORY: ${{ github.repository }}
+          TERMX_ARTIFACT_ONLY_MAC: ${{ runner.os == 'macOS' && steps.release.outputs.tag == '' }}
         run: |
           python3 - <<'PY'
           import json, os
           path="desktop/src-tauri/tauri.conf.json"
           data=json.load(open(path))
           data["plugins"]["updater"]["endpoints"]=[f"https://github.com/{os.environ['RELEASE_REPOSITORY']}/releases/latest/download/latest.json"]
+          if os.environ.get("TERMX_ARTIFACT_ONLY_MAC") == "true":
+              # Artifact-only app staging needs no updater archive or signature.
+              data["bundle"]["createUpdaterArtifacts"] = False
           open(path,"w").write(json.dumps(data,indent=2)+"\n")
           PY
 
@@ -364,6 +370,21 @@ jobs:
             `desktop/README.md`. Each platform's `SHA256SUMS-<platform>.txt` is
             attached for verification.
 
+      - name: Create signed artifact-only macOS container without layout mounting
+        if: runner.os == 'macOS' && steps.release.outputs.tag == ''
+        shell: bash
+        env:
+          TERMX_DMG_TARGET: ${{ matrix.target }}
+          TERMX_DMG_PLATFORM: ${{ matrix.name }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          uv run --no-sync python desktop/scripts/create_ci_dmg.py \
+            --app-directory "desktop/src-tauri/target/$TERMX_DMG_TARGET/release/bundle/macos" \
+            --output-directory "desktop/src-tauri/target/$TERMX_DMG_TARGET/release/bundle/dmg" \
+            --platform "$TERMX_DMG_PLATFORM" \
+            --config desktop/src-tauri/tauri.conf.json \
+            --receipt desktop/build/macos-dmg-ticket/container.json
+
       - name: Notarize and verify final artifact-only macOS DMG
         id: dmg_ticket
         if: runner.os == 'macOS' && steps.release.outputs.tag == ''
@@ -378,6 +399,16 @@ jobs:
             --directory "desktop/src-tauri/target/$TERMX_DMG_TARGET/release/bundle/dmg" \
             --platform "$TERMX_DMG_PLATFORM" \
             --receipt desktop/build/macos-dmg-ticket/receipt.json
+
+      - name: Upload bounded macOS submission diagnostics
+        if: always() && runner.os == 'macOS' && steps.release.outputs.tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-diagnostics-${{ matrix.name }}-${{ github.run_number }}
+          path: |
+            desktop/build/macos-dmg-ticket/submission.json
+            desktop/build/macos-dmg-ticket/container.json
+          if-no-files-found: ignore
 
       - name: Upload final macOS DMG ticket receipt
         if: runner.os == 'macOS' && steps.release.outputs.tag == ''

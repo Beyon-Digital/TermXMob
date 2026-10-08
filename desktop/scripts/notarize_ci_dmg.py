@@ -72,6 +72,37 @@ def submission_id(data: dict) -> str:
     return identifier
 
 
+def atomic_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix='.dmg-ticket-', dir=path.parent)
+    try:
+        with os.fdopen(handle, 'w') as stream:
+            json.dump(data, stream, indent=2)
+            stream.write('\n')
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def response_category(result: subprocess.CompletedProcess[str]) -> str:
+    text = (result.stdout + '\n' + result.stderr).lower()
+    if any(word in text for word in ('unauthorized', 'authentication', 'forbidden', 'invalid credentials', '401', '403')):
+        return 'authentication-failure'
+    if any(word in text for word in ('rejected', 'invalid submission')):
+        return 'rejected'
+    try:
+        status = submission_data(result).get('status')
+    except TicketError:
+        status = None
+    if status in ('Invalid', 'Rejected'):
+        return 'rejected'
+    if transient(result):
+        return 'transient-transport'
+    if 'timeout' in text or 'timed out' in text:
+        return 'wait-timeout-signal'
+    return 'success' if result.returncode == 0 else 'unknown-tool-failure'
+
+
 def notarize(
     directory: Path, receipt: Path, *, source_sha: str, run_id: str,
     platform: str, credentials: dict[str, str], runner: Callable = run_private,
@@ -80,6 +111,8 @@ def notarize(
 ) -> dict:
     # Do not leave an earlier success receipt usable after a failed new attempt.
     receipt.unlink(missing_ok=True)
+    diagnostic_path = receipt.parent / 'submission.json'
+    diagnostic_path.unlink(missing_ok=True)
     if not re.fullmatch(r'[0-9a-f]{40}', source_sha) or not re.fullmatch(r'[1-9][0-9]*', run_id):
         raise TicketError('Invalid source provenance')
     if platform not in ('macos-arm64', 'macos-x86_64') or not 1 <= budget_seconds <= 1200:
@@ -108,16 +141,35 @@ def notarize(
         if package.is_symlink() or package.stat().st_size != size or digest(package) != before:
             raise TicketError('Final DMG changed before ticket stapling')
 
-    def invoke(argv: list[str], stage: str, *, limit: float = 120) -> subprocess.CompletedProcess[str]:
+    diagnostic = {
+        'schema_version': 1, 'source_sha': source_sha, 'run_id': run_id,
+        'platform': platform, 'package': package.name, 'pre_ticket_sha256': before,
+        'submission_id': None, 'qualified': False, 'phases': [],
+    }
+
+    def save_diagnostic() -> None:
+        atomic_json(diagnostic_path, diagnostic)
+
+    def invoke(argv: list[str], stage: str, *, limit: float = 120, reconcile_timeout: bool = False) -> subprocess.CompletedProcess[str]:
         remaining = deadline - clock()
         if remaining <= 0:
             raise TicketError('DMG notarization exceeded its time budget')
+        started = clock()
         try:
-            return runner(argv, min(remaining, limit))
-        except TicketError:
-            raise
-        except (subprocess.TimeoutExpired, OSError):
+            result = runner(argv, min(remaining, limit))
+        except subprocess.TimeoutExpired:
+            diagnostic['phases'].append({'stage': stage, 'returncode': None, 'category': 'process-timeout', 'elapsed_seconds': round(max(0, clock() - started), 3)})
+            save_diagnostic()
+            if reconcile_timeout:
+                return subprocess.CompletedProcess(argv, 124, '', '')
             raise TicketError(f'{stage} did not complete; submission is not replayed') from None
+        except (TicketError, OSError):
+            diagnostic['phases'].append({'stage': stage, 'returncode': None, 'category': 'tool-failure', 'elapsed_seconds': round(max(0, clock() - started), 3)})
+            save_diagnostic()
+            raise TicketError(f'{stage} did not complete; submission is not replayed') from None
+        diagnostic['phases'].append({'stage': stage, 'returncode': result.returncode, 'category': response_category(result), 'elapsed_seconds': round(max(0, clock() - started), 3)})
+        save_diagnostic()
+        return result
 
     def checked(argv: list[str], stage: str) -> None:
         if invoke(argv, stage).returncode:
@@ -148,12 +200,17 @@ def notarize(
         if status not in (None, 'Uploaded', 'In Progress', 'Accepted'):
             raise TicketError('DMG submission returned an unknown status')
         accepted = status == 'Accepted'
+    diagnostic['submission_id'] = identifier
+    save_diagnostic()
+    # Publish only safe identity/hash metadata so a known submission is not lost
+    # when CI fails. This is pending evidence, never a package qualification.
+    print(json.dumps({'stage': 'known-submission', 'submission_id': identifier, 'pre_ticket_sha256': before}), flush=True)
     if not accepted:
         for attempt in range(3):
             unchanged()
             remaining = deadline - clock()
             wait_seconds = max(1, min(240, int(remaining) - 5))
-            result = invoke(['xcrun', 'notarytool', 'wait', identifier, *auth, '--timeout', f'{wait_seconds}s'], 'DMG acceptance wait', limit=wait_seconds + 5)
+            result = invoke(['xcrun', 'notarytool', 'wait', identifier, *auth, '--timeout', f'{wait_seconds}s'], 'DMG acceptance wait', limit=wait_seconds + 5, reconcile_timeout=True)
             if result.returncode == 0:
                 data = submission_data(result)
                 if submission_id(data) != identifier:
@@ -162,11 +219,24 @@ def notarize(
                     raise TicketError('DMG notarization did not return Accepted')
                 accepted = True
                 break
-            # A bounded service wait expiration has a known ID and can be polled
-            # again, unlike an unknown timed-out submit.
-            diagnostic = (result.stdout + result.stderr).lower()
-            wait_expired = any(phrase in diagnostic for phrase in ('wait timeout was exceeded', 'timed out waiting for submission', 'timeout reached while waiting for submission')) and not any(word in diagnostic for word in ('401', '403', 'unauthorized', 'authentication', 'forbidden', 'invalid credentials', 'rejected', 'invalid submission'))
-            if (not transient(result) and not wait_expired) or attempt == 2:
+            if response_category(result) in ('authentication-failure', 'rejected'):
+                raise TicketError('DMG acceptance wait failed')
+            unchanged()
+            # Reconcile structured server state for this known ID instead of
+            # guessing Apple's localized/unstructured wait-timeout wording.
+            info = invoke(['xcrun', 'notarytool', 'info', identifier, *auth], 'DMG submission reconciliation', limit=60)
+            if info.returncode:
+                raise TicketError('DMG submission reconciliation failed')
+            data = submission_data(info)
+            if submission_id(data) != identifier:
+                raise TicketError('DMG reconciliation referred to a different submission')
+            status = data.get('status')
+            if status == 'Accepted':
+                accepted = True
+                break
+            if status != 'In Progress':
+                raise TicketError('DMG submission reconciliation did not return pending or Accepted')
+            if attempt == 2:
                 raise TicketError('DMG acceptance wait failed')
             sleep(min(5 * (attempt + 1), max(0, deadline - clock())))
     if not accepted:
@@ -184,15 +254,10 @@ def notarize(
         'signature_verified': True, 'ticket_stapled_and_validated': True,
         'disk_image_verified': True, 'release_published': False,
     }
-    receipt.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix='.dmg-ticket-', dir=receipt.parent)
-    try:
-        with os.fdopen(handle, 'w') as stream:
-            json.dump(result, stream, indent=2)
-            stream.write('\n')
-        os.replace(temporary, receipt)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    atomic_json(receipt, result)
+    diagnostic['qualified'] = True
+    diagnostic['final_package_sha256'] = result['final_package_sha256']
+    save_diagnostic()
     return result
 
 
