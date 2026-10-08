@@ -1108,8 +1108,12 @@ pub fn workspace_redock_cancel(
     }
     Ok(())
 }
+// Async so the window build runs off the event-loop thread: a sync command
+// executes inside the webview's WebMessageReceived COM call, and on Windows
+// WebView2 cannot deliver the controller-creation callback into an apartment
+// already inside an inbound COM call, so build() deadlocks (wry#583/#1665).
 #[tauri::command]
-pub fn workspace_detach(
+pub async fn workspace_detach(
     app: AppHandle,
     window: WebviewWindow,
     session_id: Option<String>,

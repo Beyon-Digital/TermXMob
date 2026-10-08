@@ -472,12 +472,24 @@ jobs:
           Invoke-WebRequest "https://msedgedriver.microsoft.com/$version/edgedriver_win64.zip" -OutFile $archive
           $driverDirectory = Join-Path $env:RUNNER_TEMP 'termx-matched-edgedriver'
           Expand-Archive $archive -DestinationPath $driverDirectory -Force
-          uv run --no-sync python desktop/scripts/native_gui_smoke.py `
-            --binary $binary.FullName --package $package.FullName `
-            --driver (Join-Path $env:USERPROFILE '.cargo/bin/tauri-driver.exe') `
-            --native-driver (Join-Path $driverDirectory 'msedgedriver.exe') `
-            --output $output
-          if ($LASTEXITCODE -ne 0) { throw 'Installed native GUI qualification failed' }
+          # Elevated WebView2 instances ignore browser arguments from the local
+          # device environment (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS), which is
+          # how msedgedriver injects --remote-debugging-port. The documented
+          # escape for elevated apps is the per-exe HKLM policy override.
+          $webview2Policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $webview2Policy -Force | Out-Null
+          Set-ItemProperty -Path $webview2Policy -Name 'termx-desktop.exe' -Value '--remote-debugging-port=0'
+          try {
+            uv run --no-sync python desktop/scripts/native_gui_smoke.py `
+              --binary $binary.FullName --package $package.FullName `
+              --driver (Join-Path $env:USERPROFILE '.cargo/bin/tauri-driver.exe') `
+              --native-driver (Join-Path $driverDirectory 'msedgedriver.exe') `
+              --output $output
+            $smokeExit = $LASTEXITCODE
+          } finally {
+            Remove-Item -Path $webview2Policy -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          if ($smokeExit -ne 0) { throw 'Installed native GUI qualification failed' }
 
       - name: Upload installed native GUI evidence
         if: always() && runner.os != 'macOS'

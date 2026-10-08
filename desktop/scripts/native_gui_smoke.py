@@ -336,7 +336,7 @@ socket.binaryType='arraybuffer';
 const timer=setTimeout(()=>finish({ok:false,error:'Authenticated terminal output deadline'}),25000);
 function finish(value){if(settled)return;settled=true;clearTimeout(timer);socket.close();done(value)}
 socket.onopen=()=>{socket.send(JSON.stringify({type:'resize',cols:100,rows:30}));socket.send(JSON.stringify({type:'input',data:'echo '+marker+'\\r'}))};
-socket.onmessage=event=>{if(typeof event.data==='string')return;text+=new TextDecoder().decode(event.data);const plain=text.replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g,'');if(plain.split(/[\\r\\n]+/).some(line=>line.trim()===marker))finish({ok:true,connected:true,bytes:text.length})};
+socket.onmessage=event=>{if(typeof event.data==='string')return;text+=new TextDecoder().decode(event.data);const plain=text.replace(/\\x1b\\][^\\x07]*(?:\\x07|\\x1b\\\\)/g,'').replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g,'\\n');if(plain.split(/[\\r\\n]+/).some(line=>line.trim()===marker))finish({ok:true,connected:true,bytes:text.length})};
 socket.onerror=()=>finish({ok:false,error:'Native authenticated terminal socket error'});
 socket.onclose=event=>{if(!settled)finish({ok:false,error:'Native terminal socket closed '+event.code})};
 ''', 'args':[terminal_id]})
