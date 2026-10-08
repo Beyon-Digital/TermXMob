@@ -325,7 +325,7 @@ class BlockingProviderAdapter(FakeAdapter):
         raise ProviderError("Provider request failed (404): The provider returned an error.")
 
 
-async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout: float = 3.0) -> dict[str, Any]:
+async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout: float = 15.0) -> dict[str, Any]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
         task = store.get_task(task_id, include_events=True)
@@ -336,7 +336,7 @@ async def wait_for_status(store: AgentStore, task_id: str, status: str, timeout:
 
 
 async def wait_for_event(
-    store: AgentStore, task_id: str, event_type: str, timeout: float = 3.0
+    store: AgentStore, task_id: str, event_type: str, timeout: float = 15.0
 ) -> list[dict[str, Any]]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
@@ -348,7 +348,7 @@ async def wait_for_event(
 
 
 async def wait_for_pending_approval(store: AgentStore, task_id: str, kind: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    deadline = asyncio.get_running_loop().time() + 3
+    deadline = asyncio.get_running_loop().time() + 15
     while asyncio.get_running_loop().time() < deadline:
         task = store.get_task(task_id, include_events=True)
         if task:

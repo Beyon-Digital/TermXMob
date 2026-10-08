@@ -20,6 +20,7 @@ on:
         options:
           - all
           - macos-and-windows
+          - windows
       include_intel:
         description: "Also build the macOS Intel (x86_64) DMG on the macos-15-intel runner"
         required: false

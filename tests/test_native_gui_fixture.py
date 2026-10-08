@@ -154,8 +154,8 @@ def test_native_terminal_cleanup_mutation_validates_against_actual_schema():
 
 def test_native_scenario_selectors_exist_in_the_shipped_workspace_source():
     root = Path(__file__).resolve().parents[1]
-    smoke = (root/'desktop/scripts/native_gui_smoke.py').read_text()
-    source = ''.join(path.read_text() for path in (root/'desktop/workspace/src').rglob('*')
+    smoke = (root/'desktop/scripts/native_gui_smoke.py').read_text(encoding='utf-8')
+    source = ''.join(path.read_text(encoding='utf-8') for path in (root/'desktop/workspace/src').rglob('*')
                      if path.suffix in {'.tsx','.ts','.css'} and '.test.' not in path.name)
     labels = set(re.findall(r'aria-label=\\?"?([A-Za-z][A-Za-z ]*[A-Za-z])',smoke))
     texts = set(re.findall(r'normalize-space\(\)="([^"]+)"',smoke))
@@ -239,7 +239,7 @@ def test_failure_diagnostics_are_bounded_and_redact_secret_bearing_lines(tmp_pat
     root = tmp_path/'fixture'
     (root/'native').mkdir(parents=True)
     text = 'setup: start\nrefresh token abc123\nwindow created\n'
-    (root/'native'/'desktop.log').write_text(text)
+    (root/'native'/'desktop.log').write_bytes(text.encode())
     output = tmp_path/'out'
     output.mkdir()
     module.collect_diagnostics(root,output)
