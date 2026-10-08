@@ -325,7 +325,14 @@ class AgentManager:
             root = Path(worktree_spec["worktree_path"])
         try:
             images = _decode_images(attachments)
-            provider = dict(self._provider(provider_id))
+            try:
+                provider = dict(self._provider(provider_id))
+            except KeyError:
+                missing = provider_id or "(none selected)"
+                raise ValueError(
+                    f"Model provider '{missing}' is not configured. Add a provider account under "
+                    "Managers → Models & engines, then choose it in the composer's model picker."
+                ) from None
             chosen = _resolve_model(provider, model)
             provider["model"] = chosen
             adapter = self._adapter(provider)
