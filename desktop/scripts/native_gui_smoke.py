@@ -25,6 +25,11 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
+# Visible-text controls in the shipped workspace (App.tsx status bar and
+# WorkspaceCommands.tsx); neither carries an aria-label of its own.
+STATUS_LOCK = '//footer//button[normalize-space()="Lock workspace"]'
+STATUS_COMMANDS = '//footer//button[normalize-space()="Commands"]'
+COMMAND_STOP_HOST = '//button[contains(@class,"command-row")][normalize-space()="Stop this host"]'
 
 
 def free_port():
@@ -50,15 +55,110 @@ def wait(check, description, timeout=90):
 def fixture_environment(root: Path):
     root = root.resolve()
     environment = dict(os.environ)
+    # WEBVIEW2_USER_DATA_FOLDER is deliberately not set: it overrides the data
+    # folder msedgedriver hands to the app, so the driver never finds its
+    # DevToolsActivePort file. LOCALAPPDATA already isolates the app's own
+    # WebView2 profile.
     paths = {'XDG_DATA_HOME': root/'data', 'XDG_CONFIG_HOME': root/'config',
              'XDG_CACHE_HOME': root/'cache', 'APPDATA': root/'roaming',
-             'LOCALAPPDATA': root/'local', 'WEBVIEW2_USER_DATA_FOLDER': root/'webview'}
+             'LOCALAPPDATA': root/'local'}
     for name, path in paths.items():
         path.mkdir(parents=True, exist_ok=True)
         environment[name] = str(path)
     environment['TERMX_DESKTOP_DATA_DIR'] = str(root/'native')
     # Keep the caller's HOME, OS keyring and D-Bus session unchanged.
     return environment
+
+
+def wmctrl_window_ids(listing, title):
+    """Ids of windows titled exactly `title` in `wmctrl -l` output."""
+    ids = []
+    for line in listing.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4 and parts[3].strip() == title:
+            ids.append(parts[0])
+    return ids
+
+
+def close_window_linux(title, run=subprocess.run):
+    result = run(['wmctrl', '-l'], capture_output=True, text=True, timeout=20, check=True)
+    ids = wmctrl_window_ids(result.stdout, title)
+    if len(ids) != 1:
+        raise RuntimeError(f'Expected exactly one window titled {title!r}, found {len(ids)}')
+    run(['wmctrl', '-i', '-c', ids[0]], check=True, timeout=20)
+
+
+def close_window_windows(title, user32=None):
+    import ctypes
+    from ctypes import wintypes
+    callback_type = getattr(ctypes, 'WINFUNCTYPE', ctypes.CFUNCTYPE)(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    if user32 is None:
+        # Explicit prototypes keep 64-bit window handles from being truncated.
+        user32 = ctypes.windll.user32
+        user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    found = []
+
+    @callback_type
+    def visit(handle, _):
+        if user32.IsWindowVisible(handle):
+            length = user32.GetWindowTextLengthW(handle)
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(handle, buffer, length + 1)
+            if buffer.value == title:
+                found.append(handle)
+        return True
+
+    user32.EnumWindows(visit, 0)
+    if len(found) != 1:
+        raise RuntimeError(f'Expected exactly one window titled {title!r}, found {len(found)}')
+    user32.PostMessageW(found[0], 0x0010, 0, 0)  # WM_CLOSE
+
+
+def close_native_window(title):
+    """Send the close request a user's titlebar button sends.
+
+    WebDriver's DELETE /window only destroys the web view; the toolkit never
+    sees a close request, so the application's close handling never runs.
+    """
+    if sys.platform == 'win32':
+        close_window_windows(title)
+    else:
+        close_window_linux(title)
+
+
+SENSITIVE_WORDS = ('token', 'password', 'secret', 'cookie', 'authorization', 'bearer', 'credential')
+
+
+def process_listing():
+    command = ['tasklist', '/v', '/fo', 'csv'] if os.name == 'nt' else ['ps', '-eo', 'pid,ppid,etime,args']
+    try:
+        text = subprocess.run(command, capture_output=True, text=True, timeout=20).stdout
+    except Exception as error:
+        return [f'unavailable: {type(error).__name__}']
+    wanted = ('termx', 'msedge', 'webkit', 'tauri-driver', 'xvfb', 'openbox')
+    return [line[:300] for line in text.splitlines() if any(word in line.lower() for word in wanted)][:60]
+
+
+def collect_diagnostics(root, output):
+    """Bounded failure context: fixture tree, log tails and relevant processes."""
+    tree = []
+    for path in sorted(root.rglob('*'))[:400]:
+        with suppress(OSError):
+            tree.append({'path': path.relative_to(root).as_posix(),
+                         'bytes': path.stat().st_size if path.is_file() else None})
+    logs = {}
+    for path in sorted(root.rglob('*.log'))[:8]:
+        with suppress(OSError):
+            tail = path.read_bytes()[-16384:].decode('utf-8', 'replace')
+            lines = ['[redacted line]' if any(word in line.lower() for word in SENSITIVE_WORDS) else line
+                     for line in tail.splitlines()[-200:]]
+            logs[path.relative_to(root).as_posix()] = lines
+    (output/'diagnostics.json').write_text(json.dumps(
+        {'fixture_tree': tree, 'log_tails': logs, 'processes': process_listing()}, indent=2) + '\n')
 
 
 def file_digest(path):
@@ -330,7 +430,8 @@ def main():
             assert driver.script('return window.__TAURI_INTERNALS__.metadata.currentWindow.label') == label
             wait(lambda:driver.script('return document.querySelector("textarea[aria-label=Message]")?.value === "Native shared conversation draft"'),'same draft in detached window')
             driver.screenshot('detached-workspace')
-            driver.call('DELETE','/window')
+            close_native_window('TermX workspace')
+            wait(lambda:len(driver.call('GET','/window/handles'))==1,'native close request closes detached window')
             driver.call('POST','/window',{'handle':original})
             wait(lambda:(data_dir/('workspace-window-'+label+'.json')).is_file(),'independent detached placement file')
             reopened = driver.invoke('workspace_detach',{'sessionId':session_id,'panel':'chat'})
@@ -350,7 +451,7 @@ def main():
             wait(lambda:driver.script('return document.querySelector("textarea[aria-label=Message]")?.value === arguments[0]',draft),'main workspace retains detached draft')
             report['steps']['acknowledged_redock_preserves_draft'] = True
             live_before=assert_workspace(driver)
-            driver.click('[aria-label="Lock workspace"]')
+            driver.click(STATUS_LOCK,using='xpath')
             wait(lambda:driver.element('.lock-screen'),'actual native Lock overlay')
             driver.type('.lock-screen input[type="password"]',password)
             driver.click('//button[normalize-space()="Unlock workspace"]','xpath')
@@ -382,7 +483,9 @@ def main():
             password_signin(driver,username,password)
             host_origin=driver.script('return location.origin')
             old_pid_record=json.loads((data_dir/'backend.pid').read_text())
-            driver.click('[aria-label="Stop host"]')
+            driver.click(STATUS_COMMANDS,using='xpath')
+            driver.type('input[aria-label="Search commands"]','Stop this host')
+            driver.click(COMMAND_STOP_HOST,using='xpath')
             wait(lambda:driver.element('.host-stop-effects'),'explicit installed host effects')
             driver.click('[role="dialog"] input[type="checkbox"]')
             driver.click('//button[normalize-space()="Stop host now"]','xpath')
@@ -406,6 +509,7 @@ def main():
             report['passed'] = False
             report['failure'] = str(error)[:1200]
             with suppress(Exception):driver.screenshot('failure')
+            with suppress(Exception):collect_diagnostics(root,output)
             raise
         finally:
             # Log out any live fixture account before deleting its configuration.

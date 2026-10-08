@@ -21,9 +21,11 @@ def test_native_fixture_keeps_home_and_accounts_outside_its_profile(tmp_path):
     assert dict(os.environ) == original
     assert environment.get('HOME') == original.get('HOME')
     for name in ['XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','APPDATA',
-                 'LOCALAPPDATA','WEBVIEW2_USER_DATA_FOLDER','TERMX_DESKTOP_DATA_DIR']:
+                 'LOCALAPPDATA','TERMX_DESKTOP_DATA_DIR']:
         assert Path(environment[name]).is_absolute()
         assert Path(environment[name]).is_relative_to(tmp_path.resolve())
+    # An override hides msedgedriver's DevToolsActivePort file from the driver.
+    assert environment.get('WEBVIEW2_USER_DATA_FOLDER') == original.get('WEBVIEW2_USER_DATA_FOLDER')
     assert environment['TERMX_DESKTOP_DATA_DIR'] != original.get('TERMX_DESKTOP_DATA_DIR')
 
 
@@ -148,3 +150,101 @@ def test_native_terminal_cleanup_mutation_validates_against_actual_schema():
     assert len(cleanup) == 1 and cleanup[0]['variables'] == {'id':'synthetic-terminal'}
     errors = validate(schema._schema, parse(cleanup[0]['query']))
     assert not errors, [error.message for error in errors]
+
+
+def test_native_scenario_selectors_exist_in_the_shipped_workspace_source():
+    root = Path(__file__).resolve().parents[1]
+    smoke = (root/'desktop/scripts/native_gui_smoke.py').read_text()
+    source = ''.join(path.read_text() for path in (root/'desktop/workspace/src').rglob('*')
+                     if path.suffix in {'.tsx','.ts','.css'} and '.test.' not in path.name)
+    labels = set(re.findall(r'aria-label=\\?"?([A-Za-z][A-Za-z ]*[A-Za-z])',smoke))
+    texts = set(re.findall(r'normalize-space\(\)="([^"]+)"',smoke))
+    # password_signin builds this one from its setup flag.
+    texts |= {'Create owner account','Continue with password'}
+    classes = set(re.findall(r'(?<=[\'",(])\.([a-z]+(?:-[a-z]+)+)',smoke))|set(re.findall(r'@class,"([^"]+)"',smoke))
+    assert {'Sign out','Message','Search commands'} <= labels
+    texts = {text for text in texts if '+' not in text}
+    assert {'Return to main workspace','Unlock workspace','Stop host now','Lock workspace','Commands','Stop this host'} <= texts
+    assert {'sign-in','workspace-root','lock-screen','host-stop-effects','command-row'} <= classes
+    missing = ([f'aria-label {label}' for label in labels if f'aria-label="{label}"' not in source]
+               + [f'text {text}' for text in texts if text not in source]
+               + [f'class {name}' for name in classes if name not in source])
+    assert not missing, missing
+
+
+WMCTRL = ('0x04000003  0 host Termx\n'
+          '0x04200003  0 host TermX workspace\n'
+          '0x04400003  0 host TermX workspace notes\n')
+
+
+def test_wmctrl_selection_matches_only_the_exact_detached_window_title():
+    module = harness()
+    assert module.wmctrl_window_ids(WMCTRL,'TermX workspace') == ['0x04200003']
+    assert module.wmctrl_window_ids(WMCTRL,'Missing') == []
+    assert module.wmctrl_window_ids('malformed\n\n','Termx') == []
+
+
+def test_linux_close_sends_window_manager_close_to_one_window_and_rejects_ambiguity():
+    import pytest, subprocess
+    module = harness()
+    calls = []
+    def run(argv,**kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv,0,stdout=WMCTRL,stderr='')
+    module.close_window_linux('TermX workspace',run=run)
+    assert calls == [['wmctrl','-l'],['wmctrl','-i','-c','0x04200003']]
+    calls.clear()
+    with pytest.raises(RuntimeError,match='found 0'):
+        module.close_window_linux('Missing',run=run)
+    assert calls == [['wmctrl','-l']]
+    def duplicate(argv,**kwargs):
+        return subprocess.CompletedProcess(argv,0,stdout=WMCTRL+'0x04600003  0 host TermX workspace\n',stderr='')
+    with pytest.raises(RuntimeError,match='found 2'):
+        module.close_window_linux('TermX workspace',run=duplicate)
+
+
+class FakeUser32:
+    def __init__(self,windows):
+        self.windows = windows
+        self.posted = []
+    def EnumWindows(self,callback,parameter):
+        for handle in self.windows:
+            callback(handle,parameter)
+    def IsWindowVisible(self,handle):
+        return self.windows[handle][1]
+    def GetWindowTextLengthW(self,handle):
+        return len(self.windows[handle][0])
+    def GetWindowTextW(self,handle,buffer,size):
+        buffer.value = self.windows[handle][0]
+    def PostMessageW(self,handle,message,wparam,lparam):
+        self.posted.append((handle,message,wparam,lparam))
+
+
+def test_windows_close_posts_wm_close_only_to_the_single_visible_titled_window():
+    import pytest
+    module = harness()
+    user32 = FakeUser32({1:('Termx',True),2:('TermX workspace',True),3:('TermX workspace',False)})
+    module.close_window_windows('TermX workspace',user32)
+    assert user32.posted == [(2,0x0010,0,0)]
+    with pytest.raises(RuntimeError,match='found 0'):
+        module.close_window_windows('Missing',FakeUser32({1:('Termx',True)}))
+    both = FakeUser32({1:('TermX workspace',True),2:('TermX workspace',True)})
+    with pytest.raises(RuntimeError,match='found 2'):
+        module.close_window_windows('TermX workspace',both)
+    assert both.posted == []
+
+
+def test_failure_diagnostics_are_bounded_and_redact_secret_bearing_lines(tmp_path):
+    module = harness()
+    root = tmp_path/'fixture'
+    (root/'native').mkdir(parents=True)
+    text = 'setup: start\nrefresh token abc123\nwindow created\n'
+    (root/'native'/'desktop.log').write_text(text)
+    output = tmp_path/'out'
+    output.mkdir()
+    module.collect_diagnostics(root,output)
+    data = json.loads((output/'diagnostics.json').read_text())
+    assert data['log_tails']['native/desktop.log'] == ['setup: start','[redacted line]','window created']
+    assert {'path':'native/desktop.log','bytes':len(text)} in data['fixture_tree']
+    assert 'abc123' not in json.dumps(data)
+    assert isinstance(data['processes'],list)
