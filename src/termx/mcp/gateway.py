@@ -29,6 +29,8 @@ class _Grant:
     connections: dict[str, list[str] | None]  # conn_id -> tool allowlist or None=all
     created_at: float
     expires_at: float | None
+    project_id: str | None = None
+    authorize: Any = None
 
 
 class McpGateway:
@@ -41,13 +43,20 @@ class McpGateway:
         self,
         session_id: str,
         connections: dict[str, list[str] | None],
+        *, project_id: str | None = None, authorize=None,
     ) -> str:
+        from .scope import projects
+        for conn_id in connections:
+            handle=self._pool._connections.get(conn_id)
+            if handle and projects(handle.conn) and authorize is None:
+                raise GatewayAuthError('Scoped MCP gateway requires a live task authority validator')
         token = f"mcpgw_{secrets.token_urlsafe(32)}"
         self._grants[token] = _Grant(
             session_id=session_id,
             connections=dict(connections),
             created_at=time.time(),
             expires_at=time.time() + self._ttl if self._ttl else None,
+            project_id=project_id,authorize=authorize,
         )
         return token
 
@@ -77,7 +86,13 @@ class McpGateway:
         grant = self._grant(token)
         out: dict[str, Any] = {}
         for conn_id, allow in grant.connections.items():
-            cat = self._pool.catalog(conn_id) or {}
+            handle=self._pool._connections.get(conn_id)
+            if handle:
+                try:
+                    conn=self._pool._current(handle.conn,grant.project_id)
+                    if grant.authorize:grant.authorize(conn)
+                except Exception:raise GatewayAuthError('MCP gateway authority is unavailable') from None
+            cat = self._pool.catalog(conn_id,project_id=grant.project_id) or {}
             tools = cat.get("tools", [])
             if allow is not None:
                 tools = [t for t in tools if t["name"] in allow]
@@ -89,7 +104,8 @@ class McpGateway:
     ) -> dict[str, Any]:
         grant = self._grant(token)
         self._check_scope(grant, conn_id, tool)
-        return await self._pool.call_tool(conn_id, tool, arguments)
+        try:return await self._pool.call_tool(conn_id, tool, arguments,project_id=grant.project_id,authorize=grant.authorize)
+        except PermissionError:raise GatewayAuthError('MCP gateway authority is unavailable') from None
 
     def status(self) -> dict[str, Any]:
         now = time.time()

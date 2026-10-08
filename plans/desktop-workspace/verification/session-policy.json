@@ -1,0 +1,56 @@
+{
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "source_changes_pending_checkpoint": true,
+  "contract": {
+    "routes": "Administrator-only GET and PUT /auth/admin/session-policy. PUT exact revision,idle_ttl_seconds,absolute_ttl_seconds; extra fields forbidden. Revision mismatch400; strict bounded integers.",
+    "defaults": {
+      "idle_ttl_seconds": 86400,
+      "absolute_ttl_seconds": 2592000,
+      "access_ttl_seconds": 300
+    },
+    "ranges": "Idle600\u20132592000 seconds; absolute covers idle and is at most31536000 seconds. The minimum idle interval exceeds the fixed5minute access/refresh cadence.",
+    "existing_devices": "Existing device rows retain the minimum idle/absolute caps ever assigned. Reductions durably tighten current rows and revoke now-expired sessions. Increases apply only to new sign-ins/pairings; no old SID is widened or resurrected.",
+    "transports": "Current resolve, refresh, background execution, live socket admission/output, pairing sponsorship and unlock use the same current policy. Access JWT expiry is clamped to live device deadline. refresh_expires_in reports remaining immutable absolute lifetime; refresh/CSRF cookies use it rather than reset to default30days. Native/mobile receive the same bearer response without changing their stored principal/scopes.",
+    "frontend": "Separate SessionPolicyManager child uses admin Access wiring by root. Exact CAS and current revision conflict review; dirty values survive Lock/unlock and unmount responses are fenced."
+  },
+  "tests": [
+    {
+      "suite": "Policy defaults/persistence/no resurrection, current admin/CAS/strict input, cookie/native/mobile lifetimes, near-absolute access clamp and live WS before-effect reduction",
+      "result": "3 passed",
+      "seconds": 16.0
+    },
+    {
+      "suite": "Final policy + existing identity/TLS pairing/Lock/unlock and revocation regressions",
+      "result": "62 passed",
+      "seconds": 112.27
+    },
+    {
+      "suite": "Combined SessionPolicy and Access component tests",
+      "result": "10 passed",
+      "seconds": 12.26
+    },
+    {
+      "suite": "Final SessionPolicy component including unchanged-revision unlock without repeated review",
+      "result": "4 passed",
+      "seconds": 9.94
+    },
+    {
+      "suite": "Final migrated/older-writer device row preserves prior effective global caps on increase",
+      "result": "1 passed",
+      "seconds": 36.38
+    }
+  ],
+  "limits": [
+    "Controlled isolated fixture data only; no actual user device/session policy changed.",
+    "Counts overlap; not additive.",
+    "Final production rendered and installed-native lifetime configuration evidence remains distinct from source regressions."
+  ],
+  "rendered_proof": {
+    "status": "passed",
+    "evidence": "identity-access-session-policy-rendered-CETSIarw.json",
+    "asset": "assets/index-CETSIarw.js",
+    "states": 12,
+    "scope": "Isolated production Access3surfaces: group/audit/devicepolicy; both themes and100/200%-equivalent CSS viewport with actual keyboard and effects.",
+    "limits": "Axe color-contrast incomplete; source-only/native-installed qualification is separate. Browser approval_preview.py changed unrelated to the exercised Access paths."
+  }
+}

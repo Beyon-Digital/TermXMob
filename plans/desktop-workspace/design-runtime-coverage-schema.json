@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TermX desktop implementation/design inventory",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "inventory_id",
+    "source_plan",
+    "original_design_manifest",
+    "scope",
+    "provenance",
+    "families",
+    "journeys",
+    "omissions",
+    "release_gates",
+    "analytics"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "families": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "plan_section",
+          "surfaces"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^DF-0[1-7]$"
+          },
+          "surfaces": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "title",
+                "coverage",
+                "code_paths",
+                "endpoints",
+                "data_records",
+                "fields",
+                "permissions",
+                "states",
+                "proof_links",
+                "journey_ids",
+                "figma_screen_ids",
+                "figma_provenance",
+                "local_event_links",
+                "local_event_contract",
+                "limits"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^UI-[A-Z-]+$"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "coverage": {
+                  "enum": [
+                    "runtime-connected",
+                    "runtime-connected-with-limits"
+                  ]
+                },
+                "code_paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "endpoints": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 0
+                },
+                "data_records": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 0
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "permissions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "states": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "proof_links": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "journey_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 0
+                },
+                "figma_screen_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 0
+                },
+                "local_event_links": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 0
+                },
+                "figma_provenance": {
+                  "enum": [
+                    "original-core-frame",
+                    "implemented-runtime-surface-no-new-figma-frame",
+                    "original-core-and-advanced-external",
+                    "advanced-external-runtime-mapped"
+                  ]
+                },
+                "local_event_contract": {
+                  "type": "object",
+                  "required": [
+                    "surface_id",
+                    "task_audit_paths",
+                    "telemetry"
+                  ]
+                },
+                "limits": {
+                  "type": "string"
+                },
+                "advanced_figma_state_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^J-[A-Z]+-[0-9]{2}$"
+                  }
+                },
+                "advanced_figma_node_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9]+:[0-9]+$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "journeys": {
+      "type": "array",
+      "minItems": 7,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "surfaces",
+          "steps",
+          "proof_links"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^J-[A-Z-]+$"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 3,
+            "items": {
+              "type": "string"
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "proof_links": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -35,7 +35,9 @@ def default_web_dir() -> Path:
         return bundled
     cwd = Path.cwd()
     for candidate in (
+        cwd / "desktop" / "workspace" / "dist",
         cwd / "desktop" / "web",
+        cwd.parent / "desktop" / "workspace" / "dist",
         cwd.parent / "desktop" / "web",
         cwd / "web",
     ):
@@ -60,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--web-dir",
         default=None,
-        help="Expo web export directory (default ./app/dist)",
+        help="Shared desktop workspace bundle directory (auto-detected by default)",
     )
     parser.add_argument(
         "--desktop",
@@ -116,8 +118,12 @@ def watch_parent(parent_pid: int, request_shutdown: Any, interval: float = 2.0) 
 
 
 def print_banner(urls: list[str], tunnel_url: str | None, passcode: str | None) -> None:
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+
     def out(line: str = "") -> None:
-        print(line, flush=True)
+        # Redirected Windows output can use cp1252 even though the interactive
+        # console supports Unicode. Display must not terminate a ready host.
+        print(line.encode(encoding, errors='backslashreplace').decode(encoding), flush=True)
 
     out()
     out("termx")
@@ -131,7 +137,13 @@ def print_banner(urls: list[str], tunnel_url: str | None, passcode: str | None) 
         out("  passcode off")
     qr_target = connect_url(tunnel_url or (urls[-1] if urls else "http://127.0.0.1:8787"), passcode)
     out()
-    out(qr_ascii(qr_target))
+    qr = qr_ascii(qr_target)
+    try:
+        qr.encode(encoding)
+    except UnicodeEncodeError:
+        out('  Open the connection link below.')
+    else:
+        out(qr)
     out(f"  scan {qr_target}")
     out()
 
@@ -195,7 +207,7 @@ async def _start_server(
     return None
 
 
-async def _serve(args: argparse.Namespace) -> None:
+async def _serve(args: argparse.Namespace) -> int:
     if args.desktop:
         os.environ["TERMX_DESKTOP"] = "1"
     from termx.desktop import broker as desktop_broker
@@ -208,7 +220,7 @@ async def _serve(args: argparse.Namespace) -> None:
     if started is None:
         if not args.desktop:
             print(f"termx: could not bind {args.host}:{args.port} (and nearby ports)", flush=True)
-        return
+        return 0
     server, serve_task, actual_port = started
     if actual_port != args.port:
         state.port = actual_port
@@ -234,10 +246,10 @@ async def _serve(args: argparse.Namespace) -> None:
         if args.desktop:
             urls = http_urls(actual_port, args.host)
             notify.ready(actual_port, urls, tunnel_url)
-            body = connect_url(tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}"), args.passcode)
+            body = connect_url(tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}"), None if state.identity.configured else args.passcode)
             notify.notify("Termx is running", body, kind="ready", url=tunnel_url or urls[0])
         else:
-            print_banner(http_urls(actual_port, args.host), tunnel_url, args.passcode)
+            print_banner(http_urls(actual_port, args.host), tunnel_url, None if state.identity.configured else args.passcode)
         await serve_task
     except (asyncio.CancelledError, KeyboardInterrupt):
         server.should_exit = True
@@ -256,11 +268,17 @@ async def _serve(args: argparse.Namespace) -> None:
             except (asyncio.CancelledError, Exception):
                 pass
 
+    # This exact status is consumed only by the desktop parent. It preserves
+    # deliberate shutdown even if its stdout reader loses the exit race.
+    return notify.HOST_STOP_EXIT_CODE if args.desktop and state.host_stop_requested else 0
+
 
 def main() -> None:
     augment_path()
     args = build_parser().parse_args()
     try:
-        asyncio.run(_serve(args))
+        status = asyncio.run(_serve(args))
+        if status:
+            raise SystemExit(status)
     except KeyboardInterrupt:
         pass

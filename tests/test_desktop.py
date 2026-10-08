@@ -610,6 +610,11 @@ def test_ws_rtc_signalling_reports_availability(tmp_path, monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
     from termx.app import AppState, create_app
+    from termx.desktop.webrtc import AiortcBackend
+
+    # This case verifies unavailable signalling, independently of installed extras.
+    # A minimal v=0 string is not a valid real peer's video offer.
+    monkeypatch.setattr(AiortcBackend, "available", False)
 
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
@@ -618,12 +623,9 @@ def test_ws_rtc_signalling_reports_availability(tmp_path, monkeypatch) -> None:
         ws.send_json({"type": "rtc", "action": "offer", "session_id": "abc", "offer": {"type": "offer", "sdp": "v=0\r\n"}})
         reply = ws.receive_json()
         assert reply["type"] == "rtc"
-        if state.rtc.available():
-            assert reply["action"] == "answer"
-            assert reply["answer"]["type"] == "answer"
-        else:
-            assert reply["ok"] is False
-            assert "unavailable" in reply["error"]
+        assert state.rtc.available() is False
+        assert reply["ok"] is False
+        assert "unavailable" in reply["error"]
 
 
 def test_update_version_ordering() -> None:

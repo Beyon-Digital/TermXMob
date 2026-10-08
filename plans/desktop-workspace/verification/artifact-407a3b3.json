@@ -1,0 +1,66 @@
+{
+  "source_commit": "407a3b3344cf0b58d5a1eb116bf2f61bc80e0bc1",
+  "source_gates": "main CI 37793333451, Windows contracts 37793333191, native compile 37793333219, macOS feasibility 37793333323, macOS installed fixture 37793333443: all success",
+  "artifact_run": {
+    "run": 37794420005,
+    "run_number": 40,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37794420005",
+    "inputs": {"release_tag": "", "draft": true, "artifactqualification_scope": "all", "include_intel": true},
+    "conclusion": "failure",
+    "jobs": {
+      "macos-arm64": {
+        "conclusion": "success",
+        "dmg": "Termx_0.2.6_aarch64.dmg",
+        "submission_id": "cc0138d7-985c-47ae-863c-447dbff520b0",
+        "notarization_status": "Accepted",
+        "pre_ticket_sha256": "26501899b89d75d8c0ae21c2a8f1916a2f2bc2b84a93c0b4e2ccb447a6861bee",
+        "final_package_sha256": "641e28eaec90902a3fc804eaf6c9056a0e7a88e6c4cf2ec5db4c04c2b7ddddc3",
+        "final_package_bytes": 534227192,
+        "signature_stapler_integrity_verified": true
+      },
+      "macos-x86_64": {
+        "conclusion": "success",
+        "dmg": "Termx_0.2.6_x64.dmg",
+        "submission_id": "efe129c1-26b7-4d51-8939-aef5ca35d967",
+        "notarization_status": "Accepted",
+        "pre_ticket_sha256": "e0a751f6d26a770ca8b261cb16c3bcd6ee229a7b7c6ac9566fbbb7e5d54978a5",
+        "final_package_sha256": "4776ab8ad23316b0232bf63256861019dd4d53d6dbd12d2a10ee5703d39caae8",
+        "final_package_bytes": 569780191,
+        "signature_stapler_integrity_verified": true
+      },
+      "linux": {
+        "conclusion": "success",
+        "installed_deb_native_gui": "passed",
+        "installed_binary": "/usr/bin/termx-desktop",
+        "binary_sha256": "33924660a686d91227efc240d209599860f2128617c8530a77702a2dcbec09f9",
+        "package_sha256_prefix": "37f0c601c56bdac4",
+        "steps_passed": [
+          "fresh_native_owner_setup",
+          "isolated_native_configuration",
+          "cookie_cleared_os_keyring_restart",
+          "removed_monitor_titlebar_recovery",
+          "installed_restricted_terminal_transport",
+          "detach_close_reopen_stable_placement",
+          "acknowledged_redock_preserves_draft",
+          "explicit_lock_unlock_same_session_preserves_draft",
+          "live_native_session_revocation",
+          "native_logout_clears_os_refresh",
+          "accepted_host_stop_does_not_respawn_native_backend"
+        ],
+        "limitations": "Xvfb with openbox, not real hardware; AppImage/RPM lifecycles not installed-tested; OIDC TLS webview journey and microphone/hardware not exercised"
+      },
+      "windows": {
+        "conclusion": "failure",
+        "failed_step": "Verify complete backend suite",
+        "result": "3 failed, 1139 passed, 129 skipped",
+        "failures": [
+          "tests/test_native_gui_fixture.py::test_native_scenario_selectors_exist_in_the_shipped_workspace_source: cp1252 decode of UTF-8 source (test bug)",
+          "tests/test_native_gui_fixture.py::test_failure_diagnostics_are_bounded_and_redact_secret_bearing_lines: write_text translated newlines so byte count differed (test bug)",
+          "tests/test_agent_action_review.py::test_model_pin_change_after_permit_parks_exact_internal_write_then_resumes_once: 3-second approval deadline missed on a loaded runner; passed in earlier Windows runs (flaky wait helper)"
+        ],
+        "installer_and_native_gui": "not reached; Windows installed GUI remains untested, including the unverified WEBVIEW2_USER_DATA_FOLDER hypothesis for DevToolsActivePort"
+      }
+    }
+  },
+  "not_proven": "Installed macOS GUI, installed Windows MSI GUI, AppImage and RPM lifecycles. Run 40 is overall failure, so it is not the green source the plan requires for macos-installed-gui.yml."
+}

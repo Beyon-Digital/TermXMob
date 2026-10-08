@@ -45,8 +45,11 @@ class FakeComputer:
 class BenchAdapter:
     """Scripted provider: each entry in `script` is one turn's call list."""
 
-    def __init__(self, script: list[list[ProviderCall]], *, turn_delay_s: float = 0.0) -> None:
+    def __init__(self, script: list[list[ProviderCall]], *, turn_delay_s: float = 0.0,
+                 scripts_by_prompt: dict[str, list[list[ProviderCall]]] | None = None) -> None:
         self.script = [list(calls) for calls in script]
+        self.scripts_by_prompt = {prompt: [list(calls) for calls in turns]
+                                  for prompt, turns in (scripts_by_prompt or {}).items()}
         self.turn_delay_s = turn_delay_s
         self.turns = 0
         self.plan_calls = 0
@@ -74,12 +77,15 @@ class BenchAdapter:
         allow_subagents: bool = True,
     ) -> ProviderTurn:
         self.turns += 1
+        turn_number = self.turns
         if self.turn_delay_s:
             await asyncio.sleep(self.turn_delay_s)
-        calls = self.script.pop(0) if self.script else []
+        script = next((turns for key, turns in self.scripts_by_prompt.items()
+                       if prompt == key or prompt.startswith(key + '\n\n')), self.script)
+        calls = script.pop(0) if script else []
         text = "" if calls else "Done."
         return ProviderTurn(
-            response_id=f"response-{self.turns}",
+            response_id=f"response-{turn_number}",
             text=text,
             calls=list(calls),
             usage={"input_tokens": 8, "output_tokens": 4},
@@ -226,17 +232,21 @@ async def scenario_check_command(tmp_path: Path) -> dict[str, Any]:
 async def scenario_subagents_two(tmp_path: Path) -> dict[str, Any]:
     root = tmp_path / "subs"
     root.mkdir(parents=True, exist_ok=True)
-    script = [
-        [fn("p1", "spawn_subagent", task="Summarize file_a", agent="reader"),
-         fn("p2", "spawn_subagent", task="Summarize file_b", agent="reader")],
-        # child 1: one call turn then text; child 2: same; parent: final text
-        [fn("c1", "run_shell", command="echo child1", purpose="work")],
-        [],
-        [fn("c2", "run_shell", command="echo child2", purpose="work")],
-        [],
-        [],
-    ]
-    return await run_scenario(root, BenchAdapter(script, turn_delay_s=0.05), prompt="Fan out two readers")
+    # Parallel tasks have independent provider histories. A global FIFO can
+    # accidentally give the parent's final response to a child (or vice versa)
+    # when isolation/setup timing differs across platforms.
+    scripts = {
+        "Fan out two readers": [
+            [fn("p1", "spawn_subagent", task="Summarize file_a", agent="reader"),
+             fn("p2", "spawn_subagent", task="Summarize file_b", agent="reader")],
+            [fn("wait", "await_subagents")],
+            [],
+        ],
+        "Summarize file_a": [[fn("c1", "run_shell", command="echo child1", purpose="work")], []],
+        "Summarize file_b": [[fn("c2", "run_shell", command="echo child2", purpose="work")], []],
+    }
+    return await run_scenario(root, BenchAdapter([], turn_delay_s=0.05, scripts_by_prompt=scripts),
+                              prompt="Fan out two readers")
 
 
 async def scenario_computer_loop(tmp_path: Path) -> dict[str, Any]:

@@ -16,10 +16,21 @@ uv run termx --passcode hunter2
 uv run termx --passcode hunter2 --tunnel
 ```
 
-> **SECURITY**: the passcode is the only gate on a full remote-shell bridge —
-> anyone holding it gets unrestricted shell and filesystem access to the host.
-> Run the daemon on trusted LANs only; do not expose it to untrusted networks,
-> and treat `--tunnel` as publishing that shell to the internet.
+> **SECURITY**: before managed-auth activation, the passcode grants full host
+> authority. Protected remote operations now require TLS, and an unconfigured
+> open host permits protected operations only on loopback. Authentication does
+> not sandbox a host terminal or isolate users sharing the same OS account.
+
+The desktop workspace upgrade starts with a managed-auth backend: local password,
+configured OIDC/custom identity adapters, revocable sessions, short-lived access
+JWTs, rotating refresh credentials and live socket invalidation. Owner setup is
+explicit and host-local. After setup, passcode API access stops and existing
+paired devices have a seven-day migration window. The independent workspace uses
+managed sessions, coordinated browser refresh and native OS secure storage.
+Mobile clients must migrate to the managed authentication contract before their
+legacy pairing expires. Full release acceptance remains in progress. See the
+[authentication contract](plans/desktop-workspace/authentication.md) and
+[implementation checkpoint](plans/desktop-workspace/implementation.md).
 
 `--tunnel` needs [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 
@@ -27,17 +38,20 @@ The process prints LAN URLs, an optional Cloudflare URL, and a QR code. Open the
 
 ## Desktop app
 
-Build a native desktop host that bundles the Python server, the web UI, and the macOS
-helpers. End users install the artifact for their OS and need no Python or tooling.
+The native desktop host bundles the Python server, independent React DOM workspace,
+browser/debug/language runtimes and macOS helpers. Delivery binaries are built in
+GitHub CI. Python debugging requires a Python interpreter on the execution host.
 
 ```bash
-uv sync --group packaging
-uv run --group packaging python desktop/scripts/build_sidecar.py   # packages python + desktop/web
-cd desktop/src-tauri && cargo tauri build
+pnpm --dir desktop/workspace install --frozen-lockfile
+pnpm --dir desktop/workspace build
+uv sync --all-extras --group dev
+uv run termx --web-dir desktop/workspace/dist
 ```
 
-The web UI ships prebuilt in `desktop/web`; refresh it from the private client repo with
-`desktop/scripts/update_web_ui.sh`.
+The same versioned workspace serves the native shell and external browsers.
+`desktop/scripts/update_web_ui.sh` builds it from `desktop/workspace`; incompatible
+or missing bundles show an update instruction instead of the old Expo interface.
 
 Installers (`.dmg`, MSI/NSIS, `.deb`/`.rpm`/`.AppImage`) are produced by
 `.github/workflows/desktop.yml`. Push a `vX.Y.Z` tag that matches the app version (or
@@ -76,11 +90,9 @@ Each release attaches `SHA256SUMS-<platform>.txt`; verify with
 
 ## Client apps
 
-The mobile (Expo) and web client lives in the private repository
-`Psyborgs-git/termx-app`; it is not part of this host repository. A prebuilt web
-bundle is committed under `desktop/web` so the desktop app and `uv run termx` serve
-the full UI without any Node tooling. Rebuild it with
-`desktop/scripts/update_web_ui.sh` after client changes.
+Native mobile remains the independent Expo client in `Psyborgs-git/termx-app`.
+Desktop and external browser access use `desktop/workspace`, with shared host
+identity, projects, sessions and permissions. Existing mobile APIs remain available.
 
 ## Agent runtime and ACP
 

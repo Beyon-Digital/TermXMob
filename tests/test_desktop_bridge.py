@@ -100,8 +100,9 @@ def test_shutdown_endpoint_requires_loopback(monkeypatch) -> None:
     state = AppState(passcode="secret")
     calls: list[str] = []
     state.request_shutdown = lambda: calls.append("stop")
-    client = TestClient(create_app(state, web_dir=None))
-    # The TestClient's host is not loopback, so the loopback guard fires.
+    client = TestClient(create_app(state, web_dir=None), base_url="https://host.example",
+                        client=("203.0.113.20", 50000))
+    # A remote client cannot shut down the host, even over authenticated TLS.
     assert err_status(
         client, "mutation { shutdown { ok } }", headers={"X-Termx-Passcode": "secret"}
     ) == 403

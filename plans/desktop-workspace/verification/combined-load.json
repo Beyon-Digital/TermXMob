@@ -1,0 +1,686 @@
+{
+  "verification_date": "2026-10-07",
+  "platform": "macOS 13 Intel, isolated localhost Chromium",
+  "result": {
+    "fixture": {
+      "sessions": 500,
+      "turns": 10000,
+      "windows": 2,
+      "provider_queries": 0,
+      "authority": "explicitly owned canonical task fixture"
+    },
+    "errors": [],
+    "interactions": [
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 118
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 66
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 73
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 67
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 251
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 116
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 114
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 83
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 67
+      },
+      {
+        "kind": "filter_500_sessions_with_streams",
+        "ms": 215
+      }
+    ],
+    "terminal_frames": 393,
+    "terminal_bytes": 82000,
+    "browser_frames": 22,
+    "browser_bytes": 325112,
+    "agent_actions": 15,
+    "agent_action_latencies_ms": [
+      115,
+      416,
+      550,
+      204,
+      142,
+      238,
+      135,
+      148,
+      145,
+      134,
+      112,
+      1334,
+      93,
+      134,
+      69
+    ],
+    "authenticated_load_ms": 2352,
+    "layout_geometry_undo": true,
+    "browser_phases": {
+      "frame": [
+        133,
+        58,
+        135,
+        82,
+        69,
+        124,
+        103,
+        27,
+        741,
+        740,
+        41,
+        44,
+        218,
+        191,
+        245,
+        245,
+        198,
+        113,
+        114,
+        72,
+        98,
+        4,
+        68,
+        1,
+        118,
+        119,
+        61,
+        5,
+        145,
+        136,
+        162,
+        156,
+        84,
+        74,
+        301,
+        287
+      ],
+      "_document_hash": [
+        591,
+        98,
+        21,
+        56,
+        25,
+        7,
+        26,
+        12,
+        24,
+        345,
+        69,
+        53,
+        35,
+        13,
+        37,
+        33,
+        21,
+        6,
+        84,
+        8,
+        25,
+        25,
+        9,
+        17,
+        17,
+        16,
+        166,
+        680,
+        5,
+        23,
+        36,
+        11,
+        3,
+        8,
+        19,
+        5
+      ],
+      "wheel": [
+        213,
+        132,
+        13,
+        56,
+        70,
+        15,
+        38,
+        18,
+        16,
+        12,
+        19,
+        25,
+        15,
+        38,
+        13,
+        4,
+        19
+      ],
+      "_perform": [
+        312,
+        190,
+        22,
+        134,
+        418,
+        70,
+        55,
+        54,
+        40,
+        22,
+        48,
+        44,
+        33,
+        719,
+        39,
+        24,
+        28,
+        8
+      ]
+    },
+    "host_loop_max_lag_ms": 866,
+    "host_lag_stacks": [
+      {
+        "pending_ms": 5596,
+        "stack": [
+          "selectors.py:select:548",
+          "base_events.py:_run_once:2008",
+          "base_events.py:run_forever:677",
+          "base_events.py:run_until_complete:706",
+          "runners.py:run:127",
+          "runners.py:run:204",
+          "workspace_load_e2e.py:<lambda>:40",
+          "threading.py:run:1024",
+          "threading.py:_bootstrap_inner:1082",
+          "threading.py:_bootstrap:1044"
+        ]
+      },
+      {
+        "pending_ms": 255,
+        "stack": [
+          "dataclasses.py:is_dataclass:1472",
+          "encoders.py:jsonable_encoder:259",
+          "encoders.py:jsonable_encoder:307",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800"
+        ]
+      },
+      {
+        "pending_ms": 369,
+        "stack": [
+          "encoders.py:jsonable_encoder:129",
+          "encoders.py:jsonable_encoder:307",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789"
+        ]
+      },
+      {
+        "pending_ms": 480,
+        "stack": [
+          "selector_events.py:_write_sendmsg:1098",
+          "events.py:_run:94",
+          "base_events.py:_run_once:2046",
+          "base_events.py:run_forever:677",
+          "base_events.py:run_until_complete:706",
+          "runners.py:run:127",
+          "runners.py:run:204",
+          "workspace_load_e2e.py:<lambda>:40",
+          "threading.py:run:1024",
+          "threading.py:_bootstrap_inner:1082",
+          "threading.py:_bootstrap:1044"
+        ]
+      },
+      {
+        "pending_ms": 214,
+        "stack": [
+          "encoders.py:jsonable_encoder:316",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789",
+          "routing.py:handle:1780"
+        ]
+      },
+      {
+        "pending_ms": 325,
+        "stack": [
+          "encoders.py:jsonable_encoder:293",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789",
+          "routing.py:handle:1780"
+        ]
+      },
+      {
+        "pending_ms": 444,
+        "stack": [
+          "selector_events.py:write:1071",
+          "httptools_impl.py:send:547",
+          "errors.py:_send:161",
+          "cors.py:send:158",
+          "_exception_handler.py:sender:39",
+          "_exception_handler.py:sender:39",
+          "responses.py:__call__:167",
+          "routing.py:app:145",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800"
+        ]
+      },
+      {
+        "pending_ms": 270,
+        "stack": [
+          "encoders.py:jsonable_encoder:316",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789",
+          "routing.py:handle:1780"
+        ]
+      },
+      {
+        "pending_ms": 386,
+        "stack": [
+          "encoders.py:jsonable_encoder:316",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789",
+          "routing.py:handle:1780"
+        ]
+      },
+      {
+        "pending_ms": 235,
+        "stack": [
+          "identity.py:_db:190",
+          "contextlib.py:__exit__:148",
+          "identity.py:resolve:400",
+          "auth.py:scopes:29",
+          "authorization.py:evaluate:229",
+          "authorization.py:require:283",
+          "router.py:identity:81",
+          "router.py:downloads:198",
+          "routing.py:run_endpoint_function:352",
+          "routing.py:app:706",
+          "router.py:safe:22",
+          "routing.py:app:144"
+        ]
+      },
+      {
+        "pending_ms": 352,
+        "stack": [
+          "api_jwt.py:_validate_claims:401",
+          "api_jwt.py:decode_complete:277",
+          "api_jwt.py:decode:370",
+          "identity.py:resolve:404",
+          "authorization.py:evaluate:234",
+          "authorization.py:require:283",
+          "router.py:identity:81",
+          "router.py:profiles:99",
+          "routing.py:run_endpoint_function:352",
+          "routing.py:app:706",
+          "router.py:safe:22",
+          "routing.py:app:144"
+        ]
+      },
+      {
+        "pending_ms": 482,
+        "stack": [
+          "encoder.py:iterencode:263",
+          "encoder.py:encode:202",
+          "__init__.py:dumps:242",
+          "base.py:encode_json:66",
+          "router.py:create_response:278",
+          "async_base_view.py:run:449",
+          "router.py:handle_http_post:239",
+          "routing.py:run_endpoint_function:352",
+          "routing.py:app:706",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158"
+        ]
+      },
+      {
+        "pending_ms": 357,
+        "stack": [
+          "selector_events.py:_read_from_self:132",
+          "events.py:_run:94",
+          "base_events.py:_run_once:2046",
+          "base_events.py:run_forever:677",
+          "base_events.py:run_until_complete:706",
+          "runners.py:run:127",
+          "runners.py:run:204",
+          "workspace_load_e2e.py:<lambda>:40",
+          "threading.py:run:1024",
+          "threading.py:_bootstrap_inner:1082",
+          "threading.py:_bootstrap:1044"
+        ]
+      },
+      {
+        "pending_ms": 286,
+        "stack": [
+          "dataclasses.py:is_dataclass:1472",
+          "encoders.py:jsonable_encoder:259",
+          "encoders.py:jsonable_encoder:307",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800"
+        ]
+      },
+      {
+        "pending_ms": 395,
+        "stack": [
+          "encoders.py:jsonable_encoder:129",
+          "encoders.py:jsonable_encoder:298",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789"
+        ]
+      },
+      {
+        "pending_ms": 547,
+        "stack": [
+          "encoder.py:iterencode:263",
+          "encoder.py:encode:202",
+          "__init__.py:dumps:242",
+          "responses.py:render:195",
+          "responses.py:__init__:45",
+          "responses.py:__init__:192",
+          "routing.py:app:747",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800"
+        ]
+      },
+      {
+        "pending_ms": 244,
+        "stack": [
+          "identity.py:principal_by_id:288",
+          "authorization.py:require_principal:150",
+          "service.py:require:48",
+          "service.py:record:85",
+          "service.py:session:206",
+          "desktop_workspace.py:resolve_nodes:77",
+          "fields.py:resolver:150",
+          "resolver.py:__call__:238",
+          "field.py:get_result:241",
+          "schema_converter.py:_get_result:1017",
+          "schema_converter.py:wrapped_get_result:1131",
+          "fields.py:resolve:75"
+        ]
+      },
+      {
+        "pending_ms": 352,
+        "stack": [
+          "store.py:workspace_turns_page:1392",
+          "service.py:session:229",
+          "desktop_workspace.py:resolve_nodes:77",
+          "fields.py:resolver:150",
+          "resolver.py:__call__:238",
+          "field.py:get_result:241",
+          "schema_converter.py:_get_result:1017",
+          "schema_converter.py:wrapped_get_result:1131",
+          "fields.py:resolve:75",
+          "schema_converter.py:extension_resolver:1139",
+          "schema_converter.py:_resolver:1153",
+          "executor.py:execute_field:967"
+        ]
+      },
+      {
+        "pending_ms": 234,
+        "stack": [
+          "identity.py:_db:180",
+          "contextlib.py:__enter__:141",
+          "identity.py:configured:199",
+          "auth.py:scopes:28",
+          "auth.py:allows:49",
+          "router.py:identity:72",
+          "router.py:tabs:114",
+          "routing.py:run_endpoint_function:352",
+          "routing.py:app:706",
+          "router.py:safe:22",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42"
+        ]
+      },
+      {
+        "pending_ms": 226,
+        "stack": [
+          "store.py:get_task:524",
+          "gateway.py:<lambda>:65",
+          "service.py:action:368",
+          "workspace_load_e2e.py:activity:124",
+          "events.py:_run:94",
+          "base_events.py:_run_once:2046",
+          "base_events.py:run_forever:677",
+          "base_events.py:run_until_complete:706",
+          "runners.py:run:127",
+          "runners.py:run:204",
+          "workspace_load_e2e.py:<lambda>:40",
+          "threading.py:run:1024"
+        ]
+      },
+      {
+        "pending_ms": 339,
+        "stack": [
+          "store.py:get_task:524",
+          "gateway.py:<lambda>:65",
+          "service.py:action:368",
+          "workspace_load_e2e.py:activity:124",
+          "events.py:_run:94",
+          "base_events.py:_run_once:2046",
+          "base_events.py:run_forever:677",
+          "base_events.py:run_until_complete:706",
+          "runners.py:run:127",
+          "runners.py:run:204",
+          "workspace_load_e2e.py:<lambda>:40",
+          "threading.py:run:1024"
+        ]
+      },
+      {
+        "pending_ms": 449,
+        "stack": [
+          "identity.py:_db:180",
+          "contextlib.py:__enter__:141",
+          "identity.py:principal_by_id:287",
+          "service.py:require:40",
+          "service.py:record:85",
+          "service.py:session:206",
+          "desktop_workspace.py:resolve_nodes:77",
+          "fields.py:resolver:150",
+          "resolver.py:__call__:238",
+          "field.py:get_result:241",
+          "schema_converter.py:_get_result:1017",
+          "schema_converter.py:wrapped_get_result:1131"
+        ]
+      },
+      {
+        "pending_ms": 559,
+        "stack": [
+          "dataclasses.py:is_dataclass:1468",
+          "encoders.py:jsonable_encoder:259",
+          "encoders.py:jsonable_encoder:298",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800"
+        ]
+      },
+      {
+        "pending_ms": 672,
+        "stack": [
+          "encoders.py:jsonable_encoder:316",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789",
+          "routing.py:handle:1780"
+        ]
+      },
+      {
+        "pending_ms": 777,
+        "stack": [
+          "encoders.py:jsonable_encoder:316",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800",
+          "routing.py:handle:2789",
+          "routing.py:handle:1780"
+        ]
+      },
+      {
+        "pending_ms": 887,
+        "stack": [
+          "dataclasses.py:is_dataclass:1472",
+          "encoders.py:jsonable_encoder:259",
+          "encoders.py:jsonable_encoder:298",
+          "encoders.py:jsonable_encoder:322",
+          "encoders.py:jsonable_encoder:307",
+          "routing.py:serialize_response:341",
+          "routing.py:app:727",
+          "routing.py:app:144",
+          "_exception_handler.py:wrapped_app:42",
+          "routing.py:app:158",
+          "routing.py:handle:1279",
+          "routing.py:_handle_selected:1800"
+        ]
+      },
+      {
+        "pending_ms": 202,
+        "stack": [
+          "identity.py:_db:190",
+          "contextlib.py:__exit__:148",
+          "identity.py:resolve:400",
+          "auth.py:scopes:29",
+          "authorization.py:evaluate:229",
+          "authorization.py:require:283",
+          "router.py:identity:81",
+          "router.py:downloads:198",
+          "routing.py:run_endpoint_function:352",
+          "routing.py:app:706",
+          "router.py:safe:22",
+          "routing.py:app:144"
+        ]
+      }
+    ],
+    "control_warmup_ms": 1604,
+    "control_warmup_latencies_ms": [
+      987,
+      276
+    ],
+    "combined_workload_ms": 6405,
+    "memory": [
+      {
+        "used": 24780113,
+        "total": 52543021
+      },
+      {
+        "used": 17178036,
+        "total": 31146020
+      }
+    ],
+    "dom_nodes": [
+      1008,
+      1034
+    ],
+    "max_interaction_ms": 251,
+    "mounted_message_rows": [
+      15,
+      21
+    ],
+    "no_accidental_turn": true
+  },
+  "limits": [
+    "Fixture provider, no paid model queries",
+    "Source UI/runtime; installer and other hardware not qualified",
+    "Control latency maximum 1334ms and host loop maximum lag 866ms remain visible"
+  ]
+}

@@ -62,6 +62,7 @@ class _SessionClient:
         self._session_id = session_id
         self._state = state
         self._terminals: dict[str, dict[str, Any]] = {}
+        self._review_calls = {}
 
     # ------------------------------------------------------------- updates
 
@@ -82,6 +83,9 @@ class _SessionClient:
         data = _model_dump(update)
         self._binding(session_id)
         state = self._state
+        if data.get('status') in {'completed', 'failed'} and self._engine.browser_service:
+            identifier = self._review_calls.pop(str(data.get('toolCallId') or data.get('tool_call_id') or ''), None)
+            if identifier: self._engine.browser_service.review.complete_external(identifier, success=data['status'] == 'completed')
         if state is not None:
             if tag == "config_option_update":
                 state["config_options"] = data.get("configOptions", [])
@@ -124,6 +128,21 @@ class _SessionClient:
         if binding is None or self._engine._approval_sink is None or (self._state or {}).get("discovery"):
             outcome = _cancelled_outcome()
             return RequestPermissionResponse(outcome=outcome)
+        if self._engine.browser_service:
+            from termx.engines.action_review import authorize,consume_reviewed
+            from acp.schema import AllowedOutcome
+            call = _model_dump(tool_call)
+            try:
+                checked = await authorize(self._engine, binding, 'native_permission', call, str(call.get('toolCallId') or call.get('tool_call_id') or uuid.uuid4().hex))
+                if checked:
+                    option = next((option for option in opts if option.get('kind') == 'allow_once'), None)
+                    if not option: raise PermissionError('ACP runner did not offer a single-use approval')
+                    envelope, validate, permit = checked
+                    await consume_reviewed(self._engine,binding,envelope,validate,permit,tool='native_permission',args=call)
+                    self._review_calls[str(call.get('toolCallId') or call.get('tool_call_id') or '')] = envelope.action_id
+                    return RequestPermissionResponse(outcome=AllowedOutcome(outcome='selected', option_id=option.get('optionId') or option.get('option_id')))
+            except (PermissionError, ValueError):
+                return RequestPermissionResponse(outcome=_cancelled_outcome())
         token = f"acpreq_{uuid.uuid4().hex[:16]}"
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()
@@ -162,15 +181,18 @@ class _SessionClient:
                              limit: int | None = None, **kw: Any) -> Any:
         from acp.schema import ReadTextFileResponse
         target = self._path_ok(path, session_id)
-        with target.open("rb") as handle:
-            data = handle.read(FS_IO_MAX)
-        text = data.decode("utf-8", errors="replace")
-        if line is not None or limit is not None:
-            lines = text.splitlines(keepends=True)
-            start = max(0, (line or 1) - 1)
-            end = start + (limit or len(lines))
-            text = "".join(lines[start:end])
-        return ReadTextFileResponse(content=text)
+        async def read():
+            with target.open("rb") as handle:
+                data = handle.read(FS_IO_MAX)
+            text = data.decode("utf-8", errors="replace")
+            if line is not None or limit is not None:
+                lines = text.splitlines(keepends=True)
+                start = max(0, (line or 1) - 1)
+                end = start + (limit or len(lines))
+                text = "".join(lines[start:end])
+            return ReadTextFileResponse(content=text)
+        from termx.engines.action_review import execute
+        return await execute(self._engine, self._binding(session_id), 'read_file', {'path': str(target), 'line': line, 'limit': limit}, uuid.uuid4().hex, read)
 
     async def write_text_file(self, session_id: str, path: str,
                               content: str, **kw: Any) -> Any:
@@ -178,9 +200,13 @@ class _SessionClient:
         target = self._path_ok(path, session_id)
         if len(content.encode("utf-8")) > FS_IO_MAX:
             raise ValueError("ACP file write exceeds the supported size limit")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        return WriteTextFileResponse()
+        binding = self._binding(session_id)
+        async def write():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            return WriteTextFileResponse()
+        from termx.engines.action_review import execute
+        return await execute(self._engine, binding, 'write_file', {'path': str(target), 'content': content}, uuid.uuid4().hex, write)
 
     # -------------------------------------------------------- terminal bridge
 
@@ -194,13 +220,18 @@ class _SessionClient:
         binding = self._binding(session_id)
         if binding is None:
             raise PermissionError("ACP callback has no bound session")
-        run_cwd = cwd or (binding.cwd if binding else None)
+        run_cwd = str(self._path_ok(cwd or '.', session_id))
         env_map = self._engine._launch_env()
         for entry in env or []:
             name = getattr(entry, "name", None) or (entry.get("name") if isinstance(entry, dict) else None)
             value = entry.get("value") if isinstance(entry, dict) else getattr(entry, "value", None)
             if name and value is not None:
                 env_map[str(name)] = str(value)
+        from termx.engines.action_review import authorize,consume_reviewed
+        checked = await authorize(self._engine, binding, 'run_shell', {'command': command, 'args': args or [], 'cwd': run_cwd, 'env': [str(entry) for entry in env or []]}, uuid.uuid4().hex)
+        if checked:
+            envelope, validate, permit = checked
+            await consume_reviewed(self._engine,binding,envelope,validate,permit,tool='run_shell',args={'command':command,'args':args or [],'cwd':run_cwd,'env':[str(entry) for entry in env or []]})
         proc = await asyncio.create_subprocess_exec(
             command, *(args or []),
             stdout=asyncio.subprocess.PIPE,
@@ -211,6 +242,7 @@ class _SessionClient:
         terminal_id = f"term_{uuid.uuid4().hex[:12]}"
         self._terminals[terminal_id] = {
             "proc": proc,
+            "review_envelope": checked[0] if checked else None,
             "output": bytearray(),
             "limit": min(TERMINAL_OUTPUT_CAP, max(0, output_byte_limit if output_byte_limit is not None else TERMINAL_OUTPUT_CAP)),
             "truncated": False,
@@ -261,6 +293,8 @@ class _SessionClient:
             raise ValueError(f"unknown terminal {terminal_id}")
         code = await entry["proc"].wait()
         await entry["task"]
+        if entry.get('review_envelope'):
+            self._engine.browser_service.review.complete_external(entry['review_envelope'].action_id, success=code == 0)
         return WaitForTerminalExitResponse(**_exit_status(code))
 
     async def kill_terminal(self, session_id: str, terminal_id: str, **kw: Any) -> Any:
@@ -335,6 +369,7 @@ class AcpEngine:
         self._version: str | None = None
         self._event_sink = event_sink or (lambda _b, _e: None)
         self._approval_sink = approval_sink
+        self.browser_service = None
         self._spawn_env = spawn_env
         # Native IDs are scoped to the ACP connection and may collide across
         # processes. TermX binding IDs provide the cross-connection identity.
@@ -525,6 +560,7 @@ class AcpEngine:
             profile_revision=cfg.agent_profile_revision,
             extensions_snapshot={
                 "skills": [s.get("id") for s in cfg.skills],
+                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask" or bool(cfg.tools.get("read_only")),
                 "mcp": [m.get("connection_id") for m in cfg.mcp_bindings],
             })
         binding.project_id = cfg.agent_id
@@ -690,6 +726,7 @@ class AcpEngine:
                 self._startup_timeout)
             state["config_options"] = [_model_dump(o) for o in resp.config_options]
         self._remember_configuration(state)
+        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask" or bool(cfg.tools.get("read_only")))
         configuration = self.session_configuration(binding)
         binding.extensions_snapshot["configuration"] = configuration
         self._emit(binding, "engine.session.info", configuration)
@@ -719,11 +756,11 @@ class AcpEngine:
             if binding.get("url") and binding.get("transport") == "sse":
                 if not self._agent_capabilities.get("mcpCapabilities", {}).get("sse"):
                     raise ValueError(f"{self.id} did not advertise SSE MCP support")
-                out.append(SseMcpServer(type="sse", name=name, url=str(binding["url"]), headers=[]))
+                out.append(SseMcpServer(type="sse", name=name, url=str(binding["url"]), headers=[EnvVariable(name=k,value=v) for k,v in (binding.get('headers') or {}).items()]))
             elif binding.get("url"):
                 if not self._agent_capabilities.get("mcpCapabilities", {}).get("http"):
                     raise ValueError(f"{self.id} did not advertise HTTP MCP support")
-                out.append(HttpMcpServer(type="http", name=name, url=str(binding["url"]), headers=[]))
+                out.append(HttpMcpServer(type="http", name=name, url=str(binding["url"]), headers=[EnvVariable(name=k,value=v) for k,v in (binding.get('headers') or {}).items()]))
             else:
                 cmd = binding.get("command") or []
                 if not cmd:
@@ -790,14 +827,18 @@ class AcpEngine:
 
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
-        from acp.schema import TextContentBlock
+        from acp.schema import TextContentBlock, ImageContentBlock
+        from termx.engines.attachments import image_attachments
+        images = image_attachments(attachments)
         state = self._sessions.get(binding.binding_id)
         if state is None:
             raise ValueError("no live ACP session")
         if state.get("turn_task") is not None and not state["turn_task"].done():
             raise ValueError("ACP session already has an active turn")
-        if attachments:
-            raise ValueError("ACP attachments are not supported by this adapter")
+        if images and not self._agent_capabilities.get("promptCapabilities", {}).get("image", False):
+            raise ValueError("ACP agent does not advertise image input capability")
+        content = [TextContentBlock(type="text", text=prompt)]
+        content.extend(ImageContentBlock(type="image",data=item['data'],mimeType=item['mime']) for item in images)
         binding.status = "active"
         state["cancel_requested"] = False
         state["prompt_started"] = asyncio.Event()
@@ -808,7 +849,7 @@ class AcpEngine:
                 state["prompt_started"].set()
                 resp = await state["conn"].prompt(
                     session_id=binding.native_session_id,
-                    prompt=[TextContentBlock(type="text", text=prompt)],
+                    prompt=content,
                 )
                 stop = str(getattr(resp, "stop_reason", "") or "")
                 usage = _model_dump(getattr(resp, "usage", None))
@@ -877,6 +918,10 @@ class AcpEngine:
             raise PermissionError("approval belongs to another ACP session")
         if fut.done():
             return
+        if _method == 'browser.review':
+            from termx.engines.action_review import respond_review
+            respond_review(self, binding, entry, decision in ('approve', 'approve_always'))
+            return
         from acp.schema import AllowedOutcome, DeniedOutcome
         options = params.get("options") or []
         approved = decision in ("approve", "approve_always")
@@ -898,10 +943,7 @@ class AcpEngine:
         return False
 
     async def close(self, binding: EngineSessionBinding) -> None:
-        state = self._sessions.pop(binding.binding_id, None)
-        binding.status = "closed"
-        binding.updated_at = time.time()
-        self._bindings.pop(binding.binding_id, None)
+        state = self._sessions.get(binding.binding_id)
         if state is not None:
             self._cancel_permissions(binding)
             watch = state.get("process_watch")
@@ -912,18 +954,28 @@ class AcpEngine:
             if turn is not None and not turn.done():
                 turn.cancel()
                 await asyncio.gather(turn, return_exceptions=True)
+            failure = None
             client = state.get("client")
             if client is not None:
                 try:
                     await client.cleanup()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    failure = exc
             ctx = state.get("ctx")
             if ctx is not None:
                 try:
                     await ctx.__aexit__(None, None, None)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    failure = failure or exc
+            if failure is not None:
+                raise RuntimeError('ACP transport shutdown failed') from failure
+            process = state.get('proc')
+            if process is not None and process.returncode is None:
+                raise RuntimeError('ACP transport process remains active after shutdown')
+        self._sessions.pop(binding.binding_id, None)
+        binding.status = "closed"
+        binding.updated_at = time.time()
+        self._bindings.pop(binding.binding_id, None)
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         # Spawn a transient agent and ask — ACP list is capability-gated.

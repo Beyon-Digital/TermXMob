@@ -1,0 +1,8 @@
+import {useEffect,useState} from 'react';
+import {request,type Session} from '../lib/api';
+const labels:Record<string,string>={'files-read':'Read project files','files-write':'Edit project files','agent-run':'Run agent tasks','terminal-create':'Create terminals','desktop-control':'Control the host computer','host-admin':'Administer this host'};
+export default function SessionAccess({session,onError}:{session:Session;onError:(error:unknown)=>void}){
+ const [scopes,setScopes]=useState<string[]|null>(null);
+ useEffect(()=>{let cancelled=false;setScopes(null);request<{principal:{scopes:string[]}}>('/auth/me').then(value=>{if(!cancelled)setScopes(value.principal.scopes)}).catch(error=>{if(!cancelled)onError(error)});return()=>{cancelled=true}},[session.id]);
+ return <details><summary>Execution permissions and source</summary><p>Execution: {session.runner_id?'Dedicated runner '+session.runner_id+' · /workspace':session.cwd||'This host'}</p><p>{session.workflow==='browser'?'This conversation uses the controlled browser workflow. Each tab needs its own task grant.':'Project grants, tool policy and the selected agent preset constrain each action.'}</p><h3>Current account ceiling</h3>{scopes?<ul>{Object.entries(labels).map(([scope,label])=><li key={scope}>{label}: {scopes.includes(scope)?'Permitted by account':'Denied by account'}</li>)}</ul>:<p>Checking current host permissions…</p>}<p>Project and resource grants can restrict this ceiling further. Ask mode is a task preference; it does not grant or prove filesystem isolation. Change tools and budgets in the session’s agent preset and execution settings.</p></details>
+}

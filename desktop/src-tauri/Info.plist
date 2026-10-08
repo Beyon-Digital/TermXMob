@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>TermX records audio only when you start dictation or voice input. You can review the transcript before sending it.</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>Termx uses Apple Events to send keyboard input to applications when you control this machine remotely.</string>
   <key>NSLocalNetworkUsageDescription</key>

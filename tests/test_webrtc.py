@@ -1,4 +1,5 @@
 from termx.desktop.webrtc import AiortcBackend, DEFAULT_ICE_SERVERS, RtcError, RtcManager, RtcSession
+import pytest
 
 
 class FakeBackend:
@@ -26,7 +27,8 @@ class RealBackend(FakeBackend):
     available = True
 
 
-def test_available_false_by_default() -> None:
+def test_available_false_without_optional_backend(monkeypatch) -> None:
+    monkeypatch.setattr(AiortcBackend, "available", False)
     assert RtcManager().available() is False
     assert RtcManager(backend=FakeBackend()).available() is False
 
@@ -66,7 +68,8 @@ def test_handle_offer_applies_fps_without_leaking_private_metadata() -> None:
     assert backend.offers == [("desktop", {"type": "offer", "sdp": "v=0\r\n"})]
 
 
-def test_handle_offer_without_backend_raises() -> None:
+def test_handle_offer_without_backend_raises(monkeypatch) -> None:
+    monkeypatch.setattr(AiortcBackend, "available", False)
     mgr = RtcManager()
     mgr.create_session("s1")
     try:
@@ -93,7 +96,8 @@ def test_close_all_clears() -> None:
     assert created["session_id"] == "a"
 
 
-def test_default_unavailable_without_aiortc_injected_backend_still_works() -> None:
+def test_default_unavailable_without_aiortc_injected_backend_still_works(monkeypatch) -> None:
+    monkeypatch.setattr(AiortcBackend, "available", False)
     assert AiortcBackend().available is False
     assert RtcManager().available() is False
     backend = RealBackend()
@@ -103,3 +107,30 @@ def test_default_unavailable_without_aiortc_injected_backend_still_works() -> No
     result = mgr.handle_offer("s1", {"type": "offer", "sdp": "v=0\r\n"})
     assert result["answer"] == {"type": "answer", "sdp": "v=0\r\n"}
     assert backend.offers == [("s1", {"type": "offer", "sdp": "v=0\r\n"})]
+
+
+def test_installed_aiortc_negotiates_real_video_offer(monkeypatch) -> None:
+    """Qualify the installed optional backend with a real, locally gathered SDP."""
+    aiortc = pytest.importorskip("aiortc")
+    import termx.desktop.webrtc as rtc
+
+    # No public STUN server is contacted by this deterministic peer negotiation.
+    configuration = aiortc.RTCConfiguration(iceServers=[])
+    monkeypatch.setattr(rtc, "_RTCPeerConnection", lambda: aiortc.RTCPeerConnection(configuration))
+    peer = aiortc.RTCPeerConnection(configuration)
+    backend = AiortcBackend()
+
+    async def offer():
+        peer.addTransceiver("video", direction="recvonly")
+        await peer.setLocalDescription(await peer.createOffer())
+        return {"type": peer.localDescription.type, "sdp": peer.localDescription.sdp}
+
+    try:
+        answer = backend.handle_offer("qualified-video", rtc._run_coro(offer()))
+        assert backend.available is True
+        assert answer["type"] == "answer"
+        assert "m=video " in answer["sdp"]
+        assert "a=sendonly" in answer["sdp"]
+    finally:
+        backend.close("qualified-video")
+        rtc._run_coro(peer.close())

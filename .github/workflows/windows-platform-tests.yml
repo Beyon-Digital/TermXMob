@@ -1,0 +1,98 @@
+name: Windows workspace platform contracts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/termx/private_files.py'
+      - 'src/termx/cli.py'
+      - 'src/termx/identity*.py'
+      - 'src/termx/sandbox/*win*.py'
+      - 'src/termx/sessions.py'
+      - 'src/termx/git_ops.py'
+      - 'src/termx/agent/secrets.py'
+      - 'src/termx/agents/registry.py'
+      - 'src/termx/workspace/https_registry.py'
+      - 'src/termx/workspace/skill_sources.py'
+      - 'src/termx/runners/*.py'
+      - 'desktop/src-tauri/src/private_storage.rs'
+      - 'desktop/src-tauri/src/config.rs'
+      - 'tests/test_windows_conpty.py'
+      - 'tests/test_windows_conpty_protocol.py'
+      - 'tests/test_owned_windows_window.py'
+      - 'src/termx/desktop/windows.py'
+      - 'desktop/backend_entry.py'
+      - 'desktop/termx-backend.spec'
+      - 'desktop/scripts/notarize_ci_dmg.py'
+      - 'desktop/scripts/create_ci_dmg.py'
+      - 'desktop/scripts/artifact_matrix.py'
+      - 'desktop/scripts/native_gui_smoke.py'
+      - 'tests/test_native_gui_fixture.py'
+      - 'tests/test_ci_dmg_notarization.py'
+      - 'tests/test_ci_dmg_container.py'
+      - 'tests/test_artifact_matrix.py'
+      - 'tests/test_runner_agents.py'
+      - 'tests/test_git_stream_boundary.py'
+      - 'tests/test_private_files.py'
+      - 'tests/test_desktop_host_stop_cli.py'
+      - 'tests/test_cli_banner.py'
+      - 'tests/test_agent_registry_newlines.py'
+      - 'tests/test_https_registries.py'
+      - 'tests/test_mcp_authority.py'
+      - 'tests/test_skill_sources.py'
+      - 'tests/test_workspace_preset_tools_edit.py'
+      - '.github/workflows/windows-platform-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actual-windows-contracts:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+      - name: Verify native owner DACL before bootstrap storage
+        shell: pwsh
+        run: |
+          $testBinary = Join-Path $env:RUNNER_TEMP 'termx-private-storage-tests.exe'
+          rustc --edition 2021 --test desktop/src-tauri/src/private_storage.rs -o $testBinary
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $testBinary
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: astral-sh/setup-uv@v5
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        with:
+          enable-cache: true
+      - name: Install source test dependencies
+        id: dependencies
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: uv sync --locked --group dev --extra development --extra media --extra webrtc
+      - name: Verify actual private storage, authority and restricted console contracts
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        env:
+          TERMX_RUNTIME_QUALIFICATION: '1'
+          TERMX_TEST_NATIVE_WINDOW: '1'
+          TERMX_NATIVE_WINDOW_EVIDENCE: ${{ runner.temp }}/termx-owned-window-evidence
+        run: >-
+          uv run --no-sync pytest -q
+          tests/test_identity.py tests/test_private_files.py
+          tests/test_config.py tests/test_tokens.py
+          tests/test_chatgpt.py tests/test_discovery_agents.py
+          tests/test_engines.py tests/test_engine_catalogue.py tests/test_engines_acp.py
+          tests/test_runner_agents.py tests/test_windows_conpty.py tests/test_windows_conpty_protocol.py
+          tests/test_ci_dmg_notarization.py tests/test_ci_dmg_container.py tests/test_artifact_matrix.py
+          tests/test_native_gui_fixture.py
+          tests/test_git_stream_boundary.py
+          tests/test_owned_windows_window.py
+          tests/test_desktop_host_stop_cli.py tests/test_cli_banner.py tests/test_agent_registry_newlines.py
+          tests/test_https_registries.py tests/test_mcp_authority.py
+          tests/test_skill_sources.py tests/test_workspace_preset_tools_edit.py
+      - name: Upload owned PrintWindow evidence
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: owned-printwindow-${{ github.sha }}
+          path: ${{ runner.temp }}/termx-owned-window-evidence
+          if-no-files-found: ignore

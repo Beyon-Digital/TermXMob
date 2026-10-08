@@ -36,11 +36,15 @@ class ProviderCall:
     safety_checks: list[dict[str, Any]] = field(default_factory=list)
 
     def public(self) -> dict[str, Any]:
+        arguments = self.arguments
+        if self.name == 'browser_action':
+            # Input values never enter persistent tool-call/audit events.
+            arguments = {**arguments, 'args': {k: ('[private input omitted]' if k in {'text','data','data_base64'} else v) for k,v in (arguments.get('args') or {}).items()}}
         return {
             "type": self.type,
             "call_id": self.call_id,
             "name": self.name,
-            "arguments": _redact_value(self.arguments),
+            "arguments": _redact_value(arguments),
             "actions": _redact_value(self.actions),
             "safety_checks": _redact_value(self.safety_checks),
         }

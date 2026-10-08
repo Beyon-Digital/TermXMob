@@ -1,0 +1,41 @@
+{
+  "fixture": {
+    "sessions": 500,
+    "turns": 10000
+  },
+  "viewports": [
+    {
+      "width": 1280,
+      "page_overflow": false
+    },
+    {
+      "width": 1440,
+      "page_overflow": false
+    },
+    {
+      "width": 1920,
+      "page_overflow": false
+    },
+    {
+      "width": 2560,
+      "page_overflow": false
+    },
+    {
+      "width": 768,
+      "page_overflow": false
+    },
+    {
+      "width": 390,
+      "page_overflow": false
+    }
+  ],
+  "errors": [],
+  "authenticated_load_ms": 4413,
+  "dom_nodes": 643,
+  "layout_switch_ms": 277,
+  "multiwindow_no_run": true,
+  "memory": {
+    "usedJSHeapSize": 12700000,
+    "totalJSHeapSize": 23100000
+  }
+}

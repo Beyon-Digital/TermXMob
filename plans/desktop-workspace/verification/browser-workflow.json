@@ -1,0 +1,26 @@
+{
+  "verification_date": "2026-10-07",
+  "platform": "macOS13 Intel, isolated localhost managed Chromium",
+  "source_state": "v0.3 integration working tree",
+  "result": {
+    "provider_queries": 0,
+    "errors": [],
+    "human_takeover": true,
+    "explicit_resume_new_grant": true,
+    "live_engine_actions_after_both_resumes": true,
+    "approved_upload_actual_file": true,
+    "approved_download_actual_bytes": true,
+    "annotation_staleness_rendered": true,
+    "crash_recovery_human_new_tab": true,
+    "live_frame": true,
+    "task_handoff": true,
+    "exact_approval_resumed": true,
+    "private_human_view": true,
+    "private_agent_context_blocked": true
+  },
+  "limits": [
+    "Actual internal tools and task lifecycle with fixture provider; no paid provider queries",
+    "Production smaller reviewer remains unqualified",
+    "Source runtime; installed native platform journey qualified separately"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "platform": "linux",
+  "installed_binary": "/usr/bin/termx-desktop",
+  "binary_sha256": "108b51a33a94f3f37f12e6705809e340b822889a7c98502f56c958d334d9cc6d",
+  "package_sha256": "125102f9e693151925487e1a0426d1deedcacaef1142391cc8b13898d263f54f",
+  "ipc_mocked": false,
+  "provider_account_used": false,
+  "steps": {},
+  "limitations": [
+    "Native OIDC TLS/webview journey and macOS GUI require separate direct qualification",
+    "This lifecycle fixture does not request microphone permission, capture audio hardware or exercise a paid provider account"
+  ],
+  "passed": false,
+  "failure": "Timed out waiting for authenticated native workspace: condition unmet"
+}

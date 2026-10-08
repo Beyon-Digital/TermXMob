@@ -23,7 +23,7 @@ pub struct ReadyInfo {
 
 impl ReadyInfo {
     pub fn window_url(&self) -> String {
-        format!("http://127.0.0.1:{}/?k={}", self.port, self.passcode)
+        format!("http://127.0.0.1:{}/", self.port)
     }
 }
 
@@ -44,6 +44,8 @@ struct Inner {
     state: Mutex<State>,
     ready_at: Mutex<Option<Instant>>,
     stop_requested: AtomicBool,
+    shutdown_pending: AtomicBool,
+    shutdown_confirmed: AtomicBool,
     quitting: AtomicBool,
     adopted: AtomicBool,
     restarts: AtomicU32,
@@ -53,8 +55,8 @@ struct Inner {
 pub struct Backend(Arc<Inner>);
 
 impl Backend {
-    pub fn new(app: AppHandle) -> Self {
-        let config = config::load(&app);
+    pub fn new(app: AppHandle) -> std::io::Result<Self> {
+        let config = config::load(&app)?;
         let manager = Self(Arc::new(Inner {
             app,
             config: Mutex::new(config),
@@ -63,11 +65,13 @@ impl Backend {
             state: Mutex::new(State::Idle),
             ready_at: Mutex::new(None),
             stop_requested: AtomicBool::new(false),
+            shutdown_pending: AtomicBool::new(false),
+            shutdown_confirmed: AtomicBool::new(false),
             quitting: AtomicBool::new(false),
             adopted: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
         }));
-        manager
+        Ok(manager)
     }
 
     pub fn info(&self) -> Option<ReadyInfo> {
@@ -83,12 +87,32 @@ impl Backend {
     }
 
     pub fn port(&self) -> u16 {
-        self.0.config.lock().map(|config| config.port).unwrap_or(config::DEFAULT_PORT)
+        self.0
+            .config
+            .lock()
+            .map(|config| config.port)
+            .unwrap_or(config::DEFAULT_PORT)
     }
 
     pub fn start(&self) {
         let manager = self.clone();
         thread::spawn(move || manager.run_session());
+    }
+
+    /// Prevent automatic crash recovery while an authorized host stop is sent.
+    /// This never signals, kills or bypasses the daemon's graceful cleanup.
+    pub fn arm_expected_shutdown(&self) {
+        self.0.shutdown_pending.store(true, Ordering::SeqCst);
+    }
+
+    /// A failed request cannot undo an accepted stop or an ordinary app quit.
+    pub fn disarm_expected_shutdown(&self) {
+        self.0.shutdown_pending.store(false, Ordering::SeqCst);
+    }
+
+    fn expected_shutdown(&self) -> bool {
+        self.0.shutdown_pending.load(Ordering::SeqCst)
+            || self.0.shutdown_confirmed.load(Ordering::SeqCst)
     }
 
     pub fn restart(&self) {
@@ -98,7 +122,14 @@ impl Backend {
             manager.stop();
             manager.0.restarts.store(0, Ordering::SeqCst);
             manager.0.stop_requested.store(false, Ordering::SeqCst);
-            manager.0.state.lock().map(|mut state| *state = State::Starting).ok();
+            manager.0.shutdown_pending.store(false, Ordering::SeqCst);
+            manager.0.shutdown_confirmed.store(false, Ordering::SeqCst);
+            manager
+                .0
+                .state
+                .lock()
+                .map(|mut state| *state = State::Starting)
+                .ok();
             manager.run_session();
         });
     }
@@ -154,7 +185,10 @@ impl Backend {
     }
 
     fn run_session(&self) {
-        if self.0.quitting.load(Ordering::SeqCst) || self.0.stop_requested.load(Ordering::SeqCst) {
+        if self.0.quitting.load(Ordering::SeqCst)
+            || self.0.stop_requested.load(Ordering::SeqCst)
+            || self.expected_shutdown()
+        {
             return;
         }
         self.cleanup_stale();
@@ -171,7 +205,10 @@ impl Backend {
                 urls: vec![format!("http://127.0.0.1:{port}")],
                 tunnel: None,
             };
-            logging::desktop(&self.0.app, &format!("adopted existing backend on port {port}"));
+            logging::desktop(
+                &self.0.app,
+                &format!("adopted existing backend on port {port}"),
+            );
             self.handle_ready(info);
             return;
         }
@@ -249,39 +286,46 @@ impl Backend {
 
     fn spawn_monitor(&self) {
         let manager = self.clone();
-        thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_millis(250));
-                if manager.0.quitting.load(Ordering::SeqCst) {
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_millis(250));
+            if manager.0.quitting.load(Ordering::SeqCst) {
+                return;
+            }
+            let status = {
+                let mut guard = manager.0.child.lock().unwrap();
+                match guard.as_mut() {
+                    Some(child) => child.try_wait(),
+                    None => return,
+                }
+            };
+            match status {
+                Ok(None) => continue,
+                Ok(Some(status)) => {
+                    let expected = manager.0.stop_requested.load(Ordering::SeqCst);
+                    manager.on_exit(status.code(), expected);
                     return;
                 }
-                let status = {
-                    let mut guard = manager.0.child.lock().unwrap();
-                    match guard.as_mut() {
-                        Some(child) => child.try_wait(),
-                        None => return,
-                    }
-                };
-                match status {
-                    Ok(None) => continue,
-                    Ok(Some(status)) => {
-                        let expected = manager.0.stop_requested.load(Ordering::SeqCst);
-                        manager.on_exit(status.code(), expected);
-                        return;
-                    }
-                    Err(_) => return,
-                }
+                Err(_) => return,
             }
         });
     }
 
     fn on_exit(&self, code: Option<i32>, expected: bool) {
+        // Private daemon status79 also covers Stop host requested from the
+        // browser, independent of stdout-reader versus monitor scheduling.
+        if code == Some(79) {
+            self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
+        }
         *self.0.child.lock().unwrap() = None;
         let _ = fs::remove_file(config::pid_path(&self.0.app));
         if let Ok(mut info) = self.0.info.lock() {
             *info = None;
         }
-        if expected || self.0.quitting.load(Ordering::SeqCst) || self.0.stop_requested.load(Ordering::SeqCst) {
+        if expected
+            || self.0.quitting.load(Ordering::SeqCst)
+            || self.0.stop_requested.load(Ordering::SeqCst)
+            || self.expected_shutdown()
+        {
             if let Ok(mut state) = self.0.state.lock() {
                 *state = State::Idle;
             }
@@ -314,7 +358,10 @@ impl Backend {
             "Restarting the local service…",
         );
         thread::sleep(delay);
-        if self.0.stop_requested.load(Ordering::SeqCst) || self.0.quitting.load(Ordering::SeqCst) {
+        if self.0.stop_requested.load(Ordering::SeqCst)
+            || self.0.quitting.load(Ordering::SeqCst)
+            || self.expected_shutdown()
+        {
             return;
         }
         if let Ok(mut state) = self.0.state.lock() {
@@ -342,6 +389,16 @@ impl Backend {
             return;
         };
         match value.get("termx").and_then(Value::as_str) {
+            Some("stopping")
+                if value.get("reason").and_then(Value::as_str) == Some("host-stop-cancelled") =>
+            {
+                self.disarm_expected_shutdown();
+            }
+            Some("stopping")
+                if value.get("reason").and_then(Value::as_str) == Some("host-stop") =>
+            {
+                self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
+            }
             Some("ready") => {
                 let port = value
                     .get("port")
@@ -378,7 +435,10 @@ impl Backend {
                 ui::permission_event(&self.0.app, which);
             }
             Some("update") => {
-                let action = value.get("action").and_then(Value::as_str).unwrap_or("check");
+                let action = value
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("check");
                 crate::menu::run_update(&self.0.app, action);
             }
             Some("notify") => {
@@ -530,7 +590,13 @@ pub fn gql(port: u16, passcode: &str, query: &str, variables: Option<Value>) -> 
 pub fn gql_app(app: &AppHandle, query: &str, variables: Option<Value>) -> Option<Value> {
     let backend = app.try_state::<Backend>()?;
     let info = backend.info()?;
-    gql(info.port, &info.passcode, query, variables)
+    crate::workspace::gql_native(app, info.port, query, variables.clone()).or_else(|| {
+        if crate::workspace::legacy_allowed(info.port) {
+            gql(info.port, &info.passcode, query, variables)
+        } else {
+            None
+        }
+    })
 }
 
 fn is_termx(port: u16) -> bool {
@@ -538,7 +604,10 @@ fn is_termx(port: u16) -> bool {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_millis(800))
         .build();
-    match agent.post(&url).send_json(json!({ "query": "{ health { app } }" })) {
+    match agent
+        .post(&url)
+        .send_json(json!({ "query": "{ health { app } }" }))
+    {
         Ok(response) if (200..300).contains(&response.status()) => {
             let value: Option<Value> = response.into_json().ok();
             value

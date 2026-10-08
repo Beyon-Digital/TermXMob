@@ -1,0 +1,22 @@
+{
+  "verification_date": "2026-10-07",
+  "platform": "macOS13 Intel, isolated localhost managed Chromium",
+  "source_state": "v0.3 integration working tree",
+  "result": {
+    "actions": 30,
+    "completed": 30,
+    "human_prompts": 0,
+    "rule_based_approvals": 25,
+    "fixture_model_based_approvals": 5,
+    "fixture_reviewer_calls": 5,
+    "paid_provider_queries": 0,
+    "production_reviewer_qualified": false,
+    "audited_decisions": 30,
+    "rendered_final_input": "Fixture draft"
+  },
+  "limits": [
+    "Actual internal tools and task lifecycle with fixture provider; no paid provider queries",
+    "Production smaller reviewer remains unqualified",
+    "Source runtime; installed native platform journey qualified separately"
+  ]
+}

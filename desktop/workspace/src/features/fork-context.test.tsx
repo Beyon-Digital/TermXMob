@@ -1,0 +1,30 @@
+import {afterEach,expect,it,vi} from 'vitest';
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import ForkContextDialog from './ForkContextDialog';
+import {request,type Session} from '../lib/api';
+vi.mock('../lib/api',()=>({request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
+afterEach(()=>{cleanup();vi.resetAllMocks()});
+const session={id:'source',engine:'internal',cwd:'/project',provider_id:'account',turns:[{id:'first',prompt:'Keep this context'},{id:'second',prompt:'Exclude this context'}]} as Session;
+it('reviews only selected turns, explicit files and summary and commits the exact digest',async()=>{
+ vi.mocked(request).mockImplementation(async path=>path.endsWith('/fork-preview')?{id:'review',digest:'exact',transfer:{messages:['Keep this context'],files:['src/main.ts'],summary:'Decision'}} as never:{id:'fork'} as never);
+ const created=vi.fn();render(<ForkContextDialog session={session} engine="codex" onClose={vi.fn()} onCreated={created} onError={vi.fn()}/>);
+ fireEvent.click(screen.getByLabelText('Exclude this context'));
+ fireEvent.change(screen.getByLabelText('Project files to transfer'),{target:{value:'src/main.ts\nsrc/main.ts'}});
+ fireEvent.change(screen.getByLabelText('Transfer summary'),{target:{value:'Decision'}});
+ fireEvent.click(screen.getByRole('button',{name:'Preview transferred context'}));
+ await screen.findByLabelText('Context transfer preview');
+ expect(JSON.parse(vi.mocked(request).mock.calls[0][1]!.body as string)).toEqual({engine:'codex',turn_ids:['first'],files:['src/main.ts'],summary:'Decision'});
+ fireEvent.click(screen.getByRole('button',{name:'Edit transferred context'}));expect(screen.getByLabelText('Transfer summary')).toHaveValue('Decision');
+ fireEvent.click(screen.getByRole('button',{name:'Preview transferred context'}));await screen.findByLabelText('Context transfer preview');
+ fireEvent.click(screen.getByRole('button',{name:'Create linked fork'}));await waitFor(()=>expect(created).toHaveBeenCalledWith('fork'));
+ expect(vi.mocked(request).mock.calls.at(-1)?.[0]).toBe('/api/workspace/fork-previews/review/commit');
+ expect(JSON.parse(vi.mocked(request).mock.calls.at(-1)![1]!.body as string)).toEqual({digest:'exact',provider_id:'account'});
+});
+it('fences pending previews on Lock and keeps the selected draft for renewed review',async()=>{
+ let resolve!:(value:unknown)=>void;vi.mocked(request).mockImplementation(async()=>await new Promise<unknown>(done=>{resolve=done}) as never);
+ render(<ForkContextDialog session={session} engine="codex" onClose={vi.fn()} onCreated={vi.fn()} onError={vi.fn()}/>);
+ fireEvent.change(screen.getByLabelText('Transfer summary'),{target:{value:'Preserved'}});fireEvent.click(screen.getByRole('button',{name:'Preview transferred context'}));
+ act(()=>window.dispatchEvent(new Event('termx-locked')));await act(async()=>resolve({id:'stale',digest:'stale',transfer:{}}));
+ expect(screen.queryByLabelText('Context transfer preview')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Preview transferred context'})).toBeDisabled();
+ act(()=>window.dispatchEvent(new Event('termx-session-unlocked')));expect(screen.getByLabelText('Transfer summary')).toHaveValue('Preserved');expect(screen.getByRole('button',{name:'Preview transferred context'})).not.toBeDisabled();
+});

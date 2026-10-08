@@ -1,0 +1,51 @@
+import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/react';
+import {afterEach,it,expect,vi} from 'vitest';
+import {EditorView} from '@codemirror/view';
+import Workbench from './Workbench';
+import {request,gql,type Session} from '../lib/api';
+vi.mock('../lib/api',()=>({gql:vi.fn(),request:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
+vi.mock('./TerminalPanel',()=>({default:()=>null}));
+vi.mock('./Debugger',()=>({default:()=>null}));
+vi.mock('./Delivery',()=>({default:()=>null}));
+vi.mock('./Preview',()=>({default:()=>null}));
+vi.mock('../lib/lsp',()=>({LanguageClient:class{},fileUri:()=>'',positionAt:()=>({line:0,character:0})}));
+afterEach(()=>{cleanup();vi.clearAllMocks()});
+const session:Session={id:'chat',cwd:'/isolated',project_id:'project',worktree_id:'tree',title:'Chat',engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:0,scroll:0};
+const project={id:'project',name:'Project',path:'/main'};
+function fixture(path:string){if(path.includes('/delivery'))return {worktrees:[]};if(path.includes('operation=tree'))return {entries:[{name:'first.txt',path:'first.txt'}]};if(path.includes('operation=read'))return {path:new URLSearchParams(path.split('?')[1]).get('path'),content:path.includes('second')?'Second checkout file':'First checkout file',revision:'v1',editable:true};return {results:[{path:'second.txt'}],truncated:false}}
+it('opens a filename match through the conversation checkout and retains unsaved real editor content',async()=>{
+ vi.mocked(request).mockImplementation(async path=>fixture(path) as any);
+ const {container}=render(<Workbench project={project} session={session} visible bottom={false} onError={()=>{}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'first.txt'}));
+ await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('First checkout file'));
+ const editor=EditorView.findFromDOM(container.querySelector<HTMLElement>('.cm-editor')!)!;
+ act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Unsaved first file'}}));
+ fireEvent.click(screen.getByRole('button',{name:'Quick file open'}));
+ fireEvent.change(screen.getByLabelText('Find file by name'),{target:{value:'second'}});
+ await screen.findByRole('option',{name:'second.txt'});
+ expect(vi.mocked(request).mock.calls.some(([path])=>path.includes('/sessions/chat/files?')&&new URLSearchParams(path.split('?')[1]).get('query')==='second'&&new URLSearchParams(path.split('?')[1]).get('worktree_id')==='tree')).toBe(true);
+ const chooser=screen.getByRole('combobox',{name:'Find file by name'});expect(chooser).toHaveAttribute('aria-activedescendant',screen.getByRole('option',{name:'second.txt'}).id);expect(screen.getByRole('option',{name:'second.txt'})).toHaveAttribute('aria-selected','true');fireEvent.keyDown(chooser,{key:'Enter'});
+ await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('Second checkout file'));
+ expect(vi.mocked(gql)).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'first.txt ●'}));
+ expect(container.querySelector('.cm-content')).toHaveTextContent('Unsaved first file');
+});
+it('ignores a late filename search after the conversation changes checkout',async()=>{
+ let release!:(value:unknown)=>void;
+ vi.mocked(request).mockImplementation(async path=>path.includes('operation=quick-open')?new Promise(resolve=>{release=resolve}):fixture(path) as any);
+ const props={project,session,visible:true,bottom:false,onError:()=>{}};
+ const {rerender}=render(<Workbench {...props}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Quick file open'}));
+ await waitFor(()=>expect(release).toBeDefined());
+ rerender(<Workbench {...props} session={{...session,cwd:'/main',worktree_id:null}}/>);
+ await act(async()=>release({results:[{path:'outside-old-checkout.txt'}],truncated:false}));
+ expect(screen.queryByRole('option',{name:'outside-old-checkout.txt'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+it('refuses a local file search for cloud execution rather than silently choosing the host checkout',()=>{
+ vi.mocked(request).mockImplementation(async path=>fixture(path) as any);
+ render(<Workbench project={project} session={{...session,runner_id:'cloud'}} visible bottom={false} onError={()=>{}}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Quick file open'}));
+ expect(screen.getByRole('alert')).toHaveTextContent('local checkouts');
+ expect(vi.mocked(request).mock.calls.some(([path])=>path.includes('quick-open'))).toBe(false);
+});

@@ -4,10 +4,13 @@ mod capture;
 mod config;
 mod input_macos;
 mod logging;
+mod media_permission;
 mod menu;
 mod permissions;
+mod private_storage;
 mod tray;
 mod ui;
+mod workspace;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -65,6 +68,23 @@ fn main() {
     }
 
     let builder = tauri::Builder::default()
+        .manage(workspace::NativeSession::default())
+        .manage(workspace::RedockCoordinator::default())
+        .invoke_handler(tauri::generate_handler![
+            workspace::workspace_login,
+            workspace::workspace_resume_sso,
+            workspace::workspace_request,
+            workspace::workspace_logout,
+            workspace::workspace_lock_state,
+            workspace::workspace_unlock,
+            workspace::workspace_unlock_oidc,
+            workspace::workspace_detach,
+            workspace::workspace_redock,
+            workspace::workspace_redock_accept,
+            workspace::workspace_redock_commit,
+            workspace::workspace_redock_cancel,
+            workspace::workspace_binary
+        ])
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -81,9 +101,9 @@ fn main() {
     builder
         .setup(|app| {
             let handle = app.handle().clone();
+            config::prepare_dirs(&handle)?;
             logging::desktop(&handle, "setup: start");
-            config::prepare_dirs(&handle);
-            let desktop_config = config::load(&handle);
+            let desktop_config = config::load(&handle)?;
             logging::desktop(&handle, "setup: config loaded");
             ui::create_main_window(&handle)?;
             logging::desktop(&handle, "setup: window created");
@@ -92,10 +112,12 @@ fn main() {
             menu::sync_autostart(&handle);
             logging::desktop(&handle, "setup: autostart syncing");
             let log_handle = handle.clone();
-            if let Some(path) = broker::start(handle.clone(), move |line| logging::desktop(&log_handle, line)) {
+            if let Some(path) = broker::start(handle.clone(), move |line| {
+                logging::desktop(&log_handle, line)
+            }) {
                 logging::desktop(&handle, &format!("privileged broker ready at {path}"));
             }
-            let backend = backend::Backend::new(handle.clone());
+            let backend = backend::Backend::new(handle.clone())?;
             app.manage(backend.clone());
             backend.start();
             ui::first_run_onboarding(&handle, desktop_config.onboarded);

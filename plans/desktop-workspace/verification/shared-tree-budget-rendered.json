@@ -1,0 +1,736 @@
+{
+  "proof": "actual-host-shared-tree-budget-renewal-and-restart",
+  "paid_queries": 0,
+  "native_engine_spawns": 0,
+  "errors": [],
+  "server_exceptions": [],
+  "states": [
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "phase": "paused-grant-fields",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "phase": "paused-grant-actions",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "phase": "shared-vs-individual",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "phase": "paused-grant-fields",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "phase": "paused-grant-actions",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "phase": "shared-vs-individual",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "phase": "paused-grant-fields",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "phase": "paused-grant-actions",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "phase": "shared-vs-individual",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "phase": "paused-grant-fields",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "phase": "paused-grant-actions",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "phase": "shared-vs-individual",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "phase": "restart-receipt",
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "keyboard_checks": [
+    {
+      "target": "Review actual child budget",
+      "tabs": 40,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Shared total call ceiling",
+      "tabs": 8,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Explicit versioned extension",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Close grant without execution",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Visible footer appearance focus",
+      "tabs": 16,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Selected child controls and individual ceiling",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Close task supervision",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Review actual child budget",
+      "tabs": 40,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Shared total call ceiling",
+      "tabs": 8,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Explicit versioned extension",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Close grant without execution",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Visible footer appearance focus",
+      "tabs": 16,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Selected child controls and individual ceiling",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Close task supervision",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Review actual child budget",
+      "tabs": 19,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Shared total call ceiling",
+      "tabs": 8,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Explicit versioned extension",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Close grant without execution",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Visible footer appearance focus",
+      "tabs": 16,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Selected child controls and individual ceiling",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Close task supervision",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Review actual child budget",
+      "tabs": 19,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Shared total call ceiling",
+      "tabs": 8,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Explicit versioned extension",
+      "tabs": 5,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Close grant without execution",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Visible footer appearance focus",
+      "tabs": 16,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Selected child controls and individual ceiling",
+      "tabs": 1,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Close task supervision",
+      "tabs": 2,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Approve one shared grant",
+      "tabs": 4,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    },
+    {
+      "target": "Review saved grant continuation",
+      "tabs": 16,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": 2,
+      "ring_visible": true
+    },
+    {
+      "target": "Continue exact persisted grant",
+      "tabs": 3,
+      "visible": true,
+      "uncovered": true,
+      "outline": "solid",
+      "width": 2,
+      "offset": -3,
+      "ring_visible": true
+    }
+  ],
+  "approval_http": [
+    {
+      "path": "/api/workspace/tasks/351fd3c157544b0492097fec75857d7c/approvals/8dd598c0e14140b6892d77ba0d724281/resolve",
+      "status": 200,
+      "body": {
+        "decision": "approved",
+        "limits": {
+          "max_steps": 12,
+          "max_seconds": 120,
+          "shell_timeout_s": 120,
+          "max_parallel_subagents": 3,
+          "max_subagents_total": 8
+        }
+      }
+    },
+    {
+      "path": "/api/workspace/tasks/a1a7e185d5c54d3ca6dbc0730982907f/approvals/b89a2f22141c40aebd8913881b745b7a/resolve",
+      "status": 200,
+      "body": {
+        "decision": "approved"
+      }
+    }
+  ],
+  "phase": "teardown",
+  "UI_asset_snapshot": {
+    "assets/BrowserApprovalPreview-B9Kcc5SH.js": "eea3b5498bcd8da61e54857a8c5441b43380464ec93fa47655746876d2663ece",
+    "assets/BrowserApprovalPreview-D36AppxC.css": "4ecdbf9b298019e7eec3d3d6c468a146466b34c7deb011ca60d6697ebe5f76d0",
+    "assets/BrowserSurface-CjWfIZt1.js": "34ce98a1d13dc6719df49bfba7f90b3d3b4f9d423e3ab88c7e206c6214c3312a",
+    "assets/CaptureStatus-DwPAkkr2.js": "a45d293cfdc25bb3272c618099964f6ba8f974895b4030d197ce9088c3bff2c0",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/ComputerSurface-CnmZybPz.js": "f15fcfa3e9004c091a450be44d41ca3fad171965558d32b98e43ada1e3845c30",
+    "assets/Debugger-qTt6MGwM.js": "b839e30474316b375b332e9d80f38a490b1d0bc3a63a13d363a07d92872a49f5",
+    "assets/Delivery-C_XhJbC-.js": "21adf88761b3f8721e9287feaa350607c567a04c016635208be1793bc2a1ea0a",
+    "assets/Keybindings-BLzJH9Sk.js": "132eb5069e4b3899ee979dc957093ed65d3466823a5f4c5db89686bc1fae49ff",
+    "assets/Managers-B0Vr3Zba.css": "ae3e40d2a3e21802f1f4c2d515bbd3f3093d894b1365d50326bb5a49e4e3cc73",
+    "assets/Managers-J5KJ2on5.js": "d563dfb77684b2ad0d887c3a90984ec44de898fd40b0d3d59a74e031ac5c5017",
+    "assets/Media-BysHADpn.js": "9c9b351fc2612b45c853cc036bc36fd644893f9560d90bc455f0d155aa1cef5f",
+    "assets/Preview-Bh22SBOM.js": "99e817e93e822e60064c657b1b0ce0030f6d4adbd0eb6e5401f1a96ca6b0a070",
+    "assets/Runners-Bt0lTdwB.js": "c452a716e3a8de2029daef21f953919c40ff5c038e708255524b1fe82ff8d264",
+    "assets/SafetyManager-2gv6t7JM.js": "41a1ace79d9d6b9a25655e3f729cd0bfeebb86ab5426ffdef6e4187a39323603",
+    "assets/TerminalPanel-ClPccf08.js": "cdba7eff4a1762cd870646ce146f4f7355247506e6f120de92d80fcb88e47716",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/Workbench-C_hkQIlI.js": "b8fe775dd11547f3a5704ff69d8f3dc48918270f3d355f89cde1e5cab8942127",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-Cw7MA6QT.js": "ceecef7f54f037191d63cf629bd7cacf39752a75f7e68fde4aafb011850a2f46",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-DmYf4r-y.js": "a3913e6b23455b2b7acd1fc568f8cbc3de4d7f228a75798e826062d297f5ac81",
+    "assets/index-B2w6tMzk.css": "bd7f05d532cdb85744a38270e297b0b03c6b3a0f4d7d90c03413d1cbd3ab64a7",
+    "assets/index-Czw5tLfK.js": "29083e51a98a0130d3541bc3f7f908f178125f03bdb1ef2916f3307a4aed3618",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/mermaid-MCJ5UELQ-New3YsHq.js": "8c74f07d79dae6bc94e439f336905e9169c3b8ad01a9dd2820a95299873c7e56",
+    "assets/model-favorites-BDUqFesV.js": "b10804b5c843ecca22494766a5b6e5f95685db4bc056584566029b7952946f66",
+    "assets/play-CuwIAJEi.js": "b7eef0eeb9e7b253773230017f51425d06473704ae41c8bdc77c22df616db4a4",
+    "assets/square-D-Dts2_h.js": "6dc579206c05de0c2017dd7b3166cc89efdc1109940e429badea431868dce056",
+    "assets/transfers-DygKGw0p.js": "29ac455fe66e9cd51aa4cf794b23168c571bf6a45a6662b0f709ba71ccbd12fb",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "919837a9207a73a44008660482f9fa25f5ee7bd6b3cfba6ab2674c44f9c7dca9"
+  },
+  "human_wait": {
+    "elapsed_wall_seconds": 2,
+    "before": {
+      "root_task_id": "351fd3c157544b0492097fec75857d7c",
+      "max_steps": 8,
+      "used_steps": 7,
+      "max_execution_seconds": 120,
+      "used_execution_seconds": 2.619,
+      "active_workers": 0,
+      "version": 1,
+      "reason": null
+    },
+    "after": {
+      "root_task_id": "351fd3c157544b0492097fec75857d7c",
+      "max_steps": 8,
+      "used_steps": 7,
+      "max_execution_seconds": 120,
+      "used_execution_seconds": 2.619,
+      "active_workers": 0,
+      "version": 1,
+      "reason": null
+    },
+    "unchanged": true
+  },
+  "dialog_focus_returns": [
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "target": "Review budget extension",
+      "restored": true
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "target": "Review budget extension",
+      "restored": true
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "target": "Review budget extension",
+      "restored": true
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "target": "Review budget extension",
+      "restored": true
+    }
+  ],
+  "fixture_provider_turns": {
+    "Coordinate actual spawned children": 3,
+    "Child A": 2,
+    "Child B": 2
+  },
+  "normal_renewal": {
+    "before": {
+      "root_task_id": "351fd3c157544b0492097fec75857d7c",
+      "max_steps": 8,
+      "used_steps": 7,
+      "max_execution_seconds": 120,
+      "used_execution_seconds": 2.619,
+      "active_workers": 0,
+      "version": 1,
+      "reason": null
+    },
+    "after": {
+      "root_task_id": "351fd3c157544b0492097fec75857d7c",
+      "max_steps": 12,
+      "used_steps": 11,
+      "max_execution_seconds": 120,
+      "used_execution_seconds": 0.339,
+      "active_workers": 0,
+      "version": 2,
+      "reason": null
+    },
+    "actual_spawned_children": 2,
+    "parent_wrapper_approval": "8dd598c0e14140b6892d77ba0d724281",
+    "tool_effects": 8,
+    "unsent_draft_preserved": true
+  },
+  "restart_receipt": {
+    "actual_host_restarts": 1,
+    "committed_boundary": "approval and allowance committed; worker not launched",
+    "before_continue": {
+      "root_task_id": "a1a7e185d5c54d3ca6dbc0730982907f",
+      "max_steps": 3,
+      "used_steps": 0,
+      "max_execution_seconds": 120,
+      "used_execution_seconds": 0.0,
+      "active_workers": 0,
+      "version": 2,
+      "reason": null
+    },
+    "after_continue": {
+      "root_task_id": "a1a7e185d5c54d3ca6dbc0730982907f",
+      "max_steps": 3,
+      "used_steps": 2,
+      "max_execution_seconds": 120,
+      "used_execution_seconds": 0.104,
+      "active_workers": 0,
+      "version": 2,
+      "reason": null
+    },
+    "no_second_grant": true,
+    "exact_saved_effects": 2
+  },
+  "status": "passed",
+  "provenance": {
+    "source_baseline": "8c3021128cf0e82eddf1aecaca029785e627e7c6",
+    "followup_source": "Unpublished actual watcher escalation, safe wrapper resolution and human-wait watchdog fixes in src/termx/agent/manager.py; parent coordinates final publication.",
+    "command": "PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium .venv/bin/python tests/workspace_tree_budget_e2e.py /tmp/termx-shared-budget-Czw",
+    "scope": "Actual local AppState/AgentManager/managed HTTP and Chromium renderer with deterministic provider; no paid queries, native engine or installed package qualification.",
+    "asset_boundary": "index-Czw5tLfK.js + index-B2w6tMzk.css; subsequent Browser approval-only focus CSS does not change budget geometry or behavior."
+  },
+  "viewport_method": {
+    "100_percent": {
+      "CSS_viewport": [
+        1440,
+        1000
+      ],
+      "PNG_pixels": [
+        1440,
+        1000
+      ]
+    },
+    "200_percent_equivalent": {
+      "CSS_viewport": [
+        720,
+        500
+      ],
+      "PNG_pixels": [
+        720,
+        500
+      ]
+    },
+    "device_pixel_ratio": 1,
+    "method": "Playwright default DPR=1 context, reduced CSS viewport gives equivalent 200% desktop reflow; this is not OS zoom or a DPR=2 physical capture.",
+    "observed_PNG_dimensions": [
+      {
+        "file": "budget-dark-100-paused-grant-fields.png",
+        "pixels": [
+          1440,
+          1000
+        ]
+      },
+      {
+        "file": "budget-light-200-restart-receipt.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-dark-200-shared-vs-individual.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-light-200-shared-vs-individual.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-light-200-paused-grant-actions.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-dark-200-paused-grant-actions.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-light-100-paused-grant-fields.png",
+        "pixels": [
+          1440,
+          1000
+        ]
+      },
+      {
+        "file": "budget-dark-100-shared-vs-individual.png",
+        "pixels": [
+          1440,
+          1000
+        ]
+      },
+      {
+        "file": "budget-light-100-shared-vs-individual.png",
+        "pixels": [
+          1440,
+          1000
+        ]
+      },
+      {
+        "file": "budget-dark-200-paused-grant-fields.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-light-200-paused-grant-fields.png",
+        "pixels": [
+          720,
+          500
+        ]
+      },
+      {
+        "file": "budget-light-100-paused-grant-actions.png",
+        "pixels": [
+          1440,
+          1000
+        ]
+      },
+      {
+        "file": "budget-dark-100-paused-grant-actions.png",
+        "pixels": [
+          1440,
+          1000
+        ]
+      }
+    ]
+  }
+}

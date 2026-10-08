@@ -10,12 +10,40 @@ from termx.desktop.input import apply_event, clipboard_get, clipboard_set
 MAX_ACTIONS = 12
 
 
+async def _guarded_os(revision, operation, *args):
+    """Check in the OS worker, including transient private intervals.
+
+    An effect already sent to the OS cannot be undone. A changed epoch refuses
+    subsequent events and reports uncertainty rather than replaying input.
+    Key/button release cleanup deliberately uses the unguarded path.
+    """
+    from termx.desktop.recording import capture_privacy_revision
+    def perform():
+        if capture_privacy_revision() != revision:
+            raise PermissionError('Private capture changed before computer input')
+        result = operation(*args)
+        try:
+            changed = capture_privacy_revision() != revision
+        except PermissionError:
+            changed = True
+        if changed:
+            raise PermissionError('Private capture changed during OS input; an event may have been sent. Verify before retrying.')
+        return result
+    return await asyncio.to_thread(perform)
+
+
+
 class ComputerController:
     def __init__(self, display_id: str | None = None) -> None:
         self.display_id = display_id
 
     async def screenshot(self) -> bytes:
-        return await asyncio.to_thread(grab_jpeg, self.display_id)
+        from termx.desktop.recording import capture_privacy_revision
+        revision = capture_privacy_revision()
+        frame = await asyncio.to_thread(grab_jpeg, self.display_id)
+        if capture_privacy_revision() != revision:
+            raise PermissionError('Private capture changed while computer observation was in flight')
+        return frame
 
     async def execute(
         self,
@@ -26,10 +54,12 @@ class ComputerController:
         if len(actions) > MAX_ACTIONS:
             raise ValueError(f"computer action batch exceeds {MAX_ACTIONS} actions")
         try:
+            from termx.desktop.recording import capture_privacy_revision
+            privacy_revision = capture_privacy_revision()
             for action in actions:
                 if cancel is not None and cancel.is_set():
                     raise asyncio.CancelledError
-                await self._action(action, cancel=cancel)
+                await self._action(action, cancel=cancel, privacy_revision=privacy_revision)
             if cancel is not None and cancel.is_set():
                 raise asyncio.CancelledError
             return await self.screenshot()
@@ -54,7 +84,12 @@ class ComputerController:
         action: dict[str, Any],
         *,
         cancel: asyncio.Event | None = None,
+        privacy_revision: int | None = None,
     ) -> None:
+        from termx.desktop.recording import capture_privacy_revision
+        if privacy_revision is None: privacy_revision = capture_privacy_revision()
+        if capture_privacy_revision() != privacy_revision:
+            raise PermissionError("Private capture changed before computer input")
         kind = str(action.get("type") or "")
         if kind in {"screenshot", ""}:
             return
@@ -78,17 +113,17 @@ class ComputerController:
                 "y": float(action.get("y") or 0) / max(height, 1),
                 "button": _button(action.get("button")),
             }
-            await asyncio.to_thread(apply_event, event, target)
+            await _guarded_os(privacy_revision, apply_event, event, target)
             if kind == "double_click":
                 await asyncio.sleep(0.08)
-                await asyncio.to_thread(apply_event, event, target)
+                await _guarded_os(privacy_revision, apply_event, event, target)
             return
         if kind == "drag":
             path = action.get("path") or []
             if not isinstance(path, list) or len(path) < 2:
                 raise ValueError("drag requires at least two points")
             first = path[0]
-            await asyncio.to_thread(
+            await _guarded_os(privacy_revision,
                 apply_event,
                 {
                     "type": "pointer",
@@ -102,7 +137,7 @@ class ComputerController:
             for point in path[1:]:
                 if cancel is not None and cancel.is_set():
                     raise asyncio.CancelledError
-                await asyncio.to_thread(
+                await _guarded_os(privacy_revision,
                     apply_event,
                     {
                         "type": "pointer",
@@ -115,7 +150,7 @@ class ComputerController:
                     target,
                 )
             last = path[-1]
-            await asyncio.to_thread(
+            await _guarded_os(privacy_revision,
                 apply_event,
                 {
                     "type": "pointer",
@@ -128,7 +163,7 @@ class ComputerController:
             )
             return
         if kind == "scroll":
-            await asyncio.to_thread(
+            await _guarded_os(privacy_revision,
                 apply_event,
                 {
                     "type": "pointer",
@@ -145,22 +180,22 @@ class ComputerController:
             for character in str(action.get("text") or ""):
                 if cancel is not None and cancel.is_set():
                     raise asyncio.CancelledError
-                await asyncio.to_thread(apply_event, {"type": "text", "data": character})
+                await _guarded_os(privacy_revision, apply_event, {"type": "text", "data": character})
             return
         if kind == "paste_text":
             text = str(action.get("text") or "")
             if not text:
                 return
-            if not await self._paste_text(text):
+            if not await self._paste_text(text, privacy_revision=privacy_revision):
                 # Clipboard/native paste unavailable on this backend — the
                 # per-character path remains the safe fallback.
                 for character in text:
                     if cancel is not None and cancel.is_set():
                         raise asyncio.CancelledError
-                    await asyncio.to_thread(apply_event, {"type": "text", "data": character})
+                    await _guarded_os(privacy_revision, apply_event, {"type": "text", "data": character})
             return
         if kind in {"mouse_down", "mouse_up"}:
-            await asyncio.to_thread(
+            await _guarded_os(privacy_revision,
                 apply_event,
                 {
                     "type": "pointer",
@@ -180,7 +215,7 @@ class ComputerController:
             modifiers = [key for key in normalized if key in _MODIFIERS]
             regular = [key for key in normalized if key not in _MODIFIERS]
             for key in regular or modifiers:
-                await asyncio.to_thread(
+                await _guarded_os(privacy_revision,
                     apply_event,
                     {
                         "type": "key",
@@ -210,7 +245,7 @@ class ComputerController:
                 regular = modifiers
                 modifiers = []
             for key in regular:
-                await asyncio.to_thread(
+                await _guarded_os(privacy_revision,
                     apply_event,
                     {
                         "type": "key",
@@ -222,23 +257,28 @@ class ComputerController:
             return
         raise ValueError(f"unsupported computer action: {kind}")
 
-    async def _paste_text(self, text: str) -> bool:
+    async def _paste_text(self, text: str, *, privacy_revision: int | None = None) -> bool:
         """Paste via the native clipboard bridge; False when unsupported.
 
         Verified by reading the clipboard back — clipboard_set is a no-op on
         hosts with no clipboard command, so a mismatch means fall back to
         per-character typing.
         """
+        if privacy_revision is None:
+            from termx.desktop.recording import capture_privacy_revision
+            privacy_revision = capture_privacy_revision()
         try:
-            await asyncio.to_thread(clipboard_set, text)
-            if await asyncio.to_thread(clipboard_get) != text:
+            await _guarded_os(privacy_revision, clipboard_set, text)
+            if await _guarded_os(privacy_revision, clipboard_get) != text:
                 return False
             modifier = "meta" if sys.platform == "darwin" else "control"
-            await asyncio.to_thread(
+            await _guarded_os(privacy_revision,
                 apply_event,
                 {"type": "key", "key": "v", "action": "tap", "modifiers": [modifier]},
             )
             return True
+        except PermissionError:
+            raise
         except Exception:
             return False
 

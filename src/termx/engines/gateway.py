@@ -35,6 +35,7 @@ class EngineGateway:
         self._store = store
         self._emit = emit
         self._adapters: dict[str, EngineAdapter] = {}
+        self.browser_service = None
         # set by AppState: resolve connection.<id> -> ConnectionDef-like obj
         self.mcp_resolver: Any = None
         self.credential_lookup: Any = None  # ref -> secret
@@ -54,7 +55,18 @@ class EngineGateway:
     # ------------------------------------------------------------ registry
 
     def register(self, adapter: EngineAdapter) -> None:
+        if self.browser_service is not None:
+            adapter.browser_service = self.browser_service
         self._adapters[adapter.descriptor().id] = adapter
+
+    def set_browser_service(self, service) -> None:
+        self.browser_service = service
+        from termx.agent.policy import redact
+        service.task_summary = lambda task_id: redact(str((self._store.get_task(task_id) or {}).get('prompt', '')))[:1600]
+        from termx.agent.store import ACTIVE_STATUSES
+        service.task_live = lambda task_id: (self._store.get_task(task_id) or {}).get('status') in ACTIVE_STATUSES - {'cancelling'}
+        for adapter in self._adapters.values():
+            adapter.browser_service = service
 
     def adapter(self, engine: str) -> EngineAdapter:
         try:
@@ -184,7 +196,7 @@ class EngineGateway:
     # ------------------------------------------------------------ lifecycle
 
     def _resolve_mcp_bindings(
-        self, mcp_connections: list[dict[str, Any]]
+        self, mcp_connections: list[dict[str, Any]], *, project_id=None, authorize=None
     ) -> list[dict[str, Any]]:
         """Agent mcp_connections → per-session binding dicts for adapters.
 
@@ -196,13 +208,30 @@ class EngineGateway:
         if self.mcp_resolver is None:
             return out
         for link in mcp_connections:
+            if not isinstance(link,dict) or set(link)-{'connection','tools'}:
+                raise ValueError('MCP preset bindings contain only connection and tool selections')
             conn_id = str(link.get("connection") or "")
             conn = self.mcp_resolver(conn_id) if conn_id else None
             if conn is None:
-                continue
+                raise ValueError('Selected MCP connection no longer exists')
             if not getattr(conn, "trusted", False) or not getattr(conn, "enabled", True):
-                continue  # untrusted defs cannot reach an engine session
+                raise ValueError('Selected MCP connection is disabled or untrusted')
+            from termx.mcp.scope import require_scope,projects,definition_digest
+            require_scope(conn,project_id)
+            if projects(conn):
+                raise ValueError('Project-scoped MCP requires the Internal broker with live per-tool authority; direct native MCP cannot enforce revocation')
+            if authorize:authorize(conn)
+            elif projects(conn):raise PermissionError('Scoped MCP connection requires current caller authorization')
+            approved=list(getattr(conn,'approved_tools',['*']))
+            selected=link.get('tools')
+            if selected is not None and (not isinstance(selected,list) or any(not isinstance(t,str) for t in selected)):
+                raise ValueError('MCP tools must be a list')
+            if '*' not in approved:
+                if selected and '*' not in selected and not set(selected)<=set(approved):
+                    raise PermissionError('MCP tool selection exceeds the approved tools')
+                selected=approved if not selected or '*' in selected else selected
             env: dict[str, str] = {}
+            headers: dict[str,str] = {}
             import os
             for name in getattr(conn, "env_names", []) or []:
                 if name in os.environ:
@@ -212,13 +241,19 @@ class EngineGateway:
                     value = self.credential_lookup(ref)
                     if value:
                         env[ref.rsplit(".", 1)[-1].upper()] = value
+                for name,ref in getattr(conn,'header_secret_refs',{}).items():
+                    value=self.credential_lookup(ref)
+                    if value:headers[name]=value
             out.append({
                 "connection_id": conn_id,
+                "definition_digest":definition_digest(conn),
+                "project_id":project_id,
                 "transport": getattr(conn, "transport", "http"),
                 "command": list(getattr(conn, "command", []) or []),
                 "url": getattr(conn, "url", ""),
                 "env": env,
-                "tools": link.get("tools"),
+                "headers":headers,
+                "tools": selected,
                 "auth_method": getattr(conn, "auth_method", "none"),
             })
         return out
@@ -237,13 +272,21 @@ class EngineGateway:
         engine: str,
         model: str | None = None,
         mode: str | None = None,
+        workspace_mode: str | None = None,
         config_options: dict[str, str | bool] | None = None,
         custom_agent: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         limits: dict[str, Any] | None = None,
         sandbox_profile: str = "agent",
         approval_mode: str = "standard",
+        attachments: list[dict[str, Any]] | None = None,
+        workflow: str | None = None,
+        on_created: Callable[[str],None] | None = None,
+        mcp_project_id: str | None = None,
+        mcp_authorize: Any = None,
     ) -> dict[str, Any]:
+        from termx.engines.attachments import image_attachments
+        attachments = image_attachments(attachments)
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("task prompt is required")
@@ -251,6 +294,18 @@ class EngineGateway:
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
         adapter = self.adapter(engine)
+        if workspace_mode is not None:
+            if workspace_mode not in {'ask','agent'}:raise ValueError('Unknown workspace conversation mode')
+            if engine in {'codex','claude'}:mode=workspace_mode
+            else:
+                # Host conversation mode is not an arbitrary ACP mode ID.
+                # Ask requires the actual advertised Ask selector. Agent uses
+                # the native default unless a separate native mode was chosen.
+                mode='ask' if workspace_mode=='ask' else (None if mode=='agent' else mode)
+        if workflow not in {None,'browser'}:
+            raise ValueError('Unknown native workflow')
+        if workflow=='browser' and (engine!='claude' or not getattr(adapter,'browser_service',None)):
+            raise ValueError('This engine cannot enforce a broker-only browser session; choose Claude browser workflow or Internal')
         defaults = self.settings().engines.get(engine, {}) if self.settings else {}
         if config_options is not None and not isinstance(config_options, dict):
             raise ValueError("config_options must be an object")
@@ -264,7 +319,10 @@ class EngineGateway:
 
         file_cfg = dict((custom_agent or {}).get("file") or {})
         skills = file_cfg.get("skills") or {}
-        mcp_bindings = self._resolve_mcp_bindings(file_cfg.get("mcp_connections") or [])
+        if file_cfg.get('mcp_connections') and adapter.capabilities().mcp_native == 'unsupported':
+            raise ValueError(f'{engine} does not apply TermX per-session MCP bindings; use the Internal broker')
+        mcp_bindings = self._resolve_mcp_bindings(file_cfg.get("mcp_connections") or [],project_id=mcp_project_id,authorize=mcp_authorize)
+        mcp_snapshot=[{k:b.get(k) for k in ('connection_id','definition_digest','project_id','tools')} for b in mcp_bindings]
 
         # Resolved tool profile → cfg.tools (enforcement level varies by
         # engine and is labelled in capabilities, never overclaimed).
@@ -300,7 +358,9 @@ class EngineGateway:
                 "tools_mode": tools_resolution.tools_mode,
                 "review_required": tools_resolution.review_required,
                 "limits": limits or {},
+                "read_only":workspace_mode=="ask",
             },
+            workflow=workflow,
         )
         if (cfg.mode or cfg.config_options) and not hasattr(adapter, "configure_session"):
             raise ValueError(f"{engine} does not expose ACP mode/config selectors")
@@ -314,6 +374,12 @@ class EngineGateway:
             else None
         )
         if existing and existing["engine"] == engine:
+            previous_mcp=(existing.get('payload') or {}).get('extensions_snapshot',{}).get('mcp_scope',[])
+            if previous_mcp != mcp_snapshot:
+                raise ValueError('MCP connection scope/configuration changed; start a linked native session')
+            previous_workflow=(existing.get('payload') or {}).get('extensions_snapshot',{}).get('workflow')
+            if previous_workflow!=workflow:
+                raise ValueError('Browser and coding tool availability cannot change within a native session; create a linked conversation')
             # Host defaults apply to new sessions. Omitted selections on a
             # follow-up preserve the live agent's current configuration.
             cfg.mode = mode or file_cfg.get("engine_mode")
@@ -373,6 +439,17 @@ class EngineGateway:
             status="running",
         )
         task_id = task["id"]
+        self._emit(task_id,"engine.configuration.resolved",cfg.as_dict())
+        if on_created:on_created(task_id)
+        cfg.tools['managed_task_id']=task_id
+        if workflow=='browser':
+            # Trusted identity is bound later by the explicit browser handoff.
+            # This field is never accepted from model tool arguments.
+            cfg.tools['browser_task_id']=task_id
+        if attachments:
+            import base64
+            for item in attachments:
+                self._store.save_artifact(task_id, 'upload', item['mime'], base64.b64decode(item['data']))
 
         if binding is None:
             try:
@@ -382,6 +459,7 @@ class EngineGateway:
                 self._emit(task_id, "task.failed", {"message": str(exc)})
                 raise ValueError(f"{engine} session failed to start: {exc}") from exc
             binding.conversation_id = conversation_id
+            binding.extensions_snapshot['mcp_scope']=mcp_snapshot
             self._bindings[binding.binding_id] = binding
             self._store.save_engine_session(
                 binding.binding_id,
@@ -445,7 +523,10 @@ class EngineGateway:
                 f'You are the "{custom_agent["name"]}" agent. Follow these '
                 f"instructions:\n{instructions}\n\nTask: {prompt}"
             )
-            await adapter.send(binding, text)
+            if attachments:
+                await adapter.send(binding, text, attachments=attachments)
+            else:
+                await adapter.send(binding, text)
         except Exception as exc:
             self._store.update_task(task_id, status="failed", error=str(exc))
             self._emit(task_id, "task.failed", {"message": str(exc)})
@@ -511,6 +592,8 @@ class EngineGateway:
         resolved = self._store.resolve_approval(
             approval_id, "approved" if decision in {"approved", "approve"} else decision)
         self._emit(task_id, "approval.resolved", {"approval": resolved})
+        if payload.get('engine_method')=='browser.review':
+            self._store.update_task(task_id,status='running')
         if binding is not None and token:
             wire_decision = {
                 "approved": "approve",
@@ -562,6 +645,12 @@ class EngineGateway:
                     buf.append(str(item["text"]))
         elif event.type == "engine.turn.completed":
             self._finish_turn(binding_id, task_id, event.payload)
+        elif event.type=='engine.approval.expired':
+            for approval in self._store.approvals(task_id):
+                if approval['status']=='pending' and approval['payload'].get('engine_request_id')==event.payload.get('request_id'):
+                    resolved=self._store.resolve_approval(approval['id'],'denied')
+                    self._emit(task_id,'approval.resolved',{'approval':resolved})
+            self._store.update_task(task_id,status='running')
         elif event.type == "engine.session.lost":
             self._store.update_engine_session(binding_id, status="lost")
             task = self._store.get_task(task_id)
@@ -613,6 +702,7 @@ class EngineGateway:
             },
         )
         self._emit(task_id, "approval.requested", {"approval": approval})
+        if method=='browser.review':self._store.update_task(task_id,status='awaiting_approval')
         return str(approval["id"])
 
     # ------------------------------------------------------------ lifecycle
@@ -632,16 +722,19 @@ class EngineGateway:
                 marked += 1
         return marked
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, *, strict: bool = False) -> None:
         await self.catalogue.stop()
         registry = getattr(self, "acp_registry", None)
         if registry:
             await registry.stop()
+        failed = False
         for adapter in self._adapters.values():
             try:
                 await adapter.shutdown()
             except Exception:
-                pass
+                failed = True
+        if strict and failed:
+            raise RuntimeError('Native execution shutdown failed; private observation barriers remain active')
 
 
 def _approval_title(method: str, params: dict[str, Any]) -> str:

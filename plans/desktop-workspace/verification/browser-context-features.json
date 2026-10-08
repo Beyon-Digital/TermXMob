@@ -1,0 +1,5123 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "element-region-annotations",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ],
+            [
+              ".browser-activity > p"
+            ],
+            [
+              ".browser-activity > details:nth-child(4) > summary"
+            ],
+            [
+              ".browser-activity > .button-ghost.button-default[type=\"button\"]:nth-child(5)"
+            ],
+            [
+              ".browser-activity > .button-ghost.button-default[type=\"button\"]:nth-child(6)"
+            ],
+            [
+              ".browser-upload"
+            ],
+            [
+              "h3"
+            ],
+            [
+              ".browser-actions > .button-ghost.button-default[type=\"button\"]"
+            ],
+            [
+              ".browser-context > p"
+            ],
+            [
+              ".browser-elements > div:nth-child(1) > span"
+            ],
+            [
+              "div:nth-child(2) > span"
+            ],
+            [
+              "div:nth-child(2) > .button-ghost.button-default[type=\"button\"]"
+            ],
+            [
+              ".browser-elements > div:nth-child(3) > span"
+            ],
+            [
+              ".browser-elements > div:nth-child(3) > .button-ghost.button-default[type=\"button\"]"
+            ],
+            [
+              ".browser-annotation-editor > label:nth-child(1)"
+            ],
+            [
+              "legend"
+            ],
+            [
+              "fieldset > label:nth-child(2)"
+            ],
+            [
+              "fieldset > label:nth-child(3)"
+            ],
+            [
+              "fieldset > label:nth-child(4)"
+            ],
+            [
+              "fieldset > label:nth-child(5)"
+            ],
+            [
+              ".browser-annotation-editor > label:nth-child(3)"
+            ],
+            [
+              ".browser-annotation-editor > .browser-check"
+            ],
+            [
+              ".browser-annotation-editor > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "annotation-before-after-resolved",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ],
+            [
+              ".browser-activity > p"
+            ],
+            [
+              ".browser-activity > details:nth-child(4) > summary"
+            ],
+            [
+              ".browser-activity > .button-ghost.button-default[type=\"button\"]:nth-child(5)"
+            ],
+            [
+              ".browser-activity > .button-ghost.button-default[type=\"button\"]:nth-child(6)"
+            ],
+            [
+              ".browser-upload"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "annotated-chat-context",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "developer-inspector",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ],
+            [
+              ".browser-activity > p"
+            ],
+            [
+              ".browser-activity > details:nth-child(4) > summary"
+            ],
+            [
+              ".browser-activity > .button-default.button-ghost[type=\"button\"]:nth-child(5)"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 392.171875,
+          "right": 442.25,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 448.25,
+          "right": 541.234375,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 1110.6875,
+          "right": 1208.453125,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 1228.453125,
+          "right": 1318.765625,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 1338.765625,
+          "right": 1426,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "profile-history",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "element-region-annotations",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ],
+            [
+              ".browser-activity > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "annotation-before-after-resolved",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ],
+            [
+              ".browser-activity > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "annotated-chat-context",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "developer-inspector",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 392.171875,
+          "right": 442.25,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 448.25,
+          "right": 541.234375,
+          "top": 974.5,
+          "bottom": 998.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 1110.6875,
+          "right": 1208.453125,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 1228.453125,
+          "right": 1318.765625,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 1338.765625,
+          "right": 1426,
+          "top": 978.5,
+          "bottom": 994.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "state": "profile-history",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "element-region-annotations",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "annotation-before-after-resolved",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "annotated-chat-context",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "developer-inspector",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              "h3"
+            ],
+            [
+              ".browser-context > p"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 136.171875,
+          "right": 186.25,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 192.25,
+          "right": 285.234375,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 426.6875,
+          "right": 524.453125,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 530.453125,
+          "right": 620.765625,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 626.765625,
+          "right": 714,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "state": "profile-history",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "element-region-annotations",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "annotation-before-after-resolved",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "annotated-chat-context",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".welcome-mark"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "developer-inspector",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              "h3"
+            ],
+            [
+              ".browser-context > p"
+            ]
+          ]
+        }
+      ],
+      "footer_controls": [
+        {
+          "name": "Open capture controls",
+          "left": 136.171875,
+          "right": 186.25,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Stop capture",
+          "left": 192.25,
+          "right": 285.234375,
+          "top": 474.5,
+          "bottom": 498.5,
+          "inside": true
+        },
+        {
+          "name": "Action review",
+          "left": 426.6875,
+          "right": 524.453125,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Appearance",
+          "left": 530.453125,
+          "right": 620.765625,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        },
+        {
+          "name": "Commands",
+          "left": 626.765625,
+          "right": 714,
+          "top": 478.5,
+          "bottom": 494.5,
+          "inside": true
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "state": "profile-history",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create a browser profile",
+      "focus": {
+        "label": "Create a browser profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 173.6875,
+        "height": 36,
+        "visible_width": 173.6875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "New profile name",
+      "focus": {
+        "label": "New profile name",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 320,
+        "height": 36,
+        "visible_width": 320,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create profile",
+      "focus": {
+        "label": "Create profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 110.59375,
+        "height": 36,
+        "visible_width": 110.59375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 561.546875,
+        "height": 36,
+        "visible_width": 561.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 272,
+        "height": 26.59375,
+        "visible_width": 272,
+        "visible_height": 26.59375,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Exact annotation element",
+      "focus": {
+        "label": "Element to annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 209,
+        "height": 37,
+        "visible_width": 209,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Masked annotation image opt-in",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(29, 32, 30)",
+        "width": 13,
+        "height": 13,
+        "visible_width": 13,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.44
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Review permitted screenshot",
+      "focus": {
+        "label": "Review masked screenshot",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 753,
+        "height": 33,
+        "visible_width": 753,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Region annotation target",
+      "focus": {
+        "label": "Comment target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 180,
+        "height": 37,
+        "visible_width": 180,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Open exact annotation reference",
+      "focus": {
+        "label": "Exact frame and target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 753,
+        "height": 33,
+        "visible_width": 753,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll exact annotation reference",
+      "focus": {
+        "label": "Exact annotation frame and target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 753,
+        "height": 240,
+        "visible_width": 753,
+        "visible_height": 239.671875,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Explicit after image capture",
+      "focus": {
+        "label": "Capture masked after image",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 201.34375,
+        "height": 36,
+        "visible_width": 201.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Open before after comparison",
+      "focus": {
+        "label": "Before / after \u00b7 target unchanged",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 753,
+        "height": 33,
+        "visible_width": 753,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll frozen before reference",
+      "focus": {
+        "label": "before target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 370.5,
+        "height": 240,
+        "visible_width": 370.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll fresh after reference",
+      "focus": {
+        "label": "after target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 370.5,
+        "height": 240,
+        "visible_width": 370.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Resolve exact annotation",
+      "focus": {
+        "label": "Resolve annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 144.359375,
+        "height": 36,
+        "visible_width": 144.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Reopen exact annotation",
+      "focus": {
+        "label": "Reopen annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 142.53125,
+        "height": 36,
+        "visible_width": 142.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Remote shortcut guard",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Attach this context",
+      "focus": {
+        "label": "Attach this context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 143.234375,
+        "height": 36,
+        "visible_width": 143.234375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Annotated chat context",
+      "focus": {
+        "label": "Keyboard page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 102.6875,
+        "height": 17,
+        "visible_width": 102.6875,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll exact selected context",
+      "focus": {
+        "label": "Exact selected context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 680,
+        "height": 110,
+        "visible_width": 680,
+        "visible_height": 110,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Developer inspector",
+      "focus": {
+        "label": "Developer inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 272,
+        "height": 26.578125,
+        "visible_width": 272,
+        "visible_height": 26.578125,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Enable developer observation",
+      "focus": {
+        "label": "Enable developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 208.078125,
+        "height": 36,
+        "visible_width": 208.078125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 272,
+        "height": 17,
+        "visible_width": 272,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Focus button",
+      "focus": {
+        "label": "Focus button",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 107.28125,
+        "height": 36,
+        "visible_width": 107.28125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Inspector DOM",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll DOM diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 777,
+        "height": 80,
+        "visible_width": 777,
+        "visible_height": 80,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Inspector Console",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll Console diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 777,
+        "height": 128,
+        "visible_width": 777,
+        "visible_height": 128,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Inspector Network",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll Network diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 777,
+        "height": 144,
+        "visible_width": 777,
+        "visible_height": 144,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Inspector Performance",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scroll Performance diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 777,
+        "height": 208,
+        "visible_width": 777,
+        "visible_height": 208,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Stop developer observation",
+      "focus": {
+        "label": "Stop developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 195.203125,
+        "height": 36,
+        "visible_width": 195.203125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Close inspector",
+      "focus": {
+        "label": "Close inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Scoped browser tab commands",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Close own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Reopen own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "History",
+      "focus": {
+        "label": "History",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 71.53125,
+        "height": 36,
+        "visible_width": 71.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Clear this profile history",
+      "focus": {
+        "label": "Clear this profile history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 173.921875,
+        "height": 36,
+        "visible_width": 173.921875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Close history",
+      "focus": {
+        "label": "Close history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 107.78125,
+        "height": 36,
+        "visible_width": 107.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Theme preference",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(33, 60, 42)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.04
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "light theme",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(227, 241, 230)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.99
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 272,
+        "height": 36,
+        "visible_width": 272,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Exact annotation element",
+      "focus": {
+        "label": "Element to annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 209,
+        "height": 37,
+        "visible_width": 209,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Masked annotation image opt-in",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "width": 13,
+        "height": 13,
+        "visible_width": 13,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 21.0
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Review permitted screenshot",
+      "focus": {
+        "label": "Review masked screenshot",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 753,
+        "height": 33,
+        "visible_width": 753,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Region annotation target",
+      "focus": {
+        "label": "Comment target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 180,
+        "height": 37,
+        "visible_width": 180,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Open exact annotation reference",
+      "focus": {
+        "label": "Exact frame and target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 753,
+        "height": 33,
+        "visible_width": 753,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll exact annotation reference",
+      "focus": {
+        "label": "Exact annotation frame and target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 753,
+        "height": 240,
+        "visible_width": 753,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Explicit after image capture",
+      "focus": {
+        "label": "Capture masked after image",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 201.34375,
+        "height": 36,
+        "visible_width": 201.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Open before after comparison",
+      "focus": {
+        "label": "Before / after \u00b7 target unchanged",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 753,
+        "height": 33,
+        "visible_width": 753,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll frozen before reference",
+      "focus": {
+        "label": "before target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 370.5,
+        "height": 240,
+        "visible_width": 370.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll fresh after reference",
+      "focus": {
+        "label": "after target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 370.5,
+        "height": 240,
+        "visible_width": 370.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Resolve exact annotation",
+      "focus": {
+        "label": "Resolve annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 144.359375,
+        "height": 36,
+        "visible_width": 144.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Reopen exact annotation",
+      "focus": {
+        "label": "Reopen annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 142.53125,
+        "height": 36,
+        "visible_width": 142.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Remote shortcut guard",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Attach this context",
+      "focus": {
+        "label": "Attach this context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 143.234375,
+        "height": 36,
+        "visible_width": 143.234375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Annotated chat context",
+      "focus": {
+        "label": "Keyboard page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 102.6875,
+        "height": 17,
+        "visible_width": 102.6875,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll exact selected context",
+      "focus": {
+        "label": "Exact selected context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 680,
+        "height": 110,
+        "visible_width": 680,
+        "visible_height": 110,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Developer inspector",
+      "focus": {
+        "label": "Developer inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 272,
+        "height": 36,
+        "visible_width": 272,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Enable developer observation",
+      "focus": {
+        "label": "Enable developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 208.078125,
+        "height": 36,
+        "visible_width": 208.078125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 272,
+        "height": 24.09375,
+        "visible_width": 272,
+        "visible_height": 24.09375,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Focus button",
+      "focus": {
+        "label": "Focus button",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 107.28125,
+        "height": 36,
+        "visible_width": 107.28125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Inspector DOM",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll DOM diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 777,
+        "height": 80,
+        "visible_width": 777,
+        "visible_height": 80,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Inspector Console",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll Console diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 777,
+        "height": 128,
+        "visible_width": 777,
+        "visible_height": 128,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Inspector Network",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll Network diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 777,
+        "height": 144,
+        "visible_width": 777,
+        "visible_height": 144,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Inspector Performance",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scroll Performance diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 777,
+        "height": 208,
+        "visible_width": 777,
+        "visible_height": 208,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Stop developer observation",
+      "focus": {
+        "label": "Stop developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 195.203125,
+        "height": 36,
+        "visible_width": 195.203125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close inspector",
+      "focus": {
+        "label": "Close inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Scoped browser tab commands",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Reopen own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 472.40625,
+        "height": 36,
+        "visible_width": 472.40625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "History",
+      "focus": {
+        "label": "History",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 71.53125,
+        "height": 36,
+        "visible_width": 71.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Clear this profile history",
+      "focus": {
+        "label": "Clear this profile history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 173.921875,
+        "height": 36,
+        "visible_width": 173.921875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "target": "Close history",
+      "focus": {
+        "label": "Close history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 107.78125,
+        "height": 36,
+        "visible_width": 107.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 29.046875,
+        "height": 36,
+        "visible_width": 29.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 16.765625,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Exact annotation element",
+      "focus": {
+        "label": "Element to annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 209,
+        "height": 37,
+        "visible_width": 209,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Masked annotation image opt-in",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(29, 32, 30)",
+        "width": 13,
+        "height": 13,
+        "visible_width": 13,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.44
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Review permitted screenshot",
+      "focus": {
+        "label": "Review masked screenshot",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 661,
+        "height": 33,
+        "visible_width": 661,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Region annotation target",
+      "focus": {
+        "label": "Comment target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 180,
+        "height": 37,
+        "visible_width": 180,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Open exact annotation reference",
+      "focus": {
+        "label": "Exact frame and target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 661,
+        "height": 33,
+        "visible_width": 661,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll exact annotation reference",
+      "focus": {
+        "label": "Exact annotation frame and target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 661,
+        "height": 240,
+        "visible_width": 661,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Explicit after image capture",
+      "focus": {
+        "label": "Capture masked after image",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 201.34375,
+        "height": 36,
+        "visible_width": 201.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Open before after comparison",
+      "focus": {
+        "label": "Before / after \u00b7 target unchanged",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 661,
+        "height": 33,
+        "visible_width": 661,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll frozen before reference",
+      "focus": {
+        "label": "before target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 324.5,
+        "height": 240,
+        "visible_width": 324.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll fresh after reference",
+      "focus": {
+        "label": "after target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 324.5,
+        "height": 240,
+        "visible_width": 324.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Resolve exact annotation",
+      "focus": {
+        "label": "Resolve annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 144.359375,
+        "height": 36,
+        "visible_width": 144.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Reopen exact annotation",
+      "focus": {
+        "label": "Reopen annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 142.53125,
+        "height": 36,
+        "visible_width": 142.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Remote shortcut guard",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 701,
+        "height": 42,
+        "visible_width": 701,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Attach this context",
+      "focus": {
+        "label": "Attach this context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 143.234375,
+        "height": 36,
+        "visible_width": 143.234375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Annotated chat context",
+      "focus": {
+        "label": "Keyboard page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 102.6875,
+        "height": 17,
+        "visible_width": 102.6875,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll exact selected context",
+      "focus": {
+        "label": "Exact selected context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(38, 44, 40)",
+        "width": 625,
+        "height": 110,
+        "visible_width": 625,
+        "visible_height": 110,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.73
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Developer inspector",
+      "focus": {
+        "label": "Developer inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Enable developer observation",
+      "focus": {
+        "label": "Enable developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 208.078125,
+        "height": 36,
+        "visible_width": 208.078125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 16.765625,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Focus button",
+      "focus": {
+        "label": "Focus button",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 107.28125,
+        "height": 36,
+        "visible_width": 107.28125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Inspector DOM",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll DOM diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 685,
+        "height": 80,
+        "visible_width": 685,
+        "visible_height": 80,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Inspector Console",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll Console diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 685,
+        "height": 128,
+        "visible_width": 685,
+        "visible_height": 128,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Inspector Network",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll Network diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 685,
+        "height": 144,
+        "visible_width": 685,
+        "visible_height": 144,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Inspector Performance",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scroll Performance diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 685,
+        "height": 208,
+        "visible_width": 685,
+        "visible_height": 208,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Stop developer observation",
+      "focus": {
+        "label": "Stop developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 195.203125,
+        "height": 36,
+        "visible_width": 195.203125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Close inspector",
+      "focus": {
+        "label": "Close inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Scoped browser tab commands",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Close own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Reopen own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(21, 23, 22)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.08
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "History",
+      "focus": {
+        "label": "History",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 71.53125,
+        "height": 36,
+        "visible_width": 71.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Clear this profile history",
+      "focus": {
+        "label": "Clear this profile history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 173.921875,
+        "height": 36,
+        "visible_width": 173.921875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "target": "Close history",
+      "focus": {
+        "label": "Close history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 107.78125,
+        "height": 36,
+        "visible_width": 107.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Appearance",
+      "focus": {
+        "label": "Appearance",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 90.3125,
+        "height": 16,
+        "visible_width": 90.3125,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Theme preference",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(33, 60, 42)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 12.04
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "light theme",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(227, 241, 230)",
+        "width": 16,
+        "height": 16,
+        "visible_width": 16,
+        "visible_height": 16,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 17.99
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 24,
+        "height": 24,
+        "visible_width": 24,
+        "visible_height": 24,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 29.046875,
+        "height": 36,
+        "visible_width": 29.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 16.765625,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Exact annotation element",
+      "focus": {
+        "label": "Element to annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 209,
+        "height": 37,
+        "visible_width": 209,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Masked annotation image opt-in",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "width": 13,
+        "height": 13,
+        "visible_width": 13,
+        "visible_height": 13,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 21.0
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Review permitted screenshot",
+      "focus": {
+        "label": "Review masked screenshot",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 661,
+        "height": 33,
+        "visible_width": 661,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Region annotation target",
+      "focus": {
+        "label": "Comment target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 180,
+        "height": 37,
+        "visible_width": 180,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Page annotation",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(250, 250, 249)",
+        "width": 187,
+        "height": 36,
+        "visible_width": 187,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Annotate",
+      "focus": {
+        "label": "Annotate",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 83.484375,
+        "height": 36,
+        "visible_width": 83.484375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Open exact annotation reference",
+      "focus": {
+        "label": "Exact frame and target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 661,
+        "height": 33,
+        "visible_width": 661,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll exact annotation reference",
+      "focus": {
+        "label": "Exact annotation frame and target",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 661,
+        "height": 240,
+        "visible_width": 661,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Explicit after image capture",
+      "focus": {
+        "label": "Capture masked after image",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 201.34375,
+        "height": 36,
+        "visible_width": 201.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Open before after comparison",
+      "focus": {
+        "label": "Before / after \u00b7 target unchanged",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 661,
+        "height": 33,
+        "visible_width": 661,
+        "visible_height": 33,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll frozen before reference",
+      "focus": {
+        "label": "before target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 324.5,
+        "height": 240,
+        "visible_width": 324.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll fresh after reference",
+      "focus": {
+        "label": "after target reference",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 324.5,
+        "height": 240,
+        "visible_width": 324.5,
+        "visible_height": 240,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Resolve exact annotation",
+      "focus": {
+        "label": "Resolve annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 144.359375,
+        "height": 36,
+        "visible_width": 144.359375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Reopen exact annotation",
+      "focus": {
+        "label": "Reopen annotation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 142.53125,
+        "height": 36,
+        "visible_width": 142.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Remote shortcut guard",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(98, 109, 101)",
+        "background": "rgb(255, 255, 255)",
+        "width": 701,
+        "height": 42,
+        "visible_width": 701,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 5.39
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Attach this context",
+      "focus": {
+        "label": "Attach this context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 143.234375,
+        "height": 36,
+        "visible_width": 143.234375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Annotated chat context",
+      "focus": {
+        "label": "Keyboard page",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 102.6875,
+        "height": 17,
+        "visible_width": 102.6875,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll exact selected context",
+      "focus": {
+        "label": "Exact selected context",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(233, 236, 231)",
+        "width": 625,
+        "height": 110,
+        "visible_width": 625,
+        "visible_height": 110,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.05
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Developer inspector",
+      "focus": {
+        "label": "Developer inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 17,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Enable developer observation",
+      "focus": {
+        "label": "Enable developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 208.078125,
+        "height": 36,
+        "visible_width": 208.078125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(242, 243, 240)",
+        "width": 689,
+        "height": 17,
+        "visible_width": 689,
+        "visible_height": 16.765625,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 15.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Focus button",
+      "focus": {
+        "label": "Focus button",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 107.28125,
+        "height": 36,
+        "visible_width": 107.28125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close",
+      "focus": {
+        "label": "Close",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 62.5625,
+        "height": 36,
+        "visible_width": 62.5625,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Inspector DOM",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll DOM diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 685,
+        "height": 80,
+        "visible_width": 685,
+        "visible_height": 80,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Inspector Console",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll Console diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 685,
+        "height": 128,
+        "visible_width": 685,
+        "visible_height": 128,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Inspector Network",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll Network diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 685,
+        "height": 144,
+        "visible_width": 685,
+        "visible_height": 144,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Inspector Performance",
+      "focus": {
+        "label": "Inspector view",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 116,
+        "height": 37,
+        "visible_width": 116,
+        "visible_height": 37,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Refresh inspector",
+      "focus": {
+        "label": "Refresh inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 136.03125,
+        "height": 36,
+        "visible_width": 136.03125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scroll Performance diagnostic data",
+      "focus": {
+        "label": "Developer diagnostic data",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 685,
+        "height": 208,
+        "visible_width": 685,
+        "visible_height": 208,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Stop developer observation",
+      "focus": {
+        "label": "Stop developer observation",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 195.203125,
+        "height": 36,
+        "visible_width": 195.203125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close inspector",
+      "focus": {
+        "label": "Close inspector",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 123.34375,
+        "height": 36,
+        "visible_width": 123.34375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Scoped browser tab commands",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Reopen own browser tab",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 541.546875,
+        "height": 36,
+        "visible_width": 541.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "History",
+      "focus": {
+        "label": "History",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 71.53125,
+        "height": 36,
+        "visible_width": 71.53125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Clear this profile history",
+      "focus": {
+        "label": "Clear this profile history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 173.921875,
+        "height": 36,
+        "visible_width": 173.921875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "target": "Close history",
+      "focus": {
+        "label": "Close history",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(255, 255, 255)",
+        "width": 107.78125,
+        "height": 36,
+        "visible_width": 107.78125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.75
+      }
+    }
+  ],
+  "errors": [],
+  "paid_provider_queries": 0,
+  "limitations": [
+    "Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation."
+  ],
+  "production_bundle": {
+    "index_sha256": "dbb0b3c5c813dcb22de297b7bd8ba4a3f861377fe20fea7e631431d6a0a529b1",
+    "entry_assets": [
+      "/assets/index-t8fN_0qQ.js",
+      "/assets/index-0xZ3naUl.css"
+    ],
+    "source": "Exact production dist frozen before fixture startup; no source transform or concurrent build asset swaps"
+  },
+  "browser_features": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "element_and_region_comments": true,
+      "masked_image_reference_rendered": true,
+      "before_after_images_rendered": true,
+      "resolve_reopen_preserved_reference": true,
+      "labelled_reference_regions_valid": true,
+      "inspector_controls_inside_container": [
+        {
+          "text": "Stop developer observation",
+          "left": 265,
+          "right": 460.203125,
+          "width": 195.203125,
+          "inside": true
+        },
+        {
+          "text": "DOMConsoleNetworkPerformance",
+          "left": 468.203125,
+          "right": 584.203125,
+          "width": 116,
+          "inside": true
+        },
+        {
+          "text": "Refresh inspector",
+          "left": 592.203125,
+          "right": 728.234375,
+          "width": 136.03125,
+          "inside": true
+        },
+        {
+          "text": "Close inspector",
+          "left": 736.234375,
+          "right": 859.578125,
+          "width": 123.34375,
+          "inside": true
+        }
+      ],
+      "annotated_chat_context": true,
+      "inspector_views": 4,
+      "remote_shortcut_stayed_in_page": true,
+      "scoped_new_close_reopen": true,
+      "history_clear_kept_profile": true,
+      "agent_grants": 0,
+      "native_select_method": "Playwright form selection; real Tab/focus checks retained. Headless macOS does not synthesize native popup key selection."
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "element_and_region_comments": true,
+      "masked_image_reference_rendered": true,
+      "before_after_images_rendered": true,
+      "resolve_reopen_preserved_reference": true,
+      "labelled_reference_regions_valid": true,
+      "inspector_controls_inside_container": [
+        {
+          "text": "Stop developer observation",
+          "left": 265,
+          "right": 460.203125,
+          "width": 195.203125,
+          "inside": true
+        },
+        {
+          "text": "DOMConsoleNetworkPerformance",
+          "left": 468.203125,
+          "right": 584.203125,
+          "width": 116,
+          "inside": true
+        },
+        {
+          "text": "Refresh inspector",
+          "left": 592.203125,
+          "right": 728.234375,
+          "width": 136.03125,
+          "inside": true
+        },
+        {
+          "text": "Close inspector",
+          "left": 736.234375,
+          "right": 859.578125,
+          "width": 123.34375,
+          "inside": true
+        }
+      ],
+      "annotated_chat_context": true,
+      "inspector_views": 4,
+      "remote_shortcut_stayed_in_page": true,
+      "scoped_new_close_reopen": true,
+      "history_clear_kept_profile": true,
+      "agent_grants": 0,
+      "native_select_method": "Playwright form selection; real Tab/focus checks retained. Headless macOS does not synthesize native popup key selection."
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "element_and_region_comments": true,
+      "masked_image_reference_rendered": true,
+      "before_after_images_rendered": true,
+      "resolve_reopen_preserved_reference": true,
+      "labelled_reference_regions_valid": true,
+      "inspector_controls_inside_container": [
+        {
+          "text": "Stop developer observation",
+          "left": 17,
+          "right": 212.203125,
+          "width": 195.203125,
+          "inside": true
+        },
+        {
+          "text": "DOMConsoleNetworkPerformance",
+          "left": 220.203125,
+          "right": 336.203125,
+          "width": 116,
+          "inside": true
+        },
+        {
+          "text": "Refresh inspector",
+          "left": 344.203125,
+          "right": 480.234375,
+          "width": 136.03125,
+          "inside": true
+        },
+        {
+          "text": "Close inspector",
+          "left": 488.234375,
+          "right": 611.578125,
+          "width": 123.34375,
+          "inside": true
+        }
+      ],
+      "annotated_chat_context": true,
+      "inspector_views": 4,
+      "remote_shortcut_stayed_in_page": true,
+      "scoped_new_close_reopen": true,
+      "history_clear_kept_profile": true,
+      "agent_grants": 0,
+      "native_select_method": "Playwright form selection; real Tab/focus checks retained. Headless macOS does not synthesize native popup key selection."
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "element_and_region_comments": true,
+      "masked_image_reference_rendered": true,
+      "before_after_images_rendered": true,
+      "resolve_reopen_preserved_reference": true,
+      "labelled_reference_regions_valid": true,
+      "inspector_controls_inside_container": [
+        {
+          "text": "Stop developer observation",
+          "left": 17,
+          "right": 212.203125,
+          "width": 195.203125,
+          "inside": true
+        },
+        {
+          "text": "DOMConsoleNetworkPerformance",
+          "left": 220.203125,
+          "right": 336.203125,
+          "width": 116,
+          "inside": true
+        },
+        {
+          "text": "Refresh inspector",
+          "left": 344.203125,
+          "right": 480.234375,
+          "width": 136.03125,
+          "inside": true
+        },
+        {
+          "text": "Close inspector",
+          "left": 488.234375,
+          "right": 611.578125,
+          "width": 123.34375,
+          "inside": true
+        }
+      ],
+      "annotated_chat_context": true,
+      "inspector_views": 4,
+      "remote_shortcut_stayed_in_page": true,
+      "scoped_new_close_reopen": true,
+      "history_clear_kept_profile": true,
+      "agent_grants": 0,
+      "native_select_method": "Playwright form selection; real Tab/focus checks retained. Headless macOS does not synthesize native popup key selection."
+    }
+  ],
+  "fixture_provider_turns": 0,
+  "task_status_before_cleanup": null,
+  "artifact_directory": "/tmp/termx-browser-immutable-t8fN",
+  "method_notes": [
+    "Real Tab/focus/visible/uncovered and measured contrast checks are retained for every form control.",
+    "Native annotation/inspector select widgets use Playwright select_option, because headless macOS does not synthesize native popup key selection. This is disclosed rather than claimed as a native keyboard selection.",
+    "No CSS injection or source transform; exact immutable production assets copied before host startup.",
+    "Both themes, 100/200 percent viewport/device scaling, reduced motion; all inspector and global-footer controls fit the viewport.",
+    "Manual Browser feature fixture has no active task or agent grant. Separate real active-task and broker tests cover handoff/private/takeover and lifecycle enforcement."
+  ],
+  "asset_manifest": "browser-computer-production-assets.json",
+  "production_asset_count": 64
+}

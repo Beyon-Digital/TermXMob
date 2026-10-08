@@ -1,0 +1,33 @@
+{
+  "commit": "e102f3f3c24829908c8ea2b29abf5085567b8bc6",
+  "platform": "Windows GitHub Actions runner",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37610837562/job/112757424476",
+  "native_storage": {
+    "tests": 3,
+    "passed": 3,
+    "finished_at": "2026-10-07T10:58:07Z",
+    "checks": [
+      "protected owner/SYSTEM/administrators DACL before first bootstrap write",
+      "directory junction refused without target writes",
+      "foreign owner refused without ownership change"
+    ]
+  },
+  "backend_storage": {
+    "tests": "tests/test_private_files.py",
+    "checks": [
+      "owner-private file/directory enforcement and broad ACE repair",
+      "actual SQLite journal safe inherited DACL",
+      "real current-user DPAPI encrypted credential write/read/delete"
+    ],
+    "qualification": "Passed in actual Windows contract suite; failures were restricted console output and noninteractive worker shell, not storage tests."
+  },
+  "managed_session_proofs": [
+    "test_identity.py rate limits, rotation/reuse, expiry and revocation",
+    "native/browser parallel refresh coordination regressions",
+    "earlier actual Linux/Windows OS credential service roundtrips"
+  ],
+  "limits": [
+    "The overall Windows job failed unrelated console/worker tests.",
+    "This proves AUTH-02 storage/session contracts; installed native GUI unlock, re-dock and missing-monitor journeys remain separate gates."
+  ]
+}

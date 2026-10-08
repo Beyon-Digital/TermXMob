@@ -1,0 +1,24 @@
+import {useEffect,useRef,useState} from 'react';
+import {Button} from '../components/ui/button';
+import {Dialog,DialogTrigger,DialogContent,DialogTitle,DialogDescription} from '../components/ui/dialog';
+import {request} from '../lib/api';
+import {BrowserApprovalPreview,type HumanBrowserPreview} from './BrowserApprovalPreview';
+
+type Approval={id:string;kind?:string;payload:Record<string,unknown>};
+const scopes:Record<string,string>={task:'This task',conversation:'This conversation on this device',project:'This project for me',custom_agent:'This agent preset for me'};
+export function GeneralApprovalCard({taskId,approval,onDone,onError}:{taskId:string;approval:Approval;onDone:()=>void;onError:(error:unknown)=>void}){
+ const [scope,setScope]=useState('once'),[pending,setPending]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false),[locked,setLocked]=useState(false);
+ const active=useRef({key:taskId+':'+approval.id,generation:0,busy:false});
+ if(active.current.key!==taskId+':'+approval.id)active.current={key:taskId+':'+approval.id,generation:active.current.generation+1,busy:false};
+ const options=Array.isArray(approval.payload.remember_options)?approval.payload.remember_options.filter((v):v is string=>typeof v==='string'&&Object.hasOwn(scopes,v)):[];
+ const effectiveScope=options.includes(scope)?scope:'once';
+ const browserPreview=((approval.payload.browser_review||(approval.payload.request as Record<string,unknown>|undefined)?.browser_review) as {human_preview?:HumanBrowserPreview}|undefined)?.human_preview;
+ useEffect(()=>{setScope('once');setError('');setPending(false);setOpen(false)},[taskId,approval.id]);
+ useEffect(()=>{const cancel=()=>{active.current.generation++;active.current.busy=false;setPending(false);setOpen(false);setLocked(true)},unlock=()=>setLocked(false);window.addEventListener('termx-locked',cancel);window.addEventListener('termx-signed-out',cancel);window.addEventListener('termx-session-unlocked',unlock);return()=>{active.current.generation++;window.removeEventListener('termx-locked',cancel);window.removeEventListener('termx-signed-out',cancel);window.removeEventListener('termx-session-unlocked',unlock)}},[]);
+ const decide=async(decision:'approved'|'denied')=>{
+  if(active.current.busy||locked)return;active.current.busy=true;const generation=active.current.generation;setPending(true);setError('');
+  try{await request(`/api/workspace/tasks/${encodeURIComponent(taskId)}/approvals/${encodeURIComponent(approval.id)}/resolve`,{method:'POST',body:JSON.stringify({decision,...(effectiveScope!=='once'?{remember:effectiveScope}:{})})});if(generation===active.current.generation)onDone()}
+  catch(error){if(generation===active.current.generation){setError(error instanceof Error?error.message:'The decision could not be saved.');onError(error)}}finally{if(generation===active.current.generation){active.current.busy=false;setPending(false)}}
+ };
+ return <section className="approval" aria-label="Action approval"><h4>{browserPreview?.manual_required?'Manual operation required':'Approval needed'}</h4><Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button disabled={locked}>{browserPreview?.manual_required?'Review manual operation':browserPreview?'Review browser operation':'Review action'}</Button></DialogTrigger><DialogContent className="approval-review-dialog"><DialogTitle>{browserPreview?'Review browser operation':'Review action'}</DialogTitle><DialogDescription>Inspect this exact operation, its target and the applicable host policy.</DialogDescription><p>{String(approval.payload.reason||approval.payload.consequence||'Review this exact operation before it continues.')}</p><BrowserApprovalPreview preview={browserPreview}/><details><summary>Exact operation and host policy</summary><pre role="region" tabIndex={0} aria-label="Approval details">{JSON.stringify(approval.payload,null,2)}</pre></details>{options.length>0&&<><label>Remember this decision<select aria-label="Remember approval scope" value={effectiveScope} disabled={pending||locked} onChange={event=>setScope(event.target.value)}><option value="once">Only this operation</option>{options.map(value=><option key={value} value={value}>{scopes[value]}</option>)}</select></label><p>Remembered consent keeps this operation's target and sandbox. Host restrictions and matching denies still win. Project and preset rules belong to you; a conversation rule ends on this device's session expiry.</p></>}{error&&<p role="alert">{error}</p>}<Button disabled={pending||locked||browserPreview?.manual_required} onClick={()=>void decide('approved')}>{effectiveScope==='once'?'Allow once':'Allow and remember'}</Button><Button variant="outline" disabled={pending||locked} onClick={()=>void decide('denied')}>{effectiveScope==='once'?'Deny':'Deny and remember'}</Button></DialogContent></Dialog></section>
+}

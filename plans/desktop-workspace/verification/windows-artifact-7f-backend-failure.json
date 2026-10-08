@@ -1,0 +1,235 @@
+{
+  "recorded_at_utc": "2026-10-07T21:51:41.158158+00:00",
+  "source_sha": "7f1160f628c74499fbcf04be1ba7cb65b2788d55",
+  "run_id": 37687927763,
+  "job_id": 113020488028,
+  "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37687927763/job/113020488028",
+  "checkout": "Exact branch head 7f1160f628c74499fbcf04be1ba7cb65b2788d55; workflow_dispatch, not PR merge checkout.",
+  "workflow_inputs": {
+    "release_tag": "",
+    "draft": true,
+    "include_intel": true
+  },
+  "conclusion": "failure",
+  "backend": {
+    "passed": 1073,
+    "failed": 1,
+    "skipped": 127,
+    "warnings": 4,
+    "elapsed_seconds": 1820.1
+  },
+  "failure": {
+    "test": "tests/test_runner_agents.py::test_worker_normal_cancellation_of_pending_broker_is_not_protocol_failure[eof]",
+    "exception": "TimeoutError",
+    "trace_lines": [
+      856,
+      987
+    ],
+    "actual_phase": "Waiting for the first planning RPC at tests/test_runner_agents.py:103. EOF at line108 had not been sent.",
+    "diagnosis": "One 15-second deadline combined worker import/private-store startup with cancellation and exit; no EOF-control outcome was reached."
+  },
+  "stages": [
+    {
+      "name": "Set up job",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run dtolnay/rust-toolchain@stable",
+      "conclusion": "success"
+    },
+    {
+      "name": "Add Rust target",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Run Swatinem/rust-cache@v2",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run astral-sh/setup-uv@v5",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/setup-node@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run pnpm/action-setup@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Build dedicated workspace",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Tauri CLI",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Linux dependencies",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Import macOS signing material",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Build macOS helpers",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Locate signtool",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Chromium system dependencies",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Install complete backend and packaging dependencies",
+      "conclusion": "success"
+    },
+    {
+      "name": "Verify complete backend suite",
+      "conclusion": "failure"
+    },
+    {
+      "name": "Build complete workspace runtime and Python sidecar",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify exact owned X11 window capture",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify native bridge boundaries",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify OS credential service on macOS and Windows",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify isolated Linux OS credential service",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed debug adapters",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed browser grant and recovery contracts",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify rendered workspace accessibility",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload workspace accessibility evidence",
+      "conclusion": "success"
+    },
+    {
+      "name": "Resolve release metadata",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Determine signing mode",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify tag matches app version",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Configure repository updater endpoint",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Build installers",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Install pinned native GUI driver",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed Linux native workspace",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed Windows native workspace",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload installed native GUI evidence",
+      "conclusion": "success"
+    },
+    {
+      "name": "Add checksums to the release",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Publish updater fragment",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload updater manifest fragment",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload installers as workflow artifacts",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run pnpm/action-setup@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run actions/setup-node@v4",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run astral-sh/setup-uv@v5",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run Swatinem/rust-cache@v2",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success"
+    }
+  ],
+  "windows_artifacts": [],
+  "limits": [
+    "Frozen sidecar/runtime and installer build were skipped by the failed backend hard gate.",
+    "Installed Windows MSI GUI was not executed; upload steps ran with no Windows files.",
+    "No production Windows signing qualification or release/updater publication.",
+    "No installer downloads or local Rust delivery build."
+  ],
+  "candidate_fixture_repair": {
+    "published": false,
+    "files": [
+      "tests/test_runner_agents.py"
+    ],
+    "startup": "Bounded 30-second planning-RPC readiness with explicit success assertion and drained startup input.",
+    "control": "Separate strict 5-second cancellation/protocol-refusal and 3-second process exit bound.",
+    "invariants": "Exact terminal state, protocol failure versus ordinary cancellation, no new RPC/tools/effects, unchanged target file remain enforced. Startup events included in no-effects check.",
+    "diagnostics": "Bounded phase, event names and worker stack locations; no raw protocol controls, environment or credential values.",
+    "production_changes": false,
+    "focused": "5 passed, 11 deselected, 1 warning in15.06s",
+    "runner_suite": "15 passed, 1 skipped (explicit real Docker opt-in), 1 warning in12.46s",
+    "actual_windows_candidate": "Pending next expanded Windows contract CI.",
+    "workflow_gate": "windows-platform-tests.yml already includes runner sources/test path triggers and tests/test_runner_agents.py in hard-gated pytest."
+  }
+}

@@ -1,0 +1,31 @@
+import {afterEach,it,expect,vi} from 'vitest';
+import {cleanup,render,screen,fireEvent,waitFor} from '@testing-library/react';
+import ReasoningPicker from './ReasoningPicker';
+import {request,type Session} from '../lib/api';
+vi.mock('../lib/api',()=>({request:vi.fn(),gql:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
+afterEach(()=>{cleanup();vi.clearAllMocks()});
+const session:Session={id:'conversation-a',title:'A',engine:'codex',model:'fast',mode:'ask',pinned:false,archived:false,draft_text:'',revision:7,scroll:0,updated_at:1};
+const option=(values:string[])=>({id:'reasoning_effort',name:'Reasoning',category:'thought_level',type:'select',currentValue:'low',options:values.map(value=>({value,name:value}))});
+const catalogue={config_options:[option(['low','high'])],model_configurations:{fast:{config_options:[option(['low'])]},slow:{config_options:[option(['low','high'])]}},stale:false};
+it('uses only the exact selected model options and patches a revision-bound canonical conversation',async()=>{vi.mocked(request).mockImplementation(async(path)=>path.endsWith('/reasoning')?catalogue as any:{...session,reasoning_config:{reasoning_effort:'low'}} as any);const changed=vi.fn();render(<ReasoningPicker session={session} onUpdated={changed} onError={()=>{}}/>);await waitFor(()=>expect(screen.getByLabelText('Reasoning')).toBeEnabled());expect(screen.queryByRole('option',{name:'high'})).not.toBeInTheDocument();fireEvent.change(screen.getByLabelText('Reasoning'),{target:{value:'low'}});await waitFor(()=>expect(changed).toHaveBeenCalled());const call=vi.mocked(request).mock.calls.find(([,init])=>init?.method==='PATCH')!;expect(call[0]).toBe('/api/workspace/sessions/conversation-a');expect(JSON.parse(call[1]!.body as string)).toEqual({revision:7,changes:{reasoning_config:{reasoning_effort:'low'}}})});
+it('disables active-turn retargeting and never invents provider or missing-model effort choices',async()=>{vi.mocked(request).mockResolvedValue(catalogue);const {rerender}=render(<ReasoningPicker session={session} disabled onUpdated={()=>{}} onError={()=>{}}/>);await waitFor(()=>expect(screen.getByRole('option',{name:'low'})).toBeInTheDocument());expect(screen.getByLabelText('Reasoning')).toBeDisabled();rerender(<ReasoningPicker session={{...session,model:'unknown'}} onUpdated={()=>{}} onError={()=>{}}/>);await waitFor(()=>expect(screen.getByText('This engine/model has no verified reasoning choices.')).toBeInTheDocument());expect(screen.getByLabelText('Reasoning')).toBeDisabled();expect(vi.mocked(request).mock.calls.every(([,init])=>init?.method!=='PATCH')).toBe(true)});
+it('does not apply an old session response after switching conversations',async()=>{let resolve:(value:Session)=>void=()=>{};const pending=new Promise<Session>(done=>resolve=done);vi.mocked(request).mockImplementation((path)=>path.endsWith('/reasoning')?Promise.resolve(catalogue) as any:pending as any);const changed=vi.fn();const {rerender}=render(<ReasoningPicker session={session} onUpdated={changed} onError={()=>{}}/>);await waitFor(()=>expect(screen.getByLabelText('Reasoning')).toBeEnabled());fireEvent.change(screen.getByLabelText('Reasoning'),{target:{value:'low'}});rerender(<ReasoningPicker session={{...session,id:'conversation-b'}} onUpdated={changed} onError={()=>{}}/>);resolve(session);await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/reasoning'))).toHaveLength(2));expect(changed).not.toHaveBeenCalled()});
+
+it('resets pending state and fences A→B→A plus same-session model changes',async()=>{
+ let settle:(value:Session)=>void=()=>{};const pending=new Promise<Session>(resolve=>settle=resolve);
+ vi.mocked(request).mockImplementation((path,init)=>init?.method==='PATCH'?pending as any:Promise.resolve(catalogue) as any);
+ const changed=vi.fn(),error=vi.fn();const props={onUpdated:changed,onError:error};
+ const {rerender}=render(<ReasoningPicker session={session} {...props}/>);
+ await waitFor(()=>expect(screen.getByLabelText('Reasoning')).toBeEnabled());
+ fireEvent.change(screen.getByLabelText('Reasoning'),{target:{value:'low'}});expect(screen.getByLabelText('Reasoning')).toBeDisabled();
+ rerender(<ReasoningPicker session={{...session,id:'conversation-b'}} {...props}/>);
+ await waitFor(()=>expect(screen.getByLabelText('Reasoning')).toBeEnabled());
+ rerender(<ReasoningPicker session={session} {...props}/>);await waitFor(()=>expect(screen.getByLabelText('Reasoning')).toBeEnabled());
+ settle({...session,reasoning_config:{reasoning_effort:'low'}});await pending;
+ expect(changed).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
+ let reject:(error:Error)=>void=()=>{};const oldModel=new Promise<Session>((_,failed)=>reject=failed);
+ vi.mocked(request).mockImplementation((_,init)=>init?.method==='PATCH'?oldModel as any:Promise.resolve(catalogue) as any);
+ fireEvent.change(screen.getByLabelText('Reasoning'),{target:{value:'low'}});
+ rerender(<ReasoningPicker session={{...session,model:'slow'}} {...props}/>);await waitFor(()=>expect(screen.getByLabelText('Reasoning')).toBeEnabled());
+ reject(new Error('old model operation'));await oldModel.catch(()=>{});expect(error).not.toHaveBeenCalled();expect(changed).not.toHaveBeenCalled();
+});

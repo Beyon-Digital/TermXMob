@@ -31,7 +31,24 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .resizable(true);
     #[cfg(not(target_os = "macos"))]
     let builder = builder.menu(crate::menu::app_menu(app)?);
-    builder.build()
+    let window = builder.build()?;
+    let info = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info());
+    if let Err(error) =
+        crate::media_permission::install(&window, info.as_ref().map(|info| info.port).unwrap_or(0))
+    {
+        let _ = window.destroy();
+        return Err(error);
+    }
+    crate::workspace::restore_placement(app, &window);
+    crate::workspace::track_placement(app, &window);
+    if let Some(info) = info {
+        if let Ok(url) = info.window_url().parse() {
+            window.navigate(url)?;
+        }
+    }
+    Ok(window)
 }
 
 pub fn show_main_window(app: &AppHandle) {
@@ -61,6 +78,12 @@ pub fn toggle_main_window(app: &AppHandle) {
 pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
     let window = main_window(app).or_else(|| create_main_window(app).ok());
     if let Some(window) = window {
+        #[cfg(target_os = "macos")]
+        if crate::media_permission::install(&window, info.port).is_err() {
+            logging::desktop(app, "Could not configure microphone consent for workspace");
+            let _ = window.destroy();
+            return;
+        }
         if let Ok(url) = info.window_url().parse() {
             let _ = window.navigate(url);
         }
@@ -69,6 +92,11 @@ pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
         }
     }
     if let Some(connect) = app.get_webview_window("connect") {
+        #[cfg(target_os = "macos")]
+        if crate::media_permission::install(&connect, info.port).is_err() {
+            let _ = connect.destroy();
+            return;
+        }
         if let Ok(url) = connect_url(info).parse() {
             let _ = connect.navigate(url);
         }
@@ -88,19 +116,11 @@ pub fn on_backend_failed(app: &AppHandle, message: &str) {
 }
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
-    let _ = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show();
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 fn connect_url(info: &ReadyInfo) -> String {
-    format!(
-        "http://127.0.0.1:{}/_/connect.html?k={}",
-        info.port, info.passcode
-    )
+    format!("http://127.0.0.1:{}/?manager=access", info.port)
 }
 
 pub fn open_connect_window(app: &AppHandle) {
@@ -116,12 +136,19 @@ pub fn open_connect_window_qr(app: &AppHandle) {
 }
 
 fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
-    let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
-        notify(app, "Termx is starting", "Connection details are not ready yet.");
+    let Some(info) = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info())
+    else {
+        notify(
+            app,
+            "Termx is starting",
+            "Connection details are not ready yet.",
+        );
         return;
     };
     let url = if reveal_qr {
-        format!("{}&qr=1", connect_url(&info))
+        format!("{}&show_connection=1", connect_url(&info))
     } else {
         connect_url(&info)
     };
@@ -133,13 +160,18 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
         let _ = window.set_focus();
         return;
     }
-    let builder = WebviewWindowBuilder::new(app, "connect", WebviewUrl::External(url.parse().unwrap()))
-        .title("Termx — Machine Status")
-        .inner_size(440.0, 760.0)
-        .min_inner_size(360.0, 520.0)
-        .resizable(true);
+    let builder =
+        WebviewWindowBuilder::new(app, "connect", WebviewUrl::External(url.parse().unwrap()))
+            .title("Termx — Machine Status")
+            .inner_size(440.0, 760.0)
+            .min_inner_size(360.0, 520.0)
+            .resizable(true);
     match builder.build() {
         Ok(window) => {
+            if crate::media_permission::install(&window, info.port).is_err() {
+                let _ = window.destroy();
+                return;
+            }
             let _ = window.show();
         }
         Err(error) => {
@@ -149,18 +181,23 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
 }
 
 pub fn copy_connect_link(app: &AppHandle) {
-    let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
-        notify(app, "Termx is starting", "Connection details are not ready yet.");
+    let Some(info) = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info())
+    else {
+        notify(
+            app,
+            "Termx is starting",
+            "Connection details are not ready yet.",
+        );
         return;
     };
-    let link = match gql_app(app, "{ connect_info { connect_url } }", None)
-        .and_then(|value| {
-            value
-                .pointer("/connect_info/connect_url")
-                .and_then(|item| item.as_str())
-                .map(str::to_string)
-        })
-    {
+    let link = match gql_app(app, "{ connect_info { connect_url } }", None).and_then(|value| {
+        value
+            .pointer("/connect_info/connect_url")
+            .and_then(|item| item.as_str())
+            .map(str::to_string)
+    }) {
         Some(link) => link,
         None => info.window_url(),
     };
@@ -171,7 +208,10 @@ pub fn copy_connect_link(app: &AppHandle) {
 }
 
 pub fn open_in_browser(app: &AppHandle) {
-    let Some(info) = app.try_state::<Backend>().and_then(|backend| backend.info()) else {
+    let Some(info) = app
+        .try_state::<Backend>()
+        .and_then(|backend| backend.info())
+    else {
         return;
     };
     let url = info.window_url();
@@ -217,7 +257,9 @@ pub fn permission_event(app: &AppHandle, which: &str) {
                     crate::permissions::request_screen_recording();
                 });
                 let handle = app.clone();
-                let _ = handle.clone().run_on_main_thread(move || open_permission_settings(&handle));
+                let _ = handle
+                    .clone()
+                    .run_on_main_thread(move || open_permission_settings(&handle));
             }
         }
         "accessibility" => {
@@ -233,7 +275,9 @@ pub fn permission_event(app: &AppHandle, which: &str) {
                     crate::permissions::request_accessibility();
                 });
                 let handle = app.clone();
-                let _ = handle.clone().run_on_main_thread(move || open_accessibility_settings(&handle));
+                let _ = handle
+                    .clone()
+                    .run_on_main_thread(move || open_accessibility_settings(&handle));
             }
         }
         "open_settings" => open_permission_settings(app),
@@ -271,7 +315,10 @@ pub fn permission_dialog(app: &AppHandle) {
                 });
                 let _ = prompt;
             }
-            config::set_onboarded(&handle);
+            if config::set_onboarded(&handle).is_err() {
+                notify(&handle, "Termx", "Native workspace configuration is not private");
+                return;
+            }
             let status = crate::permissions::status();
             if !status.screen_recording {
                 open_permission_settings(&handle);
@@ -318,7 +365,10 @@ fn onboarding_welcome(app: AppHandle) {
             } else {
                 // Skipping still completes first run — the pairing window opens
                 // so the machine is reachable without a nagging wizard.
-                config::set_onboarded(&app);
+                if config::set_onboarded(&app).is_err() {
+                    notify(&app, "Termx", "Native workspace configuration is not private");
+                    return;
+                }
                 open_connect_window(&app);
             }
         });
@@ -403,10 +453,19 @@ fn onboarding_autostart(app: &AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn onboarding_ready(app: &AppHandle) {
-    config::set_onboarded(app);
+    if config::set_onboarded(app).is_err() {
+        notify(
+            app,
+            "Termx",
+            "Native workspace configuration is not private",
+        );
+        return;
+    }
     let handle = app.clone();
     app.dialog()
-        .message("This machine is ready.\n\nScan the QR code or copy the link to connect your phone.")
+        .message(
+            "This machine is ready.\n\nScan the QR code or copy the link to connect your phone.",
+        )
         .title("Termx — Machine ready")
         .buttons(MessageDialogButtons::OkCustom("Show QR & link".to_string()))
         .show(move |_| {
@@ -425,7 +484,11 @@ fn open_permission_settings_when_settled(app: &AppHandle, screen_recording: bool
         for _ in 0..20 {
             std::thread::sleep(std::time::Duration::from_millis(1500));
             let status = crate::permissions::status();
-            if if screen_recording { status.screen_recording } else { status.accessibility } {
+            if if screen_recording {
+                status.screen_recording
+            } else {
+                status.accessibility
+            } {
                 return;
             }
         }

@@ -309,9 +309,34 @@ class WindowsSandboxRunner:
         task.add_done_callback(self._release_tasks.discard)
         return StreamedProcess(process, spec, backend=self._backend_name)
 
+    def spawn_terminal(self, spec: SpawnSpec, rows: int, cols: int):
+        """Create an actual restricted ConPTY, retaining roots until job exit.
+
+        Called from the terminal service's worker thread. Windows cannot enforce
+        a network-denied PTY, so only the explicitly network-enabled human
+        workspace profile is supported; no unrestricted fallback is permitted.
+        """
+        spec.validate()
+        if spec.profile != self._profile or spec.profile != 'workspace' or not spec.pty:
+            raise SandboxFailure('invalid_profile', 'Windows PTYs require the workspace terminal profile')
+        if spec.network != 'outbound' or 'net.outbound:any' not in spec.granted_capabilities:
+            raise SandboxFailure('network_unavailable', 'Windows cannot enforce network-denied terminals')
+        from termx.sandbox._win_conpty import RestrictedConPTY
+        home, temporary = self._sandbox_home(spec), self._sandbox_tmp(spec)
+        home.mkdir(parents=True, exist_ok=True); temporary.mkdir(parents=True, exist_ok=True)
+        env = dict(spec.env or build_environment(spec.profile, home=str(home), tmp_dir=str(temporary)))
+        env.update({'TMP':str(temporary), 'TEMP':str(temporary), 'HOME':str(home), 'USERPROFILE':str(home)})
+        env = self._os_env(env)
+        held = self._apply_fs_boundary(spec, home, temporary)
+        return RestrictedConPTY(command=self._command_line(spec), cwd=str(Path(spec.cwd or spec.workspace_root).resolve()),
+            env=env, job_limits=self._job_limits(spec.limits), user_mode=self._user_mode, rows=rows, cols=cols,
+            release=lambda:self._drop_held(held))
+
     # -- internals ------------------------------------------------------
 
     def _shim_argv(self, req_path: Path) -> list[str]:
+        if getattr(sys, 'frozen', False):
+            return [sys.executable, '--runtime-module', 'termx.sandbox._win_shim', str(req_path)]
         return [sys.executable, "-m", "termx.sandbox._win_shim", str(req_path)]
 
     def _shim_env(self) -> dict[str, str]:

@@ -1,0 +1,28 @@
+{
+  "fixture": "isolated canonical host over pinned TLS",
+  "steps": [
+    "Actual desktop password login and Access scope form",
+    "Real one-use issuer response, scoped grant and HTTPS fragment link",
+    "Canonical native bearer exchange, narrowed authority, refresh rotation and replay denial",
+    "Actual desktop session revoke blocks native access and refresh",
+    "Actual cancel control invalidates unconsumed proof; no raw ticket persisted"
+  ],
+  "errors": [],
+  "limits": [
+    "Installed mobile SecureStore not exercised",
+    "Installed native desktop bridge not exercised",
+    "No provider or paid API calls"
+  ],
+  "ui_bundle": "/assets/index-DaXRE1Tz.js",
+  "backend_checks": {
+    "canonical_regressions": 58,
+    "managed_pairing_and_native_guards": 16,
+    "mac_consumer_capture_and_native_source": 11
+  },
+  "frontend_checks": {
+    "managed_pairing": 5,
+    "existing_managers": 4,
+    "typescript": "passed"
+  },
+  "source_note": "Pairing behavior proved on index-DaXRE1Tz.js. Later narrow checkbox spacing and Clipboard API fallback still need final rebuild."
+}

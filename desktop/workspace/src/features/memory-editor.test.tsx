@@ -1,0 +1,41 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { MemoryEditor } from './MemoryEditor';
+import { request } from '../lib/api';
+vi.mock('../lib/api', () => ({ request: vi.fn() }));
+const mocked = vi.mocked(request);
+const memory = { id:'fact', revision:3, content:'Decision', provenance:'Review', project_id:'project', retention_days:30, excluded:true };
+afterEach(cleanup); beforeEach(()=>{ mocked.mockReset(); });
+it('edits content and provenance while preserving the original scope, exclusion and revision', async()=>{
+  mocked.mockResolvedValue({}); const saved=vi.fn();
+  render(<MemoryEditor memory={memory} onSaved={saved} onCancel={vi.fn()}/>);
+  fireEvent.change(screen.getByLabelText('Fact or decision'),{target:{value:'New decision'}});
+  fireEvent.change(screen.getByLabelText('Source or reason'),{target:{value:'Design review'}});
+  fireEvent.change(screen.getByLabelText('Retention in days'),{target:{value:'7'}});
+  expect(mocked).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button',{name:'Save memory changes'}));
+  await waitFor(()=>expect(saved).toHaveBeenCalledOnce());
+  expect(JSON.parse(String(mocked.mock.calls[0][1]?.body))).toEqual({...memory,id:undefined,identifier:'fact',content:'New decision',provenance:'Design review',retention_days:7});
+});
+it('retains a failed stale draft without silently adopting a newer revision', async()=>{
+  mocked.mockRejectedValue(new Error('Revision conflict')); const saved=vi.fn();
+  const view=render(<MemoryEditor memory={memory} onSaved={saved} onCancel={vi.fn()}/>);
+  fireEvent.change(screen.getByLabelText('Fact or decision'),{target:{value:'Unsaved edit'}});
+  fireEvent.click(screen.getByRole('button',{name:'Save memory changes'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Your draft is kept');
+  view.rerender(<MemoryEditor memory={{...memory,revision:4,content:'Someone else changed this'}} onSaved={saved} onCancel={vi.fn()}/>);
+  expect(screen.getByLabelText('Fact or decision')).toHaveValue('Unsaved edit');
+  fireEvent.click(screen.getByRole('button',{name:'Save memory changes'}));
+  await waitFor(()=>expect(mocked).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(String(mocked.mock.calls[1][1]?.body)).revision).toBe(3); expect(saved).not.toHaveBeenCalled();
+});
+it('bounds retention, supports cancellation and sends only one pending save', async()=>{
+  let resolve!: (value:unknown)=>void; mocked.mockImplementation(()=>new Promise(r=>{resolve=r}));
+  const cancel=vi.fn(); render(<MemoryEditor memory={memory} onSaved={vi.fn()} onCancel={cancel}/>);
+  fireEvent.change(screen.getByLabelText('Retention in days'),{target:{value:'3651'}});
+  expect(screen.getByRole('button',{name:'Save memory changes'})).toBeDisabled();
+  fireEvent.click(screen.getByRole('button',{name:'Cancel memory edit'})); expect(cancel).toHaveBeenCalledOnce(); expect(mocked).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Retention in days'),{target:{value:'10'}});
+  const form=screen.getByRole('form'); fireEvent.submit(form); fireEvent.submit(form);
+  expect(mocked).toHaveBeenCalledOnce(); expect(screen.getByRole('button',{name:'Cancel memory edit'})).toBeDisabled();
+  resolve({}); await waitFor(()=>expect(screen.getByRole('button',{name:'Save memory changes'})).not.toBeDisabled());
+});

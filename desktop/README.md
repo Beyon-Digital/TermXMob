@@ -7,12 +7,22 @@ native lifecycle, tray/menu, notifications, permissions onboarding, and installe
 ```
 Termx.app / Termx.exe / termx.AppImage
 └── Tauri shell (Rust)
-    ├── chooses/adopts a backend port and passcode
+    ├── chooses/adopts a backend port and retains native bootstrap authority
     ├── spawns Resources/backend/termx-backend --desktop --port N --passcode ...
     ├── reads JSON events from sidecar stdout (ready / notify)
-    ├── loads http://127.0.0.1:N/?k=<passcode> in the system webview
+    ├── loads http://127.0.0.1:N/ with the dedicated workspace UI
+    ├── native origin-checked bridge signs in and holds access tokens in Rust memory
+    ├── OS credential storage holds rotating refresh tokens scoped to host identity
     └── on quit: POST /api/shutdown → wait → kill process tree
 ```
+
+The workspace URL contains no passcode or JWT. The bootstrap credential is
+available only to the native shell for an unconfigured local host; managed sign-in
+never falls back to it after a permission denial. Password and completed OIDC
+sign-in become the same managed session. A shared native bridge serializes refresh
+rotation across workspace windows, stores refresh secrets in the OS credential
+store, and uses HttpOnly access cookies for authenticated sockets. Detaching a
+window opens a credential-free session/panel URL against the same backend.
 
 ## Layout
 
@@ -21,14 +31,18 @@ Termx.app / Termx.exe / termx.AppImage
 | `bootstrap/` | Tiny loading page shown until the backend is ready |
 | `backend_entry.py` | PyInstaller entrypoint |
 | `termx-backend.spec` | Onedir spec (web export, static files, macOS helpers) |
-| `scripts/build_sidecar.py` | Export web → PyInstaller → stage/sign for Tauri |
+| `workspace/` | Dedicated desktop/browser React workspace; Expo remains mobile |
+| `runtime/` | Pinned language-server packages and release runtime provenance |
+| `scripts/prepare_runtime.py` | Stage pinned Chromium, verified js-debug, and language assets |
+| `scripts/build_sidecar.py` | Package the workspace/runtime with Python → stage/sign for Tauri |
 | `scripts/sign_macos_sidecar.sh` | Sign every Mach-O in the sidecar (inner→outer) |
 | `src-tauri/` | Rust shell |
 
 ## Releasing from GitHub Actions
 
-`.github/workflows/desktop.yml` builds and publishes installers on GitHub — nothing is
-built or uploaded from a local machine.
+`.github/workflows/desktop.yml` builds and publishes Rust delivery binaries and
+installers on GitHub. Source checks and isolated Python/container tests run locally;
+Rust delivery binaries are built only in CI.
 
 Trigger options:
 
@@ -71,10 +85,9 @@ therefore uses two runners:
 - `macos-15` → Apple Silicon (M-series) → `Termx_<version>_aarch64.dmg`
 - `macos-15-intel` → Intel (x86_64) → `Termx_<version>_x64.dmg`
 
-`macos-15-intel` is GitHub's supported Intel label (available through August 2027).
-If your plan or org does not provide it, run the workflow with **include_intel =
-false**; Apple Silicon users are unaffected and Intel users can build from source.
-`macos-26-intel` is a newer alternative label if you want the latest image.
+`macos-15-intel` is the Intel label configured in this workflow. If the account
+cannot use that runner, run with **include_intel = false** while arranging an
+available Intel CI runner for the same target. Delivery builds remain in CI.
 
 Windows (`windows-latest`) and Linux (`ubuntu-22.04`) run on x64, which is what
 virtually all desktop users download.
@@ -217,22 +230,20 @@ required to publish.
   commits signed helper binaries; the release workflow also builds them fresh on the
   runner, so releases never depend on that commit.
 
-## Local build
+## Workspace development and release packaging
 
-Prerequisites: Rust, `uv`, and PyInstaller via the packaging group.
-The web UI is prebuilt in `desktop/web` (committed); refresh it from the private
-client repo with `desktop/scripts/update_web_ui.sh` when the client changes.
+The dedicated UI is built from `desktop/workspace`, with the same generated bundle served to native desktop and external browsers. `desktop/scripts/update_web_ui.sh` builds this workspace; it never clones or modifies the mobile Expo repository.
 
 ```bash
-uv sync --group packaging
-uv run --group packaging python desktop/scripts/build_sidecar.py
-
-cd desktop/src-tauri
-cargo tauri build                 # release installers
-cargo tauri build --debug --bundles app   # fast local .app for testing
+pnpm --dir desktop/workspace install --frozen-lockfile
+pnpm --dir desktop/workspace test
+pnpm --dir desktop/workspace build
+uv run termx --host 127.0.0.1 --port 8787
 ```
 
-The sidecar stage lives in `desktop/src-tauri/resources/backend/` (gitignored).
+Rust delivery binaries and installers are built only through `.github/workflows/desktop.yml`. That workflow installs the frozen Python development/media/webrtc extras, prepares matching Chromium and pinned js-debug/language assets, then packages `desktop/workspace/dist` into the sidecar. Its frozen runtime smoke check must pass before the installer is published. Source checking with `cargo check` is separate from a delivery build.
+
+The sidecar stage lives in `desktop/src-tauri/resources/backend/` (gitignored). See [runtime/README.md](runtime/README.md) for package versions, integrity, host prerequisites and remaining platform verification.
 
 ## Platform artifacts
 
@@ -364,3 +375,55 @@ Hardware- and GUI-only paths that CI cannot assert:
   relaunch, confirm stale sidecar cleanup.
 - Upgrade/uninstall through the produced installers; user data remains in the config
   directory.
+
+## Linux window capture and recording dependencies
+
+Exact application-window capture requires an X11 session, `wmctrl` for enumeration, ImageMagick `import` for exact-window pixels and `xdotool` for scoped input. Debian/RPM installers declare these runtime packages. AppImage users need to install them through their distribution package manager. A normal desktop window manager supplies EWMH window metadata; CI starts Openbox inside Xvfb and captures only a uniquely named `xmessage` fixture created by the test. CI-only fixture packages are `xvfb`, `openbox` and `x11-apps`.
+
+A pure Wayland session requires a portal adapter and explicit OS consent for window capture. The current X11 adapter reports that boundary and never substitutes a full-desktop crop. macOS exact-window capture requires Screen Recording permission on the actual device. Headless Chromium accessibility tests do not require that native capture permission.
+
+Native managed authentication also requires an unlocked OS credential service: macOS Keychain, Windows Credential Manager, or a Linux Secret Service on the user's D-Bus session (for example GNOME Keyring). Missing secure storage fails authentication closed. CI verifies a uniquely named synthetic entry with write/read/delete cleanup; Linux starts an isolated `dbus-run-session` and GNOME Keyring using temporary fixture storage. This proof covers the platform credential API, while installer GUI, OS permission prompts, and actual device workflows remain separate checks.
+
+The frozen sidecar's `--runtime-smoke` qualification executes its packaged Node and FFmpeg, initializes and shuts down all five bundled language servers, initializes/disconnects bundled debugpy, and renders a data-only page with bundled Chromium. It saves `desktop/build/runtime-smoke.json`; finding asset files alone does not satisfy this check. CI separately runs actual JavaScript/TypeScript breakpoint and language-navigation tests after preparing pinned assets, with missing runtime prerequisites treated as failures.
+
+Installed native GUI qualification uses `desktop/scripts/native_gui_smoke.py` with the unchanged executable installed from the generated Linux DEB or Windows MSI. The pinned `tauri-driver` delegates to the real WebKitWebDriver or a Microsoft Edge driver matching the installed WebView2 runtime. It exercises the real owner-setup form, cookie-cleared restart through the OS credential store, session revocation/logout, detached-window reopening and missing-monitor recovery. Reports and native webview screenshots are uploaded as `workspace-native-gui-*`; the presence of this harness or a source test alone is not a successful GUI qualification. macOS native GUI and native OIDC redirects remain separate direct-verification gates.
+
+macOS packaging copies the complete backend runtime into `Resources/backend` through Tauri's `bundle.macOS.files` directory copier, preserving the Chromium app/framework symbolic links. The normal resource file copier dereferences those links and cannot safely package a complete Chromium framework. CI verifies and signs the staged browser bundle before signing the enclosing application; a compile check alone does not qualify this packaging path.
+
+For a portable or isolated installation, `TERMX_DESKTOP_DATA_DIR` selects a dedicated absolute native data directory (configuration and logs are stored below it). It never imports another profile's legacy tokens automatically. Unix application directories/files use owner-only permissions; Windows directories and the bootstrap configuration receive protected owner/SYSTEM/administrator DACLs before credential reads or writes. Foreign-owned storage and links/reparse points are refused. The native GUI fixture uses a fresh directory plus isolated webview state; it leaves `HOME` and the user's existing accounts unchanged. Linux CI provides a private D-Bus/GNOME credential service and an Xvfb/Openbox display for this fixture.
+
+Microphone recording starts from the explicit Record action and stops when its chat is hidden or unmounted. macOS bundles declare `NSMicrophoneUsageDescription` and the hardened-runtime audio-input entitlement; the WKWebView delegate requests native consent only for audio from the main frame at the current workspace origin and denies cameras, foreign frames and stale host ports. This preserves OS/TCC consent and the original Wry dialog delegate. Linux connects WebKitGTK's actual user-media permission request to a native, default-No microphone dialog, rechecking the host origin before allowing capture. A working system audio device and PulseAudio/PipeWire stack are required. Windows WebView2 denies foreign-origin microphone requests and camera requests; its default native microphone prompt and Windows privacy settings decide requests from the current workspace. SSO redirects remain supported. Controlled web browsing runs in the separate managed browser. Native policy tests and bundle settings do not prove that a signed, installed application can record on a real audio device; that remains a separate platform/device qualification.
+
+The desktop workspace exposes separate **Lock workspace**, **Sign out**, task
+**Stop**, and administrator **Stop host** controls. Lock retains the enrolled
+session and OS-stored refresh credential, hides observation, and requires the
+same configured identity to unlock. Unlock rotates credentials without changing
+the device scope grant or resuming an old browser/computer handoff. Existing
+explicit background execution can continue under current policy; revocation and
+expiry still terminate its authority. Private browser/capture barriers survive
+unlock until their explicit owner action.
+A current locked session returns HTTP423 so JSON and binary transfers show the
+Lock screen without signing out or consuming its refresh credential. Revoked or
+expired sessions return401; cookie mutation origin/CSRF failures retain403.
+
+Stop host displays the current host and shutdown effects before an explicit
+administrator acknowledgement. It performs graceful service teardown and
+suppresses the native monitor's automatic restart; **Restart Backend** is the
+separate recovery action. API/browser shutdown uses a private desktop-child stop
+notification and intentional exit status79, so it does not depend on a native
+renderer initiating the request. Installer qualification harnesses exercise
+Lock/unlock and the stopped-host/no-respawn state against isolated unchanged
+binaries; their source checks do not prove an installed GUI result.
+
+MCP connections use enrolled execution project IDs. A project-owned connection
+must allow that same project; a host-wide connection requires an administrator.
+Managers separates saving a definition, trusting its inspected revision,
+connecting, and explicitly invoking a tool. Credential bindings are write-only
+and live in the host credential store. Changed definitions, credentials or
+catalogs invalidate the old task binding until reviewed settings are used by a
+new task. The Internal engine uses the existing approval loop and rechecks the
+originating managed session, task, project, preset and connection before every
+MCP call. Project-scoped direct native MCP is refused because those integrations
+do not prove mandatory per-tool revocation interception; global administrator
+native MCP retains its declared trusted boundary. Host MCP credentials are
+never inherited by dedicated cloud runners.

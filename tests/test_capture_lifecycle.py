@@ -7,6 +7,20 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def static_helper_capture_permission(monkeypatch):
+    from termx.desktop import permissions, session
+    # Every helper in this module produces only the static JPEG below. Model
+    # capture consent for that synthetic transport, leaving input denied.
+    # This module fixture cannot alter separate real permission-denial tests.
+    snapshot = lambda: {"screen_recording": "granted", "accessibility": "denied"}
+    monkeypatch.setattr(permissions, "permission_snapshot", snapshot)
+    monkeypatch.setattr(session, "permission_snapshot", snapshot)
+
+
 # small valid JPEG (same payload used by test_capture.py)
 TINY_JPEG = bytes.fromhex(
     "ffd8ffe000104a46494600010100000100010000ffdb0043000806060706050807070709"

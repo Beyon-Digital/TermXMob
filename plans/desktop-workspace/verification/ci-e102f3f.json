@@ -1,0 +1,25 @@
+{
+  "commit": "e102f3f3c24829908c8ea2b29abf5085567b8bc6",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37610837711",
+  "conclusion": "success",
+  "linux_backend": {
+    "passed": 810,
+    "skipped": 132,
+    "seconds": 105.22
+  },
+  "macos_backend": {
+    "passed": 841,
+    "skipped": 101,
+    "seconds": 226.28
+  },
+  "workspace": {
+    "passed": 62,
+    "files": 22,
+    "build": "passed"
+  },
+  "limits": [
+    "Separate Windows contracts passed167 tests with1skip and3failures: two restricted ConPTY output checks and one worker noninteractive-shell stall. Native private storage tests passed separately.",
+    "Source CI does not qualify installed native GUI or all installer formats.",
+    "Later uncommitted browser/window/theme/reviewer additions are outside this commit."
+  ]
+}

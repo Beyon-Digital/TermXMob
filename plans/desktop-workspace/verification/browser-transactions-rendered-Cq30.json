@@ -1,0 +1,2598 @@
+{
+  "proof": "actual-browser-transaction-cards",
+  "paid_queries": 0,
+  "external_transactions": 0,
+  "errors": [],
+  "states": [
+    {
+      "state": "exact-browser-approval",
+      "surface": "browser",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "exact-browser-approval",
+      "surface": "browser",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "exact-browser-approval",
+      "surface": "browser",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".browser-diagnostics > span"
+            ],
+            [
+              ".browser-diagnostics > .button-default.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".browser-diagnostics > form > .button-default.button-ghost[type=\"submit\"]"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "exact-browser-approval",
+      "surface": "browser",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".browser-diagnostics > span"
+            ],
+            [
+              ".browser-diagnostics > .button-default.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".browser-diagnostics > form > .button-default.button-ghost[type=\"submit\"]"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "exact-chat-approval",
+      "surface": "chat",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "exact-chat-approval",
+      "surface": "chat",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "exact-chat-approval",
+      "surface": "chat",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "partial: insufficient transcript viewport"
+    },
+    {
+      "state": "exact-chat-approval",
+      "surface": "chat",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "partial: insufficient transcript viewport"
+    },
+    {
+      "state": "manual-only-takeover",
+      "surface": "browser",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "manual-only-takeover",
+      "surface": "browser",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "manual-only-takeover",
+      "surface": "browser",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".browser-diagnostics > span"
+            ],
+            [
+              ".browser-diagnostics > .button-default.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".browser-diagnostics > form > .button-default.button-ghost[type=\"submit\"]"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "manual-only-takeover",
+      "surface": "browser",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "nav > button:nth-child(1)"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ],
+            [
+              ".browser-diagnostics > span"
+            ],
+            [
+              ".browser-diagnostics > .button-default.button-ghost[type=\"button\"]"
+            ],
+            [
+              ".browser-diagnostics > form > .button-default.button-ghost[type=\"submit\"]"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "network-request-paused",
+      "surface": "browser",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "network-request-paused",
+      "surface": "browser",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ]
+          ]
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "network-request-paused",
+      "surface": "browser",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    },
+    {
+      "state": "network-request-paused",
+      "surface": "browser",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "reduced_motion": true,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": []
+        }
+      ],
+      "reading_qualification": "separately exercised; independent scroll permitted"
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 262,
+        "y": 984,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 262,
+        "y": 984,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 246,
+      "visible_height": 33,
+      "bounds": {
+        "x": 779,
+        "y": 880.234375,
+        "width": 246,
+        "height": 33
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Approve once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 246,
+      "visible_height": 36,
+      "bounds": {
+        "x": 779,
+        "y": 649.234375,
+        "width": 246,
+        "height": 36
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 246,
+      "visible_height": 36,
+      "bounds": {
+        "x": 779,
+        "y": 695.234375,
+        "width": 246,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 262,
+        "y": 984,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 246,
+      "visible_height": 33,
+      "bounds": {
+        "x": 779,
+        "y": 880.234375,
+        "width": 246,
+        "height": 33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Approve once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 246,
+      "visible_height": 36,
+      "bounds": {
+        "x": 779,
+        "y": 649.234375,
+        "width": 246,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 246,
+      "visible_height": 36,
+      "bounds": {
+        "x": 779,
+        "y": 695.234375,
+        "width": 246,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 33,
+      "bounds": {
+        "x": 28,
+        "y": 403.015625,
+        "width": 663,
+        "height": 33
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Approve once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 36,
+      "bounds": {
+        "x": 28,
+        "y": 373.015625,
+        "width": 663,
+        "height": 36
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 35.984375,
+      "bounds": {
+        "x": 28,
+        "y": 416.015625,
+        "width": 663,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 33,
+      "bounds": {
+        "x": 28,
+        "y": 403.015625,
+        "width": 663,
+        "height": 33
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Approve once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 36,
+      "bounds": {
+        "x": 28,
+        "y": 373.015625,
+        "width": 663,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 35.984375,
+      "bounds": {
+        "x": 28,
+        "y": 416.015625,
+        "width": 663,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 262,
+        "y": 984,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 722,
+      "visible_height": 23.09375,
+      "bounds": {
+        "x": 482.5,
+        "y": 459.859375,
+        "width": 722,
+        "height": 23.09375
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Allow once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 94.734375,
+      "visible_height": 36,
+      "bounds": {
+        "x": 482.5,
+        "y": 454.140625,
+        "width": 94.734375,
+        "height": 36
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 61.078125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 585.234375,
+        "y": 454.140625,
+        "width": 61.078125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 262,
+        "y": 984,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 722,
+      "visible_height": 23.09375,
+      "bounds": {
+        "x": 482.5,
+        "y": 459.859375,
+        "width": 722,
+        "height": 23.09375
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Allow once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 94.734375,
+      "visible_height": 36,
+      "bounds": {
+        "x": 482.5,
+        "y": 454.140625,
+        "width": 94.734375,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 61.078125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 585.234375,
+        "y": 454.140625,
+        "width": 61.078125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 23.09375,
+      "bounds": {
+        "x": 28,
+        "y": 88.859375,
+        "width": 663,
+        "height": 23.09375
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Allow once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 94.734375,
+      "visible_height": 23.859375,
+      "bounds": {
+        "x": 28,
+        "y": 88.140625,
+        "width": 94.734375,
+        "height": 36
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 61.078125,
+      "visible_height": 23.859375,
+      "bounds": {
+        "x": 130.734375,
+        "y": 88.140625,
+        "width": 61.078125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Exact evidence reference",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 23.09375,
+      "bounds": {
+        "x": 28,
+        "y": 88.859375,
+        "width": 663,
+        "height": 23.09375
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Allow once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 94.734375,
+      "visible_height": 23.859375,
+      "bounds": {
+        "x": 28,
+        "y": 88.140625,
+        "width": 94.734375,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 61.078125,
+      "visible_height": 23.859375,
+      "bounds": {
+        "x": 130.734375,
+        "y": 88.140625,
+        "width": 61.078125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Deny",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 61.078125,
+      "visible_height": 23.859375,
+      "bounds": {
+        "x": 130.734375,
+        "y": 88.140625,
+        "width": 61.078125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Send message",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 32,
+      "visible_height": 32,
+      "bounds": {
+        "x": 663,
+        "y": 401,
+        "width": 32,
+        "height": 32
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Allow once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 94.734375,
+      "visible_height": 24,
+      "bounds": {
+        "x": 28,
+        "y": 87.984375,
+        "width": 94.734375,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 472.578125,
+        "y": 478.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Take over",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 86.25,
+      "visible_height": 36,
+      "bounds": {
+        "x": 9,
+        "y": 221,
+        "width": 86.25,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Let agent use",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 110.578125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 9,
+        "y": 221,
+        "width": 110.578125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Hand over & observe",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 153.265625,
+      "visible_height": 36,
+      "bounds": {
+        "x": 21,
+        "y": 244.59375,
+        "width": 153.265625,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 565.8125,
+        "y": 458,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Approve once",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 663,
+      "visible_height": 35.984375,
+      "bounds": {
+        "x": 28,
+        "y": 416.015625,
+        "width": 663,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Take over this operation",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 173.03125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 778,
+        "y": 597.4375,
+        "width": 173.03125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Take over this operation",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 173.03125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 778,
+        "y": 597.4375,
+        "width": 173.03125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Take over this operation",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 173.03125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 27,
+        "y": 376.015625,
+        "width": 173.03125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 6,
+        "y": 484,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Take over this operation",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 173.03125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 27,
+        "y": 376.015625,
+        "width": 173.03125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Take over this operation",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 173.03125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 27,
+        "y": 376.015625,
+        "width": 173.03125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Let agent use",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 110.578125,
+      "visible_height": 36,
+      "bounds": {
+        "x": 9,
+        "y": 221,
+        "width": 110.578125,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Hand over & observe",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 153.265625,
+      "visible_height": 36,
+      "bounds": {
+        "x": 21,
+        "y": 244.59375,
+        "width": 153.265625,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "label": "Take over",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 86.25,
+      "visible_height": 36,
+      "bounds": {
+        "x": 316,
+        "y": 193,
+        "width": 86.25,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 1156.578125,
+        "y": 978.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 479.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 506,
+        "y": 535.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 943,
+        "y": 359.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "label": "Take over",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 86.25,
+      "visible_height": 36,
+      "bounds": {
+        "x": 316,
+        "y": 193,
+        "width": 86.25,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Layout shortcut origin",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 472.578125,
+        "y": 478.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 472.578125,
+        "y": 478.5,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Appearance dark",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "label": "Take over",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 86.25,
+      "visible_height": 36,
+      "bounds": {
+        "x": 9,
+        "y": 221,
+        "width": 86.25,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 90.3125,
+      "visible_height": 16,
+      "bounds": {
+        "x": 565.8125,
+        "y": 458,
+        "width": 90.3125,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Theme group keyboard entry",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 229.8046875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Appearance light",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 16,
+      "visible_height": 16,
+      "bounds": {
+        "x": 146,
+        "y": 285.9921875,
+        "width": 16,
+        "height": 16
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Close",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 24,
+      "visible_height": 24,
+      "bounds": {
+        "x": 583,
+        "y": 109.7265625,
+        "width": 24,
+        "height": 24
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Take over",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 86.25,
+      "visible_height": 36,
+      "bounds": {
+        "x": 9,
+        "y": 221,
+        "width": 86.25,
+        "height": 36
+      }
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "label": "Take over",
+      "focus": true,
+      "outline": "solid",
+      "outline_width": "2px",
+      "uncovered": true,
+      "visible_width": 86.25,
+      "visible_height": 36,
+      "bounds": {
+        "x": 9,
+        "y": 221,
+        "width": 86.25,
+        "height": 36
+      }
+    }
+  ],
+  "zoom_method": "Fixed1440x1000 physical display:1440x1000CSS/dpr1 at100%,720x500CSS/dpr2 at200%; same managed-session cookies across isolated renderer contexts.",
+  "limitations": [
+    "No native OS popup, physical input, live reviewer or authentic merchant qualification. Page transaction labels are untrusted. Local host adapter supplies deterministic tool calls; no model network requests."
+  ],
+  "UI_asset_snapshot": {
+    "assets/BrowserApprovalPreview-D36AppxC.css": "4ecdbf9b298019e7eec3d3d6c468a146466b34c7deb011ca60d6697ebe5f76d0",
+    "assets/BrowserApprovalPreview-D_eap9tg.js": "fe5244b1ff9a70d245f7b7f48e9b6445fed156b9d64cd9e6c869432d705b4a81",
+    "assets/BrowserSurface-K8sMA5p5.js": "a48a7e03cf8454f543552d3064202436e9d3ae4f490ee4c369a9878532674979",
+    "assets/CaptureStatus-DY7eJq0n.js": "5c5808d88a52f5fe05fa98d7b6dadbc9bd1c89c2df902cf17c0999885cbb0269",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/ComputerSurface-OHmJ-QCp.js": "026b4bea3624a3edc844a03d10302b3595388c6c13fd1ea41a51690fced1d11d",
+    "assets/Debugger-Zm4FidxC.js": "f5d469d45aeea62b58102990a80ee1b2664e05b73e54877dd2ee6902ede80046",
+    "assets/Delivery-BF3g1uZ8.js": "dc28670d1d13d64c5045a5b166ba5d2e3839059e828d11159c1ba6a37f499a79",
+    "assets/Keybindings-Dm42wUY5.js": "5aaa66bc52bce66dbf805f61e6745d24a924e45d79aa2dd727a98a91a09efd0d",
+    "assets/Managers-B0Vr3Zba.css": "ae3e40d2a3e21802f1f4c2d515bbd3f3093d894b1365d50326bb5a49e4e3cc73",
+    "assets/Managers-Beye0WqA.js": "bbf3ccea5f32b9dc76d4312d9dda6441d0f3d31d5ce084d680d3929b0ff2ec70",
+    "assets/Media-DYGpS_vI.js": "922bd2df4fc7824c7f60b4a381ca7ff8436bbf41a118bf84a454a364cd27480b",
+    "assets/Preview-C6411B4p.js": "e707e797c130ba3acefdd114641f83b87d05d7480fe248f26d1457718bd338db",
+    "assets/Runners-DVWfuPeR.js": "ad11ca56ea8aef1ab1294aca196259b0cf637e68acf7be68f1921dd4e58fe250",
+    "assets/SafetyManager-C2JqoCxi.js": "09a3f8b957d0e56611b02d3938f77ab3e3a54efcfe2e2ef88eab550b5e9c97cf",
+    "assets/TerminalPanel-Bu9WPAzt.js": "e07cb6a57f9ac4a0de28fa5e20ec44ce6dfe5eb5f9be2eb0caa125e189bee1d8",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/Workbench-jJ6KxnXw.js": "35bf8a207bb5f4c53bf854975df93c761da791fabcba44d459b4146040c4c7eb",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-DniXW_bD.js": "f46c4a0687ca7bb4c5bf481d24325c336c2b70f62e8f31be54931656c01a3bb5",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-DG6vvp6d.js": "8d0b10e9522ec9e23cc002701f2e4433c45224664bae10eb36c605a488cf12c7",
+    "assets/index-CP122w_J.css": "1340284bfca4d7bcec4131f136a10eeb9bcede7bbe68adae6efebefb6dddb1e6",
+    "assets/index-Cq30cxjA.js": "89109518117f451b736382d59b6f51f025b309e6131d1a246f6fce5ee913ad5c",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/mermaid-MCJ5UELQ-CxVE9Xky.js": "70633a3e3b1dd8fe9f57be205c6c2a8cb4b4c6241fb13bc6744e5571486e0377",
+    "assets/model-favorites-7b6QjM1t.js": "f3cffd37272cdd7845b72d639a34abeb75c4b2eaa1030d3206ed6944a87874b3",
+    "assets/play-wTDYmk39.js": "7d88d87625b8f4850b1003e8930c396ac5972dd140c19a4768b3df9e5e342102",
+    "assets/square-Dv679I-e.js": "a9f5d828f10b003e44633fb3d9167c5de36b8d34cb9388abff9b0c2508cee90b",
+    "assets/transfers-BQ3R3rev.js": "5b84cf4ecec3074295c359add330ff3c242df384ca43ab6aafa15e35cbc88582",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "a2ee386ef9a75487755d566d1fa3ac41fc16104f66d7017a8e2fc10f5ef95c97"
+  },
+  "denied_old_canonical_task_cancelled": true,
+  "effects": {
+    "old_amount_rejected_before_effect": true,
+    "fresh_review_amount": "13.50 EUR",
+    "exact_purchase_effects": 1,
+    "unknown_approval_unavailable": true,
+    "explicit_manual_takeover": true,
+    "repeated_ungranted_POST_contacted_site": false,
+    "retained_pause_explicitly_released": true,
+    "same_canonical_active_task": true
+  },
+  "source_checkpoint": "8c3021128cf0e82eddf1aecaca029785e627e7c6",
+  "qualified_process_exit_code": 0,
+  "fixture": "tests/workspace_browser_transactions_e2e.py",
+  "fixture_sha256": "95262f8c4b74ac8bfe0ac36dde093e0c2845628ba591b82fa2c067e1f69dc548",
+  "fixture_output_note": "After successful assertions, CLI output shortened; no assertion/product change.",
+  "screenshots": {
+    "exact-browser-approval-dark-100.png": "f4c8faffb81dd8c2679e3357b7681c5e343c5507edbd8601fe37353a21e95420",
+    "exact-browser-approval-dark-200.png": "44fc4c898177750590e0de4a6b8541e1094655da68acea6fc56a318f75bb11dd",
+    "exact-browser-approval-light-100.png": "fc3bd2d25660b1a8cf4bb64251d9c446eb8113c117fad14d39b6ef8d66bc62b1",
+    "exact-browser-approval-light-200.png": "78723f9f81e4371818328a32745a3f45f7fbf21af961e42e0ebf2cb28866e13e",
+    "exact-chat-approval-dark-100.png": "ab273dc017d635d520dffc42870ebb640a23d659a470288df618325344de231a",
+    "exact-chat-approval-dark-200.png": "ac57da4cd70320e904d6d2697c0dc320fcb5d171fcecebd0901ae40974109da6",
+    "exact-chat-approval-light-100.png": "c0c7dbbb6b366be2335f228db922be9f0553e9970812589c5295ab84534aad53",
+    "exact-chat-approval-light-200.png": "c2944e43d8f301d896330321eea72aae0fc49200da7ffee7b3a176397e8cbc90",
+    "manual-only-takeover-dark-100.png": "a47c1a0f03be6fde03c3efc7938f0d55ff5aad7875bee16675f9e30f7580cb10",
+    "manual-only-takeover-dark-200.png": "c663ccd816f50c27d53264cee1b5eca606487f78d3583331309d1b73b0587e77",
+    "manual-only-takeover-light-100.png": "f0e2b5f3b4187c43bf3ad09f9ccbc7c6ba8911fe3d89943cbfc1962c48cb07c2",
+    "manual-only-takeover-light-200.png": "55ec4b240654646d28634c1f4850f074e2c225e9be5debe2664427c05b571e41",
+    "network-request-paused-dark-100.png": "b2588860cf0941a76819616fe6a0f4c8550e8fe901d2ae40bc9b1410b8a12f85",
+    "network-request-paused-dark-200.png": "5c270155ccd5161d444adb33112c54a0de9f2815d793a6b9481544075e0538e9",
+    "network-request-paused-light-100.png": "8749c7dd34c4e23cc7cf03b0e12acfd3a97bd29e87de0502ec8dbaa553dd56fe",
+    "network-request-paused-light-200.png": "18f8ae7819f017e196e3165e3c4ba6290198776f67d3bca9c30f71549e7a460a"
+  },
+  "historical_fixture_attempts": [
+    {
+      "path": "/tmp/termx-browser-transactions-Cq30-proof/report.json",
+      "issue": "Unscoped shared preview legitimately appeared twice, in Browser and Chat."
+    },
+    {
+      "path": "/tmp/termx-browser-transactions-Cq30-proof-final/report.json",
+      "issue": "Native radio group must use arrow navigation after Tab enters checked choice."
+    },
+    {
+      "path": "/tmp/termx-browser-transactions-Cq30-keyboard-proof/report.json",
+      "issue": "Compact Browser restores with hidden Chat composer; readiness should use actual visible surface."
+    },
+    {
+      "path": "/tmp/termx-browser-transactions-Cq30-final-matrix/report.json",
+      "issue": "Deny intentionally cancels canonical task; fresh task and grant must be explicitly started."
+    }
+  ],
+  "qualification_status": "automated controls passed; Chat200 evidence reading remains partial after visual inspection",
+  "visual_reading_gap": {
+    "surface": "Chat",
+    "zooms": [
+      200
+    ],
+    "themes": [
+      "dark",
+      "light"
+    ],
+    "evidence": "exact-chat-approval-light-200.png",
+    "source_boundary": "styles.css compact @container permits24px transcript minimum",
+    "actual_control_intersection": {
+      "reference_summary_height_css": 23.09375,
+      "allow_once_visible_height_css": 23.859375,
+      "allow_once_total_height_css": 36
+    },
+    "needed": "Bounded accessible approval reading dialog/expansion preserving draft; then meaningful reading-region and full-control geometry assertions.",
+    "product_source_changed": false
+  }
+}

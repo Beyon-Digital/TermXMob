@@ -62,6 +62,9 @@ class ChatGPTAccounts:
         # tokens across daemons too, using a host-level advisory lock.
         async with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            if os.name == 'nt':
+                from termx.private_files import protect_private_path
+                protect_private_path(self.path.parent, directory=True)
             fd = os.open(self.path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
             def acquire():
                 if os.name == "nt":
@@ -95,6 +98,8 @@ class ChatGPTAccounts:
         fd, name = tempfile.mkstemp(dir=self.path.parent, prefix=".chatgpt-")
         try:
             with os.fdopen(fd, "w") as out:
+                from termx.private_files import protect_private_path
+                protect_private_path(Path(name))
                 json.dump(registry, out)
                 out.flush()
                 os.fsync(out.fileno())

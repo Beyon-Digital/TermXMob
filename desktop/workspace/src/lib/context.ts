@@ -1,0 +1,6 @@
+export type ContextItem={type:'browser-context'|'approved-browser-upload';[key:string]:unknown};
+export type IncomingContext={id:string;sessionId?:string;text:string;attachments:unknown[];context?:ContextItem[]};
+export function contextItem(value:unknown):ContextItem|null{if(!value||typeof value!=='object')return null;const type=(value as {type?:unknown}).type;return type==='browser-context'||type==='approved-browser-upload'?value as ContextItem:null}
+export function contextLabel(item:ContextItem):string{const source=(item.type==='approved-browser-upload'?item.file:item.context) as Record<string,unknown>|undefined;return String(source?.filename||source?.name||source?.title||source?.url||(item.type==='approved-browser-upload'?'Browser upload':'Page snapshot'))}
+export function contextDescription(item:ContextItem):string{const source=(item.type==='approved-browser-upload'?item.file:item.context) as Record<string,unknown>|undefined;return item.type==='approved-browser-upload'?'Approved file reference · tab '+String(item.tab_id||''):String(source?.url||'')+(source?.document_revision?' · revision '+source.document_revision:'')}
+export function sameContext(left:ContextItem[]|undefined,right:ContextItem[]|undefined){return JSON.stringify(left||[])===JSON.stringify(right||[])}

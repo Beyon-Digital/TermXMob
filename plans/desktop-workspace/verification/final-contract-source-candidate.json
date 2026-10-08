@@ -1,0 +1,60 @@
+{
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "candidate": true,
+  "production_bundle": "index-CETSIarw.js",
+  "frontend": {
+    "fork_selected_context": {
+      "tests": 2,
+      "result": "passed",
+      "scope": "chosen turns/files/summary, exact digest commit, edit preservation, Lock stale response fence"
+    },
+    "pre_fork_session_policy_and_chat_drafts": {
+      "tests": 15,
+      "result": "passed",
+      "scope": "separate prior snapshot; no additive whole-suite count"
+    },
+    "production_build": "passed",
+    "whole_current_suite": {
+      "tests": 241,
+      "files": 64,
+      "seconds": 367.27,
+      "result": "passed"
+    },
+    "semantic_fork_style_build": {
+      "result": "passed",
+      "seconds": 81,
+      "bundle": "index-BRkyqD1Q.js"
+    },
+    "final_frozen_build": {
+      "result": "passed",
+      "tsc": "passed",
+      "vite_seconds": 12.64,
+      "bundle": "index-Cq30cxjA.js"
+    },
+    "final_browser_publication_slice": {
+      "tests": 17,
+      "files": 2,
+      "seconds": 6.07,
+      "result": "passed",
+      "scope": "Includes final takeover/request-paused states after prior whole-suite241 snapshot."
+    }
+  },
+  "backend": {
+    "real_coordinator_fork": {
+      "passed": 1,
+      "deselected": 41,
+      "seconds": 75.51
+    }
+  },
+  "limits": [
+    "Final source CI and installed/live qualification remain separate from passed current full frontend suite.",
+    "Actual Access policy/fork rendering and installed/live qualification are distinct.",
+    "Initial component fixture returned the preview for commit too; fixture predicate corrected and both cases passed. No production behavior was weakened."
+  ],
+  "rendered_proofs": [
+    "identity-access-session-policy-rendered-CETSIarw.json",
+    "fork-context-rendered.json",
+    "coding-consent-rendered-AQa.json"
+  ],
+  "browser_backend_proof": "browser-transaction-boundary.json"
+}

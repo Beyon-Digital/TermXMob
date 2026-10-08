@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -41,12 +42,15 @@ def _store(tmp_path: Path) -> AgentStore:
 
 def test_resolve_finds_engine_in_user_dir(monkeypatch, tmp_path):
     """The GUI-PATH gap: stripped PATH must not hide ~/.local/bin engines."""
-    fake = tmp_path / ".local" / "bin" / "devin"
+    fake = tmp_path / ".local" / "bin" / ("devin.exe" if os.name == "nt" else "devin")
     fake.parent.mkdir(parents=True)
-    fake.write_text("#!/bin/sh\nexit 0\n")
-    fake.chmod(0o755)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # stripped GUI env
+    if os.name == "nt":
+        shutil.copyfile(sys.executable, fake)  # genuine platform executable
+    else:
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(0o755)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
     resolved = resolve_executable("devin")
     assert resolved == str(fake.resolve())
 
@@ -57,12 +61,15 @@ def test_resolve_override_and_missing(tmp_path):
     override = resolve_executable(
         "whatever", override=str(FIXTURE), env={})
     # fixture is not executable-bit; expect None unless we chmod
-    assert override is None
+    # Windows has no executable permission bit; an explicit existing-file
+    # override follows os.access semantics, while nonexistent paths always deny.
+    assert override == (str(FIXTURE.resolve()) if os.name == "nt" else None)
+    assert resolve_executable("whatever", override=str(tmp_path / "missing"), env={}) is None
 
 
 def test_search_path_includes_user_dirs(monkeypatch, tmp_path):
     (tmp_path / ".local" / "bin").mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
     entries = engine_search_path({"PATH": "/usr/bin"})
     assert str(tmp_path / ".local" / "bin") in entries
     assert entries[0] == "/usr/bin"  # existing PATH preserved first

@@ -1,0 +1,79 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {webcrypto} from 'node:crypto';
+import VoiceControls from './VoiceControls';
+import {gql,request} from '../lib/api';
+import {transfer} from '../lib/transfers';
+vi.mock('../lib/api',()=>({gql:vi.fn(),request:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
+vi.mock('../lib/transfers',()=>({transfer:vi.fn()}));
+const api=vi.mocked(request),graph=vi.mocked(gql),upload=vi.mocked(transfer);
+const props={sessionId:'chat-A',projectId:'project',ownerId:'owner',reply:'Assistant response',onTranscript:vi.fn()};
+beforeEach(()=>{vi.stubGlobal('crypto',webcrypto);localStorage.clear();api.mockReset();graph.mockReset();upload.mockReset();props.onTranscript.mockReset();graph.mockResolvedValue({agent_providers:[{id:'audio',name:'Audio API',capabilities:['audio'],secret_configured:true},{id:'other',name:'Other API',capabilities:['audio'],secret_configured:true},{id:'chat-only',name:'Chat only',capabilities:['chat'],secret_configured:true}]});upload.mockResolvedValue({text:async()=>JSON.stringify({id:'input-A',mime:'audio/webm'})} as Blob);api.mockResolvedValue({id:'transcript',content:'Inspect this transcript'});});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks()});
+async function selectAndUpload(){await screen.findByRole('option',{name:'Audio API'});fireEvent.change(screen.getByLabelText('Voice account'),{target:{value:'audio'}});fireEvent.change(screen.getByLabelText('Transcription model'),{target:{value:'transcribe-model'}});fireEvent.change(screen.getByLabelText('Upload audio'),{target:{files:[new File(['audio'],'voice.webm',{type:'audio/webm'})]}});await screen.findByRole('button',{name:'Transcribe audio'});}
+it('requires explicit account consent, reviews dictation and never sends the chat automatically',async()=>{
+ render(<VoiceControls {...props}/>);await selectAndUpload();expect(screen.queryByRole('option',{name:'Chat only'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Transcribe audio'})).toBeDisabled();expect(api).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'Transcribe audio'}));const text=await screen.findByLabelText('Review voice transcript');expect(props.onTranscript).not.toHaveBeenCalled();fireEvent.change(text,{target:{value:'Reviewed voice instruction'}});fireEvent.click(screen.getByRole('button',{name:'Add transcript to composer'}));expect(props.onTranscript).toHaveBeenCalledExactlyOnceWith('Reviewed voice instruction');expect(api.mock.calls.map(([path])=>path)).toEqual(['/api/media/generate']);
+ fireEvent.change(screen.getByLabelText('Voice account'),{target:{value:'other'}});expect(screen.getByRole('checkbox')).not.toBeChecked();expect(screen.getByRole('button',{name:'Read latest reply aloud'})).toBeDisabled();
+});
+it('reuses the same transcription request after a lost response without another upload',async()=>{
+ let attempt=0;api.mockImplementation(async()=>{if(++attempt===1)throw new Error('Response lost');return {id:'transcript',content:'Recovered transcript'}});render(<VoiceControls {...props}/>);await selectAndUpload();fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'Transcribe audio'}));await screen.findByRole('alert');await waitFor(()=>expect(screen.getByRole('button',{name:'Transcribe audio'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Transcribe audio'}));await screen.findByLabelText('Review voice transcript');expect(upload).toHaveBeenCalledOnce();expect(api.mock.calls[1][1]?.body).toBe(api.mock.calls[0][1]?.body);expect(props.onTranscript).not.toHaveBeenCalled();
+});
+it('speaks only the explicitly selected reply through the chosen account and keeps playback manual',async()=>{
+ const create=vi.fn().mockReturnValue('blob:spoken-reply'),revoke=vi.fn();vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:create,revokeObjectURL:revoke}));api.mockResolvedValue({id:'spoken'});upload.mockResolvedValue(new Blob(['encoded-audio'],{type:'audio/mpeg'}));
+ render(<VoiceControls {...props}/>);await screen.findByRole('option',{name:'Audio API'});fireEvent.change(screen.getByLabelText('Voice account'),{target:{value:'audio'}});fireEvent.change(screen.getByLabelText('Speech model'),{target:{value:'speech-model'}});fireEvent.change(screen.getByLabelText('Speech voice'),{target:{value:'configured-voice'}});expect(api).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'Read latest reply aloud'}));const player=await screen.findByLabelText('Spoken assistant reply');expect(player).not.toHaveAttribute('autoplay');expect(JSON.parse(String(api.mock.calls[0][1]?.body))).toMatchObject({operation:'speak',provider_id:'audio',model:'speech-model',prompt:'Assistant response',voice:'configured-voice',acknowledge_billing:true});expect(upload).toHaveBeenCalledWith('/api/media/artifacts/spoken/export?format=original');expect(props.onTranscript).not.toHaveBeenCalled();cleanup();expect(revoke).toHaveBeenCalledWith('blob:spoken-reply');
+});
+it('stops tracks and discards an active recording when the chat becomes hidden',async()=>{
+ const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue({getTracks:()=>[{stop}]})}});let recorder:any;
+ vi.stubGlobal('MediaRecorder',class{static isTypeSupported(){return true}state='inactive';mimeType='audio/webm';ondataavailable:any;onstop:any;constructor(){recorder=this}start(){this.state='recording'}stop(){this.state='inactive';this.ondataavailable?.({data:new Blob(['voice'])});this.onstop?.()}});
+ const view=render(<VoiceControls {...props} visible/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));await screen.findByRole('button',{name:'Stop microphone'});view.rerender(<VoiceControls {...props} visible={false}/>);await waitFor(()=>expect(recorder.state).toBe('inactive'));expect(stop).toHaveBeenCalled();expect(upload).not.toHaveBeenCalled();expect(api).not.toHaveBeenCalled();
+});
+it('releases a microphone permission result arriving after the session unmounts',async()=>{
+ let resolve!:(value:unknown)=>void;const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:()=>new Promise(value=>{resolve=value})}});vi.stubGlobal('MediaRecorder',class{});
+ const view=render(<VoiceControls {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));view.unmount();resolve({getTracks:()=>[{stop}]});await waitFor(()=>expect(stop).toHaveBeenCalledOnce());expect(upload).not.toHaveBeenCalled();expect(api).not.toHaveBeenCalled();
+});
+it('releases late microphone permission after hiding the chat and refreshes account availability on return',async()=>{
+ let resolve!:(value:unknown)=>void;const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:()=>new Promise(value=>{resolve=value})}});vi.stubGlobal('MediaRecorder',class{});
+ const view=render(<VoiceControls {...props} visible/>);await screen.findByRole('option',{name:'Audio API'});fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));view.rerender(<VoiceControls {...props} visible={false}/>);resolve({getTracks:()=>[{stop}]});await waitFor(()=>expect(stop).toHaveBeenCalledOnce());expect(upload).not.toHaveBeenCalled();graph.mockResolvedValue({agent_providers:[{id:'new-audio',name:'New audio API',capabilities:['audio'],secret_configured:true}]});view.rerender(<VoiceControls {...props} visible/>);await screen.findByRole('option',{name:'New audio API'});expect(screen.queryByRole('option',{name:'Audio API'})).not.toBeInTheDocument();
+});
+it('stops and discards a recording when another tab hides its dock pane',async()=>{
+ let changed!:(entries:unknown[])=>void;vi.stubGlobal('ResizeObserver',class{constructor(callback:any){changed=callback}observe(){}disconnect(){}});const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue({getTracks:()=>[{stop}]})}});
+ vi.stubGlobal('MediaRecorder',class{static isTypeSupported(){return true}state='inactive';mimeType='audio/webm';ondataavailable:any;onstop:any;start(){this.state='recording'}stop(){this.state='inactive';this.ondataavailable?.({data:new Blob(['voice'])});this.onstop?.()}});
+ render(<VoiceControls {...props} visible/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));await screen.findByRole('button',{name:'Stop microphone'});act(()=>changed([{contentRect:{width:0,height:0}}]));await waitFor(()=>expect(screen.queryByRole('button',{name:'Stop microphone'})).not.toBeInTheDocument());expect(stop).toHaveBeenCalled();expect(upload).not.toHaveBeenCalled();expect(api).not.toHaveBeenCalled();
+});
+
+it('stops and discards recording when its window is minimized or backgrounded',async()=>{
+ const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue({getTracks:()=>[{stop}]})}});
+ vi.stubGlobal('MediaRecorder',class{static isTypeSupported(){return true}state='inactive';mimeType='audio/webm';ondataavailable:any;onstop:any;start(){this.state='recording'}stop(){this.state='inactive';this.ondataavailable?.({data:new Blob(['voice'])});this.onstop?.()}});
+ render(<VoiceControls {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));await screen.findByRole('button',{name:'Stop microphone'});vi.spyOn(document,'hidden','get').mockReturnValue(true);fireEvent(document,new Event('visibilitychange'));await waitFor(()=>expect(screen.queryByRole('button',{name:'Stop microphone'})).not.toBeInTheDocument());expect(stop).toHaveBeenCalled();expect(upload).not.toHaveBeenCalled();expect(api).not.toHaveBeenCalled();
+});
+
+it('allows only one pending microphone request and releases a cancelled late grant',async()=>{
+ let resolve!:(value:unknown)=>void;const stop=vi.fn(),getUserMedia=vi.fn(()=>new Promise(value=>{resolve=value}));vi.stubGlobal('navigator',{mediaDevices:{getUserMedia}});vi.stubGlobal('MediaRecorder',class{});
+ render(<VoiceControls {...props}/>);const record=screen.getByRole('button',{name:'Record dictation'});fireEvent.click(record);expect(record).toBeDisabled();fireEvent.click(record);expect(getUserMedia).toHaveBeenCalledOnce();fireEvent.click(screen.getByRole('button',{name:'Cancel microphone request'}));resolve({getTracks:()=>[{stop}]});await waitFor(()=>expect(stop).toHaveBeenCalledOnce());expect(screen.queryByRole('button',{name:'Stop microphone'})).not.toBeInTheDocument();expect(upload).not.toHaveBeenCalled();
+});
+it('does not restart a cancelled permission request after hiding then returning to the chat',async()=>{
+ let resolve!:(value:unknown)=>void;const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:()=>new Promise(value=>{resolve=value})}});vi.stubGlobal('MediaRecorder',class{});
+ const view=render(<VoiceControls {...props} visible/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));view.rerender(<VoiceControls {...props} visible={false}/>);view.rerender(<VoiceControls {...props} visible/>);resolve({getTracks:()=>[{stop}]});await waitFor(()=>expect(stop).toHaveBeenCalledOnce());expect(screen.queryByRole('button',{name:'Stop microphone'})).not.toBeInTheDocument();expect(upload).not.toHaveBeenCalled();expect(api).not.toHaveBeenCalled();
+});
+
+it('ignores deferred events from a cancelled recorder after a new recording starts',async()=>{
+ const ended:any[]=[];vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue({getTracks:()=>[{stop:vi.fn()}]})}});
+ vi.stubGlobal('MediaRecorder',class{static isTypeSupported(){return true}state='inactive';mimeType='audio/webm';ondataavailable:any;onstop:any;start(){this.state='recording'}stop(){this.state='inactive';ended.push(this)}});
+ const view=render(<VoiceControls {...props} visible/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));await screen.findByRole('button',{name:'Stop microphone'});view.rerender(<VoiceControls {...props} visible={false}/>);view.rerender(<VoiceControls {...props} visible/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));await screen.findByRole('button',{name:'Stop microphone'});act(()=>{ended[0].ondataavailable({data:new Blob(['discarded old recording'])});ended[0].onstop()});expect(screen.getByRole('button',{name:'Stop microphone'})).toBeInTheDocument();expect(upload).not.toHaveBeenCalled();
+});
+
+it('releases late microphone permission after locking without restarting or uploading',async()=>{
+ let resolve!:(value:unknown)=>void;const stop=vi.fn();vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:()=>new Promise(value=>{resolve=value})}});vi.stubGlobal('MediaRecorder',class{});
+ render(<VoiceControls {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Record dictation'}));fireEvent(window,new Event('termx-locked'));resolve({getTracks:()=>[{stop}]});await waitFor(()=>expect(stop).toHaveBeenCalledOnce());expect(screen.queryByRole('button',{name:'Stop microphone'})).not.toBeInTheDocument();expect(upload).not.toHaveBeenCalled();expect(api).not.toHaveBeenCalled();
+});
+it('discards a late transcription after locking and requires new billing consent',async()=>{
+ let resolve!:(value:unknown)=>void;api.mockImplementation(()=>new Promise(value=>{resolve=value}));render(<VoiceControls {...props}/>);await selectAndUpload();fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'Transcribe audio'}));await waitFor(()=>expect(api).toHaveBeenCalledOnce());fireEvent(window,new Event('termx-locked'));await act(async()=>{resolve({id:'late',content:'Private late transcript'})});expect(screen.queryByLabelText('Review voice transcript')).not.toBeInTheDocument();expect(screen.getByRole('checkbox')).not.toBeChecked();expect(props.onTranscript).not.toHaveBeenCalled();expect(upload).toHaveBeenCalledOnce();
+});
+it('stops local speech playback and revokes its object URL on lock',async()=>{
+ const revoke=vi.fn(),pause=vi.spyOn(HTMLMediaElement.prototype,'pause').mockImplementation(()=>{});vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:vi.fn().mockReturnValue('blob:locked-speech'),revokeObjectURL:revoke}));api.mockResolvedValue({id:'speech'});upload.mockResolvedValue(new Blob(['audio'],{type:'audio/mpeg'}));render(<VoiceControls {...props}/>);await screen.findByRole('option',{name:'Audio API'});fireEvent.change(screen.getByLabelText('Voice account'),{target:{value:'audio'}});fireEvent.change(screen.getByLabelText('Speech model'),{target:{value:'speech-model'}});fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'Read latest reply aloud'}));await screen.findByLabelText('Spoken assistant reply');fireEvent(window,new Event('termx-locked'));expect(pause).toHaveBeenCalledOnce();expect(revoke).toHaveBeenCalledWith('blob:locked-speech');expect(screen.queryByLabelText('Spoken assistant reply')).not.toBeInTheDocument();
+});
+
+it('does not dispatch provider work when locking while its intent digest is pending',async()=>{
+ render(<VoiceControls {...props}/>);await selectAndUpload();let resolve!:(value:ArrayBuffer)=>void;vi.spyOn(crypto.subtle,'digest').mockImplementation(()=>new Promise(value=>{resolve=value}));fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'Transcribe audio'}));await waitFor(()=>expect(resolve).toBeTypeOf('function'));fireEvent(window,new Event('termx-locked'));await act(async()=>resolve(new ArrayBuffer(32)));expect(api).not.toHaveBeenCalled();expect(screen.getByRole('checkbox')).not.toBeChecked();expect(props.onTranscript).not.toHaveBeenCalled();
+});

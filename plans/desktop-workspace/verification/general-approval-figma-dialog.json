@@ -1,0 +1,204 @@
+{
+  "mutatedNodeIds": [
+    "64:16688",
+    "I64:16688;21:17",
+    "I64:16688;21:18",
+    "64:16691",
+    "64:16692",
+    "64:16695",
+    "64:16698",
+    "64:16701",
+    "I64:16701;21:15",
+    "64:16703",
+    "64:16704",
+    "64:16710",
+    "64:16716",
+    "64:16717",
+    "64:16723",
+    "64:16729",
+    "64:16730",
+    "64:16734",
+    "64:16738",
+    "I66:28695;4:116;4:5",
+    "64:16647",
+    "64:16687",
+    "64:16739",
+    "66:28695"
+  ],
+  "createdNodeIds": [
+    "78:16690",
+    "78:16691",
+    "78:16692",
+    "78:16693",
+    "78:16694",
+    "78:16695",
+    "78:16696",
+    "78:16697",
+    "78:16698",
+    "78:16699",
+    "78:16700",
+    "78:16701",
+    "78:16702",
+    "78:16703",
+    "78:16704",
+    "78:16705",
+    "78:16706",
+    "78:16707",
+    "78:16708",
+    "78:16709",
+    "78:16710",
+    "78:16711",
+    "78:16712",
+    "78:16713",
+    "78:16714",
+    "78:16715",
+    "78:16716",
+    "78:16717",
+    "78:16793"
+  ],
+  "summary": {
+    "state": "J-ENTRY-21",
+    "id": "64:16548",
+    "texts": 84,
+    "instances": 129,
+    "image_fills": 0,
+    "fonts": [
+      "Geist"
+    ]
+  },
+  "prototypeActionIdsPreserved": [
+    "64:16692",
+    "64:16695",
+    "64:16698"
+  ],
+  "BrowserInlineStateUntouched": "32:244",
+  "final_visual_validation": {
+    "mutatedNodeIds": [
+      "I64:16730;21:13",
+      "I64:16734;21:13"
+    ],
+    "storedBranches": [
+      {
+        "id": "64:16692",
+        "reactions": [
+          {
+            "action": {
+              "type": "NODE",
+              "destinationId": "64:16744",
+              "navigation": "NAVIGATE",
+              "transition": null,
+              "resetVideoPosition": false,
+              "resetScrollPosition": true
+            },
+            "actions": [
+              {
+                "type": "NODE",
+                "destinationId": "64:16744",
+                "navigation": "NAVIGATE",
+                "transition": null,
+                "resetVideoPosition": false,
+                "resetScrollPosition": true
+              }
+            ],
+            "trigger": {
+              "type": "ON_CLICK"
+            }
+          }
+        ]
+      },
+      {
+        "id": "64:16695",
+        "reactions": [
+          {
+            "action": {
+              "type": "NODE",
+              "destinationId": "32:98",
+              "navigation": "NAVIGATE",
+              "transition": null,
+              "resetVideoPosition": false,
+              "resetScrollPosition": true
+            },
+            "actions": [
+              {
+                "type": "NODE",
+                "destinationId": "32:98",
+                "navigation": "NAVIGATE",
+                "transition": null,
+                "resetVideoPosition": false,
+                "resetScrollPosition": true
+              }
+            ],
+            "trigger": {
+              "type": "ON_CLICK"
+            }
+          }
+        ]
+      },
+      {
+        "id": "64:16698",
+        "reactions": [
+          {
+            "action": {
+              "type": "NODE",
+              "destinationId": "64:16940",
+              "navigation": "NAVIGATE",
+              "transition": null,
+              "resetVideoPosition": false,
+              "resetScrollPosition": true
+            },
+            "actions": [
+              {
+                "type": "NODE",
+                "destinationId": "64:16940",
+                "navigation": "NAVIGATE",
+                "transition": null,
+                "resetVideoPosition": false,
+                "resetScrollPosition": true
+              }
+            ],
+            "trigger": {
+              "type": "ON_CLICK"
+            }
+          }
+        ]
+      },
+      {
+        "id": "66:28695",
+        "reactions": [
+          {
+            "action": {
+              "type": "NODE",
+              "destinationId": "64:16548",
+              "navigation": "NAVIGATE",
+              "transition": null,
+              "resetVideoPosition": false,
+              "resetScrollPosition": true
+            },
+            "actions": [
+              {
+                "type": "NODE",
+                "destinationId": "64:16548",
+                "navigation": "NAVIGATE",
+                "transition": null,
+                "resetVideoPosition": false,
+                "resetScrollPosition": true
+              }
+            ],
+            "trigger": {
+              "type": "ON_CLICK"
+            }
+          }
+        ]
+      }
+    ],
+    "unchangedFrame": "64:16548",
+    "BrowserInlineUntouched": "32:244"
+  },
+  "file_key": "Vo9guk8YNqP0H9DUMPvmCv",
+  "state_count": 95,
+  "managed_prototype_edges": 234,
+  "original_actions_preserved": true,
+  "cached_render": "figma/advanced-renders/coding-consent.png",
+  "code": "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+  "presentation": "Compact Chat Review action trigger opens bounded details dialog; host-advertised consent scopes only; Close/Escape preserves composer draft. BrowserSurface inline approval is deliberately unchanged."
+}

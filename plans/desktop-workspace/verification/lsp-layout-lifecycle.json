@@ -1,0 +1,39 @@
+{
+  "scope": "Actual isolated Chat/Workbench loaded-editor moves across dark/light and 100/200; explicit qualified backend language runtime; no provider queries",
+  "production_asset": "index-g3oKg0Gh.js",
+  "backend_environment": "PATH=/Users/jainamshah/Documents/GitHub/termxmob/.venv/bin:$PATH",
+  "resolved_python_adapter": [
+    "/Users/jainamshah/Documents/GitHub/termxmob/.venv/bin/basedpyright-langserver",
+    "--stdio"
+  ],
+  "states": 8,
+  "axe_violations": 0,
+  "page_errors": 0,
+  "editor_viewport_200": {
+    "width": 582,
+    "height": 176
+  },
+  "protocol": [
+    "initialize response",
+    "initialized",
+    "workspace/configuration request/response",
+    "textDocument/didOpen"
+  ],
+  "stderr_records": 0,
+  "host_4403_or_4404_closes": 0,
+  "expected_context_disposal_cancellation_preserved": true,
+  "screenshot_no_disconnect_toast": "/tmp/termx-lsp-traced-ui/workbench-light-200.png",
+  "diagnostic_trace": "/tmp/termx-lsp-ui-trace.json",
+  "source_lifecycle_regressions": "desktop/workspace/src/lib/lsp-lifecycle.test.ts",
+  "limits": "A source fixture without the qualified .venv/bin PATH may select a different available adapter. Unexpected adapter/socket failures remain reported; this proof does not suppress them or imply arbitrary adapters are qualified.",
+  "missing_runtime_admission": {
+    "backend_passed": 3,
+    "frontend_lifecycle_path_passed": 5,
+    "source_tests": [
+      "tests/test_lsp_admission.py",
+      "desktop/workspace/src/lib/lsp-lifecycle.test.ts",
+      "desktop/workspace/src/lib/lsp-paths.test.ts"
+    ],
+    "contract": "Current scope callback precedes missing-runtime acceptance; unauthorized never accepted; authorized socket delivers 4404 with bounded install guidance. Unexpected actual reason retained bounded; intentional closure remains quiet."
+  }
+}

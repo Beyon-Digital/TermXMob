@@ -1,0 +1,82 @@
+{
+  "proof": "actual-artifact-ui",
+  "paid_provider_queries": 0,
+  "errors": [],
+  "artifacts": [
+    {
+      "kind": "document",
+      "saved_version": 2,
+      "original_version_unchanged": true,
+      "export": "docx",
+      "bytes": 36595
+    },
+    {
+      "kind": "table",
+      "saved_version": 2,
+      "original_version_unchanged": true,
+      "export": "xlsx",
+      "bytes": 4848
+    },
+    {
+      "kind": "deck",
+      "saved_version": 2,
+      "original_version_unchanged": true,
+      "export": "pptx",
+      "bytes": 32906
+    },
+    {
+      "kind": "chart",
+      "saved_version": 2,
+      "original_version_unchanged": true,
+      "export": "svg",
+      "bytes": 343
+    },
+    {
+      "kind": "code",
+      "saved_version": 2,
+      "original_version_unchanged": true,
+      "export": "txt",
+      "bytes": 28
+    }
+  ],
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 100,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 200,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom_percent": 200,
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "system_appearance": {
+    "live_dark_and_light": true,
+    "preference_survives_reload": true,
+    "dialog_axe_violations": 0
+  },
+  "command_search": {
+    "settings_open_by_arrow_and_enter": true,
+    "keyboard_settings_open_by_enter": true,
+    "no_match_does_not_execute": true,
+    "view_open_by_enter": true,
+    "appearance_axe_violations": 0
+  },
+  "production_bundle": "index-D38oYzsw",
+  "source_scope": "Actual five-kind artifact editing/versioning/export, System appearance persistence/live OS changes, and searchable settings/views commands with keyboard execution. Image/audio provider qualification remains separate."
+}

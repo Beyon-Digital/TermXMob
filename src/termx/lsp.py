@@ -6,9 +6,11 @@ import os
 import shutil
 import signal
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
+from pathlib import Path
+from urllib.parse import urlparse,unquote
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import HTTPException,WebSocket, WebSocketDisconnect
 
 from termx.agent.execution import SENSITIVE_ENV
 
@@ -38,6 +40,10 @@ _SPECS = {
 
 
 def _command(language: str) -> tuple[str, ...] | None:
+    from termx.desktop.runtime import language_command
+    bundled = language_command(language)
+    if bundled:
+        return bundled
     spec = _SPECS.get(language)
     if spec is None:
         return None
@@ -89,14 +95,51 @@ async def _read_message(process: asyncio.subprocess.Process) -> str:
     return body.decode("utf-8")
 
 
-async def _from_client(websocket: WebSocket, process: asyncio.subprocess.Process) -> None:
-    while True:
-        await _write_message(process, await websocket.receive_text())
+def _validate_client_message(raw: str, root: str) -> None:
+    message=json.loads(raw)
+    if not isinstance(message,dict):
+        raise ValueError('Language requests must be JSON-RPC objects')
+    if message.get('method')=='workspace/executeCommand':
+        raise ValueError('Language command execution needs a separately authorized execution port')
+    base=Path(root).resolve(strict=True)
+    def check_path(value,uri=False):
+        if not isinstance(value,str):
+            raise ValueError('Language document paths must be strings')
+        if uri:
+            parsed=urlparse(value)
+            if parsed.scheme!='file' or (parsed.netloc and os.name!='nt'):
+                raise ValueError('Language documents must use local file URIs')
+            value=unquote(parsed.path)
+            if os.name=='nt':
+                if parsed.netloc:value='//'+parsed.netloc+value
+                elif len(value)>2 and value[0]=='/' and value[2]==':':value=value[1:]
+        target=Path(value).resolve(strict=False)
+        if not target.is_relative_to(base):
+            raise PermissionError('Language document leaves the authorized checkout')
+    def inspect(value):
+        if isinstance(value,dict):
+            for key,item in value.items():
+                if key in {'uri','rootUri','documentUri','targetUri'} and item is not None:check_path(item,True)
+                elif key=='rootPath' and item is not None:check_path(item)
+                else:inspect(item)
+        elif isinstance(value,list):
+            for item in value:inspect(item)
+    inspect(message.get('params',{}))
 
 
-async def _to_client(websocket: WebSocket, process: asyncio.subprocess.Process) -> None:
+async def _from_client(websocket: WebSocket, process: asyncio.subprocess.Process,root: str,authorize=None) -> None:
     while True:
-        await websocket.send_text(await _read_message(process))
+        raw=await websocket.receive_text()
+        if authorize:await asyncio.to_thread(authorize)
+        _validate_client_message(raw,root)
+        await _write_message(process,raw)
+
+
+async def _to_client(websocket: WebSocket, process: asyncio.subprocess.Process,authorize=None) -> None:
+    while True:
+        message=await _read_message(process)
+        if authorize:await asyncio.to_thread(authorize)
+        await websocket.send_text(message)
 
 
 async def _drain_stderr(process: asyncio.subprocess.Process) -> None:
@@ -129,10 +172,14 @@ async def _stop(process: asyncio.subprocess.Process) -> None:
         await process.wait()
 
 
-async def serve(websocket: WebSocket, root: str, language: str) -> None:
+async def serve(websocket: WebSocket, root: str, language: str,authorize:Callable[[],None]|None=None) -> None:
     command = _command(language)
     if command is None:
-        await websocket.close(code=4404, reason="Language server unavailable")
+        # Acceptance preserves an actionable close code in real browser clients.
+        # Admission remains live and authorized before any handshake succeeds.
+        if authorize:await asyncio.to_thread(authorize)
+        await websocket.accept()
+        await websocket.close(code=4404, reason="Language server unavailable. Install the configured language runtime.")
         return
     kwargs: dict[str, Any] = {
         "cwd": root,
@@ -147,11 +194,12 @@ async def serve(websocket: WebSocket, root: str, language: str) -> None:
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
+    if authorize:await asyncio.to_thread(authorize)
     process = await asyncio.create_subprocess_exec(*command, **kwargs)
     await websocket.accept()
     tasks = {
-        asyncio.create_task(_from_client(websocket, process)),
-        asyncio.create_task(_to_client(websocket, process)),
+        asyncio.create_task(_from_client(websocket, process,root,authorize)),
+        asyncio.create_task(_to_client(websocket, process,authorize)),
         asyncio.create_task(_drain_stderr(process)),
         asyncio.create_task(process.wait()),
     }
@@ -163,6 +211,8 @@ async def serve(websocket: WebSocket, root: str, language: str) -> None:
                     task.result()
                 except (WebSocketDisconnect, EOFError, ConnectionError, asyncio.IncompleteReadError):
                     pass
+                except (ValueError,PermissionError,HTTPException):
+                    await websocket.close(code=4403,reason="Language request left the authorized checkout")
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)

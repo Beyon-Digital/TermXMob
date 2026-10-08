@@ -1,0 +1,27 @@
+{
+  "source_commit": "e40b180c457ae9f6cf33881cfa76559faefef25a",
+  "source_CI": {
+    "run": 37621381290,
+    "conclusion": "success",
+    "linux": {
+      "passed": 844,
+      "skipped": 137,
+      "seconds": 140.94
+    },
+    "macos": {
+      "passed": 876,
+      "skipped": 105,
+      "seconds": 227.54
+    },
+    "frontend": {
+      "tests": 62,
+      "files": 22,
+      "build": "pass"
+    }
+  },
+  "Windows_contracts": {
+    "run": 37621381526,
+    "conclusion": "success"
+  },
+  "scope": "Committed native prerequisite checkpoint only; later combined browser/preset/media/voice/UI working-tree changes require their own source and artifact qualification."
+}

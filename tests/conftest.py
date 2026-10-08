@@ -4,6 +4,19 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def test_client_uses_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Host tests model local clients; remote tests opt into a real peer IP."""
+    from starlette.testclient import TestClient
+    original = TestClient.__init__
+
+    def initialize(self, *args, **kwargs):
+        kwargs.setdefault("client", ("127.0.0.1", 50000))
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(TestClient, "__init__", initialize)
+
+
+@pytest.fixture(autouse=True)
 def termx_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "termx-config"))
     # Keep file-backed agent/discovery writes hermetic: never touch the real

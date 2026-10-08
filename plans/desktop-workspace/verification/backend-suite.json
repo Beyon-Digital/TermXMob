@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-07",
+  "command": ".venv/bin/python -m pytest -q --tb=short",
+  "passed": 767,
+  "skipped": 87,
+  "failed": 0,
+  "duration_seconds": 287.54,
+  "scope": "current source full backend, optional real browser/native/container proofs run separately"
+}

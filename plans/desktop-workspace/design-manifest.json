@@ -1,0 +1,1419 @@
+{
+  "schema_version": "0.3",
+  "product": "TermX desktop/web",
+  "status": "runtime-mapped-with-original-design-provenance",
+  "typography": {
+    "ui": "Geist",
+    "code": "Geist Mono"
+  },
+  "tokens": {
+    "color": {
+      "background": {
+        "Light": "#FAFAF9",
+        "Dark": "#151716",
+        "css": "--background"
+      },
+      "sidebar": {
+        "Light": "#F2F3F0",
+        "Dark": "#111312",
+        "css": "--sidebar"
+      },
+      "surface": {
+        "Light": "#FFFFFF",
+        "Dark": "#1D201E",
+        "css": "--surface"
+      },
+      "muted": {
+        "Light": "#E9ECE7",
+        "Dark": "#262C28",
+        "css": "--muted"
+      },
+      "foreground": {
+        "Light": "#191F1C",
+        "Dark": "#F0F3ED",
+        "css": "--foreground"
+      },
+      "secondary": {
+        "Light": "#626D65",
+        "Dark": "#A8B4AC",
+        "css": "--secondary"
+      },
+      "border": {
+        "Light": "#DCE1DA",
+        "Dark": "#343D37",
+        "css": "--border"
+      },
+      "accent": {
+        "Light": "#116C46",
+        "Dark": "#92D4A3",
+        "css": "--accent"
+      },
+      "accent-soft": {
+        "Light": "#E3F1E6",
+        "Dark": "#213C2A",
+        "css": "--accent-soft"
+      },
+      "accent-foreground": {
+        "Light": "#FFFFFF",
+        "Dark": "#14251A",
+        "css": "--accent-foreground"
+      },
+      "warning": {
+        "Light": "#8A5910",
+        "Dark": "#E9BD70",
+        "css": "--warning"
+      },
+      "warning-soft": {
+        "Light": "#FCF1DC",
+        "Dark": "#3A2F1D",
+        "css": "--warning-soft"
+      },
+      "danger": {
+        "Light": "#A33C38",
+        "Dark": "#F49C93",
+        "css": "--danger"
+      }
+    },
+    "spacing": [
+      0,
+      4,
+      8,
+      12,
+      16,
+      20,
+      24,
+      32,
+      40,
+      48
+    ],
+    "radii": [
+      4,
+      8,
+      12,
+      16
+    ]
+  },
+  "components": [
+    {
+      "id": "text-caption",
+      "name": "Atom/Text/Caption",
+      "figma_node_id": "4:2",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "text-ui",
+      "name": "Atom/Text/UI",
+      "figma_node_id": "4:4",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "text-body",
+      "name": "Atom/Text/Body",
+      "figma_node_id": "4:6",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "text-reading",
+      "name": "Atom/Text/Reading",
+      "figma_node_id": "4:8",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "text-heading",
+      "name": "Atom/Text/Heading",
+      "figma_node_id": "4:10",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "text-display",
+      "name": "Atom/Text/Display",
+      "figma_node_id": "4:12",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "text-code",
+      "name": "Atom/Text/Code",
+      "figma_node_id": "4:14",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Semantic typography in runtime CSS; actual rendered text composes this token."
+    },
+    {
+      "id": "icon-plus",
+      "name": "Atom/Icon/plus",
+      "figma_node_id": "4:16",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-arrow",
+      "name": "Atom/Icon/arrow",
+      "figma_node_id": "4:19",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-chevron",
+      "name": "Atom/Icon/chevron",
+      "figma_node_id": "4:22",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-down",
+      "name": "Atom/Icon/down",
+      "figma_node_id": "4:25",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-chat",
+      "name": "Atom/Icon/chat",
+      "figma_node_id": "4:28",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-folder",
+      "name": "Atom/Icon/folder",
+      "figma_node_id": "4:31",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-search",
+      "name": "Atom/Icon/search",
+      "figma_node_id": "4:34",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-browser",
+      "name": "Atom/Icon/browser",
+      "figma_node_id": "4:38",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-code",
+      "name": "Atom/Icon/code",
+      "figma_node_id": "4:42",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-terminal",
+      "name": "Atom/Icon/terminal",
+      "figma_node_id": "4:45",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-shield",
+      "name": "Atom/Icon/shield",
+      "figma_node_id": "4:48",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Exact cached Figma SVG where instantiated; semantic alternative icons also used across runtime managers."
+    },
+    {
+      "id": "icon-check",
+      "name": "Atom/Icon/check",
+      "figma_node_id": "4:52",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-lock",
+      "name": "Atom/Icon/lock",
+      "figma_node_id": "4:55",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Exact cached Figma SVG where instantiated; semantic alternative icons also used across runtime managers."
+    },
+    {
+      "id": "icon-settings",
+      "name": "Atom/Icon/settings",
+      "figma_node_id": "4:59",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-attach",
+      "name": "Atom/Icon/attach",
+      "figma_node_id": "4:65",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-mic",
+      "name": "Atom/Icon/mic",
+      "figma_node_id": "4:68",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/VoiceControls.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime accessible microphone control uses Lucide geometry; original Figma atom retained as source design."
+    },
+    {
+      "id": "icon-stop",
+      "name": "Atom/Icon/stop",
+      "figma_node_id": "4:72",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-left",
+      "name": "Atom/Icon/left",
+      "figma_node_id": "4:75",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-right",
+      "name": "Atom/Icon/right",
+      "figma_node_id": "4:79",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-bottom",
+      "name": "Atom/Icon/bottom",
+      "figma_node_id": "4:83",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-branch",
+      "name": "Atom/Icon/branch",
+      "figma_node_id": "4:87",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-cloud",
+      "name": "Atom/Icon/cloud",
+      "figma_node_id": "4:93",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-clock",
+      "name": "Atom/Icon/clock",
+      "figma_node_id": "4:96",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "icon-file",
+      "name": "Atom/Icon/file",
+      "figma_node_id": "4:100",
+      "layer": "atom",
+      "variants": {},
+      "composes": [],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime SVG/Lucide icon composition; original Figma atom provenance preserved, no pixel-equivalence claim for every instance."
+    },
+    {
+      "id": "button-primary-default",
+      "name": "Atom/Button",
+      "figma_node_id": "4:103",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Primary",
+        "State": "Default"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-primary-hover",
+      "name": "Atom/Button",
+      "figma_node_id": "4:106",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Primary",
+        "State": "Hover"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-primary-focus",
+      "name": "Atom/Button",
+      "figma_node_id": "4:109",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Primary",
+        "State": "Focus"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-primary-disabled",
+      "name": "Atom/Button",
+      "figma_node_id": "4:112",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Primary",
+        "State": "Disabled"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-secondary-default",
+      "name": "Atom/Button",
+      "figma_node_id": "4:115",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Secondary",
+        "State": "Default"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-secondary-hover",
+      "name": "Atom/Button",
+      "figma_node_id": "4:118",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Secondary",
+        "State": "Hover"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-secondary-focus",
+      "name": "Atom/Button",
+      "figma_node_id": "4:121",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Secondary",
+        "State": "Focus"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-secondary-disabled",
+      "name": "Atom/Button",
+      "figma_node_id": "4:124",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Secondary",
+        "State": "Disabled"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-ghost-default",
+      "name": "Atom/Button",
+      "figma_node_id": "4:127",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Ghost",
+        "State": "Default"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-ghost-hover",
+      "name": "Atom/Button",
+      "figma_node_id": "4:130",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Ghost",
+        "State": "Hover"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-ghost-focus",
+      "name": "Atom/Button",
+      "figma_node_id": "4:133",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Ghost",
+        "State": "Focus"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-ghost-disabled",
+      "name": "Atom/Button",
+      "figma_node_id": "4:136",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Ghost",
+        "State": "Disabled"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-danger-default",
+      "name": "Atom/Button",
+      "figma_node_id": "4:139",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Danger",
+        "State": "Default"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-danger-hover",
+      "name": "Atom/Button",
+      "figma_node_id": "4:142",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Danger",
+        "State": "Hover"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-danger-focus",
+      "name": "Atom/Button",
+      "figma_node_id": "4:145",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Danger",
+        "State": "Focus"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "button-danger-disabled",
+      "name": "Atom/Button",
+      "figma_node_id": "4:148",
+      "layer": "atom",
+      "variants": {
+        "Variant": "Danger",
+        "State": "Disabled"
+      },
+      "composes": [
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "icon-button-default",
+      "name": "Atom/IconButton",
+      "figma_node_id": "4:152",
+      "layer": "atom",
+      "variants": {
+        "State": "Default"
+      },
+      "composes": [
+        "icon-plus"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "icon-button-hover",
+      "name": "Atom/IconButton",
+      "figma_node_id": "4:156",
+      "layer": "atom",
+      "variants": {
+        "State": "Hover"
+      },
+      "composes": [
+        "icon-plus"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "icon-button-focus",
+      "name": "Atom/IconButton",
+      "figma_node_id": "4:160",
+      "layer": "atom",
+      "variants": {
+        "State": "Focus"
+      },
+      "composes": [
+        "icon-plus"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "icon-button-disabled",
+      "name": "Atom/IconButton",
+      "figma_node_id": "4:164",
+      "layer": "atom",
+      "variants": {
+        "State": "Disabled"
+      },
+      "composes": [
+        "icon-plus"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/button.tsx",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "shadcn Button presentation and CSS interaction states; runtime variants mapped, original Figma frame remains first-pass."
+    },
+    {
+      "id": "status-badge-neutral",
+      "name": "Atom/StatusBadge",
+      "figma_node_id": "4:169",
+      "layer": "atom",
+      "variants": {
+        "State": "Neutral"
+      },
+      "composes": [
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime task/review badges use semantic status tokens; presentation is a runtime equivalent, not newly authored Figma variants."
+    },
+    {
+      "id": "status-badge-allowed",
+      "name": "Atom/StatusBadge",
+      "figma_node_id": "4:172",
+      "layer": "atom",
+      "variants": {
+        "State": "Allowed"
+      },
+      "composes": [
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime task/review badges use semantic status tokens; presentation is a runtime equivalent, not newly authored Figma variants."
+    },
+    {
+      "id": "status-badge-review",
+      "name": "Atom/StatusBadge",
+      "figma_node_id": "4:175",
+      "layer": "atom",
+      "variants": {
+        "State": "Review"
+      },
+      "composes": [
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime task/review badges use semantic status tokens; presentation is a runtime equivalent, not newly authored Figma variants."
+    },
+    {
+      "id": "status-badge-blocked",
+      "name": "Atom/StatusBadge",
+      "figma_node_id": "4:178",
+      "layer": "atom",
+      "variants": {
+        "State": "Blocked"
+      },
+      "composes": [
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/styles.css",
+      "implementation": "runtime-equivalent",
+      "runtime_note": "Runtime task/review badges use semantic status tokens; presentation is a runtime equivalent, not newly authored Figma variants."
+    },
+    {
+      "id": "navigation-row-default",
+      "name": "Molecule/NavigationRow",
+      "figma_node_id": "4:182",
+      "layer": "molecule",
+      "variants": {
+        "State": "Default"
+      },
+      "composes": [
+        "icon-chat",
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Runtime grouped canonical sessions and workspace shell."
+    },
+    {
+      "id": "navigation-row-selected",
+      "name": "Molecule/NavigationRow",
+      "figma_node_id": "4:188",
+      "layer": "molecule",
+      "variants": {
+        "State": "Selected"
+      },
+      "composes": [
+        "icon-chat",
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Runtime grouped canonical sessions and workspace shell."
+    },
+    {
+      "id": "tool-event",
+      "name": "Molecule/ToolEvent",
+      "figma_node_id": "4:195",
+      "layer": "molecule",
+      "variants": {},
+      "composes": [
+        "icon-check",
+        "text-ui"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/ToolActivities.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Runtime groups call started/finished into one named inspectable action."
+    },
+    {
+      "id": "session-composer-wide",
+      "name": "Organism/SessionComposer",
+      "figma_node_id": "4:201",
+      "layer": "organism",
+      "variants": {
+        "Size": "Wide"
+      },
+      "composes": [
+        "text-body",
+        "icon-button-default",
+        "button-ghost-default"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Actual session-only engine/model/mode/preset/voice/context controls and adaptive composer."
+    },
+    {
+      "id": "session-composer-compact",
+      "name": "Organism/SessionComposer",
+      "figma_node_id": "4:230",
+      "layer": "organism",
+      "variants": {
+        "Size": "Compact"
+      },
+      "composes": [
+        "text-body",
+        "icon-button-default",
+        "button-ghost-default"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Actual session-only engine/model/mode/preset/voice/context controls and adaptive composer."
+    },
+    {
+      "id": "sidebar-projects",
+      "name": "Organism/Sidebar/Projects",
+      "figma_node_id": "5:65",
+      "layer": "organism",
+      "variants": {},
+      "composes": [
+        "navigation-row-default",
+        "navigation-row-selected",
+        "icon-button-default",
+        "text-heading",
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Runtime grouped canonical sessions and workspace shell."
+    },
+    {
+      "id": "sidebar-files",
+      "name": "Organism/Sidebar/Files",
+      "figma_node_id": "5:199",
+      "layer": "organism",
+      "variants": {},
+      "composes": [
+        "navigation-row-default",
+        "navigation-row-selected",
+        "icon-button-default",
+        "text-heading",
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Workbench.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Scoped actual project/worktree file tree; canonical execution context supplies identity."
+    },
+    {
+      "id": "sidebar-settings",
+      "name": "Organism/Sidebar/Settings",
+      "figma_node_id": "5:338",
+      "layer": "organism",
+      "variants": {},
+      "composes": [
+        "navigation-row-default",
+        "navigation-row-selected",
+        "icon-button-default",
+        "text-heading",
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/features/Managers.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Original manager navigation frame preserved; advanced editable manager flows are separately mapped in advanced_design and the runtime inventory."
+    },
+    {
+      "id": "workspace-header",
+      "name": "Organism/WorkspaceHeader",
+      "figma_node_id": "5:467",
+      "layer": "organism",
+      "variants": {},
+      "composes": [
+        "text-ui",
+        "icon-chevron",
+        "button-ghost-default",
+        "icon-button-default"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Runtime grouped canonical sessions and workspace shell."
+    },
+    {
+      "id": "input",
+      "name": "Atom/Input",
+      "figma_node_id": "5:512",
+      "layer": "atom",
+      "variants": {},
+      "composes": [
+        "text-body"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/components/ui/input.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Actual shadcn input with named form controls and visible focus."
+    },
+    {
+      "id": "status-bar",
+      "name": "Organism/StatusBar",
+      "figma_node_id": "5:515",
+      "layer": "organism",
+      "variants": {},
+      "composes": [
+        "text-caption"
+      ],
+      "status": "design-first-pass",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-mapped",
+      "runtime_note": "Runtime grouped canonical sessions and workspace shell."
+    }
+  ],
+  "screens": [
+    {
+      "id": "DX-01",
+      "name": "Chat \u00b7 Focus",
+      "surface": "chat",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "6:2",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-02",
+      "name": "Workbench \u00b7 Code + chat",
+      "surface": "workbench",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "6:360",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/Workbench.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-03",
+      "name": "Browser \u00b7 Auto Review active",
+      "surface": "browser",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "6:735",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-04",
+      "name": "Browser \u00b7 User approval",
+      "surface": "approval",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "8:880",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-05",
+      "name": "Browser \u00b7 Private login",
+      "surface": "private-login",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "8:1221",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-06",
+      "name": "Safety \u00b7 Auto Review",
+      "surface": "safety",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "8:1557",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/SafetyManager.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-07",
+      "name": "Sign in \u00b7 Password / SSO",
+      "surface": "auth",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "9:1534",
+      "width": 1440,
+      "height": 900,
+      "theme": "Light",
+      "code_path": "desktop/workspace/src/App.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-08",
+      "name": "Runners \u00b7 Bring your own",
+      "surface": "runners",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "9:1562",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/Runners.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-09",
+      "name": "Chat \u00b7 Light",
+      "surface": "chat-light",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "9:1788",
+      "width": 1440,
+      "height": 900,
+      "theme": "Light",
+      "code_path": "desktop/workspace/src/features/Chat.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-10",
+      "name": "Browser \u00b7 User owns tab",
+      "surface": "browser-handoff",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "13:1904",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    },
+    {
+      "id": "DX-11",
+      "name": "Browser \u00b7 Verified result",
+      "surface": "browser-result",
+      "status": "core-design-first-pass-reviewed",
+      "figma_node_id": "13:2226",
+      "width": 1440,
+      "height": 900,
+      "theme": "Dark",
+      "code_path": "desktop/workspace/src/features/BrowserSurface.tsx",
+      "implementation": "runtime-connected",
+      "runtime_note": "Original Figma core frame status and ID preserved; runtime permission/state/journey coverage lives in design-runtime-coverage.json."
+    }
+  ],
+  "figma": {
+    "figma_file_key": "Vo9guk8YNqP0H9DUMPvmCv",
+    "figma_url": "https://www.figma.com/design/Vo9guk8YNqP0H9DUMPvmCv",
+    "status": "core-design-first-pass-ready-for-review",
+    "implementation_started": true,
+    "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=9-1534&starting-point-node-id=9%3A1534",
+    "pages": {
+      "foundations": "0:1",
+      "components": "2:128",
+      "screens": "2:129"
+    },
+    "validation": {
+      "screen_count": 11,
+      "component_count": 66,
+      "variant_sets": 5,
+      "prototype_link_count": 63,
+      "invalid_prototype_destinations": 0,
+      "auto_layout_overflow_findings": 0,
+      "overflow_tolerance_px": 3,
+      "viewport": [
+        1440,
+        900
+      ],
+      "method": "Figma screenshots plus Plugin API structural checks",
+      "runtime_tests_executed": false,
+      "production_actions_executed": false
+    },
+    "provenance_note": "Original eleven-screen/sixty-six-component first-pass design and validation remain preserved. Separate advanced_design records actual newly authored editable frames and connected prototypes; it does not rewrite original IDs or imply runtime release acceptance."
+  },
+  "migrations": [
+    {
+      "from": "0.2",
+      "to": "0.3",
+      "changes": [
+        "resolve-Q1-Q4",
+        "remove-external-tab-bridge",
+        "add-small-model-auto-review",
+        "lock-generic-oidc-and-byo-runners"
+      ]
+    }
+  ],
+  "parity": [
+    {
+      "id": "PAR-01",
+      "family": "Access and continuity",
+      "required": true,
+      "acceptance": "AUTH-03, AUTH-04"
+    },
+    {
+      "id": "PAR-02",
+      "family": "Chat and sessions",
+      "required": true,
+      "acceptance": "CHAT-02, MEDIA-01"
+    },
+    {
+      "id": "PAR-03",
+      "family": "Instructions and memory",
+      "required": true,
+      "acceptance": "MEM-01, EXT-02"
+    },
+    {
+      "id": "PAR-04",
+      "family": "Agent execution",
+      "required": true,
+      "acceptance": "AUTO-01, AGENT-01"
+    },
+    {
+      "id": "PAR-05",
+      "family": "Coding workbench",
+      "required": true,
+      "acceptance": "DEV-01"
+    },
+    {
+      "id": "PAR-06",
+      "family": "Review and delivery",
+      "required": true,
+      "acceptance": "GIT-01"
+    },
+    {
+      "id": "PAR-07",
+      "family": "Preview and Computer",
+      "required": true,
+      "acceptance": "BROW-01\u201305, CAP-01"
+    },
+    {
+      "id": "PAR-08",
+      "family": "Managers",
+      "required": true,
+      "acceptance": "EXT-01, EXT-02"
+    },
+    {
+      "id": "PAR-09",
+      "family": "Desktop ergonomics",
+      "required": true,
+      "acceptance": "DOCK-01"
+    },
+    {
+      "id": "PAR-10",
+      "family": "Multimodal and remote execution",
+      "required": true,
+      "acceptance": "MEDIA-01, CLOUD-01"
+    }
+  ],
+  "review_contract": {
+    "scope": "approval classification only",
+    "execution_tools": false,
+    "may_escalate_sandbox": false,
+    "ordering": [
+      "hard-enforced-policy",
+      "remembered-consent-and-safe-rules",
+      "eligible-small-model-review",
+      "host-revalidation",
+      "execute-or-user-approval"
+    ],
+    "outcomes": [
+      "ALLOW",
+      "NEEDS_USER",
+      "BLOCK"
+    ],
+    "private_login": "pause executor and reviewer observation; revoke queued permits",
+    "model_selection": "smallest evaluated eligible model from configured providers; no new billing fallback",
+    "status": "implemented-with-configured-model-qualification-gate",
+    "code_paths": [
+      "src/termx/auto_review.py",
+      "src/termx/browser/evaluation.py",
+      "desktop/workspace/src/features/SafetyManager.tsx"
+    ]
+  },
+  "design_coverage_note": "Original eleven core Figma screens preserve first-pass provenance. The independently verified advanced extension has 95 editable connected states, four compact layouts, four reused shared patterns and 234 stored navigation edges. The seven-family inventory maps actual runtime contracts and separate qualification gates; example Figma data executes no runtime actions.",
+  "runtime_inventory": {
+    "schema": "design-runtime-coverage-schema.json",
+    "inventory": "design-runtime-coverage.json",
+    "handoff": "design-runtime-coverage.md",
+    "status": "source-mapped-with-explicit-verification-gates"
+  },
+  "advanced_design": {
+    "status": "externally-authored-and-structurally-verified",
+    "file_key": "Vo9guk8YNqP0H9DUMPvmCv",
+    "connected_page": "32:2",
+    "pattern_page": "21:2",
+    "compact_page": "35:2",
+    "node_map": "figma/advanced-node-map.json",
+    "verification": "verification/advanced-figma.json",
+    "state_frames": 95,
+    "compact_frames": 4,
+    "prototype_edges": 234,
+    "surface_count": 24,
+    "patterns": [
+      {
+        "id": "21:3",
+        "name": "Molecule/Advanced/Field"
+      },
+      {
+        "id": "21:10",
+        "name": "Molecule/Advanced/DataRow"
+      },
+      {
+        "id": "21:14",
+        "name": "Molecule/Advanced/Notice"
+      },
+      {
+        "id": "21:16",
+        "name": "Molecule/Advanced/SectionHeader"
+      }
+    ],
+    "journeys": [
+      {
+        "id": "J-ENTRY",
+        "title": "Password / identity / owned conversation / lock / pairing / host shutdown",
+        "start_node": "32:3",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-3&starting-point-node-id=32%3A3",
+        "state_count": 31
+      },
+      {
+        "id": "J-BROWSER",
+        "title": "Live task / browser handoff / private login / verified context",
+        "start_node": "32:168",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-168&starting-point-node-id=32%3A168",
+        "state_count": 11
+      },
+      {
+        "id": "J-CODE",
+        "title": "Checkout / editor / checks / reviewed Git delivery",
+        "start_node": "32:388",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-388&starting-point-node-id=32%3A388",
+        "state_count": 8
+      },
+      {
+        "id": "J-AUTOMATE",
+        "title": "Goal / delegated schedule / isolated supervision / outcome",
+        "start_node": "32:579",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-579&starting-point-node-id=32%3A579",
+        "state_count": 13
+      },
+      {
+        "id": "J-RECORD",
+        "title": "Opt-in capture / redact / parameterize / test / enable / native source edit / authenticated registry",
+        "start_node": "32:770",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-770&starting-point-node-id=32%3A770",
+        "state_count": 14
+      },
+      {
+        "id": "J-CREATE",
+        "title": "Configured media / review / version / dedicated execution",
+        "start_node": "32:944",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-944&starting-point-node-id=32%3A944",
+        "state_count": 10
+      },
+      {
+        "id": "J-DETACH",
+        "title": "Dock / multiwindow recovery / reviewed return",
+        "start_node": "32:1149",
+        "prototype_url": "https://www.figma.com/proto/Vo9guk8YNqP0H9DUMPvmCv?node-id=32-1149&starting-point-node-id=32%3A1149",
+        "state_count": 8
+      }
+    ],
+    "original_frames_unchanged": true,
+    "original_components_unchanged": true,
+    "runtime_acceptance_independent": true
+  }
+}

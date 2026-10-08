@@ -11,6 +11,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - name: Verify dedicated workspace
+        working-directory: desktop/workspace
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-browser-workspace
+          path: desktop/workspace/dist
+
   python:
     strategy:
       fail-fast: false
@@ -24,8 +45,13 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - name: Install Linux ELF qualification tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf
       - name: Test
-        run: uv run pytest -q
+        run: uv run --locked --extra development --extra media pytest -q
 
   linux-desktop:
     name: linux desktop capture
@@ -48,9 +74,14 @@ jobs:
             imagemagick \
             ffmpeg \
             scrot \
-            xdotool
+            xdotool \
+            wmctrl \
+            openbox
       - name: Capture and virtual display tests (Xvfb)
         run: |
-          xvfb-run -a -s "-screen 0 1280x800x24" \
-            env TERMX_LINUX_DESKTOP_TESTS=1 \
-            uv run pytest tests/test_capture_linux.py tests/test_displays.py -q
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            openbox >/tmp/termx-ci-window-manager.log 2>&1 &
+            window_manager=$!
+            trap "kill $window_manager 2>/dev/null || true" EXIT
+            TERMX_LINUX_DESKTOP_TESTS=1 TERMX_TEST_NATIVE_WINDOW=1 uv run --locked --extra media pytest tests/test_capture_linux.py tests/test_displays.py tests/test_owned_x11_window.py -q
+          '

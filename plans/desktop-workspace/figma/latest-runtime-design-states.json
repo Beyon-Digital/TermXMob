@@ -1,0 +1,2621 @@
+[
+  {
+    "id": "J-ENTRY-16",
+    "title": "Queue next while this task runs",
+    "kind": "chat",
+    "fields": [
+      {
+        "label": "Current active task",
+        "value": "Inspect checkout \u00b7 running",
+        "hint": "Same canonical conversation and selected checkout"
+      },
+      {
+        "label": "Unsent instruction",
+        "value": "Verify the failing check next",
+        "hint": "Queue next starts a new turn after completion"
+      },
+      {
+        "label": "Execution snapshot",
+        "value": "Internal \u00b7 selected API account \u00b7 model \u00b7 reasoning",
+        "hint": "Original sign-in, current policy, exact budget and dependency revisions"
+      },
+      {
+        "label": "Consent deadline",
+        "value": "30 minutes \u00b7 original managed session",
+        "hint": "Lock, expiry, changed settings or revoke pauses dispatch"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Follow-up 1",
+        "value": "Verify the failing check next",
+        "status": "Waiting"
+      },
+      {
+        "name": "Follow-up 2",
+        "value": "Summarize the reviewed diff",
+        "status": "Waiting"
+      }
+    ],
+    "notice": "Queue survives closing the UI and host restart. Each request key starts at most one canonical turn. Interrupt stops the exact current task; Steer changes its next safe instruction.",
+    "tone": "accent",
+    "actions": [
+      {
+        "label": "Queue next",
+        "target": "J-ENTRY-18",
+        "variant": "primary"
+      },
+      {
+        "label": "Review paused queue",
+        "target": "J-ENTRY-17",
+        "variant": "secondary"
+      },
+      {
+        "label": "Session settings",
+        "target": "J-ENTRY-19",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-CHAT"
+    ]
+  },
+  {
+    "id": "J-ENTRY-17",
+    "title": "Review changed queued settings",
+    "kind": "chat",
+    "fields": [
+      {
+        "label": "Exact queued prompt",
+        "value": "Verify the failing check next",
+        "hint": "Prompt, references and image bytes remain immutable"
+      },
+      {
+        "label": "Original settings",
+        "value": "Model A \u00b7 checkout feature/review \u00b7 256 steps",
+        "hint": "Original policy/dependency snapshot is inspectable"
+      },
+      {
+        "label": "Current settings",
+        "value": "Model B \u00b7 same checkout \u00b7 128 steps",
+        "hint": "Current budget cannot widen without explicit renewed consent"
+      },
+      {
+        "label": "Origin authority",
+        "value": "Current managed sign-in \u00b7 valid project grant",
+        "hint": "No borrowed session or automatic billing-account fallback"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Paused follow-up",
+        "value": "Model or policy changed",
+        "status": "Needs review"
+      }
+    ],
+    "notice": "Nothing starts until Continue with these settings. The queue keeps its order. An ambiguous interrupted dispatch is inspected or cancelled rather than replayed.",
+    "tone": "warning",
+    "actions": [
+      {
+        "label": "Continue with these settings",
+        "target": "J-ENTRY-16",
+        "variant": "primary"
+      },
+      {
+        "label": "Cancel queued follow-up",
+        "target": "J-ENTRY-18",
+        "variant": "secondary"
+      },
+      {
+        "label": "Keep paused",
+        "target": "J-ENTRY-16",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-CHAT"
+    ]
+  },
+  {
+    "id": "J-ENTRY-18",
+    "title": "Inspect bounded follow-up history",
+    "kind": "chat",
+    "fields": [
+      {
+        "label": "Follow-up history",
+        "value": "Latest 100 outcomes",
+        "hint": "Collapsed until opened; task links never replay"
+      },
+      {
+        "label": "Reader position",
+        "value": "Same canonical message and within-row offset",
+        "hint": "New results do not pull the reader down"
+      },
+      {
+        "label": "Unsent draft",
+        "value": "Independent next instruction \u00b7 selected image retained",
+        "hint": "Dispatching a queued prompt does not clear a later draft"
+      },
+      {
+        "label": "Latest answer",
+        "value": "Actual canonical turn result",
+        "hint": "Jump to latest restores following and keyboard focus"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Verify the failing check",
+        "value": "Started as a turn",
+        "status": "Inspect task"
+      },
+      {
+        "name": "Cancelled next instruction",
+        "value": "Cancelled before dispatch",
+        "status": "No tool or provider effect"
+      }
+    ],
+    "notice": "Jump to latest is explicit while reading older messages. Cancelled, blocked and dispatched outcomes stay reviewable.",
+    "tone": "accent",
+    "actions": [
+      {
+        "label": "Jump to latest",
+        "target": "J-ENTRY-06",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect paused item",
+        "target": "J-ENTRY-17",
+        "variant": "secondary"
+      },
+      {
+        "label": "Queue another",
+        "target": "J-ENTRY-16",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-CHAT"
+    ]
+  },
+  {
+    "id": "J-ENTRY-19",
+    "title": "Choose this conversation\u2019s model and reasoning",
+    "kind": "chat",
+    "fields": [
+      {
+        "label": "Engine / account chip",
+        "value": "Internal \u00b7 configured account \u00b7 Model A",
+        "hint": "Single compact chip lives only in this AI composer"
+      },
+      {
+        "label": "Model",
+        "value": "Configured catalog \u00b7 explicit selection",
+        "hint": "Running task remains immutable; unavailable models are refused"
+      },
+      {
+        "label": "Reasoning",
+        "value": "Advertised model choices only",
+        "hint": "Codex/Claude per-turn snapshot; ACP capability-specific modes"
+      },
+      {
+        "label": "Mode and billing",
+        "value": "Ask / Agent \u00b7 API account billing",
+        "hint": "Read-only Ask requires actual supported adapter enforcement"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Managed preset",
+        "value": "Reviewed instructions and allowed tools",
+        "status": "Frozen per run"
+      },
+      {
+        "name": "Current host permissions",
+        "value": "Account ceiling and project boundary",
+        "status": "Inspectable"
+      }
+    ],
+    "notice": "Changing engines opens a linked-fork preview. Provider/model/effort changes cannot silently restart or retarget a running task.",
+    "tone": "accent",
+    "actions": [
+      {
+        "label": "Apply session settings",
+        "target": "J-ENTRY-06",
+        "variant": "primary"
+      },
+      {
+        "label": "Linked fork preview",
+        "target": "J-ENTRY-07",
+        "variant": "secondary"
+      },
+      {
+        "label": "Queued setting review",
+        "target": "J-ENTRY-17",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-CHAT"
+    ]
+  },
+  {
+    "id": "J-ENTRY-20",
+    "title": "Pin projects without changing execution",
+    "kind": "chat",
+    "fields": [
+      {
+        "label": "Pinned projects",
+        "value": "Service API \u00b7 UI workspace",
+        "hint": "Per-principal durable order, keyboard menu equivalents"
+      },
+      {
+        "label": "Grouped chats",
+        "value": "Pinned, recent, Needs Attention",
+        "hint": "Running and approval states remain visible"
+      },
+      {
+        "label": "Selected conversation",
+        "value": "Review the service changes",
+        "hint": "Sidebar grouping is independent of execution ownership"
+      },
+      {
+        "label": "Execution checkout",
+        "value": "Selected enrolled worktree",
+        "hint": "Pinning/moving does not change cwd, branch or grants"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Service API",
+        "value": "3 active conversations",
+        "status": "Pinned"
+      },
+      {
+        "name": "UI workspace",
+        "value": "Approval pending",
+        "status": "Needs Attention"
+      }
+    ],
+    "notice": "Project pinning changes navigation only. Foreign or removed projects are filtered through live authorization; stale edits require refresh.",
+    "tone": "accent",
+    "actions": [
+      {
+        "label": "Open project chat",
+        "target": "J-ENTRY-06",
+        "variant": "primary"
+      },
+      {
+        "label": "Open queued work",
+        "target": "J-ENTRY-16",
+        "variant": "secondary"
+      },
+      {
+        "label": "Tools for this project",
+        "target": "J-RECORD-12",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-CHAT"
+    ]
+  },
+  {
+    "id": "J-RECORD-12",
+    "title": "Scope a tool connection to execution projects",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Connection transport",
+        "value": "Streamable HTTP / SSE / local executable",
+        "hint": "Validated address or exact JSON argv; no automatic process start"
+      },
+      {
+        "label": "Allowed execution projects",
+        "value": "Only Service API",
+        "hint": "Empty allowlist is explicit host-admin global use"
+      },
+      {
+        "label": "Ownership",
+        "value": "Project: Service API",
+        "hint": "Project-owned connection allows that exact project only"
+      },
+      {
+        "label": "Approved tools",
+        "value": "lookup_issue \u00b7 inspect_build",
+        "hint": "Blank list grants no tools; wildcard is an explicit catalog decision"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Service tools",
+        "value": "Enabled \u00b7 untrusted",
+        "status": "Review required"
+      },
+      {
+        "name": "Current execution project",
+        "value": "Service API",
+        "status": "Eligible"
+      }
+    ],
+    "notice": "The host checks the actual authorized execution project before loading credentials, spawning a server or calling tools. Scoped native adapters are refused when per-tool revocation cannot be enforced.",
+    "tone": "accent",
+    "actions": [
+      {
+        "label": "Save untrusted connection",
+        "target": "J-RECORD-13",
+        "variant": "primary"
+      },
+      {
+        "label": "Review scope failure",
+        "target": "J-RECORD-14",
+        "variant": "secondary"
+      },
+      {
+        "label": "Back to pinned project",
+        "target": "J-ENTRY-20",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ]
+  },
+  {
+    "id": "J-RECORD-13",
+    "title": "Bind credentials and inspect exact tool schemas",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Credential destination",
+        "value": "Header Authorization / env API_KEY / OAuth secret",
+        "hint": "Destination names validated; values are write-only"
+      },
+      {
+        "label": "Secret value",
+        "value": "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
+        "hint": "Host derives the reference; UI clears input immediately"
+      },
+      {
+        "label": "Catalog tool",
+        "value": "lookup_issue",
+        "hint": "Inspectable current schema and approved names"
+      },
+      {
+        "label": "Tool arguments",
+        "value": "{\"issue_id\":\"TX-42\"}",
+        "hint": "Explicit Call selected tool can affect connected service"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Credential binding",
+        "value": "Configured in host secret store",
+        "status": "Never echoed"
+      },
+      {
+        "name": "Live connection",
+        "value": "Project Service API \u00b7 current grant",
+        "status": "Trusted after review"
+      }
+    ],
+    "notice": "Credential/scope edits disconnect old transports. Reconnect explicitly; current policy and approved catalog remain authoritative before every broker call.",
+    "tone": "accent",
+    "actions": [
+      {
+        "label": "Save credential binding",
+        "target": "J-RECORD-12",
+        "variant": "primary"
+      },
+      {
+        "label": "Call selected tool",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      },
+      {
+        "label": "Inspect refusal",
+        "target": "J-RECORD-14",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ]
+  },
+  {
+    "id": "J-RECORD-14",
+    "title": "Connection changes or authority require review",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Changed definition",
+        "value": "Reload before editing",
+        "hint": "Expected definition digest prevents stale scope overwrite"
+      },
+      {
+        "label": "Current project",
+        "value": "Different project selected",
+        "hint": "Connection unavailable; secrets remain unresolved"
+      },
+      {
+        "label": "Tool permission",
+        "value": "Tool absent from approved catalog",
+        "hint": "Denied before tool effect"
+      },
+      {
+        "label": "Native capability",
+        "value": "Project-scoped direct native tools unavailable",
+        "hint": "Use reviewed Internal broker; no bypass or host fallback"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Transport",
+        "value": "Disconnected after credential edit",
+        "status": "Reconnect explicitly"
+      },
+      {
+        "name": "Project grant",
+        "value": "Expired / revoked / locked session",
+        "status": "No further call"
+      }
+    ],
+    "notice": "Configuration, credential binding and trust are administrator actions. Installed does not mean trusted; a previous connection cannot retain obsolete scope authority.",
+    "tone": "warning",
+    "actions": [
+      {
+        "label": "Reload configuration",
+        "target": "J-RECORD-12",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect credentials",
+        "target": "J-RECORD-13",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Chat",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ]
+  },
+  {
+    "id": "J-ENTRY-21",
+    "title": "Review an exact coding action and its consent scope",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Exact operation",
+        "value": "Apply the reviewed service patch",
+        "hint": "Inspectable arguments, target, policy source and side effects"
+      },
+      {
+        "label": "Remember this decision",
+        "value": "Only this operation / this task / this conversation",
+        "hint": "Only host-advertised eligible scopes are selectable"
+      },
+      {
+        "label": "Personal project or preset rule",
+        "value": "Same project for me / same agent preset for me",
+        "hint": "Principal and current policy version remain bound"
+      },
+      {
+        "label": "Sensitive or credential-like content",
+        "value": "Allow once or deny only",
+        "hint": "No remembered rule and no review-model disclosure"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Plan-approved task",
+        "value": "Service API \u00b7 same execution checkout",
+        "status": "Awaiting action consent"
+      },
+      {
+        "name": "Hard host restriction",
+        "value": "Sandbox, current grants and matching denies",
+        "status": "Still authoritative"
+      }
+    ],
+    "notice": "Approving this exact effect grants no broader filesystem, network or run-budget permission. A conversation rule ends on this device session\u2019s expiry.",
+    "actions": [
+      {
+        "label": "Allow and remember",
+        "target": "J-ENTRY-22",
+        "variant": "primary"
+      },
+      {
+        "label": "Deny once",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      },
+      {
+        "label": "Inspect current policy",
+        "target": "J-ENTRY-23",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 0,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-22",
+    "title": "Inspect, edit or revoke your exact action policy",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Search coding policies",
+        "value": "Reviewed patch \u00b7 remembered conversation",
+        "hint": "Bound scope and policy source remain inspectable"
+      },
+      {
+        "label": "Coding decision",
+        "value": "Allow inside unchanged scope / deny",
+        "hint": "Matching denies override every remembered allow"
+      },
+      {
+        "label": "Expires after seconds",
+        "value": "3600",
+        "hint": "Bounded expiry; edit preserves matcher and binding"
+      },
+      {
+        "label": "Current policy revision",
+        "value": "Version 3 \u00b7 exact operation and device",
+        "hint": "CAS mutation requires this inspected version"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Your bounded remembered consent",
+        "value": "Principal \u00b7 conversation \u00b7 session \u00b7 policy revision",
+        "status": "Editable"
+      },
+      {
+        "name": "Shared host rule",
+        "value": "Administrator policy",
+        "status": "Read-only here"
+      }
+    ],
+    "notice": "Editing changes effect or bounded expiry only. It cannot expand the exact target, matcher, sandbox or principal. Revoke is immediate; stale consent needs fresh approval.",
+    "actions": [
+      {
+        "label": "Save current revision",
+        "target": "J-ENTRY-23",
+        "variant": "primary"
+      },
+      {
+        "label": "Revoke coding policy",
+        "target": "J-ENTRY-23",
+        "variant": "danger"
+      },
+      {
+        "label": "Return to Chat",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 1,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-23",
+    "title": "A stale or sensitive action needs a fresh decision",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Policy changed",
+        "value": "Your draft is preserved",
+        "hint": "Refresh before applying the inspected revision"
+      },
+      {
+        "label": "Current authority",
+        "value": "Session expired / principal policy changed",
+        "hint": "Previous remembered consent is not reusable"
+      },
+      {
+        "label": "Sensitive content",
+        "value": "Credentials or uninspectable payload",
+        "hint": "Human once-only decision; zero reviewer calls"
+      },
+      {
+        "label": "Revoked rule",
+        "value": "No further effect under this consent",
+        "hint": "The next matching action pauses for fresh consent"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Pending exact operation",
+        "value": "Effect has not run",
+        "status": "Blocked until fresh decision"
+      },
+      {
+        "name": "Remember scope",
+        "value": "Unavailable for this sensitive action",
+        "status": "Allow once / deny"
+      }
+    ],
+    "notice": "No timeout becomes consent. Hard restrictions and current denies still win; a rule cannot override a removed grant or locked originating device session.",
+    "actions": [
+      {
+        "label": "Inspect fresh action",
+        "target": "J-ENTRY-21",
+        "variant": "primary"
+      },
+      {
+        "label": "Refresh policy inventory",
+        "target": "J-ENTRY-22",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel and return",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "warning",
+    "index": 2,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-24",
+    "title": "Configure authoritative organizations and identity groups",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Group and organization",
+        "value": "Service maintainers \u00b7 Example organization",
+        "hint": "New group or enrolled group; organization is explicit"
+      },
+      {
+        "label": "Group host role",
+        "value": "Viewer / Operator / Administrator",
+        "hint": "Only administrator mappings grant host authority"
+      },
+      {
+        "label": "Trusted host execution",
+        "value": "Explicit opt-in checkbox",
+        "hint": "Shared host OS user; does not claim tenant isolation"
+      },
+      {
+        "label": "Verified provider mapping",
+        "value": "Configured issuer \u00b7 exact groups claim value",
+        "hint": "Only fresh verified issuer evidence enrolls members"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Group revision",
+        "value": "Version 4",
+        "status": "Inspected before saving"
+      },
+      {
+        "name": "Provider membership",
+        "value": "Verified claim \u00b7 bounded expiry",
+        "status": "Reverify required"
+      }
+    ],
+    "notice": "User-controlled display names or untrusted group claims grant nothing. Removing membership or changing a role/grant revokes affected device sessions.",
+    "actions": [
+      {
+        "label": "Save group and inspect",
+        "target": "J-ENTRY-25",
+        "variant": "primary"
+      },
+      {
+        "label": "Stale revision review",
+        "target": "J-ENTRY-26",
+        "variant": "secondary"
+      },
+      {
+        "label": "Audit retention",
+        "target": "J-ENTRY-27",
+        "variant": "secondary"
+      },
+      {
+        "label": "Device session policy",
+        "target": "J-ENTRY-30",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 3,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-25",
+    "title": "Review live memberships and exact project grants",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Principal and source",
+        "value": "Enabled named principal \u00b7 administrator-managed",
+        "hint": "Provider and manual membership provenance stay distinct"
+      },
+      {
+        "label": "Membership expires in days",
+        "value": "7",
+        "hint": "Bounded 1\u201390 days; removal revokes affected sessions"
+      },
+      {
+        "label": "Execution project",
+        "value": "Enrolled Service API project",
+        "hint": "Groups outside this project cannot acquire its authority"
+      },
+      {
+        "label": "Allowed action scopes",
+        "value": "files-read, agent-view",
+        "hint": "Action-specific project grants; no implied shell permission"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Member removal",
+        "value": "Affected device sessions revoked",
+        "status": "Sign in again for current authority"
+      },
+      {
+        "name": "Project grant",
+        "value": "Current enrolled project only",
+        "status": "Effective live policy"
+      }
+    ],
+    "notice": "Expiry and removal are checked at the host on every effect. Provider mappings require configured verified claims; a stale token cannot preserve removed access.",
+    "actions": [
+      {
+        "label": "Save project grant",
+        "target": "J-ENTRY-24",
+        "variant": "primary"
+      },
+      {
+        "label": "Remove membership",
+        "target": "J-ENTRY-26",
+        "variant": "danger"
+      },
+      {
+        "label": "Return to Access",
+        "target": "J-ENTRY-03",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 4,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-26",
+    "title": "Access changed elsewhere \u2014 preserve the draft and inspect",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Unsaved group draft",
+        "value": "Your role/name/organization edits retained",
+        "hint": "A changed current revision cannot overwrite this draft"
+      },
+      {
+        "label": "Reviewed current revision",
+        "value": "Version 5 \u00b7 current role and trusted execution",
+        "hint": "Compare before keep-draft continuation"
+      },
+      {
+        "label": "Live membership state",
+        "value": "Removed / expired / grant revoked",
+        "hint": "Affected sessions lost authority immediately"
+      },
+      {
+        "label": "Current session",
+        "value": "Locked or policy changed",
+        "hint": "No stale response reopens administrator controls"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Save group",
+        "value": "Disabled until conflict reviewed",
+        "status": "No blind overwrite"
+      },
+      {
+        "name": "Keep my draft",
+        "value": "Uses the reviewed current revision",
+        "status": "Explicit decision"
+      }
+    ],
+    "notice": "Refresh only reads current inventory. Choosing to keep your draft acknowledges the inspected revision; grants remain enforced server-side.",
+    "actions": [
+      {
+        "label": "Keep reviewed draft",
+        "target": "J-ENTRY-24",
+        "variant": "primary"
+      },
+      {
+        "label": "Refresh memberships",
+        "target": "J-ENTRY-25",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Access",
+        "target": "J-ENTRY-03",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "warning",
+    "index": 5,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-27",
+    "title": "Set audit retention with explicit permanent-removal consent",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Keep records for days",
+        "value": "30",
+        "hint": "Allowed 1\u20133650 days"
+      },
+      {
+        "label": "Maximum audit bytes",
+        "value": "16777216",
+        "hint": "Bounded 65536\u201367108864 bytes"
+      },
+      {
+        "label": "Maximum audit records",
+        "value": "10000",
+        "hint": "Bounded 100\u2013100000 metadata records"
+      },
+      {
+        "label": "Removal acknowledgement",
+        "value": "I understand applying retention removes older records",
+        "hint": "Required before save-and-prune or prune-saved-limits"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Audit content",
+        "value": "Session and action metadata",
+        "status": "No passwords, cookies or captured output"
+      },
+      {
+        "name": "Saved policy",
+        "value": "Host administrator managed",
+        "status": "Live authority required"
+      }
+    ],
+    "notice": "Saving limits immediately prunes older or excess records. Removal is permanent and the retention operation is itself recorded in the audit.",
+    "actions": [
+      {
+        "label": "Save limits and prune",
+        "target": "J-ENTRY-28",
+        "variant": "primary"
+      },
+      {
+        "label": "Prune saved limits",
+        "target": "J-ENTRY-28",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel retention edit",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 6,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-28",
+    "title": "Inspect the audit retention result",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Removed records",
+        "value": "120",
+        "hint": "Actual bounded operation count shown after completion"
+      },
+      {
+        "label": "Retained records and bytes",
+        "value": "3400 records \u00b7 891204 bytes",
+        "hint": "Confirmed response; no optimistic success"
+      },
+      {
+        "label": "Saved policy",
+        "value": "30 days \u00b7 16 MiB \u00b7 10000 records",
+        "hint": "The current saved policy is inspectable"
+      },
+      {
+        "label": "Changed or locked identity",
+        "value": "Controls paused; draft retained",
+        "hint": "Fresh observation required after unlock"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Retention operation",
+        "value": "Metadata event appended",
+        "status": "Recorded"
+      },
+      {
+        "name": "Private values",
+        "value": "Not included in audit/export",
+        "status": "Excluded"
+      }
+    ],
+    "notice": "Result counts are illustrative design data; runtime displays the actual host response. A late response from a locked or changed account is ignored.",
+    "actions": [
+      {
+        "label": "Review saved limits",
+        "target": "J-ENTRY-27",
+        "variant": "primary"
+      },
+      {
+        "label": "Open identity groups",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Access",
+        "target": "J-ENTRY-03",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "tone": "accent",
+    "index": 7,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-29",
+    "title": "Manage model favorites without changing any session",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Model search",
+        "value": "Configured model or account name",
+        "hint": "Models manager search filters current catalogs"
+      },
+      {
+        "label": "Installed engine catalog",
+        "value": "Inspect catalog explicitly",
+        "hint": "No paid provider inference and no automatic account fallback"
+      },
+      {
+        "label": "Account model favorite",
+        "value": "Model A \u00b7 configured API account",
+        "hint": "Per-principal device preference shared across windows"
+      },
+      {
+        "label": "Unavailable favorite",
+        "value": "Catalog not loaded or model unavailable",
+        "hint": "Retain clearly labelled entry or remove it"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Model A",
+        "value": "Configured account \u00b7 favorite",
+        "status": "Appears in composer lists"
+      },
+      {
+        "name": "Running conversation",
+        "value": "Current model and task unchanged",
+        "status": "No global active engine"
+      }
+    ],
+    "notice": "Favorites help navigation only. Catalog changes and favorites never retarget a conversation or restart active work; errors preserve the current selection.",
+    "actions": [
+      {
+        "label": "Favorite configured model",
+        "target": "J-ENTRY-19",
+        "variant": "primary"
+      },
+      {
+        "label": "Remove unavailable favorite",
+        "target": "J-ENTRY-19",
+        "variant": "secondary"
+      },
+      {
+        "label": "Return to Chat",
+        "target": "J-ENTRY-06",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-MODELS"
+    ],
+    "tone": "accent",
+    "index": 8,
+    "source_contract": {
+      "UI-MODELS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ProviderAccountForm.tsx",
+          "desktop/workspace/src/features/ModelFavoritesManager.tsx",
+          "desktop/workspace/src/lib/model-favorites.ts"
+        ],
+        "endpoints": [
+          "GraphQL engines/engine_models/agent_providers/acp_registry",
+          "GraphQL authenticate_engine/install_acp_runner/save_agent_provider/test_agent_provider"
+        ],
+        "permissions": [
+          "host-admin installation/provider mutations; session composer alone selects active engine/model; no workspace global engine; explicit account billing distinction"
+        ],
+        "states": [
+          "installed/missing/error",
+          "catalog refresh",
+          "credential absent",
+          "auth pending",
+          "capability inspection",
+          "test connection failure",
+          "Favorites inspected across Models and session composer",
+          "Unavailable saved model removed without changing active conversation"
+        ],
+        "proof_links": [
+          "tests/test_engines.py",
+          "tests/test_engines_acp.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/managers.test.tsx",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "desktop/workspace/src/features/model-favorites-manager.test.tsx",
+          "plans/desktop-workspace/verification/model-favorites-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-AUTOMATE-10",
+    "title": "Supervise one shared parent and child execution pool",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Root task and grant",
+        "value": "Root task \u00b7 version 2",
+        "hint": "The same immutable pool is visible on each child"
+      },
+      {
+        "label": "Reserved tool calls",
+        "value": "18 / 24",
+        "hint": "Exact retries reuse reservations; parallel children cannot multiply allowance"
+      },
+      {
+        "label": "Summed active worker time",
+        "value": "42.3 / 60 seconds",
+        "hint": "Parent, child, context and provider planning consume the same pool"
+      },
+      {
+        "label": "Human approval waits",
+        "value": "Time lease paused",
+        "hint": "Individual task ceilings and fan-out limits still apply"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Child A",
+        "value": "Isolated checkout \u00b7 read/write effects",
+        "status": "Running"
+      },
+      {
+        "name": "Child B",
+        "value": "Pending exact effect or budget",
+        "status": "Human wait paused"
+      }
+    ],
+    "notice": "This measures reserved tool calls and summed active execution seconds. It does not estimate tokens or billed costs. Cancelling preserves consumed reservations and actual checkpoints.",
+    "actions": [
+      {
+        "label": "Review shared boundary",
+        "target": "J-AUTOMATE-11",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect interrupted planning",
+        "target": "J-AUTOMATE-13",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel descendants",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 9,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-AUTOMATE-11",
+    "title": "Approve a versioned shared budget extension",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Inspected shared version",
+        "value": "Version 2 \u00b7 root task",
+        "hint": "Decision, grant and resumable intent commit atomically"
+      },
+      {
+        "label": "Total shared tool-call ceiling",
+        "value": "32",
+        "hint": "Must exceed already reserved calls; completed effects remain"
+      },
+      {
+        "label": "Fresh shared active seconds",
+        "value": "60",
+        "hint": "Explicit fresh summed parent/child time allowance"
+      },
+      {
+        "label": "Other paused task",
+        "value": "Continue within the same new grant",
+        "hint": "Cannot reset the meter or raise the shared ceiling twice"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Parked exact batch",
+        "value": "No effect started before admission",
+        "status": "Resumes once after consent"
+      },
+      {
+        "name": "Grant change conflict",
+        "value": "Inspect current allowance",
+        "status": "Stale extension refused"
+      }
+    ],
+    "notice": "Approval of a budget never approves a tool effect or plan. Every parked task needs explicit continuation; the same exact tool reservation is not charged twice.",
+    "actions": [
+      {
+        "label": "Approve budget extension",
+        "target": "J-AUTOMATE-10",
+        "variant": "primary"
+      },
+      {
+        "label": "Stop at current budget",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      },
+      {
+        "label": "Restart receipt",
+        "target": "J-AUTOMATE-12",
+        "variant": "secondary"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "accent",
+    "index": 10,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-AUTOMATE-12",
+    "title": "Restart after an approved grant \u2014 continue without a second reset",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Durable approved receipt",
+        "value": "Decision committed before worker launch",
+        "hint": "Original approval and grant version are retained"
+      },
+      {
+        "label": "Continue within approved budget",
+        "value": "No fresh budget input",
+        "hint": "Does not reset time or increase tool-call ceiling"
+      },
+      {
+        "label": "Uncertain live execution",
+        "value": "Time allowance exhausted conservatively",
+        "hint": "Fresh explicit renewal required; partial effects need inspection"
+      },
+      {
+        "label": "Exact saved batch",
+        "value": "Canonical pending calls and completed checkpoints",
+        "hint": "No automatic tool replay"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Host restart",
+        "value": "No provider or tool starts until confirmation",
+        "status": "Paused"
+      },
+      {
+        "name": "Same shared grant",
+        "value": "Version unchanged by continuation",
+        "status": "Idempotent"
+      }
+    ],
+    "notice": "If a running lease was lost, the host cannot assume unused time. A committed approval with no worker launch gets an explicit continue decision inside its existing grant.",
+    "actions": [
+      {
+        "label": "Continue approved budget",
+        "target": "J-AUTOMATE-10",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect actual checkpoint",
+        "target": "J-AUTOMATE-07",
+        "variant": "secondary"
+      },
+      {
+        "label": "Stop remaining work",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "warning",
+    "index": 11,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-AUTOMATE-13",
+    "title": "Parallel planning exhausted the shared allowance",
+    "kind": "manager",
+    "fields": [
+      {
+        "label": "Planning phase",
+        "value": "Saved task context and upload references",
+        "hint": "Both child plans share the parent pool before provider work"
+      },
+      {
+        "label": "Provider planning request",
+        "value": "Cancelled at aggregate time boundary",
+        "hint": "No unaccounted child planning continues"
+      },
+      {
+        "label": "Explicit renewal",
+        "value": "Regenerate the interrupted plan",
+        "hint": "A budget grant cannot bypass plan approval"
+      },
+      {
+        "label": "Plan approval",
+        "value": "Separate current plan decision required",
+        "hint": "No child execution effect before its plan is approved"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Child plan",
+        "value": "Pending renewed shared allowance",
+        "status": "No tool effect"
+      },
+      {
+        "name": "Parent and siblings",
+        "value": "Same summed active seconds",
+        "status": "Shared pool exhausted"
+      }
+    ],
+    "notice": "Human wait is paused. Renewal resumes the preserved planning phase, then presents a new plan for approval; it never silently starts coding after a time grant.",
+    "actions": [
+      {
+        "label": "Review shared renewal",
+        "target": "J-AUTOMATE-11",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect task supervision",
+        "target": "J-AUTOMATE-10",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel interrupted plan",
+        "target": "J-AUTOMATE-07",
+        "variant": "danger"
+      }
+    ],
+    "surfaces": [
+      "UI-TOOLS"
+    ],
+    "tone": "warning",
+    "index": 12,
+    "source_contract": {
+      "UI-TOOLS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Chat.tsx",
+          "desktop/workspace/src/features/ToolActivities.tsx",
+          "desktop/workspace/src/features/TaskSupervisor.tsx",
+          "desktop/workspace/src/features/BudgetApproval.tsx",
+          "desktop/workspace/src/features/McpManager.tsx",
+          "desktop/workspace/src/features/McpConnectionForm.tsx",
+          "desktop/workspace/src/features/McpCredentialForm.tsx",
+          "src/termx/mcp/scope.py",
+          "src/termx/mcp/task_broker.py",
+          "desktop/workspace/src/features/McpPresetBindings.tsx",
+          "desktop/workspace/src/features/AgentPresetEditor.tsx",
+          "desktop/workspace/src/features/GeneralApprovalCard.tsx",
+          "desktop/workspace/src/features/GeneralPolicyManager.tsx",
+          "src/termx/workspace/coding_policies.py",
+          "src/termx/agent/tree_budget.py"
+        ],
+        "endpoints": [
+          "GET /api/workspace/tasks/{identifier}",
+          "POST /api/workspace/tasks/{identifier}/cancel",
+          "POST /api/workspace/tasks/{identifier}/steer",
+          "POST /api/workspace/tasks/{identifier}/retry",
+          "POST /api/workspace/tasks/{identifier}/approvals/{approval_id}/resolve",
+          "GraphQL mcp_connections(project_id)",
+          "GraphQL create_mcp_connection(expected_digest)",
+          "GraphQL set_mcp_credential(expected_digest)",
+          "GraphQL connect_mcp_connection/call_mcp_tool(project_id)",
+          "GraphQL trust_mcp_connection/delete_mcp_connection(expected_digest)",
+          "GET/PATCH/DELETE /api/workspace/coding-policies/{identifier}",
+          "GET /api/workspace/tasks/{identifier}/tree"
+        ],
+        "permissions": [
+          "Current owner/project task authority; execution decisions continuously revalidated; cancelling a parent cancels descendants; no unapproved shared-directory parallel writes",
+          "Matching capability/execution denies dominate consent; final rule version and current principal/SID validated before effect",
+          "Human waits pause the active worker meter; parallel planning and provider work consume one root allowance; no token/cost estimate",
+          "Uncertain recovered active leases exhaust time rather than replay; atomic approved-resume receipt requires explicit continuation"
+        ],
+        "states": [
+          "started/completed/error grouped by call",
+          "human approval",
+          "budget exhausted",
+          "child denied",
+          "isolated worktree child",
+          "cancelled",
+          "retry disclosure",
+          "foreign project denied before secrets/effects",
+          "stale definition save/trust/delete refused",
+          "empty approved tool list denies all",
+          "credential edit disconnects old transport",
+          "scoped direct native adapter refused; reviewed Internal broker",
+          "manual catalog/schema inspection and explicit call",
+          "Generic approval with exact inspectable scopes; stale/withdrawn scope falls back once",
+          "Personal policy inspect, CAS edit/revoke, expiry/authority change",
+          "Concurrent worker budget pause, explicit renewal, idempotent parked-call retry",
+          "Planning budget pause resumes planning then still requires separate plan approval",
+          "Crash after approved grant requires explicit continuation within same grant"
+        ],
+        "proof_links": [
+          "tests/test_agent.py",
+          "tests/test_durable_workspace.py",
+          "desktop/workspace/src/features/tool-activity.test.tsx",
+          "plans/desktop-workspace/verification/git-workspace-rendered.json",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_mcp_authority.py",
+          "desktop/workspace/src/features/mcp-manager.test.tsx",
+          "desktop/workspace/src/features/mcp-preset-bindings.test.tsx",
+          "tests/workspace_mcp_scope_e2e.py",
+          "tests/test_tree_budget.py",
+          "tests/test_coding_consent.py",
+          "desktop/workspace/src/features/budget-approval.test.tsx",
+          "plans/desktop-workspace/verification/shared-tree-budget.json",
+          "plans/desktop-workspace/verification/generic-consent-candidate-audit.json",
+          "plans/desktop-workspace/verification/mcp-manager-rendered.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-30",
+    "title": "Device session lifetime policy",
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "kind": "manager",
+    "index": 0,
+    "fields": [
+      {
+        "label": "Idle timeout \u00b7 seconds",
+        "value": "86400",
+        "hint": "600\u20132592000; current activity extends idle only within the absolute cap"
+      },
+      {
+        "label": "Absolute lifetime \u00b7 seconds",
+        "value": "2592000",
+        "hint": "At least idle timeout; maximum31536000"
+      },
+      {
+        "label": "Access token lifetime \u00b7 seconds",
+        "value": "300 \u00b7 Read only",
+        "hint": "Short-lived access and WebSocket tickets remain bound to origin session"
+      },
+      {
+        "label": "Policy revision",
+        "value": "1",
+        "hint": "Save uses exact revision; no automatic stale retry"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Current issued sessions",
+        "value": "Reductions immediately tighten idle and absolute caps",
+        "status": "May expire this session"
+      },
+      {
+        "name": "New login and pairing",
+        "value": "Increased limits apply only to new sessions",
+        "status": "Never resurrect expiry"
+      }
+    ],
+    "notice": "Host administrator only. Saving shorter lifetimes may expire your own session. Review unsaved work first; expired sessions and tickets cannot gain authority from refresh.",
+    "tone": "warning",
+    "actions": [
+      {
+        "label": "Save session policy",
+        "target": "J-ENTRY-31",
+        "variant": "primary"
+      },
+      {
+        "label": "Inspect stale response",
+        "target": "J-ENTRY-31",
+        "variant": "secondary"
+      },
+      {
+        "label": "Cancel changes",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      }
+    ],
+    "light": false,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  },
+  {
+    "id": "J-ENTRY-31",
+    "title": "Policy saved or changed elsewhere",
+    "surfaces": [
+      "UI-ACCESS"
+    ],
+    "kind": "manager",
+    "index": 1,
+    "fields": [
+      {
+        "label": "Current policy revision",
+        "value": "2",
+        "hint": "Illustrative result; actual host response is authoritative"
+      },
+      {
+        "label": "Expired sessions",
+        "value": "Returned count from the host",
+        "hint": "Only a successful reduction returns its actual expired_sessions count"
+      },
+      {
+        "label": "Unsaved policy draft",
+        "value": "Retained after revision conflict",
+        "hint": "Review current revision before reapplying the retained draft"
+      },
+      {
+        "label": "Current session",
+        "value": "Live \u00b7 or expired by the reduction",
+        "hint": "Expired access requires a fresh configured sign-in; never retry old tickets"
+      }
+    ],
+    "rows": [
+      {
+        "name": "Revision conflict",
+        "value": "Save rejected; no policy or session effects",
+        "status": "Reload current policy"
+      },
+      {
+        "name": "Successful reduction",
+        "value": "Issued session caps tightened durably",
+        "status": "Counts inspectable"
+      }
+    ],
+    "notice": "A stale save has no effects and keeps the draft. A successful reduction can end this session; increased values never widen existing sessions. Reauthenticate through the configured entry flow when needed.",
+    "tone": "warning",
+    "actions": [
+      {
+        "label": "Reload current policy",
+        "target": "J-ENTRY-30",
+        "variant": "primary"
+      },
+      {
+        "label": "Sign in again",
+        "target": "J-ENTRY-01",
+        "variant": "secondary"
+      },
+      {
+        "label": "Back to Access",
+        "target": "J-ENTRY-24",
+        "variant": "secondary"
+      }
+    ],
+    "light": true,
+    "source_contract": {
+      "UI-ACCESS": {
+        "code_paths": [
+          "desktop/workspace/src/features/Managers.tsx",
+          "desktop/workspace/src/components/LockScreen.tsx",
+          "desktop/workspace/src/components/HostStop.tsx",
+          "src/termx/identity_locks.py",
+          "desktop/workspace/src/features/ManagedPairingForm.tsx",
+          "src/termx/identity_pairing.py",
+          "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+          "desktop/workspace/src/features/AuditRetentionManager.tsx",
+          "desktop/workspace/src/features/SessionPolicyManager.tsx",
+          "src/termx/identity_groups.py",
+          "src/termx/session_policy.py",
+          "src/termx/audit.py",
+          "src/termx/authorization_http.py"
+        ],
+        "endpoints": [
+          "GET /auth/access",
+          "GET /auth/sessions",
+          "DELETE /auth/sessions/{session_id}",
+          "GET /auth/admin/principals",
+          "PUT /auth/admin/principals/{principal_id}/role",
+          "PUT /auth/admin/principals/{principal_id}/projects/{project_id}",
+          "POST /auth/admin/adapters/configuration/test",
+          "PUT /auth/admin/adapters/configuration",
+          "POST /auth/admin/recovery-code",
+          "POST /auth/recovery",
+          "GET/POST /auth/lock-state",
+          "POST /auth/lock",
+          "POST /auth/unlock",
+          "POST /auth/oidc/{method}/unlock-begin",
+          "GET /auth/host/lifecycle",
+          "POST /auth/host/stop",
+          "POST /auth/pair/issue",
+          "POST /auth/pair/exchange",
+          "POST /auth/pair/revoke",
+          "GET /auth/admin/groups",
+          "POST /auth/admin/organizations",
+          "POST /auth/admin/groups",
+          "PUT /auth/admin/groups/{group_id}/members",
+          "PUT /auth/admin/groups/{group_id}/mappings",
+          "PUT /auth/admin/groups/{group_id}/projects/{project_id}",
+          "GET/PUT /auth/admin/audit/retention",
+          "POST /auth/admin/audit/prune",
+          "GET/PUT /auth/admin/session-policy"
+        ],
+        "permissions": [
+          "Own session visibility/revocation; host-admin for principal/adapter administration; live ownership+project scopes before effects; no hostile tenant isolation for trusted shared OS execution",
+          "Locked session requires fresh same-canonical-account verification; Browser/Computer access remains paused until explicit resume",
+          "Managed host shutdown requires live host-admin, exact host ID, acknowledged effects and a supported launcher; no host fallback",
+          "One-use device grant intersects sponsor scopes and live project/resource ownership; no account scope widening; legacy association requires explicit administrator consent",
+          "Host-admin only group, audit and session-policy mutations; exact CAS, current SID/account and last-admin constraints remain authoritative",
+          "Session lifetime reductions tighten issued sessions immediately; increases affect only new login/pairing; expired sessions never resurrect"
+        ],
+        "states": [
+          "own/foreign sessions",
+          "disabled principal",
+          "reduced scopes",
+          "adapter test pass/fail",
+          "migration overlap/end",
+          "recovery denial",
+          "locking/locked; wrong-account or disabled-method unlock refused",
+          "preserved drafts and paused observation after reload",
+          "unsupported shutdown; cancellation; accepted shutdown/restart",
+          "issued/exchanged/revoked/expired ticket; current sponsor disabled",
+          "Dirty group draft and current revision conflict",
+          "Removed manual/provider membership invalidates authority",
+          "Audit result actual deleted/remaining counts; late identity response ignored",
+          "Session lifetime stale revision preserves draft; explicit reviewed current policy; successful reduction may expire own SID"
+        ],
+        "proof_links": [
+          "tests/test_authorization.py",
+          "tests/test_identity_guard.py",
+          "tests/test_identity.py",
+          "plans/desktop-workspace/access-contract.md",
+          "plans/desktop-workspace/verification/advanced-figma.json",
+          "tests/test_session_lifecycle.py",
+          "tests/test_managed_pairing.py",
+          "plans/desktop-workspace/verification/managed-mobile-pairing.json",
+          "tests/test_identity_groups.py",
+          "tests/test_audit_retention.py",
+          "tests/test_session_policy.py",
+          "desktop/workspace/src/features/identity-access-managers.test.tsx",
+          "plans/desktop-workspace/verification/identity-access-rendered-CJW.json"
+        ]
+      }
+    }
+  }
+]

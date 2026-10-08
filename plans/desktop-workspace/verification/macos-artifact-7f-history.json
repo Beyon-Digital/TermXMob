@@ -1,0 +1,85 @@
+{
+  "source_sha": "7f1160f628c74499fbcf04be1ba7cb65b2788d55",
+  "run": {
+    "id": 37687927763,
+    "head_sha": "7f1160f628c74499fbcf04be1ba7cb65b2788d55",
+    "event": "workflow_dispatch",
+    "path": ".github/workflows/desktop.yml",
+    "status": "in_progress",
+    "conclusion": null,
+    "html_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37687927763",
+    "run_number": 37
+  },
+  "observed_at": "2026-10-07T21:50:16.389206+00:00",
+  "arm": {
+    "job_id": 113020487467,
+    "conclusion": "success",
+    "completed_at": "2026-10-07T21:37:32Z",
+    "checks": {
+      "frontend": {
+        "passed": 245,
+        "files": 64
+      },
+      "backend": {
+        "passed": 1087,
+        "skipped": 114
+      },
+      "native": {
+        "passed": 17,
+        "ignored": 1,
+        "separate_os_keyring_passed": 1
+      },
+      "debug_adapters": {
+        "passed": 14,
+        "skipped": 6
+      },
+      "managed_browser_native_review": {
+        "passed": 29
+      }
+    },
+    "app_notarization": {
+      "status": "Accepted",
+      "submission_id": "32ff1362-7bfb-4e61-9144-f0e96e7cb951",
+      "stapled": true
+    },
+    "dmg": {
+      "filename": "Termx_0.2.6_aarch64.dmg",
+      "codesigned": true,
+      "separate_dmg_notarization_step_present": false,
+      "separate_dmg_ticket_validation": "not performed; missing ticket step in source and packaging log",
+      "package_sha256": null
+    },
+    "installer_artifact": {
+      "id": 11513476127,
+      "name": "termx-macos-arm64-37",
+      "bytes": 477503046,
+      "uploaded_zip_sha256": "5942d06b357dab4306f3a961bc97f518c7a64ef9bdd3950be98af7dc746fdbb8",
+      "digest_kind": "GitHub upload ZIP metadata, not DMG digest"
+    },
+    "job_log": {
+      "bytes": 267116,
+      "sha256": "21a4dc40ea8501cb5b0253aeb9db93355a4179e4d3c61b93b005455ae6ef33bc",
+      "scratch_path": "/tmp/termx-artifact-7f-monitor-CCWOU7/arm-job.log"
+    }
+  },
+  "intel": {
+    "id": 113020487452,
+    "name": "macos-x86_64",
+    "status": "in_progress",
+    "conclusion": null,
+    "started_at": "2026-10-07T21:14:14Z",
+    "completed_at": null,
+    "active": [
+      "Build installers"
+    ],
+    "failed": []
+  },
+  "installed_mac_workflow_dispatched": false,
+  "limits": [
+    "No local installer download/build or package modification",
+    "ARM packaging success does not qualify Intel or installed Gatekeeper/Accessibility lifecycle",
+    "Actual installed-Mac dispatch held: missing final-DMG ticket; Windows backend job failed independently",
+    "Empty release tag; release and updater publication skipped",
+    "Unknown package or Intel metadata is null, never inferred as zero"
+  ]
+}

@@ -1,0 +1,252 @@
+{
+  "run_id": 37693649699,
+  "job_id": 113039789586,
+  "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37693649699/job/113039789586",
+  "source_sha": "1094609da6b390ec46438f9cd32f5cb3dfa1acad",
+  "inputs": {
+    "release_tag": "",
+    "draft": true,
+    "include_intel": true
+  },
+  "conclusion": "failure",
+  "completed_at": "2026-10-07T22:36:58Z",
+  "backend": {
+    "passed": 1093,
+    "failed": 16,
+    "skipped": 127,
+    "warnings": 5,
+    "seconds": 1825.61
+  },
+  "failures": [
+    "tests/test_ci_dmg_notarization.py::test_exact_final_container_gets_distinct_accepted_ticket_before_receipt - notarize_ci_dmg.TicketError: A private API key file is required",
+    "tests/test_ci_dmg_notarization.py::test_known_submission_is_waited_on_not_resubmitted_after_service_outage - notarize_ci_dmg.TicketError: A private API key file is required",
+    "tests/test_ci_dmg_notarization.py::test_transient_failed_submit_with_known_id_never_reuploads - notarize_ci_dmg.TicketError: A private API key file is required",
+    "tests/test_ci_dmg_notarization.py::test_unknown_submit_timeout_is_not_silently_replayed - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_package_mutation_after_submission_prevents_stapling - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_transient_retry_is_bounded_and_known_wait_never_reuploads - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_unidentified_network_failure_never_replays_unknown_upload - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_auth_failure_with_timeout_text_does_not_poll_again - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_deadline_exhaustion_before_effect_fails_closed - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_rejected_or_unrecognized_timeout_is_not_a_retry_signal[rejected: the wait timeout was exceeded] - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_rejected_or_unrecognized_timeout_is_not_a_retry_signal[invalid submission: the wait timeout was exceeded] - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_rejected_or_unrecognized_timeout_is_not_a_retry_signal[arbitrary timeout in private diagnostic] - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_rejected_or_unrecognized_timeout_is_not_a_retry_signal[HTTP 503 rejected: the wait timeout was exceeded] - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_real_nonwait_upload_envelope_requires_same_id_accepted_wait - notarize_ci_dmg.TicketError: A private API key file is required",
+    "tests/test_ci_dmg_notarization.py::test_nonwait_upload_id_alone_does_not_establish_accepted_ticket - AssertionError: Regex pattern did not match.",
+    "tests/test_ci_dmg_notarization.py::test_present_unknown_submission_status_is_not_pending - AssertionError: Regex pattern did not match."
+  ],
+  "diagnosis": {
+    "cause": "Notarization synthetic fixtures chmod600 cannot provide POSIX mode semantics on Windows; key mode guard rejects before injected notary service operations.",
+    "source": "desktop/scripts/notarize_ci_dmg.py:96",
+    "fixture": "tests/test_ci_dmg_notarization.py:26",
+    "trace_lines": [
+      912,
+      921
+    ],
+    "summary_lines": [
+      1284,
+      1324
+    ],
+    "owner": "Browser packaging agent; sent causal evidence, no overlapping edits."
+  },
+  "runner_cancellation_repair": "All runner tests passed in this complete actual Windows backend execution; no startup or cancellation timeout remained.",
+  "stages": [
+    {
+      "name": "Set up job",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run dtolnay/rust-toolchain@stable",
+      "conclusion": "success"
+    },
+    {
+      "name": "Add Rust target",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Run Swatinem/rust-cache@v2",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run astral-sh/setup-uv@v5",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/setup-node@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Run pnpm/action-setup@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Build dedicated workspace",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Tauri CLI",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Linux dependencies",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Import macOS signing material",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Build macOS helpers",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Locate signtool",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Chromium system dependencies",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Install complete backend and packaging dependencies",
+      "conclusion": "success"
+    },
+    {
+      "name": "Verify complete backend suite",
+      "conclusion": "failure"
+    },
+    {
+      "name": "Build complete workspace runtime and Python sidecar",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify exact owned X11 window capture",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify native bridge boundaries",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify OS credential service on macOS and Windows",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify isolated Linux OS credential service",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed debug adapters",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed browser grant and recovery contracts",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify rendered workspace accessibility",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload workspace accessibility evidence",
+      "conclusion": "success"
+    },
+    {
+      "name": "Resolve release metadata",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Determine signing mode",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify tag matches app version",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Configure repository updater endpoint",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Build installers",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Notarize and verify final artifact-only macOS DMG",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload final macOS DMG ticket receipt",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Install pinned native GUI driver",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed Linux native workspace",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Verify installed Windows native workspace",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload installed native GUI evidence",
+      "conclusion": "success"
+    },
+    {
+      "name": "Add checksums to the release",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Publish updater fragment",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload updater manifest fragment",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Upload installers as workflow artifacts",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run pnpm/action-setup@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run actions/setup-node@v4",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run astral-sh/setup-uv@v5",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run Swatinem/rust-cache@v2",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success"
+    }
+  ],
+  "limits": [
+    "Frozen sidecar/runtime, installed debug/browser, installer build and installed Windows GUI skipped.",
+    "No installed GUI report/hash or Windows installer artifact exists from this job.",
+    "No production Windows signing/release/updater publication.",
+    "No local Rust delivery compilation or large binary download."
+  ],
+  "log": "/tmp/termx-windows-37693649699.log",
+  "evidence_scope": "Exact published109 Windows failed full backend execution; synthetic orchestration fixtures, no actual notary request and no installed Windows GUI qualification.",
+  "candidate_repair": "Owned packaging agent corrects synthetic key permission metadata on Windows while retaining strict real macOS privacy checks; fast Windows gate will include full notarization fixtures before expensive artifacts."
+}

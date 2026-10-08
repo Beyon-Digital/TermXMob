@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 from pathlib import Path
 from typing import Any
 
 from .defs import ConnectionDef, ConnectionError_, load_connection_file
+_WRITE_LOCK=threading.RLock()
 
 
 class ConnectionRegistry:
@@ -46,7 +48,16 @@ class ConnectionRegistry:
                 return conn
         return None
 
-    def save(self, conn: ConnectionDef) -> str:
+    def save(self, conn: ConnectionDef, *, expected_digest: str | None = None) -> str:
+        with _WRITE_LOCK:
+            if expected_digest is not None:
+                from .scope import definition_digest
+                existing=self.get(conn.id)
+                if existing is None or definition_digest(existing)!=expected_digest:
+                    raise ConnectionError_('MCP definition changed; reload before updating')
+            return self._save(conn)
+
+    def _save(self, conn: ConnectionDef) -> str:
         """Persist to the first (user) mcp dir; returns file path."""
         if not self._dirs:
             raise ConnectionError_("no mcp definition dir configured")
@@ -63,12 +74,15 @@ class ConnectionRegistry:
             "transport": conn.transport,
             "enabled": conn.enabled,
             "owner": conn.owner,
+            "allowed_projects": conn.allowed_projects,
             "auth": {
                 "method": conn.auth_method,
                 "env_names": conn.env_names,
                 "scopes": conn.scopes,
             },
             "secret_refs": conn.secret_refs,
+            "header_secret_refs":conn.header_secret_refs,
+            "credential_revision":conn.credential_revision,
             "approved_tools": conn.approved_tools,
             "trust": conn.trust,
             "lan": conn.lan,

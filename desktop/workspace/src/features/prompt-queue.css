@@ -1,0 +1,9 @@
+.prompt-queue{max-height:min(180px,25vh);overflow:auto;min-height:28px;flex-shrink:1;border-bottom:1px solid var(--border);padding:4px 8px;font-size:12px}
+.prompt-queue summary{cursor:pointer;color:var(--secondary)}
+.prompt-queue article{padding:8px 0;border-top:1px solid var(--border)}
+.prompt-queue strong{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+.prompt-queue small{display:block;color:var(--secondary);margin:4px 0}
+.prompt-queue pre{max-height:140px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.running-input-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 4px;font-size:11px;color:var(--secondary);flex-shrink:0}
+.running-input-actions>span{flex-basis:100%}
+.jump-latest{align-self:center;margin:4px auto;flex-shrink:0}

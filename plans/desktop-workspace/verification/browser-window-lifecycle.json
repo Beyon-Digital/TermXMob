@@ -1,0 +1,24 @@
+{
+  "host_platform": "darwin",
+  "proof": "browser-window-lifecycle",
+  "provider_queries": 0,
+  "external_mutations": 0,
+  "fixture_adapter_calls": 1,
+  "errors": [],
+  "steps": [
+    "Actual panel and toolbar popups: close/reopen preserved draft/images; acknowledged return kept conflicting dirty files, active task and PTY; different main draft kept source open"
+  ],
+  "active_named_window_focused_without_navigation": true,
+  "conflicting_draft_return_refused": true,
+  "acknowledged_browser_return": {
+    "source_closed_after_accept": true,
+    "main_draft_preserved": true,
+    "image_bytes_preserved": true,
+    "conflicting_buffers_both_visible": true,
+    "canonical_task_running": true,
+    "same_terminal_id": "b7f149ed9c09",
+    "disk_unchanged": true
+  },
+  "context_only_closed_window_recovery": true,
+  "toolbar_and_panel_detach": true
+}

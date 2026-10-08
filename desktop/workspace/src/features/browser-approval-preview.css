@@ -1,0 +1,5 @@
+.browser-transaction-preview {min-width:0;overflow-wrap:anywhere;}
+.browser-transaction-preview dl {margin:8px 0;}
+.browser-transaction-preview dt {font-weight:600;margin-top:6px;}
+.browser-transaction-preview dd {margin-left:0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.browser-transaction-preview code {display:block;overflow-wrap:anywhere;white-space:normal;}

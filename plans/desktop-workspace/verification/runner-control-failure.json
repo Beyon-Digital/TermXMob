@@ -1,0 +1,18 @@
+{
+  "source_base_commit": "8c3021128cf0e82eddf1aecaca029785e627e7c6",
+  "scope": "Runner worker only; no AgentManager change. Invalid control protocol is failed, explicit cancel/EOF stays cancelled. Sanitized error, exactly one runner.failure, task.failed, no effects or extra RPC; stdin remains open in refusal regression.",
+  "tests": [
+    {
+      "passed": 5,
+      "seconds": 16.05,
+      "cases": "Unknown frame, malformed JSON, nonobject, explicit cancel, EOF"
+    },
+    {
+      "passed": 15,
+      "skipped": 1,
+      "seconds": 11.34,
+      "cases": "Complete runner suite; opt-in Docker skipped"
+    }
+  ],
+  "status": "Local targeted checks passed; replacement full source CI pending."
+}

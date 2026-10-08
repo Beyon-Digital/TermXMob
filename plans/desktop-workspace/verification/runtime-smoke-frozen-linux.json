@@ -1,0 +1,74 @@
+{
+  "verification_date": "2026-10-07",
+  "platform": "linux",
+  "commit": "273e59868bef796bd0498c2709d898c03d2e4734",
+  "ci_run": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37593694923",
+  "result": {
+    "assets": {
+      "ui_contract": 3,
+      "frozen": true,
+      "node": true,
+      "javascript_debug": true,
+      "python_debug_adapter": true,
+      "languages": {
+        "python": true,
+        "typescript": true,
+        "html": true,
+        "css": true,
+        "json": true
+      },
+      "chromium": true,
+      "ffmpeg": true,
+      "web": true
+    },
+    "qualification": {
+      "ui_contract": 3,
+      "frozen": true,
+      "executed": {
+        "node": {
+          "version": "v24.19.0"
+        },
+        "ffmpeg": {
+          "version": "ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers"
+        },
+        "languages": {
+          "python": {
+            "initialized": true,
+            "shutdown": true
+          },
+          "typescript": {
+            "initialized": true,
+            "shutdown": true
+          },
+          "html": {
+            "initialized": true,
+            "shutdown": true
+          },
+          "css": {
+            "initialized": true,
+            "shutdown": true
+          },
+          "json": {
+            "initialized": true,
+            "shutdown": true
+          }
+        },
+        "debugpy": {
+          "initialized": true,
+          "disconnect": true,
+          "frozen_entry": true
+        },
+        "javascript_debug": {
+          "initialized": true,
+          "loopback_bound": true
+        },
+        "chromium": {
+          "rendered": true,
+          "screenshot_png": true,
+          "version": "145.0.7632.6"
+        }
+      }
+    }
+  },
+  "limit": "Frozen Python/runtime smoke passed; later X11 dependency step failed, so no passing complete installer claim."
+}

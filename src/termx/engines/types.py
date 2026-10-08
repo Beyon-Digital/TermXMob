@@ -170,7 +170,7 @@ class EffectiveRunConfiguration:
             "tools": self.tools,
             "skills": self.skills,
             "workflow": self.workflow,
-            "mcp_bindings": self.mcp_bindings,
+            "mcp_bindings": [{**b,'env':{name:'[credential]' for name in (b.get('env') or {})},'headers':{name:'[credential]' for name in (b.get('headers') or {})}} for b in self.mcp_bindings],
             "sandbox_profile": self.sandbox_profile,
             "approval_mode": self.approval_mode,
             "cwd": self.cwd,

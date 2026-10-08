@@ -1,4 +1,6 @@
-use tauri::menu::{AboutMetadataBuilder, CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{
+    AboutMetadataBuilder, CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder,
+};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -14,7 +16,8 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
     let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
-    let check_updates = MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
+    let check_updates =
+        MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
     let autostart = CheckMenuItemBuilder::with_id("autostart", "Launch at Login")
         .checked(false)
         .build(app)?;
@@ -97,7 +100,10 @@ pub fn sync_autostart(app: &AppHandle) {
         let handle_for_menu = handle.clone();
         let _ = handle.run_on_main_thread(move || {
             if let Some(menu) = handle_for_menu.menu() {
-                if let Some(check) = menu.get("autostart").and_then(|item| item.as_check_menuitem().cloned()) {
+                if let Some(check) = menu
+                    .get("autostart")
+                    .and_then(|item| item.as_check_menuitem().cloned())
+                {
                     let _ = check.set_checked(enabled);
                 }
             }
@@ -156,7 +162,11 @@ fn toggle_autostart(app: &AppHandle) {
                 },
             );
         }
-        Err(error) => ui::notify(app, "Termx", &format!("Could not update launch at login: {error}")),
+        Err(error) => ui::notify(
+            app,
+            "Termx",
+            &format!("Could not update launch at login: {error}"),
+        ),
     }
 }
 
@@ -191,10 +201,18 @@ pub fn run_update(app: &AppHandle, action: &str) {
                     );
                     return;
                 }
-                ui::notify(&handle, "Updating Termx", &format!("Downloading Termx {version}…"));
+                ui::notify(
+                    &handle,
+                    "Updating Termx",
+                    &format!("Downloading Termx {version}…"),
+                );
                 match update.download_and_install(|_, _| {}, || {}).await {
                     Ok(()) => {
-                        ui::notify(&handle, "Termx updated", &format!("Restarting on {version}"));
+                        ui::notify(
+                            &handle,
+                            "Termx updated",
+                            &format!("Restarting on {version}"),
+                        );
                         handle.restart();
                     }
                     Err(error) => ui::notify(&handle, "Update failed", &error.to_string()),

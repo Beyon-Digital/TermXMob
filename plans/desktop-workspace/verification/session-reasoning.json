@@ -1,0 +1,94 @@
+{
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "source_changes_pending_checkpoint": false,
+  "contract": "Session.reasoning_config: advertised optionID -> value; exact engine/model catalogue validation, optimistic revision, active-turn and dispatch locks; immutable execution/delegation/queue snapshots",
+  "ui": "ReasoningPicker mounted in compact session engine/model dialog; only advertised thought_level/reasoning/effort select choices for exact model; unavailable source/model explicit disabled EngineDefault. Model/account change clears stale prior reasoning.",
+  "sources": {
+    "codex": {
+      "source": "Native model/list supportedReasoningEfforts/defaultReasoningEffort, per-model variants",
+      "dispatch": "Native turn/start model+effort; Ask readOnly, Agent exact configured sandbox. Turn configuration applied event persists actual options. Reuses authoritative native thread; active turn cannot be reconfigured.",
+      "local_version": "0.160.0",
+      "offline_schema": {
+        "ModelListResponse": {
+          "sha256": "bfbb3ee9f6e203e0b767587c17de94b9cb42f712d0d8168afbbbc3fcb4492f30",
+          "source": "Installed Codex0.160.0 app-server generate-json-schema, no agent prompt/provider generation"
+        },
+        "TurnStartParams": {
+          "sha256": "2dfcf68705896fadc344ccfeb2e9fe5a6bcbbb8b9a90cf449ce232b636daf05a",
+          "source": "Installed Codex0.160.0 app-server generate-json-schema, no agent prompt/provider generation"
+        }
+      }
+    },
+    "acp": {
+      "source": "Native configOptions category thought_level/model-specific discovery",
+      "dispatch": "Existing set_config_option revalidates after model change; workspace Agent does not invent ACP agent mode; Ask requires advertised Ask and retains host read-only review marker."
+    },
+    "claude": {
+      "local_version": "2.1.290",
+      "source": "Actual CLIhelp and official installed SDK expose --effort; no per-model reasoning catalogue currently exposed by this adapter",
+      "support": "Unavailable reasoning selector; no model effort support guessed from CLI parameter presence. Ask uses native plan permission mode; arbitrary unadvertised config rejected."
+    },
+    "internal_cloud": {
+      "support": "No advertised provider-model reasoning schema; stays EngineDefault, no provider entitlement or default billing fallback invented."
+    }
+  },
+  "native_fixes": [
+    "Reused Codex threads dispatch selected model on each turn.",
+    "Fast completion notification before turn/start RPC response is not overwritten by active state.",
+    "Codex/Claude attach accept gateway cfg resume keyword; same native IDs retained."
+  ],
+  "tests": [
+    {
+      "suite": "Engine/workspace/ACP/catalogue regression",
+      "result": "113 passed; one new ACP fixture assumption failed, corrected explicit native default and rerun passed",
+      "note": "Counts overlap the final focused suite; not additive."
+    },
+    {
+      "suite": "tests/test_reasoning.py",
+      "result": "4 passed",
+      "seconds": 7.23,
+      "evidence": "Actual controlled subprocess Codex and ACP protocols assert per-model options and turn parameters, nativeID reuse, immutable task event snapshot, invalid model-effort no native turn, active settings rejection and reasoning in execution target."
+    },
+    {
+      "suite": "reasoning-picker + session-model-controls frontend",
+      "result": "5 passed",
+      "seconds": 5.21,
+      "evidence": "Exact model choices/revisionPATCH, active-disabled, unsupported/no inventedchoices, stale session response fenced."
+    },
+    {
+      "suite": "Workspace TypeScript",
+      "result": "tsc --noEmit passed"
+    },
+    {
+      "suite": "Final tests/test_reasoning.py plus tests/test_engines.py",
+      "result": "23 passed",
+      "seconds": 12.13,
+      "evidence": "Final source after applied configuration event/model-default/sandbox-perturn fixes; real subprocess protocol and existing native transport/gateway regressions."
+    },
+    {
+      "suite": "Final tests/test_reasoning.py including real project-operator owned catalogue route",
+      "result": "5 passed",
+      "seconds": 16.77,
+      "evidence": "Operator has no host-level agent-view, reads only its own scoped session options; foreign user404, cache read does not spawn native agent."
+    },
+    {
+      "suite": "Final ReasoningPicker + session-model-controls after scoped route",
+      "result": "5 passed",
+      "seconds": 3.58,
+      "evidence": "Session-scoped source route, model-specific revisionPATCH, active freeze and stale-session response fencing; tsc --noEmit passed."
+    },
+    {
+      "suite": "ReasoningPicker and compact SessionModelControls after generation/operation fence",
+      "result": "6 passed; tsc --noEmit passed",
+      "seconds": 24.0,
+      "evidence": "Deferred PATCH A\u2192B\u2192A and same-session model-switch never apply stale result/error; pending state resets for the new selector. Published at the exact checkpoint recorded below; live provider qualification remains distinct."
+    }
+  ],
+  "limits": [
+    "Protocol fixtures use synthetic engine models with genuine transport/adapter code; no paid provider or real model response requested.",
+    "Offline installed CLI schema/help are concrete protocol evidence, not native provider generation or subscription entitlement qualification.",
+    "New frozen/bundled and rendered-session UI proof remains separate until the combined source checkpoint and production build."
+  ],
+  "catalogue_route": "GET /api/workspace/sessions/{identifier}/reasoning; canonical owned conversation derivesengine beforecache-only model configuration read; no host-level privilege required or new discovery spawn.",
+  "published_commit": "f97b71153f8794948ff55120a0df765341a94706"
+}

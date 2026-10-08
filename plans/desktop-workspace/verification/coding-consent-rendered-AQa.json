@@ -1,0 +1,565 @@
+{
+  "proof": "managed-coding-consent",
+  "paid_queries": 0,
+  "errors": [],
+  "states": [
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".resize-handle"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".resize-handle"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "targets": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              ".workspace-header"
+            ],
+            [
+              ".dock-pane-header[draggable=\"true\"][data-aria-hidden=\"true\"]"
+            ],
+            [
+              ".composer-container"
+            ],
+            [
+              "footer"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(5)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "button[aria-current=\"page\"]"
+            ],
+            [
+              "nav > button:nth-child(2)"
+            ],
+            [
+              "nav > button:nth-child(3)"
+            ],
+            [
+              "nav > button:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "keyboard_checks": [
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 351,
+        "y": 573.921875,
+        "width": 237,
+        "height": 38
+      },
+      "inside": true,
+      "label": "Coding decision"
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 596,
+        "y": 574.921875,
+        "width": 142.34375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Coding policy expiry seconds"
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 746.34375,
+        "y": 481.921875,
+        "width": 141.828125,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Save coding policy"
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 351,
+        "y": 400.921875,
+        "width": 180.5,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Cancel coding policy edit"
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 547.5,
+        "y": 400.921875,
+        "width": 156.734375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Revoke coding policy"
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 351,
+        "y": 573.921875,
+        "width": 237,
+        "height": 38
+      },
+      "inside": true,
+      "label": "Coding decision"
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 596,
+        "y": 574.921875,
+        "width": 142.34375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Coding policy expiry seconds"
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 746.34375,
+        "y": 481.921875,
+        "width": 141.828125,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Save coding policy"
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 351,
+        "y": 400.921875,
+        "width": 180.5,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Cancel coding policy edit"
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 547.5,
+        "y": 400.921875,
+        "width": 156.734375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Revoke coding policy"
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 73,
+        "y": 323.859375,
+        "width": 237,
+        "height": 38
+      },
+      "inside": true,
+      "label": "Coding decision"
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 318,
+        "y": 324.859375,
+        "width": 142.34375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Coding policy expiry seconds"
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 468.34375,
+        "y": 231.859375,
+        "width": 141.828125,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Save coding policy"
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 73,
+        "y": 150.859375,
+        "width": 180.5,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Cancel coding policy edit"
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 269.5,
+        "y": 150.859375,
+        "width": 156.734375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Revoke coding policy"
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 73,
+        "y": 323.859375,
+        "width": 237,
+        "height": 38
+      },
+      "inside": true,
+      "label": "Coding decision"
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 318,
+        "y": 324.859375,
+        "width": 142.34375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Coding policy expiry seconds"
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 468.34375,
+        "y": 231.859375,
+        "width": 141.828125,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Save coding policy"
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 73,
+        "y": 150.859375,
+        "width": 180.5,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Cancel coding policy edit"
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "focus": true,
+      "uncovered": true,
+      "bounds": {
+        "x": 269.5,
+        "y": 150.859375,
+        "width": 156.734375,
+        "height": 36
+      },
+      "inside": true,
+      "label": "Revoke coding policy"
+    }
+  ],
+  "native_select_method": "Tab and Shift+Tab actual focus; select_option for native picker values, not OS popup keyboard automation",
+  "UI_asset_snapshot": {
+    "assets/BrowserSurface-CclVa7Ig.js": "b726992f5bc209cde59f681751474336e849d3d4f2a1fecb975bae409e7263de",
+    "assets/CaptureStatus-CLG1lALd.js": "e2241706fef0955fe0af73fdd3b5c691a21f7494591b872584cfff6faefeadbf",
+    "assets/ComputerSurface-B7BZsO6H.js": "6a096b0e1cb0273a7ca7809d24f6ff16cd6f2a38bbc856ea9c099009ecd7f031",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/Debugger-Z4s1s21P.js": "a0e1df74f2c3fcc04d43dcce2c2f95e90f1d64e631832d8b35e4ad866e10a8ba",
+    "assets/Delivery-he-lv6VO.js": "220cc34246cb65f789770135b4b108c86a267e66e22d55e6aa10ebfced268776",
+    "assets/Keybindings-Bu41NbTD.js": "8e35f6e797089c7b93f97c54870412c7b77523137a453af63f33baad4fdeb443",
+    "assets/Managers-B0Vr3Zba.css": "ae3e40d2a3e21802f1f4c2d515bbd3f3093d894b1365d50326bb5a49e4e3cc73",
+    "assets/Managers-CeDEWu_1.js": "4391988dec6019f92d277db2d96ed4363aa6db50da8df141f6b8494d2c00066d",
+    "assets/Media-CEABjDxh.js": "dc1827026579ca7468f92fae3701f79431e7124aabea1d9f382426b4b56bb65e",
+    "assets/Preview-rN_YKlj2.js": "2207d86216a428d2825564176a800c4806ca110b55f9a4a67bbb9863a2359681",
+    "assets/Runners-CVEHPDSe.js": "b5831d038eb1b03247aa546b65f296858f6c36401e1adea1f9d1ba47f9dc85dd",
+    "assets/SafetyManager-DY8-dcPh.js": "95ef68480319fac22471be0c3ecac26a5b1b7d86cd97acf18003c0c0ec25658e",
+    "assets/TerminalPanel-C0K_KZ0X.js": "3cb5ec8019924dbf9a63c192d03c49bfd4ab857793801d021e3ab36b8c734dad",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/Workbench-o7o0Sa_5.js": "3f32033001c1fcb73a435dd9bbaa32ea0f08a068d510ed4d6a54f9b06d47b7be",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-BPEC2Fz-.js": "8169286c845edd9dae99d8d0a82c5d2ed2b844726dc941fb38967ee6878829fd",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-BUMqJlJD.js": "05a9dd45144cd3bcccfe60d18b6629be409e30325df84a01217a7a117c444f49",
+    "assets/index-AQa1VCFG.js": "afd05a0c314532927739804c1d9b3efcda4dd19c62e02dd2205dc42054575c30",
+    "assets/index-CP122w_J.css": "1340284bfca4d7bcec4131f136a10eeb9bcede7bbe68adae6efebefb6dddb1e6",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/mermaid-MCJ5UELQ-CpYZW-Kr.js": "148c1564d28ac7fe9137d9e2e35cc491e4002c02c28ff39e8b8f3d135bfe4ca6",
+    "assets/model-favorites-SGxryfzE.js": "194485b457804aa2b626cd867db8bcff21d703e9bae2527893c53b5ae406a56c",
+    "assets/play-DrL9an5Z.js": "7a89e435137b1c72d587baf074f34f96b3efe337df169ae522c5ad17d049a7b4",
+    "assets/square-DBBToE8g.js": "a1b134a7fd06fedf87049f244259a6aad83b8f857c66d69bb92f61ff064fa0d4",
+    "assets/transfers-DnJJKpAW.js": "4d09e70c64b302064f0982d635593f8c6c5a947d9527f2c9b6ea57f9307036d1",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "d4dbaeed31090f6b88a3669d043f2287bbebe881ebd3d2deea8436e2ad552ab8"
+  },
+  "managed_effects": {
+    "exact_two_writes": true,
+    "one_human_tool_decision": true,
+    "canonical_conversation_bound": true,
+    "second_audit_source": "coding-policy"
+  },
+  "rule_lifecycle": {
+    "inspected": true,
+    "edited_deny_expiry_cas": true,
+    "immutable_binding_fingerprint": true,
+    "revoked": true
+  },
+  "status": "passed",
+  "production_bundle": "index-AQa1VCFG.js",
+  "screenshots_visually_inspected": [
+    "coding-policy-dark-200.png",
+    "coding-policy-light-200.png"
+  ],
+  "backend_candidate_report": "generic-consent-candidate-audit.json",
+  "fixture_limitations": [
+    "No paid provider/model request",
+    "In-memory fixture credentials; no OS credential storage",
+    "No installed native/hardware qualification",
+    "Tab/Shift+Tab actual focus, select_option native value changes; not OS popup key automation",
+    "Incomplete axe modal/background/contrast targets retained",
+    "No lock/unlock interaction added to this renderer; that lifecycle source has focused unit coverage"
+  ]
+}

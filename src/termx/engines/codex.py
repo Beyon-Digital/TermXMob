@@ -84,6 +84,9 @@ class CodexEngine:
         self._initialized = False
         self._account: dict[str, Any] = {}
         self._models: list[str] = []
+        self._model_rows: list[dict[str,Any]] = []
+        self.browser_service = None
+        self._review_items = {}
 
     # ------------------------------------------------------------------ probe
 
@@ -132,7 +135,8 @@ class CodexEngine:
             await self._ensure_conn()
             self._account = await self._conn.request("account/read", {"refreshToken": False}, timeout=15) or {}
             models = await self._conn.request("model/list", {"limit": 20, "includeHidden": False}, timeout=15)
-            self._models = [m.get("id", "") for m in (models or {}).get("data", []) if m.get("id")]
+            self._model_rows = [m for m in (models or {}).get("data", []) if isinstance(m,dict) and m.get("id")]
+            self._models = [m["id"] for m in self._model_rows]
         except (TransportClosed, JsonRpcError, TimeoutError, OSError) as exc:
             desc.error = f"probe failed: {exc}"
         desc.auth_state = self._auth_state()
@@ -150,12 +154,49 @@ class CodexEngine:
             fork="supported",
             subagents="unverified",
             skills_native="supported",  # `{type:"skill"}` turn input items
-            mcp_native="supported",     # codex config MCP; per-session TBD
+            mcp_native="unsupported",
             models=list(self._models),
             notes={
+                "mcp_native": "TermX per-session MCP bindings are unsupported; use the Internal broker. Existing Codex host configuration remains native-owned and is not a TermX-applied connection selection.",
+                "attachments": "image data URLs via the native turn/start input contract; model entitlement applies",
                 "tools_filter": "tool-name filtering is advisory only; enforcement via approvalPolicy + sandboxPolicy",
+                "auto_review": "managed tasks: command/file/permission approval requests use durable host broker; native sandbox fast paths remain native policy, not per-tool host hooks",
+                "restricted_browser": "refused: no verified mechanism removes every alternate native tool",
             },
         )
+
+    async def discover_catalogue(self, cwd=None):
+        # Values come from this installed app-server model/list response, never
+        # a hard-coded model name or another provider's effort enumeration.
+        variants={}
+        default=None
+        for row in self._model_rows:
+            values=[{'value':item['reasoningEffort'],'name':item.get('description') or item['reasoningEffort']}
+                    for item in row.get('supportedReasoningEfforts',[]) if isinstance(item,dict) and isinstance(item.get('reasoningEffort'),str)]
+            option={'id':'reasoning_effort','name':'Reasoning','category':'thought_level','type':'select',
+                    'currentValue':row.get('defaultReasoningEffort'),'options':values}
+            variants[row['id']]={'config_options':[option] if values else [],'models':list(self._models)}
+            if row.get('isDefault'):default=row['id']
+        return {'models':list(self._models),'default_model':default,'model_configurations':variants,
+                'config_options':variants.get(default,{}).get('config_options',[]),'source':'codex:model/list'}
+
+    def _turn_configuration(self,cfg):
+        if cfg.mcp_bindings:
+            raise ValueError('Codex does not apply TermX per-session MCP bindings; use the Internal broker')
+        if cfg.mode not in {None,'ask','agent'}:raise ValueError('Unsupported Codex conversation mode')
+        if set(cfg.config_options)-{'reasoning_effort'}:raise ValueError('Unsupported Codex config option')
+        selected=next((m for m in self._model_rows if m['id']==cfg.model or m.get('model')==cfg.model),None) if cfg.model else next((m for m in self._model_rows if m.get('isDefault')),None)
+        effort=cfg.config_options.get('reasoning_effort')
+        if effort is not None:
+            values=[m.get('reasoningEffort') for m in (selected or {}).get('supportedReasoningEfforts',[])]
+            if not isinstance(effort,str) or effort not in values:raise ValueError('Reasoning effort is not advertised for this Codex model; refresh the engine catalogue')
+        if effort is None:effort=(selected or {}).get('defaultReasoningEffort')
+        sandbox={'type':'readOnly'} if cfg.mode=='ask' or cfg.sandbox_profile=='read-only' else (
+            {'type':'workspaceWrite','writableRoots':[cfg.cwd],'networkAccess':False,'excludeSlashTmp':True,'excludeTmpdirEnvVar':True}
+            if cfg.sandbox_profile in {'agent','workspace'} else {'type':'dangerFullAccess'} if cfg.sandbox_profile=='host' else None)
+        return {**({'model':(selected or {}).get('model') or cfg.model} if selected or cfg.model else {}),
+                **({'effort':effort} if effort is not None else {}),
+                **({'sandboxPolicy':sandbox} if sandbox else {})}
 
     # ------------------------------------------------------------- connection
 
@@ -202,6 +243,7 @@ class CodexEngine:
     # ---------------------------------------------------------------- session
 
     async def create_session(self, cfg: EffectiveRunConfiguration) -> EngineSessionBinding:
+        turn_configuration=self._turn_configuration(cfg)
         await self._ensure_conn()
         params: dict[str, Any] = {
             "cwd": cfg.cwd or None,
@@ -209,12 +251,15 @@ class CodexEngine:
         }
         if cfg.model:
             params["model"] = cfg.model
-        sandbox = _codex_sandbox(cfg.sandbox_profile)
+        sandbox = "read-only" if cfg.mode=="ask" else _codex_sandbox(cfg.sandbox_profile)
         if sandbox:
             params["sandbox"] = sandbox
         approval = _codex_approval_policy(cfg.approval_mode)
         if approval:
             params["approvalPolicy"] = approval
+        if cfg.tools.get('managed_task_id') and self.browser_service:
+            params['approvalsReviewer'] = 'user'
+            params['approvalPolicy'] = 'untrusted'
         result = await self._conn.request(
             "thread/start", {k: v for k, v in params.items() if v is not None}, timeout=30
         )
@@ -230,6 +275,8 @@ class CodexEngine:
             account_scope=self._auth_detail(),
             extensions_snapshot={
                 "skills": [s.get("id") for s in cfg.skills],
+                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask",
+                "turn_configuration":turn_configuration,
                 "mcp": [m.get("connection_id") for m in cfg.mcp_bindings],
             },
         )
@@ -237,8 +284,10 @@ class CodexEngine:
         self._bindings[binding.binding_id] = binding
         return binding
 
-    async def attach(self, binding: EngineSessionBinding) -> EngineSessionBinding:
+    async def attach(self, binding: EngineSessionBinding, *, cfg=None) -> EngineSessionBinding:
         """Re-attach to a persisted thread after host restart (native resume)."""
+        if cfg is not None:
+            self._turn_configuration(cfg)
         await self._ensure_conn()
         result = await self._conn.request(
             "thread/resume", {"threadId": binding.native_session_id}, timeout=30
@@ -252,15 +301,27 @@ class CodexEngine:
         self._bindings[binding.binding_id] = binding
         return binding
 
+    async def configure_session(self, binding, cfg):
+        if binding.status=="active":raise ValueError("Native turn is still running")
+        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask",turn_configuration=self._turn_configuration(cfg))
+
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
         await self._ensure_conn()
+        from termx.engines.attachments import image_attachments
         inputs: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-        params: dict[str, Any] = {"threadId": binding.native_session_id, "input": inputs}
+        inputs.extend({"type":"image", "url":f"data:{item['mime']};base64,{item['data']}"} for item in image_attachments(attachments))
+        effective=dict(binding.extensions_snapshot.get("turn_configuration",{}))
+        self._emit(binding,"engine.configuration.applied",effective)
+        params: dict[str, Any] = {"threadId": binding.native_session_id, "input": inputs,**effective}
+        if binding.extensions_snapshot.get('managed_task_id') and self.browser_service:
+            params.update(approvalsReviewer='user', approvalPolicy='untrusted')
+        # A fast completion notification may arrive before the RPC response.
+        # Admit active state before sending, never overwrite its completed state.
+        binding.status = "active"
         result = await self._conn.request("turn/start", params, timeout=30)
         turn = (result or {}).get("turn") or {}
         binding.native_turn_id = turn.get("id")
-        binding.status = "active"
         binding.updated_at = time.time()
         return binding.native_turn_id
 
@@ -306,6 +367,10 @@ class CodexEngine:
         if fut.done():
             return
         approved = decision in ("approve", "approve_always")
+        if method == "browser.review":
+            from termx.engines.action_review import respond_review
+            respond_review(self, binding, entry, approved)
+            return
         if method in ("item/commandExecution/requestApproval",
                       "item/fileChange/requestApproval"):
             wire = {
@@ -345,6 +410,9 @@ class CodexEngine:
     async def shutdown(self) -> None:
         if self._conn:
             await self._conn.close()
+            process = getattr(self._conn, '_proc', None)
+            if process is not None and process.returncode is None:
+                raise RuntimeError('Codex transport process remains active after shutdown')
         self._initialized = False
 
     # ----------------------------------------------------------------- events
@@ -393,6 +461,10 @@ class CodexEngine:
         if mapped and binding:
             native: dict[str, Any] = {}
             item = params.get("item") or {}
+            if method == 'item/completed' and self.browser_service:
+                reviewed = self._review_items.pop((binding.binding_id, item.get('id')), None)
+                if reviewed:
+                    self.browser_service.review.complete_external(reviewed.action_id, success=item.get('status') not in {'failed', 'declined', 'cancelled'})
             if isinstance(item, dict) and item.get("id"):
                 native["item_id"] = item["id"]
             if params.get("itemId"):
@@ -430,6 +502,18 @@ class CodexEngine:
         if binding is None or self._approval_sink is None:
             return ({"decision": "decline"} if kind != "elicitation"
                     else {"action": "decline", "content": None})
+        if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"} and self.browser_service:
+            from termx.engines.action_review import authorize,consume_reviewed
+            from termx.auto_review import ActionBlocked
+            try:
+                checked = await authorize(self, binding, 'run_shell' if method == 'item/commandExecution/requestApproval' else 'native_permission', params, str(params.get('approvalId') or params.get('itemId') or uuid.uuid4().hex))
+                if checked:
+                    envelope, validate, permit = checked
+                    await consume_reviewed(self,binding,envelope,validate,permit,tool='run_shell' if method=='item/commandExecution/requestApproval' else 'native_permission',args=params)
+                    self._review_items[(binding.binding_id, params.get('itemId'))] = envelope
+                    return {'permissions': params.get('permissions', {}), 'scope': 'turn'} if method == 'item/permissions/requestApproval' else {'decision': 'accept'}
+            except (PermissionError, ActionBlocked):
+                return {'permissions': {}, 'scope': 'turn'} if method == 'item/permissions/requestApproval' else {'decision': 'decline'}
         token = f"engreq_{uuid.uuid4().hex[:16]}"
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()

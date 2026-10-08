@@ -1,0 +1,3 @@
+export type ConversationAnchor={id:string;offset:number};
+export function conversationAnchor(element:HTMLElement):ConversationAnchor|null{const top=element.getBoundingClientRect().top;const row=Array.from(element.querySelectorAll<HTMLElement>('[data-message-id]')).find(row=>row.getBoundingClientRect().bottom>top);return row?.dataset.messageId?{id:row.dataset.messageId,offset:row.getBoundingClientRect().top-top}:null}
+export function anchorCorrection(element:HTMLElement,anchor:ConversationAnchor):number|null{const row=Array.from(element.querySelectorAll<HTMLElement>('[data-message-id]')).find(row=>row.dataset.messageId===anchor.id);return row?row.getBoundingClientRect().top-element.getBoundingClientRect().top-anchor.offset:null}

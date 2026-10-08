@@ -131,14 +131,18 @@ def list_dir_entries(path: str | None = None, include_files: bool = False) -> di
 
 def atomic_write(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    from termx.private_files import protect_private_path
+    if os.name == 'nt':
+        protect_private_path(path.parent, directory=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".termx-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            protect_private_path(Path(tmp))
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        protect_private_path(path)
     except Exception:
         try:
             os.unlink(tmp)

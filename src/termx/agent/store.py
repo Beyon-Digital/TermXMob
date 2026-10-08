@@ -212,6 +212,10 @@ class AgentStore:
                 meta TEXT NOT NULL DEFAULT '{}',
                 created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS task_agent_presets (
+                task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+                preset TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS custom_agents (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -273,7 +277,7 @@ class AgentStore:
                 id TEXT PRIMARY KEY,
                 version INTEGER NOT NULL DEFAULT 1,
                 effect TEXT NOT NULL CHECK(effect IN ('allow','deny')),
-                scope_type TEXT NOT NULL CHECK(scope_type IN ('task','project','custom_agent','host')),
+                scope_type TEXT NOT NULL CHECK(scope_type IN ('task','conversation','project','custom_agent','host')),
                 scope_id TEXT,
                 action_type TEXT NOT NULL DEFAULT 'tool'
                     CHECK(action_type IN ('tool','capability','publication','computer')),
@@ -328,6 +332,17 @@ class AgentStore:
             """
         )
         # Additive migration for databases created before the Chat mode column.
+        policy_columns = {row["name"] for row in self._db.execute("PRAGMA table_info(policy_rules)")}
+        if "consent_binding" not in policy_columns:
+            self._db.execute("ALTER TABLE policy_rules ADD COLUMN consent_binding TEXT NOT NULL DEFAULT '{}'")
+        policy_sql = self._db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='policy_rules'").fetchone()[0]
+        if "'conversation'" not in policy_sql:
+            self._db.execute('ALTER TABLE policy_rules RENAME TO policy_rules_legacy_scope')
+            self._db.execute(policy_sql.replace("'task','project','custom_agent','host'", "'task','conversation','project','custom_agent','host'"))
+            self._db.execute('INSERT INTO policy_rules SELECT * FROM policy_rules_legacy_scope')
+            self._db.execute('DROP TABLE policy_rules_legacy_scope')
+            self._db.execute('CREATE INDEX policy_rules_fingerprint ON policy_rules(fingerprint,action_type)')
+            self._db.execute('CREATE INDEX policy_rules_scope ON policy_rules(scope_type,scope_id)')
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tasks)")}
         if "mode" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'")
@@ -500,21 +515,30 @@ class AgentStore:
         mode: str = "agent",
         parent_id: str | None = None,
         custom_agent_id: str | None = None,
+        custom_agent_snapshot: dict[str, Any] | None = None,
         engine: str = "internal",
         status: str = "planning",
     ) -> dict[str, Any]:
+        encoded=json.dumps(custom_agent_snapshot,sort_keys=True) if custom_agent_snapshot is not None else None
+        if custom_agent_snapshot is not None and custom_agent_snapshot.get('id')!=custom_agent_id:
+            raise ValueError('Task preset ID does not match its immutable configuration')
         now = time()
         task_id = uuid.uuid4().hex
         with self._lock:
-            self._db.execute(
-                """
-                INSERT INTO tasks
-                    (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, engine, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (task_id, prompt, cwd, provider_id, model, status, _json(limits), mode, parent_id, custom_agent_id, engine, now, now),
-            )
-            self._db.commit()
+            try:
+                self._db.execute(
+                    """
+                    INSERT INTO tasks
+                        (id, prompt, cwd, provider_id, model, status, limits, mode, parent_id, custom_agent_id, engine, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (task_id, prompt, cwd, provider_id, model, status, _json(limits), mode, parent_id, custom_agent_id, engine, now, now),
+                )
+                if encoded is not None:
+                    self._db.execute('INSERT INTO task_agent_presets VALUES (?,?)',(task_id,encoded))
+                self._db.commit()
+            except BaseException:
+                self._db.rollback();raise
         task = self.get_task(task_id)
         if task is None:  # pragma: no cover
             raise RuntimeError("task was not created")
@@ -605,12 +629,18 @@ class AgentStore:
             "created_at": created,
         }
 
-    def events(self, task_id: str, after: int = 0) -> list[dict[str, Any]]:
+    def events(self, task_id: str, after: int = 0, *, tail_limit: int | None = None) -> list[dict[str, Any]]:
         with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence",
-                (task_id, max(0, after)),
-            ).fetchall()
+            if tail_limit is None:
+                rows = self._db.execute(
+                    "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence",
+                    (task_id, max(0, after)),
+                ).fetchall()
+            else:
+                rows = list(reversed(self._db.execute(
+                    "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence DESC LIMIT ?",
+                    (task_id, max(0, after), min(max(tail_limit, 1), 1000)),
+                ).fetchall()))
         return [
             {
                 "id": row["id"],
@@ -1100,6 +1130,14 @@ class AgentStore:
             "model": row["model"],
             "engine_mode": file_cfg.get("engine_mode"),
             "config_options": file_cfg.get("config_options", {}),
+            "tools_mode": file_cfg.get("tools_mode", "explicit"),
+            "toolsets": file_cfg.get("toolsets", []),
+            "deny_tools": file_cfg.get("deny_tools", []),
+            "auto_use": file_cfg.get("auto_use", True),
+            "skills": file_cfg.get("skills", {}),
+            "workflows": file_cfg.get("workflows", []),
+            "mcp_connections": file_cfg.get("mcp_connections", []),
+            "delegation": file_cfg.get("delegation", {}),
             "tools": tools,
             "limits": limits,
             "approval_mode": (
@@ -1356,6 +1394,37 @@ class AgentStore:
             self._db.commit()
         return cursor.rowcount > 0
 
+    def workspace_conversations_snapshot(self, identifiers: list[str]) -> list[dict]:
+        """Bounded public collection projection without per-conversation reads."""
+        identifiers=list(dict.fromkeys(identifiers))
+        if len(identifiers)>500:raise ValueError('Read at most 500 conversations per batch')
+        if not identifiers:return []
+        placeholders=','.join('?' for _ in identifiers)
+        with self._lock:
+            rows=self._db.execute('SELECT c.*,t.status AS latest_status,t.updated_at AS latest_task_updated '
+                'FROM conversations c LEFT JOIN conversation_turns ct ON ct.id=(SELECT id FROM conversation_turns '
+                'WHERE conversation_id=c.id ORDER BY sequence DESC LIMIT 1) '
+                'LEFT JOIN tasks t ON t.id=ct.task_id WHERE c.id IN ('+placeholders+')',identifiers).fetchall()
+            return [{**self._conversation(row),'latest_status':row['latest_status'],'latest_task_updated':row['latest_task_updated'] or 0} for row in rows]
+
+    def workspace_turn(self, identifier: str) -> dict | None:
+        with self._lock:
+            row = self._db.execute('SELECT * FROM conversation_turns WHERE id=?', (identifier,)).fetchone()
+            return dict(row) if row else None
+
+    def active_conversation_tasks(self, identifier: str) -> list[dict]:
+        """Bound work to live tasks without materializing historical turns."""
+        placeholders=','.join('?' for _ in ACTIVE_STATUSES)
+        with self._lock:
+            rows=self._db.execute('SELECT DISTINCT tasks.* FROM tasks JOIN conversation_turns ON conversation_turns.task_id=tasks.id WHERE conversation_turns.conversation_id=? AND tasks.status IN ('+placeholders+') ORDER BY tasks.created_at', (identifier,*sorted(ACTIVE_STATUSES))).fetchall()
+            return [self._task(row) for row in rows]
+
+    def workspace_turns_page(self, identifier: str, *, after_sequence: int = 0, before_sequence: int | None = None, descending: bool = False, limit: int = 51) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute('SELECT * FROM conversation_turns WHERE conversation_id=? AND sequence>? AND sequence<? ORDER BY sequence '+('DESC' if descending else 'ASC')+' LIMIT ?',
+                                    (identifier, after_sequence, before_sequence if before_sequence is not None else 2**63-1, min(max(limit, 1), 201))).fetchall()
+            return [dict(row) for row in rows]
+
     def add_conversation_turn(
         self,
         conversation_id: str,
@@ -1373,6 +1442,11 @@ class AgentStore:
         now = time()
         turn_id = uuid.uuid4().hex[:16]
         with self._lock:
+            if task_id:
+                existing=self._db.execute('SELECT id FROM conversation_turns WHERE conversation_id=? AND task_id=?',(conversation_id,task_id)).fetchone()
+                if existing:
+                    conversation=self.get_conversation(conversation_id,include_turns=True)
+                    return next(turn for turn in conversation['turns'] if turn['id']==existing['id'])
             row = self._db.execute(
                 "SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_turns WHERE conversation_id = ?",
                 (conversation_id,),
@@ -1428,6 +1502,21 @@ class AgentStore:
         return next(turn for turn in conversation["turns"] if turn["id"] == turn_id)  # type: ignore[index]
 
     # Custom agents -------------------------------------------------------
+
+    def freeze_task_agent(self, task_id: str, preset: dict[str, Any]) -> None:
+        """Immutable admission config, distinct from the editable preset library."""
+        encoded=json.dumps(preset,sort_keys=True)
+        with self._lock:
+            old=self._db.execute('SELECT preset FROM task_agent_presets WHERE task_id=?',(task_id,)).fetchone()
+            if old and old[0]!=encoded:raise ValueError('Task agent preset is immutable')
+            self._db.execute('INSERT OR IGNORE INTO task_agent_presets VALUES (?,?)',(task_id,encoded));self._db.commit()
+
+    def task_agent(self, task: dict[str, Any], agent_id: str | None = None) -> dict[str, Any] | None:
+        with self._lock:
+            row=self._db.execute('SELECT preset FROM task_agent_presets WHERE task_id=?',(task.get('id'),)).fetchone()
+        if row:return json.loads(row[0])
+        identifier=agent_id or task.get('custom_agent_id')
+        return self.get_custom_agent(identifier) if identifier else None
 
     def create_custom_agent(
         self,
@@ -1742,10 +1831,11 @@ class AgentStore:
         project_id: str | None = None,
         display: str = "",
         expires_at: float | None = None,
+        consent_binding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if effect not in {"allow", "deny"}:
             raise ValueError("effect must be allow or deny")
-        if scope_type not in {"task", "project", "custom_agent", "host"}:
+        if scope_type not in {"task", "conversation", "project", "custom_agent", "host"}:
             raise ValueError("invalid scope_type")
         if action_type not in {"tool", "capability", "publication", "computer"}:
             raise ValueError("invalid action_type")
@@ -1772,8 +1862,8 @@ class AgentStore:
                     (id, effect, scope_type, scope_id, action_type, tool,
                      fingerprint, fingerprint_kind, matcher_json, capabilities_json,
                      sandbox_profile, source_approval_id, task_id, project_id,
-                     display, created_at, updated_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     display, created_at, updated_at, expires_at, consent_binding)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rule_id,
@@ -1794,6 +1884,7 @@ class AgentStore:
                     now,
                     now,
                     expires_at,
+                    _json(consent_binding or {}),
                 ),
             )
             self._db.commit()
@@ -1909,7 +2000,7 @@ class AgentStore:
         assignments = ", ".join(f"{key} = ?" for key in encoded)
         with self._lock:
             cursor = self._db.execute(
-                f"UPDATE policy_rules SET {assignments} WHERE id = ? AND revoked_at IS NULL",
+                f"UPDATE policy_rules SET {assignments}, version = version + 1 WHERE id = ? AND revoked_at IS NULL",
                 (*encoded.values(), rule_id),
             )
             if cursor.rowcount == 0:
@@ -1920,6 +2011,24 @@ class AgentStore:
             raise KeyError(rule_id)
         return rule
 
+    def edit_policy_consent(self, rule_id: str, *, version: int, validate, effect=None, expires_at=None, revoke=False):
+        """CAS editor: immutable matcher, identity, scope and capabilities."""
+        with self._lock:
+            rule = self.get_policy_rule(rule_id)
+            if not rule: raise KeyError(rule_id)
+            validate(rule)
+            if rule['version'] != version: raise ValueError('Coding policy changed; refresh before editing')
+            if rule['revoked_at'] is not None: raise ValueError('Coding policy was revoked')
+            now = time()
+            if not revoke and (effect not in {'allow','deny'} or not isinstance(expires_at,(int,float)) or not now < expires_at <= now + 30*86400 + 1):
+                raise ValueError('Choose a bounded decision and expiry')
+            cursor = self._db.execute(
+                'UPDATE policy_rules SET effect=?,expires_at=?,revoked_at=?,updated_at=?,version=version+1 WHERE id=? AND version=? AND revoked_at IS NULL',
+                (rule['effect'] if revoke else effect,rule['expires_at'] if revoke else expires_at,now if revoke else None,now,rule_id,version))
+            if cursor.rowcount != 1: raise ValueError('Coding policy changed; refresh before editing')
+            self._db.commit()
+            return self.get_policy_rule(rule_id)
+
     def expire_task_policy_rules(self, task_id: str) -> int:
         """Expire every task-scoped rule for a task — called at terminal state
         so scoped trust can never outlive its task."""
@@ -1929,9 +2038,9 @@ class AgentStore:
                 """
                 UPDATE policy_rules SET expires_at = ?, updated_at = ?
                 WHERE scope_type = 'task' AND scope_id = ?
-                  AND revoked_at IS NULL AND expires_at IS NULL
+                  AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
                 """,
-                (now, now, task_id),
+                (now, now, task_id, now),
             )
             self._db.commit()
         return cursor.rowcount
@@ -1952,7 +2061,7 @@ class AgentStore:
         now = time()
         with self._lock:
             cursor = self._db.execute(
-                "UPDATE policy_rules SET revoked_at = ?, updated_at = ? WHERE id = ? AND revoked_at IS NULL",
+                "UPDATE policy_rules SET revoked_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND revoked_at IS NULL",
                 (now, now, rule_id),
             )
             if cursor.rowcount == 0:
@@ -1968,6 +2077,7 @@ class AgentStore:
         return {
             "id": row["id"],
             "version": row["version"],
+            "consent_binding": _load_json(row["consent_binding"], {}),
             "effect": row["effect"],
             "scope_type": row["scope_type"],
             "scope_id": row["scope_id"],

@@ -1,0 +1,35 @@
+{
+  "source_commit": "77e56d6",
+  "scope": "local machine qualification only; no new CI artifact run yet",
+  "artifact_run": null,
+  "root_causes_fixed": [
+    {
+      "symptom": "session not created: DevToolsActivePort file doesn't exist (msedgedriver POST /session)",
+      "cause": "Elevated WebView2 processes ignore browser arguments supplied through the local device environment (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS), which is the channel msedgedriver uses to inject --remote-debugging-port=0. The app always runs elevated on the Windows runner, so the flag never reached the browser process. Documented upstream: 'Elevated apps ignore flags that are set via the local device environment'; the documented escape is the per-exe HKLM WebView2 AdditionalBrowserArguments policy.",
+      "fix": "desktop.yml writes HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments\\termx-desktop.exe = '--remote-debugging-port=0' before the smoke and removes it in a finally block.",
+      "evidence": "Session creation succeeds with the policy value present (debuggerAddress localhost:<port>); interactive run without driver also reproduces the crash without it."
+    },
+    {
+      "symptom": "installed_restricted_terminal_transport: 'Authenticated terminal output deadline' after 25s",
+      "cause": "Fixture check defect, not a product defect. cmd.exe over ConPTY redraws the next prompt with a CUP escape (CSI ... H) and no line terminator, so the echoed MARKER glued onto the next prompt line and the strict line-equality check never matched. Input was never dead: all send variants executed (verified by decoding captured PTY streams).",
+      "fix": "native_gui_smoke.py strips OSC sequences, then treats CSI sequences as line boundaries before splitting on line breaks. The strict line.trim() === marker assertion is unchanged.",
+      "evidence": "Captured stream 'echo MARKER\\r\\nMARKER\\x1b[17;1HC:\\Users\\x>' now yields a standalone MARKER line; step passes end to end."
+    },
+    {
+      "symptom": "workspace_detach invoke timed out after 60s; a second invoke also timed out; detached window 'TermX workspace' existed but had no __TAURI_INTERNALS__ (controller shell created, renderer never spawned)",
+      "cause": "Product bug on Windows. workspace_detach was a synchronous command, which executes inside the webview's WebMessageReceived COM call. WebView2 cannot deliver the second CreateCoreWebView2Controller completion callback into an STA already inside an inbound COM call, so wry's wait_with_pump deadlocks (tauri-apps/wry#583; wry#1665 is the same root cause; upstream PR #1666 still unmerged and questioned on x64). Reproduced interactively without the driver or the policy flag: real-user detach also produced a permanently blank 'TermX workspace' window.",
+      "fix": "workspace_detach is now an async command, so the window build runs on async_runtime off the event-loop thread - the same dispatch path a JS-side WebviewWindow creation uses.",
+      "evidence": "Locally rebuilt termx-desktop.exe: invoke returns the label in ~0.4s, msedgedriver then sees two window handles, detached window initializes and loads. Full smoke passes all 11 steps."
+    }
+  ],
+  "local_qualification": {
+    "method": "rebuilt termx-desktop.exe from source at 77e56d6 (x86_64-pc-windows-gnu toolchain; CI builds MSVC) dropped into the MSI install tree next to the MSI-installed backend, then the unmodified desktop/scripts/native_gui_smoke.py against it",
+    "report_json": {"passed": true, "steps_all_true": true},
+    "caveat": "Local exe was a GNU build of the same source; the CI artifact is MSVC. The Rust change is a one-keyword signature change and cannot behave differently across toolchains, but installed-artifact CI evidence is still required before promoting any acceptance row."
+  },
+  "windows_installed_gui": "locally verified; CI artifact proof pending",
+  "known_open_nits": [
+    "fixture TemporaryDirectory cleanup can raise PermissionError on agent.sqlite3-shm if the backend still holds the WAL at __exit__; observed intermittently, did not affect the passing run",
+    "~21 dead exploratory HKLM WebView2 policy keys exist on the qualification box from debugging; only termx-desktop.exe under AdditionalBrowserArguments is the working value"
+  ]
+}

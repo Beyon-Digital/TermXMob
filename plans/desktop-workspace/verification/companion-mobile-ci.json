@@ -1,0 +1,21 @@
+{
+  "repository": "Beyon-Digital/termx-app",
+  "pull_request": "https://github.com/Beyon-Digital/termx-app/pull/26",
+  "draft": true,
+  "head_sha": "ee0a90f8303e41478e2233cc8bf6becfbf5e5827",
+  "ci_run": "https://github.com/Beyon-Digital/termx-app/actions/runs/37638221463",
+  "conclusion": "success",
+  "checks": [
+    "Typecheck",
+    "68 application contract tests",
+    "Expo web export"
+  ],
+  "boundaries": [
+    "No installed iOS or Android qualification from these source checks",
+    "Expo web export is a compatibility check; new desktop/web remains the independent TermXMob workspace",
+    "No release, merge, deployment or paid provider queries"
+  ],
+  "evidence": [
+    "verification/managed-mobile-pairing.json"
+  ]
+}

@@ -42,8 +42,9 @@ def test_http_urls_and_qr_are_fast() -> None:
 def test_builtin_ui_served() -> None:
     client = TestClient(create_app(AppState(), web_dir=None))
     res = client.get("/")
-    assert res.status_code == 200
-    assert "Termx" in res.text
+    assert res.status_code in {200, 503}
+    assert 'TermX' in res.text
+    assert 'termx-ui-contract' in res.text or 'Install the desktop workspace bundle' in res.text
     css = client.get("/_/vendor/xterm.css")
     assert css.status_code == 200
 
@@ -65,12 +66,22 @@ def test_builtin_pages_reference_loadable_assets() -> None:
 def test_exported_web_ui_served(tmp_path) -> None:
     web_dir = tmp_path / "dist"
     web_dir.mkdir()
-    (web_dir / "index.html").write_text("<html><body>Exported Termx</body></html>", encoding="utf-8")
+    markup = '<html><head><meta name="termx-ui-contract" content="3"></head><body>TermX Workspace</body></html>'
+    (web_dir / "index.html").write_text(markup, encoding="utf-8")
     (web_dir / "asset.js").write_text("export {};", encoding="utf-8")
     client = TestClient(create_app(AppState(), web_dir=web_dir))
-    assert client.get("/").text == "<html><body>Exported Termx</body></html>"
+    assert client.get("/").text == markup
     assert client.get("/asset.js").text == "export {};"
-    assert client.get("/workspace").text == "<html><body>Exported Termx</body></html>"
+    assert client.get("/workspace").text == markup
+
+
+def test_incompatible_ui_never_falls_back_to_expo(tmp_path):
+    (tmp_path/'index.html').write_text('<html>Old Expo bundle</html>')
+    client = TestClient(create_app(AppState(), web_dir=tmp_path))
+    assert client.get('/').status_code == 503
+    assert 'Old Expo bundle' not in client.get('/').text
+    assert client.get('/workspace-version.json').json()['host_contract'] == 3
+    assert client.get('/api/does-not-exist').status_code == 404
 
 
 def test_pair_issues_token() -> None:
@@ -188,7 +199,9 @@ def test_cors_env_override(monkeypatch) -> None:
     assert _preflight(client, "http://192.168.1.20:8081").status_code == 400
 
 
-def test_commands_and_preferences_roundtrip(tmp_path) -> None:
+def test_commands_and_preferences_roundtrip(tmp_path, monkeypatch) -> None:
+    from termx.desktop.webrtc import AiortcBackend
+    monkeypatch.setattr(AiortcBackend, "available", False)
     client = TestClient(create_app(AppState(), web_dir=None))
     item = data(
         client,

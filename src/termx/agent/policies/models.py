@@ -6,12 +6,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # action_type values: "tool" | "capability" | "publication" | "computer"
-# scope_type values:   "task" | "project" | "custom_agent" | "host"
+# scope_type values:   "task" | "conversation" | "project" | "custom_agent" | "host"
 # effect values:       "allow" | "deny"
 # fingerprint_kind:    "exact" | "conservative"
 
-SCOPE_ORDER = {"task": 0, "custom_agent": 1, "project": 2, "host": 3}
-REMEMBER_SCOPES = ("task", "project", "custom_agent")
+SCOPE_ORDER = {"task": 0, "conversation": 1, "custom_agent": 2, "project": 3, "host": 4}
+REMEMBER_SCOPES = ("task", "conversation", "project", "custom_agent")
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,7 @@ class PolicyIntent:
     risk_class: str = "safe"  # safe|consequential|sensitive|publication|privilege|external|outside_root
     arguments_digest: str = ""
     matcher: dict[str, Any] = field(default_factory=dict)
+    consent_binding: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
         """Serializable form embedded in approval payloads."""
@@ -55,6 +56,7 @@ class PolicyIntent:
             "risk_class": self.risk_class,
             "arguments_digest": self.arguments_digest,
             "matcher": self.matcher,
+            "consent_binding": self.consent_binding,
         }
 
     @staticmethod
@@ -74,6 +76,7 @@ class PolicyIntent:
             risk_class=str(data.get("risk_class") or "safe"),
             arguments_digest=str(data.get("arguments_digest") or ""),
             matcher=dict(data.get("matcher") or {}),
+            consent_binding=dict(data.get("consent_binding") or {}),
         )
 
     def to_public(self) -> dict[str, Any]:
@@ -87,8 +90,27 @@ class PolicyIntent:
             "required_capabilities": list(self.required_capabilities),
             "risk_class": self.risk_class,
             "sandbox_profile": self.sandbox_profile,
-            "matcher": self.matcher,
+            "matcher": _public_matcher(self.matcher),
+            "consent_binding": self.consent_binding,
         }
+
+
+def _public_matcher(value: Any, depth: int = 0) -> Any:
+    """Redact public metadata recursively without changing matching authority."""
+    from termx.agent.policy import redact
+
+    sensitive = {"password", "secret", "token", "cookie", "cookies", "authorization",
+                 "api_key", "apikey", "csrf", "refresh_token", "access_token",
+                 "client_secret", "private_key", "assertion", "evidence"}
+    if depth > 16:
+        return "[nested metadata omitted]"
+    if isinstance(value, dict):
+        return {str(key): "[redacted]" if str(key).lower() in sensitive
+                else _public_matcher(item, depth + 1)
+                for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_public_matcher(item, depth + 1) for item in value[:256]]
+    return redact(value) if isinstance(value, str) else value
 
 
 def rule_public(rule: dict[str, Any]) -> dict[str, Any]:
@@ -100,11 +122,9 @@ def rule_public(rule: dict[str, Any]) -> dict[str, Any]:
     """
     from termx.agent.policy import redact
 
-    matcher = {
-        str(k): (redact(str(v)) if isinstance(v, str) else v)
-        for k, v in dict(rule["matcher"] or {}).items()
-    }
+    matcher = _public_matcher(dict(rule["matcher"] or {}))
     return {
+        "consent_binding": rule.get("consent_binding") or {},
         "id": rule["id"],
         "version": rule["version"],
         "effect": rule["effect"],

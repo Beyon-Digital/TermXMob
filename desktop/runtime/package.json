@@ -1,0 +1,10 @@
+{
+  "name": "@termx/desktop-runtime",
+  "private": true,
+  "version": "0.3.0",
+  "dependencies": {
+    "typescript": "5.9.3",
+    "typescript-language-server": "4.3.3",
+    "vscode-langservers-extracted": "4.10.0"
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "proof": "actual-project-pins-and-session-controls",
+  "provider_queries": 0,
+  "errors": [],
+  "states": [
+    {
+      "surface": "model-manager",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "surface": "model-manager",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "surface": "model-manager",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "surface": "model-manager",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "UI_asset_snapshot": {
+    "assets/BrowserSurface-DD6bXZgf.js": "879b8422c09324ee9f183b4e126cd6d20a44b14a28db1ce752328f5ec22ee2f6",
+    "assets/CaptureStatus-C0L7bipj.js": "f751b13ebb9655d2f1378e70969b1b76eda2b78ec22c3674e507f0c6ef59ac70",
+    "assets/ComputerSurface-BO8Yu3NR.js": "07300957bde42560bea234275b3e8da24f18f8b5082a1f5d8576323f0d3c1d3f",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/Debugger-IKYbUebl.js": "000c70cb0eeca767692c28fa7ced4785eca008136d4c286a33fd4940d652adb1",
+    "assets/Delivery-WknH5BxL.js": "67e421eeeed497f50ed9b94f88c6b346ce7d83bf78d1c2d8f380d0e44408ec7c",
+    "assets/Keybindings-TYEAGesG.js": "3bae66ae5b7cfd194f009a0e9a26ecced3f859ec02b50f95a4c442693753cad6",
+    "assets/Managers-K6iCTEID.css": "c7ea2030a05ca76f502bf3b22ff3dcb9f02283b91e236c76f5b1c1d23c5d1f58",
+    "assets/Managers-t5gE3eUz.js": "e6afe1a727db05181be6b897540ef5a694468ed2f348a6c3426e86465b07bc58",
+    "assets/Media-gxMn3WAG.js": "18ba85bb655fd98288bbed534d398bd774a78d440241cc1fdcd9d791d6aaa540",
+    "assets/Preview-Do9Al9DT.js": "8b6939e278a033d470315a145b73edf3227aab0f6d8cee621e2a9e28dad4acb1",
+    "assets/Runners-hG0BWNYN.js": "0e8b9b9b82c840c6d37ba64a7f42b418e095a3a14a3d45b5e876567b9e398d05",
+    "assets/SafetyManager-GusDP0cR.js": "f73938975e4a32494dc02c480981e8a9d56cd337b833f5ddce90971c1ad60c45",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/TerminalPanel-DU1WjFry.js": "3af65678e8a400bd99db27abfcbe929fd545d5d650963cbab124bfb3090a8799",
+    "assets/Workbench-CTNOdeSb.js": "5a27c5a350bce9745ae85a5de7dd22d31840640a107e8796cdd5de58daa57690",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-DmUe7Gnz.js": "e8fc45cf6c55a644b30eecea1a3b8a3fa8c7999c0c1c1c3de2999175b0a973d3",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-C36kYe1L.js": "9609997c79e2f7df55d45b9fb270cb4ec0943d2353da6729842f4decc32607bf",
+    "assets/index-CP122w_J.css": "1340284bfca4d7bcec4131f136a10eeb9bcede7bbe68adae6efebefb6dddb1e6",
+    "assets/index-Cfb7wns2.js": "3ec292c3f1ad38161c083aeed808ca26a5b55542d60d5a79378b3d064fea2bfe",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-BIsNltXP.js": "e95cefe34e2035faa764fad7969e5065a0475dd138551d8acd5be88ee0e23ecd",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/model-favorites-B2aTOqa8.js": "a57a646685fdfedeef09d2729f529a83c0dbf20dabc93793bee4c3e37e731846",
+    "assets/play-CEAn02--.js": "792669fbd7eb996e97a8376bd89b7c680c854f116451ec712918be2413d19db2",
+    "assets/square-B0cfDFt6.js": "ed4e174c16dd92d2398644f6e966ca6d4ecf0d1db09ab202a8e4d7d6af76162b",
+    "assets/transfers-WBprAkbg.js": "cece8eab61360ef3a8b41d27100c0c27fd85e5307f84f66c77f4b97b45d3d2ab",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "b42303c2d58e0cf68b698910192bd32fe039541a863181eb7257b7dcae5218f4"
+  },
+  "pins": {
+    "canonical_project_persisted": true,
+    "reload_and_second_window": true,
+    "active_session_target_unchanged": true
+  },
+  "manager_favorites": {
+    "shared_with_mounted_session_and_second_window": true,
+    "canonical_model_unchanged": true,
+    "tasks_created": 0,
+    "provider_queries": 0
+  },
+  "model": {
+    "only_selected_session_patched": true,
+    "engine_model_single_chip": true,
+    "account_ceiling_source_visible": true,
+    "tasks_created": 0
+  },
+  "status": "passed",
+  "production_bundle": "index-Cfb7wns2.js",
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "source_followup_pending": true,
+  "scope": "Actual isolated managed host and exact production React DOM snapshot; configured fixture account; no paid provider query, physical device or installed-native claim.",
+  "screenshots": [
+    "screenshots/model-favorites-dark-100.png",
+    "screenshots/model-favorites-light-200.png",
+    "screenshots/session-controls-Cfb-dark-100.png",
+    "screenshots/session-controls-Cfb-light-200.png"
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TermX desktop design manifest v0.3",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "product",
+    "status",
+    "tokens",
+    "components",
+    "screens",
+    "figma",
+    "parity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.3"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "figma_node_id",
+          "layer",
+          "status",
+          "implementation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "figma_node_id": {
+            "type": "string",
+            "pattern": "^[0-9]+:[0-9]+$"
+          },
+          "layer": {
+            "enum": [
+              "atom",
+              "molecule",
+              "organism",
+              "pattern"
+            ]
+          },
+          "implementation": {
+            "enum": [
+              "not-started",
+              "runtime-mapped",
+              "runtime-equivalent"
+            ]
+          }
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "figma_node_id",
+          "status",
+          "theme",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^DX-[0-9]{2}$"
+          },
+          "theme": {
+            "enum": [
+              "Light",
+              "Dark"
+            ]
+          },
+          "figma_node_id": {
+            "type": "string",
+            "pattern": "^[0-9]+:[0-9]+$"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "implementation": {
+            "enum": [
+              "not-started",
+              "runtime-connected"
+            ]
+          }
+        }
+      }
+    },
+    "parity": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "required"
+        ],
+        "properties": {
+          "required": {
+            "const": true
+          }
+        }
+      }
+    },
+    "advanced_design": {
+      "type": "object",
+      "required": [
+        "status",
+        "file_key",
+        "connected_page",
+        "node_map",
+        "verification",
+        "state_frames",
+        "compact_frames",
+        "prototype_edges",
+        "surface_count",
+        "patterns",
+        "journeys",
+        "runtime_acceptance_independent"
+      ],
+      "properties": {
+        "status": {
+          "const": "externally-authored-and-structurally-verified"
+        },
+        "state_frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "compact_frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "prototype_edges": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "surface_count": {
+          "const": 24
+        },
+        "runtime_acceptance_independent": {
+          "const": true
+        },
+        "connected_page": {
+          "type": "string",
+          "pattern": "^[0-9]+:[0-9]+$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "commit": "2a57243b2a509d7a8a8790bbc46a3561aa637ca6",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37612365081",
+  "conclusion": "success",
+  "linux_backend": {
+    "passed": 812,
+    "skipped": 132,
+    "seconds": 104.7
+  },
+  "macos_backend": {
+    "passed": 843,
+    "skipped": 101,
+    "seconds": 215.32
+  },
+  "workspace": {
+    "passed": 62,
+    "files": 22,
+    "build": "passed"
+  },
+  "windows_platform": {
+    "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37612365091/job/112762435897",
+    "native_storage_passed": 3,
+    "backend_passed": 171,
+    "backend_skipped": 1,
+    "backend_failed": 2,
+    "seconds": 187.38,
+    "qualified": [
+      "actual worker first effect, subsequent shell and cancellation",
+      "all three kept-open stdin metadata/shell/mutating-Git boundaries",
+      "private storage, managed identity and engine contracts"
+    ],
+    "failures": [
+      "restricted ConPTY input/resize/interrupt fixture has no initial READY output",
+      "restricted ConPTY descendant fixture has no TREE_READY output"
+    ]
+  },
+  "limits": [
+    "Restricted Windows console remains unqualified pending broker correction.",
+    "Later browser/window/theme/reviewer additions are outside this committed CI proof.",
+    "Source CI does not prove installed native GUI or complete installer packaging."
+  ]
+}

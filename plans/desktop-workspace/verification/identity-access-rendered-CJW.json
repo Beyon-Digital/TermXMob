@@ -1,0 +1,192 @@
+{
+  "proof": "production-identity-groups-audit",
+  "provider_queries": 0,
+  "real_host_audit_modified": false,
+  "errors": [],
+  "states": [
+    {
+      "surface": "group-editor",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "audit-retention",
+      "theme": "dark",
+      "zoom": 100,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "group-editor",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "audit-retention",
+      "theme": "light",
+      "zoom": 100,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "group-editor",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "audit-retention",
+      "theme": "dark",
+      "zoom": 200,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "group-editor",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    },
+    {
+      "surface": "audit-retention",
+      "theme": "light",
+      "zoom": 200,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        "color-contrast"
+      ]
+    }
+  ],
+  "UI_asset_snapshot": {
+    "assets/BrowserSurface-D3zk1Sab.js": "3c1f7926530e881220d9d8441d5fd262d05e2f01c8dd114dbe396bf11d09ed09",
+    "assets/CaptureStatus-BqFMj6Ia.js": "d97b94a15c8bb2ee4b77e9af4b6ce59832cc42404872394f6fc0b9280a8ad897",
+    "assets/ComputerSurface-Cez7BVfN.css": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a",
+    "assets/ComputerSurface-Cf9okiMW.js": "9d06404b8d3ab1bb3c363c07567793983c6c1024d1c13d9d0e2f3a6bb6327875",
+    "assets/Debugger-Wvxn8qsq.js": "de7f9f7f35ebba4828e32c8fcb2939f89922bb93546882c73d1e3fd5f0e1a4f8",
+    "assets/Delivery-CHEkAmTg.js": "b9a520ac67090f28aaf9da263318d0ad77fe4f7968ea70908be8ffec2ab411b7",
+    "assets/Keybindings-ByOLltNl.js": "fbc0d7c8e32d559399439a8bc7b5d1844f9c7025929372b888f73e603bafe0a5",
+    "assets/Managers-0U5CIHyT.js": "e90d8cbe059c3cf88708f13cc19c7e74511ef3a0f633ca5ad178e8b7b4c48222",
+    "assets/Managers-B0Vr3Zba.css": "ae3e40d2a3e21802f1f4c2d515bbd3f3093d894b1365d50326bb5a49e4e3cc73",
+    "assets/Media-Ci6GDsGO.js": "c7a1cbf54993e1b9c36b3a4f8a8c76f86a948f08c1c47f3a9472e25cb4f17bd7",
+    "assets/Preview-BZCRFcXn.js": "cbdb03a0928286659ddfd074e58ff828e33b93cbf2ca3ba816dbe3beedb0f01c",
+    "assets/Runners-BAnWqigN.js": "a464e1c392364e1734e036f11637b8e1176d08b90b7a8236efd21861307fda1a",
+    "assets/SafetyManager-Dd5h50qT.js": "57d65a4603db9e78444c6564e253a761f22af20b666bf35abc2bc85785cd78b2",
+    "assets/TerminalPanel-DFuMZ0ql.css": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1",
+    "assets/TerminalPanel-GdgQfa2g.js": "6572ac478e006ff1bdac95e2caa984ed3f52e4918463248b6e30e3fb7d637719",
+    "assets/Workbench-C5j5srYe.js": "37ada5148ad5175d2a1981d9ae0b0e9c22bb1a451e5d08e77b1151702c1b18c9",
+    "assets/browser/lock.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "assets/browser/shield.svg": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d",
+    "assets/browser-CGjcJuWr.css": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d",
+    "assets/circle-K02Dng-G.js": "afd52e871679071e6c5a88e2bc6a3a675cf82873e8c2abdee8d7327dccee301a",
+    "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e",
+    "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09",
+    "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "assets/geist-latin-wght-normal-BgDaEnEv.woff2": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac",
+    "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587",
+    "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9",
+    "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c",
+    "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a",
+    "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474",
+    "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1",
+    "assets/highlighted-body-KQOG7T2V-DTF2oL5Z.js": "91f1c53094dc8d089a2f8e5d6d173a5b630a63ad8d17e30c07843f6303b6fbd4",
+    "assets/index-CJWjwsmg.js": "97f28463421f10e0a1f545ef6c80a00995d4b242a9b256e882895eb64f2487bf",
+    "assets/index-CP122w_J.css": "1340284bfca4d7bcec4131f136a10eeb9bcede7bbe68adae6efebefb6dddb1e6",
+    "assets/media-intent-p4t3Zrai.js": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de",
+    "assets/mermaid-MCJ5UELQ-CM1f98pe.css": "943aa047116c96ce5e00080fdf99733f814309e8f4e6bdb790b11f50c1b7f381",
+    "assets/mermaid-MCJ5UELQ-vatuYBs4.js": "26b59f8ac80c871434cdc3b5c3c899dae151dff1a76c171b1b38ec1d9063bb97",
+    "assets/model-favorites-B2_ZyDmL.js": "9928098e8657260b0848b1444cd9c5d81ff00ffc00575d37de3a61ef018582f2",
+    "assets/play-DHhOtRAV.js": "a8dd309b3ab1d493debf8541dc6ec555b520c19004600d8c426e140a8a4d7ba1",
+    "assets/square-C03gzfIT.js": "122f6d76947d7a125390baafd96f55cbdbb056ac1a382b530b36239a55e53b27",
+    "assets/transfers-Tylbk31l.js": "902ba1189396bcf4fa6da4ff1de204d67dd7a1ecceed45558ae3293fa604670c",
+    "figma/094e1.svg": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e",
+    "figma/1f8ed.svg": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3",
+    "figma/252c5.svg": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74",
+    "figma/3026d.svg": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95",
+    "figma/3dd9f.svg": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff",
+    "figma/3eb60.svg": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959",
+    "figma/461b5.svg": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce",
+    "figma/4fb85.svg": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2",
+    "figma/5011d.svg": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0",
+    "figma/6efce.svg": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5",
+    "figma/85436.svg": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01",
+    "figma/91050.svg": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930",
+    "figma/92e4c.svg": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247",
+    "figma/a1773.svg": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a",
+    "figma/assets.json": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c",
+    "figma/b8eee.svg": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450",
+    "figma/c5fe8.svg": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625",
+    "figma/df8e3.svg": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e",
+    "figma/e7233.svg": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d",
+    "figma/ede27.svg": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51",
+    "figma/f6959.svg": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791",
+    "figma/verified-assets.json": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09",
+    "index.html": "24f9269e55f3699fa709ef01edc8a5b82b1641b53b563c973723fef1df17c71e"
+  },
+  "group_effects": {
+    "organization_created": true,
+    "project_scope_only": true,
+    "member_admin_routes_denied": true,
+    "administrative_controls_hidden_from_member": true,
+    "membership_removal_revoked_existing_session": true
+  },
+  "provider_mapping": {
+    "exact_configured_issuer_claim": true,
+    "signed_assertion_verified": true,
+    "unmapped_admin_text_not_authority": true,
+    "mapping_removal_revoked_existing_session": true
+  },
+  "revision_conflict": {
+    "draft_preserved": true,
+    "stale_save_disabled": true,
+    "explicit_current_revision_review": true,
+    "exact_draft_saved": true
+  },
+  "audit_effects": {
+    "exact_limits_saved": true,
+    "acknowledgement_required": true,
+    "expired_fixture_removed": true,
+    "retention_operation_recorded": true,
+    "confirmation_reset": true
+  },
+  "status": "passed",
+  "source_base_commit": "f97b71153f8794948ff55120a0df765341a94706",
+  "candidate_source": true,
+  "bundle": "index-CJWjwsmg.js",
+  "fixture": "tests/workspace_identity_access_e2e.py",
+  "screenshots": "screenshots/identity-access-CJW",
+  "limits": [
+    "Actual isolated localhost host and signed custom assertion; no enterprise deployment or installed native GUI is inferred.",
+    "Theme/zoom scenarios use viewport scaling equivalent to100/200percent CSS layout and reduced motion.",
+    "Keyboard checks concern the named group/audit fields; automated axe incompletes are retained, not promoted to screen-reader qualification.",
+    "This bundle precedes the later configurable session-policy child UI. It does not qualify that future surface."
+  ]
+}

@@ -1,0 +1,3880 @@
+{
+  "source": "plan-v0.3.html",
+  "sha256": "6bd1bdeadbbae81eaeccbf86cd1e42174911255c2194157bbe8a5d6e185ee89a",
+  "purpose": "Exact unchanged source-table and prose traceability. Mapping records contract/owner responsibility, never automatic feature completion; original source facts, design-stage history and reference assertions are preserved as context.",
+  "implementation_state": "backend_and_frontend_integrated_final_rendered_and_ci_checks_in_progress",
+  "tables": [
+    {
+      "section": "01 / Confirmed direction and changes",
+      "rows": [
+        {
+          "id": "PLAN-T01-R01",
+          "cells": [
+            "Approved",
+            "Separate desktop/web UI; native Expo mobile remains separate; one new route tree for desktop and external-browser access; chat-first project/session grouping; left/right/bottom panels and keyboard controls."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T01-R02",
+          "cells": [
+            "Approved",
+            "All original Further Parity families; session-only engine/model controls; built-in browser automation; lower-friction Auto Review; local/OIDC/custom identity adapters; BYO dedicated runners."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP02",
+            "WP03",
+            "WP04",
+            "WP05",
+            "WP06",
+            "WP07",
+            "WP08",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T01-R03",
+          "cells": [
+            "Engineering defaults",
+            "Reviewer model is selected from configured providers after task-specific evaluation. Exact model, runtime versions and browser rendering adapter are implementation proof decisions, not new product questions. No new provider account or paid service is authorized."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T01-R04",
+          "cells": [
+            "Current stage",
+            "The plan is locked for design. A separate Figma file is started; full design/interaction coverage and approval precede application implementation. No production security or browser capability has been deployed by this planning update."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP02",
+            "WP03",
+            "WP04",
+            "WP05",
+            "WP06",
+            "WP07",
+            "WP08",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates",
+          "instruction_override": "Historical design-only stage superseded by direct user approval of delivery-plan-v0.3.md and instruction to resume implementation in Code mode."
+        }
+      ],
+      "id": "PLAN-T01",
+      "headers": [
+        "Status",
+        "Decision"
+      ]
+    },
+    {
+      "section": "02 / Repository baseline and reuse",
+      "rows": [
+        {
+          "id": "PLAN-T02-R01",
+          "cells": [
+            "The desktop host uses Tauri and bundles the Python server and desktop/web. The update script runs the client\u2019s Expo web export and copies its output. [E1] [E3]",
+            "Replace the exported presentation artifact. Do not build a second backend or merely restyle the Expo export."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T02-R02",
+          "cells": [
+            "The client already includes CodeMirror, xterm, Relay and AIUX packages. Its workbench uses React Native/Expo layouts and canvas-takeover tool surfaces. [E2] [E4]",
+            "Audit and extract reusable editor/terminal/data behavior. Rebuild composition around simultaneous desktop panels. VS Code-style layout does not require a VS Code fork."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T02-R03",
+          "cells": [
+            "The schema separates conversations, tasks, projects and native engine session IDs. [E5]",
+            "Keep authoritative host IDs. Layout changes must never create replacement sessions or duplicate tasks."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP04"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T02-R04",
+          "cells": [
+            "The host documents native Codex/Claude adapters, ACP runners, discovery, cached model catalogs and custom-agent Markdown. [E1] [E6]",
+            "Use a capability-aware management UI over existing engines. Do not introduce another agent loop."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T02-R05",
+          "cells": [
+            "The README warns that the passcode grants full host-shell access; native engine mode names are not a read-only guarantee. [E1] [E6]",
+            "Access and permission controls require backend verification. A lock screen alone is insufficient."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T02",
+      "headers": [
+        "Observed source",
+        "Planning implication"
+      ]
+    },
+    {
+      "section": "02 / Repository baseline and reuse",
+      "rows": [
+        {
+          "id": "PLAN-T03-R01",
+          "cells": [
+            "The inspected Auth class accepts the host passcode with all scopes, delegates paired credentials to TokenStore, and permits the existing open-host behavior when no passcode is configured. [E7]",
+            "Replace this broad credential check behind a compatibility facade. New password entry creates a session; the password is not a standing credential sent with every API request. Production remote access must fail closed when auth is unconfigured."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T03-R02",
+          "cells": [
+            "TokenStore already stores hashed opaque tokens with device labels, granular scopes, optional expiry and revocation. Default paired-device scopes exclude host-admin. [E8]",
+            "Preserve useful scope/revocation behavior and migration semantics. This is an extension of existing security, not a claim that the host has no session controls. Add canonical principals, rotating sessions, identity adapters and browser-specific grants."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T03",
+      "headers": [
+        "Observed source",
+        "Change required"
+      ]
+    },
+    {
+      "section": "04 / Workspace hierarchy and session-only engine controls",
+      "rows": [
+        {
+          "id": "PLAN-T04-R01",
+          "cells": [
+            "Workspace header",
+            "Machine, project, execution location when relevant, layout and connection state. No engine or model selector."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T04-R02",
+          "cells": [
+            "AI session composer",
+            "One compact engine/model chip; expand to account, supported reasoning/mode, and session execution permissions. Remember choices for this session. New chats can inherit a preset; an explicit selection wins."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T04-R03",
+          "cells": [
+            "Workbench chat panel",
+            "It is the same conversation. Its contextual controls move with the conversation; they are not repeated in editor, terminal, browser toolbar or status bar."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T04-R04",
+          "cells": [
+            "Managers",
+            "Install, authenticate, discover and configure engines/models. Editing a saved agent preset is configuration, not a switch for the active workspace. No manager action silently retargets an existing session."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T04-R05",
+          "cells": [
+            "Project and session groups",
+            "Pinned projects, grouped chats, search and a compact Needs attention view. Running/approval/error badges on session rows. Unassigned chats stay available. Moving a chat\u2019s group must not move its files or execution folder."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T04-R06",
+          "cells": [
+            "Worktree and layout",
+            "A worktree is a run location, not another project or a sandbox. A layout is a per-device arrangement, not another mandatory hierarchy. Persist chat drafts, selections, dirty buffers and panel state separately from runtime state."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T04",
+      "headers": [
+        "Object / surface",
+        "Interaction rule"
+      ]
+    },
+    {
+      "section": "05 / Full feature scope \u2014 no optional Further Parity column",
+      "rows": [
+        {
+          "id": "PLAN-T05-R01",
+          "cells": [
+            "PAR-01 Access and continuity",
+            "Password entry; revocable device sessions; project/chat/draft restore.",
+            "Enterprise identity adapters and shared-host roles."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R02",
+          "cells": [
+            "PAR-02 Chat and sessions",
+            "Streaming, attachments, context, skills, search/archive/pin/resume.",
+            "Cross-engine linked forks and richer media inputs."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R03",
+          "cells": [
+            "PAR-03 Instructions and memory",
+            "Project instructions, AGENTS.md, scoped inspectable memory.",
+            "Advanced memory policies and hooks."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R04",
+          "cells": [
+            "PAR-04 Agent execution",
+            "Plans, tool details, approvals, stop/resume, queues and history.",
+            "Goals, unattended schedules, subagents and intervention."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R05",
+          "cells": [
+            "PAR-05 Coding workbench",
+            "Files, editor splits, search, terminals, Problems and output.",
+            "Richer debugging and language-specific tooling."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R06",
+          "cells": [
+            "PAR-06 Review and delivery",
+            "Task-linked changes, diffs and review feedback.",
+            "Isolated parallel worktrees; full stage/commit/push/PR/checks workflows."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP06"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R07",
+          "cells": [
+            "PAR-07 Preview and Computer",
+            "Host previews; watch/control; split and fullscreen canvases.",
+            "Agent browser tabs; annotations; app/window capture; recording-to-skill."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R08",
+          "cells": [
+            "PAR-08 Managers",
+            "Plugins, skills, engines/models, agents, MCP/tools and health.",
+            "Expanded registries and richer plugin compatibility."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R09",
+          "cells": [
+            "PAR-09 Desktop ergonomics",
+            "Resizable panels, commands, presets, themes and accessibility.",
+            "Arbitrary docking; multiwindow synchronization; multi-monitor layouts."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T05-R10",
+          "cells": [
+            "PAR-10 Multimodal and remote execution",
+            "Supported file/image rendering and clear availability states.",
+            "Voice; image generation; richer artifact authoring; dedicated cloud runners; account-specific capability adapters."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T05",
+      "headers": [
+        "ID / family",
+        "Baseline retained",
+        "Former Further Parity \u2014 now required"
+      ]
+    },
+    {
+      "section": "05 / Full feature scope \u2014 no optional Further Parity column",
+      "rows": [
+        {
+          "id": "PLAN-T06-R01",
+          "cells": [
+            "PAR-01",
+            "Local password plus generic OIDC and a tested custom adapter; owner/admin/operator/viewer policy presets; project/host resource checks; expiry/revocation on every protected transport. Demonstrate two users cannot cross the declared access boundary.",
+            "AUTH-03, AUTH-04"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R02",
+          "cells": [
+            "PAR-02",
+            "Reviewable context-transfer sheet; preserved original session; supported image/audio/video/document inputs with limits and conversion disclosures; no false native resume, silent credential transfer or extra billing.",
+            "CHAT-02, MEDIA-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R03",
+          "cells": [
+            "PAR-03",
+            "Memory provenance, scope, review/edit/delete, retention/export and exclusions; lifecycle hooks with permission checks, timeouts and logs. Prefer native engine hooks; supply host lifecycle equivalents where feasible and disclose semantics.",
+            "MEM-01, EXT-02"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R04",
+          "cells": [
+            "PAR-04",
+            "Goal success criteria; checkpointed work; scheduling with timezone/missed-run/overlap rules; parent-child run tree; cancel/steer/retry; shared budgets and run leases. Auto Review continues eligible in-scope work. Human-required decisions pause unattended work until resolved; silence never becomes consent.",
+            "AUTO-01, AGENT-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R05",
+          "cells": [
+            "PAR-05",
+            "Debug adapter integration: launch/attach, breakpoints, step controls, stack, variables and console. Language-server navigation, diagnostics, completion and formatting. Test at least Python and TypeScript/JavaScript adapters; never label a terminal as a debugger.",
+            "DEV-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R06",
+          "cells": [
+            "PAR-06",
+            "Create/inspect/clean worktrees; compare/stage/unstage hunks; commit, push, create/update PR, review comments and checks. Handle conflicts and dirty files. Publish/destructive operations require policy-controlled authorization.",
+            "GIT-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP06"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R07",
+          "cells": [
+            "PAR-07",
+            "First-class browser tabs and profile scopes, explicit handoff/takeover, site permissions and developer tools; annotated element/region context; opt-in app/window recording; scrub/edit a recorded sequence into a parameterized skill; test before enabling.",
+            "BROW-01\u201305, CAP-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R08",
+          "cells": [
+            "PAR-08",
+            "Versioned registry/manifest adapters; public/private sources; install/update/rollback; provenance and permission diffs; compatible portable skill/MCP bundles. Validate against documented fixtures and adapters. No claim of automatic VS Code or proprietary marketplace compatibility.",
+            "EXT-01, EXT-02"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R09",
+          "cells": [
+            "PAR-09",
+            "Drag-and-dock zones plus keyboard equivalent; detach/re-dock panels; multiple project/session windows; shared task/buffer coordination; monitor-aware restore. Browser uses permitted windows or in-app splits, never silently requires desktop-native APIs.",
+            "DOCK-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T06-R10",
+          "cells": [
+            "PAR-10",
+            "Dictation and voice interaction; image generation/editing; versioned document/table/chart/deck/code artifacts with preview/export/revise; provision or enroll isolated cloud runners, inject scoped secrets, stream logs, control cost and tear down. Validate one real provider per capability; provider selection is not a placeholder implementation.",
+            "MEDIA-01, CLOUD-01"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T06",
+      "headers": [
+        "Family",
+        "Required proof",
+        "Verification IDs"
+      ]
+    },
+    {
+      "section": "06 / End-to-end journeys",
+      "rows": [
+        {
+          "id": "PLAN-T07-R01",
+          "cells": [
+            "Enter and resume",
+            "Discover allowed sign-in method \u2192 password or configured SSO \u2192 authorized machine/project \u2192 restore last session and draft. Handle expired, revoked, unavailable-provider and offline states. No mandatory dashboard."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R02",
+          "cells": [
+            "Start or fork a conversation",
+            "Choose project or scratch chat \u2192 session-level engine/model \u2192 selected context/media/tools \u2192 send. Changing an incompatible engine offers an explicit linked fork with a context preview."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R03",
+          "cells": [
+            "Chat \u2192 build \u2192 review",
+            "Open a changed file \u2192 Workbench with the same session \u2192 edit/test with chat and terminal visible \u2192 review attributed diffs \u2192 stage/commit/push/PR \u2192 inspect checks and review feedback."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP06"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R04",
+          "cells": [
+            "Browse and hand off",
+            "Open a built-in managed tab \u2192 choose Ask about page or Let agent use \u2192 inspect site/task grant \u2192 watch actions \u2192 take over for login/correction \u2192 resume explicitly \u2192 verify result \u2192 release control."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R05",
+          "cells": [
+            "Annotate a live bug",
+            "Select an element or region \u2192 describe the desired result \u2192 attach URL, page revision, selection and permitted snapshot \u2192 agent fixes code \u2192 browser verifies \u2192 compare before/after and close the annotation."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05",
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R06",
+          "cells": [
+            "Parallel work",
+            "Start separate sessions on isolated worktrees/runners \u2192 see child tasks and branch/location \u2192 intervene, cancel or change budgets \u2192 reconcile outputs without concurrent writes to the same checkout."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04",
+            "WP06",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R07",
+          "cells": [
+            "Schedule a goal",
+            "Define success criteria, target project/runner, schedule, tools, budget and approval policy \u2192 preview next runs \u2192 enable \u2192 review outcomes in the session and Needs attention \u2192 retry or disable. Closed UI does not cancel the schedule."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R08",
+          "cells": [
+            "Create an artifact",
+            "Ask by text/voice \u2192 approve provider/account where required \u2192 open the generated artifact beside chat \u2192 edit or request a revision \u2192 compare/save/export. Arbitrary generated web content runs outside the privileged UI origin."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R09",
+          "cells": [
+            "Record a reusable workflow",
+            "Choose window/tab and capture scope \u2192 visibly start/stop recording \u2192 redact secrets and parameters \u2192 edit generated skill \u2192 dry-run against a safe target \u2192 approve/publish a version. No ambient recording."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R10",
+          "cells": [
+            "Expand the workspace",
+            "Dock or detach browser/editor/chat to another window/monitor \u2192 keep task and permission ownership \u2192 reconnect/restore \u2192 resolve buffer or draft conflicts without overwriting."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP07",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T07-R11",
+          "cells": [
+            "Change enterprise authentication",
+            "Admin configures adapter and mappings \u2192 tests a login and policy result \u2192 activates atomically \u2192 new sessions use it \u2192 existing sessions follow an explicit revoke/expiry migration. Failed configuration cannot strand the only authorized administrator."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T07",
+      "headers": [
+        "Journey",
+        "Required behavior"
+      ]
+    },
+    {
+      "section": "07 / Chat UX and component strategy",
+      "rows": [
+        {
+          "id": "PLAN-T08-R01",
+          "cells": [
+            "shadcn shell and chat",
+            "Use owned, composable shell/chat primitives for menus, commands, messages, attachments, forms, dialogs, tabs and panel affordances. They provide presentation, not TermX\u2019s identity, transcript store or execution runtime. [W1][W14]"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T08-R02",
+          "cells": [
+            "AI Elements / headless AIUX",
+            "Use compatible presentational parts for tool calls, confirmations, plans, queue, artifacts and session selectors. Adapt host events and reuse viable headless behavior; do not import a second AI backend. [W2][W3][E2]"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP08",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T08-R03",
+          "cells": [
+            "Session controls",
+            "Engine/model chip beside the composer only. Optional details show account/billing, mode, reasoning and permissions. Less-used options remain in session settings. Never duplicate selection in the workspace chrome."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T08-R04",
+          "cells": [
+            "Work visibility",
+            "Compact progress summary, files changed, artifacts, child agents and browser actions; expand for details. Render only engine-provided summaries, not invented hidden reasoning. Keep the Stop action reachable."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP04",
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T08-R05",
+          "cells": [
+            "Input and output",
+            "Text, files, image, audio/video support via declared adapters; dictation and voice mode; bounded attachment sizes and redaction preview. Explicit provider/billing disclosure for generation, transcription and conversions."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T08-R06",
+          "cells": [
+            "Continuity",
+            "Preserve scroll while history loads; Jump to latest when not following; virtualize long history; collapse verbose logs; persist drafts. Queue versus interrupt is always named. Pause/resume controls match actual capability."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP04",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T08",
+      "headers": [
+        "Layer",
+        "Contract"
+      ]
+    },
+    {
+      "section": "07B / Browser workspace, automation and tab handoff",
+      "rows": [
+        {
+          "id": "PLAN-T09-R01",
+          "cells": [
+            "Managed in-app browser",
+            "Tabs, navigation, history, find, zoom, downloads, popups and browser settings. Separate persistent profiles per authorized user/project; ephemeral profiles for throwaway tasks. Profiles and history are visible and clearable; not automatically shared with all chats."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R02",
+          "cells": [
+            "Ask about page",
+            "Attach only explicitly selected page context: URL/title, selected text, screenshot or structured snapshot. Snapshot access is not ongoing monitoring or permission to click/type. Show exactly what will be shared."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R03",
+          "cells": [
+            "Let agent use",
+            "One explicit task handoff grants the named conversation bounded access to selected built-in tabs, sites and action types. Auto Review then resolves routine requests inside that grant; the user does not approve every click or scroll. Show profile/account, scope and expiry. New origins or broader authority are not silently granted."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R04",
+          "cells": [
+            "Automation tools",
+            "Navigate, inspect rendered/structured state, click, type, scroll, wait, capture, verify, manage authorized tabs and permitted downloads/uploads. Uploads use explicit approved file references; never unrestricted host paths. Developer mode adds separately approved DOM, console, network and performance diagnostics."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R05",
+          "cells": [
+            "External tabs \u2014 excluded",
+            "Do not ship or display an external-tab extension/bridge. Pasting a URL opens a new built-in tab; it does not import an external account, cookies, storage or live session. External browser access to the TermX UI remains supported."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R06",
+          "cells": [
+            "Handoff and takeover",
+            "One control lease per tab. Human Take over pauses automation and invalidates queued actions before manual input. Actions already sent to a website cannot always be undone; report the actual result. Resume requires explicit consent and a fresh page observation."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R07",
+          "cells": [
+            "Private login / MFA",
+            "Enter manual private mode: stop agent observations, screenshots, input/event capture and recording for that tab. The user completes login, MFA or CAPTCHA; Resume re-observes the new page without exposing credential values. Never automate around challenges."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R08",
+          "cells": [
+            "Sensitive actions",
+            "Mandatory human-review policy covers sends/publication, purchases, irreversible deletion, credential-sensitive actions, privilege/access changes and unapproved data export. Group one consequential operation into one clear confirmation; do not ask separately for every preparatory click. A prior exact, current authorization may satisfy that same action\u2014not unrelated future actions."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R09",
+          "cells": [
+            "Annotations and evidence",
+            "Element or region comments retain page URL, frame/context, navigation/document version and permitted screenshot reference. Stale annotations are flagged after navigation; do not silently attach them to a different element."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T09-R10",
+          "cells": [
+            "Audit and recovery",
+            "Record principal, session, tab, site, tool/action, grant, approval and outcome. Content capture is separately consented; redact or exclude secrets. Reconnect shows current state, not automatic replay. Tab closed/crashed/denied/expired grant are designed states."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T09",
+      "headers": [
+        "Capability",
+        "Product and security contract"
+      ]
+    },
+    {
+      "section": "07C / Reference-led visual and interaction direction",
+      "rows": [
+        {
+          "id": "PLAN-T10-R01",
+          "cells": [
+            "Visual hierarchy",
+            "Neutral light/dark/system foundations; one restrained accent; subtle separators; narrow consistent icon family; compact desktop typography. No decorative gradients or oversized metric cards in the work area."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T10-R02",
+          "cells": [
+            "Composer and context",
+            "Persistent rounded composer with one primary Send/Stop action. Attachments, tab references and skills become removable chips; the engine/model chip is contextual to this chat."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T10-R03",
+          "cells": [
+            "Progressive disclosure",
+            "Empty chat emphasizes the prompt. A running task introduces progress and relevant tools. Browser, editor, artifacts and details open only when requested or needed, without unsolicited focus theft."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP07",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T10-R04",
+          "cells": [
+            "Motion and responsiveness",
+            "Proposed 120\u2013180 ms panel/menu transitions; no animation on every streamed token; reduced-motion equivalents. Preserve focus, cursor and scroll through panel relocation. Test frame stability rather than claiming it."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T10-R05",
+          "cells": [
+            "Workspace chrome",
+            "Compact title/command bar; no duplicated machine/project selectors. Drag targets reveal on drag; keyboard docking and visible toggles provide alternatives. Keep controls reachable at 200% zoom."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T10-R06",
+          "cells": [
+            "Perceived speed",
+            "Lazy-load heavy work surfaces; reuse state; virtualize long lists; show honest queued/connecting/working states. Optimistic UI may show local draft state, not unconfirmed execution success."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T10",
+      "headers": [
+        "Design rule",
+        "TermX application"
+      ]
+    },
+    {
+      "section": "08 / Managers without global engine state",
+      "rows": [
+        {
+          "id": "PLAN-T11-R01",
+          "cells": [
+            "Models & Engines",
+            "Installed/discovered engines; register/install/authenticate; provider accounts; refreshed model catalogs; favorites and availability; API-key versus subscription billing clarity. No global active engine. Catalog changes never retarget a session."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R02",
+          "cells": [
+            "Plugins & registries",
+            "Public/private registry adapters, manifest compatibility, provenance, versions, dependency review, installation, permission diffs, rollback and removal. Installed, connected, authorized and enabled remain separate states."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R03",
+          "cells": [
+            "Skills & recordings",
+            "Discover global/project sources including compatible ~/.agents/ paths; edit/validate/import/export; version history; convert consented recordings to draft skills; safe dry-run; scope and effective override inspection."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R04",
+          "cells": [
+            "Agents, memory & hooks",
+            "Named presets for future sessions; instructions, toolsets, budgets and engine defaults. Project memory with provenance, exclusions, retention and delete/export. Lifecycle hook configuration, timeout/failure history and execution permissions."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03",
+            "WP04",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R05",
+          "cells": [
+            "Tools & connections",
+            "MCP tool connections, allowed projects and credentials; ACP engine registrations remain distinct. Dynamic discovery/registration where the server supports it; no invented endpoints or secret values in UI exports."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R06",
+          "cells": [
+            "Browser & Computer",
+            "Profiles, built-in tabs, history, downloaded files, site rules, grants, capture/recording scope, OS permission health and active control ownership. Human browsing does not automatically authorize an agent."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R07",
+          "cells": [
+            "Automations & runners",
+            "Goals, schedules, next run, history, budget, runner health, credentials references, cancellation and cleanup. Execution-provider settings never silently move work or secrets off the machine."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R08",
+          "cells": [
+            "Access & sessions",
+            "Enabled auth methods, adapter health, principal/group mappings, host/project roles, device sessions, revocation, audit and policy. Hide administrative controls from non-admin users."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T11-R09",
+          "cells": [
+            "Safety & Auto Review",
+            "Compact review-model configuration, verified provider/account, policy source, scoped remembered rules, review history, latency/cost counters and human escalation. This selects a background reviewer\u2014not a workspace engine. Policies apply to tool effects regardless of which engine requested them."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T11",
+      "headers": [
+        "Manager",
+        "Required scope"
+      ]
+    },
+    {
+      "section": "09 / Authentication ports, sessions and authorization",
+      "rows": [
+        {
+          "id": "PLAN-T12-R01",
+          "cells": [
+            "AuthenticationPort",
+            "Discover enabled methods; start/complete a login; validate configured provider evidence; report issuer, stable subject and authentication strength. Concrete local-password, generic OIDC and custom reference adapters are included."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T12-R02",
+          "cells": [
+            "PrincipalDirectoryPort",
+            "Map (issuer, subject) to an immutable TermX principal plus organization/groups and machine/project membership. Never auto-merge identities solely because email addresses match. Anonymous bootstrap is not a privileged principal."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T12-R03",
+          "cells": [
+            "SessionPort",
+            "Create, renew, list and revoke device sessions and refresh-token families. Track owner, device, expiry, authentication context and policy version. Revocation has effect on APIs, event sockets and active control leases."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T12-R04",
+          "cells": [
+            "TokenIssuer / Verifier ports",
+            "Issue short-lived access JWTs with configured algorithms, issuer/audience and signing-key rotation. Validate type, issuer, audience, signature, expiry and session state. A JWT signature is not a full authorization decision."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T12-R05",
+          "cells": [
+            "AuthorizationPort",
+            "Evaluate operation/resource/tenant/host/project policy, returning permit/deny plus constraints and audit reason. Enterprise policy may restrict further; no adapter may override mandatory host safety boundaries."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T12-R06",
+          "cells": [
+            "SecretStore / Audit ports",
+            "Keep passwords hashed and provider/refresh secrets in protected host storage. Emit auditable session/action metadata with secret redaction and retention controls. Auth adapters are administrator-trusted extensions, not regular agent-installable plugins."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T12",
+      "headers": [
+        "Port / service",
+        "Responsibility and boundary"
+      ]
+    },
+    {
+      "section": "09B / Auto Review \u2014 low friction, bounded authority",
+      "rows": [
+        {
+          "id": "PLAN-T13-R01",
+          "cells": [
+            "1 \u00b7 Mandatory boundaries",
+            "Hard deny and sandbox impossibility win. Enforce administrator/device restrictions and remembered denies before allows. Root/admin escalation, broker secrets, unrelated host credentials and writes outside the approved capability envelope cannot be auto-approved."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T13-R02",
+          "cells": [
+            "2 \u00b7 Existing consent",
+            "Match an exact current user approval or narrow remembered policy: task, project/custom agent, principal, profile/account, origin/resource, action class and bounds. Respect expiry and policy version. Rules do not spill into another project, user or agent."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T13-R03",
+          "cells": [
+            "3 \u00b7 Safe fast path",
+            "Explicitly allowed read/inspect/navigation and other typed low-risk actions in an authorized environment use code rules, with no reviewer round trip. Do not classify safety from the word \u201cclick,\u201d HTTP verb, or model prose; inspect actual effect and target."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T13-R04",
+          "cells": [
+            "4 \u00b7 Smaller reviewer",
+            "Only eligible low/medium-risk, sandbox-contained proposals without an existing match reach the reviewer. It evaluates task alignment, intended side effect, data movement and scope using the minimum required context. Self-reported confidence alone cannot unlock execution."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T13-R05",
+          "cells": [
+            "5 \u00b7 Human decision",
+            "Escalate uncertainty, unknown effects, missing scope, sensitive/irreversible operations or reviewer outage. Show target/account, exact operation, data to be sent, consequence and why review is needed. Approval is an action-bound decision, not universal trust."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T13",
+      "headers": [
+        "Decision tier",
+        "Required behavior"
+      ]
+    },
+    {
+      "section": "09B / Auto Review \u2014 low friction, bounded authority",
+      "rows": [
+        {
+          "id": "PLAN-T14-R01",
+          "cells": [
+            "Routine sequence",
+            "A compact \u201cAuto Review active\u201d indicator and an expandable \u201c23 actions allowed\u201d summary. No toast or modal for each click, scroll, observation or permitted edit. Counts are illustrative design data."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T14-R02",
+          "cells": [
+            "Consequential operation",
+            "One inline approval card or attention panel. Buttons: Approve once, Deny, and policy-permitted scoped remember. A purchase confirmation covers the exact merchant, amount and payload; it does not preapprove a shopping session."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T14-R03",
+          "cells": [
+            "Reviewer uncertain or unavailable",
+            "The affected action pauses with a clear explanation and Retry / Review manually. Existing deterministic-safe work may continue. No silent upgrade to a larger model, new account or different billing path."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T14-R04",
+          "cells": [
+            "Human takeover / private login",
+            "Takeover revokes the tab lease and queued permits immediately. Private login pauses executor and reviewer observations, DOM reads, screenshots and recordings. Resume obtains a fresh observation; never replay stale actions."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T14-R05",
+          "cells": [
+            "Policy history",
+            "Inspect decisions, reasons, scope, rule/model version and outcome. Revoke a remembered rule. Owner/admin edits safety settings; agents cannot edit the rules they are judged by."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T14",
+      "headers": [
+        "Situation",
+        "UX"
+      ]
+    },
+    {
+      "section": "10 / Keyboard, docking and desktop interaction",
+      "rows": [
+        {
+          "id": "PLAN-T15-R01",
+          "cells": [
+            "Toggle left sidebar",
+            "\u2318/Ctrl + B",
+            "Restore its last width and active view."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T15-R02",
+          "cells": [
+            "Toggle right panel",
+            "macOS: \u2318 + Option + B Windows/Linux: Ctrl + Alt + B",
+            "Restore the same chat/context and return focus predictably."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T15-R03",
+          "cells": [
+            "Toggle bottom panel",
+            "\u2318/Ctrl + J",
+            "Restore terminal/output/problems tab; hiding does not kill its process."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T15-R04",
+          "cells": [
+            "Command palette",
+            "\u2318/Ctrl + Shift + P",
+            "Search commands, settings, views and keybindings."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T15-R05",
+          "cells": [
+            "Quick file open",
+            "\u2318/Ctrl + P",
+            "Use where the browser permits; provide a remappable fallback and visible button."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T15-R06",
+          "cells": [
+            "Focus layout",
+            "\u2318/Ctrl + K, then Z",
+            "Hide chrome; Escape leaves the temporary view without stopping a task."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T15-R07",
+          "cells": [
+            "Keyboard resize / region navigation",
+            "Accessible handles and remappable commands",
+            "Resize and focus all panels without dragging; do not trap focus."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T15",
+      "headers": [
+        "Action",
+        "Proposed default",
+        "Behavior"
+      ]
+    },
+    {
+      "section": "11 / Acceptance and verification map",
+      "rows": [
+        {
+          "id": "PLAN-T16-R01",
+          "cells": [
+            "UX-01",
+            "Unlock \u2192 project/session \u2192 chat \u2192 workbench with no forced dashboard or mobile-navigation detour."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R02",
+          "cells": [
+            "UX-02",
+            "Chat/Workbench/Browser layout moves preserve conversation/native IDs, active runs, drafts, scroll, dirty buffers and PTYs."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP07",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R03",
+          "cells": [
+            "CHAT-01",
+            "No engine selector outside AI session UI; session A can use a different engine from B; configuration changes do not retarget either run."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R04",
+          "cells": [
+            "CHAT-02",
+            "A cross-engine fork retains the original, previews transferred context, records linkage and never claims a native resume."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R05",
+          "cells": [
+            "DATA-01",
+            "Reconnect or duplicate windows do not duplicate prompts, messages, website submissions, Git mutations or tool calls."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP04",
+            "WP06",
+            "WP07",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R06",
+          "cells": [
+            "AUTH-01",
+            "Locked/revoked users cannot access protected API/socket/file/preview/browser/control/legacy paths."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R07",
+          "cells": [
+            "AUTH-02",
+            "Rate-limited password attempts, secure storage, refresh rotation, parallel refresh coordination, expiry and device/session revocation work."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R08",
+          "cells": [
+            "AUTH-03",
+            "Local-password, real OIDC test provider and custom reference adapter all reach the same principal/session/authorization contract without route rewrites."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R09",
+          "cells": [
+            "AUTH-04",
+            "Reject wrong issuer/audience/algorithm, ID-token misuse, revoked sessions, stale groups and cross-host/project grants. Enforce shared-host isolation claims."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R10",
+          "cells": [
+            "BROW-01",
+            "Complete sign-in \u2192 browse \u2192 handoff \u2192 agent action \u2192 human takeover \u2192 explicit resume inside the app, plus external-browser access to the same host tab."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R11",
+          "cells": [
+            "BROW-02",
+            "Revoked/expired/tab-mismatched grants and stale document/lease revisions reject actions. No agent sees unrelated tabs or another user\u2019s profile."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R12",
+          "cells": [
+            "BROW-03",
+            "Private login produces no agent-visible credential input, DOM snapshot, screenshot or recording. Takeover stops queued actions and reports in-flight outcomes."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R13",
+          "cells": [
+            "BROW-04",
+            "Block unapproved origins/redirects, raw CDP exposure, protected local services, metadata access and attempts to reach privileged app/native bridges."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R14",
+          "cells": [
+            "BROW-05",
+            "Only built-in tabs can be handed to the agent. No external-tab attach, cookie import or extension flow exists. URL-only opening creates a fresh built-in tab. Annotation staleness, permitted file transfer and browser crash recovery work."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R15",
+          "cells": [
+            "CAP-01",
+            "Opt-in window/tab capture has persistent indicator, excludes private mode, and produces an editable/redacted/tested skill draft\u2014not an auto-enabled recording."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R16",
+          "cells": [
+            "MEM-01",
+            "Memory reads/writes/deletes/export obey provenance and project/user scopes; retention and hooks cannot leak cross-project context."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R17",
+          "cells": [
+            "AUTO-01",
+            "Schedules survive UI close/host restart; honor timezone, missed-run and overlap policy; approval waits do not time out into consent; delegated grants and budget caps are enforced."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R18",
+          "cells": [
+            "AGENT-01",
+            "Parent/child task tree, cancellation/steering, fan-out limits, aggregation and concurrency budgets work without hidden shared-directory writes."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP04"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R19",
+          "cells": [
+            "DEV-01",
+            "Real Python and TypeScript/JavaScript debug and language-server paths demonstrate breakpoint/step/inspect/navigation with proper host authorization."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R20",
+          "cells": [
+            "GIT-01",
+            "Two parallel worktrees \u2192 edits/tests \u2192 stage/commit/push \u2192 PR/checks; conflicts, failed checks and cleanup are handled without discarding dirty user files."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP06"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R21",
+          "cells": [
+            "EXT-01",
+            "Registry install/update/rollback and permission diff work; unsupported format is honest; in-use removal is safe; no secrets in exported skill/plugin files."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R22",
+          "cells": [
+            "EXT-02",
+            "Private registry and custom compatibility adapter are tested; hooks have correct scope, timeout, failure and audit behavior."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R23",
+          "cells": [
+            "DOCK-01",
+            "Drag/keyboard dock, detach/re-dock, concurrent views, missing-monitor restore, browser popup denial and unsaved-buffer conflicts are recoverable."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R24",
+          "cells": [
+            "MEDIA-01",
+            "Text/voice \u2192 image/document/table/deck/code output \u2192 inspect/edit/version/export through real named adapters; unsupported input and provider entitlement failures are explicit."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R25",
+          "cells": [
+            "CLOUD-01",
+            "Create/enroll dedicated runner \u2192 scoped secret injection \u2192 run/logs/browser where supported \u2192 results \u2192 budget stop/teardown; local/cloud side effects are never silently migrated."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R26",
+          "cells": [
+            "SAFE-01",
+            "Remembered action rules cannot exceed host policy; browser access is not transaction consent; claimed restricted runtime cannot bypass grants through shell/network tools."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R27",
+          "cells": [
+            "WEB-01",
+            "Desktop/browser share UI version, routes and domain state. Deep links and reload work; the viewer\u2019s localhost is never confused with the host preview."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R28",
+          "cells": [
+            "PERF-01",
+            "Measure load, interaction, stream and memory budgets; test 10,000 messages, 500 sessions, multiple windows, noisy PTY logs and active browser control. These are test fixtures, not measured results."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP07",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R29",
+          "cells": [
+            "A11Y-01",
+            "Keyboard-only browsing/workspace flows, screen-reader labels and meaningful content, contrast, 200% zoom and reduced motion work in both themes."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R30",
+          "cells": [
+            "VIEW-01",
+            "1280/1440/1920/ultrawide plus narrow-browser fallback; no page overflow, unreachable control, stranded window or forced Expo fallback."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R31",
+          "cells": [
+            "REVIEW-01",
+            "Run a representative 30-action safe browser task with no repeated human approval once the task grant is valid. Audit every automated decision; distinguish rule-based from model-based approvals."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R32",
+          "cells": [
+            "REVIEW-02",
+            "Sensitive sends, payments, deletes, publication and privilege changes stop at the approved human gate; a single explicit decision does not expand unrelated authority."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R33",
+          "cells": [
+            "REVIEW-03",
+            "Injection in pages, files, tool outputs or executor summaries cannot change policy or mint grants. Test hidden content, redirects, cross-origin uploads and deceptively labelled controls."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R34",
+          "cells": [
+            "REVIEW-04",
+            "Reviewer timeout, invalid JSON, unavailable account or stale decision never allow an unknown action. Report review error and preserve resumable state."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R35",
+          "cells": [
+            "REVIEW-05",
+            "Policy update, scope revoke, account switch, navigation or takeover invalidate cached reviews and queued permits. Restart/reconnect does not duplicate submissions."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R36",
+          "cells": [
+            "REVIEW-06",
+            "Remembered allow/deny policies are scoped and revocable; deny wins. Audit cannot contain passwords/cookies/token values; private login reaches neither model."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R37",
+          "cells": [
+            "REVIEW-07",
+            "Evaluate and pin the smaller reviewer against a frozen representative/adversarial suite. Report false-allow cases, escalation rate, latency and cost. Zero escapes in release-blocking fixtures is necessary but not proof of general safety."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T16-R38",
+          "cells": [
+            "REVIEW-08",
+            "Test each native/internal/ACP adapter\u2019s interception coverage. A supported run cannot evade required enforcement using unrestricted shell, raw CDP or alternate network tools."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP04",
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T16",
+      "headers": [
+        "ID",
+        "Must be demonstrated"
+      ]
+    },
+    {
+      "section": "12 / Figma scope and complete delivery sequence",
+      "rows": [
+        {
+          "id": "PLAN-T17-R01",
+          "cells": [
+            "DX-01",
+            "Chat \u00b7 Focus",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R02",
+          "cells": [
+            "DX-02",
+            "Workbench \u00b7 Code + chat",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP05",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R03",
+          "cells": [
+            "DX-03",
+            "Browser \u00b7 Auto Review active",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R04",
+          "cells": [
+            "DX-04",
+            "Browser \u00b7 User approval",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R05",
+          "cells": [
+            "DX-05",
+            "Browser \u00b7 Private login",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R06",
+          "cells": [
+            "DX-06",
+            "Safety \u00b7 Auto Review",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R07",
+          "cells": [
+            "DX-07",
+            "Sign in \u00b7 Password / SSO",
+            "First pass \u00b7 light \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R08",
+          "cells": [
+            "DX-08",
+            "Runners \u00b7 Bring your own",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R09",
+          "cells": [
+            "DX-09",
+            "Chat \u00b7 Light",
+            "First pass \u00b7 light \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R10",
+          "cells": [
+            "DX-10",
+            "Browser \u00b7 User owns tab",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T17-R11",
+          "cells": [
+            "DX-11",
+            "Browser \u00b7 Verified result",
+            "First pass \u00b7 dark \u00b7 1440 \u00d7 900"
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T17",
+      "headers": [
+        "Screen",
+        "Core review coverage",
+        "Status"
+      ]
+    },
+    {
+      "section": "12 / Figma scope and complete delivery sequence",
+      "rows": [
+        {
+          "id": "PLAN-T18-R01",
+          "cells": [
+            "Foundations and component map",
+            "Semantic light/dark/system tokens; typography; icons; motion; keyboard/hover/focus/disabled states. Canonical versioned JSON \u2192 atoms \u2192 molecules \u2192 organisms \u2192 patterns \u2192 screens, with stable IDs and data/permission/analytics/code links."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T18-R02",
+          "cells": [
+            "Entry and identity",
+            "Local-password setup/login; dynamic SSO choice/callback/failure; adapter admin/test/migration; sessions/revoke; roles/access denied; trusted-host recovery."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T18-R03",
+          "cells": [
+            "Chats and supervision",
+            "Grouped projects/sessions; contextual selectors; streaming and multimodal input; tool/approval state; cross-engine fork; goals/schedules; subagents; memory and context; reconnect/cancel/budget failures."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP03",
+            "WP04"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T18-R04",
+          "cells": [
+            "Browser and Computer",
+            "Built-in tabs/profiles; bounded handoff; Auto Review activity and escalation; annotations; private login; takeover/resume; sensitive confirmation; recording-to-skill; history/downloads; worker/capture/OS-permission failures. No external extension flow."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T18-R05",
+          "cells": [
+            "Workbench and delivery",
+            "Editor, terminal, debug and language tooling; worktree creation; diffs/hunks; conflicts; stage/commit/push/PR/checks; preview verification; clean-up guardrails."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05",
+            "WP06"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T18-R06",
+          "cells": [
+            "Creation and runners",
+            "Voice controls/transcripts; image creation/edit; artifact revision/preview/export; runner connection/provisioning, active logs, approval/budget waits, disconnect and teardown."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T18-R07",
+          "cells": [
+            "Managers and advanced shell",
+            "Engine/provider inventory; registries/plugins/skills/hooks; Auto Review policy/model/history; credentials/identity; arbitrary docking, detached windows, monitor restore, keyboard alternatives and browser-safe fallback."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP08",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T18",
+      "headers": [
+        "Design family",
+        "Required screens and states"
+      ]
+    },
+    {
+      "section": "12 / Figma scope and complete delivery sequence",
+      "rows": [
+        {
+          "id": "PLAN-T19-R01",
+          "cells": [
+            "M0 \u00b7 Technical proofs",
+            "Validate browser in-app rendering/control and platform packaging, auth adapter/session contract, docking coordination and real cloud/media/debug adapters. Resolve unsupported promises before locking implementation details."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP05",
+            "WP07",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T19-R02",
+          "cells": [
+            "M1 \u00b7 Secure shared shell",
+            "Independent UI bundle, routes, dynamic sign-in, canonical identity/session/policy, device revocation and compatibility migration."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T19-R03",
+          "cells": [
+            "M2 \u00b7 Durable AI workspace",
+            "Grouped conversations, session-only controls, streaming/context/media, continuity, scoped memory and engine-aware cross-session handoffs."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP03"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T19-R04",
+          "cells": [
+            "M3 \u00b7 Coding and browser work",
+            "Editor/terminal/debug/language tooling; managed browser/Auto Review/annotations/capture; complete Git/worktree/review pipeline."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP05",
+            "WP06",
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T19-R05",
+          "cells": [
+            "M4 \u00b7 Automation and extensibility",
+            "Goals, persistent schedules, subagents, hooks, registry compatibility, recording-to-skill, media/artifacts and dedicated cloud execution."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP03",
+            "WP04",
+            "WP08",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T19-R06",
+          "cells": [
+            "M5 \u00b7 Advanced desktop and release",
+            "Arbitrary docking, multiwindow/multi-monitor behavior, security/performance/accessibility tests, full support matrix, migration/rollback and packaging."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP07",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T19",
+      "headers": [
+        "Milestone",
+        "Dependency / gate"
+      ]
+    },
+    {
+      "section": "13 / Locked decisions and implementation defaults",
+      "rows": [
+        {
+          "id": "PLAN-T20-R01",
+          "cells": [
+            "Q1 \u00b7 Browser target",
+            "Built-in browser only. Remove external Chrome/Edge/Safari extensions and tab bridges. Keep external browsers as clients of the same TermX UI."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T20-R02",
+          "cells": [
+            "Q2 \u00b7 Approval authority",
+            "Smaller Auto Review Model + enforced rules + scoped remembered consent. Routine work is automatic; uncertain or sensitive actions request user input. A model cannot elevate sandbox capabilities."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP07",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T20-R03",
+          "cells": [
+            "Q3 \u00b7 Identity",
+            "Local password plus generic OIDC and a custom-adapter reference implementation, behind common principal/session/JWT/authorization contracts. No specific enterprise vendor is required to approve design."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T20-R04",
+          "cells": [
+            "Q4 \u00b7 Cloud ownership",
+            "Bring-your-own dedicated VM/container runners. Enrollment/provisioning, credentials, run/logs/results, budget/stop and teardown are required. TermX-managed fleet, billing and cloud residency product operations are excluded."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T20-R05",
+          "cells": [
+            "D1 / D2 \u00b7 Workspace",
+            "Same conversation across Chat/Workbench/Browser. Presets remain defaults; arbitrary docking, multiwindow and multi-monitor support remain mandatory."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP09"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T20-R06",
+          "cells": [
+            "D4 \u00b7 Full parity",
+            "All ten original Further Parity families are required; staged construction is not staged commitment."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP01",
+            "WP02",
+            "WP03",
+            "WP04",
+            "WP05",
+            "WP06",
+            "WP07",
+            "WP08",
+            "WP09",
+            "WP10"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        },
+        {
+          "id": "PLAN-T20-R07",
+          "cells": [
+            "D5 \u00b7 Selectors",
+            "The execution engine/model selector belongs only to AI sessions. Managers configure inventory/presets; Auto Review settings select the reviewer, not a global active engine."
+          ],
+          "mapping_status": "mapped_to_contract_and_delivery_owner",
+          "work_packages": [
+            "WP02",
+            "WP08"
+          ],
+          "verification_status": "see_scoped_evidence_and_open_gates"
+        }
+      ],
+      "id": "PLAN-T20",
+      "headers": [
+        "Decision",
+        "Approved outcome"
+      ]
+    }
+  ],
+  "work_packages": {
+    "WP01": {
+      "title": "Access and continuity",
+      "contract_paths": [
+        "src/termx/identity.py",
+        "src/termx/identity_adapters.py",
+        "src/termx/identity_groups.py",
+        "src/termx/authorization.py",
+        "src/termx/authorization_http.py",
+        "src/termx/audit.py",
+        "desktop/workspace/src/features/IdentityGroupsManager.tsx",
+        "desktop/workspace/src/features/AuditRetentionManager.tsx",
+        "src/termx/session_policy.py"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP02": {
+      "title": "Chat and sessions",
+      "contract_paths": [
+        "src/termx/workspace/service.py",
+        "src/termx/workspace/prompt_queue.py",
+        "src/termx/engines/gateway.py",
+        "desktop/workspace/src/features/Chat.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP03": {
+      "title": "Instructions and memory",
+      "contract_paths": [
+        "src/termx/workspace/service.py",
+        "src/termx/workspace/automation.py",
+        "desktop/workspace/src/features/MemoryEditor.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP04": {
+      "title": "Execution and supervision",
+      "contract_paths": [
+        "src/termx/agent/manager.py",
+        "src/termx/agent/tree_budget.py",
+        "src/termx/workspace/automation.py",
+        "desktop/workspace/src/features/TaskSupervisor.tsx",
+        "desktop/workspace/src/features/BudgetApproval.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP05": {
+      "title": "Coding workbench",
+      "contract_paths": [
+        "src/termx/development",
+        "desktop/workspace/src/features/TerminalPanel.tsx",
+        "desktop/workspace/src/features/Workbench.tsx",
+        "desktop/workspace/src/features/Debugger.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP06": {
+      "title": "Review and delivery",
+      "contract_paths": [
+        "src/termx/development/delivery.py",
+        "desktop/workspace/src/features/Delivery.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP07": {
+      "title": "Browser and Computer",
+      "contract_paths": [
+        "src/termx/browser",
+        "src/termx/auto_review.py",
+        "desktop/workspace/src/features/BrowserSurface.tsx",
+        "desktop/workspace/src/features/ComputerSurface.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP08": {
+      "title": "Managers and extensibility",
+      "contract_paths": [
+        "src/termx/workspace/extensions.py",
+        "src/termx/workspace/coding_policies.py",
+        "desktop/workspace/src/features/Managers.tsx",
+        "desktop/workspace/src/features/SafetyManager.tsx",
+        "src/termx/mcp"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP09": {
+      "title": "Desktop ergonomics",
+      "contract_paths": [
+        "desktop/workspace/src/App.tsx",
+        "desktop/workspace/src/lib/keybindings.ts",
+        "desktop/src-tauri",
+        "desktop/workspace/src/lib/layout-presets.ts"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    },
+    "WP10": {
+      "title": "Media and runners",
+      "contract_paths": [
+        "desktop/workspace/src/features/Runners.tsx",
+        "src/termx/media",
+        "src/termx/runners",
+        "desktop/workspace/src/features/Media.tsx"
+      ],
+      "qualification_record": "verification/full-html-runtime-scope-audit.md"
+    }
+  },
+  "prose": [
+    {
+      "id": "PLAN-P-direction-01",
+      "section": "direction",
+      "text": "This v0.3 revision supersedes v0.2. The four open questions are answered. All ten Further Parity families remain mandatory. Only external-browser tab bridging is explicitly removed by the user.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-direction-02",
+      "section": "direction",
+      "text": "Users browse and hand over tabs inside TermX. No Chrome, Edge or Safari extension, cookie import, or external live-tab attachment. External browsers still load the same TermX web UI and control the connected host\u2019s built-in browser.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-direction-03",
+      "section": "direction",
+      "text": "Routine permitted actions proceed without interrupting the user. Hard policies and scoped remembered rules run first; a separate small reviewer handles eligible uncertain actions; sensitive or unresolved actions pause.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-direction-04",
+      "section": "direction",
+      "text": "Local password \u2192 managed session/JWT, generic OIDC, and a custom-adapter reference implementation. All use the same principal, session and authorization contracts.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-direction-05",
+      "section": "direction",
+      "text": "Enroll or provision dedicated user-owned VM/container runners; stream logs/results; enforce grants, budgets, stop and teardown. No TermX-managed cloud fleet is included.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-direction-06",
+      "section": "direction",
+      "text": "Prior security invariant retained: auto-approve never auto-elevates the active sandbox\u2019s capabilities. Model confidence is not a permission grant.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-baseline-01",
+      "section": "baseline",
+      "text": "Evidence level: live default-branch source inspection on 7 October 2026. This is a product/UX planning pass, not a complete security audit, a runtime test or proof that every documented capability works.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP05",
+        "WP08",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-surfaces-01",
+      "section": "surfaces",
+      "text": "Same experience, honest capability differences. Both surfaces share tabs, layouts, grants and session identities. Native adapters add OS file pickers, secure storage, window controls, app capture and notifications. A normal website does not receive access to other local tabs. TermX offers only its host-managed built-in browser; native Computer capabilities remain separately permissioned.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP07",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-surfaces-02",
+      "section": "surfaces",
+      "text": "Execution location is explicit. An external browser controls the connected host or selected runner. Its local filesystem, browser profile and localhost are not automatically those of the host. Uploading local files is a separate authorized action. Connecting the viewer\u2019s existing browser tabs is out of scope.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP07",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-surfaces-03",
+      "section": "surfaces",
+      "text": "Reuse, do not rewrite blindly. Retain Tauri/Python initially; replace the Expo web publishing step with the independent desktop build. Reuse viable CodeMirror/xterm logic, domain contracts and Relay behavior. Browser rendering and cloud execution have independent ports; neither may force an unrelated runtime or UI rewrite.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP07",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-surfaces-04",
+      "section": "surfaces",
+      "text": "Shared data and delivery contract",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP07",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-surfaces-05",
+      "section": "surfaces",
+      "text": "Use host-owned canonical opaque IDs, Relay Node identity and cursor connections for paginated domain data. Retain dedicated streamed/PTY transports where required. Changes to the new UI must not break mobile APIs. Version the UI/host capability handshake and migrations; incompatible bundles must show an actionable update state instead of an Expo fallback.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP07",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-surfaces-06",
+      "section": "surfaces",
+      "text": "Event consumers reconcile from durable cursors and stable event IDs. Rendering the same session in two windows must not duplicate a run, subscription effect or file mutation.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP07",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-workspace-01",
+      "section": "workspace",
+      "text": "Chat and Workbench are presets of one workspace. Browser, Computer, Review and artifact editors are dockable canvases. Arbitrary docking, detach/re-dock, multiple windows and multi-monitor restore are now part of required scope, while predictable presets remain the default.",
+      "work_packages": [
+        "WP02",
+        "WP04",
+        "WP05",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-workspace-02",
+      "section": "workspace",
+      "text": "Session transitions and multiple windows",
+      "work_packages": [
+        "WP02",
+        "WP04",
+        "WP05",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-workspace-03",
+      "section": "workspace",
+      "text": "Never switch an engine in place during an active turn. After the turn, use a supported native change or offer an explicit linked fork with reviewed context. Show what transfers: messages, chosen files and summaries\u2014not hidden engine memory, credentials or undocumented native state. Keep the original session intact.",
+      "work_packages": [
+        "WP02",
+        "WP04",
+        "WP05",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-workspace-04",
+      "section": "workspace",
+      "text": "Window instances reference host session IDs. Use one active-turn coordinator, versioned file saves and edit-conflict recovery; preserve independent unsent drafts per window rather than overwriting them. Closing or hiding a window must not kill tasks or PTYs. Multi-monitor restore must recover off-screen windows onto an available display.",
+      "work_packages": [
+        "WP02",
+        "WP04",
+        "WP05",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-scope-01",
+      "section": "scope",
+      "text": "The old two-tier scope is removed. Both columns below are mandatory. These ten rows map one-for-one to the previous Section 5; no original parity family has been discarded.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-scope-02",
+      "section": "scope",
+      "text": "Capability limits govern routing, not whether we build the feature. Every capability needs a real end-to-end implementation on at least one declared supported adapter. Other engines show accurate availability, an install/connect action or a consensual linked handoff. An unsupported badge alone does not complete a requirement. A denied site, absent account entitlement or OS restriction must not be bypassed.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-scope-03",
+      "section": "scope",
+      "text": "Completion contract for all ten parity families",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-scope-04",
+      "section": "scope",
+      "text": "Scope includes adapter SDKs and concrete reference implementations. It does not include copying private services, reusing unavailable product entitlements, building every third-party provider or promising every language/OS feature without qualification. The support matrix must name supported platforms, adapter versions, account requirements and a test for each row.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-scope-05",
+      "section": "scope",
+      "text": "Reference products inform interaction patterns and feature categories; TermX\u2019s committed scope above comes from this product request. Current official desktop docs cover project-based work, files, browser/computer use and scheduled tasks. [W4] [W15]",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-journeys-01",
+      "section": "journeys",
+      "text": "Resume is capability-aware. A dropped connection does not authorize repeating a prompt, replaying a website submission or repeating a Git mutation. Reconcile observed state first.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-chat-01",
+      "section": "chat",
+      "text": "One flat conversation, one persistent composer. Keep readable text width, quiet message actions and compact context chips. Agent internals expand on demand; errors and approvals are explicit rather than hidden in logs. Useful empty-state actions disappear once a conversation exists.",
+      "work_packages": [
+        "WP02",
+        "WP04",
+        "WP08",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-chat-02",
+      "section": "chat",
+      "text": "Complexity stays contextual. No engine dropdown on Files, Terminal, Browser, Computer, login, project settings or general workspace navigation. Runtime facts may appear read-only in task diagnostics; they are not extra selectors. A preset editor may configure an engine for future sessions without changing any current one.",
+      "work_packages": [
+        "WP02",
+        "WP04",
+        "WP08",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-01",
+      "section": "browser",
+      "text": "Users can browse, sign in, annotate and pass control to an agent inside TermX. The browser state belongs to a host/profile/session grant, not whichever UI panel happens to be visible.",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-02",
+      "section": "browser",
+      "text": "Task and plan Browser actions / annotations Approval when required",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-03",
+      "section": "browser",
+      "text": "Composer Session engine / model",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-04",
+      "section": "browser",
+      "text": "Back / forward \u00b7 Reload \u00b7 Exact origin \u00b7 Profile",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-05",
+      "section": "browser",
+      "text": "Ask about page \u00b7 Annotate \u00b7 Hand over",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-06",
+      "section": "browser",
+      "text": "Tab permission is not account isolation. Two tabs in the same browser profile can share authentication. A grant constrains the automation broker, but a compromised profile/worker or broad shell access can exceed a UI-only tab boundary. Separate profiles/workers and OS-level isolation are required where users or tenants do not trust each other.",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-07",
+      "section": "browser",
+      "text": "Browser integration ports and implementation proof",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-08",
+      "section": "browser",
+      "text": "Proposed BrowserPort: create/attach/close tab, list authorized tabs, navigate, observe, act, claim/release control, capture, subscribe events and manage scoped profile lifecycle. Every command carries a principal, session, grant, tab ID and document/lease revision. Reject stale actions after navigation or takeover.",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-09",
+      "section": "browser",
+      "text": "Baseline candidate: an isolated managed Chromium worker controlled through a narrow Playwright/CDP broker, with an authenticated interactive browser view in the shared web UI. Desktop-native embedding is an optimization behind a view adapter, not a second UX. A raw Playwright window or screenshot-only mock does not meet the in-app handoff requirement.",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-10",
+      "section": "browser",
+      "text": "Before fixing the renderer, verify local latency, typing/IME, clipboard, popups, downloads, zoom, keyboard accessibility, platform packaging and remote viewing. A streamed surface is a candidate, not a proven production integration. Provide keyboard-accessible controls and meaningful page context; a canvas alone is not accessibility parity.",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-11",
+      "section": "browser",
+      "text": "Never expose raw CDP to agents or external networks. Validate targets and network access, including redirects, private networks, cloud metadata and privileged local services. Allow development ports only through explicit project grants. In-app remote content receives no TermX credentials or Tauri command capabilities. Browser-control permissions cannot be bypassed by an unrestricted shell in a claimed restricted environment.",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-12",
+      "section": "browser",
+      "text": "Playwright documents isolated contexts; Tauri documents per-window/webview capability boundaries. These are building blocks, not proof of full browser security. External-tab extension research is retained only as historical context and is not part of the delivery scope. [W18] [W19] [W20]",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-browser-13",
+      "section": "browser",
+      "text": "Current ChatGPT docs distinguish its built-in separate browser profile from Chrome-extension access to existing signed-in tabs and show browser annotations. TermX implements only the built-in profile path. Existing external-tab control is deliberately excluded. [W9] [W16]",
+      "work_packages": [
+        "WP07"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-design-direction-01",
+      "section": "design-direction",
+      "text": "Target: a quiet conversational surface that expands into a capable workspace. Use ChatGPT\u2019s restrained hierarchy as a reference, not its branding. Use desktop density when working and breathing room when reading. Avoid mobile cards scaled across a wide screen, oversized headers and permanent rows of advanced selectors.",
+      "work_packages": [
+        "WP02",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-design-direction-02",
+      "section": "design-direction",
+      "text": "The inspected Mobbin screen shows a low-contrast left sidebar, ample content space and a centered composer with compact contextual controls.",
+      "work_packages": [
+        "WP02",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-design-direction-03",
+      "section": "design-direction",
+      "text": "The inspected conversation uses a flat answer, quiet message actions and a bottom composer. Selection stays evident in the sidebar without dominating the transcript.",
+      "work_packages": [
+        "WP02",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-design-direction-04",
+      "section": "design-direction",
+      "text": "The official desktop illustration places a browser page beside the active conversation, with tab chrome and an annotation attached to the rendered page.",
+      "work_packages": [
+        "WP02",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-design-direction-05",
+      "section": "design-direction",
+      "text": "Current official desktop documentation groups project conversations, inspectable files, browser/computer work and schedules in one workspace.",
+      "work_packages": [
+        "WP02",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-design-direction-06",
+      "section": "design-direction",
+      "text": "Mobbin provides web references, not proof of the latest native desktop build. Current official desktop docs supply the feature check. Linked references are retained; no external image, font or script is required to open this plan.",
+      "work_packages": [
+        "WP02",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-managers-01",
+      "section": "managers",
+      "text": "Use a consistent searchable list \u2192 detail/editor \u2192 permissions \u2192 activity pattern, with loading, empty, stale, installing, authorization-required, disabled and error states. Do not require users to understand MCP/ACP before completing a common task; keep protocol specifics in expandable details.",
+      "work_packages": [
+        "WP01",
+        "WP03",
+        "WP04",
+        "WP07",
+        "WP08",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-managers-02",
+      "section": "managers",
+      "text": "Precedence: host/enterprise restrictions constrain project policy, which constrains agent and session preferences. A lower scope cannot override a deny above it. Show effective settings and their source before a privileged action.",
+      "work_packages": [
+        "WP01",
+        "WP03",
+        "WP04",
+        "WP07",
+        "WP08",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-01",
+      "section": "access",
+      "text": "Use ports-and-adapters for authentication. \u201cDynamic\u201d means server-configured providers and discoverable sign-in methods, not accepting arbitrary client-supplied issuers or installing untrusted auth code from chat.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-02",
+      "section": "access",
+      "text": "Enterprise authentication does not require each endpoint to know the provider. OIDC uses Authorization Code + PKCE with validated state, nonce and redirect targets. A custom adapter may integrate an existing identity implementation. For direct enterprise access tokens, only an administrator-configured verifier or exchange route is trusted; ID tokens are not generic API access tokens. [W21] [W22]",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-03",
+      "section": "access",
+      "text": "JWT, storage, refresh and revocation contract",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-04",
+      "section": "access",
+      "text": "Proposed defaults: 5-minute access-token lifetime; rotating opaque refresh tokens; configurable idle/absolute device-session limits; single-flight refresh per session across windows. These are starting parameters, not yet measured policy. Detect refresh reuse and revoke the affected family, without creating false positives from legitimate coordinated refreshes.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-05",
+      "section": "access",
+      "text": "Access claims include issuer, audience, subject, session ID, issued/expiry times, token type and policy context. Minimize embedded personal data. Authorization is evaluated against current server policy and resource membership; a stale role claim cannot preserve removed access. API audience identifies the intended host/gateway, with host-scoped permissions enforced at the target.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-06",
+      "section": "access",
+      "text": "For the same-origin browser, keep long-lived secrets in secure HttpOnly cookies and use CSRF protection plus strict origin checks. Browser API access may use a same-origin session facade or protected access cookie; clients must not persist bearer tokens in localStorage. Native/CLI refresh credentials use OS secure storage, with short-lived access tokens in memory. No password/JWT in URL parameters, logs or analytics.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-07",
+      "section": "access",
+      "text": "Check session revocation on privileged requests and publish invalidation to sockets/control leases; JWT expiration alone is not immediate logout. Revalidate socket authorization and permissions over long-lived sessions. On sign-out, clear authorized client state and browser-control grants; audit job policy separately from UI connection state.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-08",
+      "section": "access",
+      "text": "JWT validation and OAuth session handling follow the cited standards. The durations, port names and endpoint shapes here are proposed TermX decisions. [W17] [W12] [W22]",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-09",
+      "section": "access",
+      "text": "Transport, adapter rollout and legacy migration",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-10",
+      "section": "access",
+      "text": "Proposed contract names: GET /auth/methods , local POST /auth/login , provider begin/callback, POST /auth/refresh , POST /auth/logout , session inventory/revoke and GET /auth/me . Final paths and GraphQL equivalents belong in the implementation handoff. Method discovery reveals only safe branding and available flows, never secrets or user existence.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-11",
+      "section": "access",
+      "text": "Protect GraphQL/HTTP, subscriptions, raw PTYs, file downloads, preview proxies, browser control, remote screen/input and legacy routes. TLS is required for remote transport. Local initial setup is bound to a trusted host-admin path; a network visitor cannot claim an unconfigured machine.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-12",
+      "section": "access",
+      "text": "Ship a compatibility facade over the existing Auth calls, map scopes without elevating legacy credentials, and provide a bounded migration/re-pair route. Stop accepting the owner password as a general API bearer after migration. Test native mobile compatibility during the transition; never retain a forgotten unauthenticated legacy path.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-13",
+      "section": "access",
+      "text": "Adapter updates are validated, versioned, health-tested and activated atomically. Unknown issuers, adapter crashes and policy-store failure fail closed. Preserve an explicit audited local administrator recovery route; do not silently fall back from failed enterprise SSO to password access. Account/IdP loss revokes or expires sessions under the declared policy.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-14",
+      "section": "access",
+      "text": "Authentication does not sandbox a shell. Named users and JWT roles cannot isolate two people executing as the same unrestricted OS user. Multi-user hosts and cloud runners require restricted OS identities or containers/VMs, separate credentials/files/browser profiles and enforceable resource boundaries. Where that is absent, disclose a trusted-shared-machine boundary rather than claiming tenant isolation.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-15",
+      "section": "access",
+      "text": "Three authorities stay separate: signing in to TermX, authorizing an engine/provider account, and logging in to a website. None grants the other two. Lock, logout, Stop task and Stop host are separate actions with clear effects on existing jobs and capture/control.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-access-16",
+      "section": "access",
+      "text": "Remembered action policy: offer Allow once, this session, or a bounded project/agent rule, with inspect/edit/revoke controls. Separate filesystem/network/browser grants from run-budget renewals. Auto Review is the default after an explicit task handoff within the active policy. Unattended schedules still require an explicit delegated grant. Neither can exceed host policy or authorize unrelated high-impact actions.",
+      "work_packages": [
+        "WP01"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-01",
+      "section": "auto-review",
+      "text": "The smaller model is a bounded policy reviewer, not an executor and not a second agent loop. The host broker remains the enforcement point. The reviewer cannot grant itself tools, expand a sandbox, change roles, write remembered permissions or issue credentials.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-02",
+      "section": "auto-review",
+      "text": "Reviewer configuration and action contract",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-03",
+      "section": "auto-review",
+      "text": "Default strategy: choose the smallest eligible model from an already configured, approved local or remote provider after a held-out tool-safety evaluation. Pin its provider/model/version and policy prompt. Prefer a qualified local option when available; do not force an unqualified small model merely to minimize cost. Final model selection is an implementation gate, not a product blocker or an invented available model ID.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-04",
+      "section": "auto-review",
+      "text": "Discover provider models/capabilities; require reliable structured verdicts, measured latency/cost, adversarial-case performance and enterprise data-residency compliance. Record reviewer usage separately from the session engine. Review-model settings live in Safety & Auto Review; the chat engine stays only in session controls.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-05",
+      "section": "auto-review",
+      "text": "Tool metadata is host-owned. Page text, screenshots, files, tool results and executor summaries are untrusted evidence\u2014not policy or user consent. Pass only necessary redacted context. Do not send cookies, passwords, tokens, secret-store values or private-login frames to any reviewer provider. The reviewer has no executable tools and no durable permission-write access.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-06",
+      "section": "auto-review",
+      "text": "Performance targets, not measured results: safe rule checks should add negligible user-visible delay; reviewer p95 target \u22642 seconds on the selected reference setup, with a 5-second decision deadline. A timeout becomes NEEDS_USER for that action. Tune only after tests. Deduplicate concurrent reviews for the same action; never cache a blanket approval for every future click.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-07",
+      "section": "auto-review",
+      "text": "Any cache/permit is bound to the action, identity, project, profile, account, target, grant, policy/reviewer version and document/lease revisions. Revalidate immediately before execution. Navigation, policy changes, expiry or takeover invalidate it. A state-changing submission is never replayed just because a response was lost.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-08",
+      "section": "auto-review",
+      "text": "Engine coverage and isolation",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-09",
+      "section": "auto-review",
+      "text": "Route native engine approval hooks and TermX/MCP/browser tool boundaries through the same broker. Preserve native session ownership and resume semantics. Where a harness cannot expose all actions for interception, enforce OS/network restrictions and disclose the exact coverage; do not claim total Auto Review protection. Direct shell/CDP/network access must not bypass the browser broker in an environment described as restricted.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-10",
+      "section": "auto-review",
+      "text": "Keep host, workspace and agent execution profiles distinct. The existing human host terminal is not magically sandboxed by a UI toggle. Restricted agent/workspace profiles need enforceable kernel/VM/container constraints. Shared browser profiles are not tenant isolation.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-11",
+      "section": "auto-review",
+      "text": "Unattended jobs use explicit scoped job grants with expiry/budget; they do not borrow a logged-in UI session indefinitely. Revocation closes leases and prevents future protected effects. Review states survive reconnect/restart without replaying completed operations.",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-auto-review-12",
+      "section": "auto-review",
+      "text": "The layered boundary design is consistent with OWASP least-privilege guidance and OpenAI\u2019s tool-boundary review guidance. These sources do not prove the smaller model is reliable enough; TermX must evaluate it. [W23] [W24] [W25]",
+      "work_packages": [
+        "WP01",
+        "WP04",
+        "WP07",
+        "WP08"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-keyboard-01",
+      "section": "keyboard",
+      "text": "The primary/secondary sidebar and bottom-panel model follows familiar VS Code conventions. These are proposed TermX bindings, not a promise that browsers allow every shortcut. Provide a keybinding editor, conflict warnings, menu equivalents and browser-safe alternatives. [W13]",
+      "work_packages": [
+        "WP02",
+        "WP05",
+        "WP07",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-keyboard-02",
+      "section": "keyboard",
+      "text": "Respect focus: terminals retain shell controls such as Ctrl+C; editors retain editing commands; remote Computer keyboard capture is explicit and escapable. Never intercept OS security shortcuts. Distinguish full-screen window mode, panel maximization and Focus layout.",
+      "work_packages": [
+        "WP02",
+        "WP05",
+        "WP07",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-keyboard-03",
+      "section": "keyboard",
+      "text": "Layout rules: resizable constrained panels, independent scroll regions, saved/resettable presets and dirty-buffer protection. At narrower widths, collapse secondary panels before starving the editor/chat. No full-width mobile card stack on large screens. Light/dark/system modes and reduced-motion settings cover every surface.",
+      "work_packages": [
+        "WP02",
+        "WP05",
+        "WP07",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-keyboard-04",
+      "section": "keyboard",
+      "text": "shadcn Resizable supplies keyboard-accessible resize primitives; it does not supply the entire workspace state, focus or docking model. [W14]",
+      "work_packages": [
+        "WP02",
+        "WP05",
+        "WP07",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-keyboard-05",
+      "section": "keyboard",
+      "text": "Support mouse and keyboard move/dock/detach; minimum panel sizes; layout undo/reset; tab overflow; focused-region commands; multiwindow session coordination and multi-monitor recovery. On the web, request popups only from user actions and retain an in-app split fallback. Do not let a browser shortcut, captured remote keyboard or hidden panel make Stop/Take over unreachable.",
+      "work_packages": [
+        "WP02",
+        "WP05",
+        "WP07",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-keyboard-06",
+      "section": "keyboard",
+      "text": "Browser tab keys are contextual. Commands for new/close/reopen tab apply only when the internal browser is focused and the shell permits interception. Never close the external browser\u2019s TermX tab when the user intended to close an internal tab. Provide remappable commands and visible controls.",
+      "work_packages": [
+        "WP02",
+        "WP05",
+        "WP07",
+        "WP09"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-verification-01",
+      "section": "verification",
+      "text": "Every parity family maps to explicit proofs. A screen or inactive control is not evidence of a working feature. Record platform, engine/provider, test fixture, result and known limit for each requirement.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-verification-02",
+      "section": "verification",
+      "text": "These tests are planned, not executed. This revision\u2019s verification is limited to the planning artifact and inspected source/reference material.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-01",
+      "section": "figma",
+      "text": "Keep the approved workspace direction. Create a separate desktop/web Figma file after clarification; do not overwrite mobile designs. Cover the full scope now, even when implementation follows dependencies. No \u201creference-parity later\u201d design gap.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-02",
+      "section": "figma",
+      "text": "TermX \u2014 Desktop Workspace \u00b7 v0.3 / Figma design file \u2192",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-03",
+      "section": "figma",
+      "text": "First Figma pass ready for review: 11 core screens, 66 editable components, 5 variant sets, light/dark semantic tokens, and 63 verified cross-screen links. The full design inventory below remains required. This is not an implementation-ready sign-off.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-04",
+      "section": "figma",
+      "text": "Open the linked core walkthrough \u00b7 Open the editable design file",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-05",
+      "section": "figma",
+      "text": "Validated: individual Figma screen renders, editable component structure, semantic theme inheritance, valid prototype destinations and frame overflow checks. No invalid destinations or frame overflows above the 3 px check tolerance remain. Not validated: runtime authentication, model decisions, browser automation, remote runners, native packaging, keyboard behavior, accessibility in code, or full end-to-end workflows.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-06",
+      "section": "figma",
+      "text": "Prototype boundary: navigation, handoff, takeover, private-login resume, and sample approval/result paths are linked. Forms do not submit credentials; production actions are illustrative. Panel toggles and unlinked manager controls are design placeholders, not delivered functionality. They remain required before implementation acceptance.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-07",
+      "section": "figma",
+      "text": "Still required before the engineering handoff: complete the advanced manager, Git/worktree/PR/checks, debugger, memory, automation/subagent, media, docking/multiwindow, responsive, accessibility and failure-state designs. All ten parity families remain in scope.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-08",
+      "section": "figma",
+      "text": "Save design manifest JSON Save manifest schema",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-09",
+      "section": "figma",
+      "text": "Password or SSO \u2192 session \u2192 browser handoff \u2192 private login \u2192 agent action \u2192 takeover; code \u2192 debug \u2192 parallel worktrees \u2192 PR/checks; schedule a goal \u2192 subagent approval \u2192 inspect output; record \u2192 redact \u2192 test skill; voice \u2192 artifact revision/export; detach \u2192 reconnect \u2192 restore.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-10",
+      "section": "figma",
+      "text": "Dependency sequence \u2014 all milestones are required",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-figma-11",
+      "section": "figma",
+      "text": "Milestones are implementation order, not permission to cut scope. Internal previews may be incomplete, but the full desktop upgrade is not complete until all ten parity families meet their acceptance gates. No cloud provider, paid API account or external service is provisioned by approving this plan.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    },
+    {
+      "id": "PLAN-P-decisions-01",
+      "section": "decisions",
+      "text": "Engineering must still prove browser rendering/control, provider/reviewer suitability, OIDC interoperability, runner isolation and platform packaging. These are validation tasks, not permission to omit requirements or to begin building before design approval.",
+      "work_packages": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07",
+        "WP08",
+        "WP09",
+        "WP10"
+      ],
+      "mapping_status": "mapped_section_contract",
+      "verification_status": "see_scoped_evidence_and_open_gates"
+    }
+  ],
+  "delivery_plan": "delivery-plan-v0.3.md",
+  "evidence_policy": "Local fixtures, coherent CI, real accounts and installed platforms are separate evidence levels. Scope audit and acceptance ledger retain open gates.",
+  "open_working_path_gaps": [
+    {
+      "id": "FINAL-QUALIFICATION",
+      "state": "pending",
+      "scope": "Exact coherent source CI, production fork/session-policy/browser approval renderer checks, installed packages and configured live provider/reviewer qualification."
+    }
+  ]
+}

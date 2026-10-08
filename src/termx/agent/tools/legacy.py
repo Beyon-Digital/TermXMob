@@ -74,7 +74,7 @@ def register(registry: ToolRegistry) -> None:
         ToolSpec(
             name="spawn_subagent",
             description=(
-                "Delegate one bounded sub-task to a sub-agent running in the same project folder. "
+                "Delegate one bounded sub-task. Write children use an isolated Git worktree, or a bounded independent snapshot for non-Git projects. Read-only children may inspect the parent folder. "
                 "Returns immediately with the child's task_id — the sub-agent runs concurrently "
                 "while you keep working, so you can spawn several and coordinate them. Collect "
                 "results with await_subagents, inspect with subagent_status, stop with "

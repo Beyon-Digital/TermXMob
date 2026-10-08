@@ -1,31 +1,51 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+import os
+import sys
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_all
 
 ROOT = Path(SPECPATH).parent
 
 datas = [
     (str(ROOT / "src" / "termx" / "static"), "termx/static"),
-    (str(ROOT / "desktop" / "web"), "web"),
+    (os.environ.get("TERMX_PACKAGE_WEB_DIR", str(ROOT / "desktop" / "workspace" / "dist")), "web"),
 ]
+# Chromium's complete macOS .app/framework layout must survive unchanged.
+# PyInstaller otherwise processes individual Mach-O files in a partial cache
+# bundle and codesign rejects its missing framework components. Stage the full
+# external runtime after COLLECT, before signing and frozen execution checks.
+if sys.platform != "darwin":
+    datas.append((str(ROOT / "desktop" / "build" / "runtime"), "runtime"))
 
 if ROOT.joinpath("helpers", "macos", "bin").is_dir():
     datas.append((str(ROOT / "helpers" / "macos" / "bin"), "helpers/macos/bin"))
 
 hiddenimports = [
+    'termx.sandbox._win_shim',
+    'termx.sandbox._win_conpty',
+    'termx.sandbox._win_conpty_host',
+    'termx.sandbox._win_conpty_worker',
+    'termx.sandbox._win_conpty_protocol',
+    'termx.sandbox._win_conpty_security',
     *collect_submodules("uvicorn"),
     *collect_submodules("websockets"),
     *collect_submodules("qrcode"),
     *collect_submodules("anyio"),
 ]
 
-for optional in ("aiortc", "av", "numpy"):
+binaries = []
+# Browser driver, Node, FFmpeg, office schemas and debugger data are runtime assets.
+for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_wheel", "debugpy", "imageio_ffmpeg", "openpyxl", "PIL", "pypdf", "docx", "pptx", "tzdata"):
+
     try:
         __import__(optional)
     except ImportError:
         continue
-    hiddenimports.extend(collect_submodules(optional))
+    package_data, package_binaries, package_imports = collect_all(optional)
+    datas.extend(package_data)
+    binaries.extend(package_binaries)
+    hiddenimports.extend(package_imports)
 
 excludes = [
     "tkinter",
@@ -38,7 +58,7 @@ excludes = [
 a = Analysis(
     [str(ROOT / "desktop" / "backend_entry.py")],
     pathex=[str(ROOT / "src")],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

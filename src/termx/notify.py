@@ -7,6 +7,7 @@ import threading
 from typing import Any
 
 _LOCK = threading.Lock()
+HOST_STOP_EXIT_CODE = 79  # Private desktop daemon lifecycle protocol.
 
 
 def desktop_enabled() -> bool:
@@ -48,3 +49,13 @@ def update(action: str) -> None:
 
 def ready(port: int, urls: list[str], tunnel: str | None = None) -> None:
     emit({"termx": "ready", "port": port, "urls": list(urls), "tunnel": tunnel})
+
+
+def host_stopping() -> None:
+    """Acknowledge an authorized host stop without terminating any worker."""
+    emit({"termx": "stopping", "reason": "host-stop"})
+
+
+def host_stop_cancelled() -> None:
+    """Current authority changed before the queued shutdown effect."""
+    emit({"termx": "stopping", "reason": "host-stop-cancelled"})

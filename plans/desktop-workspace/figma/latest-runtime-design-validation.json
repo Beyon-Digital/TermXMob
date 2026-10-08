@@ -1,0 +1,2573 @@
+{
+  "canonical_frames": [
+    {
+      "state_id": "J-ENTRY-01",
+      "node_id": "32:3",
+      "width": 1440,
+      "height": 900,
+      "texts": 17,
+      "instances": 15,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-02",
+      "node_id": "32:19",
+      "width": 1440,
+      "height": 900,
+      "texts": 17,
+      "instances": 15,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-03",
+      "node_id": "32:35",
+      "width": 1440,
+      "height": 900,
+      "texts": 50,
+      "instances": 89,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-04",
+      "node_id": "32:56",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-05",
+      "node_id": "32:77",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-06",
+      "node_id": "32:98",
+      "width": 1440,
+      "height": 900,
+      "texts": 62,
+      "instances": 114,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-07",
+      "node_id": "32:126",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-08",
+      "node_id": "32:147",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-01",
+      "node_id": "32:168",
+      "width": 1440,
+      "height": 900,
+      "texts": 54,
+      "instances": 101,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-02",
+      "node_id": "32:194",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-03",
+      "node_id": "32:220",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-04",
+      "node_id": "32:244",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-05",
+      "node_id": "32:268",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-06",
+      "node_id": "32:292",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-07",
+      "node_id": "32:318",
+      "width": 1440,
+      "height": 900,
+      "texts": 54,
+      "instances": 101,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-08",
+      "node_id": "32:344",
+      "width": 1440,
+      "height": 900,
+      "texts": 50,
+      "instances": 86,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-09",
+      "node_id": "32:367",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CODE-01",
+      "node_id": "32:388",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 90,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-CODE-02",
+      "node_id": "32:412",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 90,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-CODE-03",
+      "node_id": "32:436",
+      "width": 1440,
+      "height": 900,
+      "texts": 54,
+      "instances": 93,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-CODE-04",
+      "node_id": "32:462",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 90,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-CODE-05",
+      "node_id": "32:486",
+      "width": 1440,
+      "height": 900,
+      "texts": 77,
+      "instances": 141,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-CODE-06",
+      "node_id": "32:510",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 90,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-CODE-07",
+      "node_id": "32:534",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CODE-08",
+      "node_id": "32:558",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-01",
+      "node_id": "32:579",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-02",
+      "node_id": "32:600",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-03",
+      "node_id": "32:623",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-04",
+      "node_id": "32:644",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-05",
+      "node_id": "32:665",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-06",
+      "node_id": "32:686",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-07",
+      "node_id": "32:707",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-08",
+      "node_id": "32:728",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-09",
+      "node_id": "32:749",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-01",
+      "node_id": "32:770",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-02",
+      "node_id": "32:794",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-03",
+      "node_id": "32:818",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-04",
+      "node_id": "32:839",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-05",
+      "node_id": "32:860",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-06",
+      "node_id": "32:881",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 85,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-07",
+      "node_id": "32:902",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-08",
+      "node_id": "32:923",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-01",
+      "node_id": "32:944",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-02",
+      "node_id": "32:967",
+      "width": 1440,
+      "height": 900,
+      "texts": 54,
+      "instances": 101,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-03",
+      "node_id": "32:993",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-04",
+      "node_id": "32:1014",
+      "width": 1440,
+      "height": 900,
+      "texts": 55,
+      "instances": 103,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-05",
+      "node_id": "32:1040",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-06",
+      "node_id": "32:1063",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-07",
+      "node_id": "32:1084",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-08",
+      "node_id": "32:1107",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-09",
+      "node_id": "32:1128",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-01",
+      "node_id": "32:1149",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 90,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-02",
+      "node_id": "32:1173",
+      "width": 1440,
+      "height": 900,
+      "texts": 54,
+      "instances": 101,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-03",
+      "node_id": "32:1199",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-04",
+      "node_id": "32:1220",
+      "width": 1440,
+      "height": 900,
+      "texts": 71,
+      "instances": 141,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-05",
+      "node_id": "32:1241",
+      "width": 1440,
+      "height": 900,
+      "texts": 51,
+      "instances": 90,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-06",
+      "node_id": "32:1265",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-07",
+      "node_id": "32:1286",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-DETACH-08",
+      "node_id": "32:1307",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-10",
+      "node_id": "33:10492",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-BROWSER-11",
+      "node_id": "33:10685",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-CREATE-10",
+      "node_id": "33:10878",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-09",
+      "node_id": "41:11133",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist",
+        "Geist Mono"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-10",
+      "node_id": "41:11329",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-11",
+      "node_id": "41:11525",
+      "width": 1440,
+      "height": 900,
+      "texts": 50,
+      "instances": 84,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-09",
+      "node_id": "46:11660",
+      "width": 1440,
+      "height": 900,
+      "texts": 19,
+      "instances": 16,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-10",
+      "node_id": "46:11702",
+      "width": 1440,
+      "height": 900,
+      "texts": 14,
+      "instances": 11,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-15",
+      "node_id": "46:11733",
+      "width": 1440,
+      "height": 900,
+      "texts": 14,
+      "instances": 9,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-11",
+      "node_id": "46:11762",
+      "width": 1440,
+      "height": 900,
+      "texts": 46,
+      "instances": 81,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-12",
+      "node_id": "46:11955",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-13",
+      "node_id": "46:12151",
+      "width": 1440,
+      "height": 900,
+      "texts": 49,
+      "instances": 82,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-14",
+      "node_id": "46:12348",
+      "width": 1440,
+      "height": 900,
+      "texts": 40,
+      "instances": 75,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-16",
+      "node_id": "54:14167",
+      "width": 1440,
+      "height": 900,
+      "texts": 55,
+      "instances": 103,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-17",
+      "node_id": "54:14403",
+      "width": 1440,
+      "height": 900,
+      "texts": 60,
+      "instances": 128,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-18",
+      "node_id": "54:14635",
+      "width": 1440,
+      "height": 900,
+      "texts": 55,
+      "instances": 103,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-19",
+      "node_id": "54:14871",
+      "width": 1440,
+      "height": 900,
+      "texts": 61,
+      "instances": 131,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-20",
+      "node_id": "54:15107",
+      "width": 1440,
+      "height": 900,
+      "texts": 55,
+      "instances": 103,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-12",
+      "node_id": "54:15343",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-13",
+      "node_id": "54:15539",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-RECORD-14",
+      "node_id": "54:15735",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-21",
+      "node_id": "64:16548",
+      "width": 1440,
+      "height": 900,
+      "texts": 84,
+      "instances": 129,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-22",
+      "node_id": "64:16744",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-23",
+      "node_id": "64:16940",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-24",
+      "node_id": "64:17136",
+      "width": 1440,
+      "height": 900,
+      "texts": 48,
+      "instances": 85,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-25",
+      "node_id": "64:17332",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-26",
+      "node_id": "64:17528",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-27",
+      "node_id": "64:17724",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-28",
+      "node_id": "64:17920",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-29",
+      "node_id": "64:18116",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-10",
+      "node_id": "64:18312",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-11",
+      "node_id": "64:18508",
+      "width": 1440,
+      "height": 900,
+      "texts": 72,
+      "instances": 105,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-12",
+      "node_id": "64:18704",
+      "width": 1440,
+      "height": 900,
+      "texts": 72,
+      "instances": 105,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-AUTOMATE-13",
+      "node_id": "64:18900",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-30",
+      "node_id": "68:16270",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    },
+    {
+      "state_id": "J-ENTRY-31",
+      "node_id": "68:16466",
+      "width": 1440,
+      "height": 900,
+      "texts": 47,
+      "instances": 83,
+      "image_fills": 0,
+      "fonts": [
+        "Geist"
+      ]
+    }
+  ],
+  "prototype_edges": [
+    {
+      "from_state": "J-ENTRY-01",
+      "source_node": "32:15",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-01",
+      "source_node": "32:16",
+      "to_state": "J-ENTRY-02",
+      "destination_node": "32:19"
+    },
+    {
+      "from_state": "J-ENTRY-02",
+      "source_node": "32:31",
+      "to_state": "J-ENTRY-01",
+      "destination_node": "32:3"
+    },
+    {
+      "from_state": "J-ENTRY-02",
+      "source_node": "32:32",
+      "to_state": "J-ENTRY-04",
+      "destination_node": "32:56"
+    },
+    {
+      "from_state": "J-ENTRY-03",
+      "source_node": "32:42",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-03",
+      "source_node": "32:43",
+      "to_state": "J-ENTRY-04",
+      "destination_node": "32:56"
+    },
+    {
+      "from_state": "J-ENTRY-03",
+      "source_node": "47:12401",
+      "to_state": "J-ENTRY-09",
+      "destination_node": "46:11660"
+    },
+    {
+      "from_state": "J-ENTRY-03",
+      "source_node": "47:12405",
+      "to_state": "J-ENTRY-11",
+      "destination_node": "46:11762"
+    },
+    {
+      "from_state": "J-ENTRY-03",
+      "source_node": "47:12409",
+      "to_state": "J-ENTRY-13",
+      "destination_node": "46:12151"
+    },
+    {
+      "from_state": "J-ENTRY-03",
+      "source_node": "66:28685",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    },
+    {
+      "from_state": "J-ENTRY-04",
+      "source_node": "32:63",
+      "to_state": "J-ENTRY-05",
+      "destination_node": "32:77"
+    },
+    {
+      "from_state": "J-ENTRY-04",
+      "source_node": "32:64",
+      "to_state": "J-ENTRY-08",
+      "destination_node": "32:147"
+    },
+    {
+      "from_state": "J-ENTRY-05",
+      "source_node": "32:84",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-05",
+      "source_node": "32:85",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "32:105",
+      "to_state": "J-BROWSER-01",
+      "destination_node": "32:168"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "32:106",
+      "to_state": "J-ENTRY-07",
+      "destination_node": "32:126"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "36:11012",
+      "to_state": "J-AUTOMATE-01",
+      "destination_node": "32:579"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "55:14027",
+      "to_state": "J-ENTRY-16",
+      "destination_node": "54:14167"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "55:14031",
+      "to_state": "J-ENTRY-19",
+      "destination_node": "54:14871"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "55:14035",
+      "to_state": "J-ENTRY-20",
+      "destination_node": "54:15107"
+    },
+    {
+      "from_state": "J-ENTRY-06",
+      "source_node": "66:28695",
+      "to_state": "J-ENTRY-21",
+      "destination_node": "64:16548"
+    },
+    {
+      "from_state": "J-ENTRY-07",
+      "source_node": "32:133",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-07",
+      "source_node": "32:134",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-08",
+      "source_node": "32:154",
+      "to_state": "J-ENTRY-04",
+      "destination_node": "32:56"
+    },
+    {
+      "from_state": "J-ENTRY-08",
+      "source_node": "32:155",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-BROWSER-01",
+      "source_node": "32:175",
+      "to_state": "J-BROWSER-02",
+      "destination_node": "32:194"
+    },
+    {
+      "from_state": "J-BROWSER-01",
+      "source_node": "32:176",
+      "to_state": "J-BROWSER-08",
+      "destination_node": "32:344"
+    },
+    {
+      "from_state": "J-BROWSER-02",
+      "source_node": "32:201",
+      "to_state": "J-BROWSER-03",
+      "destination_node": "32:220"
+    },
+    {
+      "from_state": "J-BROWSER-02",
+      "source_node": "32:202",
+      "to_state": "J-BROWSER-06",
+      "destination_node": "32:292"
+    },
+    {
+      "from_state": "J-BROWSER-03",
+      "source_node": "32:227",
+      "to_state": "J-BROWSER-04",
+      "destination_node": "32:244"
+    },
+    {
+      "from_state": "J-BROWSER-03",
+      "source_node": "32:228",
+      "to_state": "J-BROWSER-05",
+      "destination_node": "32:268"
+    },
+    {
+      "from_state": "J-BROWSER-04",
+      "source_node": "32:251",
+      "to_state": "J-BROWSER-05",
+      "destination_node": "32:268"
+    },
+    {
+      "from_state": "J-BROWSER-04",
+      "source_node": "32:252",
+      "to_state": "J-BROWSER-05",
+      "destination_node": "32:268"
+    },
+    {
+      "from_state": "J-BROWSER-05",
+      "source_node": "32:275",
+      "to_state": "J-BROWSER-06",
+      "destination_node": "32:292"
+    },
+    {
+      "from_state": "J-BROWSER-05",
+      "source_node": "32:276",
+      "to_state": "J-BROWSER-02",
+      "destination_node": "32:194"
+    },
+    {
+      "from_state": "J-BROWSER-05",
+      "source_node": "36:11018",
+      "to_state": "J-RECORD-01",
+      "destination_node": "32:770"
+    },
+    {
+      "from_state": "J-BROWSER-06",
+      "source_node": "32:299",
+      "to_state": "J-BROWSER-07",
+      "destination_node": "32:318"
+    },
+    {
+      "from_state": "J-BROWSER-06",
+      "source_node": "32:300",
+      "to_state": "J-BROWSER-10",
+      "destination_node": "33:10492"
+    },
+    {
+      "from_state": "J-BROWSER-07",
+      "source_node": "32:325",
+      "to_state": "J-CODE-01",
+      "destination_node": "32:388"
+    },
+    {
+      "from_state": "J-BROWSER-07",
+      "source_node": "32:326",
+      "to_state": "J-BROWSER-08",
+      "destination_node": "32:344"
+    },
+    {
+      "from_state": "J-BROWSER-08",
+      "source_node": "32:351",
+      "to_state": "J-BROWSER-04",
+      "destination_node": "32:244"
+    },
+    {
+      "from_state": "J-BROWSER-08",
+      "source_node": "32:352",
+      "to_state": "J-BROWSER-09",
+      "destination_node": "32:367"
+    },
+    {
+      "from_state": "J-BROWSER-08",
+      "source_node": "34:23385",
+      "to_state": "J-BROWSER-11",
+      "destination_node": "33:10685"
+    },
+    {
+      "from_state": "J-BROWSER-09",
+      "source_node": "32:374",
+      "to_state": "J-BROWSER-08",
+      "destination_node": "32:344"
+    },
+    {
+      "from_state": "J-BROWSER-09",
+      "source_node": "32:375",
+      "to_state": "J-BROWSER-04",
+      "destination_node": "32:244"
+    },
+    {
+      "from_state": "J-CODE-01",
+      "source_node": "32:395",
+      "to_state": "J-CODE-02",
+      "destination_node": "32:412"
+    },
+    {
+      "from_state": "J-CODE-01",
+      "source_node": "32:396",
+      "to_state": "J-CODE-04",
+      "destination_node": "32:462"
+    },
+    {
+      "from_state": "J-CODE-02",
+      "source_node": "32:419",
+      "to_state": "J-CODE-03",
+      "destination_node": "32:436"
+    },
+    {
+      "from_state": "J-CODE-02",
+      "source_node": "32:420",
+      "to_state": "J-CODE-01",
+      "destination_node": "32:388"
+    },
+    {
+      "from_state": "J-CODE-03",
+      "source_node": "32:443",
+      "to_state": "J-CODE-04",
+      "destination_node": "32:462"
+    },
+    {
+      "from_state": "J-CODE-03",
+      "source_node": "32:444",
+      "to_state": "J-CODE-01",
+      "destination_node": "32:388"
+    },
+    {
+      "from_state": "J-CODE-04",
+      "source_node": "32:469",
+      "to_state": "J-CODE-05",
+      "destination_node": "32:486"
+    },
+    {
+      "from_state": "J-CODE-04",
+      "source_node": "32:470",
+      "to_state": "J-CODE-01",
+      "destination_node": "32:388"
+    },
+    {
+      "from_state": "J-CODE-05",
+      "source_node": "32:493",
+      "to_state": "J-CODE-06",
+      "destination_node": "32:510"
+    },
+    {
+      "from_state": "J-CODE-05",
+      "source_node": "32:494",
+      "to_state": "J-CODE-04",
+      "destination_node": "32:462"
+    },
+    {
+      "from_state": "J-CODE-06",
+      "source_node": "32:517",
+      "to_state": "J-CODE-07",
+      "destination_node": "32:534"
+    },
+    {
+      "from_state": "J-CODE-06",
+      "source_node": "32:518",
+      "to_state": "J-CODE-01",
+      "destination_node": "32:388"
+    },
+    {
+      "from_state": "J-CODE-07",
+      "source_node": "32:541",
+      "to_state": "J-CODE-08",
+      "destination_node": "32:558"
+    },
+    {
+      "from_state": "J-CODE-07",
+      "source_node": "32:542",
+      "to_state": "J-BROWSER-06",
+      "destination_node": "32:292"
+    },
+    {
+      "from_state": "J-CODE-08",
+      "source_node": "32:565",
+      "to_state": "J-CODE-04",
+      "destination_node": "32:462"
+    },
+    {
+      "from_state": "J-CODE-08",
+      "source_node": "32:566",
+      "to_state": "J-CODE-01",
+      "destination_node": "32:388"
+    },
+    {
+      "from_state": "J-AUTOMATE-01",
+      "source_node": "32:586",
+      "to_state": "J-AUTOMATE-02",
+      "destination_node": "32:600"
+    },
+    {
+      "from_state": "J-AUTOMATE-01",
+      "source_node": "32:587",
+      "to_state": "J-AUTOMATE-06",
+      "destination_node": "32:686"
+    },
+    {
+      "from_state": "J-AUTOMATE-02",
+      "source_node": "32:607",
+      "to_state": "J-AUTOMATE-04",
+      "destination_node": "32:644"
+    },
+    {
+      "from_state": "J-AUTOMATE-02",
+      "source_node": "32:608",
+      "to_state": "J-AUTOMATE-03",
+      "destination_node": "32:623"
+    },
+    {
+      "from_state": "J-AUTOMATE-03",
+      "source_node": "32:630",
+      "to_state": "J-AUTOMATE-02",
+      "destination_node": "32:600"
+    },
+    {
+      "from_state": "J-AUTOMATE-03",
+      "source_node": "32:631",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-04",
+      "source_node": "32:651",
+      "to_state": "J-AUTOMATE-05",
+      "destination_node": "32:665"
+    },
+    {
+      "from_state": "J-AUTOMATE-04",
+      "source_node": "32:652",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-04",
+      "source_node": "66:28708",
+      "to_state": "J-AUTOMATE-10",
+      "destination_node": "64:18312"
+    },
+    {
+      "from_state": "J-AUTOMATE-05",
+      "source_node": "32:672",
+      "to_state": "J-AUTOMATE-04",
+      "destination_node": "32:644"
+    },
+    {
+      "from_state": "J-AUTOMATE-05",
+      "source_node": "32:673",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-06",
+      "source_node": "32:693",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-06",
+      "source_node": "32:694",
+      "to_state": "J-AUTOMATE-09",
+      "destination_node": "32:749"
+    },
+    {
+      "from_state": "J-AUTOMATE-07",
+      "source_node": "32:714",
+      "to_state": "J-AUTOMATE-02",
+      "destination_node": "32:600"
+    },
+    {
+      "from_state": "J-AUTOMATE-07",
+      "source_node": "32:715",
+      "to_state": "J-AUTOMATE-08",
+      "destination_node": "32:728"
+    },
+    {
+      "from_state": "J-AUTOMATE-08",
+      "source_node": "32:735",
+      "to_state": "J-CREATE-07",
+      "destination_node": "32:1084"
+    },
+    {
+      "from_state": "J-AUTOMATE-08",
+      "source_node": "32:736",
+      "to_state": "J-AUTOMATE-02",
+      "destination_node": "32:600"
+    },
+    {
+      "from_state": "J-AUTOMATE-09",
+      "source_node": "32:756",
+      "to_state": "J-AUTOMATE-06",
+      "destination_node": "32:686"
+    },
+    {
+      "from_state": "J-AUTOMATE-09",
+      "source_node": "32:757",
+      "to_state": "J-AUTOMATE-01",
+      "destination_node": "32:579"
+    },
+    {
+      "from_state": "J-RECORD-01",
+      "source_node": "32:777",
+      "to_state": "J-RECORD-02",
+      "destination_node": "32:794"
+    },
+    {
+      "from_state": "J-RECORD-01",
+      "source_node": "32:778",
+      "to_state": "J-RECORD-02",
+      "destination_node": "32:794"
+    },
+    {
+      "from_state": "J-RECORD-02",
+      "source_node": "32:801",
+      "to_state": "J-RECORD-03",
+      "destination_node": "32:818"
+    },
+    {
+      "from_state": "J-RECORD-02",
+      "source_node": "32:802",
+      "to_state": "J-RECORD-01",
+      "destination_node": "32:770"
+    },
+    {
+      "from_state": "J-RECORD-03",
+      "source_node": "32:825",
+      "to_state": "J-RECORD-05",
+      "destination_node": "32:860"
+    },
+    {
+      "from_state": "J-RECORD-03",
+      "source_node": "32:826",
+      "to_state": "J-RECORD-02",
+      "destination_node": "32:794"
+    },
+    {
+      "from_state": "J-RECORD-04",
+      "source_node": "32:846",
+      "to_state": "J-RECORD-03",
+      "destination_node": "32:818"
+    },
+    {
+      "from_state": "J-RECORD-04",
+      "source_node": "32:847",
+      "to_state": "J-RECORD-03",
+      "destination_node": "32:818"
+    },
+    {
+      "from_state": "J-RECORD-05",
+      "source_node": "32:867",
+      "to_state": "J-RECORD-06",
+      "destination_node": "32:881"
+    },
+    {
+      "from_state": "J-RECORD-05",
+      "source_node": "32:868",
+      "to_state": "J-RECORD-04",
+      "destination_node": "32:839"
+    },
+    {
+      "from_state": "J-RECORD-06",
+      "source_node": "32:888",
+      "to_state": "J-RECORD-07",
+      "destination_node": "32:902"
+    },
+    {
+      "from_state": "J-RECORD-06",
+      "source_node": "32:889",
+      "to_state": "J-RECORD-08",
+      "destination_node": "32:923"
+    },
+    {
+      "from_state": "J-RECORD-06",
+      "source_node": "36:11024",
+      "to_state": "J-CREATE-01",
+      "destination_node": "32:944"
+    },
+    {
+      "from_state": "J-RECORD-06",
+      "source_node": "42:11661",
+      "to_state": "J-RECORD-09",
+      "destination_node": "41:11133"
+    },
+    {
+      "from_state": "J-RECORD-07",
+      "source_node": "32:909",
+      "to_state": "J-RECORD-06",
+      "destination_node": "32:881"
+    },
+    {
+      "from_state": "J-RECORD-07",
+      "source_node": "32:910",
+      "to_state": "J-RECORD-01",
+      "destination_node": "32:770"
+    },
+    {
+      "from_state": "J-RECORD-08",
+      "source_node": "32:930",
+      "to_state": "J-RECORD-06",
+      "destination_node": "32:881"
+    },
+    {
+      "from_state": "J-RECORD-08",
+      "source_node": "32:931",
+      "to_state": "J-RECORD-07",
+      "destination_node": "32:902"
+    },
+    {
+      "from_state": "J-CREATE-01",
+      "source_node": "32:951",
+      "to_state": "J-CREATE-02",
+      "destination_node": "32:967"
+    },
+    {
+      "from_state": "J-CREATE-01",
+      "source_node": "32:952",
+      "to_state": "J-CREATE-10",
+      "destination_node": "33:10878"
+    },
+    {
+      "from_state": "J-CREATE-02",
+      "source_node": "32:974",
+      "to_state": "J-CREATE-03",
+      "destination_node": "32:993"
+    },
+    {
+      "from_state": "J-CREATE-02",
+      "source_node": "32:975",
+      "to_state": "J-CREATE-04",
+      "destination_node": "32:1014"
+    },
+    {
+      "from_state": "J-CREATE-03",
+      "source_node": "32:1000",
+      "to_state": "J-CREATE-04",
+      "destination_node": "32:1014"
+    },
+    {
+      "from_state": "J-CREATE-03",
+      "source_node": "32:1001",
+      "to_state": "J-CREATE-02",
+      "destination_node": "32:967"
+    },
+    {
+      "from_state": "J-CREATE-04",
+      "source_node": "32:1021",
+      "to_state": "J-CREATE-05",
+      "destination_node": "32:1040"
+    },
+    {
+      "from_state": "J-CREATE-04",
+      "source_node": "32:1022",
+      "to_state": "J-CREATE-02",
+      "destination_node": "32:967"
+    },
+    {
+      "from_state": "J-CREATE-04",
+      "source_node": "36:11030",
+      "to_state": "J-DETACH-01",
+      "destination_node": "32:1149"
+    },
+    {
+      "from_state": "J-CREATE-05",
+      "source_node": "32:1047",
+      "to_state": "J-CREATE-06",
+      "destination_node": "32:1063"
+    },
+    {
+      "from_state": "J-CREATE-05",
+      "source_node": "32:1048",
+      "to_state": "J-CREATE-01",
+      "destination_node": "32:944"
+    },
+    {
+      "from_state": "J-CREATE-06",
+      "source_node": "32:1070",
+      "to_state": "J-CREATE-07",
+      "destination_node": "32:1084"
+    },
+    {
+      "from_state": "J-CREATE-06",
+      "source_node": "32:1071",
+      "to_state": "J-CREATE-05",
+      "destination_node": "32:1040"
+    },
+    {
+      "from_state": "J-CREATE-07",
+      "source_node": "32:1091",
+      "to_state": "J-CREATE-08",
+      "destination_node": "32:1107"
+    },
+    {
+      "from_state": "J-CREATE-07",
+      "source_node": "32:1092",
+      "to_state": "J-CREATE-09",
+      "destination_node": "32:1128"
+    },
+    {
+      "from_state": "J-CREATE-08",
+      "source_node": "32:1114",
+      "to_state": "J-CREATE-04",
+      "destination_node": "32:1014"
+    },
+    {
+      "from_state": "J-CREATE-08",
+      "source_node": "32:1115",
+      "to_state": "J-CREATE-09",
+      "destination_node": "32:1128"
+    },
+    {
+      "from_state": "J-CREATE-09",
+      "source_node": "32:1135",
+      "to_state": "J-CREATE-07",
+      "destination_node": "32:1084"
+    },
+    {
+      "from_state": "J-CREATE-09",
+      "source_node": "32:1136",
+      "to_state": "J-CREATE-08",
+      "destination_node": "32:1107"
+    },
+    {
+      "from_state": "J-DETACH-01",
+      "source_node": "32:1156",
+      "to_state": "J-DETACH-02",
+      "destination_node": "32:1173"
+    },
+    {
+      "from_state": "J-DETACH-01",
+      "source_node": "32:1157",
+      "to_state": "J-DETACH-08",
+      "destination_node": "32:1307"
+    },
+    {
+      "from_state": "J-DETACH-02",
+      "source_node": "32:1180",
+      "to_state": "J-DETACH-04",
+      "destination_node": "32:1220"
+    },
+    {
+      "from_state": "J-DETACH-02",
+      "source_node": "32:1181",
+      "to_state": "J-DETACH-03",
+      "destination_node": "32:1199"
+    },
+    {
+      "from_state": "J-DETACH-03",
+      "source_node": "32:1206",
+      "to_state": "J-DETACH-02",
+      "destination_node": "32:1173"
+    },
+    {
+      "from_state": "J-DETACH-03",
+      "source_node": "32:1207",
+      "to_state": "J-DETACH-08",
+      "destination_node": "32:1307"
+    },
+    {
+      "from_state": "J-DETACH-04",
+      "source_node": "32:1227",
+      "to_state": "J-DETACH-02",
+      "destination_node": "32:1173"
+    },
+    {
+      "from_state": "J-DETACH-04",
+      "source_node": "32:1228",
+      "to_state": "J-DETACH-05",
+      "destination_node": "32:1241"
+    },
+    {
+      "from_state": "J-DETACH-05",
+      "source_node": "32:1248",
+      "to_state": "J-DETACH-06",
+      "destination_node": "32:1265"
+    },
+    {
+      "from_state": "J-DETACH-05",
+      "source_node": "32:1249",
+      "to_state": "J-DETACH-02",
+      "destination_node": "32:1173"
+    },
+    {
+      "from_state": "J-DETACH-06",
+      "source_node": "32:1272",
+      "to_state": "J-DETACH-01",
+      "destination_node": "32:1149"
+    },
+    {
+      "from_state": "J-DETACH-06",
+      "source_node": "32:1273",
+      "to_state": "J-DETACH-07",
+      "destination_node": "32:1286"
+    },
+    {
+      "from_state": "J-DETACH-07",
+      "source_node": "32:1293",
+      "to_state": "J-DETACH-03",
+      "destination_node": "32:1199"
+    },
+    {
+      "from_state": "J-DETACH-07",
+      "source_node": "32:1294",
+      "to_state": "J-DETACH-03",
+      "destination_node": "32:1199"
+    },
+    {
+      "from_state": "J-DETACH-08",
+      "source_node": "32:1314",
+      "to_state": "J-DETACH-01",
+      "destination_node": "32:1149"
+    },
+    {
+      "from_state": "J-DETACH-08",
+      "source_node": "32:1315",
+      "to_state": "J-DETACH-03",
+      "destination_node": "32:1199"
+    },
+    {
+      "from_state": "J-BROWSER-10",
+      "source_node": "33:10636",
+      "to_state": "J-BROWSER-06",
+      "destination_node": "32:292"
+    },
+    {
+      "from_state": "J-BROWSER-10",
+      "source_node": "33:10639",
+      "to_state": "J-BROWSER-02",
+      "destination_node": "32:194"
+    },
+    {
+      "from_state": "J-BROWSER-11",
+      "source_node": "33:10829",
+      "to_state": "J-BROWSER-08",
+      "destination_node": "32:344"
+    },
+    {
+      "from_state": "J-BROWSER-11",
+      "source_node": "33:10832",
+      "to_state": "J-BROWSER-04",
+      "destination_node": "32:244"
+    },
+    {
+      "from_state": "J-CREATE-10",
+      "source_node": "33:11022",
+      "to_state": "J-CREATE-01",
+      "destination_node": "32:944"
+    },
+    {
+      "from_state": "J-CREATE-10",
+      "source_node": "33:11025",
+      "to_state": "J-CREATE-03",
+      "destination_node": "32:993"
+    },
+    {
+      "from_state": "J-RECORD-09",
+      "source_node": "41:11277",
+      "to_state": "J-RECORD-10",
+      "destination_node": "41:11329"
+    },
+    {
+      "from_state": "J-RECORD-09",
+      "source_node": "41:11280",
+      "to_state": "J-RECORD-06",
+      "destination_node": "32:881"
+    },
+    {
+      "from_state": "J-RECORD-09",
+      "source_node": "41:11283",
+      "to_state": "J-RECORD-11",
+      "destination_node": "41:11525"
+    },
+    {
+      "from_state": "J-RECORD-10",
+      "source_node": "41:11473",
+      "to_state": "J-RECORD-09",
+      "destination_node": "41:11133"
+    },
+    {
+      "from_state": "J-RECORD-10",
+      "source_node": "41:11476",
+      "to_state": "J-RECORD-09",
+      "destination_node": "41:11133"
+    },
+    {
+      "from_state": "J-RECORD-10",
+      "source_node": "41:11479",
+      "to_state": "J-RECORD-06",
+      "destination_node": "32:881"
+    },
+    {
+      "from_state": "J-RECORD-11",
+      "source_node": "41:11669",
+      "to_state": "J-RECORD-06",
+      "destination_node": "32:881"
+    },
+    {
+      "from_state": "J-RECORD-11",
+      "source_node": "41:11672",
+      "to_state": "J-RECORD-09",
+      "destination_node": "41:11133"
+    },
+    {
+      "from_state": "J-RECORD-11",
+      "source_node": "41:11675",
+      "to_state": "J-RECORD-07",
+      "destination_node": "32:902"
+    },
+    {
+      "from_state": "J-ENTRY-09",
+      "source_node": "46:11667",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-09",
+      "source_node": "46:11670",
+      "to_state": "J-ENTRY-10",
+      "destination_node": "46:11702"
+    },
+    {
+      "from_state": "J-ENTRY-09",
+      "source_node": "46:11673",
+      "to_state": "J-ENTRY-01",
+      "destination_node": "32:3"
+    },
+    {
+      "from_state": "J-ENTRY-10",
+      "source_node": "46:11709",
+      "to_state": "J-ENTRY-09",
+      "destination_node": "46:11660"
+    },
+    {
+      "from_state": "J-ENTRY-10",
+      "source_node": "46:11712",
+      "to_state": "J-ENTRY-01",
+      "destination_node": "32:3"
+    },
+    {
+      "from_state": "J-ENTRY-15",
+      "source_node": "46:11740",
+      "to_state": "J-ENTRY-01",
+      "destination_node": "32:3"
+    },
+    {
+      "from_state": "J-ENTRY-11",
+      "source_node": "46:11906",
+      "to_state": "J-ENTRY-12",
+      "destination_node": "46:11955"
+    },
+    {
+      "from_state": "J-ENTRY-11",
+      "source_node": "46:11909",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-12",
+      "source_node": "46:12099",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-12",
+      "source_node": "46:12102",
+      "to_state": "J-ENTRY-11",
+      "destination_node": "46:11762"
+    },
+    {
+      "from_state": "J-ENTRY-12",
+      "source_node": "46:12105",
+      "to_state": "J-ENTRY-14",
+      "destination_node": "46:12348"
+    },
+    {
+      "from_state": "J-ENTRY-13",
+      "source_node": "46:12295",
+      "to_state": "J-ENTRY-15",
+      "destination_node": "46:11733"
+    },
+    {
+      "from_state": "J-ENTRY-13",
+      "source_node": "46:12298",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-14",
+      "source_node": "46:12492",
+      "to_state": "J-ENTRY-11",
+      "destination_node": "46:11762"
+    },
+    {
+      "from_state": "J-ENTRY-14",
+      "source_node": "46:12495",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-16",
+      "source_node": "54:14319",
+      "to_state": "J-ENTRY-18",
+      "destination_node": "54:14635"
+    },
+    {
+      "from_state": "J-ENTRY-16",
+      "source_node": "54:14322",
+      "to_state": "J-ENTRY-17",
+      "destination_node": "54:14403"
+    },
+    {
+      "from_state": "J-ENTRY-16",
+      "source_node": "54:14325",
+      "to_state": "J-ENTRY-19",
+      "destination_node": "54:14871"
+    },
+    {
+      "from_state": "J-ENTRY-17",
+      "source_node": "54:14555",
+      "to_state": "J-ENTRY-16",
+      "destination_node": "54:14167"
+    },
+    {
+      "from_state": "J-ENTRY-17",
+      "source_node": "54:14558",
+      "to_state": "J-ENTRY-18",
+      "destination_node": "54:14635"
+    },
+    {
+      "from_state": "J-ENTRY-17",
+      "source_node": "54:14561",
+      "to_state": "J-ENTRY-16",
+      "destination_node": "54:14167"
+    },
+    {
+      "from_state": "J-ENTRY-18",
+      "source_node": "54:14787",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-18",
+      "source_node": "54:14790",
+      "to_state": "J-ENTRY-17",
+      "destination_node": "54:14403"
+    },
+    {
+      "from_state": "J-ENTRY-18",
+      "source_node": "54:14793",
+      "to_state": "J-ENTRY-16",
+      "destination_node": "54:14167"
+    },
+    {
+      "from_state": "J-ENTRY-19",
+      "source_node": "54:15023",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-19",
+      "source_node": "54:15026",
+      "to_state": "J-ENTRY-07",
+      "destination_node": "32:126"
+    },
+    {
+      "from_state": "J-ENTRY-19",
+      "source_node": "54:15029",
+      "to_state": "J-ENTRY-17",
+      "destination_node": "54:14403"
+    },
+    {
+      "from_state": "J-ENTRY-19",
+      "source_node": "66:28702",
+      "to_state": "J-ENTRY-29",
+      "destination_node": "64:18116"
+    },
+    {
+      "from_state": "J-ENTRY-20",
+      "source_node": "54:15259",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-20",
+      "source_node": "54:15262",
+      "to_state": "J-ENTRY-16",
+      "destination_node": "54:14167"
+    },
+    {
+      "from_state": "J-ENTRY-20",
+      "source_node": "54:15265",
+      "to_state": "J-RECORD-12",
+      "destination_node": "54:15343"
+    },
+    {
+      "from_state": "J-RECORD-12",
+      "source_node": "54:15487",
+      "to_state": "J-RECORD-13",
+      "destination_node": "54:15539"
+    },
+    {
+      "from_state": "J-RECORD-12",
+      "source_node": "54:15490",
+      "to_state": "J-RECORD-14",
+      "destination_node": "54:15735"
+    },
+    {
+      "from_state": "J-RECORD-12",
+      "source_node": "54:15493",
+      "to_state": "J-ENTRY-20",
+      "destination_node": "54:15107"
+    },
+    {
+      "from_state": "J-RECORD-13",
+      "source_node": "54:15683",
+      "to_state": "J-RECORD-12",
+      "destination_node": "54:15343"
+    },
+    {
+      "from_state": "J-RECORD-13",
+      "source_node": "54:15686",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-RECORD-13",
+      "source_node": "54:15689",
+      "to_state": "J-RECORD-14",
+      "destination_node": "54:15735"
+    },
+    {
+      "from_state": "J-RECORD-14",
+      "source_node": "54:15879",
+      "to_state": "J-RECORD-12",
+      "destination_node": "54:15343"
+    },
+    {
+      "from_state": "J-RECORD-14",
+      "source_node": "54:15882",
+      "to_state": "J-RECORD-13",
+      "destination_node": "54:15539"
+    },
+    {
+      "from_state": "J-RECORD-14",
+      "source_node": "54:15885",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-21",
+      "source_node": "64:16692",
+      "to_state": "J-ENTRY-22",
+      "destination_node": "64:16744"
+    },
+    {
+      "from_state": "J-ENTRY-21",
+      "source_node": "64:16695",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-21",
+      "source_node": "64:16698",
+      "to_state": "J-ENTRY-23",
+      "destination_node": "64:16940"
+    },
+    {
+      "from_state": "J-ENTRY-22",
+      "source_node": "64:16888",
+      "to_state": "J-ENTRY-23",
+      "destination_node": "64:16940"
+    },
+    {
+      "from_state": "J-ENTRY-22",
+      "source_node": "64:16891",
+      "to_state": "J-ENTRY-23",
+      "destination_node": "64:16940"
+    },
+    {
+      "from_state": "J-ENTRY-22",
+      "source_node": "64:16894",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-23",
+      "source_node": "64:17084",
+      "to_state": "J-ENTRY-21",
+      "destination_node": "64:16548"
+    },
+    {
+      "from_state": "J-ENTRY-23",
+      "source_node": "64:17087",
+      "to_state": "J-ENTRY-22",
+      "destination_node": "64:16744"
+    },
+    {
+      "from_state": "J-ENTRY-23",
+      "source_node": "64:17090",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-ENTRY-24",
+      "source_node": "64:17280",
+      "to_state": "J-ENTRY-25",
+      "destination_node": "64:17332"
+    },
+    {
+      "from_state": "J-ENTRY-24",
+      "source_node": "64:17283",
+      "to_state": "J-ENTRY-26",
+      "destination_node": "64:17528"
+    },
+    {
+      "from_state": "J-ENTRY-24",
+      "source_node": "64:17286",
+      "to_state": "J-ENTRY-27",
+      "destination_node": "64:17724"
+    },
+    {
+      "from_state": "J-ENTRY-24",
+      "source_node": "68:16665",
+      "to_state": "J-ENTRY-30",
+      "destination_node": "68:16270"
+    },
+    {
+      "from_state": "J-ENTRY-25",
+      "source_node": "64:17476",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    },
+    {
+      "from_state": "J-ENTRY-25",
+      "source_node": "64:17479",
+      "to_state": "J-ENTRY-26",
+      "destination_node": "64:17528"
+    },
+    {
+      "from_state": "J-ENTRY-25",
+      "source_node": "64:17482",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-26",
+      "source_node": "64:17672",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    },
+    {
+      "from_state": "J-ENTRY-26",
+      "source_node": "64:17675",
+      "to_state": "J-ENTRY-25",
+      "destination_node": "64:17332"
+    },
+    {
+      "from_state": "J-ENTRY-26",
+      "source_node": "64:17678",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-27",
+      "source_node": "64:17868",
+      "to_state": "J-ENTRY-28",
+      "destination_node": "64:17920"
+    },
+    {
+      "from_state": "J-ENTRY-27",
+      "source_node": "64:17871",
+      "to_state": "J-ENTRY-28",
+      "destination_node": "64:17920"
+    },
+    {
+      "from_state": "J-ENTRY-27",
+      "source_node": "64:17874",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    },
+    {
+      "from_state": "J-ENTRY-28",
+      "source_node": "64:18064",
+      "to_state": "J-ENTRY-27",
+      "destination_node": "64:17724"
+    },
+    {
+      "from_state": "J-ENTRY-28",
+      "source_node": "64:18067",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    },
+    {
+      "from_state": "J-ENTRY-28",
+      "source_node": "64:18070",
+      "to_state": "J-ENTRY-03",
+      "destination_node": "32:35"
+    },
+    {
+      "from_state": "J-ENTRY-29",
+      "source_node": "64:18260",
+      "to_state": "J-ENTRY-19",
+      "destination_node": "54:14871"
+    },
+    {
+      "from_state": "J-ENTRY-29",
+      "source_node": "64:18263",
+      "to_state": "J-ENTRY-19",
+      "destination_node": "54:14871"
+    },
+    {
+      "from_state": "J-ENTRY-29",
+      "source_node": "64:18266",
+      "to_state": "J-ENTRY-06",
+      "destination_node": "32:98"
+    },
+    {
+      "from_state": "J-AUTOMATE-10",
+      "source_node": "64:18456",
+      "to_state": "J-AUTOMATE-11",
+      "destination_node": "64:18508"
+    },
+    {
+      "from_state": "J-AUTOMATE-10",
+      "source_node": "64:18459",
+      "to_state": "J-AUTOMATE-13",
+      "destination_node": "64:18900"
+    },
+    {
+      "from_state": "J-AUTOMATE-10",
+      "source_node": "64:18462",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-11",
+      "source_node": "64:18652",
+      "to_state": "J-AUTOMATE-10",
+      "destination_node": "64:18312"
+    },
+    {
+      "from_state": "J-AUTOMATE-11",
+      "source_node": "64:18655",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-11",
+      "source_node": "64:18658",
+      "to_state": "J-AUTOMATE-12",
+      "destination_node": "64:18704"
+    },
+    {
+      "from_state": "J-AUTOMATE-12",
+      "source_node": "64:18848",
+      "to_state": "J-AUTOMATE-10",
+      "destination_node": "64:18312"
+    },
+    {
+      "from_state": "J-AUTOMATE-12",
+      "source_node": "64:18851",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-12",
+      "source_node": "64:18854",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-AUTOMATE-13",
+      "source_node": "64:19044",
+      "to_state": "J-AUTOMATE-11",
+      "destination_node": "64:18508"
+    },
+    {
+      "from_state": "J-AUTOMATE-13",
+      "source_node": "64:19047",
+      "to_state": "J-AUTOMATE-10",
+      "destination_node": "64:18312"
+    },
+    {
+      "from_state": "J-AUTOMATE-13",
+      "source_node": "64:19050",
+      "to_state": "J-AUTOMATE-07",
+      "destination_node": "32:707"
+    },
+    {
+      "from_state": "J-ENTRY-30",
+      "source_node": "68:16414",
+      "to_state": "J-ENTRY-31",
+      "destination_node": "68:16466"
+    },
+    {
+      "from_state": "J-ENTRY-30",
+      "source_node": "68:16417",
+      "to_state": "J-ENTRY-31",
+      "destination_node": "68:16466"
+    },
+    {
+      "from_state": "J-ENTRY-30",
+      "source_node": "68:16420",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    },
+    {
+      "from_state": "J-ENTRY-31",
+      "source_node": "68:16610",
+      "to_state": "J-ENTRY-30",
+      "destination_node": "68:16270"
+    },
+    {
+      "from_state": "J-ENTRY-31",
+      "source_node": "68:16613",
+      "to_state": "J-ENTRY-01",
+      "destination_node": "32:3"
+    },
+    {
+      "from_state": "J-ENTRY-31",
+      "source_node": "68:16616",
+      "to_state": "J-ENTRY-24",
+      "destination_node": "64:17136"
+    }
+  ],
+  "validation": {
+    "invalid_destinations": [],
+    "action_overflow": [],
+    "reachability": {
+      "reachable": 95,
+      "total": 95,
+      "missing": []
+    },
+    "editable": true,
+    "flattened_raster_ui": false
+  },
+  "shared_budget_dialog_alignment": "verification/shared-tree-budget-figma.json",
+  "general_approval_dialog_alignment": "verification/general-approval-figma-dialog.json"
+}

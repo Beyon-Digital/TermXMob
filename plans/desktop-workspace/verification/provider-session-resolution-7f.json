@@ -1,0 +1,142 @@
+{
+  "inspected_at_utc": "2026-10-07T21:34:09.954302+00:00",
+  "source_sha": "7f1160f628c74499fbcf04be1ba7cb65b2788d55",
+  "scope": "Read-only effective resolver source review and live SQLite non-secret account/model/capability metadata. No credentials, provider calls or fallback selected.",
+  "source_contracts": [
+    {
+      "path": "src/termx/workspace/service.py",
+      "lines": [
+        553,
+        556
+      ],
+      "behavior": "Internal session dispatch passes saved provider or empty string and saved optional model."
+    },
+    {
+      "path": "src/termx/agent/manager.py",
+      "lines": [
+        294,
+        303
+      ],
+      "behavior": "Explicit account/model remain first; preset defaults then conversation fields may fill omitted values."
+    },
+    {
+      "path": "src/termx/graphql/domains/agent.py",
+      "lines": [
+        482,
+        506
+      ],
+      "behavior": "Direct GraphQL uses explicit request, conversation then preset; missing account is rejected."
+    },
+    {
+      "path": "src/termx/agent/manager.py",
+      "lines": [
+        2398,
+        2402
+      ],
+      "behavior": "Exact provider ID lookup; no implicit account fallback."
+    },
+    {
+      "path": "src/termx/agent/manager.py",
+      "lines": [
+        2703,
+        2712
+      ],
+      "behavior": "Null model selects first configured model only after a real account is selected."
+    },
+    {
+      "path": "desktop/workspace/src/App.tsx",
+      "lines": [
+        110,
+        110
+      ],
+      "behavior": "New conversation explicitly persists preset provider or first inventory account."
+    },
+    {
+      "path": "src/termx/agent/store.py",
+      "lines": [
+        461,
+        464
+      ],
+      "behavior": "Inventory is ordered by most recently updated account."
+    },
+    {
+      "path": "src/termx/engines/gateway.py",
+      "lines": [
+        343,
+        345
+      ],
+      "behavior": "New native session model resolves explicit then preset then configured engine default; native runtime may supply omitted model/account."
+    },
+    {
+      "path": "src/termx/engines/gateway.py",
+      "lines": [
+        383,
+        387
+      ],
+      "behavior": "Native follow-up omitted selection preserves current native session configuration."
+    }
+  ],
+  "actual_recent_existing_sessions": {
+    "local_daemon_latest_five": "Saved provider/model unset. Selected presets also have provider/model unset.",
+    "native_desktop_latest_three": "Saved provider/model unset.",
+    "effective_internal_account": "No account can be inferred from those saved sessions or their preset defaults.",
+    "creation_default_is_not_existing_session_fallback": true,
+    "native_cli_entitlement": "Native engine account/runtime default is distinct from a configured media API or qualified reviewer; no entitlement inferred."
+  },
+  "configured_account_metadata": [
+    {
+      "host": "local-daemon",
+      "kind": "chatgpt",
+      "credential_configured_flag": true,
+      "capabilities": [
+        "functions",
+        "shell"
+      ],
+      "classification": "Subscription account; no media API declaration."
+    },
+    {
+      "host": "local-daemon",
+      "id": "openai",
+      "kind": "openai",
+      "model": "auto",
+      "credential_configured_flag": false,
+      "capabilities": [
+        "computer",
+        "shell"
+      ]
+    },
+    {
+      "host": "native-desktop",
+      "id": "kiro",
+      "kind": "openai",
+      "models": [
+        "claude-opus-5-5-thinking",
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "claude-sonnet-5-thinking"
+      ],
+      "credential_configured_flag": true,
+      "capabilities": [
+        "computer",
+        "shell"
+      ],
+      "classification": "Local compatible proxy metadata does not prove media entitlement or reviewer qualification."
+    },
+    {
+      "host": "native-desktop",
+      "id": "openrouter",
+      "kind": "openai",
+      "model": "openrouter/free",
+      "credential_configured_flag": true,
+      "capabilities": [
+        "computer",
+        "shell"
+      ]
+    }
+  ],
+  "media_image_audio_declared": false,
+  "reviewer_configuration_or_evaluation_storage": "Absent for both inspected actual host configurations.",
+  "pricing_snapshot_present": false,
+  "live_qualification_requests": 0,
+  "remaining_prerequisites": "Explicit effective API account/model, supported image/audio entitlement and numeric bounded allowance; reviewer exact API/model/version with truthful pricing and actual frozen-suite qualification."
+}

@@ -1,0 +1,41 @@
+{
+  "recorded_at_utc": "2026-10-07T21:55:34.286848+00:00",
+  "source_ancestor": "7f1160f628c74499fbcf04be1ba7cb65b2788d55",
+  "source_files": {
+    ".github/workflows/desktop.yml": "9fd47607dd0a0606c58db676215ceb58b70b906c5e95610d5067e76f50d19350",
+    "desktop/scripts/notarize_ci_dmg.py": "3b955caf0b176ee6711b709a0908870ec6430e968c6d08d29437731aa1036836",
+    "tests/test_ci_dmg_notarization.py": "e0906740ab053ec4a2415ec1cae8130e1a00bd721fd7e220b12a6ce63e1c6358",
+    "tests/test_runner_agents.py": "8b596ba85ed266ede8b2c008dbf4dda1dca45e9267724177994d33579ef6e8a8"
+  },
+  "dmg_contract_checks": {
+    "command": ".venv/bin/python -m pytest -q tests/test_ci_dmg_notarization.py tests/test_native_gui_fixture.py",
+    "passed": 44,
+    "seconds": 8.24,
+    "dmg_cases": 35,
+    "native_fixture_cases": 9,
+    "scope": "Synthetic subprocess receipt/failure contracts; actual Apple/DMG/installed-app qualification pending."
+  },
+  "runner_checks": {
+    "focused_passed": 5,
+    "focused_seconds": 15.06,
+    "module_passed": 15,
+    "module_skipped": 1,
+    "module_seconds": 12.46,
+    "scope": "Actual isolated worker on local macOS; Docker opt-in skipped. Actual Windows readiness/cancellation checks pending."
+  },
+  "review": {
+    "submit": "Exactly once; unknown/lost response never replayed. Successful valid upload ID with absent status is pending; exact same ID and Accepted required from wait.",
+    "package": "Signature and pre-ticket hash before submission; unchanged until staple; final ticket/signature/image integrity and final hash required. Installer artifact upload refuses missing ticket success.",
+    "worker": "Explicit planning RPC readiness bound30s; separate cancellation/protocol refusal5s and exit3s; no new RPC, tool effects or file mutation. No production worker limit changes.",
+    "concurrency": "Artifact-only dispatch groups include immutable SHA; duplicate same-SHA cancel remains. Existing tag/release grouping retained."
+  },
+  "official_notary_contract": {
+    "url": "https://developer.apple.com/documentation/security/customizing-the-notarization-workflow",
+    "local_help": "xcrun notarytool submit --help: --wait default=false; JSON single update at end of operation.",
+    "interpretation": "Upload ID is distinct from completed notarization. Explicit final Accepted wait is required."
+  },
+  "live_provider_calls": 0,
+  "live_notary_calls_from_local_tests": 0,
+  "local_rust_delivery_builds": 0,
+  "release_or_updater_publication": false
+}

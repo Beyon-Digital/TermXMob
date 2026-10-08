@@ -1,0 +1,121 @@
+{
+  "scope": "Section 09: Lock, unlock, Logout, Stop task and Stop host remain distinct actions",
+  "source_base_commit": "5226d009acaa5f7aad0664d551ab73938b6da882",
+  "source_changes_pending_checkpoint": false,
+  "lock_contract": {
+    "routes": [
+      "POST /auth/lock",
+      "GET /auth/lock-state",
+      "POST /auth/lock-state",
+      "POST /auth/unlock",
+      "POST /auth/oidc/{method}/unlock-begin"
+    ],
+    "managed_session": "Lock denies ordinary HTTP/WSS/RTC authority. Unlock verifies the same current canonical principal, retains SID/device scope grant/absolute expiry, rotates refresh/CSRF and increments access generation. Pre-lock access never revives.",
+    "background_execution": "Existing explicit execution grants can survive a lock through a server-only execution lookup. Revocation, expiry and current role/project/device limits still apply. Lock does not itself cancel enrolled tasks; browser/computer/process actions remain constrained by privacy and observation authority.",
+    "privacy": "Matching device browser and capture grants become private/revoked before lock. Unlock never silently clears these private barriers or resumes a previous handoff. Ordinary lock/revoke closes exact principal/SID RTC peers; entering a global private observation barrier closes all host RTC transports before acknowledgement.",
+    "transport_failure": "A failed peer shutdown retains privacy, still locks the canonical SID and reports503 without claiming observation closure. Reauthentication remains possible.",
+    "native": "OS keyring refresh survives423. Native unlock verifies and rotates inside the trusted same-host Rust bridge. OIDC transmits only its one-use browser binding to WebView; refresh is never returned to JavaScript. All native windows receive lock/unlock events.",
+    "http_status": "A current locked JWT gets423 on canonical and protected HTTP. Cookie mutations enforce exact-origin CSRF before returning423. Revoked/expired managed JWTs get401; resource-denied live sessions retain403. Binary transfers signal the same local Lock overlay."
+  },
+  "host_stop_contract": {
+    "routes": [
+      "GET /auth/host/lifecycle",
+      "POST /auth/host/stop"
+    ],
+    "request": "Current host administrator + exact host_id + acknowledge:true. Cookie transport requires same-origin CSRF; remote authentication retains TLS.",
+    "effects": "Graceful local service teardown disconnects clients and observation, stops local tasks/terminals, pauses schedules until restart and requests reachable cloud-task cancellation without destroying dedicated machines.",
+    "final_authority": "Current SID/host-admin are rechecked before shutdown. An aborted queued request notifies native pending-intent cancellation. Accepted desktop shutdown uses private child stdout plus intentional exit79; native automatic restart is suppressed. Explicit Restart Backend remains a separate user action."
+  },
+  "tests": [
+    {
+      "suite": "tests/test_session_lifecycle.py tests/test_webrtc_authority.py tests/test_desktop.py -k lifecycle-or-authority-or-selected-RTC/display",
+      "result": "19 passed,1 optional aiortc skipped,30 deselected",
+      "seconds": 22.28,
+      "evidence": "Real certificate-verified localhost HTTPS/WSS: cookie Lock closes existing socket,423 retains refresh, password unlock restores sameSID. Actual TLS IdP discovery/PKCE/code/JWKS verifies sameSID OIDC unlock and replay denial; current scoped native pairing remains functional."
+    },
+    {
+      "suite": "Final transport-failure/current-host tests plus controlled RTC authority tests",
+      "result": "10 passed,1 real-aiortc test deselected",
+      "seconds": 6.83,
+      "evidence": "Lock still denies canonical device after simulated shutdown failure; ownership isolation, capture/conversion revocation races, privacy entered-and-cleared epochs, synchronous private peer shutdown and fail-closed acknowledgement."
+    },
+    {
+      "suite": "Broader lifecycle/webrtc/macOS/native harness fixture regression",
+      "result": "33 passed,2 optional aiortc skipped",
+      "seconds": 10.85,
+      "note": "Overlaps preceding focused suites; counts are not additive."
+    },
+    {
+      "suite": "desktop/workspace/src/lib/api.test.ts",
+      "result": "5 passed",
+      "evidence": "423 signals lock without signout/credential persistence; cookie CSRF and explicit same-session unlock."
+    },
+    {
+      "suite": "Workspace TypeScript",
+      "result": "tsc --noEmit passed"
+    },
+    {
+      "suite": "Native Rust source validation",
+      "result": "cargo check --locked passed; parent cargo check --locked --tests passed",
+      "note": "Source validation only. Final tiny503 lock-event branch still belongs to next source CI; no Rust delivery binary built locally."
+    },
+    {
+      "suite": "Parent-owned isolated daemon subprocess shutdown",
+      "result": "2 passed",
+      "seconds": 51.78,
+      "evidence": "Wronghost denied while daemon stayslive; accepted desktop exits79 with one private stop event; ordinary daemon exits0 without desktop event."
+    },
+    {
+      "suite": "tests/test_desktop_capture_authority.py tests/test_browser_private_race.py tests/test_browser_stream_fairness.py tests/test_window_recording.py",
+      "result": "13 passed,1 headless/browser optional skip",
+      "seconds": 9.91,
+      "note": "Viewer close fixture drains max8 exact synthetic CaptureError text messages, rejects all pixel frames and still requires close1000; preserves ownership/current-viewer/no-input assertions."
+    },
+    {
+      "suite": "tests/test_session_lifecycle.py tests/test_identity_guard.py tests/test_managed_pairing.py",
+      "result": "25 passed",
+      "seconds": 15.57,
+      "evidence": "Real TLS/WSS and controlled TLS OIDC provider; scoped pairing, locked refresh continuity and replay/revocation remain enforced."
+    },
+    {
+      "suite": "Final locked-cookie status discriminator and identity_guard tests",
+      "result": "5 passed",
+      "seconds": 6.04,
+      "evidence": "Locked GET423; foreign-origin or missing-CSRF cookie POST403; current-origin+CSRF POST423; after SID revocation both GET and POST401."
+    },
+    {
+      "suite": "desktop/workspace/src/lib/native-lock.test.ts and api.test.ts",
+      "result": "8 passed; tsc --noEmit passed",
+      "evidence": "Rust invoke locked-error normalization and returned423 both notify Lock; unrelated transfer failures do not. Public IPC is mocked only for JS branch tests, not an installed native claim."
+    },
+    {
+      "suite": "Cross-platform native source CI",
+      "result": "Windows,macOS,Linux SUCCESS",
+      "run": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37643153354",
+      "commit": "171e32dede9b83f0e5852ff5c7e698f12bb69c5e",
+      "jobs": {
+        "windows": 112866930609,
+        "macos": 112866930780,
+        "linux": 112866931112
+      },
+      "evidence": "Cargo check of production native source on actual platforms; no installed GUI lifecycle or hardware permission inferred."
+    },
+    {
+      "suite": "Managed custom-agent and browser revoked-session HTTP discriminator fixtures",
+      "result": "7 passed",
+      "seconds": 13.65,
+      "evidence": "Current role/private preset operations succeed. Revoked or disabled managed access fails HTTP401 before GraphQL data; live resource/policy denials retain403. Fixture-only followup is pending the next combined checkpoint."
+    }
+  ],
+  "installed_fixture_source": [
+    "desktop/scripts/native_gui_smoke.py: unchanged Linux/Windows installed binaries, actual native Lock/password unlock retainsSID/draft, actual acknowledged Stophost leaves native window alive with no backend respawn for15seconds.",
+    "desktop/scripts/macos_installed_gui.py: unchanged signed artifact, owned-PID AX Lock/unlock retainsSID/dirtybuffer, actual explicit Stophost/norespawn, only random fixture-host keychain entry cleanup."
+  ],
+  "limits": [
+    "No installer/native GUI lifecycle result is inferred from Rust compilation, harness source tests or host API tests. Updated artifact-only matrix and signed macOS artifact-consumer runs must execute these fixtures.",
+    "Local optional aiortc is absent. Actual peer connection close test is present and will run where the workflow-installed webrtc extra is available; controlled frame/transport races passed locally.",
+    "No physical microphone/camera/TCC grant, live enterprise SSO rollout, user host shutdown or paid provider call occurred."
+  ],
+  "followup_source_base_commit": "1daa4ce4c2dfe0d1e21b5ba4387ae77b9610e645",
+  "published_followup_commit": "1daa4ce4c2dfe0d1e21b5ba4387ae77b9610e645"
+}

@@ -1,0 +1,4 @@
+.managed-pairing .provider-capabilities label,.managed-pairing .pairing-consent{display:inline-flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.5}
+.managed-pairing input[type=checkbox]{width:auto;margin:3px 0 0;flex-shrink:0}
+.managed-pairing .pairing-legacy{border:1px solid var(--border);border-radius:8px;padding:12px}
+.managed-pairing .manager-help{overflow-wrap:anywhere}

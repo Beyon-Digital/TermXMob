@@ -1,0 +1,66 @@
+{
+  "head_commit": "f897d3fbd754a376699ee4d49c926184bb28c099",
+  "checkout": "GitHub pull-request merge checkout ba931c2, combining this exact head with base b307428f761332068a84090fb63b1b1a576e074d",
+  "run_url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37623308441",
+  "workflow": ".github/workflows/native-permission-check.yml",
+  "conclusion": "success",
+  "finished_at": "2026-10-07T12:47:22Z",
+  "qualification": "Actual cross-platform source compilation and bundle/policy checks; no installed GUI, microphone hardware, provider account or delivery build was exercised by this workflow.",
+  "commands": [
+    "cargo check --locked --manifest-path desktop/src-tauri/Cargo.toml",
+    "uv run --locked pytest -q tests/test_native_media_permission.py"
+  ],
+  "source_compile_environment": {
+    "TAURI_CONFIG": "{\"bundle\":{\"resources\":null}}",
+    "reason": "Source-only compilation omits installer resources. The separate artifact workflow still stages and qualifies actual frozen sidecars and installer assets; no dummy runtime replaces them."
+  },
+  "jobs": [
+    {
+      "platform": "macos-14",
+      "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37623308441/job/112798690682",
+      "conclusion": "success",
+      "cargo_check": "passed",
+      "pytest": {"passed": 2, "skipped": 0},
+      "completed_at": "2026-10-07T12:46:18Z"
+    },
+    {
+      "platform": "ubuntu-22.04",
+      "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37623308441/job/112798690903",
+      "conclusion": "success",
+      "cargo_check": "passed",
+      "pytest": {"passed": 1, "skipped": 1, "skip_reason": "The compiled Objective-C policy fixture is macOS-only."},
+      "completed_at": "2026-10-07T12:47:05Z"
+    },
+    {
+      "platform": "windows-2022",
+      "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37623308441/job/112798691326",
+      "conclusion": "success",
+      "cargo_check": "passed",
+      "pytest": {"passed": 1, "skipped": 1, "skip_reason": "The compiled Objective-C policy fixture is macOS-only."},
+      "completed_at": "2026-10-07T12:47:21Z"
+    }
+  ],
+  "native_policy": {
+    "macos": "WKUIDelegate media permission proxy: microphone-only, main-frame, exact current loopback host origin and top-level URL receive Prompt; camera, foreign, stale-port, subframe and unready requests receive Deny. Original delegate callbacks remain forwarded. Installation failure destroys the owned WebView.",
+    "linux": "WebKitGTK PermissionRequest interception: microphone-only on the exact current workspace origin receives an explicit native Yes/No prompt, defaults to No, and revalidates the live origin before Allow. Camera and foreign requests are denied. Asynchronous decisions complete once.",
+    "windows": "WebView2 PermissionRequested interception: exact current-origin microphone requests retain the native DEFAULT permission prompt; camera and foreign requests are denied. Failed PermissionKind/Uri reads and null URI deny; failure to apply Deny destroys the owned WebView.",
+    "bundle_prerequisites": [
+      "macOS NSMicrophoneUsageDescription and audio-input hardened-runtime entitlement",
+      "Pinned Linux WebKitGTK and Windows WebView2 compile dependencies",
+      "Debian gstreamer1.0-plugins-good and RPM gstreamer1-plugins-good capture dependencies"
+    ],
+    "macos_compiled_policy_fixture": [
+      "Actual Objective-C policy implementation compiled and executed with controlled native collaborator objects",
+      "Current microphone request prompts; camera, combined capture, foreign origin, subframe, stale port and unready host deny",
+      "Original UIDelegate optional callback is forwarded"
+    ]
+  },
+  "limits": [
+    "The compiled macOS fixture does not invoke TCC or acquire a microphone.",
+    "Linux and Windows runtime native permission prompts are not exercised by the source test.",
+    "OS permission consent and an available PulseAudio/PipeWire/Windows/macOS audio device remain runtime prerequisites; no permission is silently granted.",
+    "Native password/keyring restart, restricted terminal transport, detach/reopen, acknowledged re-dock, session revocation and logout require the separate unchanged installed-binary WebDriver fixture.",
+    "Native OIDC TLS/WebView navigation and macOS installed GUI remain separate qualification gates.",
+    "No real paid audio/image API or provider entitlement was tested, and this evidence does not close that gate."
+  ]
+}

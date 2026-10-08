@@ -1,0 +1,44 @@
+import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/react';
+import {afterEach,it,expect,vi} from 'vitest';
+import {EditorView} from '@codemirror/view';
+import Workbench from './Workbench';
+import {gql,request} from '../lib/api';
+vi.mock('../lib/api',()=>({gql:vi.fn(),request:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
+vi.mock('./TerminalPanel',()=>({default:()=>null}));
+vi.mock('./Debugger',()=>({default:()=>null}));
+vi.mock('./Delivery',()=>({default:()=>null}));
+vi.mock('./Preview',()=>({default:()=>null}));
+vi.mock('../lib/lsp',()=>({LanguageClient:class{async open(){}async change(){}close(){}},fileUri:()=>'',positionAt:()=>({line:0,character:0})}));
+afterEach(()=>{cleanup();vi.clearAllMocks()});
+it('edits the same real buffer in two views without losing dirty content when the split closes',async()=>{
+ vi.mocked(gql).mockImplementation(async(query:string)=>{if(query.includes('project_tree'))return {project_tree:{entries:[{name:'main.txt',path:'main.txt',directory:false}]}} as any;if(query.includes('save_project_file'))return {save_project_file:{revision:'v2'}} as any;if(query.includes('project_file'))return {project_file:{path:'main.txt',content:'Original content',revision:'v1',editable:true}} as any;return {save_project_file:{revision:'v2'}} as any});
+ const {container}=render(<Workbench project={{id:'project',name:'Project',path:'/fixture'}} visible bottom={false} onError={()=>{}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'main.txt'}));
+ await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('Original content'));
+ fireEvent.change(screen.getByLabelText('Editor split layout'),{target:{value:'vertical'}});
+ await waitFor(()=>expect(container.querySelectorAll('.cm-editor')).toHaveLength(2));
+ const editors=container.querySelectorAll<HTMLElement>('.cm-editor');const secondary=EditorView.findFromDOM(editors[1])!;
+ act(()=>secondary.dispatch({changes:{from:0,to:secondary.state.doc.length,insert:'Unsent split edits'}}));
+ await waitFor(()=>expect(EditorView.findFromDOM(editors[0])!.state.doc.toString()).toBe('Unsent split edits'));
+ fireEvent.change(screen.getByLabelText('Editor split layout'),{target:{value:'none'}});
+ expect(container.querySelectorAll('.cm-editor')).toHaveLength(1);expect(container.querySelector('.cm-content')).toHaveTextContent('Unsent split edits');
+ fireEvent.click(screen.getByRole('button',{name:'Save file'}));
+ await waitFor(()=>expect(vi.mocked(gql).mock.calls.some(([,variables])=>(variables as any)?.input?.content==='Unsent split edits')).toBe(true));await waitFor(()=>expect(screen.getByRole('button',{name:'Save file'})).toBeDisabled());
+});
+
+it('edits an enrolled session checkout through the scoped API and preserves its dirty buffer after a target switch',async()=>{
+ const errors=vi.fn(),changed=vi.fn();
+ vi.mocked(request).mockImplementation(async(path:string,init?:RequestInit)=>{if(path.includes('/delivery'))return {worktrees:[{id:'tree',path:'/isolated',branch:'codex/isolated'}]} as any;if(init?.method==='PUT')return {revision:'v2'} as any;if(init?.method==='PATCH')return {} as any;if(path.includes('operation=tree'))return {entries:[{path:'main.txt',name:'main.txt'}]} as any;return {path:'main.txt',content:'Isolated original',revision:'v1',editable:true} as any});
+ const session={id:'chat',cwd:'/isolated',project_id:'project',worktree_id:'tree',title:'Chat',engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:0,scroll:0};
+ const project={id:'project',name:'Project',path:'/main'};
+ const {container,rerender}=render(<Workbench project={project} session={session} onTargetChange={changed} visible bottom={false} onError={errors}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'main.txt'}));await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('Isolated original'));
+ const editor=EditorView.findFromDOM(container.querySelector<HTMLElement>('.cm-editor')!)!;
+ act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Edited isolated content'}}));fireEvent.click(screen.getByRole('button',{name:'Save file'}));
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.some(([path,init])=>path==='/api/workspace/sessions/chat/files'&&JSON.parse(init!.body as string).worktree_id==='tree'&&JSON.parse(init!.body as string).content==='Edited isolated content')).toBe(true));
+ act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Unsaved retained edits'}}));
+ fireEvent.change(screen.getByLabelText('Session checkout'),{target:{value:''}});await waitFor(()=>expect(changed).toHaveBeenCalled());
+ rerender(<Workbench project={project} session={{...session,cwd:'/main',worktree_id:null}} onTargetChange={changed} visible bottom={false} onError={errors}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Save file'}));await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({message:expect.stringContaining('original conversation and checkout')})));
+ expect(container.querySelector('.cm-content')).toHaveTextContent('Unsaved retained edits');
+});

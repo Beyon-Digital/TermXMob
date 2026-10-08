@@ -1,0 +1,78 @@
+name: Installed macOS workspace qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful artifact-only desktop workflow run ID
+        required: true
+        type: string
+      source_sha:
+        description: Exact forty-character source commit used by that run
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - 'desktop/scripts/macos_installed_gui.py'
+      - 'desktop/scripts/fetch_macos_installer.py'
+      - 'tests/test_macos_installed_fixture.py'
+      - '.github/workflows/macos-installed-gui.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: installed-macos-gui-${{ github.ref }}-${{ inputs.source_run || 'source' }}
+  cancel-in-progress: true
+
+jobs:
+  fixture-source:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run --locked pytest -q tests/test_macos_installed_fixture.py
+  installed-app:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify actual hosted native GUI access without changing permissions
+        run: python3 desktop/scripts/macos_gui_feasibility.py --output desktop/build/macos-installed-gui/feasibility
+      - name: Fetch and install matching signed unchanged native artifact
+        env:
+          SOURCE_RUN: ${{ inputs.source_run }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_PLATFORM: ${{ matrix.platform }}
+        run: |
+          python3 desktop/scripts/fetch_macos_installer.py \
+            --repo "$SOURCE_REPO" --source-run "$SOURCE_RUN" --source-sha "$SOURCE_SHA" \
+            --platform "$SOURCE_PLATFORM" --output "$RUNNER_TEMP/termx-macos-installed-gui" \
+            --report desktop/build/macos-installed-gui/installation.json \
+            --environment-file "$GITHUB_ENV"
+      - name: Exercise actual signed installed app through owned OS Accessibility
+        run: |
+          python3 desktop/scripts/macos_installed_gui.py \
+            --app "$TERMX_MAC_GUI_APP" --package "$TERMX_MAC_GUI_DMG" \
+            --output desktop/build/macos-installed-gui/lifecycle
+      - name: Upload exact installed native lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-macos-workspace-${{ matrix.platform }}-${{ inputs.source_run }}
+          path: desktop/build/macos-installed-gui
+          if-no-files-found: error

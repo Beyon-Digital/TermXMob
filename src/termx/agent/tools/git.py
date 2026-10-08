@@ -83,7 +83,7 @@ async def _run_mutating(
         granted_capabilities=sorted(grants),
         task_id=str(getattr(ctx, "task_id", "") or "") or None,
         purpose=f"git_{args[0] if args else 'command'}",
-        stdin=stdin,
+        stdin=stdin if stdin is not None else asyncio.subprocess.DEVNULL,
     )
     spawned = await sandbox_spawn(ctx, profile).spawn(spec)
     process = spawned.process

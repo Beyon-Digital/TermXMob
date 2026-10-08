@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": null,
+    "macOS": {
+      "files": {
+        "Resources/backend": "resources/backend"
+      }
+    }
+  }
+}

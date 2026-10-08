@@ -17,11 +17,13 @@ from termx.graphql.domains.files import FilesMutations, FilesQueries
 from termx.graphql.domains.network import NetworkMutations, NetworkQueries
 from termx.graphql.domains.runbooks import RunbookMutations, RunbookQueries
 from termx.graphql.domains.workspace import WorkspaceMutations, WorkspaceQueries
+from termx.graphql.domains.desktop_workspace import DesktopWorkspaceQueries, ArtifactNode, WorkspaceTurnNode
 from termx.graphql.subscriptions import Subscription
 
 
 @strawberry.type
 class Query(
+    DesktopWorkspaceQueries,
     CoreQueries,
     WorkspaceQueries,
     FilesQueries,
@@ -53,6 +55,7 @@ def build_schema() -> strawberry.Schema:
         query=Query,
         mutation=Mutation,
         subscription=Subscription,
+        types=[ArtifactNode, WorkspaceTurnNode],
         config=StrawberryConfig(auto_camel_case=False),
     )
 

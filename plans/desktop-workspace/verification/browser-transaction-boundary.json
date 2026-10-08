@@ -1,0 +1,87 @@
+{
+  "plan": "plans/desktop-workspace/plan-v0.3.html",
+  "plan_sha256": "6bd1bdeadbbae81eaeccbf86cd1e42174911255c2194157bbe8a5d6e185ee89a",
+  "qualification": "real isolated managed Chromium and frontend component tests; production UI renderer and installed/native/live reviewer qualification separate",
+  "paid_provider_queries": 0,
+  "external_browser_navigation": 0,
+  "external_transactions": 0,
+  "source_sha256": {
+    "src/termx/browser/service.py": "8fecab1bd20180c5967d4422b47c2cec9cee5180bb9e05a571fb54d2974624ae",
+    "src/termx/browser/challenges.py": "458bfa609948da51e4ac07ba1410057f91e810f62db41ba4035cffeee29c26f9",
+    "src/termx/browser/approval_preview.py": "ea27ee42aa9aaa43f38484fb33d3c9873551819b065e511f1cdd5096db9e4aa1",
+    "src/termx/auto_review.py": "5e9799e07039f1b4490b49632dda89bb5520c482f57de9d4c8ba2ee37cd2ba92",
+    "desktop/workspace/src/features/BrowserSurface.tsx": "5ae850ff12c7b9bd4c7adbb848916e67a0eadd554db25b6ad26e3d5274d2a151",
+    "desktop/workspace/src/features/BrowserApprovalPreview.tsx": "1a5d5a39edc075e04b3b2f70057b56923437ff78f1e729c53f95a4a1668c3780",
+    "desktop/workspace/src/features/GeneralApprovalCard.tsx": "be7806fcbfd25fd23890782cd78d93b4465d6c30f6b9fa668650bc9b1ddaff9d",
+    "desktop/workspace/src/features/browser-approval-preview.css": "ae09af67d6b0b6b5aa963ff062b2fd77785cfc30fafa33001f996da910e17604",
+    "desktop/workspace/src/features/browser-approval-preview.test.tsx": "61d2a1d493d31c175b4519a1c3530410da52898f10435aca108e2dae404c35da",
+    "desktop/workspace/src/features/browser.test.tsx": "e15649bd57309200d71df32586d0fcd335cbb374b51e58e84b998e3baf05f5c3",
+    "tests/test_browser_manual_challenges.py": "b5c244de0f2a14af3cc38abfae1c4442a4a1a639023a38ba4a9840f9f716c282",
+    "tests/test_browser_transaction_previews.py": "eb4bc3cef9a5a8b1060cac29e3b97fa9c56dfde0e379d42032cecd6c4176ca89",
+    "tests/test_managed_browser.py": "d034a67f48923fe6ebf68750563b702f1aab5c18c9ae91057d8e4681031f6029"
+  },
+  "final_checks": [
+    {
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium .venv/bin/python -m pytest -q tests/test_browser_transaction_previews.py tests/test_managed_browser.py::test_real_managed_browser_grant_input_private_takeover_and_stale",
+      "passed": 3,
+      "seconds": 67.61,
+      "note": "core checks before added ancestor-hidden test; final visibility/retained transport checks separately rerun"
+    },
+    {
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium .venv/bin/python -m pytest -q tests/test_browser_manual_challenges.py",
+      "passed": 2,
+      "seconds": 23.61
+    },
+    {
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium .venv/bin/python -m pytest -q tests/test_browser_transaction_previews.py::test_exact_purchase_preview_redacts_and_binds_amount_before_one_effect",
+      "passed": 1,
+      "seconds": 52.91,
+      "note": "visible/semantic hidden control and marker privacy cases added"
+    },
+    {
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium .venv/bin/python -m pytest -q tests/test_browser_transaction_previews.py::test_ancestor_hidden_input_requires_manual_without_publishing_value",
+      "passed": 1,
+      "seconds": 15.17
+    },
+    {
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/tmp/termx-managed-chromium .venv/bin/python -m pytest -q tests/test_browser_transaction_previews.py::test_scoped_data_requests_refuse_cross_origin_fetch_but_allow_passive_asset tests/test_managed_browser.py::test_redirect_hop_outside_agent_origins_never_contacts_destination",
+      "passed": 2,
+      "seconds": 12.48,
+      "note": "final retained-revocation repeated POST and popup initial/retry assertions; readiness wait subsequently bounded at10seconds without weakening effects"
+    },
+    {
+      "command": "pnpm --dir desktop/workspace exec vitest run src/features/browser-approval-preview.test.tsx src/features/general-approvals.test.tsx src/features/browser.test.tsx",
+      "passed": 23,
+      "seconds": 55.34
+    },
+    {
+      "command": "pnpm --dir desktop/workspace exec vitest run src/features/browser.test.tsx -t 'offers only explicit takeover'",
+      "passed": 1,
+      "not_selected": 13,
+      "seconds": 4.65
+    },
+    {
+      "command": "pnpm --dir desktop/workspace exec vitest run src/features/browser.test.tsx -t 'retained network pause'",
+      "passed": 1,
+      "not_selected": 14,
+      "seconds": 3.09
+    }
+  ],
+  "limits": [
+    "No universal CAPTCHA/provider/locale recognition",
+    "No arbitrary JavaScript consequence or passive-resource covert-channel prediction",
+    "Registered/delegated checkbox event listeners are not universally detected",
+    "Profile/page labels are untrusted evidence, not authenticated merchant identity",
+    "Upload/download and diagnostics use separate explicit transfer paths",
+    "No new production theme/zoom renderer claimed",
+    "No installed native or paid model qualification"
+  ],
+  "historical_broad_run": {
+    "passed": 34,
+    "failed": 1,
+    "reason": "fixture served HTML as passive image; Chromium ORB; changed fixture to valid SVG and targeted final checks passed"
+  },
+  "fixture_notes": [
+    "Root removed unsupported TypeScript ByRoleOptions exact:true from the new takeover assertion; string accessible-name matching stays exact by default. Product behavior unchanged. Root owns final coherent TypeScript/build qualification."
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "source_commit": "02f987be049075298ebd17da5a0e9d035b22d39a",
+  "run": 37677911211,
+  "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37677911211",
+  "windows_job": 112986128807,
+  "windows_backend": {
+    "passed": 1048,
+    "skipped": 126,
+    "failed": 8,
+    "seconds": 1617.14
+  },
+  "windows_packaged_application_qualified": false,
+  "failure_groups": [
+    {
+      "tests": [
+        "test_desktop_host_stop_cli.py"
+      ],
+      "diagnosis": "Non-desktop banner writes to an undrained subprocess pipe; fixture now uses retained log files. Windows rerun required."
+    },
+    {
+      "tests": [
+        "test_identity.py"
+      ],
+      "diagnosis": "Future-issued-at claim constructed during collection became current before the long full suite executed it. Fixture now constructs claim at execution."
+    },
+    {
+      "tests": [
+        "test_mcp_authority.py",
+        "test_workspace_preset_tools_edit.py"
+      ],
+      "diagnosis": "Windows default newline translation changed agent source bytes after returned revision computation; immediate legitimate CAS update failed. Writer now preserves exact LF bytes; regression checks existing CRLF files and true stale edits."
+    },
+    {
+      "tests": [
+        "test_https_registries.py"
+      ],
+      "diagnosis": "Real TLS fixtures now send explicit HTTP Content-Length rather than using abrupt TLS shutdown as a body delimiter. Transport additionally refuses incomplete declared bodies; certificate/hostname/redirect/bounds remain enforced. Windows rerun required."
+    },
+    {
+      "tests": [
+        "test_skill_sources.py"
+      ],
+      "diagnosis": "Enrolled project roots are identified before global compatibility-home remapping; home-nested Windows Temp projects retain their real project root. Checked-path link/missing/directory errors now use the same OSError contract as POSIX, preserving refusal and inventory diagnostics. Windows rerun required."
+    }
+  ],
+  "evidence_boundary": "This failed Windows full-source gate stops sidecar, installer and installed-MSI qualification. Other platform jobs remain independently scoped; source CI02 did not run this full Windows suite.",
+  "focused_local_repair_checks": [
+    {
+      "suite": "Identity, MCP authority, tools preset editing, exact agent byte revisions",
+      "passed": 48,
+      "seconds": 28.47
+    },
+    {
+      "suite": "Skill source platform and checked-path implementations",
+      "passed": 12,
+      "seconds": 5.0
+    },
+    {
+      "suite": "Real TLS registry transports and refusal boundaries",
+      "passed": 8,
+      "seconds": 7.03
+    },
+    {
+      "suite": "Owned non-desktop and desktop daemon stop",
+      "passed": 2,
+      "seconds": 11.0
+    }
+  ],
+  "repair_qualification_limit": "Focused local macOS checks pass. Expanded exact-source Windows workflow and full desktop artifact suite must qualify the new checkpoint before Windows installation is claimed."
+}

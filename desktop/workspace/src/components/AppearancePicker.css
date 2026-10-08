@@ -1,0 +1,6 @@
+.theme-choices{display:grid;gap:8px;margin-top:20px}
+.theme-choices .theme-choice{display:flex;flex-direction:row;align-items:center;gap:12px;margin:0;padding:14px 16px;border:1px solid var(--border);border-radius:10px;cursor:pointer;text-align:left;background:var(--background)}
+.theme-choice[data-selected=true]{border-color:var(--accent);background:var(--accent-soft)}
+.theme-choice input{margin:0;accent-color:var(--accent);width:16px;height:16px;flex-shrink:0}
+.theme-choice span{flex:1;line-height:1.4}
+.theme-choice svg{flex-shrink:0;color:var(--secondary)}

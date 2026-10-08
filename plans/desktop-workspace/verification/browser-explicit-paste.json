@@ -1,0 +1,606 @@
+{
+  "tool": "axe-core/4.10.3",
+  "states": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "sign-in",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "state": "explicit-browser-paste",
+      "reduced_motion": true,
+      "overflow": false,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".welcome-mark"
+            ],
+            [
+              "button[aria-label=\"Go back\"]"
+            ],
+            [
+              "button[aria-label=\"Go forward\"]"
+            ],
+            [
+              "button[aria-label=\"Reload page\"]"
+            ],
+            [
+              ".browser-remote-input"
+            ],
+            [
+              ".browser-activity > p"
+            ],
+            [
+              "details:nth-child(4) > summary"
+            ],
+            [
+              ".browser-activity > .button-default.button-ghost[type=\"button\"]:nth-child(5)"
+            ],
+            [
+              ".browser-activity > .button-default.button-ghost[type=\"button\"]:nth-child(6)"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Username",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Password",
+      "focus": {
+        "label": "",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(25, 31, 28)",
+        "background": "rgb(250, 250, 249)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.03
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Continue with password",
+      "focus": {
+        "label": "Continue with password",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(17, 108, 70)",
+        "width": 354,
+        "height": 36,
+        "visible_width": 354,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 6.45
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create a browser profile",
+      "focus": {
+        "label": "Create a browser profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 173.6875,
+        "height": 36,
+        "visible_width": 173.6875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "New profile name",
+      "focus": {
+        "label": "New profile name",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 320,
+        "height": 36,
+        "visible_width": 320,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Create profile",
+      "focus": {
+        "label": "Create profile",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(20, 37, 26)",
+        "background": "rgb(146, 212, 163)",
+        "width": 110.59375,
+        "height": 36,
+        "visible_width": 110.59375,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 9.29
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page address",
+      "focus": {
+        "label": "Page address",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(21, 23, 22)",
+        "width": 561.546875,
+        "height": 36,
+        "visible_width": 561.546875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 8.4
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Go",
+      "focus": {
+        "label": "Go",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 45.046875,
+        "height": 36,
+        "visible_width": 45.046875,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Page controls",
+      "focus": {
+        "label": "Page controls",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(17, 19, 18)",
+        "width": 272,
+        "height": 26.59375,
+        "visible_width": 272,
+        "visible_height": 26.59375,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 16.65
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Focus input",
+      "focus": {
+        "label": "Focus input",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(240, 243, 237)",
+        "background": "rgb(29, 32, 30)",
+        "width": 98.953125,
+        "height": 36,
+        "visible_width": 98.953125,
+        "visible_height": 36,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 14.67
+      }
+    },
+    {
+      "theme": "dark",
+      "zoom_percent": 100,
+      "target": "Explicit paste target",
+      "focus": {
+        "label": "Type into the focused browser page field. Press Escape to return to page controls.",
+        "outline": "solid",
+        "outline_width": "2px",
+        "foreground": "rgb(168, 180, 172)",
+        "background": "rgb(29, 32, 30)",
+        "width": 481,
+        "height": 42,
+        "visible_width": 481,
+        "visible_height": 42,
+        "uncovered": true,
+        "onscreen": true,
+        "computed_text_contrast": 7.66
+      }
+    }
+  ],
+  "errors": [],
+  "paid_provider_queries": 0,
+  "limitations": [
+    "Rendered DOM and host-semantic browser controls are audited; pixels inside a remotely rendered third-party page and screen-reader speech require separate human evaluation."
+  ],
+  "production_bundle": {
+    "index_sha256": "aecd1e8ee723ff459a313f94d5392e2ed29c55b725594730e978cdb0becdc404",
+    "entry_assets": [
+      "/assets/index-Ch15AWFC.js",
+      "/assets/index-DeOWSpEh.css"
+    ],
+    "source": "Exact production dist frozen before fixture startup; no source transform or concurrent build asset swaps"
+  },
+  "production_assets": [
+    {
+      "path": "assets/BrowserSurface-DMpz05YR.js",
+      "bytes": 30938,
+      "sha256": "d4ba5d4ee3be5a0c6b27bbc8a77cbe38d531def002af6ad1d6cc57ca275bcf3b"
+    },
+    {
+      "path": "assets/CaptureStatus-DECNsux4.js",
+      "bytes": 2706,
+      "sha256": "091a558625a9173b643ea3b79fb27ae2680e1790510a5abf460136f59f8b5806"
+    },
+    {
+      "path": "assets/ComputerSurface-Cez7BVfN.css",
+      "bytes": 1514,
+      "sha256": "45018e5b67112d4f62171a8424b24de9e2c7f5dd3a8e5f22f6bb3e30aa98419a"
+    },
+    {
+      "path": "assets/ComputerSurface-D6XhDvwp.js",
+      "bytes": 13741,
+      "sha256": "0b35f97fdb448e6987c8d71b54f1d0a1bf52ac8e1f413aa551cf782a139111b9"
+    },
+    {
+      "path": "assets/Debugger-D3ZSzog7.js",
+      "bytes": 5764,
+      "sha256": "c430ca32cea8570b61d606035aab6bb315c3485aa4c5d06130ff3f208643bcf7"
+    },
+    {
+      "path": "assets/Delivery-XcQLsTY1.js",
+      "bytes": 9255,
+      "sha256": "657335e983e942b611a03fc89a2e67b38abda4ca6f35a7ecbe3038b03c50b439"
+    },
+    {
+      "path": "assets/Keybindings-Duw50Kss.js",
+      "bytes": 769,
+      "sha256": "7c716c1fb3b16126d1452dff406d8d89eb2a4cbcfb539c2d09a3c0fc2a98ec7b"
+    },
+    {
+      "path": "assets/Managers-Bm65CjWQ.js",
+      "bytes": 52380,
+      "sha256": "16857534bf8c11d4ef0c703096df1110d2604dbc3423c05d5889f022b0d96d3d"
+    },
+    {
+      "path": "assets/Managers-C0IGirYo.css",
+      "bytes": 4983,
+      "sha256": "a619bc182b389eb1b72b3e2787d23db0909756a8a5a77e56564b1d1d6e5dc623"
+    },
+    {
+      "path": "assets/Media-BbtWZx-y.js",
+      "bytes": 13990,
+      "sha256": "707169cfc88aa003bf248922c08efa1887ac7178c7544439f1b3f6678a528844"
+    },
+    {
+      "path": "assets/Preview-931fIlrC.js",
+      "bytes": 4197,
+      "sha256": "9a8aff12f46ab64d59655afd6719b4868096194a6f486fe231be8e7a6753b4b3"
+    },
+    {
+      "path": "assets/Runners-C5RMATL6.js",
+      "bytes": 7389,
+      "sha256": "72f43464fa38b52072b99ace6c3428f4e29776a7e78b3bfebf78ad905c066d92"
+    },
+    {
+      "path": "assets/SafetyManager-DBSFhrMT.js",
+      "bytes": 13698,
+      "sha256": "9557c114a41344b2810b5f3a4e8894f89b48e2ad78d053afd8c052aa7bc37bdb"
+    },
+    {
+      "path": "assets/TerminalPanel-8vq810P2.js",
+      "bytes": 295499,
+      "sha256": "3d60354f5b3ad22a84c33b1a77ba66af6a01e6727bab0face173c117896cb175"
+    },
+    {
+      "path": "assets/TerminalPanel-DFuMZ0ql.css",
+      "bytes": 2527,
+      "sha256": "554060ecb62d0cd186b6db5056b8dcf9ac16faff135cabf09e8fa9675f1776a1"
+    },
+    {
+      "path": "assets/Workbench-BeKxqx6U.js",
+      "bytes": 476474,
+      "sha256": "df6f66c2fc60af99517cf4574e82aa48789587a644af2e990109e3c8668b9418"
+    },
+    {
+      "path": "assets/browser/lock.svg",
+      "bytes": 697,
+      "sha256": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930"
+    },
+    {
+      "path": "assets/browser/shield.svg",
+      "bytes": 489,
+      "sha256": "9b0b28864cbf26748544e8bebdc917f7e74d3291fe5cbe3a20c0e7d89a5c9b3d"
+    },
+    {
+      "path": "assets/browser-CGjcJuWr.css",
+      "bytes": 10190,
+      "sha256": "b4b38292b7558ed3f27d3447443fd890c51f5fb7c0a9b6909beac60f3006d11d"
+    },
+    {
+      "path": "assets/circle-DqgKx47t.js",
+      "bytes": 127,
+      "sha256": "8e1771b5bb157db772c00bfe4601c423336530ac42faf874435634746e97bdda"
+    },
+    {
+      "path": "assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2",
+      "bytes": 7420,
+      "sha256": "2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e"
+    },
+    {
+      "path": "assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2",
+      "bytes": 15084,
+      "sha256": "6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09"
+    },
+    {
+      "path": "assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+      "bytes": 16512,
+      "sha256": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f"
+    },
+    {
+      "path": "assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+      "bytes": 29400,
+      "sha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1"
+    },
+    {
+      "path": "assets/geist-mono-cyrillic-ext-wght-normal-I4S5GZfc.woff2",
+      "bytes": 6180,
+      "sha256": "bd1b9caace920419e40805d118eb5df340651ccf60f324a6c0fc969184c5a9ac"
+    },
+    {
+      "path": "assets/geist-mono-cyrillic-wght-normal-BmXc_FBt.woff2",
+      "bytes": 12876,
+      "sha256": "856e341d017239201ffa3eda7a1e9768dcd145dd9a6e82e24d87068c49c4f587"
+    },
+    {
+      "path": "assets/geist-mono-latin-ext-wght-normal-DrnZ1wKl.woff2",
+      "bytes": 14784,
+      "sha256": "63e27dba1a5baa700f1e279593c25ea6cfe24d2dff5badd2ecba178a35a49bb9"
+    },
+    {
+      "path": "assets/geist-mono-latin-wght-normal-B_7UjwxQ.woff2",
+      "bytes": 29896,
+      "sha256": "af61b969e7f999969f6af576e584ee85dca301a008a76be1251d172d56b9904c"
+    },
+    {
+      "path": "assets/geist-mono-symbols2-wght-normal-GZpp1pK2.woff2",
+      "bytes": 5804,
+      "sha256": "5aaf17e01d441991470749b33a92a5492f6c8697f6e7e0f11298b23f3652374a"
+    },
+    {
+      "path": "assets/geist-mono-vietnamese-wght-normal-D8KDMBhC.woff2",
+      "bytes": 7716,
+      "sha256": "be2d997590216caf1e91c214a90cef7cf9863a3134c9d9666ee53d3fc3982474"
+    },
+    {
+      "path": "assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+      "bytes": 8004,
+      "sha256": "8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1"
+    },
+    {
+      "path": "assets/highlighted-body-KQOG7T2V-N4QBKERh.js",
+      "bytes": 693,
+      "sha256": "1105a96e26d009522d8b28a1a63bdcd02a2f0965baa89dfbdbf92385e4a752c0"
+    },
+    {
+      "path": "assets/index-Ch15AWFC.js",
+      "bytes": 385022,
+      "sha256": "9d26c3a97187fe7ac0f774197a9b27b15636dacf02af851b96b41057977b148e"
+    },
+    {
+      "path": "assets/index-DeOWSpEh.css",
+      "bytes": 38750,
+      "sha256": "9e7c23b6812b954f46e60c7eb8630f12db836e0ef24bccf108d340cde3ca1df9"
+    },
+    {
+      "path": "assets/media-intent-p4t3Zrai.js",
+      "bytes": 696,
+      "sha256": "29f83ace6c3ca0dc7f67ee86d5b7f06ca328c3ccdc1dca258121c1b2198523de"
+    },
+    {
+      "path": "assets/mermaid-MCJ5UELQ-4H8Dtj2A.css",
+      "bytes": 1083,
+      "sha256": "051d151bd7de335a8ae5fe85eca5727c9325210f46cd6b3656443f9ef429c7af"
+    },
+    {
+      "path": "assets/mermaid-MCJ5UELQ-D0eJbRpk.js",
+      "bytes": 524451,
+      "sha256": "f53a9da730b74542c7d48db7698d24e65c4919d40abb3aa2deac90e96e139fa4"
+    },
+    {
+      "path": "assets/play-CnFF_n6s.js",
+      "bytes": 131,
+      "sha256": "53b52b52c54764d5c96a7d9b0fd5549715d496917168750787d1e4c06ef8f15c"
+    },
+    {
+      "path": "assets/square-BrK7FxIB.js",
+      "bytes": 144,
+      "sha256": "df037071715d82a70ec46ca9d7a52607577bd040ad7792a86f82bbca4c9cb65a"
+    },
+    {
+      "path": "assets/transfers-BGR_3pbZ.js",
+      "bytes": 906,
+      "sha256": "e75587aedb518ef0bd192fde675908b363682ba5bd32a8871be8d38c6ae3da48"
+    },
+    {
+      "path": "figma/094e1.svg",
+      "bytes": 316,
+      "sha256": "d8bb2d1e19cab5535df38c8de8d55313de84b5a91cac3d2d088a2d0e6c02233e"
+    },
+    {
+      "path": "figma/1f8ed.svg",
+      "bytes": 701,
+      "sha256": "038ee9b8b687564db3ef24065d25e5c42705bbb6442023d4b624c9e5a97bdba3"
+    },
+    {
+      "path": "figma/252c5.svg",
+      "bytes": 984,
+      "sha256": "213bb67b5ff0198fdf9c17acacd08fecb20933fb26d946a09e4c56ba8d23ee74"
+    },
+    {
+      "path": "figma/3026d.svg",
+      "bytes": 316,
+      "sha256": "e7f1bae96f2de339161f591f517fc23b445d9da91432d78470a917e222594e95"
+    },
+    {
+      "path": "figma/3dd9f.svg",
+      "bytes": 534,
+      "sha256": "e3eecf1ee7f1735b6895f7b1d998e8d335b543bd33b0c449609fbbf9840e7aff"
+    },
+    {
+      "path": "figma/3eb60.svg",
+      "bytes": 317,
+      "sha256": "d589d61f5298cf2d1f4df072ed1660f37b0c713135991ddfe1284434484f2959"
+    },
+    {
+      "path": "figma/461b5.svg",
+      "bytes": 979,
+      "sha256": "5b3281e38a7170dbc36f7109f7a3f085498720d34755c2f7dc9b06496a4758ce"
+    },
+    {
+      "path": "figma/4fb85.svg",
+      "bytes": 323,
+      "sha256": "9df578dceeb5138ff8dddeb8d0bf31c12ae4c29e7ccb42a07b6e76cbc4eb34e2"
+    },
+    {
+      "path": "figma/5011d.svg",
+      "bytes": 933,
+      "sha256": "4e60f2c12dbc347464026cd89d12c4dd073b2d3618ee418ce76f766d482142a0"
+    },
+    {
+      "path": "figma/6efce.svg",
+      "bytes": 321,
+      "sha256": "5cefa1977811aedfaf376eb5451eb0128a0de032475ed6f9b1bf87b9de2d1ea5"
+    },
+    {
+      "path": "figma/85436.svg",
+      "bytes": 348,
+      "sha256": "93841b2f48e9c564c4a105bc0752a734082706c289c73c5742fdf359978f7c01"
+    },
+    {
+      "path": "figma/91050.svg",
+      "bytes": 697,
+      "sha256": "4176e28122677fac6d51312ad102fb6392a196bd334721ba483fa24c808b6930"
+    },
+    {
+      "path": "figma/92e4c.svg",
+      "bytes": 784,
+      "sha256": "6223f6f03ed8d061bcb198d18146de59c33f9ed1d8dc9d52213aa94ba458d247"
+    },
+    {
+      "path": "figma/a1773.svg",
+      "bytes": 539,
+      "sha256": "b8fa42cf7e4d32a093c227eb560972eb47ec9df3bd520e258656ba55baeebd0a"
+    },
+    {
+      "path": "figma/assets.json",
+      "bytes": 1347,
+      "sha256": "7a3d1d9141b7d499d4f42a39b2ac5ebf52e1e13593948ef30ee297a75e5b685c"
+    },
+    {
+      "path": "figma/b8eee.svg",
+      "bytes": 348,
+      "sha256": "5e4f294748dfbefecfa380d8eb66b3208a107e0c3b4ea9051c2c95adddc4f450"
+    },
+    {
+      "path": "figma/c5fe8.svg",
+      "bytes": 541,
+      "sha256": "da9be5e2e839f00ef65ae0f3a0cdeb0dac2cb72bb3790d78aaa869015aead625"
+    },
+    {
+      "path": "figma/df8e3.svg",
+      "bytes": 539,
+      "sha256": "a75fad8049b6a3bd4764c137f56d059362ab786a19e8eeaf14347c342d4cb54e"
+    },
+    {
+      "path": "figma/e7233.svg",
+      "bytes": 534,
+      "sha256": "2d350af0dd1eced6c58c8478129b8222a774bb561ca528ed79e33ddc91d9456d"
+    },
+    {
+      "path": "figma/ede27.svg",
+      "bytes": 323,
+      "sha256": "11ee403820e9a51ff7f0ac69b8591e4b7b41079bdf07878972ce3ecdee940f51"
+    },
+    {
+      "path": "figma/f6959.svg",
+      "bytes": 538,
+      "sha256": "0c87cb691a504b34c73ab118731332fcb40390d23f73d6605b1d5e48dc8f9791"
+    },
+    {
+      "path": "figma/verified-assets.json",
+      "bytes": 3802,
+      "sha256": "1601f08e07f3becbb6ddd1a4aa1c9555952ea105d385ee5427ff71bf85813a09"
+    },
+    {
+      "path": "index.html",
+      "bytes": 446,
+      "sha256": "aecd1e8ee723ff459a313f94d5392e2ed29c55b725594730e978cdb0becdc404"
+    }
+  ],
+  "paste_features": {
+    "explicit_dom_clipboard_event_to_real_managed_page": true,
+    "text": "Explicit clipboard event fixture",
+    "background_clipboard_reads": 0,
+    "host_os_clipboard_used": false,
+    "limit": "Synthetic explicit paste event uses isolated browser DataTransfer; OS/native clipboard integration remains separate."
+  },
+  "fixture_provider_turns": 0,
+  "task_status_before_cleanup": null
+}

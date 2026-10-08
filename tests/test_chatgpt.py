@@ -120,7 +120,8 @@ def test_dynamic_registration_validates_and_keeps_credentials_host_only(tmp_path
             on_disk = accounts.path.read_text()
             public = json.dumps(identity) + json.dumps(status) + on_disk
             assert not any(secret in public for secret in ("access-secret", "refresh-secret", "id_token", "test-code"))
-            assert accounts.path.stat().st_mode & 0o777 == 0o600
+            from termx.private_files import private_path_permissions
+            assert private_path_permissions(accounts.path)
             exchange = next(form for path, form, _ in server.requests if path.endswith("oauth/token"))
             assert exchange["client_id"] == "oaiapp_one"
             assert exchange["redirect_uri"] == params["redirect_uri"]

@@ -1,0 +1,147 @@
+{
+  "run_id": 37677911211,
+  "source_sha": "02f987be049075298ebd17da5a0e9d035b22d39a",
+  "event": "workflow_dispatch",
+  "workflow": ".github/workflows/desktop.yml",
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": [
+    {
+      "completed_at": "2026-10-07T19:53:42Z",
+      "conclusion": "success",
+      "failed": [],
+      "id": 112986060157,
+      "name": "prepare",
+      "started_at": "2026-10-07T19:53:38Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-07T20:56:28Z",
+      "conclusion": "failure",
+      "failed": [
+        "Build installers"
+      ],
+      "id": 112986128665,
+      "name": "macos-x86_64",
+      "started_at": "2026-10-07T19:53:47Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-07T20:47:04Z",
+      "conclusion": "failure",
+      "failed": [
+        "Build installers",
+        "Verify installed Linux native workspace"
+      ],
+      "id": 112986128677,
+      "name": "linux",
+      "started_at": "2026-10-07T19:53:45Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-07T20:17:02Z",
+      "conclusion": "success",
+      "failed": [],
+      "id": 112986128736,
+      "name": "macos-arm64",
+      "started_at": "2026-10-07T19:53:50Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-07T20:23:36Z",
+      "conclusion": "failure",
+      "failed": [
+        "Verify complete backend suite"
+      ],
+      "id": 112986128807,
+      "name": "windows",
+      "started_at": "2026-10-07T19:53:47Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-07T20:56:29Z",
+      "conclusion": "skipped",
+      "failed": [],
+      "id": 113013161396,
+      "name": "Publish updater manifest",
+      "started_at": "2026-10-07T20:56:29Z",
+      "status": "completed"
+    }
+  ],
+  "artifacts": [
+    {
+      "digest": "sha256:4239ea3eb263966704fd783ad3211c53257877e7e1becbd8598c0b6a8cc9fd0a",
+      "expired": false,
+      "id": 11509953471,
+      "name": "termx-linux-36",
+      "size_in_bytes": 1241762329
+    },
+    {
+      "digest": "sha256:ba8906ab00f51cc59e67a4057f1c1381ef048e380726425155986848ad87c3df",
+      "expired": false,
+      "id": 11509899123,
+      "name": "workspace-native-gui-linux",
+      "size_in_bytes": 44041
+    },
+    {
+      "digest": "sha256:570b0e421009c5a021b80f2f08e852d13c9628f54e5b86b27de878c9bca5f9ff",
+      "expired": false,
+      "id": 11508784971,
+      "name": "workspace-accessibility-macos-x86_64",
+      "size_in_bytes": 823559
+    },
+    {
+      "digest": "sha256:6278ee29e377c59d817a5c63720018b9944b0cecbe260f3f0138a74951878024",
+      "expired": false,
+      "id": 11508313705,
+      "name": "termx-macos-arm64-36",
+      "size_in_bytes": 477513227
+    },
+    {
+      "digest": "sha256:3728c4ec82dae52506f2d33bcd331a251ad904fce557c2262d0aabb2deddd4fb",
+      "expired": false,
+      "id": 11508191870,
+      "name": "workspace-accessibility-linux",
+      "size_in_bytes": 674122
+    },
+    {
+      "digest": "sha256:9aced99948bc3fdc5d34b90a8cd1b796d3afc265bea4ee474ac58fae6eab9e88",
+      "expired": false,
+      "id": 11507987364,
+      "name": "workspace-accessibility-macos-arm64",
+      "size_in_bytes": 823843
+    }
+  ],
+  "installed_macos_dispatched": false,
+  "installer_payloads_downloaded": false,
+  "limitations": [
+    "Artifact metadata digests are GitHub upload digests, not independently downloaded DMG hashes.",
+    "ARM packaging success does not qualify installed GUI lifecycle or fresh repaired sources.",
+    "No old-run Mac installed workflow was dispatched because overall artifact qualification failed."
+  ],
+  "qualification_limit": "Artifact-only run; no release/updater publication. ARM bundling success does not prove installed GUI. Windows stopped before frozen packaging; Linux DEB installed but login failed; Intel accepted app notarization but DMG construction failed.",
+  "diagnoses": {
+    "windows": "Eight full-source failures preserved in windows-installer-02f987b-failures.json; subsequent ac source/Windows checks pass.",
+    "linux_appimage": "AV private helper ELF lacks sibling RPATH; linuxdeploy cannot resolve exact libxcb-5ddf6756.so.1.1.0. DEB/RPM outputs existed; unchanged real installed-DEB report and screenshot retain native hashes and failed setup.",
+    "linux_native_gui": "Rendered Set up screen reports Command workspace_request not allowed by ACL. Tauri remote-origin custom commands require explicit AppManifest and capability grants; host/session guards remain required.",
+    "intel_macos": "First attempt Apple notarization offline(-1009). Retry app notarization accepted9e079c85-a7c6-43ca-9701-0c6e3d774d0c; DMG Finder cosmetics then hdiutil detach timed out after120 seconds."
+  },
+  "scoped_candidates": [
+    "Exact thirteen native command ACL grants only for existing loopback workspace windows, with unchanged trusted URL/session guards.",
+    "Complete staged AV private library closure with preserved hashed names and existing RPATH entries; clean-environment ldd hard gate.",
+    "TAURI_BUNDLER_DMG_IGNORE_CI=false suppresses interactive CI Finder layout only; signing/notary/stapling/checks and bounded retry remain."
+  ],
+  "focused_local_checks": {
+    "native_acl_fixture": {
+      "passed": 9,
+      "seconds": 2.13,
+      "compiled_rust": false
+    },
+    "sidecar_bundle": {
+      "passed": 3,
+      "skipped": 1,
+      "seconds": 6.64,
+      "skip": "Actual Linux ELF loader regression requires Linux; new source CI installs patchelf and artifact workflow already has it."
+    }
+  }
+}

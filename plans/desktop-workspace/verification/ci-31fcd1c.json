@@ -1,0 +1,65 @@
+{
+  "source_commit": "31fcd1c270618833110859964db1d27f9e2974d5",
+  "note": "Run outcomes only; per-suite counts were not extracted and are not claimed here.",
+  "superseded_attempt": {
+    "source_commit": "4ec21f5",
+    "result": "main CI 37707354795 and Windows 37707354653 failed: tests imported the desktop package, which bare pytest cannot resolve. Fixed in 31fcd1c by loading helpers by script path."
+  },
+  "source_gates": {
+    "main_ci": {"run": 37707562846, "conclusion": "success"},
+    "windows_platform_contracts": {"run": 37707562810, "conclusion": "success"},
+    "native_microphone_compile": {"run": 37707562752, "conclusion": "success"},
+    "macos_hosted_native_gui_feasibility": {"run": 37707562770, "conclusion": "success"},
+    "installed_macos_workspace_qualification_fixture": {"run": 37707562867, "conclusion": "success"}
+  },
+  "artifact_run": {
+    "run": 37708359897,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37708359897",
+    "inputs": {"release_tag": "", "draft": true, "artifactqualification_scope": "all", "include_intel": true},
+    "conclusion": "failure",
+    "jobs": {
+      "macos-arm64": {
+        "conclusion": "success",
+        "dmg": "Termx_0.2.6_aarch64.dmg",
+        "submission_id": "5c40694a-7d88-4c22-947b-eb8cce1d100b",
+        "notarization_status": "Accepted",
+        "pre_ticket_sha256": "b5203ea2a5b7b6f3777b7f8a9b35c302272e3f7240669c2d4b914c133281218b",
+        "final_package_sha256": "5b055a53aea65bd2b7f5d03279dc5f3421f62488204a443d9389152afa5fa362",
+        "final_package_bytes": 534083023,
+        "signature_stapler_integrity_verified": true
+      },
+      "macos-x86_64": {
+        "conclusion": "success",
+        "dmg": "Termx_0.2.6_x64.dmg",
+        "submission_id": "98b76b98-67d2-45a2-81d2-ae4decf6c6f8",
+        "notarization_status": "Accepted",
+        "pre_ticket_sha256": "c42e9ecb0fa9ebe54686b9e20819206e44725b3ca8ca75beef616f6f61529eec",
+        "final_package_sha256": "ac9490e6050f8c80d8562bc1861ff3ac38e0b7046fd8b15fa8a4fd34561fe8ef",
+        "final_package_bytes": 569840343,
+        "signature_stapler_integrity_verified": true
+      },
+      "windows": {
+        "conclusion": "failure",
+        "failed_step": "Verify installed Windows native workspace",
+        "full_backend_suite": "passed",
+        "installers_built": true,
+        "failure": "session not created: DevToolsActivePort file doesn't exist (WebDriver session creation, no GUI step reached; webdriver.log empty). First time the Windows installed GUI has executed; cause not determined."
+      },
+      "linux": {
+        "conclusion": "failure",
+        "failed_step": "Verify installed Linux native workspace",
+        "installers_built": ["deb", "rpm", "appimage"],
+        "steps_passed": ["fresh_native_owner_setup", "isolated_native_configuration", "cookie_cleared_os_keyring_restart", "removed_monitor_titlebar_recovery", "installed_restricted_terminal_transport", "detached window opened with shared draft"],
+        "failure": "Timed out waiting for independent detached placement file (workspace-window-<label>.json) after WebDriver DELETE /window. Product writes it only on CloseRequested (workspace.rs track_placement). Whether DELETE /window emits CloseRequested under WebKitWebDriver is unverified; cause not determined."
+      }
+    },
+    "artifacts_retained_small": ["workspace-native-gui-linux", "workspace-native-gui-windows", "macos-dmg-ticket-*", "macos-dmg-diagnostics-*"],
+    "not_proven": "Installed macOS GUI, Windows MSI GUI and Linux DEB GUI lifecycles are not qualified; this run is overall failure, so it is not a valid source for macos-installed-gui.yml"
+  },
+  "previous_artifact_run": {
+    "run": 37693649699,
+    "source_commit": "1094609da6b390ec46438f9cd32f5cb3dfa1acad",
+    "conclusion": "failure",
+    "jobs": {"macos-arm64": "failure", "macos-x86_64": "failure (Build installers)", "linux": "failure", "windows": "failure"}
+  }
+}

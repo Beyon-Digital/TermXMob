@@ -1,0 +1,14 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+import {preserveBeforeLock} from './lock-preservation';
+import {sessionDrafts} from './drafts';
+import {persistWindowDraft} from './window-journal';
+import {persistBuffers} from './window-state';
+import {persistArtifactDrafts} from './artifact-drafts';
+import {flushRedockDraft} from './redock-state';
+vi.mock('./window-state',()=>({persistBuffers:vi.fn(async()=>{}),snapshotBuffers:()=>[{content:'Dirty file'}]}));
+vi.mock('./artifact-drafts',()=>({persistArtifactDrafts:vi.fn(async()=>{}),snapshotArtifactDrafts:()=>[{content:'Dirty artifact'}]}));
+vi.mock('./window-journal',()=>({persistWindowDraft:vi.fn(async()=>{})}));
+vi.mock('./redock-state',()=>({flushRedockDraft:vi.fn(async()=>{})}));
+beforeEach(()=>{vi.clearAllMocks();sessionDrafts.clear();sessionDrafts.set('conversation',{text:'Unsent',saved:'',dirty:true,attachments:[{name:'Image',mime:'image/png',data:'bytes'}]})});
+it('durably preserves dirty buffers, artifacts and exact unsent image draft before flushing host CAS',async()=>{expect(await preserveBeforeLock('owner')).toEqual([]);expect(persistBuffers).toHaveBeenCalledWith('owner',[{content:'Dirty file'}]);expect(persistArtifactDrafts).toHaveBeenCalledWith('owner',[{content:'Dirty artifact'}]);expect(persistWindowDraft).toHaveBeenCalledWith('owner','conversation',sessionDrafts.get('conversation'));expect(vi.mocked(persistWindowDraft).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(flushRedockDraft).mock.invocationCallOrder[0])});
+it('reports a real CAS conflict without overwriting the draft and bounds a stalled flush',async()=>{vi.mocked(flushRedockDraft).mockRejectedValueOnce(Error('Another unsent draft'));expect(await preserveBeforeLock('owner')).toEqual(['Error: Another unsent draft']);expect(sessionDrafts.get('conversation')?.text).toBe('Unsent');vi.mocked(flushRedockDraft).mockImplementationOnce(()=>new Promise(()=>{}));const warnings=await preserveBeforeLock('owner',10);expect(warnings).toContain('Conversation autosave is still pending; local drafts remain preserved.');expect(sessionDrafts.get('conversation')?.attachments?.[0].data).toBe('bytes')});
