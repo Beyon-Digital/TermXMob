@@ -86,3 +86,29 @@ input::placeholder,textarea::placeholder{color:var(--secondary);opacity:1}
 .chat-region .composer-options{border:1px solid var(--border);border-radius:12px;padding:6px 14px 10px;margin:0 0 8px;background:var(--background)}
 .chat-region .composer-options>.button{margin:6px 0}
 .chat-region .composer-controls .button-icon[aria-expanded="true"]{background:var(--muted);color:var(--accent)}
+
+/* Session settings surface: dialog on wide viewports, sliding bottom sheet on phones */
+.sheet-scrim{position:fixed;inset:0;border:0;padding:0;background:rgba(0,0,0,.45);z-index:60;animation:sheet-fade .18s ease-out}
+.settings-sheet{position:fixed;left:0;right:0;bottom:0;z-index:61;display:flex;flex-direction:column;max-height:82vh;background:var(--background);border-top:1px solid var(--border);border-radius:16px 16px 0 0;box-shadow:0 -12px 40px rgba(0,0,0,.4);animation:sheet-up .24s cubic-bezier(.2,.9,.25,1)}
+@keyframes sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes sheet-fade{from{opacity:0}to{opacity:1}}
+.sheet-grab{display:flex;justify-content:center;padding:10px 0 4px;background:none;border:0;cursor:grab}
+.sheet-grab span{width:36px;height:4px;border-radius:2px;background:var(--muted-foreground,#666);opacity:.5}
+.settings-sheet h2{margin:2px 18px 8px;font-size:15px}
+.settings-sheet .sheet-scroll{overflow-y:auto;overscroll-behavior:contain;padding:0 18px calc(20px + env(safe-area-inset-bottom))}
+.settings-dialog{max-width:560px}
+.settings-body{display:flex;flex-direction:column;gap:16px;padding:4px 0 8px}
+.settings-group{display:flex;flex-direction:column;gap:8px}
+.settings-group h3{margin:0;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-foreground,#888)}
+.settings-field{display:flex;flex-direction:column;gap:6px}
+.settings-label{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:13px}
+.settings-label output{color:var(--muted-foreground,#888);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settings-line{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:none;color:inherit;cursor:pointer;text-align:left}
+.settings-line:hover{background:var(--muted)}
+.settings-line small{color:var(--muted-foreground,#888)}
+.settings-check{display:flex;align-items:baseline;gap:8px;font-size:13px}
+.settings-check small{color:var(--muted-foreground,#888)}
+.effort-field{display:flex;flex-direction:column;gap:4px;margin:2px 0}
+.effort-range{width:100%;accent-color:var(--accent,#4f8ef7);cursor:pointer}
+.effort-marks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted-foreground,#888)}
+.effort-marks .on{color:var(--accent,#4f8ef7);font-weight:600}
