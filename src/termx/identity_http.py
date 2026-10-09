@@ -142,7 +142,8 @@ def mount_identity(app, state: AppState) -> None:
     @router.get("/methods")
     def methods(response: Response):
         response.headers["Cache-Control"] = "no-store"
-        return {"configured": service.configured, "methods": service.methods(), "host_id": service.host_id}
+        return {"configured": service.configured, "methods": service.methods(), "host_id": service.host_id,
+                "passcode_required": bool(state.auth.passcode and not service.configured)}
 
     @router.post("/setup")
     async def setup(body: LoginInput, request: Request, response: Response):
