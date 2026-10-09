@@ -83,3 +83,6 @@ input::placeholder,textarea::placeholder{color:var(--secondary);opacity:1}
 .status-bar :focus-visible{outline-offset:-3px}
 
 .browser-workspace .browser-approval :focus-visible{outline-offset:-3px}
+.chat-region .composer-options{border:1px solid var(--border);border-radius:12px;padding:6px 14px 10px;margin:0 0 8px;background:var(--background)}
+.chat-region .composer-options>.button{margin:6px 0}
+.chat-region .composer-controls .button-icon[aria-expanded="true"]{background:var(--muted);color:var(--accent)}
