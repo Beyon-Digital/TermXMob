@@ -4,6 +4,13 @@ Native host for the existing Python/FastAPI Termx core. The desktop app does not
 reimplement the backend: it starts the packaged Python sidecar, supervises it, and adds
 native lifecycle, tray/menu, notifications, permissions onboarding, and installers.
 
+The dedicated React UI in `workspace/` is the control plane for both the native
+desktop app and web/browser access. Its overview coordinates projects, runs,
+agents, runners, automations and access; individual execution workspaces provide
+dockable editing, terminals, browser/computer tools and delivery. The separate
+Expo app is the mobile remote controller. See
+[the product boundary and task workflow](../docs/task-workspace.md).
+
 ```
 Termx.app / Termx.exe / termx.AppImage
 └── Tauri shell (Rust)
