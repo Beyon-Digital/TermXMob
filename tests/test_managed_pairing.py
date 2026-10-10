@@ -297,3 +297,21 @@ def test_real_tls_oidc_identity_can_explicitly_pair_without_local_password(tls_i
     retired=client.put('/auth/admin/adapters/tls-phone',headers=admin,json={'enabled':False,'session_policy':'revoke'})
     assert retired.status_code==200,retired.text
     assert state.identity.resolve(device.json()['access_token']) is None
+
+
+def test_browser_pairing_requires_origin_and_sets_only_httponly_credentials(tmp_path):
+    state, _, admin, client, headers = fixture(tmp_path)
+    proof = issue(client, headers, ('machine-view', 'agent-view'))
+    body = {'ticket': proof['ticket'], 'host_id': proof['host_id'], 'device_name': 'QR browser', 'transport': 'cookie'}
+    assert client.post('/auth/pair/exchange', json=body).status_code == 403
+    assert client.post('/auth/pair/exchange', headers={'Origin': 'https://evil.example'}, json=body).status_code == 403
+    response = client.post('/auth/pair/exchange', headers={'Origin': str(client.base_url).rstrip('/')}, json=body)
+    assert response.status_code == 200, response.text
+    assert 'access_token' not in response.json() and 'refresh_token' not in response.json()
+    cookies = response.headers.get_list('set-cookie')
+    assert any(value.startswith('termx_access=') and 'HttpOnly' in value for value in cookies)
+    assert any(value.startswith('termx_refresh=') and 'HttpOnly' in value for value in cookies)
+    assert client.get('/auth/me').json()['principal']['scopes'] == ['machine-view', 'agent-view']
+    another = issue(client, headers, ('machine-view',))
+    body.update(ticket=another['ticket'])
+    assert client.post('/auth/pair/exchange', headers={'Origin': str(client.base_url).rstrip('/')}, json=body).status_code == 409

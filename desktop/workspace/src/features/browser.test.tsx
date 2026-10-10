@@ -40,3 +40,19 @@ it('pastes only explicit clipboard event text into the current human-controlled 
 it('clears stream observation on lock and requires an explicit view resume with no automatic handoff',async()=>{vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:vi.fn(()=>'/frame.jpg'),revokeObjectURL:vi.fn()}));render(<BrowserSurface projectId="project" taskId="task"/>);await screen.findByRole('button',{name:'Ask about page'});await waitFor(()=>expect(Socket.instances).toHaveLength(1));Socket.instances[0].onmessage?.({data:new Blob(['jpeg'])} as never);await screen.findByRole('img',{name:/Live rendered browser page/});fireEvent(window,new Event('termx-locked'));await screen.findByRole('button',{name:'Resume browser view'});expect(screen.queryByRole('img',{name:/Live rendered browser page/})).toBeNull();Socket.instances[0].onmessage?.({data:new Blob(['late'])} as never);await new Promise(resolve=>setTimeout(resolve,50));expect(screen.queryByRole('img',{name:/Live rendered browser page/})).toBeNull();expect(Socket.instances).toHaveLength(1);fireEvent.click(screen.getByRole('button',{name:'Resume browser view'}));await waitFor(()=>expect(Socket.instances).toHaveLength(2));expect(api.mock.calls.some(([path])=>path.endsWith('/handoff'))).toBe(false)});
 
 it('restores a locked-window browser pause after reload without creating a stream or task grant',async()=>{sessionStorage.setItem('termx-browser-view-paused','true');render(<BrowserSurface projectId="project"/>);await screen.findByRole('button',{name:'Resume browser view'});await screen.findByRole('button',{name:'Ask about page'});expect(Socket.instances).toHaveLength(0);fireEvent.click(screen.getByRole('button',{name:'Resume browser view'}));await waitFor(()=>expect(Socket.instances).toHaveLength(1));expect(sessionStorage.getItem('termx-browser-view-paused')).toBeNull();expect(api.mock.calls.some(([path])=>path.endsWith('/handoff'))).toBe(false)});
+
+it('disconnects hidden panels and foreground loss, ignoring old frames',async()=>{
+ vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:vi.fn(()=>'/frame.jpg'),revokeObjectURL:vi.fn()}));
+ const view=render(<BrowserSurface projectId="project" visible/>);
+ await waitFor(()=>expect(Socket.instances).toHaveLength(1));
+ const old=Socket.instances[0];
+ view.rerender(<BrowserSurface projectId="project" visible={false}/>);
+ expect(old.close).toHaveBeenCalled();
+ old.onmessage?.({data:new Blob(['late-frame'])} as never);
+ expect(screen.queryByRole('img',{name:/Live rendered browser page/})).toBeNull();
+ view.rerender(<BrowserSurface projectId="project" visible/>);
+ await waitFor(()=>expect(Socket.instances).toHaveLength(2));
+ fireEvent(window,new Event('blur'));
+ expect(Socket.instances[1].close).toHaveBeenCalled();
+ view.unmount();
+});

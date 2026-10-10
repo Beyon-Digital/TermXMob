@@ -59,3 +59,49 @@ use a simulated transport; live APNs/FCM delivery requires device validation.
 Source builds are separate: build `desktop/workspace` for the bundled desktop UI;
 build the companion Expo repository for mobile and its web export. Do not replace
 the standalone desktop bundle with an Expo export.
+
+## Viewer, pairing and runner audit
+
+Computer capture closes its socket, releases input and discards frames when the
+panel hides, the window loses focus, the workspace locks, or the component
+unmounts. Returning requires an explicit Watch action. Browser observation also
+closes its socket while inactive. Foreground browser and runner polling is
+serialized; execution polling pauses under the control plane and managers.
+
+Pair device · QR opens the managed pairing form. It renders a local QR image for
+a scoped, five-minute, one-use HTTPS invitation. A fresh browser removes the
+ticket from its URL before boot and exchanges it only after an explicit Connect
+action. Browser credentials use HttpOnly cookies; the existing native bearer
+exchange remains available. Pairing does not replace an already signed-in browser
+session. Remote HTTPS must be configured; loopback is the development exception.
+
+Global runner enrollment includes project selection. Session options load the
+host's runner array directly, making eligible runners available for attachment.
+Refresh and request errors are visible; requests have a 30-second deadline and
+mutation timeout messages warn that the operation may already have completed.
+
+Validation performed:
+
+- Desktop: 255 unit tests, TypeScript and production build pass; four creation
+  tests rerun after the final stale-response guard.
+- Host: 12 managed-pairing tests, two capture-authority tests, two real Docker
+  runner tests and 16 agent-runner tests pass.
+- `tests/workspace_managed_pairing_e2e.py` exercises the rendered desktop UI and
+  real host over pinned TLS: QR generation, fresh-browser cookie sign-in, bearer
+  exchange, scope enforcement, refresh rotation, replay rejection and revocation.
+- `tests/workspace_runner_e2e.py` exercises enrollment, upload, execution,
+  artifact download, conversation attachment, an agent turn, reload, detach and
+  teardown against real Docker. It also verifies that actual host viewer
+  registrations disappear when the desktop panel hides or window blurs.
+
+Both browser scripts create isolated host state. Build the desktop workspace
+before running them; the runner script also requires the
+`termx-runner:workspace` image. Set `TERMX_CHROMIUM_EXECUTABLE` when using a system
+Chromium. The runner Dockerfile accepts an optional BuildKit `proxy_ca` secret
+for package installation behind a trusted corporate proxy; it is not copied
+into the resulting image.
+
+The agent provider is a deterministic fixture and physical screen capture is
+stubbed at the operating-system boundary. These checks do not establish native
+Tauri bridge behavior, physical-device capture, installed mobile secure storage,
+or live provider billing behavior.

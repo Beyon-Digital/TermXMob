@@ -19,7 +19,7 @@ export async function refreshSession(){
  })().finally(()=>{refreshing=undefined});return refreshing;
 }
 export async function request<T>(path:string,init:RequestInit={},retry=true):Promise<T>{
- if(!path.startsWith('/')||path.startsWith('//'))throw new Error('API requests must stay on this workspace origin');
+ if(!path.startsWith('/')||path.startsWith('//')||path.includes('\\'))throw new Error('API requests must stay on this workspace origin');
  if(nativeWorkspace() && !path.startsWith('/auth/oidc/')){
   try { const response=await nativeRequest<T>(path,init);if(response.status===423)locked();if(response.status<200||response.status>=300){const value=response.body as {detail?:unknown};throw new ApiError(response.status,typeof value?.detail==='string'?value.detail:JSON.stringify(value));}return response.body; }
   catch(error){if(error instanceof ApiError)throw error;const message=error instanceof Error?error.message:String(error);if(/Session locked/.test(message)){locked();throw new ApiError(423,message);}if(/expired|revoked|Sign in required/.test(message)){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));throw new ApiError(401,message);}throw new Error(message);}
@@ -27,12 +27,22 @@ export async function request<T>(path:string,init:RequestInit={},retry=true):Pro
  const headers=new Headers(init.headers);
  if(init.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');
  if(!['GET','HEAD'].includes((init.method||'GET').toUpperCase()))headers.set('X-Termx-CSRF',csrf());
- const response=await fetch(path,{...init,headers,credentials:'same-origin'});
+ const controller=new AbortController(),upstream=init.signal;
+ let timedOut=false;
+ const abort=()=>controller.abort();
+ if(upstream?.aborted)controller.abort();else upstream?.addEventListener('abort',abort,{once:true});
+ const timer=setTimeout(()=>{timedOut=true;controller.abort()},30000);
+ let response:Response,payload:any;
+ try{
+  response=await fetch(path,{...init,headers,credentials:'same-origin',signal:controller.signal});
+  if(response.status!==204){try{payload=await response.json()}catch(error){if(controller.signal.aborted)throw error;if(response.ok)throw new Error('The host returned an invalid response. Refresh and try again.');payload={detail:response.statusText}}}
+ }catch(error){if(timedOut)throw new ApiError(504,init.method&&init.method!=='GET'?'The host request timed out. The operation may have completed; refresh its status before retrying.':'The host request timed out. Check the connection and retry.');throw error}
+ finally{clearTimeout(timer);upstream?.removeEventListener('abort',abort)}
  if(response.status===401&&retry&&(!path.startsWith('/auth/')||path==='/auth/me')){await refreshSession();return request<T>(path,init,false);}
  if(response.status===423)locked();
- if(!response.ok){const body=await response.json().catch(()=>({detail:response.statusText}));throw new ApiError(response.status,typeof (body.detail||body.error)==='string'?(body.detail||body.error):JSON.stringify(body.detail||body.error||body));}
+ if(!response.ok){const body=payload||{};throw new ApiError(response.status,typeof (body.detail||body.error)==='string'?(body.detail||body.error):JSON.stringify(body.detail||body.error||body));}
  if(response.status===204)return undefined as T;
- return response.json() as Promise<T>;
+ return payload as T;
 }
 export async function gql<T>(query:string,variables:Record<string,unknown>={}):Promise<T>{const body=await request<{data?:T;errors?:{message:string}[]}>('/graphql',{method:'POST',body:JSON.stringify({query,variables})});if(body.errors?.length)throw new Error(body.errors.map(error=>error.message).join('\n'));return body.data!;}
 export function json(method:string,data?:unknown):RequestInit{return {method,body:data===undefined?undefined:JSON.stringify(data)}};

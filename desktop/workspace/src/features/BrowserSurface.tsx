@@ -1,3 +1,4 @@
+import {useObservationActive} from '../lib/use-observation-active';
 import {BrowserAnnotationEditor,type BrowserAnnotation,type BrowserElement} from './BrowserContextControls';
 import BrowserSkillEditor,{type BrowserDraft} from './BrowserSkillEditor';
 import {useCallback,useEffect,useRef,useState} from 'react';
@@ -14,10 +15,11 @@ type Context={tab_id:string;url:string;title:string;elements:Element[];annotatio
 type Review={human_preview?:HumanBrowserPreview;id:string;status:string;decision:string;reason:string;target:string;effect:string;tool_id:string;run_id:string;grant_id?:string;expires_at:number};
 type Annotation=BrowserAnnotation;
 type Download={id:string;filename:string;size:number;approved:boolean};
-export type BrowserSurfaceProps={locked?:boolean;projectId?:string|null;taskId?:string|null;onContext?:(context:unknown)=>void};
+export type BrowserSurfaceProps={visible?:boolean;locked?:boolean;projectId?:string|null;taskId?:string|null;onContext?:(context:unknown)=>void};
 const post=(body:unknown):RequestInit=>({method:'POST',body:JSON.stringify(body)});
 
-export function BrowserSurface({projectId,taskId,onContext,locked=false}:BrowserSurfaceProps){
+export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=true}:BrowserSurfaceProps){
+ const active=useObservationActive(visible&&!locked),activeNow=useRef(active);activeNow.current=active;
  const [profiles,setProfiles]=useState<Profile[]>([]),[tabs,setTabs]=useState<Tab[]>([]),[selected,setSelected]=useState('');
  const [url,setUrl]=useState(''),[profileId,setProfileId]=useState(''),[profileName,setProfileName]=useState(''),[showProfile,setShowProfile]=useState(false),[profileEphemeral,setProfileEphemeral]=useState(false);
  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[frame,setFrame]=useState(''),[connected,setConnected]=useState(false);
@@ -37,27 +39,27 @@ export function BrowserSurface({projectId,taskId,onContext,locked=false}:Browser
  const load=useCallback(async()=>{
   const scope=projectId||'';
   const [p,t,r,d]=await Promise.all([request<Profile[]>('/api/browser/profiles'),request<Tab[]>('/api/browser/tabs'),request<Review[]>('/api/browser/reviews'),request<Download[]>('/api/browser/downloads')]);
-  if(activeProject.current!==scope)return;
+  if(activeProject.current!==scope||!activeNow.current)return;
   setProfiles(p);setTabs(t);setReviews(r);setDownloads(d);setProfileId(current=>p.some(x=>x.id===current&&x.project_id===(projectId||''))?current:p.find(x=>x.project_id===(projectId||''))?.id||'');
   setSelected(current=>t.some(x=>x.id===current&&x.project_id===(projectId||'')&&!['closed','crashed'].includes(x.state))?current:t.find(x=>x.project_id===(projectId||'')&&!['closed','crashed'].includes(x.state))?.id||'');
  },[projectId]);
  const run=useCallback(async(job:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await job()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}},[]);
- useEffect(()=>{void run(load);const timer=setInterval(()=>{void load().catch(()=>{})},2500);return()=>clearInterval(timer)},[load,run]);
+ useEffect(()=>{if(!active)return;let stopped=false,busy=false;const poll=async()=>{if(stopped||busy)return;busy=true;try{await load()}catch(error){if(!stopped)setError(error instanceof Error?error.message:String(error))}finally{busy=false}};void poll();const timer=setInterval(()=>void poll(),5000);return()=>{stopped=true;clearInterval(timer)}},[load,active]);
  useEffect(()=>{setUrl(tab?.state==='private'?'':tab?.url||'');setContext(null);setAnnotations([]);diagnosticEpoch.current++;setDiagnostic(null);setDiagnosticEnabled(false)},[selected,tab?.url,tab?.state,tab?.document_revision]);
  useEffect(()=>{const pause=()=>{sessionStorage.setItem('termx-browser-view-paused','true');observationBlocked.current=true;setObservationPaused(true);setControlAllowed(false);setContext(null);setAnnotations([]);diagnosticEpoch.current++;setDiagnostic(null);setShowContext(false);setGrantOpen(false);socket.current?.close();setFrame('');if(frameURL.current){URL.revokeObjectURL(frameURL.current);frameURL.current=''}};window.addEventListener('termx-locked',pause);if(locked)pause();return()=>window.removeEventListener('termx-locked',pause)},[locked]);
  useEffect(()=>{
-  setConnected(false);setFrame('');if(!selected||observationPaused)return;
+  setConnected(false);setFrame('');if(!selected||observationPaused||!active){setViewConnecting(false);return;}
   let live=true,attempts=0;let timer:ReturnType<typeof setTimeout>|undefined;
-  const connect=()=>{if(!live||observationBlocked.current)return;
+  const connect=()=>{if(!live||!activeNow.current||observationBlocked.current)return;
   setViewConnecting(true);const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/browser/tabs/${encodeURIComponent(selected)}/view`);socket.current=ws;ws.binaryType='blob';
-  ws.onopen=()=>{if(live){setConnected(true);setViewConnecting(false)}};
-  ws.onmessage=(event)=>{if(!live||observationBlocked.current)return;if(event.data instanceof Blob){const next=URL.createObjectURL(event.data);if(frameURL.current)URL.revokeObjectURL(frameURL.current);frameURL.current=next;setFrame(next)}else{try{const payload=JSON.parse(event.data);if(payload.type==='state'){setTabs(items=>items.map(t=>t.id===payload.tab.id?payload.tab:t));if(typeof payload.can_control==='boolean')setControlAllowed(payload.can_control)}else if(payload.type==='error'||payload.type==='denied'){setError(payload.message||'Browser request failed');if(payload.type==='denied')setControlAllowed(false)}}catch{}}};
+  ws.onopen=()=>{if(!live||!activeNow.current){ws.close();return;}if(live){setConnected(true);setViewConnecting(false)}};
+  ws.onmessage=(event)=>{if(!live||!activeNow.current||observationBlocked.current)return;if(event.data instanceof Blob){const next=URL.createObjectURL(event.data);if(frameURL.current)URL.revokeObjectURL(frameURL.current);frameURL.current=next;setFrame(next)}else{try{const payload=JSON.parse(event.data);if(payload.type==='state'){setTabs(items=>items.map(t=>t.id===payload.tab.id?payload.tab:t));if(typeof payload.can_control==='boolean')setControlAllowed(payload.can_control)}else if(payload.type==='error'||payload.type==='denied'){setError(payload.message||'Browser request failed');if(payload.type==='denied')setControlAllowed(false)}}catch{}}};
   ws.onerror=()=>{if(live)setError('Browser view could not connect. Check the host connection and session.')};
   ws.onclose=event=>{if(!live)return;setConnected(false);setViewConnecting(false);setFrame('');if([4401,4403,4404].includes(event.code))setError(event.reason|| (event.code===4401?'Sign in to resume the browser view.':event.code===4403?'Browser view permission is denied or revoked.':'The built-in tab closed or crashed.'));if(attempts>=5||![1006,1011,4401].includes(event.code))return;const delay=Math.min(5000,250*2**attempts++);timer=setTimeout(()=>{if(event.code===4401)void request('/auth/me').then(()=>connect()).catch(()=>{});else connect()},delay)};
   };connect();
   return()=>{live=false;if(timer)clearTimeout(timer);socket.current?.close();socket.current=null;if(frameURL.current){URL.revokeObjectURL(frameURL.current);frameURL.current=''}};
- },[selected,connectionAttempt,observationPaused]);
- const human=(action:string,args:Record<string,unknown>={})=>{if(observationBlocked.current)return;if(!controlAllowed){setError('Browser control permission is required. You can still view and share permitted context.');return}if(socket.current?.readyState===WebSocket.OPEN)socket.current.send(JSON.stringify({action,args}));else void run(async()=>{await request(`/api/browser/tabs/${selected}/human`,post({action,args}));await load()})};
+ },[selected,connectionAttempt,observationPaused,active]);
+ const human=(action:string,args:Record<string,unknown>={})=>{if(observationBlocked.current||!activeNow.current)return;if(!controlAllowed){setError('Browser control permission is required. You can still view and share permitted context.');return}if(socket.current?.readyState===WebSocket.OPEN)socket.current.send(JSON.stringify({action,args}));else void run(async()=>{await request(`/api/browser/tabs/${selected}/human`,post({action,args}));await load()})};
  const observe=async()=>{const [value,notes]=await Promise.all([request<Context>(`/api/browser/tabs/${selected}/context`),request<Annotation[]>(`/api/browser/tabs/${selected}/annotations`)]);if(observationBlocked.current||selection.current!==selected)throw new Error('The selected tab changed. Open Page controls again.');setContext(value);setAnnotations(notes);setShowContext(true);return value};
  const createTab=(address?:string)=>run(async()=>{if(!profileId)throw new Error('Create or select a browser profile first.');const value=await request<Tab>('/api/browser/tabs',post({profile_id:profileId,url:address??(url.trim()||'about:blank')}));await load();setSelected(value.id)});
  const closeSelected=()=>run(async()=>{if(!selected)return;await request(`/api/browser/tabs/${selected}`,{method:'DELETE'});await load()});
