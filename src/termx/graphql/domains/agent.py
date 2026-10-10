@@ -55,6 +55,35 @@ _APPROVAL_REMEMBER = {"once", "task", "conversation", "project", "custom_agent",
 class AgentQueries:
     @strawberry.field
     @resolver
+    def agent_task_page(self, info: Ctx, cursor: str | None = None, status: str = 'all', search: str = '') -> JSON:
+        import hashlib
+        import json
+        from cryptography.fernet import InvalidToken
+        import math
+        ctx = info.context
+        ctx.require('agent-view')
+        groups = {'all': (), 'running': ('queued', 'planning', 'running', 'recovering', 'cancelling'), 'attention': ('awaiting_approval', 'recovery_confirmation_required', 'failed', 'paused'), 'completed': ('completed',)}
+        if status not in groups or len(search) > 500:
+            raise HTTPException(400, 'Invalid task filter')
+        binding = hashlib.sha256(json.dumps([ctx.secret, status, search.strip()]).encode()).hexdigest()
+        before = None
+        if cursor:
+            try:
+                if len(cursor) > 1000: raise ValueError()
+                stamp, identifier, owner = json.loads(ctx.state.task_cursor_cipher.decrypt(cursor.encode(), ttl=3600))
+                if owner != binding: raise ValueError()
+                if not isinstance(stamp, (float, int)) or not math.isfinite(stamp) or not isinstance(identifier, str) or len(identifier) > 128: raise ValueError()
+                before = (stamp, identifier)
+            except (ValueError, TypeError, UnicodeError, InvalidToken) as exc:
+                raise HTTPException(400, 'Invalid task cursor') from exc
+        rows = ctx.state.agent_store.task_page(before=before, statuses=groups[status], search=search.strip())
+        visible = ctx.visible('agent-view', 'task', rows)
+        fields = ('id', 'prompt', 'cwd', 'model', 'engine', 'status', 'parent_id', 'conversation_id', 'created_at', 'updated_at')
+        next_cursor = ctx.state.task_cursor_cipher.encrypt(json.dumps([rows[-1]['updated_at'], rows[-1]['id'], binding]).encode()).decode() if len(rows) == 100 else None
+        return {'items': [{key: row.get(key) for key in fields} for row in visible], 'next_cursor': next_cursor}
+
+    @strawberry.field
+    @resolver
     def agent_configuration(self, info: Ctx) -> JSON:
         info.context.require_host('ai-settings')
         return asdict(info.context.state.store.get().agent)
@@ -162,6 +191,37 @@ class AgentQueries:
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return T.AgentTask.wrap(task)
+
+    @strawberry.field
+    @resolver
+    def agent_task_tree(self, info: Ctx, task_id: str) -> JSON:
+        """Bounded supervision tree, applying live resource authority at every node."""
+        ctx = info.context
+        remaining = [100]
+        seen: set[str] = set()
+
+        def visit(identifier: str, depth: int = 0):
+            ctx.require_resource('agent-view', 'task', identifier)
+            value = ctx.state.agent_store.get_task(identifier)
+            if value is None:
+                raise HTTPException(404, 'task not found')
+            seen.add(identifier)
+            remaining[0] -= 1
+            result = {key: value.get(key) for key in ('id', 'prompt', 'cwd', 'engine', 'status', 'parent_id', 'conversation_id', 'limits', 'created_at', 'updated_at')}
+            result['children'] = []
+            result['truncated'] = False
+            if value.get('engine', 'internal') == 'internal':
+                result['tree_budget'] = ctx.state.agent.tree_budget.snapshot(identifier)
+            for child in ctx.state.agent_store.children(identifier):
+                if child['id'] in seen or not ctx.state.authorization.can(ctx.secret, 'agent-view', resource_kind='task', resource_id=child['id']):
+                    continue
+                if depth >= 8 or remaining[0] <= 0:
+                    result['truncated'] = True
+                    break
+                result['children'].append(visit(child['id'], depth + 1))
+            return result
+
+        return visit(task_id)
 
     @strawberry.field
     @resolver

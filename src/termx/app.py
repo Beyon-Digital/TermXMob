@@ -152,8 +152,12 @@ class AppState:
         self.engines.mcp_resolver = lambda conn_id: self.mcp_registry().get(conn_id)
         self.mcp_pool.definition_resolver = lambda conn_id: self.mcp_registry().get(conn_id)
         self.engines.credential_lookup = self.credentials.get
+        from cryptography.fernet import Fernet
+        self.task_cursor_cipher = Fernet(Fernet.generate_key())
         self.notifications = NotificationCenter()
         self.notifications.bridge_agent(self.agent, self.agent_store)
+        from termx.push import PushDelivery
+        self.push = PushDelivery(self, self.store.path.parent / "push.sqlite3")
         self.port = port
         self.request_shutdown = None
         self.host_stop_requested = False
@@ -334,7 +338,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         state.previews.start()
         await state.runner_agents.startup_reconcile()
         state.prompt_queue.start()
+        state.push.start()
         yield
+        await state.push.close()
         await state.prompt_queue.close()
         await state.automation.close()
         await state.runner_agents.close()

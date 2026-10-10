@@ -286,6 +286,16 @@ class CoreMutations:
 
     @strawberry.mutation
     @resolver
+    def register_push_device(self, info: Ctx, token: str, host: str) -> JSON:
+        return info.context.state.push.register(info.context.secret, token, host)
+
+    @strawberry.mutation
+    @resolver
+    def unregister_push_device(self, info: Ctx, token: str) -> JSON:
+        return info.context.state.push.unregister(info.context.secret, token)
+
+    @strawberry.mutation
+    @resolver
     def mark_notifications_read(self, info: Ctx, ids: list[str]) -> int:
         info.context.require("machine-view")
         return info.context.state.notifications.mark_read(ids)

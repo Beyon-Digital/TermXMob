@@ -578,6 +578,23 @@ class AgentStore:
             ).fetchall()
         return [self._task(row) for row in rows]
 
+    def task_page(self, *, limit=100, before=None, statuses=(), search=''):
+        """Stable keyset page for the task dashboard; callers filter authority."""
+        clauses, values = [], []
+        if before:
+            clauses.append('(updated_at < ? OR (updated_at = ? AND id < ?))')
+            values.extend((before[0], before[0], before[1]))
+        if statuses:
+            clauses.append('status IN (' + ','.join('?' for _ in statuses) + ')')
+            values.extend(statuses)
+        if search:
+            clauses.append("instr(lower(prompt || ' ' || cwd || ' ' || model || ' ' || coalesce(result, '')), lower(?)) > 0")
+            values.append(search)
+        where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
+        with self._lock:
+            rows = self._db.execute('SELECT * FROM tasks' + where + ' ORDER BY updated_at DESC, id DESC LIMIT ?', (*values, max(1, min(limit, 100)))).fetchall()
+        return [self._task(row) for row in rows]
+
     def update_task(self, task_id: str, **changes: Any) -> dict[str, Any]:
         invalid = set(changes) - TASK_FIELDS
         if invalid:
