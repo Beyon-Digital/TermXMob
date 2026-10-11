@@ -105,3 +105,8 @@ The agent provider is a deterministic fixture and physical screen capture is
 stubbed at the operating-system boundary. These checks do not establish native
 Tauri bridge behavior, physical-device capture, installed mobile secure storage,
 or live provider billing behavior.
+
+Scheduled agent tasks and direct shell cron jobs are implemented in the host and
+standalone control plane, with remote controls in the companion. See
+[scheduling.md](scheduling.md) for supported expressions, authorization, command
+limits, lifecycle behavior and validation.

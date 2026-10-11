@@ -237,7 +237,7 @@ class RunbookRunner:
         pending = 0
         try:
             while True:
-                remaining = STEP_TIMEOUT_S - (time.monotonic() - started)
+                remaining = min(STEP_TIMEOUT_S, step.get('_timeout_s', STEP_TIMEOUT_S)) - (time.monotonic() - started)
                 if remaining <= 0:
                     self._kill_proc(proc)
                     return result("failed", None, "step timed out")
