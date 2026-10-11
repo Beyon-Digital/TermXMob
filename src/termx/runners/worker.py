@@ -13,6 +13,9 @@ import sys
 import uuid
 import tempfile
 import threading
+import argparse
+import re
+from time import monotonic
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,11 +32,13 @@ PROTOCOL = 1
 MAX_FRAME = 8 * 1024 * 1024
 TOOLS = {'read_file','write_file','apply_patch','list_files','search_files','grep','glob','run_shell','run_check','search_project','git_status','git_diff','git_log','git_show','project_manifest'}
 
-def capabilities():
+def capabilities(machine_root=None):
     registry=default_registry()
     return {'protocol':PROTOCOL,'engine':'internal','credential_transport':'host-stdio-broker',
             'review':'host-bound-fingerprint-v1','tools':sorted(TOOLS.intersection(registry.names())),
-            'root':'/workspace','network':'none','version':'0.3.0','agent_presets':'snapshot-v1'}
+            'root':machine_root or '/workspace','network':'machine' if machine_root else 'none',
+            'machine_control':'stop-file-v1' if machine_root else None,
+            'version':'0.3.0','agent_presets':'snapshot-v1'}
 
 def frame(value):
     raw=json.dumps(value,separators=(',',':'),allow_nan=False).encode()
@@ -59,6 +64,7 @@ class Channel:
     def __init__(self):self.pending={};self.task_id=None;self.manager=None;self.control_error=None;self.closed=asyncio.Event();self.phase='startup';self._reader_stopped=threading.Event();self._diagnostics_stopped=threading.Event();self._incoming=None
     def send(self,value):sys.stdout.buffer.write(frame(value));sys.stdout.buffer.flush()
     async def rpc(self,method,arguments):
+        if self.closed.is_set():raise RuntimeError('Host runner control channel closed')
         self.phase='rpc:'+method
         identifier=uuid.uuid4().hex;future=asyncio.get_running_loop().create_future();self.pending[identifier]=future
         self.send({'type':'rpc','id':identifier,'method':method,'arguments':arguments})
@@ -213,19 +219,24 @@ class ReviewedManager(AgentManager):
             await self.channel.rpc('effect-result',{'review_id':review_id,'ok':False})
             raise
 
-async def run():
+async def run(machine_root=None,job_id=None,seconds=3600):
     if os.name=='nt':
         import msvcrt
         msvcrt.setmode(0,os.O_BINARY);msvcrt.setmode(1,os.O_BINARY)
-    channel=Channel()
-    raw=await channel.next_frame()
+    channel=Channel();deadline=monotonic()+seconds
+    raw=await asyncio.wait_for(channel.next_frame(),min(30,seconds))
     if len(raw)>MAX_FRAME+1 or not raw.endswith(b'\n'):raise ValueError('Invalid startup frame')
     start=json.loads(raw)
     if start.get('type')!='start' or start.get('protocol')!=PROTOCOL:raise ValueError('Unsupported engine port')
-    root=Path('/workspace')
+    root=Path(machine_root or '/workspace')
     # Test-only isolated path is never accepted in production container commands.
-    if os.environ.get('TERMX_RUNNER_TEST_ROOT'):root=Path(os.environ['TERMX_RUNNER_TEST_ROOT'])
+    if not machine_root and os.environ.get('TERMX_RUNNER_TEST_ROOT'):root=Path(os.environ['TERMX_RUNNER_TEST_ROOT'])
     root.mkdir(parents=True,exist_ok=True)
+    control=root/'.termx-control'
+    if machine_root:
+        control.mkdir(mode=0o700,exist_ok=True)
+        if (control/(job_id+'.stop')).exists():
+            (control/(job_id+'.done')).touch();raise ValueError('Machine task was cancelled before startup')
     data=Path(tempfile.mkdtemp(prefix='termx-runner-'))
     os.environ['TERMX_CONFIG_DIR']=str(data/'config')
     os.environ['TERMX_AGENTS_DIR']=str(data/'agents')
@@ -249,6 +260,16 @@ async def run():
         preset={key:preset.get(key) for key in ('id','name','instructions','tools','limits','workspace_revision')}
         preset.update(sandbox_profile='agent',approval_mode='standard')
     listener=asyncio.create_task(channel.listen())
+    async def watch_machine():
+        while True:
+            if monotonic()>=deadline or (control/(job_id+'.stop')).exists():
+                if channel.task_id:manager.cancel(channel.task_id)
+                channel.closed.set()
+                for future in list(channel.pending.values()):
+                    if not future.done():future.set_exception(RuntimeError('Machine execution stopped'))
+                return
+            await asyncio.sleep(.05)
+    watcher=asyncio.create_task(watch_machine()) if machine_root else None
     try:
         task=await manager.create_task(prompt=start['prompt'],cwd=str(root),provider_id=provider['id'],model=provider['model'],mode=start.get('mode','agent'),limits=start.get('limits'),attachments=start.get('attachments'),custom_agent_snapshot=preset,custom_agent_id=preset['id'] if preset else None)
         channel.task_id=task['id'];channel.send({'type':'ready','remote_task_id':task['id']})
@@ -258,6 +279,8 @@ async def run():
                 channel.send({'type':'finished','task':task});break
             await asyncio.sleep(.05)
     finally:
+        if watcher:
+            watcher.cancel();await asyncio.gather(watcher,return_exceptions=True)
         channel.stop();await manager.close();listener.cancel();await asyncio.gather(listener,return_exceptions=True)
         # A task may already have paused or reached a terminal state when its
         # listener rejects a frame. Keep the protocol failure explicit without
@@ -265,7 +288,30 @@ async def run():
         if channel.control_error is not None and channel.task_id and store.get_task(channel.task_id)['status']!='failed':
             manager._fail(channel.task_id,channel.control_error)
         store.close();projects.close()
+        if machine_root:(control/(job_id+'.done')).touch()
 
 if __name__=='__main__':
-    if '--capabilities' in sys.argv:print(json.dumps(capabilities()))
-    else:asyncio.run(run())
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--capabilities',action='store_true')
+    parser.add_argument('--machine-root')
+    parser.add_argument('--job-id')
+    parser.add_argument('--stop-job')
+    parser.add_argument('--seconds',type=int,default=3600)
+    args=parser.parse_args()
+    if args.machine_root:
+        root=Path(args.machine_root)
+        if not root.is_absolute() or str(root.resolve())!=args.machine_root:parser.error('Machine root must be an absolute canonical path')
+        job=args.stop_job or args.job_id
+        if not args.capabilities and (not job or not re.fullmatch('[a-zA-Z0-9_-]{1,128}',job)):parser.error('Machine job ID is required')
+        if not 1<=args.seconds<=3600:parser.error('Machine budget must be 1–3600 seconds')
+    elif args.stop_job or args.job_id:parser.error('Machine root is required')
+    if args.capabilities:print(json.dumps(capabilities(args.machine_root)))
+    elif args.stop_job:
+        import time
+        control=Path(args.machine_root)/'.termx-control';control.mkdir(mode=0o700,exist_ok=True)
+        (control/(args.stop_job+'.stop')).touch()
+        deadline=monotonic()+10
+        while not (control/(args.stop_job+'.done')).exists():
+            if monotonic()>=deadline:sys.exit(2)
+            time.sleep(.1)
+    else:asyncio.run(run(args.machine_root,args.job_id,args.seconds))

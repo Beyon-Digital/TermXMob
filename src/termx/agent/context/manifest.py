@@ -4,7 +4,7 @@ import fnmatch
 import os
 from pathlib import Path
 
-SKIP_DIRS = frozenset({".git", ".hg", ".svn", "node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"})
+SKIP_DIRS = frozenset({".git", ".hg", ".svn", "node_modules", ".venv", ".termx-runtime", ".termx-control", "venv", "dist", "build", "target", "__pycache__"})
 SECRET_NAMES = (
     ".env",
     ".env.*",

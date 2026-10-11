@@ -166,7 +166,9 @@ class WorkspaceService:
         runner=runners.row(principal.id,identifier)
         if runner['status']!='ready' or runner['expires']<=time() or runner['project']!=(row.get('project_id') or ''):
             raise PermissionError('Runner must be ready and scoped to this execution project')
-        if runner['configuration'].get('network','none')!='none':
+        if runner['configuration'].get('kind')=='machine':
+            if not runner['configuration'].get('trust_machine') or not runners.authority(runner):raise PermissionError('Machine execution is not authorized')
+        elif runner['configuration'].get('network','none')!='none':
             raise PermissionError('Reviewed cloud agents require the isolated runner network policy')
 
     def create_session(self, principal, *, title='', project_id=None, cwd=None,
@@ -427,7 +429,7 @@ class WorkspaceService:
         transfer = {'source_id':identifier,'source_revision':source['revision'],'source_updated_at':source['updated_at'],'engine':engine,
                     'messages':messages,'files':safe_files,'summary':summary,
                     'semantics':'new_session_with_reviewed_context',
-                    'source_execution':{'runner_id':source.get('runner_id'),'cwd':'/workspace' if source.get('runner_id') else source.get('cwd')},
+                    'source_execution':{'runner_id':source.get('runner_id'),'cwd':self.state.runners.row(principal.id,source['runner_id'])['configuration'].get('root','/workspace') if source.get('runner_id') else source.get('cwd')},
                     'target_execution':{'kind':'local','cwd':source.get('cwd'),'project_id':source.get('project_id')},
                     'excluded':['native_session','hidden_memory','credentials','native_resume']}
         encoded = json.dumps(transfer, sort_keys=True)
@@ -589,7 +591,7 @@ class WorkspaceService:
     def _dispatch_created(self,principal,row,key,tid,managed_session_id=None,delegation_id=None,turn_prompt=None,submitted_prompt=None,submitted_context=None):
         if delegation_id:
             self.validate_delegation(principal,row,delegation_id)
-        self.store.create('task',principal.id,{'conversation_id':row['id'],'mcp_snapshot':row.get('mcp_snapshot',{}),'reasoning_config':dict(row.get('reasoning_config') or {}),'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+'/workspace' if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
+        self.store.create('task',principal.id,{'conversation_id':row['id'],'mcp_snapshot':row.get('mcp_snapshot',{}),'reasoning_config':dict(row.get('reasoning_config') or {}),'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+self.state.runners.row(principal.id,row['runner_id'])['configuration'].get('root','/workspace') if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'task', tid, project_id=row.get('project_id'))
         with self.store.lock:

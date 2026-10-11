@@ -387,6 +387,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_media(app, state)
     from termx.runners.http import mount_runners
     mount_runners(app, state)
+    from termx.runners.cloud.http import mount_cloud
+    mount_cloud(app, state)
     from termx.runners.agent_http import mount_runner_agents
     mount_runner_agents(app, state)
     from termx.browser.service import BrowserService

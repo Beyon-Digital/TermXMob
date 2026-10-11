@@ -49,6 +49,13 @@ class RunnerAgentService:
         provider=self._account(provider_id,credential_ref,model)
         if runner['status']!='ready' or runner['expires']<=time() or not self.runners.authority(runner):raise HTTPException(403,'Runner lease is unavailable or revoked')
         config=runner['configuration']
+        if config.get('kind')=='machine':
+            if not config.get('trust_machine'):raise HTTPException(409,'Machine execution requires explicit SSH account trust')
+            probe=await self.runners.machines.probe(config)
+            expected={'protocol':PROTOCOL,'engine':'internal','root':config['root'],'network':'machine','credential_transport':'host-stdio-broker','review':'host-bound-fingerprint-v1','machine_control':'stop-file-v1'}
+            if any(probe.get(k)!=v for k,v in expected.items()) or not set(probe.get('tools') or []).issubset(TOOLS):raise HTTPException(409,'Set up the current TermX machine runtime before selecting this target')
+            self.qualified[runner_id]=probe
+            return {'runner':runner,'provider':provider,'capabilities':probe}
         if config.get('network','none')!='none':raise HTTPException(409,'AI runner requires isolated networking and host provider brokerage')
         details=json.loads(await self.runners.docker(config,'inspect',runner['container']))[0]
         host=details['HostConfig']
@@ -100,6 +107,7 @@ class RunnerAgentService:
         provider_id=provider_id or credential_ref
         admission=await self.preflight(principal,runner_id,provider_id,credential_ref,model)
         runner,provider=admission['runner'],admission['provider']
+        root=runner['configuration'].get('root','/workspace')
         preset=None
         if custom_agent:
             if admission['capabilities'].get('agent_presets')!='snapshot-v1':raise HTTPException(409,'Install a runner image with immutable agent preset support')
@@ -118,13 +126,15 @@ class RunnerAgentService:
         digest=canonical_hash({**request,'limits':original_limits})
         with self.runners.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            current=self.runners.row(principal.id,runner_id)
+            if current['status']!='ready' or not self.runners.authority(current):raise HTTPException(409,'Runner state changed during admission')
             old=db.execute('SELECT * FROM agent_jobs WHERE runner=? AND request_id=?',(runner_id,request_id)).fetchone()
             if old:
                 if old['digest']!=digest:raise HTTPException(409,'Request ID belongs to a different task')
                 return self.store.get_task(old['task'],include_events=True)
             if db.execute("SELECT 1 FROM jobs WHERE runner=? AND status='running'",(runner_id,)).fetchone():raise HTTPException(409,'Dedicated runner already has an active job')
-            task=self.store.create_task(prompt=prompt,cwd='/workspace',provider_id=provider_id,model=provider['model'],limits=bounded,mode=mode,engine='runner',custom_agent_id=preset['id'] if preset else None,custom_agent_snapshot=preset)
-            runtime={'runner_id':runner_id,'runner_protocol':PROTOCOL,'runner_request_id':request_id,'conversation_id':conversation_id,'remote_root':'/workspace','owner':principal.id}
+            task=self.store.create_task(prompt=prompt,cwd=root,provider_id=provider_id,model=provider['model'],limits=bounded,mode=mode,engine='runner',custom_agent_id=preset['id'] if preset else None,custom_agent_snapshot=preset)
+            runtime={'runner_id':runner_id,'runner_protocol':PROTOCOL,'runner_request_id':request_id,'conversation_id':conversation_id,'remote_root':root,'owner':principal.id}
             self.store.update_task(task['id'],runtime=runtime)
             for name,mime,data in images:self.store.save_artifact(task['id'],'upload',mime,data)
             try:
@@ -133,7 +143,7 @@ class RunnerAgentService:
                 self.store.update_task(task['id'],status='failed',error='Resource admission failed before dispatch');raise
             db.execute('INSERT INTO agent_jobs VALUES(?,?,?,?,?,?,?,?,?,?)',(task['id'],runner_id,principal.id,request_id,digest,provider_id,credential_ref,principal.policy_version,self._fingerprint(provider,credential_ref),'running'))
             db.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)',(task['id'],runner_id,'agent:'+request_id,digest,json.dumps({'engine':'internal','task_id':task['id']}),'running',time(),None,None))
-        self.state.agent._emit(task['id'],'task.created',{'task':self.store.get_task(task['id']),'execution_location':{'kind':'runner','runner_id':runner_id,'root':'/workspace'}})
+        self.state.agent._emit(task['id'],'task.created',{'task':self.store.get_task(task['id']),'execution_location':{'kind':'runner','runner_id':runner_id,'root':root}})
         self.workers[task['id']]=asyncio.create_task(self._drive(task['id'],request,runner))
         return self.store.get_task(task['id'],include_events=True)
     def _emit(self,task_id,kind,payload):return self.state.agent._emit(task_id,kind,payload)
@@ -164,8 +174,12 @@ class RunnerAgentService:
                 else:raise ValueError('Unexpected worker frame')
             raise RuntimeError('Runner channel closed before a confirmed result')
         try:
-            command=['docker']+(['--host',config['endpoint']] if config.get('endpoint') else ['--context',config['context']])
-            process=await asyncio.create_subprocess_exec(*command,'exec','-i',runner['container'],'python','-I','-m','termx.runners.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,limit=MAX_FRAME+2)
+            if config.get('kind')=='machine':
+                command=self.runners.machines.worker_command(config,'--job-id',task_id,'--seconds',str(request['limits']['max_seconds']))
+            else:
+                command=['docker']+(['--host',config['endpoint']] if config.get('endpoint') else ['--context',config['context']])
+                command += ['exec','-i',runner['container'],'python','-I','-m','termx.runners.worker']
+            process=await asyncio.create_subprocess_exec(*command,stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,limit=MAX_FRAME+2)
             self.channels[task_id]=process
             await self._send(task_id,{'type':'start','protocol':PROTOCOL,'provider':{'id':job['provider'],'model':request['model']},'prompt':request['prompt'],'mode':request['mode'],'limits':request['limits'],'attachments':request['attachments'],'custom_agent':request.get('custom_agent')})
             reader=asyncio.create_task(read());watcher=asyncio.create_task(monitor())
@@ -206,7 +220,7 @@ class RunnerAgentService:
     def _event(self,task_id,value):
         event=value['event'];kind=event['type'];payload=event.get('payload') or {}
         self._snapshot(task_id,value.get('task') or {})
-        if kind=='task.created':payload={'task':self.store.get_task(task_id),'execution_location':{'kind':'runner','runner_id':self._job(task_id)['runner'],'root':'/workspace'}}
+        if kind=='task.created':payload={'task':self.store.get_task(task_id),'execution_location':{'kind':'runner','runner_id':self._job(task_id)['runner'],'root':self.store.get_task(task_id)['cwd']}}
         if kind=='user.media':payload={'artifacts':[a for a in self.store.artifacts(task_id) if a['kind']=='upload']}
         if kind=='approval.requested':
             remote=payload['approval'];local=self.store.create_approval(task_id,remote['kind'],{**remote['payload'],'execution_target':'Dedicated runner'})
@@ -228,19 +242,20 @@ class RunnerAgentService:
         return adapter
     async def _rpc(self,job,value):
         identifier=value['id'];method=value.get('method');args=value.get('arguments') or {};task_id=job['task']
+        root=self.store.get_task(task_id)['cwd']
         try:
             if not self._valid(job):raise PermissionError('Authority changed')
             if method in {'plan','turn'}:
-                if args.get('cwd')!='/workspace':raise ValueError('Provider context must be the admitted remote workspace')
+                if args.get('cwd')!=root:raise ValueError('Provider context must be the admitted remote workspace')
                 provider=self._account(job['provider'],job['credential_ref'],self.store.get_task(task_id)['model'])
                 runner=self.runners.row(job['owner'],job['runner'])
-                qualified=self.qualified.get(runner['configuration']['image_id'],{}).get('tools') or TOOLS
+                qualified=self.qualified.get(runner['configuration'].get('image_id',runner['id']),{}).get('tools') or TOOLS
                 preset=self.store.task_agent(self.store.get_task(task_id))
                 permitted=set(qualified).intersection(preset['tools']) if preset and preset.get('tools') else set(qualified)
                 adapter=self._adapter(provider,permitted)
-                if method=='plan':result=await adapter.plan(str(args.get('prompt','')), '/workspace', args.get('manifest') or {})
+                if method=='plan':result=await adapter.plan(str(args.get('prompt','')), root, args.get('manifest') or {})
                 else:
-                    result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd='/workspace',manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),allow_computer=False,read_only=self.store.get_task(task_id)['mode']=='ask'))
+                    result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd=root,manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),allow_computer=False,read_only=self.store.get_task(task_id)['mode']=='ask'))
                 if not self._valid(job):raise PermissionError('Authority changed during provider request')
             elif method=='review':result=await self._review(job,identifier,args)
             elif method=='effect-result':
@@ -266,9 +281,9 @@ class RunnerAgentService:
         if tool in {'write_file','read_file','apply_patch'} and not state:hard='Missing installed-worker file state proof'
         for path,digest in state:
             p=PurePosixPath(path)
-            if not p.is_relative_to('/workspace') or '..' in p.parts or is_sensitive_path(path) or (digest is not None and not re.fullmatch('[a-f0-9]{64}',digest)):hard='Sensitive or invalid remote file target'
+            if not p.is_relative_to(task['cwd']) or '..' in p.parts or is_sensitive_path(path) or (digest is not None and not re.fullmatch('[a-f0-9]{64}',digest)):hard='Sensitive or invalid remote file target'
         if tool=='apply_patch' and '+++ /dev/null' in str(arguments.get('patch','')):effect='delete'
-        envelope=ActionEnvelope(task_id+':'+identifier,job['owner'],'runner:'+job['runner'],self.runners.row(job['owner'],job['runner'])['project'],task_id,'runner.'+tool,canonical_hash({'arguments':arguments,'state':state}),'/workspace',effect,'runner-task:'+task_id,job['policy_version'],data_labels=('secret',) if redact(json.dumps(arguments))!=json.dumps(arguments) else ())
+        envelope=ActionEnvelope(task_id+':'+identifier,job['owner'],'runner:'+job['runner'],self.runners.row(job['owner'],job['runner'])['project'],task_id,'runner.'+tool,canonical_hash({'arguments':arguments,'state':state}),task['cwd'],effect,'runner-task:'+task_id,job['policy_version'],data_labels=('secret',) if redact(json.dumps(arguments))!=json.dumps(arguments) else ())
         review=self.state.browser.review;validate=lambda:self._valid(job)
         try:permit=await review.authorize(envelope,validate=validate,hard_deny=hard,context={'task_summary':task['prompt'],'effect_summary':effect})
         except ActionBlocked:return {'allowed':False}
@@ -287,7 +302,7 @@ class RunnerAgentService:
         worker=self.workers.get(task_id)
         if not worker:raise HTTPException(409,'Task channel is unavailable; no automatic replay is permitted')
         worker.cancel()
-        self.store.update_task(task_id,status='cancelled',error='Cancelled by user; dedicated container stopping')
+        self.store.update_task(task_id,status='cancelled',error='Cancelled by user; runner execution stopping')
         self._emit(task_id,'task.status',{'status':'cancelled','execution_target':'runner'})
         async def stop_cancelled():
             await asyncio.gather(worker,return_exceptions=True)

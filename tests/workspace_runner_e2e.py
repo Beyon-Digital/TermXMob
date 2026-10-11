@@ -90,7 +90,7 @@ def run(destination):
                     page.get_by_role('button', name='Dismiss', exact=True).click()
                 report['steps'].append('Real desktop viewer sockets disappear from host capture status when the panel hides and window blurs; no automatic restart')
                 page.get_by_role('button', name='Runners', exact=True).click()
-                page.get_by_role('button', name='Enroll runner', exact=True).click()
+                page.get_by_role('button', name='Enroll container', exact=True).click()
                 page.get_by_role('combobox', name='Runner project').select_option(project['id'])
                 page.get_by_label('Container image', exact=True).fill(os.environ.get('TERMX_RUNNER_IMAGE', 'termx-runner:workspace'))
                 page.get_by_role('button', name='Create scoped runner').click()
