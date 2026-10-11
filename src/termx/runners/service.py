@@ -40,6 +40,8 @@ class RunnerService:
                 configuration TEXT, status TEXT, started REAL, ended REAL, result TEXT,
                 UNIQUE(runner, request_id));''')
         self.path.chmod(0o600)
+        from termx.runners.machines import MachineService
+        self.machines = MachineService(self)
 
     @contextmanager
     def db(self):
@@ -154,6 +156,7 @@ class RunnerService:
 
     async def run(self, owner, identifier, request):
         runner=self.row(owner,identifier);request=dict(request)
+        if runner['configuration'].get('kind')=='machine':raise HTTPException(409,'Use an agent session to run reviewed commands on this machine')
         if runner['status']!='ready' or runner['expires']<=time() or not self.authority(runner):raise HTTPException(403,'Runner lease is unavailable or revoked')
         argv=request.get('argv')
         if not isinstance(argv,list) or not argv or len(argv)>64 or any(not isinstance(arg,str) or '\0' in arg or len(arg)>8192 for arg in argv):raise HTTPException(400,'Provide an explicit command argument array')
@@ -220,6 +223,7 @@ class RunnerService:
 
     async def stop(self, owner, identifier, teardown=False):
         runner=self.row(owner,identifier)
+        if runner['configuration'].get('kind')=='machine':return await self.machines.stop(runner,teardown)
         if runner['container']:
             await self.docker(runner['configuration'],'rm' if teardown else 'stop',
                 *(['--force'] if teardown else ['--time','1']),runner['container'])
@@ -231,6 +235,7 @@ class RunnerService:
 
     async def upload(self, owner, identifier, archive_bytes):
         runner=self.row(owner,identifier)
+        if runner['configuration'].get('kind')=='machine':raise HTTPException(409,'Use SSH/SFTP or an agent session to manage persistent machine files')
         if runner['status']!='ready' or not self.authority(runner):raise HTTPException(403,'Runner is unavailable')
         if len(archive_bytes)>20*1024*1024:raise HTTPException(413,'Workspace archive exceeds 20 MiB')
         output=io.BytesIO();total=0
@@ -249,6 +254,7 @@ class RunnerService:
 
     async def results(self, owner, identifier, path):
         runner=self.row(owner,identifier);relative=Path(path)
+        if runner['configuration'].get('kind')=='machine':raise HTTPException(409,'Use SSH/SFTP or an agent session to retrieve persistent machine files')
         if relative.is_absolute() or '..' in relative.parts or not path:raise HTTPException(400,'Choose a result path inside the runner workspace')
         # tar is generated in the container, not followed by the host.
         raw=await self.docker(runner['configuration'],'exec',runner['container'],'tar','-cf','-','-C','/workspace',path)
@@ -279,6 +285,7 @@ class RunnerService:
             await asyncio.sleep(1)
 
     async def close(self):
+        await self.machines.close()
         if self.monitor:
             self.monitor.cancel();await asyncio.gather(self.monitor,return_exceptions=True)
         with self.db() as db:

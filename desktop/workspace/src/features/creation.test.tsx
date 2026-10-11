@@ -24,7 +24,7 @@ it('preserves edited content when the server reports a version conflict',async()
 });
 it('enrolls only the selected project and explicit execution location',async()=>{
  render(<Runners ownerId="owner" projectId="project"/>);await screen.findByText('Enroll a dedicated runner for this project to start remote work.');
- fireEvent.click(screen.getByRole('button',{name:'Enroll runner'}));fireEvent.change(screen.getByLabelText('Container image'),{target:{value:'alpine:latest'}});
+ fireEvent.click(screen.getByRole('button',{name:'Enroll container'}));fireEvent.change(screen.getByLabelText('Container image'),{target:{value:'alpine:latest'}});
  fireEvent.change(screen.getByLabelText('Execution host'),{target:{value:'ssh://user@runner.example'}});
  api.mockImplementation(async(path:string,init?:RequestInit)=>path==='/api/runners'&&init?.method==='POST'?{id:'runner',configuration:{image:'alpine:latest'}}:[]);
  fireEvent.click(screen.getByRole('button',{name:'Create scoped runner'}));await waitFor(()=>expect(api).toHaveBeenCalledWith('/api/runners',expect.objectContaining({body:expect.stringContaining('"project_id":"project"')})));

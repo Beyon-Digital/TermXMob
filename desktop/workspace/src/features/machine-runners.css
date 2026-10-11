@@ -1,0 +1,8 @@
+.machine-fleet{padding-bottom:28px;margin-bottom:28px;border-bottom:1px solid var(--border)}
+.machine-eyebrow{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.1em;color:var(--secondary);font-weight:650}
+.machine-fleet h2{font-size:24px;margin:8px 0}.machine-fleet h3{display:flex;align-items:center;gap:9px;margin:8px 0;font-size:17px}
+.machine-provider-options,.machine-steps{display:flex;flex-wrap:wrap;gap:8px}.machine-provider-options{margin:10px 0 20px}
+.machine-enrollment .machine-trust{display:flex;flex-direction:row;align-items:flex-start;gap:10px;line-height:1.6;max-width:760px}.machine-trust input{margin-top:5px;flex-shrink:0}
+.machine-empty{border:1px dashed var(--border);border-radius:12px;padding:30px;margin-top:20px}.machine-empty>svg{color:var(--secondary)}.machine-empty p{max-width:620px}.machine-steps{margin-top:20px}.machine-steps span{padding:8px 12px;background:var(--muted);border-radius:6px;font-size:12px}
+.machine-card h3{font-size:19px}.machine-address{font-family:monospace;overflow-wrap:anywhere}.machine-card dd{overflow-wrap:anywhere}.machine-card pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:12px}.machine-review{padding:16px;border:1px solid var(--border);border-radius:8px;margin-top:12px;background:var(--muted)}.machine-review h4{margin:0;text-transform:capitalize}.machine-ready{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.6}.machine-ready svg{flex-shrink:0;margin-top:3px}
+@media(prefers-reduced-motion:no-preference){.machine-enrollment,.machine-review{animation:machine-reveal .18s ease-out}@keyframes machine-reveal{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}}

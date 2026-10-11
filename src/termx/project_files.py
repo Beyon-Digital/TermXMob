@@ -196,7 +196,7 @@ class ProjectFiles:
         visited = 0
         deadline = time() + 5
         for directory, dirs, files in os.walk(root, followlinks=False):
-            dirs[:] = [d for d in dirs if d not in {".git", "node_modules", ".venv", "dist", "build", "target"}
+            dirs[:] = [d for d in dirs if d not in {".git", "node_modules", ".venv", ".termx-runtime", ".termx-control", "dist", "build", "target"}
                        and not Path(directory, d).is_symlink()]
             for name in files:
                 visited += 1
