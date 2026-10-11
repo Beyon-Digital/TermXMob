@@ -12,7 +12,7 @@ def mount_runner_agents(app,state):
         state.authorization.require(raw,'host-admin');return identity.principal
     @router.get('/capabilities')
     def capabilities(request:Request):
-        return {'protocol':1,'engine':'internal','accounts':state.runner_agents.accounts(actor(request)),'network':'none','credential_transport':'host-broker'}
+        return {'protocol':1,'engine':'internal','accounts':state.runner_agents.accounts(actor(request)),'network':'none','credential_transport':'host-broker','execution_modes':{'container':{'network':'none','root':'/workspace'},'machine':{'network':'machine','root':'configured','permissions':'ssh-account'}}}
     @router.post('/{runner_id}/preflight')
     async def preflight(runner_id:str,request:Request):
         data=await request.json()

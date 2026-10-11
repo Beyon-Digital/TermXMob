@@ -1,3 +1,4 @@
+import CloudAccounts from './CloudAccounts';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -17,7 +18,7 @@ import SessionPolicyManager from './SessionPolicyManager';
 
 type Row = Record<string, any>;
 export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void }
-const groups = [['models', 'Models & engines'], ['agents', 'Agents'], ['extensions', 'Plugins & skills'], ['connections', 'Tools & connections'], ['memory', 'Memory'], ['hooks', 'Hooks'], ['automations', 'Automations'], ['access', 'Access & sessions']];
+const groups = [['models', 'Models & engines'], ['cloud', 'Cloud accounts'], ['agents', 'Agents'], ['extensions', 'Plugins & skills'], ['connections', 'Tools & connections'], ['memory', 'Memory'], ['hooks', 'Hooks'], ['automations', 'Automations'], ['access', 'Access & sessions']];
 const scoped = (project: string | null) => project ? `?project_id=${encodeURIComponent(project)}` : '';
 const body = (value: unknown, method = 'POST'): RequestInit => ({ method, body: JSON.stringify(value), headers: { 'Content-Type': 'application/json' } });
 const date = (value?: number) => value ? new Date(value * 1000).toLocaleString() : '—';
@@ -90,6 +91,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       <Input className="manager-search" placeholder="Search this manager…" aria-label="Search settings" value={search} onChange={e => setSearch(e.target.value)} />
       {error && <div role="alert" className="manager-error">{error}<button onClick={() => setVersion(v => v + 1)}>Retry</button></div>}{notice && <div role="status" className="manager-notice">{notice}</div>}
       {loading && !['extensions','automations'].includes(section) ? <Empty>Loading current settings…</Empty> : <>
+      {section === 'cloud' && <CloudAccounts search={search}/>}
       {section === 'models' && <><h2>Installed engines</h2>{(data.engines || []).filter(matches).map((engine: Row) => <Item key={engine.id} title={engine.label} meta={`${engine.installed ? 'Installed' : 'Needs installation'} · ${engine.auth_state || 'Unknown account status'}${engine.version ? ` · ${engine.version}` : ''}`}>
         {action('Inspect capabilities', () => setPreview(engine), true)}{action('Refresh models', () => mutate(async () => { const value = await gql('query($id:String!){engine_models(engine_id:$id)}', { id: engine.id }); setPreview(value); return value }, 'Model catalog refreshed', false), true)}
         <details><summary>Account sign-in</summary><Input aria-label={`Sign-in method for ${engine.label}`} placeholder="Method ID from engine account settings" value={draft[`method-${engine.id}`] || ''} onChange={e => change(`method-${engine.id}`, e.target.value)} />{action('Sign in', () => mutate(() => gql('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}', { id: engine.id, method: draft[`method-${engine.id}`] || '' }), 'Sign-in request completed'))}</details>

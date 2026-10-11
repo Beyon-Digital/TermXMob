@@ -36,7 +36,7 @@ from termx.agent.tools.registry import (
     decide_never,
 )
 
-_SKIP_DIRS = {".git", ".termx", "__pycache__", ".venv", "venv", "node_modules", "dist", "build", "target", ".next", ".mypy_cache", ".pytest_cache"}
+_SKIP_DIRS = {".git", ".termx", "__pycache__", ".venv", ".termx-runtime", ".termx-control", "venv", "node_modules", "dist", "build", "target", ".next", ".mypy_cache", ".pytest_cache"}
 _MAX_LIST_ENTRIES = 500
 # How far a hunk may drift from its stated line and still apply; matches
 # must also be unique within that window so stale patches can't silently

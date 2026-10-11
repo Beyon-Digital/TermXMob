@@ -77,6 +77,9 @@ session. Remote HTTPS must be configured; loopback is the development exception.
 
 Global runner enrollment includes project selection. Session options load the
 host's runner array directly, making eligible runners available for attachment.
+Persistent SSH machines and EC2/Lightsail lifecycle controls are documented in
+[Runner machines](runner-machines.md). Their configured roots and SSH permissions
+are shown separately from leased, isolated containers.
 Refresh and request errors are visible; requests have a 30-second deadline and
 mutation timeout messages warn that the operation may already have completed.
 
