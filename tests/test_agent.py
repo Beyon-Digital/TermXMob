@@ -666,8 +666,8 @@ class _FanOutAdapter(FakeAdapter):
     """Routes scripted turns per-task by a substring of the task prompt.
 
     routes maps a prompt substring to (script, per-turn delay). Parent and
-    children consume independent scripts, and a nonzero delay keeps a task
-    busy so fan-out/cancel paths are exercised deterministically.
+    children consume independent scripts. Delays model slow children; tests
+    that require overlapping execution must synchronize the child turns.
     """
 
     def __init__(self, routes: dict[str, tuple[list[list[ProviderCall]], float]]) -> None:
@@ -755,7 +755,24 @@ def test_spawn_subagent_returns_async_handle(tmp_path: Path) -> None:
 
 def test_subagent_fanout_and_await_collects_results(tmp_path: Path) -> None:
     async def run() -> None:
-        adapter = _FanOutAdapter(
+        child_turns_started: set[str] = set()
+        both_children_running = asyncio.Event()
+
+        class ConcurrentAdapter(_FanOutAdapter):
+            async def turn(self, **kwargs: Any) -> ProviderTurn:
+                for child in ("child-a", "child-b"):
+                    if child in kwargs["prompt"]:
+                        child_turns_started.add(child)
+                        if len(child_turns_started) == 2:
+                            both_children_running.set()
+                        # Separate spawn approvals can take arbitrarily longer
+                        # than a fixture sleep on CI. Neither child may finish
+                        # until both are executing; a serial spawn still fails.
+                        await asyncio.wait_for(both_children_running.wait(), timeout=10)
+                        break
+                return await super().turn(**kwargs)
+
+        adapter = ConcurrentAdapter(
             {
                 "Coordinate": (
                     [
@@ -767,8 +784,8 @@ def test_subagent_fanout_and_await_collects_results(tmp_path: Path) -> None:
                     ],
                     0.0,
                 ),
-                "child-a": ([], 0.5),
-                "child-b": ([], 0.5),
+                "child-a": ([], 0.0),
+                "child-b": ([], 0.0),
             }
         )
         manager, store = build_manager(tmp_path, adapter)
@@ -779,6 +796,7 @@ def test_subagent_fanout_and_await_collects_results(tmp_path: Path) -> None:
 
         await wait_for_status(store, parent["id"], "completed")
         children = [t for t in store.list_tasks() if t.get("parent_id") == parent["id"]]
+        assert child_turns_started == {"child-a", "child-b"}
         assert len(children) == 2
         for child in children:
             assert child["status"] == "completed"
