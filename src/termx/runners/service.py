@@ -1,6 +1,6 @@
 """Dedicated Docker runners on the owner's local or SSH Docker host.
 
-No cloud fleet, host bind mounts or implicit execution migration. Containers
+No host bind mounts or implicit execution migration. Containers
 have fixed CPU/memory/PID limits, isolated scratch storage and explicit network
 policy. SSH hosts use the user's existing SSH host-key verification and keys.
 """
@@ -263,6 +263,7 @@ class RunnerService:
         return raw
 
     def start(self):
+        if getattr(self,'cloud',None):self.cloud.start()
         if self.monitor is None:self.monitor=asyncio.create_task(self._monitor())
 
     async def _monitor(self):
@@ -285,6 +286,7 @@ class RunnerService:
             await asyncio.sleep(1)
 
     async def close(self):
+        if getattr(self,'cloud',None):await self.cloud.close()
         await self.machines.close()
         if self.monitor:
             self.monitor.cancel();await asyncio.gather(self.monitor,return_exceptions=True)

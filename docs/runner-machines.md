@@ -1,4 +1,85 @@
-# Persistent runner machines
+# Cloud and persistent runner machines
+
+## Provision a machine from the desktop
+
+Open **Models & tools → Cloud accounts** in Workspace settings. Verify and save
+an AWS, Azure, or GCP account, then open **Runners → Create cloud machine**.
+The control plane provisions infrastructure directly; no cloud CLI, uploaded SSH
+key, manually installed worker, or mobile setup is required for this workflow.
+
+| Provider | Authentication | Required account capability |
+| --- | --- | --- |
+| AWS EC2 | IAM access key and secret; session token for temporary credentials | STS identity, EC2 catalog/describe, tagged instance and volume creation/deletion, and VPC/subnet/route/Internet gateway/security group operations |
+| Azure | Tenant, subscription, application/client ID and service principal secret | Contributor on the subscription; Microsoft.Compute and Microsoft.Network registered |
+| GCP Compute Engine | Service-account JSON key | Compute Engine API enabled; Compute Admin on the selected project |
+
+Authentication must have provisioning permissions, sufficient quota and billing
+enabled. Valid read-only credentials can authenticate but cannot create machines.
+Credentials stay in the host OS keychain/Secret Service, never SQLite, browser
+storage or runner configuration. The host must have a working secure credential
+store. Update expired credentials using **Update authentication**; replacements
+must belong to the same account/project/subscription and Azure tenant. Accounts
+cannot be removed until their deployments have been cleaned up.
+
+Choose a project, region, availability zone, x86 Linux machine size and Ubuntu
+24.04 image from the provider catalog, a boot disk and up to four data volumes.
+Choose a dedicated network or an existing VPC/VNet and subnet. Set the allowed
+SSH source CIDR to the **control plane host's** egress IP/range, not the phone or
+browser's address. Optional private-only access requires an existing subnet with
+outbound internet access and a route from the control plane. TermX does not create
+VPNs, peering or NAT gateways. New managed networks require a public IP.
+
+Review the configuration and authorize provider charges before choosing
+**Create reviewed machine**. This review is valid for five minutes and is bound
+to the project authority, account revision and exact configuration. Retrying a
+lost launch response with the same request ID returns the original deployment.
+
+TermX generates SSH client and host keys before boot and pins the host key. Its
+cloud-init script installs Python 3.14 and the worker dependencies. Installation
+needs access to Ubuntu repositories, PyPI and Python downloads from GitHub.
+The agent uses `/home/termx/workspace` as the `termx` user; passwordless sudo is an
+explicit choice. No provider account credentials or cloud instance role/service
+account are assigned to the VM. Boot disks contain the runtime; additional disks
+are attached blank and require formatting/mounting before use. The agent's
+filesystem permissions and any administrator access determine whether it may
+perform that work.
+
+When the deployment is **ready**, select its name in the session's **Execution**
+settings. Cloud machines use the same SSH worker and host-side model credential
+broker as registered machines. Their control, task review and history remain
+available through existing desktop/browser and mobile companion flows.
+
+### Cleanup and recovery
+
+Choose manual cleanup, a maximum lifetime, or cleanup after the first task ends
+(with a maximum lifetime). Automatic cleanup requires the control plane to stay
+online; deadlines that pass offline are processed after restart. An interrupted
+provisioning operation is reconciled and cleaned up after restart, never replayed.
+
+**Clean up machine → Delete managed resources** revokes new work, stops the
+active task and deletes the VM, boot/data disks, managed firewall, public IP and
+dedicated networking. It permanently deletes machine files. Export needed results
+first. Borrowed networks/subnets are preserved. Resource identities and ownership
+tags are checked before deletion. Azure cleanup refuses to delete a nonempty
+resource group, including unrelated resources added to it by another actor.
+
+Each create/delete intent and resource identity is journaled before the next
+operation. Lost responses are reconciled against provider state. If the outcome
+cannot be confirmed, the card shows **cleanup-failed** and retains credentials
+and resource details for **Retry cleanup**. It does not claim deletion or silently
+create replacement machines. Restore provider access or resolve the displayed
+resource conflict in the provider console, then retry. Provider charges may
+continue until cleanup is confirmed. Prices, quotas and capacity remain subject
+to the cloud account; TermX does not provide price estimates or reserve capacity.
+
+On-demand creation currently supports EC2, Azure VMs and GCP Compute Engine in
+their public commercial clouds. Lightsail and other providers remain supported
+through existing-machine SSH enrollment below. Windows/ARM images, interactive
+cloud OAuth, managed identities, attaching existing disks and automatic replacement
+of a deleted scheduled-task runner are not part of provisioning. Select a live
+runner before dispatching a schedule; a deleted runner is never recreated implicitly.
+
+## Existing machine enrollment
 
 Runners in the desktop control plane support two execution modes:
 
@@ -97,6 +178,14 @@ an instance's public address changes when it restarts.
 
 ## API and validation
 
+- `GET/POST /api/cloud/accounts`, `PUT/DELETE /api/cloud/accounts/{id}`:
+  verify, store, rotate and remove provider authentication.
+- `GET /api/cloud/accounts/{id}/catalog?region=...&zone=...`: provider choices.
+- `POST /api/cloud/preview`: validate and review a concrete configuration.
+- `POST /api/cloud/deployments`: launch the reviewed configuration (202).
+- `GET /api/cloud/deployments`: durable provisioning and resource state.
+- `POST /api/cloud/deployments/{id}/cleanup`: reconcile and delete resources (202).
+
 - `POST /api/runners/machines`: register an owner/project-scoped machine.
 - `POST /api/runners/machines/{id}/setup`: start runtime setup (202).
 - `POST /api/runners/machines/{id}/connect`: check and enable execution.
@@ -112,6 +201,20 @@ loopback SSH tests using temporary host/client keys and a loopback-only sshd.
 `TERMX_TEST_SSH_SETUP=1` separately enables a fresh runtime installation test
 with package downloads; only its loopback fixture forwards the test environment's
 proxy and CA settings.
+
+`tests/test_cloud_runners.py` runs production adapters against stateful mock cloud
+APIs, validating AWS SDK request shapes and Azure/GCP HTTP operations. It covers
+create/use/delete, borrowed networks, lost responses, cleanup retries, ownership,
+automatic expiry, task completion and restart recovery. Agent execution uses a
+real local worker. `tests/test_cloud_auth.py` exercises OAuth/JWT token refresh and
+API destination checks without sending real credentials.
+
+`tests/workspace_cloud_e2e.py <output-directory>` drives the rendered desktop
+Settings, launch review, execution selector and cleanup for all three providers,
+using mock infrastructure APIs and a real loopback SSH worker. It writes browser
+screenshots and a JSON report. This is not a live provider qualification: cloud-init,
+actual quotas, capacity, routing and billing need a separate run in an authorized
+provider account. No billable machines are created by these tests.
 `tests/workspace_machine_e2e.py <output-directory>` exercises the rendered desktop
 and saves screenshots. AWS adapter tests use fixtures, so they create no cloud
 resources and make no paid provider calls.
