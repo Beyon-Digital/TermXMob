@@ -10,3 +10,20 @@ describe('managed cookie API boundary',()=>{
  it('rejects another origin before reading session credentials',async()=>{const fetch=vi.fn();vi.stubGlobal('fetch',fetch);await expect(request('//other.example/private')).rejects.toThrow('workspace origin');expect(fetch).not.toHaveBeenCalled()});
  it('preserves explicit backend authorization failures',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('{"error":"This origin is not granted"}',{status:403})));await expect(request('/api/fixture')).rejects.toThrow('This origin is not granted')});
 });
+
+it('bounds a stalled mutation without repeating it and explains the uncertain result',async()=>{
+ vi.useFakeTimers();
+ try{
+  const fetch=vi.fn((_path:string,init:RequestInit)=>new Promise<Response>((_,reject)=>init.signal!.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')))));
+  vi.stubGlobal('fetch',fetch);
+  const outcome=request('/api/actions',{method:'POST',body:'{}'}).catch(error=>error);
+  await vi.advanceTimersByTimeAsync(30001);
+  expect(await outcome).toMatchObject({status:504,message:expect.stringContaining('may have completed')});
+  expect(fetch).toHaveBeenCalledTimes(1);
+ }finally{vi.useRealTimers()}
+});
+it('rejects a backslash-normalized foreign origin',async()=>{
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+ await expect(request('/\\other.example/private')).rejects.toThrow('workspace origin');
+ expect(fetch).not.toHaveBeenCalled();
+});

@@ -74,6 +74,7 @@ class PairExchangeInput(BaseModel):
     ticket: str = Field(min_length=32, max_length=256)
     host_id: str = Field(min_length=1, max_length=128)
     device_name: str = Field(min_length=1, max_length=128)
+    transport: str = 'bearer'
 
 
 class SocketProofInput(BaseModel):
@@ -405,6 +406,13 @@ def mount_identity(app, state: AppState) -> None:
     @router.post("/pair/exchange")
     def pair_exchange(body: PairExchangeInput, request: Request, response: Response):
         transport(request)
+        if body.transport not in {'bearer', 'cookie'}:
+            raise HTTPException(400, 'Unsupported pairing transport')
+        if body.transport == 'cookie':
+            if not same_origin(request.headers.get('origin'), request.url.scheme, request.headers.get('host', '')):
+                raise HTTPException(403, 'Browser pairing requires the same origin')
+            if service.resolve(credential(request), allow_locked=True):
+                raise HTTPException(409, 'Sign out before pairing this browser with another session')
         try:
             service._attempt(request.client.host if request.client else '')
             credentials = pairing.exchange(body.ticket,host_id=body.host_id,device_name=body.device_name)
@@ -412,7 +420,7 @@ def mount_identity(app, state: AppState) -> None:
             raise HTTPException(429,str(exc),headers={'Retry-After':'60'}) from exc
         except AuthenticationError as exc:
             raise HTTPException(401,str(exc)) from exc
-        result = issue(request,response,credentials,'bearer')
+        result = issue(request,response,credentials,body.transport)
         actor = service.resolve(credentials.access_token)
         return {**result,'host_id':service.host_id,'principal':asdict(actor.principal)}
 

@@ -59,14 +59,14 @@ def run(destination):
             sleep(.02)
         try:
             with sync_playwright() as playwright:
-                browser=playwright.chromium.launch(headless=True,args=['--ignore-certificate-errors-spki-list='+pinned])
+                browser=playwright.chromium.launch(headless=True,executable_path=os.environ.get('TERMX_CHROMIUM_EXECUTABLE'),args=['--ignore-certificate-errors-spki-list='+pinned])
                 context=browser.new_context(viewport={'width':1440,'height':1100},reduced_motion='reduce')
                 page=context.new_page();page.on('pageerror',lambda error:report['errors'].append(str(error)))
                 page.goto(origin)
                 page.get_by_label('Username',exact=True).fill('pair-fixture-owner');page.get_by_label('Password',exact=True).fill('rendered-pair-fixture-password-123')
                 page.get_by_role('button',name='Continue with password').click()
-                page.get_by_role('button',name='Managers',exact=True).wait_for(timeout=60000)
-                page.get_by_role('button',name='Managers',exact=True).click();page.get_by_role('button',name='Access & sessions',exact=True).click()
+                page.get_by_role('button',name='Pair device · QR',exact=True).wait_for(timeout=60000)
+                page.get_by_role('button',name='Pair device · QR',exact=True).click()
                 form=page.get_by_role('form',name='Create managed pairing ticket')
                 form.wait_for(timeout=30000)
                 assert not form.get_by_label('Host administration',exact=True).is_checked()
@@ -97,7 +97,7 @@ def run(destination):
                     page.get_by_role('button',name='Revoke and clear pairing ticket').click()
                     page.get_by_label('One-use pairing ticket',exact=True).wait_for(state='detached')
                     # Reload the real Access collection after the independently paired phone appears.
-                    page.get_by_role('button',name='Models & engines',exact=True).click();page.get_by_role('button',name='Access & sessions',exact=True).click()
+                    page.get_by_role('button',name='Models & engines',exact=True).click();page.get_by_role('region',name='Workspace managers').get_by_role('button',name='Access & sessions',exact=True).click()
                     phone=page.locator('article').filter(has=page.get_by_role('heading',name='Rendered phone fixture',exact=True))
                     phone.wait_for(timeout=30000);phone.scroll_into_view_if_needed();page.screenshot(path=str(destination/'paired-session.png'))
                     phone.get_by_role('button',name='Revoke session',exact=True).click()
@@ -112,6 +112,25 @@ def run(destination):
                 page.get_by_label('One-use pairing ticket').wait_for(state='detached')
                 with httpx.Client(base_url=origin,verify=trust,trust_env=False) as native:
                     assert native.post('/auth/pair/exchange',json={'ticket':discarded,'host_id':host,'device_name':'Discarded fixture'}).status_code==401
+                # Scan-equivalent navigation opens a fresh browser and uses the actual QR sign-in UI.
+                page.get_by_role('button',name='Create one-use pairing ticket').click()
+                qr=page.get_by_role('img',name='One-use device sign-in QR code')
+                qr.wait_for(timeout=10000)
+                assert qr.get_attribute('src').startswith('data:image/png;base64,')
+                browser_link=page.get_by_label('One-use pairing link').input_value()
+                fresh=browser.new_context()
+                paired_page=fresh.new_page();paired_page.goto(browser_link)
+                paired_page.get_by_role('button',name='Connect with pairing code').click()
+                paired_page.get_by_role('heading',name='Control plane',exact=True).wait_for(timeout=30000)
+                assert not paired_page.url.split('#')[1:]
+                who=paired_page.evaluate("async()=> (await fetch('/auth/me')).json()")
+                assert who['principal']['id']==owner.id
+                assert sorted(who['principal']['scopes'])==sorted(['machine-view','files-read','agent-view'])
+                cookies={item['name']:item for item in fresh.cookies()}
+                assert cookies['termx_access']['httpOnly'] and cookies['termx_refresh']['httpOnly']
+                assert not paired_page.evaluate('Object.keys(localStorage).some(k=>/token|ticket/i.test(k))')
+                fresh.close()
+                report['steps'].append('Rendered QR, fresh browser pairing, fragment scrubbing, HttpOnly cookies and narrowed authority')
                 assert ticket.encode() not in state.identity.path.read_bytes()
                 assert discarded.encode() not in state.identity.path.read_bytes()
                 assert not report['errors'],report['errors']

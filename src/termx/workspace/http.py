@@ -113,6 +113,30 @@ class ScheduleInput(Input):
     enabled: bool=False
 
 
+class AutomationInput(GoalInput):
+    runbook_id: str | None = None
+    command: str | None = Field(default=None,min_length=1,max_length=32000)
+    request_id: str = Field(min_length=8,max_length=128)
+    prompt: str = Field(min_length=1,max_length=64000)
+    spec: dict
+    grant_days: int = Field(ge=1,le=90)
+    missed: str = 'skip'
+    overlap: str = 'skip'
+
+
+class ScheduleEdit(Input):
+    revision: int
+    enabled: bool | None = None
+    prompt: str | None = Field(default=None,min_length=1,max_length=64000)
+    spec: dict | None = None
+    missed: str | None = None
+    overlap: str | None = None
+
+
+class ScheduleRevision(Input):
+    revision: int
+
+
 class EnableInput(Input):
     enabled: bool
     revision: int
@@ -366,14 +390,50 @@ def mount_workspace(app,state):
         return call(automation.schedule,principal(request),**body.model_dump())
 
     @router.patch('/schedules/{identifier}')
-    def schedule_enable(request:Request,identifier:str,body:EnableInput):
-        return call(automation.enable,principal(request),identifier,body.enabled,body.revision)
+    def schedule_enable(request:Request,identifier:str,body:ScheduleEdit):
+        return call(automation.edit,principal(request),identifier,**body.model_dump())
+
+    @router.post('/schedules/{identifier}/run')
+    async def schedule_run(request:Request,identifier:str,body:ScheduleRevision):
+        return await await_call(automation.run_now,principal(request),identifier,body.revision)
+
+    @router.post('/schedules/{identifier}/archive')
+    def schedule_archive(request:Request,identifier:str,body:ScheduleRevision):
+        return call(automation.archive,principal(request),identifier,body.revision)
+
+    @router.post('/schedule-runs/{identifier}/confirm')
+    async def scheduled_confirm(request:Request,identifier:str):
+        return await await_call(automation.control_run,principal(request),identifier,'confirm')
+
+    @router.post('/schedule-runs/{identifier}/stop')
+    async def scheduled_stop(request:Request,identifier:str):
+        return await await_call(automation.control_run,principal(request),identifier,'stop')
+
+    @router.get('/automation-runbooks')
+    def automation_runbooks(request:Request,project_id:str|None=None):
+        actor=principal(request);call(workspace.require,actor,'agent-view',project_id)
+        rows=[]
+        for row in workspace.agents.list_runbooks(project_id):
+            try: workspace.require(actor,'terminal-control',row.get('project_id'))
+            except (PermissionError,HTTPException): continue
+            rows.append(row)
+        return {'runbooks':rows}
+
+    @router.post('/automations')
+    def automation_create(request:Request,body:AutomationInput):
+        return call(automation.create,principal(request),**body.model_dump())
 
     @router.get('/automations')
     def automations(request:Request,project_id:str|None=None):
         actor=principal(request);call(workspace.require,actor,'agent-view',project_id)
-        return {kind:[row for row in workspace.store.list(kind,actor.id,project_id)
-                      if row.get('project_id')==project_id] for kind in ('goal','schedule','schedule_run','delegation')}
+        result={}
+        for kind in ('goal','schedule','schedule_run','delegation'):
+            result[kind]=[]
+            for row in workspace.store.list(kind,actor.id,project_id):
+                try: workspace.record(actor,kind,row['id'])
+                except (PermissionError,KeyError,HTTPException): continue
+                result[kind].append(row)
+        return result
 
     @router.post('/goals/{identifier}/cancel')
     async def cancel_goal(request:Request,identifier:str):

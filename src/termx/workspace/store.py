@@ -88,7 +88,7 @@ class WorkspaceStore:
             self.db.commit()
             return self.get(kind, identifier)
 
-    def reserve_schedule_run(self, schedule, now, next_due):
+    def reserve_schedule_run(self, schedule, now, next_due, *, manual=False):
         """Atomically claim one due occurrence and its shared goal/grant budget."""
         with self.lock:
             self.db.execute('BEGIN IMMEDIATE')
@@ -96,7 +96,7 @@ class WorkspaceStore:
                 current = self.get('schedule', schedule['id'])
                 grant = self.get('delegation', schedule['grant_id'])
                 goal = self.get('goal', schedule['goal_id'])
-                if not current or not current['enabled'] or current['revision'] != schedule['revision']:
+                if not current or (not manual and not current['enabled']) or current.get('archived') or current['revision'] != schedule['revision']:
                     self.db.rollback()
                     return None
                 if (not grant or not goal or grant['revoked'] or grant['expires_at'] <= now
@@ -105,12 +105,13 @@ class WorkspaceStore:
                     raise Conflict('Delegated authority or shared run budget exhausted')
                 identifier = uuid.uuid4().hex
                 body = {'schedule_id':schedule['id'],'goal_id':goal['id'],
-                        'status':'dispatching','due':schedule['next_run'],'task_id':None}
+                        'status':'dispatching','due':now if manual else schedule['next_run'],'manual':manual,'task_id':None}
                 self.db.execute('INSERT INTO records VALUES(?,?,?,?,?,?,?,?)',
                     ('schedule_run', identifier, schedule['owner'], schedule.get('project_id'),
                      1, json.dumps(body), now, now))
                 for kind, record, changes in (
-                    ('schedule',current,{'next_run':next_due,'last_run':identifier}),
+                    ('schedule',current,{'next_run':next_due,'last_run':identifier,'queued':False,
+                        **({'enabled':False,'state':'completed'} if next_due is None else {})}),
                     ('delegation',grant,{'used_runs':grant['used_runs']+1}),
                     ('goal',goal,{'runs_started':goal['runs_started']+1})):
                     clean = {k:v for k,v in {**record,**changes}.items()

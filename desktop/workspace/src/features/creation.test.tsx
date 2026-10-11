@@ -7,7 +7,7 @@ import {webcrypto} from 'node:crypto';
 vi.mock('../lib/api',()=>({request:vi.fn(),gql:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
 vi.mock('../lib/transfers',()=>({download:vi.fn(),transfer:vi.fn()}));
 const api=vi.mocked(request),graph=vi.mocked(gql);
-beforeEach(()=>{api.mockReset();graph.mockReset();graph.mockResolvedValue({agent_providers:[{id:'account',name:'Configured API',model:'configured-model',capabilities:['image','audio']}]});api.mockImplementation(async(path:string)=>{if(path==='/api/runners')return [];if(path.startsWith('/api/media/artifacts?')||path.startsWith('/api/media/operations'))return [];throw new Error('Unexpected request '+path)})});
+beforeEach(()=>{api.mockReset();graph.mockReset();graph.mockResolvedValue({projects:[{id:'project',name:'Fixture project',path:'/fixture'}],agent_providers:[{id:'account',name:'Configured API',model:'configured-model',capabilities:['image','audio']}]});api.mockImplementation(async(path:string)=>{if(path==='/api/runners')return [];if(path.startsWith('/api/media/artifacts?')||path.startsWith('/api/media/operations'))return [];throw new Error('Unexpected request '+path)})});
 afterEach(()=>{cleanup();vi.unstubAllGlobals()});
 it('requires explicit provider billing consent before generation',async()=>{
  render(<Media projectId="project"/>);await screen.findByRole('option',{name:'Configured API'});

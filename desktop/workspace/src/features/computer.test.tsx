@@ -13,3 +13,25 @@ describe('acknowledged computer control',()=>{
 });
 
 it('closes capture and control on workspace lock and never starts another watcher without a user action',async()=>{const ws=await watch();ws.message({type:'control',view_only:false});fireEvent(window,new Event('termx-locked'));await screen.findByRole('button',{name:'Watch this machine'});expect(ws.close).toHaveBeenCalled();ws.message({type:'control',view_only:false});expect(screen.queryByRole('button',{name:'Return to watch'})).toBeNull();expect(Socket.instances).toHaveLength(1);fireEvent.click(screen.getByRole('button',{name:'Watch this machine'}));await waitFor(()=>expect(Socket.instances).toHaveLength(2));await waitFor(()=>expect(screen.getByRole('button',{name:'Take control'})).toBeEnabled())});
+
+it('closes hidden dock panels, releases input, and ignores late callbacks after unmount',async()=>{
+ const view=render(<ComputerSurface onError={vi.fn()} visible/>);
+ fireEvent.click(screen.getByRole('button',{name:'Watch this machine'}));
+ await waitFor(()=>expect(Socket.instances).toHaveLength(1));
+ const ws=Socket.instances[0];ws.message({type:'control',view_only:false});
+ view.rerender(<ComputerSurface onError={vi.fn()} visible={false}/>);
+ expect(ws.close).toHaveBeenCalled();
+ expect(ws.send).toHaveBeenCalledWith(JSON.stringify({type:'release_all'}));
+ expect(ws.send).toHaveBeenCalledWith(JSON.stringify({type:'pause'}));
+ ws.message({type:'control',view_only:false});
+ expect(screen.queryByRole('button',{name:'Return to watch'})).toBeNull();
+ view.unmount();act(()=>ws.onopen?.());expect(ws.close.mock.calls.length).toBeGreaterThan(1);
+});
+
+it('stops capture on window blur and requires an explicit restart',async()=>{
+ const ws=await watch();fireEvent(window,new Event('blur'));
+ expect(ws.close).toHaveBeenCalled();
+ fireEvent(window,new Event('focus'));
+ expect(screen.getByRole('button',{name:'Watch this machine'})).toBeEnabled();
+ expect(Socket.instances).toHaveLength(1);
+});
