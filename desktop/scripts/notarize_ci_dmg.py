@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Notarize the signed artifact-only DMG before upload; never rebuild or publish it.
+"""Notarize the signed DMG before upload; never rebuild or publish it.
 
 Apple's application ticket is distinct from the final disk-image ticket. A known
 submission is waited on again after transient failures; an unknown submission

@@ -98,7 +98,11 @@
           "wmctrl",
           "xdotool",
           "ImageMagick"
-        ]
+        ],
+        "compression": {
+          "type": "zstd",
+          "level": 3
+        }
       },
       "appimage": {
         "bundleMediaFramework": false

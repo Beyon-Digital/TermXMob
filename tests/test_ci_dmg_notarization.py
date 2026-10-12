@@ -198,15 +198,15 @@ def test_workflow_blocks_artifact_upload_on_missing_final_dmg_ticket():
     jobs = data['jobs']
     steps = next(job['steps'] for job in jobs.values() if any(step.get('name') == 'Build installers' for step in job.get('steps', [])))
     names = [step.get('name', '') for step in steps]
-    ticket = steps[names.index('Notarize and verify final artifact-only macOS DMG')]
-    assert ticket['if'] == "runner.os == 'macOS' && steps.release.outputs.tag == ''"
+    ticket = steps[names.index('Notarize and verify final macOS DMG')]
+    assert ticket['if'] == "runner.os == 'macOS'"
     assert ticket['id'] == 'dmg_ticket'
     assert 'continue-on-error' not in ticket and 'notarize_ci_dmg.py' in ticket['run']
     assert names.index('Build installers') < names.index(ticket['name'])
     upload = next(step for step in steps if step.get('name') == 'Upload final macOS DMG ticket receipt')
     assert upload['with']['if-no-files-found'] == 'error'
     installers = next(step for step in steps if step.get('name') == 'Upload installers as workflow artifacts')
-    assert installers['if'] == "always() && (runner.os != 'macOS' || steps.release.outputs.tag != '' || steps.dmg_ticket.outcome == 'success')"
+    assert installers['if'] == "always() && (runner.os != 'macOS' || steps.dmg_ticket.outcome == 'success')"
     assert names.index(ticket['name']) < names.index(installers['name'])
     assert 'stapler' in (Path(__file__).parents[1] / 'desktop/scripts/fetch_macos_installer.py').read_text()
 

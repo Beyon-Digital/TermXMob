@@ -74,6 +74,11 @@ Trigger options:
 
 Each matrix job also attaches its installers to the release:
 
+macOS builds produce and verify a signed, notarized app first, then create a signed
+DMG without Finder layout mounting. The final DMG must receive its own accepted
+notarization ticket before upload. RPMs use Zstd level 3 to keep bundled-runtime
+compression practical in CI.
+
 Releases stay in draft until every platform passes qualification and a complete,
 signed updater manifest is attached. Mac updater archives have separate Apple
 Silicon and Intel filenames. A failed run cannot replace the latest public release
