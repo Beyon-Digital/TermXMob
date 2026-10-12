@@ -22,6 +22,9 @@
 .dock-pane{position:relative}.dock-resizer{position:absolute;z-index:12;background:transparent;touch-action:none}.dock-resizer:hover,.dock-resizer:focus-visible{background:var(--accent)}.resize-right,.resize-split{left:-2px;top:0;bottom:0;width:5px;cursor:col-resize}.resize-left{right:-2px;top:0;bottom:0;width:5px;cursor:col-resize}.resize-bottom{left:0;right:0;top:-2px;height:5px;cursor:row-resize}.terminal-tab-pane{flex:1;min-height:0;flex-direction:column}
 
 .sidebar-close-label{display:none}@media(max-width:850px){.sidebar-brand .button-icon{width:auto;min-width:52px;padding:6px;gap:4px}.sidebar-close-label{display:inline;font-size:11px}}
+/* Short windows and desktop zoom must leave the virtual conversation list a
+   measurable viewport. Scroll the navigation instead of collapsing it to zero. */
+@media(max-height:720px){.sidebar{overflow-y:auto}.sidebar>*{flex-shrink:0}.sidebar-scroll{flex:1 0 160px}}
 
 .supervision-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}.supervision-tree{max-height:480px;overflow:auto}.supervision-row{display:flex;align-items:center;gap:8px;width:100%;padding:10px;text-align:left;border-radius:6px}.supervision-row.selected{background:var(--muted)}.supervision-row strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500;white-space:nowrap}.supervision-detail{min-width:0}.supervision-detail code{overflow-wrap:anywhere;font-size:12px}.supervision-detail .button{margin:8px 4px 0 0}@media(max-width:850px){.supervision-grid{grid-template-columns:1fr}.supervision-tree{max-height:200px}}
 .keybinding-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(160px,240px);align-items:center;gap:16px;margin:12px 0}.dock-pane-header{overflow-x:auto;scrollbar-width:thin}.dock-pane-header>button{white-space:nowrap;flex-shrink:0}

@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 
 spec = importlib.util.spec_from_file_location('updater_manifest', Path(__file__).parents[1] / 'desktop/scripts/updater_manifest.py')
 module = importlib.util.module_from_spec(spec)
@@ -32,3 +33,14 @@ def test_rejects_incomplete_or_misrouted_updates(change):
     elif change == 'unsigned': first['signature'] = ''
     elif change == 'wrong_release': first['url'] = first['url'].replace('/v0.2.8/', '/v0.2.7/')
     with pytest.raises(ValueError): merge(values)
+
+
+def test_only_the_complete_qualified_release_is_published():
+    workflow = yaml.safe_load((Path(__file__).parents[1] / '.github/workflows/desktop.yml').read_text())
+    build = next(step for step in workflow['jobs']['build']['steps'] if step.get('name') == 'Build installers')
+    assert build['with']['releaseDraft'] is True
+    assert build['with']['includeUpdaterJson'] is False
+    publish = workflow['jobs']['updater']
+    assert publish['needs'] == 'build'
+    assert 'success()' in publish['if'] and 'always()' not in publish['if']
+    assert 'inputs.release_tag' in publish['if']
