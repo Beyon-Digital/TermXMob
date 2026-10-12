@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import subprocess
@@ -130,7 +131,7 @@ def close_native_window(title):
         close_window_linux(title)
 
 
-SENSITIVE_WORDS = ('token', 'password', 'secret', 'cookie', 'authorization', 'bearer', 'credential')
+SENSITIVE_WORDS = ('token', 'password', 'secret', 'cookie', 'authorization', 'bearer', 'credential', '?k=')
 
 
 def process_listing():
@@ -140,7 +141,8 @@ def process_listing():
     except Exception as error:
         return [f'unavailable: {type(error).__name__}']
     wanted = ('termx', 'msedge', 'webkit', 'tauri-driver', 'xvfb', 'openbox')
-    return [line[:300] for line in text.splitlines() if any(word in line.lower() for word in wanted)][:60]
+    return [re.sub(r'(--passcode(?:=|\s+))\S+', r'\1[redacted]', line)[:300]
+            for line in text.splitlines() if any(word in line.lower() for word in wanted)][:60]
 
 
 def collect_diagnostics(root, output):

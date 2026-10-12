@@ -99,6 +99,8 @@ jobs:
           done
           # Raw memory can contain fixture credentials and is never uploaded.
           rm -f "$RUNNER_TEMP"/termx-cores/core.*
+          sudo dmesg --ctime | grep -Ei 'termx|segfault|out of memory|killed process' | tail -40 \
+            > desktop/build/native-gui/kernel-crash-events.txt || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
