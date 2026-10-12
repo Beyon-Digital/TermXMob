@@ -51,3 +51,8 @@ def test_ci_workflow_retains_full_checks_and_gates_final_container_ticket():
     assert create['if']==ticket['if']=="runner.os == 'macOS' && steps.release.outputs.tag == ''"
     assert names.index('Build installers') < names.index(create['name']) < names.index(ticket['name'])
     assert 'create_ci_dmg.py' in create['run']
+
+
+def test_releases_cannot_disable_intel_updater_coverage():
+    rows = build_matrix(event='workflow_dispatch', release_tag='v0.2.8', include_intel=False)['include']
+    assert {row['name'] for row in rows} == {'macos-arm64', 'macos-x86_64', 'windows', 'linux'}

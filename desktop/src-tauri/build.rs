@@ -40,6 +40,8 @@ fn main() {
         "workspace_redock_commit",
         "workspace_redock_cancel",
         "workspace_binary",
+        "desktop_update_state",
+        "desktop_update_action",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Failed to build the guarded workspace command ACL")

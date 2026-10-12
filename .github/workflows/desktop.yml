@@ -249,7 +249,9 @@ jobs:
       - name: Verify rendered workspace accessibility
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/desktop/build/runtime/browsers
-        run: uv run --no-sync python tests/workspace_accessibility_e2e.py desktop/build/accessibility desktop/workspace/node_modules/axe-core/axe.min.js
+        run: |
+          uv run --no-sync python tests/workspace_accessibility_e2e.py desktop/build/accessibility desktop/workspace/node_modules/axe-core/axe.min.js
+          uv run --no-sync python tests/updater_ui_e2e.py desktop/build/updater-ui desktop/workspace/node_modules/axe-core/axe.min.js
 
       - name: Upload workspace accessibility evidence
         if: always()
@@ -258,6 +260,7 @@ jobs:
           name: workspace-accessibility-${{ matrix.name }}
           path: |
             desktop/build/accessibility
+            desktop/build/updater-ui
             desktop/build/runtime-smoke.json
           if-no-files-found: ignore
 
@@ -340,9 +343,9 @@ jobs:
           args: --verbose ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }} --bundles ${{ matrix.bundles }}
           tagName: ${{ steps.release.outputs.tag }}
           releaseName: ${{ steps.release.outputs.tag != '' && format('Termx {0}', steps.release.outputs.tag) || '' }}
-          releaseDraft: ${{ steps.release.outputs.draft }}
+          releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
+          includeUpdaterJson: false
           releaseBody: |
             ## Termx ${{ steps.release.outputs.tag }}
 
@@ -542,7 +545,7 @@ jobs:
             platform="darwin-x86_64"
             dmg_pattern="*x64.dmg"
             case "$TARGET" in *aarch64*) platform="darwin-aarch64"; dmg_pattern="*aarch64.dmg";; esac
-            payload="Termx.app.tar.gz"
+            payload="Termx-${platform}.app.tar.gz"
           elif [ "$RUNNER_OS" = "Linux" ]; then
             platform="linux-x86_64"
             payload="*amd64.AppImage"
@@ -550,8 +553,8 @@ jobs:
             platform="windows-x86_64"
             payload="*-setup.exe"
           else
-            echo "::warning::unknown platform for updater payload"
-            exit 0
+            echo "::error::unknown platform for updater payload"
+            exit 1
           fi
           tmp="$(mktemp -d)"
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -582,14 +585,14 @@ jobs:
           # The release already carries the updater payload and its signature
           # (uploaded by the bundler); fetch them to build this platform's entry.
           if ! gh release download "$TAG" --pattern "$payload" --pattern "$payload.sig" --dir "$tmp" --clobber; then
-            echo "::warning::updater payload for $platform is not attached to the release"
-            exit 0
+            echo "::error::updater payload for $platform is not attached to the release"
+            exit 1
           fi
           file="$(ls "$tmp"/$payload | head -1)"
           sig="${file}.sig"
           if [ ! -f "$sig" ]; then
-            echo "::warning::no updater signature published for $platform"
-            exit 0
+            echo "::error::no updater signature published for $platform"
+            exit 1
           fi
           python3 - "$(basename "$file")" "$sig" "$platform" "$version" "$TAG" "$RUNNER_TEMP/updater-$platform.json" <<'PY'
           import json, os, sys
@@ -607,7 +610,7 @@ jobs:
         with:
           name: updater-${{ matrix.name }}-${{ github.run_number }}
           path: ${{ runner.temp }}/updater-*.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload installers as workflow artifacts
@@ -629,7 +632,7 @@ jobs:
   updater:
     name: Publish updater manifest
     needs: build
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ success() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -642,26 +645,18 @@ jobs:
           path: updater
       - name: Merge platform entries into latest.json
         shell: bash
-        run: |
-          python3 - <<'PY'
-          import glob, json, os, datetime
-          merged = {"version": "", "notes": "", "pub_date": "", "platforms": {}}
-          for path in sorted(glob.glob("updater/*.json")):
-              data = json.load(open(path))
-              merged["version"] = merged["version"] or data.get("version", "")
-              merged["notes"] = merged["notes"] or data.get("notes", "")
-              merged["platforms"].update(data.get("platforms", {}))
-          if not merged["platforms"]:
-              raise SystemExit("no updater platform entries were produced")
-          merged["pub_date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-          os.makedirs("updater", exist_ok=True)
-          open("updater/latest.json", "w").write(json.dumps(merged, indent=2))
-          print(json.dumps(merged, indent=2))
-          PY
-      - name: Attach latest.json to the release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: python3 desktop/scripts/updater_manifest.py updater --tag "$RELEASE_TAG" --repository "$RELEASE_REPOSITORY"
+      - name: Attach manifest and publish qualified release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          KEEP_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
         shell: bash
         run: |
-          cp updater/latest.json latest.json
-          gh release upload "${GITHUB_REF_NAME}" latest.json --clobber
+          gh release upload "$RELEASE_TAG" updater/latest.json --clobber
+          if [ "$KEEP_DRAFT" != "true" ]; then
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi

@@ -53,7 +53,7 @@ def run(destination, axe_source):
             sleep(.05)
         try:
             with sync_playwright() as playwright:
-                browser=playwright.chromium.launch(headless=True)
+                browser=playwright.chromium.launch(headless=True, executable_path=os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE") or None)
                 for zoom in (100,200):
                     # A fixed physical 1440×900 display at 200% exposes 720×450 CSS pixels.
                     scale=zoom/100
@@ -63,7 +63,19 @@ def run(destination, axe_source):
                     report['production_bundle']=page.evaluate('Array.from(document.scripts).map(s=>s.src).find(s=>s.includes("/assets/index-"))?.split("/").pop()')
                     page.get_by_label('Username',exact=True).fill('accessibility-owner');page.get_by_label('Password',exact=True).fill('accessibility-fixture-password-123')
                     page.get_by_role('button',name='Continue with password').click()
-                    page.wait_for_function("""()=>{const t=document.querySelector('textarea[aria-label="Message"]'),b=document.querySelector('button[aria-label="Rename or move conversation"]');return !!t&&!t.disabled&&!!b&&!b.disabled}""",timeout=60000)
+                    try:
+                        # Authentication opens the control plane. Enter the fixture
+                        # through the real navigation before checking its composer.
+                        if zoom == 200:
+                            page.get_by_role('button',name='Show sidebar',exact=True).click()
+                        page.get_by_text('Keyboard workspace fixture',exact=True).click()
+                        if zoom == 200 and page.get_by_role('button',name='Hide sidebar',exact=True).is_visible():
+                            page.get_by_role('button',name='Hide sidebar',exact=True).click()
+                        page.wait_for_function("""()=>{const t=document.querySelector('textarea[aria-label="Message"]'),b=document.querySelector('button[aria-label="Session options"]');return !!t&&!t.disabled&&!!b&&!b.disabled}""",timeout=60000)
+                    except Exception:
+                        page.screenshot(path=str(destination / f"startup-failure-{zoom}.png"))
+                        (destination / f"startup-failure-{zoom}.html").write_text(page.content(), encoding="utf-8")
+                        raise
                     page.get_by_text('Keyboard workspace fixture',exact=True).last.wait_for(state='attached')
                     page.get_by_role('textbox',name='Message',exact=True).wait_for()
                     for theme in ('dark','light'):
