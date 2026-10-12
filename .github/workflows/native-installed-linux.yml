@@ -1,0 +1,109 @@
+name: Installed Linux package qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Desktop release workflow run containing the installer
+        required: true
+        type: string
+      source_ref:
+        description: Immutable tag or commit that produced that installer
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  installed-linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify installer provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        shell: bash
+        run: |
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          mkdir -p desktop/build/native-gui
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" > desktop/build/native-gui/source-run.json
+          expected=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_REF" --jq .sha)
+          actual=$(jq -r .head_sha desktop/build/native-gui/source-run.json)
+          test "$actual" = "$expected"
+          test "$(jq -r .path desktop/build/native-gui/source-run.json)" = '.github/workflows/desktop.yml'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.source_run }}
+          pattern: termx-linux-*
+          path: packages
+          merge-multiple: true
+      - name: Install native test dependencies and unchanged package
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y webkit2gtk-driver xvfb x11-utils wmctrl openbox dbus-x11 gnome-keyring gdb
+          mapfile -t packages < <(find packages -type f -name '*.deb')
+          test "${#packages[@]}" = 1
+          package=$(realpath "${packages[0]}")
+          sudo apt-get install -y "$package"
+          binary=$(dpkg -L "$(dpkg-deb --field "$package" Package)" | awk '/\/bin\/termx-desktop$/ {print; exit}')
+          test -x "$binary"
+          echo "TERMX_GUI_PACKAGE=$package" >> "$GITHUB_ENV"
+          echo "TERMX_GUI_BINARY=$binary" >> "$GITHUB_ENV"
+          mkdir -m 700 "$RUNNER_TEMP/termx-cores"
+          sudo sysctl -w "kernel.core_pattern=$RUNNER_TEMP/termx-cores/core.%e.%p"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        id: driver-cache
+        with:
+          path: ~/.cargo/bin/tauri-driver
+          key: native-driver-ubuntu22-2.1.0
+      - name: Install pinned automation driver
+        if: steps.driver-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-driver --version 2.1.0 --locked
+      - name: Qualify installed native workspace
+        shell: bash
+        run: |
+          ulimit -c unlimited
+          dbus-run-session -- bash -eu -c '
+            fixture_keyring=$(mktemp -d)
+            export XDG_DATA_HOME="$fixture_keyring"
+            trap "rm -rf -- $fixture_keyring" EXIT
+            printf "%s" "synthetic-native-gui-keyring-password" | gnome-keyring-daemon --unlock --components=secrets
+            xvfb-run -a -s "-screen 0 1024x768x24" bash -eu -c '\''
+              openbox >/tmp/termx-native-gui-window-manager.log 2>&1 &
+              window_manager=$!
+              trap "kill $window_manager 2>/dev/null || true" EXIT
+              python3 desktop/scripts/native_gui_smoke.py \
+                --binary "$TERMX_GUI_BINARY" --package "$TERMX_GUI_PACKAGE" \
+                --driver "$HOME/.cargo/bin/tauri-driver" \
+                --native-driver "$(command -v WebKitWebDriver)" \
+                --output desktop/build/native-gui
+            '\''
+          '
+      - name: Collect crash backtraces without memory dumps
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p desktop/build/native-gui
+          for core in "$RUNNER_TEMP"/termx-cores/core.termx-desktop.*; do
+            test -f "$core" || continue
+            gdb -batch -ex 'set print frame-arguments none' -ex 'thread apply all bt 16' \
+              "$TERMX_GUI_BINARY" "$core" > "desktop/build/native-gui/$(basename "$core").backtrace.txt" 2>&1 || true
+          done
+          # Raw memory can contain fixture credentials and is never uploaded.
+          rm -f "$RUNNER_TEMP"/termx-cores/core.*
+          sudo dmesg --ctime | grep -Ei 'termx|segfault|out of memory|killed process' | tail -40 \
+            > desktop/build/native-gui/kernel-crash-events.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installed-linux-qualification-${{ github.run_id }}
+          path: desktop/build/native-gui
+          if-no-files-found: error
