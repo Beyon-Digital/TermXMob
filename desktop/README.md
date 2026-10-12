@@ -416,6 +416,12 @@ The frozen sidecar's `--runtime-smoke` qualification executes its packaged Node 
 
 Installed native GUI qualification uses `desktop/scripts/native_gui_smoke.py` with the unchanged executable installed from the generated Linux DEB or Windows MSI. The pinned `tauri-driver` delegates to the real WebKitWebDriver or a Microsoft Edge driver matching the installed WebView2 runtime. It exercises the real owner-setup form, cookie-cleared restart through the OS credential store, session revocation/logout, detached-window reopening and missing-monitor recovery. Reports and native webview screenshots are uploaded as `workspace-native-gui-*`; the presence of this harness or a source test alone is not a successful GUI qualification. macOS native GUI and native OIDC redirects remain separate direct-verification gates.
 
+The manual **Installed Linux package qualification** workflow reruns that entire
+suite against an existing desktop workflow artifact. Supply its source run ID
+and immutable tag/commit; the workflow verifies provenance before installing the
+unchanged DEB. Crash backtraces omit frame arguments, and raw memory dumps are
+deleted rather than uploaded. This diagnostic path does not publish a release.
+
 macOS packaging copies the complete backend runtime into `Resources/backend` through Tauri's `bundle.macOS.files` directory copier, preserving the Chromium app/framework symbolic links. The normal resource file copier dereferences those links and cannot safely package a complete Chromium framework. CI verifies and signs the staged browser bundle before signing the enclosing application; a compile check alone does not qualify this packaging path.
 
 For a portable or isolated installation, `TERMX_DESKTOP_DATA_DIR` selects a dedicated absolute native data directory (configuration and logs are stored below it). It never imports another profile's legacy tokens automatically. Unix application directories/files use owner-only permissions; Windows directories and the bootstrap configuration receive protected owner/SYSTEM/administrator DACLs before credential reads or writes. Foreign-owned storage and links/reparse points are refused. The native GUI fixture uses a fresh directory plus isolated webview state; it leaves `HOME` and the user's existing accounts unchanged. Linux CI provides a private D-Bus/GNOME credential service and an Xvfb/Openbox display for this fixture.

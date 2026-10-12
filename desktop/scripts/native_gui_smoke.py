@@ -202,7 +202,7 @@ class NativeDriver:
             result = json.loads(response.read() or b'{}')
         value = result.get('value')
         if isinstance(value, dict) and value.get('error'):
-            raise RuntimeError(value.get('message', value['error'])[:1000])
+            raise RuntimeError((value.get('message') or value['error'])[:1000])
         return value
 
     def start(self):
