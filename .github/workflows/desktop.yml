@@ -96,6 +96,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure Intel Ventura deployment target
+        if: matrix.minimum_macos != ''
+        shell: bash
+        env:
+          MINIMUM_MACOS: ${{ matrix.minimum_macos }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          minimum = os.environ['MINIMUM_MACOS']
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'MACOSX_DEPLOYMENT_TARGET={minimum}\n')
+          path = Path('desktop/src-tauri/tauri.conf.json')
+          config = json.loads(path.read_text())
+          config['bundle']['macOS']['minimumSystemVersion'] = minimum
+          path.write_text(json.dumps(config, indent=2) + '\n')
+          PY
+
       - uses: dtolnay/rust-toolchain@stable
       - name: Add Rust target
         if: matrix.target != ''
@@ -103,13 +121,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri -> target
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ matrix.minimum_macos || 'default' }}
           # Retain compiled dependencies when a later installer/UI gate fails.
           cache-on-failure: true
 
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-suffix: ${{ matrix.target }}-${{ matrix.minimum_macos || 'default' }}-${{ matrix.minimum_macos != '' && hashFiles('desktop/scripts/build_macos_openssl.py') || 'default' }}
 
       - uses: actions/setup-node@v4
         with:
@@ -212,10 +231,36 @@ jobs:
           uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
           uv run --no-sync python -m playwright install-deps chromium
 
+      - name: Build Ventura-compatible Intel TLS libraries
+        if: matrix.minimum_macos != ''
+        shell: bash
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+        run: uv run --no-project --python 3.14 python desktop/scripts/build_macos_openssl.py --minimum ${{ matrix.minimum_macos }} --prefix "$RUNNER_TEMP/termx-openssl"
+
       - name: Install complete backend and packaging dependencies
         env:
           UV_PYTHON_PREFERENCE: only-managed
-        run: uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc
+        # Select wheels for Ventura, not for the macOS 15 build host. debugpy's
+        # CPython 3.14 wheel requires macOS 15; build its locked source instead.
+        # cryptography links our private static TLS build, never Homebrew dylibs.
+        run: uv sync --locked --group packaging --group dev --extra development --extra media --extra webrtc ${{ matrix.minimum_macos != '' && format('--python-platform {0} --no-binary-package debugpy --no-binary-package cryptography', matrix.target) || '' }}
+
+      - name: Build Ventura-compatible debugger attach helper
+        if: matrix.minimum_macos != ''
+        shell: bash
+        run: |
+          uv run --no-sync python - <<'PY'
+          from pathlib import Path
+          import debugpy, subprocess
+          root = Path(debugpy.__file__).parent / '_vendored/pydevd/pydevd_attach_to_process'
+          script = root / 'linux_and_mac/compile_mac.sh'
+          # Source distributions omit the prebuilt attach library. Run the
+          # upstream build with normalized line endings and our deployment env.
+          subprocess.run(['bash', '-c', script.read_text(), str(script)], check=True)
+          if not (root / 'attach.dylib').is_file():
+              raise SystemExit('Debugger attach library was not built')
+          PY
 
       - name: Verify complete backend suite
         run: uv run --no-sync pytest -q
@@ -231,6 +276,10 @@ jobs:
           uv run --no-sync python desktop/scripts/prepare_runtime.py
           uv run --no-sync python desktop/scripts/build_sidecar.py
           uv run --no-sync python desktop/scripts/verify_runtime.py
+
+      - name: Verify Intel sidecar Ventura compatibility
+        if: matrix.minimum_macos != ''
+        run: uv run --no-sync python desktop/scripts/verify_macos_compatibility.py desktop/src-tauri/resources/backend --minimum ${{ matrix.minimum_macos }} --require termx-backend --require _internal/debugpy/_vendored/pydevd/pydevd_attach_to_process/attach.dylib --report desktop/build/ventura-sidecar.json
 
       - name: Verify exact owned X11 window capture
         if: runner.os == 'Linux'
@@ -387,7 +436,7 @@ jobs:
             | Platform | Files |
             | --- | --- |
             | macOS 13+ (Apple Silicon) | `.dmg` |
-            | macOS 13+ (Intel) | `.dmg` |
+            | macOS Ventura 13.7.8+ (Intel) | `.dmg` |
             | Windows 10+ | `.msi`, `.exe` (NSIS) |
             | Linux | `.deb`, `.rpm`, `.AppImage` |
 
@@ -403,6 +452,18 @@ jobs:
             displays need an IddCx driver. Linux capture needs the tools listed in
             `desktop/README.md`. Each platform's `SHA256SUMS-<platform>.txt` is
             attached for verification.
+
+      - name: Verify Intel application Ventura compatibility
+        if: matrix.minimum_macos != ''
+        run: uv run --no-sync python desktop/scripts/verify_macos_compatibility.py desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Termx.app --minimum ${{ matrix.minimum_macos }} --report desktop/build/ventura-application.json
+
+      - name: Upload Intel compatibility reports
+        if: always() && matrix.minimum_macos != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ventura-compatibility-${{ matrix.name }}
+          path: desktop/build/ventura-*.json
+          if-no-files-found: ignore
 
       - name: Create signed macOS container without layout mounting
         if: runner.os == 'macOS'

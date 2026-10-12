@@ -17,6 +17,18 @@ def sidecar_module():
     return module
 
 
+def test_macos_excludes_unused_x11_but_preserves_pillow_and_other_platforms():
+    module = sidecar_module()
+    entries = [(name, '/fixture/' + name, 'BINARY') for name in (
+        'libX11.dylib', 'libX11.6.dylib', 'libXdmcp.6.dylib',
+        'PIL/.dylibs/libXau.6.dylib', 'PIL/.dylibs/libxcb.1.1.0.dylib',
+        'libpython3.14.dylib', 'libX11.so.6',
+    )]
+    assert module.platform_binaries(entries, 'darwin') == entries[3:]
+    assert module.platform_binaries(entries, 'linux') == entries
+    assert module.platform_binaries(entries, 'win32') == entries
+
+
 def test_linux_private_library_staging_refuses_escaped_or_conflicting_aliases(tmp_path, monkeypatch):
     module = sidecar_module()
     monkeypatch.setattr(module.shutil, 'which', lambda name: '/fixture/patchelf')

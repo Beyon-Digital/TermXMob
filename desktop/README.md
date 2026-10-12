@@ -114,6 +114,25 @@ therefore uses two runners:
 - `macos-15` → Apple Silicon (M-series) → `Termx_<version>_aarch64.dmg`
 - `macos-15-intel` → Intel (x86_64) → `Termx_<version>_x64.dmg`
 
+The Intel installer targets **macOS Ventura 13.7.8 and newer**. The runner OS is
+the build host, not the deployment minimum. CI sets `MACOSX_DEPLOYMENT_TARGET`
+before compilation, applies the same minimum to the app metadata, and asks uv to
+select Intel wheels for that target. The locked debugpy source is compiled because
+its Python 3.14 binary wheel requires macOS 15; its attach helper is also rebuilt.
+Cryptography links a private static OpenSSL 3.5 LTS build (source and checksum
+pinned in `build_macos_openssl.py`) so Homebrew's macOS 15 TLS libraries are not
+bundled. Keep that source pin current with upstream LTS security updates.
+The macOS freezer also excludes unused X11 libraries inferred from Linux-only
+ctypes code, while preserving Pillow's separate XCB/Xau dependencies.
+Target-specific caches prevent
+reuse of artifacts from the old build configuration.
+
+Before DMG creation, CI checks the actual Intel Mach-O deployment requirements
+and nested bundle metadata in both the frozen backend and the completed app,
+including Python libraries, helpers, Node, FFmpeg and Chromium. Compatibility
+reports are uploaded with the build. These checks detect newer minimum versions;
+running the installed app on Ventura remains the runtime compatibility test.
+
 `macos-15-intel` is the Intel label configured in this workflow. If the account
 cannot use that runner, run with **include_intel = false** while arranging an
 available Intel CI runner for the same target. Delivery builds remain in CI.

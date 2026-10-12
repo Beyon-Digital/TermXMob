@@ -68,6 +68,12 @@ a = Analysis(
     noarchive=False,
 )
 
+# Static ctypes analysis sees Linux's optional X11 loader even on macOS.
+# Do not ship unused build-host libraries with a newer deployment minimum.
+sys.path.insert(0, str(ROOT / 'desktop' / 'scripts'))
+from build_sidecar import platform_binaries
+a.binaries = platform_binaries(a.binaries, sys.platform)
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

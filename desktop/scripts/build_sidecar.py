@@ -28,6 +28,20 @@ BUILD = DESKTOP / "build"
 EXE_NAME = "termx-backend.exe" if os.name == "nt" else "termx-backend"
 
 
+def platform_binaries(entries: list[tuple], platform: str) -> list[tuple]:
+    """Drop X11 libraries inferred from Linux-only ctypes calls on a Mac host.
+
+    PyInstaller scans those calls even behind a sys.platform runtime guard and
+    picks up the runner's Homebrew/XQuartz libraries. Keep other dependencies,
+    notably Pillow's own libxcb/libXau closure, intact.
+    """
+    if platform != 'darwin':
+        return entries
+    import re
+    return [entry for entry in entries if not re.fullmatch(
+        r'lib(?:X11|Xdmcp)(?:\.\d+)*\.dylib', Path(entry[0]).name)]
+
+
 def run(argv: list[str], cwd: Path | None = None) -> None:
     shown = argv.copy()
     if "/p" in shown:
