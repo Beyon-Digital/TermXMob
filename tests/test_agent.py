@@ -3056,8 +3056,8 @@ def test_ports_and_processes_endpoints(tmp_path: Path) -> None:
             else:
                 entry = next((e for e in ports if e["port"] == port), None)
                 assert entry is not None, ports
-                assert entry["is_http"] is True
-                assert entry["url"] == f"http://127.0.0.1:{port}"
+                assert entry["is_http"] is None  # discovery does not contact the server
+                assert entry["url"] is None
                 assert entry["pid"] == os.getpid()  # in-proc listener is discoverable
                 pids = {p["pid"] for p in procs}
                 assert os.getpid() in pids
@@ -3679,14 +3679,13 @@ def test_darwin_process_discovery_parsers(monkeypatch, tmp_path: Path) -> None:
         return r
 
     monkeypatch.setattr(processes.subprocess, "run", fake_run)
-    monkeypatch.setattr(processes, "probe_http", lambda port, host="127.0.0.1": port == 8000)
     ports = processes.listeners()
     assert {p["port"] for p in ports} == {8000, 3000}
     loop = next(p for p in ports if p["port"] == 8000)
     assert loop["pid"] == 12345 and loop["process"] == "python3"
-    assert loop["is_http"] is True and loop["url"] == "http://127.0.0.1:8000"
+    assert loop["is_http"] is None and loop["url"] is None
     wild = next(p for p in ports if p["port"] == 3000)
-    assert wild["is_http"] is False and wild["url"] is None
+    assert wild["is_http"] is None and wild["url"] is None
 
     procs = processes.termx_processes([str(tmp_path)])
     ours = next(p for p in procs if p["pid"] == os.getpid())
