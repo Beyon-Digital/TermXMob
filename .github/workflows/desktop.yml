@@ -76,6 +76,8 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> target
           key: ${{ matrix.target }}
+          # Retain compiled dependencies when a later installer/UI gate fails.
+          cache-on-failure: true
 
       - uses: astral-sh/setup-uv@v5
         with:

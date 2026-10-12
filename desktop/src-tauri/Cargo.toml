@@ -1,6 +1,6 @@
 [package]
 name = "termx-desktop"
-version = "0.2.8"
+version = "0.2.9"
 description = "Termx desktop host"
 authors = ["Jainam"]
 edition = "2021"

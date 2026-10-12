@@ -315,6 +315,7 @@ def password_signin(driver, username, password, setup=False):
         signin_alert(driver)
         return driver.script('const button=document.querySelector(\'.sign-in button[type="submit"]\');return !!button&&!button.disabled')
     wait(available, 'native password form ready')
+    assert not driver.element('input[aria-label="Host passcode"]'), 'Native sign-in must use the Rust-held bootstrap credential, not a required browser passcode field'
     driver.type('input[autocomplete="username"]',username)
     driver.type('input[type="password"][autocomplete]',password)
     driver.click('//button[normalize-space()="'+('Create owner account' if setup else 'Continue with password')+'"]','xpath')
