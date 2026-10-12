@@ -3,8 +3,8 @@ download progress, signature verification, installation status, and retryable
 errors. Download, install, and restart are explicit actions. Closing the update
 window preserves the current operation; reopen Check for Updates to return.
 
-This release also fixes first-run native owner setup and conversation navigation
-in short or zoomed desktop windows. Browser setup still requires the host's
+This release also fixes first-run native owner setup, native control-plane
+navigation, and conversation navigation in short or zoomed desktop windows. Browser setup still requires the host's
 bootstrap credential.
 
 Installers include the Python backend and workspace runtime. macOS downloads are
