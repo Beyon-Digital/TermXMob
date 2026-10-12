@@ -11,7 +11,7 @@ def build_matrix(*, event: str, release_tag: str, scope: str = 'all', include_in
     effective_scope = scope if artifact_only else 'all'
     if effective_scope not in SCOPES:
         raise ValueError('Unknown artifact qualification scope')
-    mac_bundles = 'app' if artifact_only else 'dmg'
+    mac_bundles = 'app'  # The verified CI helper creates the final signed DMG.
     platforms = []
     if effective_scope != 'windows':
         platforms.append({'name': 'macos-arm64', 'platform': 'macos-15', 'target': 'aarch64-apple-darwin', 'bundles': mac_bundles})

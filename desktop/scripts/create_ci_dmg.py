@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an artifact-only signed DMG without an explicit mounted-layout phase.
+"""Create a signed DMG without an explicit mounted-layout phase.
 
 The Tauri-built app must already be signed, notarized and stapled. Its copied
 bytes/signatures/ticket are verified; only the new container is signed here.

@@ -21,6 +21,11 @@ def test_complete_manifest():
     assert set(merge(fragments())['platforms']) == module.PLATFORMS
 
 
+def test_update_window_receives_release_context():
+    result = module.merge(fragments(), tag='v0.2.8', repository='Beyon-Digital/TermXMob', notes='Visible update progress and native setup fixes.')
+    assert result['notes'] == 'Visible update progress and native setup fixes.'
+
+
 @pytest.mark.parametrize('change', ['missing', 'duplicate', 'version', 'shared_payload', 'unsigned', 'wrong_release'])
 def test_rejects_incomplete_or_misrouted_updates(change):
     values = fragments()
@@ -44,3 +49,12 @@ def test_only_the_complete_qualified_release_is_published():
     assert publish['needs'] == 'build'
     assert 'success()' in publish['if'] and 'always()' not in publish['if']
     assert 'inputs.release_tag' in publish['if']
+    steps = workflow['jobs']['build']['steps']
+    names = [step.get('name') for step in steps]
+    assert "runner.os != 'macOS'" in build['with']['tagName']
+    assert names.index('Notarize and verify final macOS DMG') < names.index('Attach qualified macOS installer to draft')
+    fragment = next(step for step in steps if step.get('name') == 'Publish updater fragment')
+    assert 'hdiutil attach' not in fragment['run'] and 'hdiutil detach' not in fragment['run']
+    prepare = workflow['jobs']['prepare']['steps'][-1]
+    assert prepare['name'] == 'Prepare draft release'
+    assert '--draft' in prepare['run'] and '--target "$GITHUB_SHA"' in prepare['run']

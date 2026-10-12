@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 PLATFORMS = {'darwin-aarch64', 'darwin-x86_64', 'windows-x86_64', 'linux-x86_64'}
 
 
-def merge(fragments, *, tag, repository):
+def merge(fragments, *, tag, repository, notes=None):
     version = tag.removeprefix('v')
     platforms = {}
     urls = set()
@@ -33,7 +33,7 @@ def merge(fragments, *, tag, repository):
     if set(platforms) != PLATFORMS:
         raise ValueError(f'Missing updater platforms: {sorted(PLATFORMS - set(platforms))}')
     return {
-        'version': version, 'notes': f'Termx {tag}',
+        'version': version, 'notes': notes or f'Termx {tag}',
         'pub_date': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'platforms': platforms,
     }
@@ -44,7 +44,9 @@ if __name__ == '__main__':
     parser.add_argument('directory', type=Path)
     parser.add_argument('--tag', required=True)
     parser.add_argument('--repository', required=True)
+    parser.add_argument('--notes-file', type=Path)
     args = parser.parse_args()
     fragments = [json.loads(path.read_text()) for path in sorted(args.directory.glob('updater-*.json'))]
-    result = merge(fragments, tag=args.tag, repository=args.repository)
+    result = merge(fragments, tag=args.tag, repository=args.repository,
+                   notes=args.notes_file.read_text() if args.notes_file else None)
     (args.directory / 'latest.json').write_text(json.dumps(result, indent=2) + '\n')
