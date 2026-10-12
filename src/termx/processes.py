@@ -4,15 +4,14 @@ Two scoped views:
 
 - ``listeners()`` — listening TCP sockets from ``/proc/net/tcp{,6}`` joined
   with the owning PID (when ``/proc/<pid>/fd`` is readable), process name,
-  cmdline and cwd, plus a bounded HTTP probe so the client can offer a
-  one-click preview URL.
+  cmdline and cwd. Discovery is passive: it never connects to listeners.
+  Protocol detection and page loading are not part of discovery.
 - ``termx_processes(projects)`` — processes Termx owns (our own PID tree:
   PTY shells, forward/tunnel helpers, agent-spawned children) plus any
   process whose cwd sits inside a registered project root. Arbitrary
   unrelated system processes are never listed.
 
-Linux-only in this version; other platforms degrade to empty lists rather
-than pretending discovery worked.
+Linux uses /proc; macOS uses lsof and ps. Other platforms return empty lists.
 """
 
 from __future__ import annotations
@@ -59,11 +58,6 @@ def _darwin_listeners() -> list[dict[str, Any]]:
         except (ValueError, IndexError):
             pid = None
         address = addr.lstrip("*") or "0.0.0.0"
-        loopback = address in {"127.0.0.1", "0.0.0.0", "::", "::1", "localhost"}
-        is_http = probe_http(port) if loopback else False
-        url = None
-        if is_http:
-            url = f"http://{'127.0.0.1' if address in {'0.0.0.0', '::'} else address}:{port}"
         out.append(
             {
                 "port": port,
@@ -73,8 +67,8 @@ def _darwin_listeners() -> list[dict[str, Any]]:
                 "process": parts[0],
                 "cmdline": None,
                 "cwd": None,
-                "is_http": is_http,
-                "url": url,
+                "is_http": None,
+                "url": None,
             }
         )
     out.sort(key=lambda item: (item["port"], item["family"]))
@@ -119,10 +113,6 @@ def _darwin_infos() -> dict[int, dict[str, Any]]:
                 infos[pid]["cwd"] = line[1:]
             pid = None
     return infos
-
-
-_HTTP_PROBE_BYTES = b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
-_PROBE_TIMEOUT = 0.25
 
 
 def _hex_addr(raw: str, ipv6: bool) -> str:
@@ -209,20 +199,15 @@ def _live_pids() -> list[int]:
         return []
 
 
-def probe_http(port: int, host: str = "127.0.0.1") -> bool:
-    """Bounded probe: True when the listener answers an HTTP request line."""
-    try:
-        with socket.create_connection((host, port), timeout=_PROBE_TIMEOUT) as sock:
-            sock.settimeout(_PROBE_TIMEOUT)
-            sock.sendall(_HTTP_PROBE_BYTES)
-            head = sock.recv(64)
-            return head.startswith(b"HTTP/")
-    except OSError:
-        return False
+def listeners() -> list[dict[str, Any]]:
+    """Read listening sockets and owners without sending network traffic.
 
-
-def listeners(probe: bool = True) -> list[dict[str, Any]]:
-    """Listening TCP sockets enriched with owner process data when permitted."""
+    Clients poll this list in the background. Even a bounded GET probe on
+    each refresh floods services, including unrelated and non-HTTP listeners.
+    Keep the nullable API fields for compatibility: None means unverified,
+    not that the service is known to be non-HTTP. Preview creation constructs
+    its URL separately when requested by the user.
+    """
     if not supported():
         return []
     if sys.platform == "darwin":
@@ -243,12 +228,6 @@ def listeners(probe: bool = True) -> list[dict[str, Any]]:
         if pid is not None and pid not in info_cache:
             info = info_cache[pid] = _proc_info(pid)
         address = entry["address"]
-        loopback = address in {"127.0.0.1", "0.0.0.0", "::", "::1"}
-        is_http = probe_http(entry["port"]) if probe and loopback else False
-        url = None
-        if is_http:
-            host = "127.0.0.1" if address in {"0.0.0.0", "::"} else address
-            url = f"http://{host}:{entry['port']}"
         out.append(
             {
                 "port": entry["port"],
@@ -258,8 +237,8 @@ def listeners(probe: bool = True) -> list[dict[str, Any]]:
                 "process": info["name"] if info else None,
                 "cmdline": info["cmdline"] if info else None,
                 "cwd": info["cwd"] if info else None,
-                "is_http": is_http,
-                "url": url,
+                "is_http": None,
+                "url": None,
             }
         )
     out.sort(key=lambda item: (item["port"], item["family"]))
