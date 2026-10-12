@@ -303,6 +303,7 @@ def assert_workspace(driver):
         signin_alert(driver)
         return None
     wait(ready, 'authenticated native workspace')
+    assert driver.script('return location.pathname === "/"'), 'Native navigation left the exact trusted workspace path'
     result = driver.api('/auth/me')
     assert result['status'] == 200 and result['body']['session_id']
     assert not driver.script('return /[?&]k=/.test(location.href)'), 'Credential in native window URL'
@@ -411,6 +412,11 @@ def main():
             username,password = 'native-fixture-owner','isolated-native-fixture-password-123'
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True
+            for label, heading in [('Projects','Projects'),('Runs','Runs'),('Overview','Control plane')]:
+                driver.click('//nav[@aria-label="Control plane navigation"]//button[normalize-space()="'+label+'"]','xpath')
+                wait(lambda:driver.script('return document.querySelector(".control-heading h1")?.textContent === arguments[0]',heading),'native control plane '+label)
+                assert_workspace(driver)
+            report['steps']['native_control_plane_navigation'] = True
             driver.screenshot('owner-workspace')
             report['steps']['desktop_update_window'] = desktop_update_window(driver)
             config_files = list(root.rglob('desktop.json'))

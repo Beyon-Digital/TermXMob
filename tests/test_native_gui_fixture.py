@@ -124,6 +124,7 @@ def test_native_workspace_ready_still_verifies_managed_session_and_url():
     class Driver:
         def element(self,selector):return 'actual-workspace'
         def script(self,script):
+            if 'location.pathname' in script:return True
             assert '/[?&]k=/' in script
             return False
         def api(self,path):
