@@ -349,6 +349,36 @@ socket.onclose=event=>{if(!settled)finish({ok:false,error:'Native terminal socke
         assert removed['status'] == 200 and not removed['body'].get('errors'), str(removed)
 
 
+def desktop_update_window(driver):
+    """Exercise actual bundled assets and local-only IPC without installing."""
+    original = driver.call('GET', '/window')
+    for command, payload in [('desktop_update_state', {}), ('desktop_update_action', {'action': 'install'})]:
+        try:
+            driver.invoke(command, payload)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError('Remote workspace received a privileged update capability')
+    snapshots = []
+    for attempt in range(2):
+        opened = driver.api('/graphql', 'POST', {'query': 'mutation { apply_update { started } }'})
+        assert opened['status'] == 200 and not opened['body'].get('errors'), str(opened)
+        handles = wait(lambda: (values if len(values) == 2 else None) if (values := driver.call('GET', '/window/handles')) else None, 'desktop update window')
+        driver.call('POST', '/window', {'handle': next(handle for handle in handles if handle != original)})
+        wait(lambda: driver.script('return location.pathname === "/updater.html" && !!document.querySelector("#action")'), 'bundled update UI')
+        snapshot = driver.invoke('desktop_update_state', {})
+        assert snapshot['phase'] in ('checking', 'current', 'available', 'error'), snapshot
+        assert snapshot['downloaded'] == 0, 'Checking must never start installation or download'
+        wait(lambda: driver.script('return document.querySelector("#current").textContent === arguments[0]', snapshot['currentVersion']), 'rendered native update status')
+        assert driver.script('return !document.querySelector("#title").textContent.includes("Could not load")')
+        driver.screenshot('desktop-updater-' + str(attempt))
+        snapshots.append({'phase': snapshot['phase'], 'current_version': snapshot['currentVersion']})
+        close_native_window('Termx — Software Update')
+        wait(lambda: len(driver.call('GET', '/window/handles')) == 1, 'close update window')
+        driver.call('POST', '/window', {'handle': original})
+    return {'local_ipc_and_assets': True, 'remote_install_denied': True, 'reopened': True, 'snapshots': snapshots}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary',required=True,type=Path)
@@ -381,6 +411,7 @@ def main():
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True
             driver.screenshot('owner-workspace')
+            report['steps']['desktop_update_window'] = desktop_update_window(driver)
             config_files = list(root.rglob('desktop.json'))
             assert len(config_files) == 1, 'Native app state escaped the isolated fixture directories'
             data_dir = config_files[0].parent
