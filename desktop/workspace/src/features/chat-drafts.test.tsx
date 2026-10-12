@@ -1,11 +1,38 @@
-import {render,screen,fireEvent,cleanup,waitFor} from '@testing-library/react';
+import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/react';
 import {afterEach,it,expect,vi} from 'vitest';
 import Chat from './Chat';
 import {sessionDrafts,draftWrites,submittingDrafts} from '../lib/drafts';
+import {acceptTransferredDraft} from '../lib/redock-state';
 import {request,type Session} from '../lib/api';
 vi.mock('../lib/api',()=>({gql:vi.fn(async()=>({engine_models:[]})),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
 afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();vi.clearAllMocks()});
 const row=(id:string):Session=>({id,title:id,engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,turns:[]});
+it('accepts a returned draft after remote metadata refresh and panel remount without inventing local edits',()=>{
+ const original={...row('returned-draft'),draft_text:'Previously saved draft'};
+ const returned={...original,draft_text:'Edited in detached window',revision:2};
+ sessionDrafts.set(original.id,{text:original.draft_text,saved:original.draft_text,dirty:false,revision:1});
+ vi.mocked(request).mockResolvedValue({...returned} as any);
+ const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:vi.fn()};
+ const panel=render(<Chat session={original} {...props}/>);
+ panel.rerender(<Chat session={returned} {...props}/>);
+ panel.unmount();render(<Chat session={returned} {...props}/>);
+ const draft={text:returned.draft_text,saved:returned.draft_text,dirty:false,revision:2};
+ act(()=>acceptTransferredDraft({version:1,sessionId:original.id,buffers:[],draft}));
+ expect(screen.getByLabelText('Message')).toHaveValue(returned.draft_text);
+ expect(props.onError).not.toHaveBeenCalled();
+});
+
+it('retains a real unsaved local edit and rejects a conflicting returned draft',()=>{
+ const original={...row('conflicting-return'),draft_text:'Saved draft'};
+ vi.mocked(request).mockResolvedValue({...original} as any);
+ const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:vi.fn()};
+ const panel=render(<Chat session={original} {...props}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Unsent main-window edit'}});
+ panel.rerender(<Chat session={{...original,draft_text:'Detached edit',revision:2}} {...props}/>);
+ expect(()=>acceptTransferredDraft({version:1,sessionId:original.id,buffers:[],draft:{text:'Detached edit',saved:'Detached edit',dirty:false}})).toThrow('different unsent draft');
+ expect(screen.getByLabelText('Message')).toHaveValue('Unsent main-window edit');
+});
+
 it('preserves and flushes a draft when switching faster than the autosave delay',async()=>{const a=row('a'),b=row('b');vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;const current=path.includes('/a')?a:b;if(init?.method==='PATCH'){Object.assign(current,JSON.parse(init.body as string).changes);current.revision++}return {...current} as any});const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const {rerender}=render(<Chat session={{...a}} {...props}/>);fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Unsent work'}});rerender(<Chat session={{...b}} {...props}/>);rerender(<Chat session={{...a}} {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Unsent work');await waitFor(()=>expect(a.draft_text).toBe('Unsent work'))});
 
 it('retains unsent text through a real panel unmount and stale metadata remount',async()=>{const a=row('unmount');vi.mocked(request).mockImplementation(async(path,init)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);const props={session:{...a},engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const panel=render(<Chat {...props}/>);fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Draft while loading Workbench'}});panel.unmount();render(<Chat {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Draft while loading Workbench')});

@@ -11,6 +11,7 @@ import argparse
 import base64
 from contextlib import suppress
 import hashlib
+from http.client import HTTPConnection
 import json
 import os
 from pathlib import Path
@@ -21,9 +22,9 @@ import subprocess
 import sys
 import tempfile
 from time import monotonic, sleep
-from urllib.error import HTTPError, URLError
+from urllib.error import URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
 # Visible-text controls in the shipped workspace (App.tsx status bar and
@@ -194,14 +195,17 @@ class NativeDriver:
         if session:
             path = '/session/'+self.session+path
         body = None if data is None else json.dumps(data).encode()
-        request = Request(self.origin+path, data=body, method=method,
-                          headers={'Content-Type':'application/json'})
+        # urllib forces Connection: close. tauri-driver forwards that header
+        # to WebKit while pooling the upstream connection, allowing the next
+        # command to race its shutdown. Use HTTP/1.1's normal keep-alive on
+        # that upstream connection. Never replay a possibly executed command.
+        connection = HTTPConnection('127.0.0.1', int(self.origin.rsplit(':', 1)[1]), timeout=180)
         try:
-            response = urlopen(request, timeout=180)
-        except HTTPError as error:
-            response = error
-        with response:
+            connection.request(method, path, body, {'Content-Type':'application/json'})
+            response = connection.getresponse()
             result = json.loads(response.read() or b'{}')
+        finally:
+            connection.close()
         value = result.get('value')
         if isinstance(value, dict) and value.get('error'):
             raise RuntimeError((value.get('message') or value['error'])[:1000])
@@ -416,7 +420,11 @@ def main():
                               fixture_environment(root),output)
         try:
             driver.start()
-            assert driver.script('return document.querySelector("h1")?.textContent') == 'Set up your workspace'
+            # WebKit can reconnect automation while navigating from the bundled
+            # bootstrap page to the host. Poll this read-only readiness check;
+            # never retry a native command whose side effects are unknown.
+            wait(lambda: driver.script('return document.querySelector("h1")?.textContent') == 'Set up your workspace',
+                 'fresh native owner setup page')
             username,password = 'native-fixture-owner','isolated-native-fixture-password-123'
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True

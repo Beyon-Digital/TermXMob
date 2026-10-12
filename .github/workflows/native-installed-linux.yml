@@ -11,6 +11,10 @@ on:
         description: Immutable tag or commit that produced that installer
         required: true
         type: string
+      trace_exits:
+        description: Capture native process exits and signals for diagnosis
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -69,7 +73,7 @@ jobs:
         run: cargo install tauri-driver --version 2.1.0 --locked
       - name: Qualify installed native workspace
         env:
-          TERMX_NATIVE_TRACE: '1'
+          TERMX_NATIVE_TRACE: ${{ inputs.trace_exits && '1' || '0' }}
         shell: bash
         run: |
           ulimit -c unlimited

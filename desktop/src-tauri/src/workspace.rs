@@ -1152,6 +1152,20 @@ pub async fn workspace_detach(
     Ok(label)
 }
 pub fn restore_placement(app: &AppHandle, window: &WebviewWindow) {
+    // Tauri dispatches the monitor lookup, but converts the returned native
+    // monitor on the calling thread. On Linux that conversion reads GDK's
+    // work area. Detach/redock run on workers, so keep the entire placement
+    // operation on the event-loop thread, including monitor conversion.
+    let handle = app.clone();
+    let observed = window.clone();
+    if let Err(error) = window.run_on_main_thread(move || {
+        restore_placement_on_main_thread(&handle, &observed);
+    }) {
+        log::warn!("Could not restore workspace window placement: {error}");
+    }
+}
+
+fn restore_placement_on_main_thread(app: &AppHandle, window: &WebviewWindow) {
     let Some(filename) = placement_filename(window.label()) else {
         return;
     };

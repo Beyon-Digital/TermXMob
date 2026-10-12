@@ -48,8 +48,9 @@ window opens a credential-free session/panel URL against the same backend.
 ## Releasing from GitHub Actions
 
 `.github/workflows/desktop.yml` builds and publishes Rust delivery binaries and
-installers on GitHub. Source checks and isolated Python/container tests run locally;
-Rust delivery binaries are built only in CI.
+installers on GitHub. Reproduce native failures locally and qualify the corrected
+native build before pushing desktop fixes. Local Rust builds are for diagnosis
+and verification; signed delivery binaries and installers are built in CI.
 
 Trigger options:
 
@@ -421,6 +422,9 @@ suite against an existing desktop workflow artifact. Supply its source run ID
 and immutable tag/commit; the workflow verifies provenance before installing the
 unchanged DEB. Crash backtraces omit frame arguments, and raw memory dumps are
 deleted rather than uploaded. This diagnostic path does not publish a release.
+It is a qualification tool, not a replacement for local debugging. Optional
+`trace_exits` records process exits and signals without recording IPC, network
+payloads or executable arguments.
 
 macOS packaging copies the complete backend runtime into `Resources/backend` through Tauri's `bundle.macOS.files` directory copier, preserving the Chromium app/framework symbolic links. The normal resource file copier dereferences those links and cannot safely package a complete Chromium framework. CI verifies and signs the staged browser bundle before signing the enclosing application; a compile check alone does not qualify this packaging path.
 
