@@ -10,6 +10,9 @@ on:
       - 'desktop/src-tauri/src/media_permission.rs'
       - 'desktop/src-tauri/src/main.rs'
       - 'desktop/src-tauri/src/ui.rs'
+      - 'desktop/src-tauri/src/updater.rs'
+      - 'desktop/src-tauri/capabilities/**'
+      - 'desktop/bootstrap/**'
       - 'desktop/src-tauri/src/workspace.rs'
       - 'desktop/src-tauri/Info.plist'
       - 'desktop/src-tauri/entitlements.plist'
@@ -48,7 +51,7 @@ jobs:
           # This job checks sources only. Frozen runtime staging and packaged
           # assets are hard-gated by desktop.yml, never replaced by dummy files.
           TAURI_CONFIG: '{"bundle":{"resources":null}}'
-        run: cargo check --locked --manifest-path desktop/src-tauri/Cargo.toml
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml updater::tests
       - uses: astral-sh/setup-uv@v5
       - name: Verify bundle prerequisites and compiled macOS policy
         run: uv run --locked pytest -q tests/test_native_media_permission.py

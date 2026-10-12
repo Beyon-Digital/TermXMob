@@ -74,6 +74,22 @@ Trigger options:
 
 Each matrix job also attaches its installers to the release:
 
+Releases stay in draft until every platform passes qualification and a complete,
+signed updater manifest is attached. Mac updater archives have separate Apple
+Silicon and Intel filenames. A failed run cannot replace the latest public release
+with a partial update set. The `draft` manual input keeps a qualified release private
+for review; release runs always include all four platforms.
+
+**Check for Updates** in the app or tray menu opens a persistent desktop window.
+Checking never installs automatically. The window shows installed and available
+versions, release notes, download bytes/percentage (or indeterminate progress),
+signature verification, installation, and errors with retry. Downloads continue if
+the window is closed; reopening restores their status. Installation is explicit;
+Windows closes Termx to launch its installer, while macOS/Linux offer a separate
+restart action after installation. Save work before installing or restarting.
+The bundled window owns a local-only Tauri capability; browser workspaces cannot
+invoke update installation commands.
+
 | Runner | Output |
 | --- | --- |
 | `macos-15` (arm64) | `Termx_<version>_aarch64.dmg` |

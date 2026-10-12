@@ -18,6 +18,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .checked(app.autolaunch().is_enabled().unwrap_or(false))
         .build(app)?;
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
+    let updates = MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit Termx").build(app)?;
 
     // Service operations (tunnel, restarts, permissions) sit under Advanced —
@@ -37,6 +38,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .item(&connect)
         .item(&copy_link)
         .separator()
+        .item(&updates)
         .item(&advanced)
         .separator()
         .item(&quit)

@@ -27,6 +27,24 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm test
           pnpm build
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Verify rendered workspace and desktop updater
+        env:
+          TERMX_CONFIG_DIR: ${{ runner.temp }}/termx-ui-tests
+        run: |
+          uv sync --locked --extra development --extra media
+          uv run --no-sync playwright install --with-deps chromium
+          uv run --no-sync python tests/workspace_accessibility_e2e.py desktop/build/accessibility desktop/workspace/node_modules/axe-core/axe.min.js
+          uv run --no-sync python tests/updater_ui_e2e.py desktop/build/updater-ui desktop/workspace/node_modules/axe-core/axe.min.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-ui-evidence
+          path: |
+            desktop/build/accessibility
+            desktop/build/updater-ui
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-browser-workspace

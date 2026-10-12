@@ -3,7 +3,6 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_updater::UpdaterExt;
 
 use crate::backend::Backend;
 use crate::ui;
@@ -171,55 +170,11 @@ fn toggle_autostart(app: &AppHandle) {
 }
 
 fn check_updates(app: &AppHandle) {
-    run_update(app, "install");
+    crate::updater::show(app);
 }
 
-/// Run an update step: `check` only reports, `install` downloads and restarts.
-pub fn run_update(app: &AppHandle, action: &str) {
-    let handle = app.clone();
-    let install = action == "install";
-    tauri::async_runtime::spawn(async move {
-        let updater = match handle.updater() {
-            Ok(updater) => updater,
-            Err(_) => {
-                ui::notify(
-                    &handle,
-                    "Updates unavailable",
-                    "This build has no update endpoint configured.",
-                );
-                return;
-            }
-        };
-        match updater.check().await {
-            Ok(Some(update)) => {
-                let version = update.version.clone();
-                if !install {
-                    ui::notify(
-                        &handle,
-                        "Update available",
-                        &format!("Termx {version} is ready — open the menu to install it."),
-                    );
-                    return;
-                }
-                ui::notify(
-                    &handle,
-                    "Updating Termx",
-                    &format!("Downloading Termx {version}…"),
-                );
-                match update.download_and_install(|_, _| {}, || {}).await {
-                    Ok(()) => {
-                        ui::notify(
-                            &handle,
-                            "Termx updated",
-                            &format!("Restarting on {version}"),
-                        );
-                        handle.restart();
-                    }
-                    Err(error) => ui::notify(&handle, "Update failed", &error.to_string()),
-                }
-            }
-            Ok(None) => ui::notify(&handle, "Termx is up to date", ""),
-            Err(error) => ui::notify(&handle, "Updates unavailable", &error.to_string()),
-        }
-    });
+/// Backend update requests open the same confirmation/progress window.
+/// Installation and restart require a user action in that local window.
+pub fn run_update(app: &AppHandle, _action: &str) {
+    crate::updater::show(app);
 }

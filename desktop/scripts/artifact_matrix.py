@@ -15,7 +15,7 @@ def build_matrix(*, event: str, release_tag: str, scope: str = 'all', include_in
     platforms = []
     if effective_scope != 'windows':
         platforms.append({'name': 'macos-arm64', 'platform': 'macos-15', 'target': 'aarch64-apple-darwin', 'bundles': mac_bundles})
-        if include_intel:
+        if include_intel or not artifact_only:
             platforms.append({'name': 'macos-x86_64', 'platform': 'macos-15-intel', 'target': 'x86_64-apple-darwin', 'bundles': mac_bundles})
     platforms.append({'name': 'windows', 'platform': 'windows-latest', 'target': '', 'bundles': 'msi,nsis'})
     if effective_scope == 'all':

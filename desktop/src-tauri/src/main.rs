@@ -10,6 +10,7 @@ mod permissions;
 mod private_storage;
 mod tray;
 mod ui;
+mod updater;
 mod workspace;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,6 +69,7 @@ fn main() {
     }
 
     let builder = tauri::Builder::default()
+        .manage(updater::Coordinator::default())
         .manage(workspace::NativeSession::default())
         .manage(workspace::RedockCoordinator::default())
         .invoke_handler(tauri::generate_handler![
@@ -83,7 +85,9 @@ fn main() {
             workspace::workspace_redock_accept,
             workspace::workspace_redock_commit,
             workspace::workspace_redock_cancel,
-            workspace::workspace_binary
+            workspace::workspace_binary,
+            updater::desktop_update_state,
+            updater::desktop_update_action
         ])
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
