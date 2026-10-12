@@ -215,6 +215,12 @@ class NativeDriver:
         args = [str(self.driver), '--port', str(port), '--native-port', str(native_port)]
         if self.native_driver:
             args += ['--native-driver', str(self.native_driver)]
+        if sys.platform == 'linux' and os.environ.get('TERMX_NATIVE_TRACE') == '1':
+            # Observe only exits and signals, never credential-bearing IPC,
+            # network data, environment, or exec arguments. The installed app
+            # and WebDriver application path remain unchanged.
+            args = ['strace','-f','-tt','-e','trace=exit,exit_group,kill,tgkill',
+                    '-e','signal=all','-o',str(self.output/('native-exit-'+str(port)+'.trace')),*args]
         self.log = (self.output/'webdriver.log').open('ab')
         self.process = subprocess.Popen(args, env=self.environment, stdout=self.log,
                                         stderr=self.log, start_new_session=os.name != 'nt')
@@ -461,6 +467,8 @@ def main():
             driver.type('textarea[aria-label="Message"]','Native shared conversation draft')
             wait(lambda:driver.api('/api/workspace/sessions/'+session_id)['body'].get('draft_text') == 'Native shared conversation draft','canonical saved native draft')
             original = driver.call('GET','/window')
+            if os.environ.get('TERMX_NATIVE_TRACE') == '1':
+                (output/'processes-before-detach.json').write_text(json.dumps(process_listing(),indent=2)+'\n')
             label = driver.invoke('workspace_detach',{'sessionId':session_id,'panel':'chat'})
             handles = wait(lambda:(values if len(values)>1 else None) if (values:=driver.call('GET','/window/handles')) else None,'detached native window')
             detached = next(handle for handle in handles if handle != original)
