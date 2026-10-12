@@ -52,6 +52,53 @@ def test_native_fixture_rejects_changed_installed_asset(tmp_path):
     assert report['asset_verification']['unchanged'] is False
 
 
+def test_native_transport_preserves_keepalive_and_never_replays_a_lost_command(tmp_path):
+    from http.client import RemoteDisconnected
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    import pytest
+
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get('Content-Length', 0)))
+            requests.append((self.path, self.headers.get('Connection')))
+            if self.path.endswith('/lost-response'):
+                # The command executed, but its response was lost. Retrying
+                # could duplicate a detached window or another native action.
+                self.close_connection = True
+                return
+            body = b'{"value":{"ok":true}}'
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    module = harness()
+    driver = module.NativeDriver(tmp_path/'app', tmp_path/'driver', None, {}, tmp_path)
+    driver.origin = f'http://127.0.0.1:{server.server_port}'
+    driver.session = 'fixture'
+    try:
+        assert driver.call('POST', '/normal', {}) == {'ok': True}
+        with pytest.raises(RemoteDisconnected):
+            driver.call('POST', '/lost-response', {})
+        assert [path for path, _ in requests] == ['/session/fixture/normal', '/session/fixture/lost-response']
+        assert all(connection != 'close' for _, connection in requests)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_native_artifact_canvas_is_allowed_only_through_existing_window_guards():
     source=(Path(__file__).resolve().parents[1]/'desktop/src-tauri/src/workspace.rs').read_text()
     for name in ('workspace_redock','workspace_detach'):

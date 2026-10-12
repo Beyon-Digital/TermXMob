@@ -11,6 +11,10 @@ on:
         description: Immutable tag or commit that produced that installer
         required: true
         type: string
+      trace_exits:
+        description: Capture native process exits and signals for diagnosis
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,7 +51,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y webkit2gtk-driver xvfb x11-utils wmctrl openbox dbus-x11 gnome-keyring gdb
+          sudo apt-get install -y webkit2gtk-driver xvfb x11-utils wmctrl openbox dbus-x11 gnome-keyring gdb strace
           mapfile -t packages < <(find packages -type f -name '*.deb')
           test "${#packages[@]}" = 1
           package=$(realpath "${packages[0]}")
@@ -68,6 +72,8 @@ jobs:
         if: steps.driver-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-driver --version 2.1.0 --locked
       - name: Qualify installed native workspace
+        env:
+          TERMX_NATIVE_TRACE: ${{ inputs.trace_exits && '1' || '0' }}
         shell: bash
         run: |
           ulimit -c unlimited
