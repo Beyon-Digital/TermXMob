@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
-use crate::config::{self, DesktopConfig};
+use crate::config::{self, BackendMode, DesktopConfig};
 use crate::{logging, ui};
 
 #[derive(Clone, Debug, Default)]
@@ -51,6 +51,7 @@ struct Inner {
     adopted: AtomicBool,
     restarts: AtomicU32,
     generation: AtomicU32,
+    service_identity: Mutex<Option<Value>>,
 }
 
 #[derive(Clone)]
@@ -74,6 +75,7 @@ impl Backend {
             adopted: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
             generation: AtomicU32::new(0),
+            service_identity: Mutex::new(None),
         }));
         Ok(manager)
     }
@@ -91,11 +93,128 @@ impl Backend {
     }
 
     pub fn port(&self) -> u16 {
+        if let Some(info) = self.info() {
+            return info.port;
+        }
         self.0
             .config
             .lock()
             .map(|config| config.port)
             .unwrap_or(config::DEFAULT_PORT)
+    }
+
+    pub fn background_mode(&self) -> bool {
+        self.0
+            .config
+            .lock()
+            .map(|config| config.backend_mode == BackendMode::Service)
+            .unwrap_or(false)
+    }
+
+    pub fn verify_identity(&self) -> Result<(), String> {
+        if !self.background_mode() {
+            return Ok(());
+        }
+        let identity = self
+            .0
+            .service_identity
+            .lock()
+            .map_err(|_| "Background host identity unavailable")?
+            .clone()
+            .ok_or("Background host is not attached")?;
+        crate::host_service::verify(&self.0.app, &identity).map(|_| ())
+    }
+
+    pub fn set_background_mode(&self, enabled: bool) {
+        let manager = self.clone();
+        self.0.stop_requested.store(true, Ordering::SeqCst);
+        thread::spawn(move || {
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            let active_port = manager.port();
+            manager.stop_inner();
+            let result = (|| -> Result<(), String> {
+                let mut config = manager
+                    .0
+                    .config
+                    .lock()
+                    .map_err(|_| "Host configuration unavailable")?
+                    .clone();
+                if enabled {
+                    config = config::set_backend_mode(
+                        &manager.0.app,
+                        BackendMode::Service,
+                        Some(active_port),
+                    )
+                    .map_err(|_| "Host choice could not be saved")?;
+                    *manager.0.config.lock().unwrap() = config.clone();
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "install",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "start",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                } else {
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "stop",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "uninstall",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                    config = config::set_backend_mode(&manager.0.app, BackendMode::App, None)
+                        .map_err(|_| "Host choice could not be saved")?;
+                    *manager.0.config.lock().unwrap() = config;
+                }
+                Ok(())
+            })();
+            crate::menu::sync_background_mode(&manager.0.app, manager.background_mode());
+            if let Err(error) = result {
+                manager.fail(&error);
+                return;
+            }
+            manager.0.stop_requested.store(false, Ordering::SeqCst);
+            manager.0.shutdown_pending.store(false, Ordering::SeqCst);
+            manager.0.shutdown_confirmed.store(false, Ordering::SeqCst);
+            manager.run_session_inner();
+        });
+    }
+
+    pub fn stop_background_host(&self) {
+        if !self.background_mode() {
+            return;
+        }
+        let manager = self.clone();
+        self.0.stop_requested.store(true, Ordering::SeqCst);
+        thread::spawn(move || {
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            let result = crate::host_service::control(
+                &manager.0.app,
+                "stop",
+                manager.port(),
+                &manager.passcode(),
+            );
+            manager.stop_inner();
+            if let Err(error) = result {
+                manager.fail(&error);
+            } else {
+                ui::notify(
+                    &manager.0.app,
+                    "Background host stopped",
+                    "Agents remain stopped until you explicitly start the host again.",
+                );
+            }
+        });
     }
 
     pub fn start(&self) {
@@ -127,6 +246,25 @@ impl Backend {
             manager.stop_inner();
             if crate::QUITTING.load(Ordering::SeqCst) {
                 return;
+            }
+            if manager.background_mode() {
+                if let Err(error) = crate::host_service::control(
+                    &manager.0.app,
+                    "stop",
+                    manager.port(),
+                    &manager.passcode(),
+                )
+                .and_then(|_| {
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "start",
+                        manager.port(),
+                        &manager.passcode(),
+                    )
+                }) {
+                    manager.fail(&error);
+                    return;
+                }
             }
             manager.0.restarts.store(0, Ordering::SeqCst);
             manager.0.stop_requested.store(false, Ordering::SeqCst);
@@ -187,7 +325,10 @@ impl Backend {
             let _ = child.wait();
             logging::desktop(&self.0.app, "backend process tree terminated");
         }
-        let _ = fs::remove_file(config::pid_path(&self.0.app));
+        if !self.background_mode() {
+            let _ = fs::remove_file(config::pid_path(&self.0.app));
+        }
+        *self.0.service_identity.lock().unwrap() = None;
         if let Ok(mut state) = self.0.state.lock() {
             *state = State::Idle;
         }
@@ -216,8 +357,12 @@ impl Backend {
             return;
         }
         let generation = self.0.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        self.cleanup_stale();
         let config = self.0.config.lock().unwrap().clone();
+        if config.backend_mode == BackendMode::Service {
+            self.attach_service(&config, generation);
+            return;
+        }
+        self.cleanup_stale();
         let (port, adopted) = self.pick_port(&config);
         self.0.adopted.store(adopted, Ordering::SeqCst);
         if let Ok(mut state) = self.0.state.lock() {
@@ -249,6 +394,49 @@ impl Backend {
                 self.fail(&format!("Termx backend could not start: {error}"));
             }
         }
+    }
+
+    fn attach_service(&self, config: &DesktopConfig, generation: u32) {
+        let result =
+            crate::host_service::control(&self.0.app, "status", config.port, &config.passcode)
+                .and_then(|status| {
+                    crate::host_service::verify(&self.0.app, &status).map(|port| (status, port))
+                });
+        let (identity, port) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                self.fail(&format!("Background host unavailable: {error}. Use Restart Backend to start it explicitly."));
+                return;
+            }
+        };
+        self.0.adopted.store(true, Ordering::SeqCst);
+        *self.0.service_identity.lock().unwrap() = Some(identity.clone());
+        self.handle_ready(ReadyInfo {
+            port,
+            passcode: config.passcode.clone(),
+            urls: vec![format!("http://127.0.0.1:{port}")],
+            tunnel: None,
+        });
+        let manager = self.clone();
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(2));
+            if crate::QUITTING.load(Ordering::SeqCst)
+                || manager.0.generation.load(Ordering::SeqCst) != generation
+            {
+                return;
+            }
+            if crate::host_service::verify(&manager.0.app, &identity).is_ok() {
+                continue;
+            }
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            if manager.0.generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            *manager.0.info.lock().unwrap() = None;
+            *manager.0.service_identity.lock().unwrap() = None;
+            manager.fail("Background host stopped or changed. Agents will not restart automatically; use Restart Backend when ready.");
+            return;
+        });
     }
 
     fn spawn_backend(
@@ -635,6 +823,7 @@ pub fn gql(port: u16, passcode: &str, query: &str, variables: Option<Value>) -> 
 
 pub fn gql_app(app: &AppHandle, query: &str, variables: Option<Value>) -> Option<Value> {
     let backend = app.try_state::<Backend>()?;
+    backend.verify_identity().ok()?;
     let info = backend.info()?;
     crate::workspace::gql_native(app, info.port, query, variables.clone()).or_else(|| {
         if crate::workspace::legacy_allowed(info.port) {

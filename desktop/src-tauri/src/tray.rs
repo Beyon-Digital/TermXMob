@@ -2,6 +2,7 @@ use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBui
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
+pub struct BackgroundItem(pub tauri::menu::CheckMenuItem<tauri::Wry>);
 pub struct AutostartItem(pub tauri::menu::CheckMenuItem<tauri::Wry>);
 
 use crate::backend::gql_app;
@@ -24,7 +25,20 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 
     // Service operations (tunnel, restarts, permissions) sit under Advanced —
     // the top level stays machine status, pairing, and launch-at-login.
+    let background =
+        CheckMenuItemBuilder::with_id("background_host", "Keep Host Running After Quit")
+            .checked(
+                crate::config::load(app)
+                    .map(|config| config.backend_mode == crate::config::BackendMode::Service)
+                    .unwrap_or(false),
+            )
+            .build(app)?;
+    let stop_background =
+        MenuItemBuilder::with_id("stop_background_host", "Stop Background Host").build(app)?;
     let advanced = SubmenuBuilder::new(app, "Advanced")
+        .item(&background)
+        .item(&stop_background)
+        .separator()
         .item(&permissions)
         .item(&autostart)
         .separator()
@@ -75,6 +89,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     }
     builder.build(app)?;
     app.manage(AutostartItem(autostart));
+    app.manage(BackgroundItem(background));
     Ok(())
 }
 

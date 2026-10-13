@@ -21,7 +21,7 @@ async def execute(call,ctx):
         while monotonic()<deadline:
             if ctx.cancel.is_set():raise asyncio.CancelledError
             binding=service.records.get('browser-task',ctx.task_id)
-            if binding and service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']):
+            if binding and service.authority_valid(binding):
                 tabs=await BrowserToolAdapter(service).execute('browser_tabs',{},task_id=ctx.task_id,principal_id=binding['principal_id'],session_id=binding['session_id'],call_id='wait')
                 if tabs:return ToolOutcome({'tabs':tabs})
             await asyncio.sleep(.25)
@@ -57,8 +57,8 @@ async def execute(call,ctx):
             if current and current['status']=='paused':ctx.store.update_task(ctx.task_id,status=previous['status'])
         ctx.emit('task.handoff.resumed',{'call_id':call.call_id,'tab_id':requested_tab})
     if ctx.read_only and call.name in {'browser_action','browser_open_tab','browser_close_tab'}:return ToolOutcome({'refused':True,'error':'Ask mode cannot send browser input'})
-    if not service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']):return ToolOutcome({'refused':True,'error':'Browser task authority expired or was revoked'})
-    result=await BrowserToolAdapter(service).execute(call.name,call.arguments,task_id=ctx.task_id,principal_id=binding['principal_id'],session_id=binding['session_id'],call_id=ctx.task_id+':'+call.call_id,authority=lambda:service.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version']))
+    if not service.authority_valid(binding):return ToolOutcome({'refused':True,'error':'Browser task authority expired or was revoked'})
+    result=await BrowserToolAdapter(service).execute(call.name,call.arguments,task_id=ctx.task_id,principal_id=binding['principal_id'],session_id=binding['session_id'],call_id=ctx.task_id+':'+call.call_id,authority=lambda:service.authority_valid(binding))
     return ToolOutcome(result if isinstance(result,dict) else {'tabs':result})
 
 def register(registry):

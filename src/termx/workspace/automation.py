@@ -79,11 +79,26 @@ class AutomationService:
         else:
             state.agent.cancel(task_id)
 
-    def create(self,principal,*,request_id,conversation_id,success_criteria,max_runs,limits,prompt,spec,grant_days,missed='skip',overlap='skip',runbook_id=None,command=None):
+    async def create_with_browser(self,principal,*,browser_permission=None,**kwargs):
+        identifier=uuid.uuid5(uuid.NAMESPACE_URL,principal.id+':schedule:'+kwargs['request_id']).hex
+        if self.store.get('schedule',identifier):
+            return self.create(principal,**kwargs,browser_permission=browser_permission)
+        prepared=None
+        if browser_permission is not None:
+            if kwargs.get('runbook_id') or kwargs.get('command'):
+                raise ValueError('Browser permissions require an agent schedule')
+            service=getattr(self.workspace.state,'scheduled_browser',None)
+            if service is None:
+                raise ValueError('Scheduled browser access is unavailable')
+            prepared=await service.prepare(principal,kwargs['conversation_id'],browser_permission)
+        return self.create(principal,**kwargs,browser_permission=browser_permission,_prepared_browser_permission=prepared)
+
+    def create(self,principal,*,request_id,conversation_id,success_criteria,max_runs,limits,prompt,spec,grant_days,missed='skip',overlap='skip',runbook_id=None,command=None,browser_permission=None,_prepared_browser_permission=None):
         self.workspace.record(principal,'conversation',conversation_id,scope='agent-run')
         identifier=uuid.uuid5(uuid.NAMESPACE_URL,principal.id+':schedule:'+request_id).hex
         digest=hashlib.sha256(json.dumps(dict(conversation_id=conversation_id,success_criteria=success_criteria,
-            max_runs=max_runs,limits=limits,prompt=prompt,spec=spec,grant_days=grant_days,missed=missed,overlap=overlap,runbook_id=runbook_id,command=command),sort_keys=True).encode()).hexdigest()
+            max_runs=max_runs,limits=limits,prompt=prompt,spec=spec,grant_days=grant_days,missed=missed,overlap=overlap,runbook_id=runbook_id,command=command,
+            **({'browser_permission':browser_permission} if browser_permission is not None else {})),sort_keys=True).encode()).hexdigest()
         with self.store.lock:
             previous=self.store.get('schedule',identifier)
             if previous:
@@ -91,6 +106,8 @@ class AutomationService:
                 if previous.get('creation_digest')!=digest: raise Conflict('Creation request changed; use a new request ID')
                 return previous
             if command and runbook_id: raise ValueError('Choose a saved automation or a new command')
+            if browser_permission is not None and _prepared_browser_permission is None:
+                raise ValueError('Review and prepare browser permissions before creating a schedule')
             runbook=self.runbook(principal,conversation_id,runbook_id) if runbook_id else None
             if command:
                 conversation=self.workspace.session(principal,conversation_id,turns=False)
@@ -99,6 +116,8 @@ class AutomationService:
             due=next_run(spec,self.clock())
             if due>=self.clock()+grant_days*86400:
                 raise ValueError('The first run must be before the execution grant expires')
+            if browser_permission is not None and (browser_permission['expires_at']>self.clock()+grant_days*86400 or due>=browser_permission['expires_at']):
+                raise ValueError('Browser permission must cover the first run and expire within the schedule grant')
             goal=grant=created_runbook=None
             try:
                 if command:
@@ -111,6 +130,8 @@ class AutomationService:
                 grant=self.grant(principal,goal_id=goal['id'],expires_at=self.clock()+grant_days*86400,max_runs=max_runs,limits=limits)
                 if runbook:
                     grant=self.store.update('delegation',grant['id'],{**grant,'runbook':runbook})
+                if _prepared_browser_permission is not None:
+                    grant=self.store.update('delegation',grant['id'],{**grant,'browser_permission':_prepared_browser_permission})
                 return self.schedule(principal,goal_id=goal['id'],grant_id=grant['id'],prompt=prompt,spec=spec,
                     missed=missed,overlap=overlap,enabled=True,identifier=identifier,creation_digest=digest)
             except Exception:
@@ -446,6 +467,11 @@ class AutomationService:
         if not pending or any(a['kind'] != 'plan' for a in pending):
             return
         principal, grant = self._run_authority(run)
+        if grant.get('browser_permission'):
+            service=getattr(self.workspace.state,'scheduled_browser',None)
+            if service is None:
+                raise PermissionError('Scheduled browser access is unavailable')
+            await service.activate(task['id'])
         for approval in pending:
             await self.workspace.state.agent.resolve_approval(task['id'], approval['id'], 'approved')
             self.store.log(principal.id, 'task', task['id'], 'delegation.plan_approved', {'grant_id':grant['id']})

@@ -64,6 +64,7 @@ fn trusted(app: &AppHandle, window: &WebviewWindow) -> Result<u16, String> {
     let backend = app
         .try_state::<crate::backend::Backend>()
         .ok_or("Host unavailable")?;
+    backend.verify_identity()?;
     let port = backend.port();
     let url = window.url().map_err(|_| "Window unavailable")?;
     if !workspace_label(window.label())

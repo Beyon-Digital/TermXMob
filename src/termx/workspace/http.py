@@ -113,6 +113,18 @@ class ScheduleInput(Input):
     enabled: bool=False
 
 
+class ScheduledBrowserTab(Input):
+    tab_id: str = Field(min_length=1,max_length=128)
+    origins: list[str] = Field(min_length=1,max_length=30)
+    actions: list[str] = Field(min_length=1,max_length=10)
+
+
+class ScheduledBrowserPermission(Input):
+    tabs: list[ScheduledBrowserTab] = Field(min_length=1,max_length=8)
+    expires_at: float = Field(gt=0)
+    max_seconds: int = Field(ge=10,le=3600)
+
+
 class AutomationInput(GoalInput):
     runbook_id: str | None = None
     command: str | None = Field(default=None,min_length=1,max_length=32000)
@@ -122,6 +134,7 @@ class AutomationInput(GoalInput):
     grant_days: int = Field(ge=1,le=90)
     missed: str = 'skip'
     overlap: str = 'skip'
+    browser_permission: ScheduledBrowserPermission | None = None
 
 
 class ScheduleEdit(Input):
@@ -435,9 +448,23 @@ def mount_workspace(app,state):
             rows.append(row)
         return {'runbooks':rows}
 
+    @router.get('/scheduled-browser/tabs')
+    def scheduled_browser_tabs(request:Request,conversation_id:str):
+        actor=principal(request)
+        conversation=call(workspace.session,actor,conversation_id,turns=False)
+        call(workspace.record,actor,'conversation',conversation_id,scope='agent-run')
+        call(workspace.require,actor,'desktop-control',conversation.get('project_id'))
+        if conversation['engine']!='internal' or conversation.get('runner_id') or conversation['mode']!='agent':
+            raise HTTPException(400,'Scheduled browser access requires a local Internal Agent conversation')
+        browser=getattr(state,'browser',None)
+        return {'tabs':[{key:tab.get(key) for key in ('id','title','url','profile_id','lease_revision','document_revision')}
+                        for tab in browser.tabs(actor.id) if tab['state']=='human' and tab['project_id']==conversation.get('project_id')
+                        and not (browser.records.get('profile',tab['profile_id']) or {}).get('ephemeral')]
+                if browser else []}
+
     @router.post('/automations')
-    def automation_create(request:Request,body:AutomationInput):
-        return call(automation.create,principal(request),**body.model_dump())
+    async def automation_create(request:Request,body:AutomationInput):
+        return await await_call(automation.create_with_browser,principal(request),**body.model_dump())
 
     @router.get('/automations')
     def automations(request:Request,project_id:str|None=None):

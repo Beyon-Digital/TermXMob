@@ -26,6 +26,9 @@ class BrowserService:
         self.records=Records(root);self.review=review or DecisionBroker(self.records)
         self.network=NetworkPolicy(development_origins);self.executable_path=executable_path
         self.session_valid=session_valid or (lambda principal,session,policy_version:True)
+        self.delegation_valid=lambda binding:False
+        self.delegation_release=lambda tab,grant:None
+        self.delegation_completed=lambda grant:False
         self.task_summary=lambda task_id:''
         self.task_live=lambda task_id:True # App gateway replaces this with its canonical task ledger.
         self.claim_tab=lambda principal,tab:None # Router binds durable ownership for agent-created tabs.
@@ -33,7 +36,10 @@ class BrowserService:
         self._views={};self._permission_ports={};self._permission_origins=set();self._human_diagnostics={};self._capture_cdp={};self._capture_jobs={};self._frame_cache={};self._control_waiters={};self._closed_contexts=set();self._context_tabs={}
         for tab in self.records.list('tab'):
             self._clear_private_capture(tab['id'])
-            tab.update(state='closed',grant_id=None,lease_revision=tab['lease_revision']+1);self.records.put('tab',tab['id'],tab)
+            if not tab.get('restart_closed'):
+                tab['restart_source_state']=tab['state']
+                tab['restart_source_lease']=tab['lease_revision']
+            tab.update(state='closed',grant_id=None,restart_closed=True,lease_revision=tab['lease_revision']+1);self.records.put('tab',tab['id'],tab)
         for grant in self.records.list('grant'):
             grant['revoked']=True;self.records.put('grant',grant['id'],grant)
         for profile in self.records.list('profile'):
@@ -113,7 +119,9 @@ class BrowserService:
         while True:
             for tab in self.records.list('tab'):
                 if tab.get('grant_id') and not self._grant_valid(tab,self.records.get('grant',tab['grant_id'])):
-                    self._revoke(tab,'human')
+                    grant=self.records.get('grant',tab['grant_id'])
+                    released=self._revoke(tab,'human')
+                    if grant and grant.get('delegation_id'):self.delegation_release(released,grant)
             await asyncio.sleep(.25)
     async def _route(self,route,*,profile_id=None):
         try:
@@ -142,7 +150,10 @@ class BrowserService:
             # documents, fetch/XHR and non-read requests cannot move data to an
             # ungranted origin, including a form or script-triggered request.
             moves_data=request.resource_type in {'document','fetch','xhr'} or request.method.upper() not in {'GET','HEAD','OPTIONS'}
-            if not tab and moves_data and profile_id and any(row['profile_id']==profile_id and row['state'] not in {'closed','crashed'} and (row['state']=='agent' or row.get('transport_restricted')) for row in self.records.list('tab')):
+            bootstrap=(tab or {}).get('scheduled_bootstrap')
+            if bootstrap and moves_data and (destination not in bootstrap['origins'] or not self.authority_valid(bootstrap['authority'])):
+                return await route.abort('blockedbyclient')
+            if not tab and moves_data and profile_id and any(row['profile_id']==profile_id and row['state'] not in {'closed','crashed'} and (row['state']=='agent' or row.get('transport_restricted') or row.get('scheduled_bootstrap')) for row in self.records.list('tab')):
                 # Chromium can report a popup's initial request before its
                 # frame/opener exists. Unattributed data movement in a scoped
                 # profile is refused rather than inheriting human authority.
@@ -160,7 +171,7 @@ class BrowserService:
         if opener is None:return
         parent_id=next((id for id,p in self._pages.items() if p==opener),None)
         parent=self.records.get('tab',parent_id) if parent_id else None
-        if not parent:await page.close();return
+        if not parent or parent.get('scheduled_bootstrap'):await page.close();return
         # An agent popup is human-owned until explicitly granted. No inherited control.
         tab=self._new_tab_record(profile,parent['session_id']);self._pages[tab['id']]=page
         if parent['state']=='agent' or parent.get('transport_restricted'):
@@ -201,6 +212,9 @@ class BrowserService:
                 destination=await self.network.validate(url)
                 tab=self.records.get('tab',id)
                 grant=self.records.get('grant',tab['grant_id']) if tab and tab.get('grant_id') else None
+                bootstrap=(tab or {}).get('scheduled_bootstrap')
+                if bootstrap and (destination not in bootstrap['origins'] or not self.authority_valid(bootstrap['authority'])):
+                    raise TargetDenied('Redirect destination outside scheduled restart permission')
                 if tab and (tab['state']=='agent' or tab.get('transport_restricted')) and (not grant or not self._grant_valid(tab,grant) or destination not in grant['origins']):
                     self._revoke(tab,'human');raise TargetDenied('Redirect destination outside task grant')
                 await session.send('Fetch.continueRequest',{'requestId':request_id})
@@ -209,12 +223,16 @@ class BrowserService:
             except Exception:pass # page closed; no request can escape a closed target
         session.on('Fetch.requestPaused',lambda event:asyncio.create_task(navigation(event)))
         await session.send('Fetch.enable',{'patterns':[{'resourceType':'Document','requestStage':'Request'}]})
-    async def create_tab(self,principal,session,profile_id,url='about:blank'):
+    async def create_tab(self,principal,session,profile_id,url='about:blank',*,scheduled_scope=None):
         profile=self.records.get('profile',profile_id)
         if not profile or profile['principal_id']!=principal:raise KeyError('profile not found')
         if url!='about:blank':await self.network.validate(url)
         context=await self._context(profile);page=await context.new_page()
-        tab=self._new_tab_record(profile,session);self._pages[tab['id']]=page;await self._wire_page(page,tab['id'])
+        tab=self._new_tab_record(profile,session)
+        if scheduled_scope:
+            tab['scheduled_bootstrap']=scheduled_scope
+            self.records.put('tab',tab['id'],tab)
+        self._pages[tab['id']]=page;await self._wire_page(page,tab['id'])
         if url!='about:blank':
             try:
                 await page.goto(url,wait_until='domcontentloaded',timeout=30000)
@@ -306,12 +324,16 @@ class BrowserService:
             tab['private_session_id']=session_id or (grant or {}).get('session_id') or tab['session_id']
             tab['private_policy_version']=policy_version if policy_version is not None else (grant or {}).get('policy_version',0)
         return self._revoke(tab,'private' if private else 'human')
+    def authority_valid(self,binding):
+        if binding.get('delegation_id'):
+            return bool(binding.get('session_id') is None and self.delegation_valid(binding))
+        return self.session_valid(binding['principal_id'],binding['session_id'],binding['policy_version'])
     def _grant_valid(self,tab,grant):
         try:
-            return bool(grant and not grant['revoked'] and grant['expires_at']>time() and all(grant[key]==tab[key] for key in ('principal_id','project_id','profile_id')) and grant['tab_id']==tab['id'] and tab['grant_id']==grant['id'] and tab['lease_revision']==grant['lease_revision'] and tab['state']=='agent' and self.task_live(grant['run_id']) and self.session_valid(grant['principal_id'],grant['session_id'],grant['policy_version']))
+            return bool(grant and not grant['revoked'] and grant['expires_at']>time() and all(grant[key]==tab[key] for key in ('principal_id','project_id','profile_id')) and grant['tab_id']==tab['id'] and tab['grant_id']==grant['id'] and tab['lease_revision']==grant['lease_revision'] and tab['state']=='agent' and self.task_live(grant['run_id']) and self.authority_valid(grant))
         except Exception:
             return False
-    async def handoff(self,id,principal,session,*,run_id,origins,actions,expires_in=600,policy_version=0):
+    async def handoff(self,id,principal,session,*,run_id,origins,actions,expires_in=600,policy_version=0,delegation_id=None):
         tab=self.get(id,principal)
         if tab['state'] in {'closed','crashed'}:raise ValueError('tab is closed')
         if not run_id or len(run_id)>128:raise ValueError('named task required')
@@ -331,12 +353,14 @@ class BrowserService:
         tab=self._revoke(current,'human');id_grant=secrets.token_urlsafe(16)
         current_url=page.url;title=await page.title()
         current=self.get(id,principal)
-        if current['lease_revision']!=tab['lease_revision'] or current['document_revision']!=tab['document_revision'] or current['state']!='human' or page.url!=current_url or not self.task_live(run_id) or not self.session_valid(principal,session,policy_version):raise PermissionError('Task, authority or page changed during handoff')
+        if current['lease_revision']!=tab['lease_revision'] or current['document_revision']!=tab['document_revision'] or current['state']!='human' or page.url!=current_url or not self.task_live(run_id) or not self.authority_valid({'principal_id':principal,'session_id':session,'policy_version':policy_version,'delegation_id':delegation_id,'run_id':run_id}):raise PermissionError('Task, authority or page changed during handoff')
         tab=current;tab['url']=current_url;tab['title']=title
+        tab.pop('scheduled_bootstrap',None)
         tab.update(state='agent',grant_id=id_grant,transport_restricted=True)
         grant={'id':id_grant,'tab_id':id,'principal_id':principal,'session_id':session,'project_id':tab['project_id'],'run_id':run_id,'profile_id':tab['profile_id'],'origins':sites,'actions':sorted(set(actions)),'expires_at':time()+expires_in,'lease_revision':tab['lease_revision'],'policy_version':policy_version,'revoked':False}
+        if delegation_id:grant['delegation_id']=delegation_id
         self.records.put('grant',id_grant,grant);self.records.put('tab',id,tab)
-        self.records.put('browser-task',run_id,{'id':run_id,'principal_id':principal,'session_id':session,'project_id':tab['project_id'],'policy_version':policy_version,'restricted':True})
+        self.records.put('browser-task',run_id,{'id':run_id,'principal_id':principal,'session_id':session,'project_id':tab['project_id'],'policy_version':policy_version,'restricted':True,**({'delegation_id':delegation_id,'run_id':run_id} if delegation_id else {})})
         # Explicit Resume always obtains a fresh observation after grant creation.
         observation=await self.observe(id,principal,grant_id=id_grant,run_id=run_id)
         return {'tab':self.get(id,principal),'grant':grant,'observation':observation}
@@ -515,7 +539,7 @@ class BrowserService:
                 async with self._control(id):
                     if not validate() or await self._document_hash(self._pages[id],'close_tab',{})!=document_hash:raise ValueError('Page changed during close approval; propose a fresh action')
                     await self.close_tab(id,principal)
-                if not self.task_live(run_id) or not self.session_valid(principal,session_id,policy_version) or (authority and not authority()):raise PermissionError('Task authority changed during close; verify the tab state')
+                if not self.task_live(run_id) or not self.authority_valid(grant) or (authority and not authority()):raise PermissionError('Task authority changed during close; verify the tab state')
                 return {'closed':id}
             child=await self.create_tab(principal,session_id,tab['profile_id'],args['url'])
             try:
@@ -780,7 +804,18 @@ class BrowserService:
         if self._monitor:
             self._monitor.cancel();await asyncio.gather(self._monitor,return_exceptions=True);self._monitor=None
         for tab in self.records.list('tab'):
-            if tab['state'] not in {'closed','crashed'}:self._revoke(tab,'closed')
+            if tab['state']=='agent' and tab.get('grant_id'):
+                grant=self.records.get('grant',tab['grant_id'])
+                if grant and grant.get('delegation_id') and self.delegation_completed(grant):
+                    tab=self._revoke(tab,'human')
+                    self.delegation_release(tab,grant)
+            if tab['state'] not in {'closed','crashed'}:
+                # Preserve the pre-shutdown source only for intentional host
+                # closure. User close/private/takeover still changes its lease.
+                tab['restart_closed']=True
+                tab['restart_source_state']=tab['state']
+                tab['restart_source_lease']=tab['lease_revision']
+                self._revoke(tab,'closed')
         self._context_tabs.clear() # Intentional host shutdown is not a renderer failure.
         captures=list(self._capture_jobs.values())
         for capture in captures:capture.cancel()

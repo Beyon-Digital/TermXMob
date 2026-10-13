@@ -70,3 +70,18 @@ it('lets remote users stop a schedule while execution is still preparing',async(
  fireEvent.click(screen.getByRole('button',{name:'Stop run'}));
  await waitFor(()=>expect(mocked).toHaveBeenCalledWith('/api/workspace/schedule-runs/pending-run/stop',expect.objectContaining({method:'POST'})));
 });
+
+it('includes unattended browser scope only after an explicit exact authorization',async()=>{
+ const base=mocked.getMockImplementation()!;
+ mocked.mockImplementation(async(path,init)=>path.includes('/sessions')?{sessions:[{id:'chat',title:'Browser task',engine:'internal',mode:'agent'}]}:path.includes('/scheduled-browser/tabs')?{tabs:[{id:'approved-tab',title:'Approved page',url:'https://example.com/tasks'}]}:base(path,init));
+ render(<ScheduleManager projectId={null} sessionId="chat"/>);
+ fireEvent.click(await screen.findByRole('button',{name:'New scheduled task'}));
+ fireEvent.change(screen.getByLabelText('Success criteria'),{target:{value:'Check tasks'}});fireEvent.change(screen.getByLabelText('Task prompt'),{target:{value:'Read the approved page'}});fireEvent.click(screen.getByLabelText(/Allow unattended runs within these limits/));
+ const browser=await screen.findByRole('checkbox',{name:/Allow this schedule to use/});fireEvent.click(browser);
+ expect(screen.getByRole('button',{name:'Authorize and create schedule'})).toBeDisabled();
+ fireEvent.click(await screen.findByRole('checkbox',{name:/Approved page · tab approved-tab/}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Authorize and create schedule'})).toBeEnabled());
+ fireEvent.click(screen.getByRole('button',{name:'Authorize and create schedule'}));
+ await waitFor(()=>expect(mocked.mock.calls.some(([path,init])=>path==='/api/workspace/automations'&&init?.method==='POST')).toBe(true));
+ const call=mocked.mock.calls.find(([path,init])=>path==='/api/workspace/automations'&&init?.method==='POST');expect(JSON.parse(String(call?.[1]?.body)).browser_permission).toMatchObject({tabs:[{tab_id:'approved-tab',origins:['https://example.com'],actions:['observe']}],max_seconds:600});
+});

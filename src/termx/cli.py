@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -53,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--host", default="0.0.0.0", help="Bind address (default 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8787, help="Bind port (default 8787)")
+    parser.add_argument('--config-dir', default=None, help='Private host state profile directory')
+    parser.add_argument('--service-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument("--passcode", default=None, help="Optional shared passcode")
     parser.add_argument(
         "--tunnel",
@@ -80,6 +83,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=argparse.SUPPRESS,
     )
+    commands=parser.add_subparsers(dest='command')
+    service=commands.add_parser('service', help='Manage an opt-in background user host')
+    actions=service.add_subparsers(dest='service_action',required=True)
+    for action in ('install','start','stop','status','uninstall'):
+        control=actions.add_parser(action)
+        control.add_argument('--config-dir',default=argparse.SUPPRESS)
+        if action in {'install','start'}:
+            control.add_argument('--host',default='127.0.0.1')
+            control.add_argument('--port',type=int,default=8787)
+            control.add_argument('--web-dir',default=argparse.SUPPRESS)
+        if action=='install':
+            control.add_argument('--tunnel-profile',default=None,help='Explicit existing tunnel profile to restore at service startup')
     return parser
 
 
@@ -161,11 +176,11 @@ async def _wait_started(server: uvicorn.Server, task: "asyncio.Task[None]", time
 
 
 async def _start_server(
-    app: object, host: str, port: int
+    app: object, host: str, port: int, *, strict: bool = False
 ) -> tuple[uvicorn.Server, "asyncio.Task[None]", int] | None:
     import socket
 
-    candidates = [port] + [port + offset for offset in range(1, 10)] + [0]
+    candidates = [port] if strict else [port] + [port + offset for offset in range(1, 10)] + [0]
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     for candidate in candidates:
         sock = socket.socket(family, socket.SOCK_STREAM)
@@ -208,6 +223,28 @@ async def _start_server(
 
 
 async def _serve(args: argparse.Namespace) -> int:
+    from termx.config import config_dir
+    from termx.host_instance import HostInstance
+    if getattr(args,'config_dir',None):
+        os.environ['TERMX_CONFIG_DIR']=str(Path(args.config_dir).expanduser().resolve())
+    if getattr(args,'service_worker',False):
+        from termx.host_service import DISPLAY_KEYS, HostService
+        settings=HostService()._settings()
+        if not settings: raise ValueError('This host profile has no installed service configuration')
+        args.host=settings['host'];args.port=settings['port'];args.web_dir=settings.get('web_dir')
+        args.passcode=settings.get('bootstrap_passcode');args.desktop=False;args.parent_pid=None;args.broker=None
+        args.tunnel_profile=settings.get('tunnel_profile_id');args.tunnel_authority=settings.get('tunnel_authority')
+        for key,value in settings.get('display_environment',{}).items():
+            if key in DISPLAY_KEYS:os.environ[key]=value
+        os.environ['TERMX_DESKTOP']='0'
+    instance=HostInstance(config_dir()).acquire()
+    try:
+        return await _serve_owned(args,instance)
+    finally:
+        instance.close()
+
+
+async def _serve_owned(args: argparse.Namespace, instance) -> int:
     if args.desktop:
         os.environ["TERMX_DESKTOP"] = "1"
     from termx.desktop import broker as desktop_broker
@@ -215,13 +252,21 @@ async def _serve(args: argparse.Namespace) -> int:
     desktop_broker.configure(getattr(args, "broker", None))
     web_dir = Path(args.web_dir) if args.web_dir else default_web_dir()
     state = AppState(passcode=args.passcode, port=args.port)
+    state.host_instance=instance
     app = create_app(state, web_dir=web_dir if web_dir.is_dir() else None)
-    started = await _start_server(app, args.host, args.port)
+    managed=getattr(args,'service_worker',False)
+    started = await _start_server(app, args.host, args.port, strict=managed)
     if started is None:
         if not args.desktop:
-            print(f"termx: could not bind {args.host}:{args.port} (and nearby ports)", flush=True)
-        return 0
+            suffix='' if managed else ' (and nearby ports)'
+            print(f"termx: could not bind {args.host}:{args.port}{suffix}", flush=True)
+        return 73 if managed else 0
     server, serve_task, actual_port = started
+    state.host_runtime=instance.publish(host=args.host,port=actual_port,managed=managed)
+    if managed:
+        from dataclasses import asdict
+        from termx.desktop.capabilities import probe_desktop
+        state.host_runtime['computer']=asdict(probe_desktop())
     if actual_port != args.port:
         state.port = actual_port
         state.tunnels.port = actual_port
@@ -240,7 +285,19 @@ async def _serve(args: argparse.Namespace) -> int:
             loop.add_signal_handler(signal.SIGINT, _request_shutdown)
         except (NotImplementedError, RuntimeError):
             pass
-        if args.tunnel:
+        selected=getattr(args,'tunnel_profile',None)
+        if managed and selected:
+            authority=getattr(args,'tunnel_authority',None)
+            actor=state.identity.principal_by_id(authority['principal_id']) if authority else None
+            permitted=state.identity.configured and (not authority or (actor and 'network-manage' in actor.scopes and 'host-admin' in actor.scopes and actor.policy_version==authority['policy_version']))
+            profile=state.store.get_profile(selected) if permitted else None
+            if profile:
+                status=await state.tunnels.start(profile)
+                tunnel_url=status.url if status.state=='connected' else None
+                state.host_runtime['remote']={'state':status.state,'url':tunnel_url}
+            else:
+                state.host_runtime['remote']={'state':'blocked','url':None}
+        elif args.tunnel:
             status = await state.tunnels.start_quick_cloudflare()
             tunnel_url = status.url
         if args.desktop:
@@ -248,7 +305,7 @@ async def _serve(args: argparse.Namespace) -> int:
             notify.ready(actual_port, urls, tunnel_url)
             body = connect_url(tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}"), None if state.identity.configured else args.passcode)
             notify.notify("Termx is running", body, kind="ready", url=tunnel_url or urls[0])
-        else:
+        elif not managed:
             print_banner(http_urls(actual_port, args.host), tunnel_url, None if state.identity.configured else args.passcode)
         await serve_task
     except (asyncio.CancelledError, KeyboardInterrupt):
@@ -276,9 +333,28 @@ async def _serve(args: argparse.Namespace) -> int:
 def main() -> None:
     augment_path()
     args = build_parser().parse_args()
+    if args.command == 'service':
+        import json
+        from termx.host_service import HostService
+        controller=HostService(getattr(args,'config_dir',None))
+        try:
+            action=args.service_action
+            if action=='install':
+                result=controller.install(host=args.host,port=args.port,web_dir=args.web_dir or str(default_web_dir()),
+                    bootstrap_passcode=os.environ.get('TERMX_SERVICE_PASSCODE'),tunnel_profile_id=args.tunnel_profile)
+            elif action=='start':result=controller.start(bootstrap_passcode=os.environ.get('TERMX_SERVICE_PASSCODE'))
+            else:result=getattr(controller,action)()
+            print(json.dumps(result),flush=True)
+        except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as exc:
+            print(json.dumps({'ok':False,'error':str(exc)}),flush=True)
+            raise SystemExit(1) from None
+        return
     try:
         status = asyncio.run(_serve(args))
         if status:
             raise SystemExit(status)
     except KeyboardInterrupt:
         pass
+    except RuntimeError as exc:
+        print(str(exc),file=sys.stderr,flush=True)
+        raise SystemExit(73) from None

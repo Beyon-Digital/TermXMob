@@ -3,6 +3,7 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 use crate::backend::Backend;
 use crate::ui;
@@ -27,7 +28,20 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
 
     // Low-level service operations live under Advanced — the top level stays
     // machine status, pairing, permissions, and launch-at-login.
+    let background =
+        CheckMenuItemBuilder::with_id("background_host", "Keep Host Running After Quit")
+            .checked(
+                crate::config::load(app)
+                    .map(|config| config.backend_mode == crate::config::BackendMode::Service)
+                    .unwrap_or(false),
+            )
+            .build(app)?;
+    let stop_background =
+        MenuItemBuilder::with_id("stop_background_host", "Stop Background Host").build(app)?;
     let advanced = SubmenuBuilder::new(app, "Advanced")
+        .item(&background)
+        .item(&stop_background)
+        .separator()
         .item(&restart)
         .item(&restart_app)
         .item(&check_updates)
@@ -113,8 +127,69 @@ pub fn sync_autostart(app: &AppHandle) {
     });
 }
 
+pub fn sync_background_mode(app: &AppHandle, enabled: bool) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(menu) = handle.menu() {
+            if let Some(check) = menu
+                .get("background_host")
+                .and_then(|item| item.as_check_menuitem().cloned())
+            {
+                let _ = check.set_checked(enabled);
+            }
+        }
+        for window in handle.webview_windows().values() {
+            if let Some(menu) = window.menu() {
+                if let Some(check) = menu
+                    .get("background_host")
+                    .and_then(|item| item.as_check_menuitem().cloned())
+                {
+                    let _ = check.set_checked(enabled);
+                }
+            }
+        }
+        if let Some(item) = handle.try_state::<crate::tray::BackgroundItem>() {
+            let _ = item.0.set_checked(enabled);
+        }
+    });
+}
+
+fn toggle_background_mode(app: &AppHandle) {
+    let Some(backend) = app.try_state::<Backend>() else {
+        return;
+    };
+    let enable = !backend.background_mode();
+    sync_background_mode(app, !enable);
+    let message = if enable {
+        "Keep agents and schedules running after you quit Termx?\n\nThis explicitly enables a user-owned background host for this profile. It continues until you stop it remotely or choose Stop Background Host. Independent service mode does not inherit the desktop shell’s macOS permission bridge. Verify computer-control permissions on the host before relying on unattended desktop control."
+    } else {
+        "Stop the independent background host and return to an app-managed host?\n\nActive agent work will stop. Afterwards, quitting Termx also stops its host."
+    };
+    let handle = app.clone();
+    app.dialog()
+        .message(message)
+        .title("Termx — Host Lifetime")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Switch host mode".into(),
+            "Cancel".into(),
+        ))
+        .show(move |accepted| {
+            if accepted {
+                if let Some(backend) = handle.try_state::<Backend>() {
+                    backend.set_background_mode(enable);
+                }
+            }
+        });
+}
+
 pub fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
+        "background_host" => toggle_background_mode(app),
+        "stop_background_host" => {
+            if let Some(backend) = app.try_state::<Backend>() {
+                backend.stop_background_host();
+            }
+        }
         "connect" => ui::open_connect_window(app),
         "copy_link" => {
             let handle = app.clone();
