@@ -734,7 +734,10 @@ class WorkspaceService:
             child_id = (event.get('payload') or {}).get('child_id')
             child = self.agents.get_task(child_id) if child_id else None
             if parent and child and not self.store.get('task', child_id):
-                self.store.create('task', parent['owner'], {'conversation_id':parent.get('conversation_id'), 'cwd':child['cwd']}, parent.get('project_id'), child_id)
+                self.store.create('task', parent['owner'], {'conversation_id':parent.get('conversation_id'),
+                    'cwd':parent.get('cwd'), 'execution_location':child['cwd'], 'parent_id':task_id,
+                    'agent_label':event['payload'].get('agent'), 'delegated_task':event['payload'].get('task'),
+                    'isolation':event['payload'].get('isolation')}, parent.get('project_id'), child_id)
                 lookup = getattr(self, 'principal_lookup', None)
                 actor = lookup(parent['owner']) if lookup else None
                 if actor and getattr(self.state, 'authorization', None):
@@ -750,9 +753,10 @@ class WorkspaceService:
             parent = self.store.get('task',(task or {}).get('parent_id') or '')
             if parent:
                 self.store.create('task',parent['owner'],{'conversation_id':parent.get('conversation_id'),
-                    'cwd':(task or {}).get('cwd')},parent.get('project_id'),task_id)
+                    'cwd':parent.get('cwd'), 'execution_location':(task or {}).get('cwd'),
+                    'parent_id':(task or {}).get('parent_id')},parent.get('project_id'),task_id)
                 row = self.store.get('task',task_id)
-        if row and not row.get('runner_id'):
+        if row and not row.get('runner_id') and not row.get('parent_id'):
             callback = getattr(self,'principal_lookup',None)
             principal = callback(row['owner']) if callback else None
             if principal:

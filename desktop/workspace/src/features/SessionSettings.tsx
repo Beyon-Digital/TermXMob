@@ -17,9 +17,11 @@ const BUDGET_FIELDS:{key:string;label:string;min:number;max:number;step:number;f
  {key:'max_steps',label:'Steps',min:16,max:1024,step:8,format:value=>value+' steps'},
  {key:'max_seconds',label:'Wall clock',min:300,max:86400,step:300,format:value=>value>=3600?Math.round(value/360)/10+' h':Math.round(value/60)+' min'},
  {key:'shell_timeout_s',label:'Shell timeout',min:10,max:1800,step:10,format:value=>value+' s'},
- {key:'max_parallel_subagents',label:'Parallel sub-agents',min:1,max:16,step:1,format:value=>String(value)},
- {key:'max_subagents_total',label:'Total sub-agents',min:1,max:64,step:1,format:value=>String(value)},
+ {key:'max_parallel_subagents',label:'Parallel sub-agents',min:1,max:8,step:1,format:value=>String(value)},
+ {key:'max_subagents_total',label:'Total sub-agents',min:1,max:32,step:1,format:value=>String(value)},
 ];
+
+const DEFAULT_RUN_BUDGET={max_steps:256,max_seconds:14400,shell_timeout_s:120,max_parallel_subagents:3,max_subagents_total:8};
 
 export type SessionSettingsProps={open:boolean;onOpenChange:(open:boolean)=>void;session:Session|null;running:boolean;turnsCount:number;ownerId?:string;visible?:boolean;
  runnerOptions:Runner[];runnerAccounts:RunnerAccount[];
@@ -34,15 +36,16 @@ export default function SessionSettings({open,onOpenChange,session,running,turns
  const [presets,setPresets]=useState<AgentPreset[]>([]),[presetsLoading,setPresetsLoading]=useState(false);
  useEffect(()=>{setPresets([]);if(!open||!session||!visible)return;setPresetsLoading(true);let cancelled=false;const query=new URLSearchParams({engine:session.engine});if(session.project_id)query.set('project_id',session.project_id);if(session.runner_id)query.set('runner_id',session.runner_id);request<{presets:AgentPreset[]}>('/api/workspace/presets?'+query).then(value=>{if(!cancelled)setPresets(value.presets||[])}).catch(error=>{if(!cancelled)onError(error)}).finally(()=>{if(!cancelled)setPresetsLoading(false)});return()=>{cancelled=true}},[open,session?.id,session?.engine,session?.runner_id,session?.custom_agent_revision,visible]);
  const [extensions,setExtensions]=useState<Extension[]>([]);
- useEffect(()=>{if(!open||!session)return;request<{extensions:Extension[]}>('/api/workspace/available-extensions'+(session.project_id?'?project_id='+encodeURIComponent(session.project_id):'')).then(value=>setExtensions(value.extensions)).catch(onError)},[open,session?.id]);
- const [runBudget,setRunBudget]=useState<Record<string,number>>({max_steps:256,max_seconds:14400,shell_timeout_s:120,max_parallel_subagents:3,max_subagents_total:8});
- useEffect(()=>{if(session?.run_limits)setRunBudget({...session.run_limits})},[session?.id,JSON.stringify(session?.run_limits)]);
+ useEffect(()=>{setExtensions([]);if(!open||!session||!visible)return;let cancelled=false;request<{extensions:Extension[]}>('/api/workspace/available-extensions'+(session.project_id?'?project_id='+encodeURIComponent(session.project_id):'')).then(value=>{if(!cancelled)setExtensions(value.extensions)}).catch(error=>{if(!cancelled)onError(error)});return()=>{cancelled=true}},[open,session?.id,session?.project_id,visible]);
+ const [runBudget,setRunBudget]=useState<Record<string,number>>(DEFAULT_RUN_BUDGET);
+ const [savingBudget,setSavingBudget]=useState(false);
+ useEffect(()=>{setRunBudget({...DEFAULT_RUN_BUDGET,...session?.run_limits})},[session?.id,JSON.stringify(session?.run_limits)]);
  const [reasoning,setReasoning]=useState<ReasoningConfig|null>(null),[reasoningLoading,setReasoningLoading]=useState(false),[effortDraft,setEffortDraft]=useState<Record<string,number>>({});
  const effortSelection=JSON.stringify([session?.id,session?.engine,session?.model,session?.runner_id]);
- useEffect(()=>{let cancelled=false;setReasoning(null);setEffortDraft({});if(!open||!session||session.engine==='internal'||session.runner_id)return;setReasoningLoading(true);request<ReasoningConfig>('/api/workspace/sessions/'+session.id+'/reasoning').then(value=>{if(!cancelled)setReasoning(value)}).catch(error=>{if(!cancelled)onError(error)}).finally(()=>{if(!cancelled)setReasoningLoading(false)});return()=>{cancelled=true}},[effortSelection,open]);
+ useEffect(()=>{let cancelled=false;setReasoning(null);setReasoningLoading(false);setEffortDraft({});if(!open||!session||session.engine==='internal'||session.runner_id)return;setReasoningLoading(true);request<ReasoningConfig>('/api/workspace/sessions/'+session.id+'/reasoning').then(value=>{if(!cancelled)setReasoning(value)}).catch(error=>{if(!cancelled)onError(error)}).finally(()=>{if(!cancelled)setReasoningLoading(false)});return()=>{cancelled=true}},[effortSelection,open]);
  const selectedCatalogue=session?.model?reasoning?.model_configurations?.[session.model]:reasoning;
  const effortOptions=(selectedCatalogue?.config_options||[]).filter(option=>['thought_level','reasoning','effort'].includes(option.category||'')&&option.type==='select'&&option.options?.length);
- async function commitEffort(option:ReasoningOption,index:number){if(!session)return;const values=(option.options||[]).map(entry=>entry.value),value=values[index];setEffortDraft(old=>{const next={...old};delete next[option.id];return next});if(!value||value===session.reasoning_config?.[option.id])return;await patch({reasoning_config:{...session.reasoning_config,[option.id]:value}})}
+ async function commitEffort(option:ReasoningOption,index:number){if(!session)return;const values=(option.options||[]).map(entry=>entry.value),value=values[index];setEffortDraft(old=>{const next={...old};delete next[option.id];return next});if(!value||value===session.reasoning_config?.[option.id])return;try{await patch({reasoning_config:{...session.reasoning_config,[option.id]:value}})}catch(error){onError(error)}}
  if(!open||!session)return null;
  const body=<div className="settings-body">
   <div className="settings-group"><button className="settings-line" onClick={onConversationSettings}><span>Conversation</span><small>Rename, move between projects</small></button></div>
@@ -65,13 +68,12 @@ export default function SessionSettings({open,onOpenChange,session,running,turns
    {!runnerOptions.length&&<p>Connect a machine or enroll an isolated container in Runners before selecting cloud execution.</p>}</div>
   </section>}
   <section className="settings-group"><h3>Run budget</h3>
-   {BUDGET_FIELDS.map(field=><label className="effort-field" key={field.key}><span className="settings-label"><span>{field.label}</span><output>{field.format(runBudget[field.key]??field.min)}</output></span><input type="range" className="effort-range" min={field.min} max={field.max} step={field.step} value={runBudget[field.key]??field.min} disabled={running} aria-label={'Run '+field.key} onChange={event=>setRunBudget(old=>({...old,[field.key]:Number(event.target.value)}))}/></label>)}
-   <Button size="sm" variant="outline" disabled={running} onClick={()=>patch({run_limits:runBudget})}>Save run budget</Button>
+   {BUDGET_FIELDS.map(field=><label className="effort-field" key={field.key}><span className="settings-label"><span>{field.label}</span><output>{field.format(runBudget[field.key]??field.min)}</output></span><input type="range" className="effort-range" min={field.min} max={field.max} step={field.step} value={runBudget[field.key]??field.min} disabled={running||savingBudget} aria-label={'Run '+field.key} onChange={event=>setRunBudget(old=>({...old,[field.key]:Number(event.target.value)}))}/></label>)}
+   <Button size="sm" variant="outline" disabled={running||savingBudget} onClick={async()=>{setSavingBudget(true);try{await patch({run_limits:runBudget})}catch(error){onError(error)}finally{setSavingBudget(false)}}}>{savingBudget?'Saving run budget…':'Save run budget'}</Button>
   </section>
   <section className="settings-group"><h3>Voice</h3>
    <VoiceControls key={session.id} sessionId={session.id} projectId={session.project_id||null} ownerId={ownerId} visible={visible&&open} reply={reply} onTranscript={onTranscript}/>
   </section>
  </div>;
- if(compact)return <><button className="sheet-scrim" aria-label="Close session settings" onClick={()=>onOpenChange(false)}/><div className="settings-sheet" role="dialog" aria-modal="true" aria-label="Session settings"><button className="sheet-grab" aria-label="Close session settings" onClick={()=>onOpenChange(false)}><span/></button><h2>Session settings</h2><div className="sheet-scroll">{body}</div></div></>;
- return <Dialog open onOpenChange={onOpenChange}><DialogContent className="settings-dialog"><DialogTitle>Session settings</DialogTitle><DialogDescription>Engine, model, tools and budget for this conversation. Applies to the next turn.</DialogDescription>{body}</DialogContent></Dialog>;
+ return <Dialog open onOpenChange={onOpenChange}><DialogContent className={compact?'settings-sheet':'settings-dialog'}><DialogTitle>Session settings</DialogTitle><DialogDescription>Engine, model, tools and budget for this conversation. Applies to the next turn.</DialogDescription>{compact?<div className="sheet-scroll">{body}</div>:body}</DialogContent></Dialog>;
 }

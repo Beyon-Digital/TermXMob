@@ -55,3 +55,37 @@ it.each(['completed','failed'])('returns the delivery selector to project only a
  if(outcome==='completed'){await waitFor(()=>expect((screen.getByRole('combobox',{name:/^Git checkout$/}) as HTMLSelectElement).value).toBe(''));await screen.findByText('No uncommitted changes.');expect(screen.queryByRole('alert')).toBeNull();expect(errors).not.toHaveBeenCalled()}
  else {await screen.findByText('Dirty worktree retained');expect((screen.getByRole('combobox',{name:/^Git checkout$/}) as HTMLSelectElement).value).toBe('isolated')}
 });
+
+it.each(['success','error'])('ignores a previous project PR inspection %s after selecting another project',async outcome=>{
+ let resolvePull!:(value:unknown)=>void,rejectPull!:(reason:Error)=>void;
+ api.mockImplementation(async(path:string)=>{
+  if(path.includes('/pulls/'))return await new Promise((resolve,reject)=>{resolvePull=resolve;rejectPull=reject});
+  if(path.endsWith('/actions'))return [];
+  return {status:{branch:'main',files:[]},worktrees:[]};
+ });
+ const errors=vi.fn(),view=render(<Delivery project={project} onError={errors}/>);
+ const inspect=screen.getByRole('button',{name:'Inspect PR & checks'});
+ fireEvent.change(screen.getByLabelText('Pull request number'),{target:{value:'12'}});
+ await waitFor(()=>expect(inspect).toBeEnabled());fireEvent.click(inspect);
+ await waitFor(()=>expect(resolvePull).toBeDefined());
+ view.rerender(<Delivery project={{...project,id:'other'}} onError={errors}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Review push'})).toBeEnabled());
+ await act(async()=>{if(outcome==='success')resolvePull({number:12,title:'Old project PR',url:'https://example.com/old',statusCheckRollup:[],comments:[],reviews:[]});else rejectPull(new Error('Old project failure'))});
+ expect(screen.queryByText(/Old project/)).toBeNull();expect(errors).not.toHaveBeenCalled();
+});
+
+it('prevents duplicate delivery requests before a pending operation completes',async()=>{
+ let resolvePrepare!:(value:unknown)=>void;
+ api.mockImplementation(async(path:string)=>{
+  if(path.endsWith('/prepare'))return await new Promise(resolve=>{resolvePrepare=resolve});
+  if(path.endsWith('/actions'))return [];
+  return {status:{branch:'main',files:[]},worktrees:[]};
+ });
+ render(<Delivery project={project}/>);
+ const push=screen.getByRole('button',{name:'Review push'});
+ await waitFor(()=>expect(push).toBeEnabled());
+ act(()=>{push.click();push.click()});
+ expect(api.mock.calls.filter(([path])=>path.endsWith('/prepare'))).toHaveLength(1);
+ await act(async()=>resolvePrepare({id:'one',operation:'push',arguments:{},head:'sha',requires_confirmation:true}));
+ await screen.findByRole('region',{name:'Exact delivery confirmation'});
+});

@@ -106,6 +106,9 @@ pub fn sync_autostart(app: &AppHandle) {
                     let _ = check.set_checked(enabled);
                 }
             }
+            if let Some(check) = handle_for_menu.try_state::<crate::tray::AutostartItem>() {
+                let _ = check.0.set_checked(enabled);
+            }
         });
     });
 }
@@ -113,7 +116,10 @@ pub fn sync_autostart(app: &AppHandle) {
 pub fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "connect" => ui::open_connect_window(app),
-        "copy_link" => ui::copy_connect_link(app),
+        "copy_link" => {
+            let handle = app.clone();
+            std::thread::spawn(move || ui::copy_connect_link(&handle));
+        }
         "permissions" => ui::permission_dialog(app),
         "restart" => {
             if let Some(backend) = app.try_state::<Backend>() {
@@ -121,13 +127,19 @@ pub fn handle_menu_event(app: &AppHandle, id: &str) {
             }
         }
         "restart_app" => {
-            if let Some(backend) = app.try_state::<Backend>() {
-                backend.stop();
-            }
-            app.restart();
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                if let Some(backend) = handle.try_state::<Backend>() {
+                    backend.stop();
+                }
+                handle.restart();
+            });
         }
         "check_updates" => check_updates(app),
-        "autostart" => toggle_autostart(app),
+        "autostart" => {
+            let handle = app.clone();
+            std::thread::spawn(move || toggle_autostart(&handle));
+        }
         "open_logs" => ui::open_logs(app),
         "reload" => {
             if let Some(window) = ui::main_window(app) {

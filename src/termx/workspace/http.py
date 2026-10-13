@@ -193,6 +193,22 @@ class TaskMessage(Input):
     message: str=Field(min_length=1,max_length=64000)
 
 
+class SwarmMember(Input):
+    agent: str=Field(min_length=1,max_length=100)
+    task: str=Field(min_length=1,max_length=64000)
+    instructions: str=Field(default='',max_length=64000)
+    mode: str=Field(default='ask',pattern='^(ask|agent)$')
+
+
+class SwarmInput(Input):
+    request_id: str=Field(min_length=8,max_length=128)
+    members: list[SwarmMember]=Field(min_length=1,max_length=8)
+
+
+class RecoveryInput(Input):
+    confirm: bool=False
+
+
 def mount_workspace(app,state):
     if not getattr(state,'workspace',None):
         state.workspace=WorkspaceService(state)
@@ -445,22 +461,33 @@ def mount_workspace(app,state):
         actor=principal(request);call(workspace.record,actor,'task',identifier)
         fields={'id','prompt','cwd','provider_id','model','status','limits','mode','parent_id','plan','result','error','engine','created_at','updated_at','execution_location'}
         remaining=[100]
+        seen=set()
         def tree(tid,depth=0):
             call(workspace.record,actor,'task',tid)
             value=state.agent_store.get_task(tid)
+            if value is None:raise HTTPException(404,'Task not found')
+            seen.add(tid)
+            remaining[0]-=1
             result={key:value[key] for key in fields if key in value}
             metadata=workspace.store.get('task',tid) or {}
             result['execution_location']=metadata.get('execution_location') or value.get('cwd')
             result['runner_id']=metadata.get('runner_id')
+            result['agent_label']=metadata.get('agent_label')
+            result['delegated_task']=metadata.get('delegated_task')
+            result['isolation']=metadata.get('isolation')
             result['worktree']=state.agent_store.task_worktree(tid) or ({'worktree_id':metadata['worktree_id'],'worktree_path':metadata.get('cwd'),'branch':metadata.get('worktree_branch'),'source':'session'} if metadata.get('worktree_id') else None)
             if value.get('engine')=='internal' and hasattr(state.agent,'tree_budget'):
                 result['tree_budget']=state.agent.tree_budget.snapshot(tid)
             result['children']=[]
-            if depth<8:
-                for child in state.agent_store.children(tid):
-                    if remaining[0]<=0:break
-                    remaining[0]-=1
-                    result['children'].append(tree(child['id'],depth+1))
+            result['truncated']=False
+            for child in state.agent_store.children(tid):
+                if child['id'] in seen:continue
+                try:workspace.record(actor,'task',child['id'])
+                except (KeyError,PermissionError):continue
+                if depth>=8 or remaining[0]<=0:
+                    result['truncated']=True
+                    break
+                result['children'].append(tree(child['id'],depth+1))
             return result
         return tree(identifier)
 
@@ -469,12 +496,29 @@ def mount_workspace(app,state):
         await await_call(automation.cancel_tree,principal(request),identifier)
         return {'cancelled':True}
 
+    @router.post('/tasks/{identifier}/swarm')
+    async def create_swarm(request:Request,identifier:str,body:SwarmInput):
+        from termx.workspace.swarms import assemble
+        return await await_call(assemble,workspace,principal(request),identifier,
+                                request_id=body.request_id,members=[m.model_dump() for m in body.members])
+
     @router.post('/tasks/{identifier}/retry')
     async def retry_task(request:Request,identifier:str,body:RetryInput):
         raw=extract_passcode(authorization=request.headers.get('authorization')) or request.cookies.get(ACCESS_COOKIE)
         origin=state.identity.resolve(raw)
         return await await_call(workspace.retry,principal(request),identifier,request_id=body.request_id,
                                 managed_session_id=origin.session_id)
+
+    @router.post('/tasks/{identifier}/recover')
+    async def recover(request:Request,identifier:str,body:RecoveryInput):
+        actor=principal(request)
+        metadata=call(workspace.record,actor,'task',identifier,scope='agent-control')
+        call(workspace.record,actor,'task',identifier,scope='agent-run')
+        value=state.agent_store.get_task(identifier)
+        if not value:raise HTTPException(404,'Task not found')
+        if metadata.get('runner_id') or value.get('engine','internal')!='internal':
+            raise HTTPException(409,'Recover this task on its selected execution engine; it cannot replay on this host')
+        return await await_call(state.agent.recover_task,identifier,confirm=body.confirm)
 
     @router.post('/tasks/{identifier}/steer')
     async def steer(request:Request,identifier:str,body:TaskMessage):

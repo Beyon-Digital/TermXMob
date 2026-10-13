@@ -39,6 +39,7 @@ pub enum State {
 struct Inner {
     app: AppHandle,
     config: Mutex<DesktopConfig>,
+    lifecycle: Mutex<()>,
     child: Mutex<Option<Child>>,
     info: Mutex<Option<ReadyInfo>>,
     state: Mutex<State>,
@@ -49,6 +50,7 @@ struct Inner {
     quitting: AtomicBool,
     adopted: AtomicBool,
     restarts: AtomicU32,
+    generation: AtomicU32,
 }
 
 #[derive(Clone)]
@@ -60,6 +62,7 @@ impl Backend {
         let manager = Self(Arc::new(Inner {
             app,
             config: Mutex::new(config),
+            lifecycle: Mutex::new(()),
             child: Mutex::new(None),
             info: Mutex::new(None),
             state: Mutex::new(State::Idle),
@@ -70,6 +73,7 @@ impl Backend {
             quitting: AtomicBool::new(false),
             adopted: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
+            generation: AtomicU32::new(0),
         }));
         Ok(manager)
     }
@@ -119,7 +123,11 @@ impl Backend {
         let manager = self.clone();
         self.0.stop_requested.store(true, Ordering::SeqCst);
         thread::spawn(move || {
-            manager.stop();
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            manager.stop_inner();
+            if crate::QUITTING.load(Ordering::SeqCst) {
+                return;
+            }
             manager.0.restarts.store(0, Ordering::SeqCst);
             manager.0.stop_requested.store(false, Ordering::SeqCst);
             manager.0.shutdown_pending.store(false, Ordering::SeqCst);
@@ -130,12 +138,19 @@ impl Backend {
                 .lock()
                 .map(|mut state| *state = State::Starting)
                 .ok();
-            manager.run_session();
+            manager.run_session_inner();
         });
     }
 
     pub fn stop(&self) {
         self.0.stop_requested.store(true, Ordering::SeqCst);
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        self.stop_inner();
+    }
+
+    fn stop_inner(&self) {
+        self.0.stop_requested.store(true, Ordering::SeqCst);
+        self.0.generation.fetch_add(1, Ordering::SeqCst);
         if let Some(mut state) = self.0.state.lock().ok() {
             if *state != State::Idle {
                 *state = State::Stopping;
@@ -185,12 +200,22 @@ impl Backend {
     }
 
     fn run_session(&self) {
-        if self.0.quitting.load(Ordering::SeqCst)
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        self.run_session_inner();
+    }
+
+    fn run_session_inner(&self) {
+        if crate::QUITTING.load(Ordering::SeqCst)
+            || self.0.quitting.load(Ordering::SeqCst)
             || self.0.stop_requested.load(Ordering::SeqCst)
             || self.expected_shutdown()
         {
             return;
         }
+        if self.0.child.lock().unwrap().is_some() || self.info().is_some() {
+            return;
+        }
+        let generation = self.0.generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.cleanup_stale();
         let config = self.0.config.lock().unwrap().clone();
         let (port, adopted) = self.pick_port(&config);
@@ -212,11 +237,12 @@ impl Backend {
             self.handle_ready(info);
             return;
         }
-        match self.spawn_backend(port, &config) {
+        match self.spawn_backend(port, &config, generation) {
             Ok(child) => {
+                let pid = child.id();
                 *self.0.child.lock().unwrap() = Some(child);
                 self.write_pid_file(port, &config);
-                self.spawn_monitor();
+                self.spawn_monitor(pid);
             }
             Err(error) => {
                 logging::desktop(&self.0.app, &format!("failed to spawn backend: {error}"));
@@ -225,7 +251,12 @@ impl Backend {
         }
     }
 
-    fn spawn_backend(&self, port: u16, config: &DesktopConfig) -> std::io::Result<Child> {
+    fn spawn_backend(
+        &self,
+        port: u16,
+        config: &DesktopConfig,
+        generation: u32,
+    ) -> std::io::Result<Child> {
         let binary = backend_binary(&self.0.app);
         logging::desktop(
             &self.0.app,
@@ -268,7 +299,7 @@ impl Backend {
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
-                    manager.handle_stdout(&line);
+                    manager.handle_stdout(&line, generation);
                 }
             });
         }
@@ -284,7 +315,7 @@ impl Backend {
         Ok(child)
     }
 
-    fn spawn_monitor(&self) {
+    fn spawn_monitor(&self, pid: u32) {
         let manager = self.clone();
         thread::spawn(move || loop {
             thread::sleep(Duration::from_millis(250));
@@ -294,15 +325,15 @@ impl Backend {
             let status = {
                 let mut guard = manager.0.child.lock().unwrap();
                 match guard.as_mut() {
-                    Some(child) => child.try_wait(),
-                    None => return,
+                    Some(child) if child.id() == pid => child.try_wait(),
+                    _ => return,
                 }
             };
             match status {
                 Ok(None) => continue,
                 Ok(Some(status)) => {
                     let expected = manager.0.stop_requested.load(Ordering::SeqCst);
-                    manager.on_exit(status.code(), expected);
+                    manager.on_exit(pid, status.code(), expected);
                     return;
                 }
                 Err(_) => return,
@@ -310,12 +341,17 @@ impl Backend {
         });
     }
 
-    fn on_exit(&self, code: Option<i32>, expected: bool) {
+    fn on_exit(&self, pid: u32, code: Option<i32>, expected: bool) {
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        if self.0.child.lock().unwrap().as_ref().map(Child::id) != Some(pid) {
+            return;
+        }
         // Private daemon status79 also covers Stop host requested from the
         // browser, independent of stdout-reader versus monitor scheduling.
         if code == Some(79) {
             self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
         }
+        self.0.generation.fetch_add(1, Ordering::SeqCst);
         *self.0.child.lock().unwrap() = None;
         let _ = fs::remove_file(config::pid_path(&self.0.app));
         if let Ok(mut info) = self.0.info.lock() {
@@ -367,7 +403,7 @@ impl Backend {
         if let Ok(mut state) = self.0.state.lock() {
             *state = State::Starting;
         }
-        self.run_session();
+        self.run_session_inner();
     }
 
     fn fail(&self, message: &str) {
@@ -379,7 +415,11 @@ impl Backend {
         ui::on_backend_failed(&self.0.app, message);
     }
 
-    fn handle_stdout(&self, line: &str) {
+    fn handle_stdout(&self, line: &str, generation: u32) {
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        if self.0.generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
         logging::backend(&self.0.app, line);
         let trimmed = line.trim();
         if !trimmed.starts_with('{') {
@@ -400,10 +440,16 @@ impl Backend {
                 self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
             }
             Some("ready") => {
+                if self.0.stop_requested.load(Ordering::SeqCst)
+                    || crate::QUITTING.load(Ordering::SeqCst)
+                {
+                    return;
+                }
                 let port = value
                     .get("port")
                     .and_then(Value::as_u64)
-                    .map(|value| value as u16)
+                    .and_then(|value| u16::try_from(value).ok())
+                    .filter(|port| *port > 0)
                     .unwrap_or_else(|| self.port());
                 let urls = value
                     .get("urls")

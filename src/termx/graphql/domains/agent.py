@@ -207,7 +207,13 @@ class AgentQueries:
                 raise HTTPException(404, 'task not found')
             seen.add(identifier)
             remaining[0] -= 1
-            result = {key: value.get(key) for key in ('id', 'prompt', 'cwd', 'engine', 'status', 'parent_id', 'conversation_id', 'limits', 'created_at', 'updated_at')}
+            result = {key: value.get(key) for key in ('id', 'prompt', 'cwd', 'engine', 'status', 'parent_id', 'conversation_id', 'limits', 'created_at', 'updated_at', 'result', 'error', 'mode', 'model', 'provider_id')}
+            result['execution_location'] = value.get('cwd')
+            result['worktree'] = ctx.state.agent_store.task_worktree(identifier)
+            delegation = next((event['payload'] for event in ctx.state.agent_store.events(identifier, tail_limit=1, event_types=('task.delegation',))
+                               if event['type'] == 'task.delegation'), {})
+            result['agent_label'] = delegation.get('agent')
+            result['delegated_task'] = delegation.get('task')
             result['children'] = []
             result['truncated'] = False
             if value.get('engine', 'internal') == 'internal':

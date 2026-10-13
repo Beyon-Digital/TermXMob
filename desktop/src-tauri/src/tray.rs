@@ -1,7 +1,8 @@
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::AppHandle;
-use tauri_plugin_autostart::ManagerExt;
+use tauri::{AppHandle, Manager};
+
+pub struct AutostartItem(pub tauri::menu::CheckMenuItem<tauri::Wry>);
 
 use crate::backend::gql_app;
 use crate::menu;
@@ -15,7 +16,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
     let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
     let autostart = CheckMenuItemBuilder::with_id("autostart", "Launch at Login")
-        .checked(app.autolaunch().is_enabled().unwrap_or(false))
+        .checked(false)
         .build(app)?;
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
     let updates = MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
@@ -63,7 +64,8 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             if id == "show" {
                 ui::show_main_window(app);
             } else if id == "tunnel" {
-                toggle_tunnel(app);
+                let handle = app.clone();
+                std::thread::spawn(move || toggle_tunnel(&handle));
             } else {
                 menu::handle_menu_event(app, id);
             }
@@ -72,11 +74,12 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon).icon_as_template(true);
     }
     builder.build(app)?;
+    app.manage(AutostartItem(autostart));
     Ok(())
 }
 
 fn toggle_tunnel(app: &AppHandle) {
-    let status = gql_app(app, "{ tunnels { active } }", None);
+    let status = gql_app(app, "{ tunnels { active { state } } }", None);
     let connected = status
         .as_ref()
         .and_then(|value| value.pointer("/tunnels/active/state"))

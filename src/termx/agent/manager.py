@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import mimetypes
+import shutil
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -90,6 +91,7 @@ class AgentManager:
         self._metrics: dict[str, TaskMetrics] = {}
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
+        self._spawn_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._observation = ObservationTracker()
         from termx.agent.policies.engine import PolicyEngine
         from termx.sandbox import runner_for as default_runner_for
@@ -498,6 +500,24 @@ class AgentManager:
             self._emit(task_id,'approval.resolved',{'approval':approval})
             self._unpause_if_idle(task_id)
             return approval
+        if approval['kind'] == 'tool' and escalation:
+            # The child owns the actionable request and its consent binding.
+            # Commit that decision before consuming the parent's public wrapper,
+            # so stale browser state or invalid consent remains retryable.
+            child_id = str(wrapper['child_id'])
+            child = self._task(child_id)
+            inner = self.store.get_approval(str(wrapper['child_approval_id']))
+            if child.get('parent_id') != task_id or not inner or inner['task_id'] != child_id or inner['kind'] != 'tool':
+                raise ValueError('Child tool request no longer belongs to this parent')
+            if inner['status'] == 'pending':
+                await self.resolve_approval(child_id, inner['id'], decision, remember=remember, limits=limits)
+            elif inner['status'] != decision:
+                raise ValueError('Child tool decision changed; inspect the current task')
+            approval = self.store.resolve_approval(approval_id, decision)
+            self._pending_approval_calls.pop(approval_id, None)
+            self._emit(task_id, 'approval.resolved', {'approval': approval})
+            self._unpause_if_idle(task_id)
+            return approval
         browser_pending=self._pending_approval_calls.get(approval_id) or {}
         if browser_pending.get('browser_review_id') and decision!='denied' and self.browser:
             reviewed=self.browser.records.get('review',browser_pending['browser_review_id'])
@@ -557,25 +577,6 @@ class AgentManager:
                 # A denial must still settle the agent's parked approval.
                 if reviewed and reviewed['status']=='needs_user':
                     self.browser.review.decide(private_payload['browser_review_id'],principal_id=binding['principal_id'],approve=decision!='denied')
-        if private_payload is not None and "child_approval_id" in private_payload:
-            # A sub-agent's consequential action was escalated to this parent;
-            # relay the decision AND the remember scope — the durable rule is
-            # written with the child's context so it can't outlive its task.
-            child_id = str(private_payload["child_id"])
-            try:
-                await self.resolve_approval(
-                    child_id,
-                    str(private_payload["child_approval_id"]),
-                    decision,
-                    remember=remember,
-                    limits=limits or next_limits,
-                )
-            except (KeyError, ValueError):
-                pass
-            # Async sub-agents let the parent finish while an escalation is
-            # open; only wake it back to running when genuinely idle.
-            self._unpause_if_idle(task_id)
-            return approval
         if remember:
             self._record_remembered_rule(
                 task,
@@ -683,8 +684,9 @@ class AgentManager:
         cancel = self._cancel.get(task_id)
         if cancel is not None:
             cancel.set()
-            self.store.update_task(task_id, status="cancelling")
-            self._emit(task_id, "task.status", {"status": "cancelling"})
+            if task['status'] != 'cancelling':
+                self.store.update_task(task_id, status="cancelling")
+                self._emit(task_id, "task.status", {"status": "cancelling"})
         else:
             # No live worker (e.g. paused on approval): finalize in-place.
             self._finish_state(task_id)
@@ -1938,7 +1940,11 @@ class AgentManager:
             child_id = child["id"]
             if child_id in handles:
                 continue
-            handle = _SubagentHandle(parent_id=task_id, child_id=child_id)
+            delegation = next((event['payload'] for event in self.store.events(child_id, tail_limit=1, event_types=('task.delegation',))
+                               if event['type'] == 'task.delegation'), {})
+            handle = _SubagentHandle(parent_id=task_id, child_id=child_id,
+                                    agent=delegation.get('agent') or 'Sub-agent',
+                                    call_id=delegation.get('call_id'))
             handles[child_id] = handle
             if child["status"] in ACTIVE_STATUSES:
                 self._attach_watcher(task_id, handle, child)
@@ -1977,6 +1983,24 @@ class AgentManager:
         call: ProviderCall,
         cancel: asyncio.Event,
     ) -> dict[str, Any]:
+        # Isolation preparation yields to other calls. Reserve admission through
+        # child registration so concurrent callers cannot exceed the same cap.
+        async with self._spawn_locks[task_id]:
+            return await self._spawn_subagent_locked(task_id, task, call, cancel)
+
+    async def _spawn_subagent_locked(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        call: ProviderCall,
+        cancel: asyncio.Event,
+    ) -> dict[str, Any]:
+        current = self.store.get_task(task_id)
+        if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
+            return {'ok': False, 'error': 'The coordinator is no longer accepting sub-agents'}
+        if current.get('mode') == 'ask':
+            return {'ok': False, 'error': 'Switch to Agent mode before creating sub-agents'}
+        task = current
         prompt = str(call.arguments.get("task") or "").strip()
         if not prompt:
             return {"ok": False, "error": "spawn_subagent requires a task"}
@@ -2010,11 +2034,31 @@ class AgentManager:
                 "error": f"sub-agent total limit reached ({len(handles)}/{max_total} spawned)",
             }
 
+        created_ids = []
         def attach(child_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
+            nonlocal isolation
+            created_ids.append(child_id)
             self._subscribers[child_id].add(queue)
             if self.browser:
                 authority=self.browser.records.get('agent-task-authority',task_id)
                 if authority:self.browser.records.put('agent-task-authority',child_id,{**authority,'id':child_id,'delegated_by':task_id})
+            child = self._task(child_id)
+            if child_execution == 'worktree':
+                record = self.store.task_worktree(child_id)
+                isolation = {'kind':'worktree', 'path':child['cwd'], 'branch':record['branch'],
+                             'base_ref':record['base_ref'], 'base_path':task['cwd'], 'automatic_apply':False}
+            self._emit(child_id, 'task.delegation', {'agent':agent, 'task':prompt, 'call_id':call.call_id})
+            self._emit(child_id, 'task.isolation', isolation)
+            handle = _SubagentHandle(parent_id=task_id, child_id=child_id, call_id=call.call_id,
+                                     agent=agent, queue=queue, parent_cancel=cancel)
+            handle.deadline = monotonic() + min(float(parent_limits['max_seconds']), _SUBAGENT_MAX_SECONDS)
+            handles[child_id] = handle
+            # Enroll and supervise the worker before provider planning yields.
+            # The desktop can inspect/cancel it even while creation is pending.
+            self._emit(task_id, 'subagent.started', {'call_id':call.call_id, 'agent':agent,
+                       'task':prompt, 'child_id':child_id, 'isolation':isolation})
+            handle.watcher = asyncio.create_task(self._watch_child(task_id, handle),
+                                                name=f'termx-subagent-{child_id[:8]}')
 
         child_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
         child_mode='ask' if str(call.arguments.get('mode') or '').strip().lower()=='ask' else 'agent'
@@ -2027,12 +2071,26 @@ class AgentManager:
             else:
                 from termx.agent.child_isolation import snapshot
                 snapshot_path=self.store.artifact_dir/'delegations'/uuid.uuid4().hex
+                preparation = asyncio.create_task(asyncio.to_thread(snapshot, Path(child_cwd), snapshot_path,
+                                                    excluded=[self.store.path, self.store.artifact_dir]))
                 try:
-                    isolation=await asyncio.to_thread(snapshot,Path(child_cwd),snapshot_path,excluded=[self.store.path,self.store.artifact_dir])
+                    isolation=await asyncio.shield(preparation)
+                except asyncio.CancelledError:
+                    # Cancelling to_thread cannot stop its filesystem writes.
+                    # Let the bounded copy settle before reclaiming its folder.
+                    try:await preparation
+                    except (ValueError, OSError):pass
+                    finally:await asyncio.to_thread(shutil.rmtree, snapshot_path, True)
+                    raise
                 except (ValueError,OSError) as exc:return {'ok':False,'error':str(exc)}
                 child_cwd=str(snapshot_path)
                 child_prompt+='\n\nExecution uses an independent project snapshot. Keep all edits here; they are retained for review and never automatically copied into the parent project.'
-        child = await self.create_task(
+        current = self.store.get_task(task_id)
+        if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
+            if snapshot_path:await asyncio.to_thread(shutil.rmtree, snapshot_path, True)
+            return {'ok': False, 'error': 'Coordinator stopped while preparing the worker workspace'}
+        try:
+            child = await _race_cancel(self.create_task(
             prompt=child_prompt,
             cwd=child_cwd,
             provider_id=task["provider_id"],
@@ -2044,68 +2102,32 @@ class AgentManager:
             mode=child_mode,
             execution_mode=child_execution,
             model=str(task.get("model") or "") or None,
-            cancel=cancel,
+            # A child's own cancellation must never signal its siblings or
+            # coordinator. The outer race observes cancellation during planning.
+            cancel=asyncio.Event(),
             on_created=lambda child_id: attach(child_id, child_queue),
             parent_id=task_id,
             custom_agent_id=task.get("custom_agent_id"),
             custom_agent_snapshot=self.store.task_agent(task),
-        )
+            ), cancel)
+        except BaseException:
+            if snapshot_path and not created_ids:
+                await asyncio.to_thread(shutil.rmtree, snapshot_path, True)
+            for created_id in created_ids:
+                self.cancel(created_id)
+            raise
         child_id = child["id"]
-        if child_execution=='worktree':
-            record=self.store.task_worktree(child_id)
-            isolation={'kind':'worktree','path':child['cwd'],'branch':record['branch'],'base_ref':record['base_ref'],'base_path':task['cwd'],'automatic_apply':False}
-        self._emit(child_id,'task.isolation',isolation)
-        handle = _SubagentHandle(
-            parent_id=task_id,
-            child_id=child_id,
-            call_id=call.call_id,
-            agent=agent,
-            queue=child_queue,
-            parent_cancel=cancel,
-        )
-        handle.deadline = monotonic() + min(
-            float(parent_limits["max_seconds"]), _SUBAGENT_MAX_SECONDS
-        )
-        handles[child_id] = handle
-        if cancel.is_set():
-            self.unsubscribe(child_id, child_queue)
+        current = self.store.get_task(task_id)
+        if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
             self.cancel(child_id)
-            handle.status = "cancelled"
-            handle.done.set()
-            raise asyncio.CancelledError
-        self._emit(
-            task_id,
-            "subagent.started",
-            {"call_id": call.call_id, "agent": agent, "task": prompt, "child_id": child_id,'isolation':isolation},
-        )
-        if child["status"] in {"completed", "failed", "cancelled"}:
-            self.unsubscribe(child_id, child_queue)
-            handle.status = child["status"]
-            handle.result = str(child.get("error") or child.get("result") or "")
-            handle.done.set()
-            self._emit(
-                task_id,
-                "subagent.finished",
-                {
-                    "call_id": call.call_id,
-                    "child_id": child_id,
-                    "agent": agent,
-                    "status": handle.status,
-                    "result": handle.result,
-                },
-            )
-            return {
-                "ok": handle.status == "completed",
-                "status": handle.status,
-                "result": handle.result[:4000],
-                "task_id": child_id,
-            }
+            return {'ok': False, 'status': 'cancelled', 'task_id': child_id,
+                    'error': 'Coordinator stopped while preparing the worker'}
+        if child['status'] in {'completed', 'failed', 'cancelled'}:
+            return {'ok': child['status'] == 'completed', 'status': child['status'],
+                    'result': str(child.get('result') or child.get('error') or '')[:4000], 'task_id':child_id}
         # The parent's approved plan covers the delegation itself, so the child's
         # plan is approved on its behalf; its consequential tool checks are
         # escalated to the parent for the user to decide.
-        handle.watcher = asyncio.create_task(
-            self._watch_child(task_id, handle), name=f"termx-subagent-{child_id[:8]}"
-        )
         await self._auto_approve(child_id, kind="plan")
         return {"ok": True, "status": "running", "task_id": child_id}
 
@@ -2123,7 +2145,8 @@ class AgentManager:
         result = ""
         try:
             while True:
-                if handle.parent_cancel is not None and handle.parent_cancel.is_set():
+                parent = self.store.get_task(parent_id)
+                if (handle.parent_cancel is not None and handle.parent_cancel.is_set()) or (parent and parent['status'] in {'cancelling', 'cancelled'}):
                     self.cancel(child_id)
                 waiting_for_user = self._task(child_id)['status'] == 'awaiting_approval'
                 wait_started = monotonic()
@@ -2490,6 +2513,9 @@ class AgentManager:
             return
         if self._has_pending_approvals(task_id):
             return
+        if any(approval['kind'] == 'plan' and approval['status'] == 'pending'
+               for approval in self.store.approvals(task_id)):
+            return
         if task_id in self._workers:self.tree_budget.start(task_id)
         self.store.update_task(task_id, status="running")
         self._emit(task_id, "task.status", {"status": "running"})
@@ -2504,6 +2530,11 @@ class AgentManager:
                 continue
             if keep_escalations and "child_approval_id" in payload:
                 continue
+            if child_id is not None and payload.get('child_approval_id'):
+                approval = self.store.get_approval(approval_id)
+                if approval and approval['status'] == 'pending':
+                    settled = self.store.resolve_approval(approval_id, 'denied')
+                    self._emit(task_id, 'approval.resolved', {'approval': settled})
             self._pending_approval_calls.pop(approval_id, None)
 
     def _finalize_worktree(self, task_id: str) -> None:

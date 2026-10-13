@@ -49,3 +49,23 @@ it('a pending cancel from an earlier A→B→A mount cannot strand busy or alter
  api.mockImplementation(async(path,init)=>init?.method==='DELETE'?new Promise(value=>{release=value}):{items:[item]});
  const props={changed:0,onError:error,onRefresh:vi.fn()};const view=render(<PromptQueue {...props} sessionId="A"/>);await screen.findByRole('button',{name:'Cancel queued follow-up'});fireEvent.click(screen.getByRole('button',{name:'Cancel queued follow-up'}));expect(screen.getByRole('button',{name:'Cancel queued follow-up'})).toBeDisabled();view.rerender(<PromptQueue {...props} sessionId="B"/>);view.rerender(<PromptQueue {...props} sessionId="A"/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Cancel queued follow-up'})).toBeEnabled());await act(async()=>release({cancelled:true}));expect(props.onRefresh).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
 });
+
+it('keeps recovery awaiting confirmation active, queues follow-ups and blocks conflicting execution settings',async()=>{
+ const recovering={...session,turns:[{...session.turns![0],task:{...session.turns![0].task!,status:'recovery_confirmation_required'}}]};
+ render(<Chat {...props} session={recovering}/>);
+ const input=screen.getByRole('textbox',{name:'Message'});
+ fireEvent.change(input,{target:{value:'After recovery'}});
+ expect(screen.queryByRole('button',{name:'Send message'})).toBeNull();
+ expect(screen.getByRole('button',{name:'Stop task'})).toBeEnabled();
+ fireEvent.keyDown(input,{key:'Enter'});
+ expect(api.mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Session engine and model'}));
+ expect(screen.getByRole('combobox',{name:'Session engine'})).toBeDisabled();
+ expect(screen.getByRole('combobox',{name:'Session provider'})).toBeDisabled();
+ expect(screen.getByRole('combobox',{name:'Session model'})).toBeDisabled();
+ expect(screen.getByRole('combobox',{name:'Session mode'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Close'}));
+ fireEvent.click(screen.getByRole('button',{name:'Queue next'}));
+ await waitFor(()=>expect(api.mock.calls.some(([path,init])=>path.endsWith('/queue')&&init?.method==='POST')).toBe(true));
+ expect(api.mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+});

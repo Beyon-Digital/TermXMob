@@ -400,13 +400,21 @@ def test_host_runner_terminate_kills_process_tree(tmp_path):
 
         await spawned.terminate()
         assert spawned.process.returncode is not None
-        # The backgrounded child is dead (ESRCH once reaped by init).
+        # A container's PID 1 may not reap orphans. A zombie is already dead,
+        # although kill(pid, 0) keeps succeeding until its parent reaps it.
         deadline = asyncio.get_running_loop().time() + 5
         while asyncio.get_running_loop().time() < deadline:
             try:
                 os.kill(child_pid, 0)
             except ProcessLookupError:
                 return
+            if sys.platform.startswith('linux'):
+                try:
+                    fields = Path(f'/proc/{child_pid}/stat').read_text().rsplit(')', 1)[1].split()
+                except FileNotFoundError:
+                    return
+                if fields[0] == 'Z':
+                    return
             await asyncio.sleep(0.05)
         raise AssertionError(f"descendant pid {child_pid} survived tree kill")
 
