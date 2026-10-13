@@ -93,7 +93,7 @@ def test_real_agent_freezes_instructions_tool_allowlist_and_sandbox_before_run(w
         assert service.agents.task_agent(task)==original
         await asyncio.sleep(.05)
         assert prompts and 'Only explain the selected source.' in prompts[0] and 'Mutated library' not in prompts[0]
-        ctx=SimpleNamespace(task=task,cancel=asyncio.Event())
+        ctx=manager._tool_context(task['id'],task)
         with pytest.raises(PermissionError,match='outside'):await manager._invoke_tool(SimpleNamespace(call=ProviderCall(type='function',call_id='blocked',name='run_shell',arguments={}),spec=object()),ctx)
         block.set();await asyncio.sleep(.1);await manager.close()
     asyncio.run(run())

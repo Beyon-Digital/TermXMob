@@ -311,6 +311,7 @@ def _require_scope(state: AppState, provided: str | None, scope: str) -> None:
 
 def create_app(state: AppState | None = None, web_dir: Path | None = None) -> FastAPI:
     state = state or AppState()
+    state.host_web_dir=web_dir.resolve() if web_dir else None
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -377,6 +378,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_development(app, state)
     from termx.workspace import mount_workspace
     mount_workspace(app, state)
+    from termx.host_service_http import mount_host_service
+    mount_host_service(app, state)
     from termx.mcp.task_broker import McpTaskBroker
     state.agent.mcp = McpTaskBroker(state)
     from termx.workspace.prompt_queue_http import mount_prompt_queue
@@ -408,6 +411,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     state.browser.execution_session_valid = execution_session_valid
     state.agent.browser = state.browser
     state.engines.set_browser_service(state.browser)
+    from termx.workspace.scheduled_browser import ScheduledBrowserPermissions
+    state.scheduled_browser = ScheduledBrowserPermissions(state.workspace)
+    state.browser.delegation_valid = state.scheduled_browser.valid
+    state.browser.delegation_release = state.scheduled_browser.release
+    state.browser.delegation_completed = state.scheduled_browser.completed
     app.include_router(browser_router(state))
     from termx.desktop.recording_http import mount_window_recording
     mount_window_recording(app, state)

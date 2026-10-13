@@ -6,6 +6,15 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 pub const DEFAULT_PORT: u16 = 8787;
+static CONFIG_UPDATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendMode {
+    #[default]
+    App,
+    Service,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DesktopConfig {
@@ -14,6 +23,8 @@ pub struct DesktopConfig {
     pub port: u16,
     #[serde(default)]
     pub onboarded: bool,
+    #[serde(default)]
+    pub backend_mode: BackendMode,
 }
 
 fn default_port() -> u16 {
@@ -26,6 +37,7 @@ impl Default for DesktopConfig {
             passcode: random_passcode(),
             port: DEFAULT_PORT,
             onboarded: false,
+            backend_mode: BackendMode::App,
         }
     }
 }
@@ -128,6 +140,15 @@ pub fn migrate_legacy(app: &AppHandle) {
 mod tests {
     use super::*;
     #[test]
+    fn existing_desktop_profiles_remain_app_managed() {
+        let config: DesktopConfig =
+            serde_json::from_str(r#"{"passcode":"existing-secret","port":8787,"onboarded":true}"#)
+                .unwrap();
+        assert_eq!(config.backend_mode, BackendMode::App);
+        assert_eq!(config.passcode, "existing-secret");
+    }
+
+    #[test]
     fn desktop_data_override_requires_an_absolute_directory() {
         let absolute = std::env::temp_dir().join("termx-isolated-native-fixture");
         assert_eq!(
@@ -150,10 +171,31 @@ pub fn prepare_dirs(app: &AppHandle) -> std::io::Result<()> {
 }
 
 pub fn set_onboarded(app: &AppHandle) -> std::io::Result<()> {
+    let _update = CONFIG_UPDATE
+        .lock()
+        .map_err(|_| std::io::Error::other("Host configuration unavailable"))?;
     let mut config = load(app)?;
     if !config.onboarded {
         config.onboarded = true;
         save(app, &config)?;
     }
     Ok(())
+}
+
+/// Preserve independently completed onboarding while changing host lifetime.
+pub fn set_backend_mode(
+    app: &AppHandle,
+    mode: BackendMode,
+    port: Option<u16>,
+) -> std::io::Result<DesktopConfig> {
+    let _update = CONFIG_UPDATE
+        .lock()
+        .map_err(|_| std::io::Error::other("Host configuration unavailable"))?;
+    let mut config = load(app)?;
+    config.backend_mode = mode;
+    if let Some(port) = port {
+        config.port = port;
+    }
+    save(app, &config)?;
+    Ok(config)
 }

@@ -646,17 +646,23 @@ class AgentStore:
             "created_at": created,
         }
 
-    def events(self, task_id: str, after: int = 0, *, tail_limit: int | None = None) -> list[dict[str, Any]]:
+    def events(self, task_id: str, after: int = 0, *, tail_limit: int | None = None,
+               event_types: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+        query = 'SELECT * FROM events WHERE task_id = ? AND sequence > ?'
+        parameters: list[Any] = [task_id, max(0, after)]
+        if event_types is not None:
+            if not event_types:return []
+            query += ' AND type IN (' + ','.join('?' for _ in event_types) + ')'
+            parameters.extend(event_types)
         with self._lock:
             if tail_limit is None:
                 rows = self._db.execute(
-                    "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence",
-                    (task_id, max(0, after)),
+                    query + ' ORDER BY sequence', parameters,
                 ).fetchall()
             else:
                 rows = list(reversed(self._db.execute(
-                    "SELECT * FROM events WHERE task_id = ? AND sequence > ? ORDER BY sequence DESC LIMIT ?",
-                    (task_id, max(0, after), min(max(tail_limit, 1), 1000)),
+                    query + ' ORDER BY sequence DESC LIMIT ?',
+                    [*parameters, min(max(tail_limit, 1), 1000)],
                 ).fetchall()))
         return [
             {

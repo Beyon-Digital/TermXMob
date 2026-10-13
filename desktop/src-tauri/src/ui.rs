@@ -11,6 +11,7 @@ use crate::backend::{gql_app, Backend, ReadyInfo};
 use crate::{config, logging};
 
 pub static START_HIDDEN: AtomicBool = AtomicBool::new(false);
+static DID_BECOME_READY: AtomicBool = AtomicBool::new(false);
 
 pub fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
@@ -27,7 +28,7 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .title("Termx")
         .inner_size(1280.0, 820.0)
         .min_inner_size(760.0, 520.0)
-        .visible(false)
+        .visible(!START_HIDDEN.load(Ordering::SeqCst))
         .resizable(true);
     #[cfg(not(target_os = "macos"))]
     let builder = builder.menu(crate::menu::app_menu(app)?);
@@ -64,10 +65,11 @@ pub fn show_main_window(app: &AppHandle) {
 pub fn toggle_main_window(app: &AppHandle) {
     match main_window(app) {
         Some(window) => {
-            if window.is_visible().unwrap_or(false) {
+            if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false) {
                 let _ = window.hide();
             } else {
                 let _ = window.show();
+                let _ = window.unminimize();
                 let _ = window.set_focus();
             }
         }
@@ -87,7 +89,7 @@ pub fn on_backend_ready(app: &AppHandle, info: &ReadyInfo) {
         if let Ok(url) = info.window_url().parse() {
             let _ = window.navigate(url);
         }
-        if !START_HIDDEN.load(Ordering::SeqCst) {
+        if !DID_BECOME_READY.swap(true, Ordering::SeqCst) && !START_HIDDEN.load(Ordering::SeqCst) {
             let _ = window.show();
         }
     }
@@ -181,17 +183,18 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
 }
 
 pub fn copy_connect_link(app: &AppHandle) {
-    let Some(info) = app
+    if app
         .try_state::<Backend>()
         .and_then(|backend| backend.info())
-    else {
+        .is_none()
+    {
         notify(
             app,
             "Termx is starting",
             "Connection details are not ready yet.",
         );
         return;
-    };
+    }
     let link = match gql_app(app, "{ connect_info { connect_url } }", None).and_then(|value| {
         value
             .pointer("/connect_info/connect_url")
@@ -199,7 +202,14 @@ pub fn copy_connect_link(app: &AppHandle) {
             .map(str::to_string)
     }) {
         Some(link) => link,
-        None => info.window_url(),
+        None => {
+            notify(
+                app,
+                "Connection link unavailable",
+                "Open Machine Status & Pairing to sign in and create a connection link.",
+            );
+            return;
+        }
     };
     match app.clipboard().write_text(link.clone()) {
         Ok(()) => notify(app, "Connection link copied", &link),

@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
-use crate::config::{self, DesktopConfig};
+use crate::config::{self, BackendMode, DesktopConfig};
 use crate::{logging, ui};
 
 #[derive(Clone, Debug, Default)]
@@ -39,6 +39,7 @@ pub enum State {
 struct Inner {
     app: AppHandle,
     config: Mutex<DesktopConfig>,
+    lifecycle: Mutex<()>,
     child: Mutex<Option<Child>>,
     info: Mutex<Option<ReadyInfo>>,
     state: Mutex<State>,
@@ -49,6 +50,8 @@ struct Inner {
     quitting: AtomicBool,
     adopted: AtomicBool,
     restarts: AtomicU32,
+    generation: AtomicU32,
+    service_identity: Mutex<Option<Value>>,
 }
 
 #[derive(Clone)]
@@ -60,6 +63,7 @@ impl Backend {
         let manager = Self(Arc::new(Inner {
             app,
             config: Mutex::new(config),
+            lifecycle: Mutex::new(()),
             child: Mutex::new(None),
             info: Mutex::new(None),
             state: Mutex::new(State::Idle),
@@ -70,6 +74,8 @@ impl Backend {
             quitting: AtomicBool::new(false),
             adopted: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
+            generation: AtomicU32::new(0),
+            service_identity: Mutex::new(None),
         }));
         Ok(manager)
     }
@@ -87,11 +93,128 @@ impl Backend {
     }
 
     pub fn port(&self) -> u16 {
+        if let Some(info) = self.info() {
+            return info.port;
+        }
         self.0
             .config
             .lock()
             .map(|config| config.port)
             .unwrap_or(config::DEFAULT_PORT)
+    }
+
+    pub fn background_mode(&self) -> bool {
+        self.0
+            .config
+            .lock()
+            .map(|config| config.backend_mode == BackendMode::Service)
+            .unwrap_or(false)
+    }
+
+    pub fn verify_identity(&self) -> Result<(), String> {
+        if !self.background_mode() {
+            return Ok(());
+        }
+        let identity = self
+            .0
+            .service_identity
+            .lock()
+            .map_err(|_| "Background host identity unavailable")?
+            .clone()
+            .ok_or("Background host is not attached")?;
+        crate::host_service::verify(&self.0.app, &identity).map(|_| ())
+    }
+
+    pub fn set_background_mode(&self, enabled: bool) {
+        let manager = self.clone();
+        self.0.stop_requested.store(true, Ordering::SeqCst);
+        thread::spawn(move || {
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            let active_port = manager.port();
+            manager.stop_inner();
+            let result = (|| -> Result<(), String> {
+                let mut config = manager
+                    .0
+                    .config
+                    .lock()
+                    .map_err(|_| "Host configuration unavailable")?
+                    .clone();
+                if enabled {
+                    config = config::set_backend_mode(
+                        &manager.0.app,
+                        BackendMode::Service,
+                        Some(active_port),
+                    )
+                    .map_err(|_| "Host choice could not be saved")?;
+                    *manager.0.config.lock().unwrap() = config.clone();
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "install",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "start",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                } else {
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "stop",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "uninstall",
+                        config.port,
+                        &config.passcode,
+                    )?;
+                    config = config::set_backend_mode(&manager.0.app, BackendMode::App, None)
+                        .map_err(|_| "Host choice could not be saved")?;
+                    *manager.0.config.lock().unwrap() = config;
+                }
+                Ok(())
+            })();
+            crate::menu::sync_background_mode(&manager.0.app, manager.background_mode());
+            if let Err(error) = result {
+                manager.fail(&error);
+                return;
+            }
+            manager.0.stop_requested.store(false, Ordering::SeqCst);
+            manager.0.shutdown_pending.store(false, Ordering::SeqCst);
+            manager.0.shutdown_confirmed.store(false, Ordering::SeqCst);
+            manager.run_session_inner();
+        });
+    }
+
+    pub fn stop_background_host(&self) {
+        if !self.background_mode() {
+            return;
+        }
+        let manager = self.clone();
+        self.0.stop_requested.store(true, Ordering::SeqCst);
+        thread::spawn(move || {
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            let result = crate::host_service::control(
+                &manager.0.app,
+                "stop",
+                manager.port(),
+                &manager.passcode(),
+            );
+            manager.stop_inner();
+            if let Err(error) = result {
+                manager.fail(&error);
+            } else {
+                ui::notify(
+                    &manager.0.app,
+                    "Background host stopped",
+                    "Agents remain stopped until you explicitly start the host again.",
+                );
+            }
+        });
     }
 
     pub fn start(&self) {
@@ -119,7 +242,30 @@ impl Backend {
         let manager = self.clone();
         self.0.stop_requested.store(true, Ordering::SeqCst);
         thread::spawn(move || {
-            manager.stop();
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            manager.stop_inner();
+            if crate::QUITTING.load(Ordering::SeqCst) {
+                return;
+            }
+            if manager.background_mode() {
+                if let Err(error) = crate::host_service::control(
+                    &manager.0.app,
+                    "stop",
+                    manager.port(),
+                    &manager.passcode(),
+                )
+                .and_then(|_| {
+                    crate::host_service::control(
+                        &manager.0.app,
+                        "start",
+                        manager.port(),
+                        &manager.passcode(),
+                    )
+                }) {
+                    manager.fail(&error);
+                    return;
+                }
+            }
             manager.0.restarts.store(0, Ordering::SeqCst);
             manager.0.stop_requested.store(false, Ordering::SeqCst);
             manager.0.shutdown_pending.store(false, Ordering::SeqCst);
@@ -130,12 +276,19 @@ impl Backend {
                 .lock()
                 .map(|mut state| *state = State::Starting)
                 .ok();
-            manager.run_session();
+            manager.run_session_inner();
         });
     }
 
     pub fn stop(&self) {
         self.0.stop_requested.store(true, Ordering::SeqCst);
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        self.stop_inner();
+    }
+
+    fn stop_inner(&self) {
+        self.0.stop_requested.store(true, Ordering::SeqCst);
+        self.0.generation.fetch_add(1, Ordering::SeqCst);
         if let Some(mut state) = self.0.state.lock().ok() {
             if *state != State::Idle {
                 *state = State::Stopping;
@@ -172,7 +325,10 @@ impl Backend {
             let _ = child.wait();
             logging::desktop(&self.0.app, "backend process tree terminated");
         }
-        let _ = fs::remove_file(config::pid_path(&self.0.app));
+        if !self.background_mode() {
+            let _ = fs::remove_file(config::pid_path(&self.0.app));
+        }
+        *self.0.service_identity.lock().unwrap() = None;
         if let Ok(mut state) = self.0.state.lock() {
             *state = State::Idle;
         }
@@ -185,14 +341,28 @@ impl Backend {
     }
 
     fn run_session(&self) {
-        if self.0.quitting.load(Ordering::SeqCst)
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        self.run_session_inner();
+    }
+
+    fn run_session_inner(&self) {
+        if crate::QUITTING.load(Ordering::SeqCst)
+            || self.0.quitting.load(Ordering::SeqCst)
             || self.0.stop_requested.load(Ordering::SeqCst)
             || self.expected_shutdown()
         {
             return;
         }
-        self.cleanup_stale();
+        if self.0.child.lock().unwrap().is_some() || self.info().is_some() {
+            return;
+        }
+        let generation = self.0.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let config = self.0.config.lock().unwrap().clone();
+        if config.backend_mode == BackendMode::Service {
+            self.attach_service(&config, generation);
+            return;
+        }
+        self.cleanup_stale();
         let (port, adopted) = self.pick_port(&config);
         self.0.adopted.store(adopted, Ordering::SeqCst);
         if let Ok(mut state) = self.0.state.lock() {
@@ -212,11 +382,12 @@ impl Backend {
             self.handle_ready(info);
             return;
         }
-        match self.spawn_backend(port, &config) {
+        match self.spawn_backend(port, &config, generation) {
             Ok(child) => {
+                let pid = child.id();
                 *self.0.child.lock().unwrap() = Some(child);
                 self.write_pid_file(port, &config);
-                self.spawn_monitor();
+                self.spawn_monitor(pid);
             }
             Err(error) => {
                 logging::desktop(&self.0.app, &format!("failed to spawn backend: {error}"));
@@ -225,7 +396,55 @@ impl Backend {
         }
     }
 
-    fn spawn_backend(&self, port: u16, config: &DesktopConfig) -> std::io::Result<Child> {
+    fn attach_service(&self, config: &DesktopConfig, generation: u32) {
+        let result =
+            crate::host_service::control(&self.0.app, "status", config.port, &config.passcode)
+                .and_then(|status| {
+                    crate::host_service::verify(&self.0.app, &status).map(|port| (status, port))
+                });
+        let (identity, port) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                self.fail(&format!("Background host unavailable: {error}. Use Restart Backend to start it explicitly."));
+                return;
+            }
+        };
+        self.0.adopted.store(true, Ordering::SeqCst);
+        *self.0.service_identity.lock().unwrap() = Some(identity.clone());
+        self.handle_ready(ReadyInfo {
+            port,
+            passcode: config.passcode.clone(),
+            urls: vec![format!("http://127.0.0.1:{port}")],
+            tunnel: None,
+        });
+        let manager = self.clone();
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(2));
+            if crate::QUITTING.load(Ordering::SeqCst)
+                || manager.0.generation.load(Ordering::SeqCst) != generation
+            {
+                return;
+            }
+            if crate::host_service::verify(&manager.0.app, &identity).is_ok() {
+                continue;
+            }
+            let _lifecycle = manager.0.lifecycle.lock().unwrap();
+            if manager.0.generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            *manager.0.info.lock().unwrap() = None;
+            *manager.0.service_identity.lock().unwrap() = None;
+            manager.fail("Background host stopped or changed. Agents will not restart automatically; use Restart Backend when ready.");
+            return;
+        });
+    }
+
+    fn spawn_backend(
+        &self,
+        port: u16,
+        config: &DesktopConfig,
+        generation: u32,
+    ) -> std::io::Result<Child> {
         let binary = backend_binary(&self.0.app);
         logging::desktop(
             &self.0.app,
@@ -268,7 +487,7 @@ impl Backend {
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
-                    manager.handle_stdout(&line);
+                    manager.handle_stdout(&line, generation);
                 }
             });
         }
@@ -284,7 +503,7 @@ impl Backend {
         Ok(child)
     }
 
-    fn spawn_monitor(&self) {
+    fn spawn_monitor(&self, pid: u32) {
         let manager = self.clone();
         thread::spawn(move || loop {
             thread::sleep(Duration::from_millis(250));
@@ -294,15 +513,15 @@ impl Backend {
             let status = {
                 let mut guard = manager.0.child.lock().unwrap();
                 match guard.as_mut() {
-                    Some(child) => child.try_wait(),
-                    None => return,
+                    Some(child) if child.id() == pid => child.try_wait(),
+                    _ => return,
                 }
             };
             match status {
                 Ok(None) => continue,
                 Ok(Some(status)) => {
                     let expected = manager.0.stop_requested.load(Ordering::SeqCst);
-                    manager.on_exit(status.code(), expected);
+                    manager.on_exit(pid, status.code(), expected);
                     return;
                 }
                 Err(_) => return,
@@ -310,12 +529,17 @@ impl Backend {
         });
     }
 
-    fn on_exit(&self, code: Option<i32>, expected: bool) {
+    fn on_exit(&self, pid: u32, code: Option<i32>, expected: bool) {
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        if self.0.child.lock().unwrap().as_ref().map(Child::id) != Some(pid) {
+            return;
+        }
         // Private daemon status79 also covers Stop host requested from the
         // browser, independent of stdout-reader versus monitor scheduling.
         if code == Some(79) {
             self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
         }
+        self.0.generation.fetch_add(1, Ordering::SeqCst);
         *self.0.child.lock().unwrap() = None;
         let _ = fs::remove_file(config::pid_path(&self.0.app));
         if let Ok(mut info) = self.0.info.lock() {
@@ -367,7 +591,7 @@ impl Backend {
         if let Ok(mut state) = self.0.state.lock() {
             *state = State::Starting;
         }
-        self.run_session();
+        self.run_session_inner();
     }
 
     fn fail(&self, message: &str) {
@@ -379,7 +603,11 @@ impl Backend {
         ui::on_backend_failed(&self.0.app, message);
     }
 
-    fn handle_stdout(&self, line: &str) {
+    fn handle_stdout(&self, line: &str, generation: u32) {
+        let _lifecycle = self.0.lifecycle.lock().unwrap();
+        if self.0.generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
         logging::backend(&self.0.app, line);
         let trimmed = line.trim();
         if !trimmed.starts_with('{') {
@@ -400,10 +628,16 @@ impl Backend {
                 self.0.shutdown_confirmed.store(true, Ordering::SeqCst);
             }
             Some("ready") => {
+                if self.0.stop_requested.load(Ordering::SeqCst)
+                    || crate::QUITTING.load(Ordering::SeqCst)
+                {
+                    return;
+                }
                 let port = value
                     .get("port")
                     .and_then(Value::as_u64)
-                    .map(|value| value as u16)
+                    .and_then(|value| u16::try_from(value).ok())
+                    .filter(|port| *port > 0)
                     .unwrap_or_else(|| self.port());
                 let urls = value
                     .get("urls")
@@ -589,6 +823,7 @@ pub fn gql(port: u16, passcode: &str, query: &str, variables: Option<Value>) -> 
 
 pub fn gql_app(app: &AppHandle, query: &str, variables: Option<Value>) -> Option<Value> {
     let backend = app.try_state::<Backend>()?;
+    backend.verify_identity().ok()?;
     let info = backend.info()?;
     crate::workspace::gql_native(app, info.port, query, variables.clone()).or_else(|| {
         if crate::workspace::legacy_allowed(info.port) {

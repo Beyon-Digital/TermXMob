@@ -36,6 +36,7 @@ class WorkspaceService:
         self._workers: set[asyncio.Task] = set()
         self._closed = False
         state.agent._listeners.add(self._on_event)
+        state.agent.execution_authority = self.validate_task_execution
 
     def require(self, principal: Principal, scope: str, project_id: str | None = None, cwd: str | None = None, *, resource_kind=None, resource_id=None):
         live = self.state.identity.current_principal(principal) if hasattr(self.state, 'identity') else principal
@@ -588,6 +589,33 @@ class WorkspaceService:
             raise PermissionError('Delegation does not authorize this conversation')
         return grant
 
+    def validate_task_execution(self, task_id):
+        """Check unattended authority at execution boundaries, including recovery."""
+        row = self.store.get('task', task_id)
+        task = self.agents.get_task(task_id)
+        # Older child metadata predates delegated grants. Resolve its enrolled
+        # parent too, so restarting an existing team cannot shed revocation.
+        seen = {task_id}
+        while task and task.get('parent_id') and not (row or {}).get('delegation_id'):
+            ancestor = task['parent_id']
+            if ancestor in seen or len(seen) >= 64:
+                raise PermissionError('Delegated task ancestry is invalid')
+            seen.add(ancestor)
+            row = self.store.get('task', ancestor)
+            task = self.agents.get_task(ancestor)
+        if not row or not row.get('delegation_id'):
+            return
+        principal = self.state.identity.principal_by_id(row['owner'])
+        if not principal:
+            raise PermissionError('Scheduled principal is no longer active')
+        from fastapi import HTTPException
+        try:
+            conversation = self.session(principal, row['conversation_id'], turns=False)
+            self.record(principal, 'conversation', conversation['id'], scope='agent-run')
+            self.validate_delegation(principal, conversation, row['delegation_id'])
+        except HTTPException as exc:
+            raise PermissionError('Scheduled execution permission was revoked') from exc
+
     def _dispatch_created(self,principal,row,key,tid,managed_session_id=None,delegation_id=None,turn_prompt=None,submitted_prompt=None,submitted_context=None):
         if delegation_id:
             self.validate_delegation(principal,row,delegation_id)
@@ -734,7 +762,11 @@ class WorkspaceService:
             child_id = (event.get('payload') or {}).get('child_id')
             child = self.agents.get_task(child_id) if child_id else None
             if parent and child and not self.store.get('task', child_id):
-                self.store.create('task', parent['owner'], {'conversation_id':parent.get('conversation_id'), 'cwd':child['cwd']}, parent.get('project_id'), child_id)
+                self.store.create('task', parent['owner'], {'conversation_id':parent.get('conversation_id'),
+                    'cwd':parent.get('cwd'), 'execution_location':child['cwd'], 'parent_id':task_id,
+                    'delegation_id':parent.get('delegation_id'),
+                    'agent_label':event['payload'].get('agent'), 'delegated_task':event['payload'].get('task'),
+                    'isolation':event['payload'].get('isolation')}, parent.get('project_id'), child_id)
                 lookup = getattr(self, 'principal_lookup', None)
                 actor = lookup(parent['owner']) if lookup else None
                 if actor and getattr(self.state, 'authorization', None):
@@ -750,9 +782,11 @@ class WorkspaceService:
             parent = self.store.get('task',(task or {}).get('parent_id') or '')
             if parent:
                 self.store.create('task',parent['owner'],{'conversation_id':parent.get('conversation_id'),
-                    'cwd':(task or {}).get('cwd')},parent.get('project_id'),task_id)
+                    'cwd':parent.get('cwd'), 'execution_location':(task or {}).get('cwd'),
+                    'delegation_id':parent.get('delegation_id'),
+                    'parent_id':(task or {}).get('parent_id')},parent.get('project_id'),task_id)
                 row = self.store.get('task',task_id)
-        if row and not row.get('runner_id'):
+        if row and not row.get('runner_id') and not row.get('parent_id'):
             callback = getattr(self,'principal_lookup',None)
             principal = callback(row['owner']) if callback else None
             if principal:

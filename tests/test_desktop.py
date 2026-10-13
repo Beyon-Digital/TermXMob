@@ -681,3 +681,52 @@ def test_update_apply_without_desktop_shell(tmp_path, monkeypatch) -> None:
     )
     assert body["started"] is False
     assert "instructions" in body
+
+
+def test_xtest_character_keysyms_preserve_literal_whitespace_and_punctuation() -> None:
+    from termx.desktop.input import _XTest
+
+    class X11:
+        def XStringToKeysym(self, name):
+            return {b"Return": 0xFF0D, b"Tab": 0xFF09, b"Shift_L": 0xFFE1}.get(name, 0)
+
+    adapter = _XTest.__new__(_XTest)
+    adapter.x11 = X11()
+    for text, expected in [(" ", 32), ("!", 33), ("a", 97), ("A", 65), ("\n", 0xFF0D), ("\t", 0xFF09), ("\u03bb", 0x010003BB)]:
+        assert adapter._keysym(text) == expected
+
+
+def test_xtest_shift_depends_on_requested_character() -> None:
+    from termx.desktop.input import _XTest
+
+    class X11:
+        def XkbKeycodeToKeysym(self, display, code, group, level):
+            return {38: (ord("a"), ord("A")), 10: (ord("1"), ord("!")), 65: (ord(" "), ord(" "))}[code][level]
+
+    adapter = _XTest.__new__(_XTest)
+    adapter.x11 = X11()
+    adapter.display = None
+    for code, text, shifted in [(38, "a", False), (38, "A", True), (10, "1", False), (10, "!", True), (65, " ", False)]:
+        assert adapter.needs_shift(code, text) is shifted
+
+
+def test_xtest_text_refuses_unmapped_character_before_partial_input(monkeypatch) -> None:
+    from termx.desktop import input as desktop_input
+    import pytest
+
+    sent = []
+
+    class Adapter:
+        def keycode(self, text):
+            return None if text == "\u03bb" else 38
+
+        def needs_shift(self, code, text):
+            return False
+
+        def press(self, code, shift):
+            sent.append(code)
+
+    monkeypatch.setattr(desktop_input, "_xtest", lambda: Adapter())
+    with pytest.raises(desktop_input.InputError, match="clipboard paste"):
+        desktop_input._xtest_text("a\u03bb")
+    assert not sent

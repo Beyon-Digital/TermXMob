@@ -1,6 +1,6 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {cleanup,renderHook} from '@testing-library/react';
-import {useWorkspaceHistory} from './App';
+import {useWorkspaceHistory,workspaceRoute} from './App';
 import {nativeWorkspace} from './lib/native';
 
 vi.mock('./lib/native',async original=>({...await original<typeof import('./lib/native')>(),nativeWorkspace:vi.fn()}));
@@ -26,4 +26,27 @@ it('browser navigation still creates shareable manager and conversation routes a
  expect(location.pathname).toBe('/session/conversation%20with%20spaces');
  rerender({authenticated:true,manager:'',selected:''});
  expect(location.pathname).toBe('/');
+});
+
+// The sign-out event resets the control plane while retaining the URL. Signing
+// back in must restore the requested surface before browser history resumes.
+it.each([
+ ['/?session=conversation', {selected:'conversation',manager:''}],
+ ['/session/conversation%20with%20spaces', {selected:'conversation with spaces',manager:''}],
+ ['/?layout=workbench', {selected:'',manager:''}],
+ ['/manage/agents', {selected:'',manager:'agents'}],
+ ['/', {selected:'',manager:'overview'}],
+])('restores the requested authenticated surface after sign-out: %s',(initial,expected)=>{
+ history.replaceState(null,'',initial);
+ expect(workspaceRoute()).toEqual(expected);
+});
+
+it('retains the requested URL while authenticated route state is still being restored',()=>{
+ vi.mocked(nativeWorkspace).mockReturnValue(false);
+ history.replaceState(null,'','/?session=requested');
+ const {rerender}=renderHook(({ready,manager,selected})=>useWorkspaceHistory(ready,manager,selected),{initialProps:{ready:false,manager:'overview',selected:''}});
+ expect(location.search).toBe('?session=requested');
+ const route=workspaceRoute();
+ rerender({ready:true,...route});
+ expect(location.pathname).toBe('/session/requested');
 });

@@ -64,11 +64,11 @@ def run(destination, axe_source):
                     page.get_by_label('Username',exact=True).fill('accessibility-owner');page.get_by_label('Password',exact=True).fill('accessibility-fixture-password-123')
                     page.get_by_role('button',name='Continue with password').click()
                     try:
-                        # Authentication opens the control plane. Enter the fixture
-                        # through the real navigation before checking its composer.
+                        # Select the named sidebar entry; its title also appears in the
+                        # breadcrumb after authenticated deep-link restoration.
                         if zoom == 200:
                             page.get_by_role('button',name='Show sidebar',exact=True).click()
-                        page.get_by_text('Keyboard workspace fixture',exact=True).click()
+                        page.get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
                         if zoom == 200 and page.get_by_role('button',name='Hide sidebar',exact=True).is_visible():
                             page.get_by_role('button',name='Hide sidebar',exact=True).click()
                         page.wait_for_function("""()=>{const t=document.querySelector('textarea[aria-label="Message"]'),b=document.querySelector('button[aria-label="Session options"]');return !!t&&!t.disabled&&!!b&&!b.disabled}""",timeout=60000)

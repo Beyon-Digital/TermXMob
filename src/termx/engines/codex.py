@@ -228,8 +228,23 @@ class CodexEngine:
                     timeout=20,
                 )
                 await self._conn.notify("initialized", {})
-            except Exception:
+            except Exception as exc:
                 await self._conn.close()
+                # Native startup can exit before its first RPC response. Expose
+                # actionable failure classes without returning raw stderr, which
+                # may contain account details or credentials from host config.
+                if isinstance(exc, TransportClosed):
+                    detail = self._conn.stderr_tail.lower()
+                    if "read-only file system" in detail:
+                        raise TransportClosed(
+                            "Codex app-server cannot write its runtime state: "
+                            "the filesystem is read-only. Run Codex with a writable runtime directory."
+                        ) from exc
+                    if "permission denied" in detail:
+                        raise TransportClosed(
+                            "Codex app-server startup was denied filesystem access. "
+                            "Check access to its configured runtime directory."
+                        ) from exc
                 raise
             self._initialized = True
 

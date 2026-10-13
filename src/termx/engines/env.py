@@ -69,18 +69,18 @@ def resolve_executable(
 
 
 async def probe_version(executable: str, args: list[str], timeout: float = 8.0) -> str | None:
-    """Run `<exe> <args>` bounded; first non-empty line of output, truncated."""
+    """Run `<exe> <args>` bounded; prefer stdout over startup warnings."""
     try:
         proc = await asyncio.create_subprocess_exec(
             executable, *args,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
         )
     except (OSError, ValueError):
         return None
     try:
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
         proc.kill()
         try:
@@ -88,10 +88,11 @@ async def probe_version(executable: str, args: list[str], timeout: float = 8.0) 
         except Exception:
             pass
         return None
-    for line in out.decode("utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if line:
-            return line[:200]
+    for stream in (out, err):
+        for line in stream.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line:
+                return line[:200]
     return None
 
 
