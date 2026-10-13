@@ -19,7 +19,7 @@ from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
 from termx.app import AppState, create_app
 from termx.engines.codex import CodexEngine
-from termx.engines.env import engine_search_path, resolve_executable
+from termx.engines.env import engine_search_path, probe_version, resolve_executable
 from termx.engines.gateway import EngineGateway
 from termx.engines.jsonrpc import JsonlProcess, TransportClosed
 from termx.engines.types import EffectiveRunConfiguration, EngineEvent
@@ -73,6 +73,32 @@ def test_search_path_includes_user_dirs(monkeypatch, tmp_path):
     entries = engine_search_path({"PATH": "/usr/bin"})
     assert str(tmp_path / ".local" / "bin") in entries
     assert entries[0] == "/usr/bin"  # existing PATH preserved first
+
+
+@pytest.mark.parametrize("stdout,stderr,expected", [
+    ("codex-cli 0.159.2", "WARNING: PATH aliases unavailable", "codex-cli 0.159.2"),
+    ("", "engine 1.2.3", "engine 1.2.3"),
+])
+def test_version_prefers_stdout_over_startup_warnings(stdout, stderr, expected):
+    script = f"import sys; print({stderr!r},file=sys.stderr); print({stdout!r})"
+    assert asyncio.run(probe_version(sys.executable, ["-c", script])) == expected
+
+
+def test_codex_startup_readonly_error_is_actionable_without_raw_stderr(monkeypatch):
+    script = "import sys; print('Error: Read-only file system (os error 30); sensitive startup context',file=sys.stderr); sys.exit(1)"
+    def process(_argv, **kwargs):
+        return JsonlProcess([sys.executable, "-u", "-c", script], **kwargs)
+    monkeypatch.setattr("termx.engines.codex.JsonlProcess", process)
+    async def run():
+        engine = CodexEngine(executable_override=sys.executable)
+        try:
+            descriptor = await engine.probe()
+            assert "filesystem is read-only" in descriptor.error
+            assert "writable runtime directory" in descriptor.error
+            assert "sensitive startup context" not in descriptor.error
+        finally:
+            await engine.shutdown()
+    asyncio.run(run())
 
 
 # ----------------------------------------------------------------- jsonrpc

@@ -8,6 +8,8 @@ import logging
 import uuid
 from time import time
 
+from fastapi import HTTPException
+
 from termx.agent.limits import resolve_limits
 from termx.agent.store import ACTIVE_STATUSES
 from termx.workspace.store import Conflict
@@ -25,12 +27,57 @@ class AutomationService:
         self._worker = None
         self._lock = asyncio.Lock()
         self._closing = False
+        self._dispatch_workers = {}
         # A task already dispatched remains owned by AgentManager recovery.
         # An interrupted claim without task ID is ambiguous and never replayed.
         for run in self.store.list('schedule_run'):
             if run['status']=='dispatching':
-                self.store.update('schedule_run',run['id'],{**run,'status':'needs_attention',
-                                  'reason':'Host restarted during dispatch; reconcile before retrying'})
+                task_id = self._dispatched_task_id(run)
+                self.store.update('schedule_run',run['id'],{**run,
+                    **({'status':'running','task_id':task_id} if task_id else
+                       {'status':'needs_attention','reason':'Host restarted during dispatch; reconcile before retrying'})})
+
+    def _dispatched_task_id(self, run):
+        with self.store.lock:
+            row = self.store.db.execute('SELECT result FROM requests WHERE owner=? AND key=?',
+                (run['owner'], 'schedule:' + run['id'])).fetchone()
+        return row['result'] if row and row['result'] else None
+
+    def _run_authority(self, run):
+        schedule = self.store.get('schedule', run['schedule_id'])
+        grant = self.store.get('delegation', run.get('grant_id') or (schedule or {}).get('grant_id') or '')
+        goal = self.store.get('goal', run['goal_id'])
+        principal = self.principal_lookup(run['owner'])
+        if not principal or not goal or goal['status'] != 'active':
+            raise PermissionError('Scheduled principal or goal is no longer active')
+        if not grant or grant['revoked'] or grant['expires_at'] <= self.clock():
+            raise PermissionError('Scheduled execution grant expired or was revoked')
+        if grant['policy_version'] != principal.policy_version:
+            raise PermissionError('Scheduled execution authority changed')
+        try:
+            conversation = self.workspace.session(principal, goal['conversation_id'], turns=False)
+            self.workspace.record(principal, 'conversation', conversation['id'], scope='agent-run')
+        except HTTPException as exc:
+            raise PermissionError(str(exc.detail)) from exc
+        if grant.get('execution_target') != self.workspace.execution_target(conversation):
+            raise PermissionError('Scheduled execution target changed')
+        return principal, grant
+
+    async def _stop_task_tree(self, task_id):
+        # Revocation must still stop execution after the principal is disabled;
+        # this host-owned ledger traversal grants no new execution authority.
+        for child in self.workspace.agents.children(task_id):
+            await self._stop_task_tree(child['id'])
+        task = self.workspace.agents.get_task(task_id)
+        if not task or task['status'] not in ACTIVE_STATUSES:
+            return
+        state = self.workspace.state
+        if getattr(state, 'runner_agents', None) and state.runner_agents.owns(task):
+            state.runner_agents.cancel(task_id)
+        elif task.get('engine', 'internal') != 'internal':
+            await state.engines.cancel(task_id)
+        else:
+            state.agent.cancel(task_id)
 
     def create(self,principal,*,request_id,conversation_id,success_criteria,max_runs,limits,prompt,spec,grant_days,missed='skip',overlap='skip',runbook_id=None,command=None):
         self.workspace.record(principal,'conversation',conversation_id,scope='agent-run')
@@ -163,11 +210,13 @@ class AutomationService:
             self.workspace.record(principal,'goal',row['goal_id'],scope='agent-run')
             if row['revision']!=revision: raise Conflict('Schedule changed; refresh before running again')
             if row.get('archived'): raise ValueError('Archived schedules cannot run')
-            return await self._dispatch(row,manual=True)
+            if len(self._dispatch_workers) >= 8:
+                raise Conflict('Scheduled dispatch capacity reached; wait for a preparing run to finish')
+            return await self._dispatch(row,manual=True,background=True)
 
     async def control_run(self,principal,identifier,action):
         run=self.workspace.record(principal,'schedule_run',identifier,scope='agent-control')
-        if run['status']!='running': raise ValueError('This scheduled run is no longer active')
+        if run['status'] not in {'running','dispatching'}: raise ValueError('This scheduled run is no longer active')
         if run.get('runbook_run_id'):
             if action=='confirm':
                 await self._reconcile_command(run)
@@ -176,8 +225,19 @@ class AutomationService:
                 return self.workspace.state.agent.runbooks.confirm(run['runbook_run_id'])
             return await self.workspace.state.agent.runbooks.cancel(run['runbook_run_id'])
         if action=='confirm': raise ValueError('Review agent approvals in the conversation')
-        await self.cancel_tree(principal,run['task_id'])
+        await self._cancel_agent_run(run, 'Cancelled by user')
         return {'cancelled':True}
+
+    async def _cancel_agent_run(self, run, reason):
+        task_id = run.get('task_id') or self._dispatched_task_id(run)
+        self.store.update('schedule_run', run['id'], {**run,'status':'cancelled',
+            'reason':reason,'finished_at':self.clock(), **({'task_id':task_id} if task_id else {})})
+        if task_id:
+            await self._stop_task_tree(task_id)
+        worker = self._dispatch_workers.get(run['id'])
+        if worker and worker is not asyncio.current_task():
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
 
     def revoke(self,principal,identifier):
         grant=self.workspace.record(principal,'delegation',identifier,scope='agent-control')
@@ -191,9 +251,9 @@ class AutomationService:
         self.workspace.record(principal,'delegation',identifier,scope='agent-control')
         schedules={row['id'] for row in self.store.list('schedule',principal.id) if row['grant_id']==identifier}
         for run in self.store.list('schedule_run',principal.id):
-            if run.get('schedule_id') in schedules and run['status']=='running':
+            if run.get('schedule_id') in schedules and run['status'] in {'running','dispatching'}:
                 if run.get('runbook_run_id'): await self.workspace.state.agent.runbooks.cancel(run['runbook_run_id'])
-                elif run.get('task_id'): await self.cancel_tree(principal,run['task_id'])
+                else: await self._cancel_agent_run(run, 'Delegated execution grant revoked')
 
     async def cancel_goal(self,principal,identifier):
         goal=self.workspace.record(principal,'goal',identifier,scope='agent-control')
@@ -204,7 +264,7 @@ class AutomationService:
         for run in self.store.list('schedule_run',principal.id):
             if run.get('goal_id')==identifier:
                 if run.get('runbook_run_id'): await self.workspace.state.agent.runbooks.cancel(run['runbook_run_id'])
-                elif run.get('task_id'): await self.cancel_tree(principal,run['task_id'])
+                elif run['status'] in {'running','dispatching'}: await self._cancel_agent_run(run, 'Goal cancelled')
 
     async def cancel_tree(self,principal,task_id):
         self.workspace.record(principal,'task',task_id,scope='agent-control')
@@ -230,6 +290,15 @@ class AutomationService:
         async with self._lock:
             # Reconcile only known task IDs; approval waits remain waits.
             for run in self.store.list('schedule_run'):
+                if run['status'] == 'dispatching':
+                    try:
+                        self._run_authority(run)
+                    except (PermissionError, KeyError, ValueError) as exc:
+                        await self._cancel_agent_run(run, str(exc))
+                        continue
+                    task_id = self._dispatched_task_id(run)
+                    if task_id:
+                        run = self.store.update('schedule_run', run['id'], {**run, 'status':'running', 'task_id':task_id})
                 if run['status']!='running':
                     continue
                 if run.get('runbook_run_id'):
@@ -237,6 +306,14 @@ class AutomationService:
                     continue
                 if not run.get('task_id'): continue
                 task=self.workspace.agents.get_task(run['task_id'])
+                if task and task['status'] in ACTIVE_STATUSES:
+                    try:
+                        self._run_authority(run)
+                        await self._approve_initial_plan(run, task)
+                        task = self.workspace.agents.get_task(task['id'])
+                    except (PermissionError, KeyError, ValueError) as exc:
+                        await self._cancel_agent_run(run, str(exc))
+                        continue
                 if not task:
                     self.store.update('schedule_run',run['id'],{**run,'status':'needs_attention','reason':'Task ledger unavailable'})
                 elif task['status'] in ACTIVE_STATUSES and run.get('task_status')!=task['status']:
@@ -246,9 +323,11 @@ class AutomationService:
             for schedule in self.store.list('schedule'):
                 if not schedule['enabled'] or schedule['next_run']>self.clock():
                     continue
-                await self._dispatch(schedule)
+                if len(self._dispatch_workers) >= 8:
+                    continue
+                await self._dispatch(schedule, background=True)
 
-    async def _dispatch(self,schedule,manual=False):
+    async def _dispatch(self,schedule,manual=False,background=False):
         now=self.clock()
         principal=self.principal_lookup(schedule['owner'])
         goal=self.store.get('goal',schedule['goal_id'])
@@ -279,8 +358,8 @@ class AutomationService:
             self.store.update('schedule',schedule['id'],{**schedule,'enabled':False,'state':'needs_attention','reason':str(exc)})
             if manual: raise
             return
-        command_active=any(r['status']=='running' and r.get('runbook_run_id') and
-            self.store.get('goal',r['goal_id']).get('conversation_id')==conversation['id']
+        command_active=any((r['status']=='dispatching' or (r['status']=='running' and r.get('runbook_run_id'))) and
+            (self.store.get('goal',r['goal_id']) or {}).get('conversation_id')==conversation['id']
             for r in self.store.list('schedule_run',principal.id))
         if self.workspace.active(conversation['id']) or command_active:
             if manual: raise Conflict('This conversation already has an active turn')
@@ -308,17 +387,68 @@ class AutomationService:
         if run is None:
             if manual: raise Conflict('Schedule changed; refresh before running again')
             return
+        run = self.store.update('schedule_run', run['id'], {**run, 'grant_id':grant['id'], 'started_at':now})
+        if background:
+            worker = asyncio.create_task(self._execute_dispatch(run, schedule, principal, goal, grant, conversation))
+            self._dispatch_workers[run['id']] = worker
+            worker.add_done_callback(lambda done, identifier=run['id']: self._dispatch_finished(identifier, done))
+            # Fast local dispatches remain observable in this tick; a provider's
+            # planning latency cannot monopolize reconciliation or remote control.
+            await asyncio.wait({worker}, timeout=.05)
+            return self.store.get('schedule_run', run['id'])
+        return await self._execute_dispatch(run, schedule, principal, goal, grant, conversation)
+
+    def _dispatch_finished(self, identifier, worker):
+        self._dispatch_workers.pop(identifier, None)
+        if not worker.cancelled():
+            worker.exception()
+
+    async def _execute_dispatch(self, run, schedule, principal, goal, grant, conversation):
+        now = self.clock()
         try:
+            self._dispatch_guard(run)
             if grant.get('runbook'):
                 snapshot={**grant['runbook'],'steps':[{**step,'_timeout_s':min(grant['limits']['shell_timeout_s'],grant['limits']['max_seconds'])} for step in grant['runbook']['steps']]}
                 command=self.workspace.state.agent.runbooks.start(snapshot,conversation['cwd'],profile='host',project_id=conversation.get('project_id'))
                 return self.store.update('schedule_run',run['id'],{**run,'status':'running','runbook_run_id':command['id'],'started_at':now,'grant_id':grant['id']})
             task=await self.workspace.send(principal,conversation['id'],prompt=schedule['prompt']+
-                '\n\nSuccess criteria:\n'+goal['success_criteria'],request_id='schedule:'+run['id'],limits=grant['limits'],delegation_id=grant['id'])
-            self.store.update('schedule_run',run['id'],{**run,'status':'running','task_id':task['id']})
+                '\n\nSuccess criteria:\n'+goal['success_criteria'],request_id='schedule:'+run['id'],limits=grant['limits'],delegation_id=grant['id'],
+                dispatch_guard=lambda row:self._dispatch_guard(run))
+            fresh = self.store.get('schedule_run', run['id'])
+            if fresh['status'] in {'cancelled', 'needs_attention'}:
+                await self._stop_task_tree(task['id'])
+                return fresh
+            self.store.update('schedule_run',run['id'],{**fresh,'status':'running','task_id':task['id']})
+            await self._approve_initial_plan({**fresh, 'task_id':task['id']}, task)
         except Exception as exc:
-            self.store.update('schedule_run',run['id'],{**run,'status':'needs_attention','reason':type(exc).__name__})
+            fresh = self.store.get('schedule_run', run['id'])
+            if fresh['status'] == 'cancelled':
+                return fresh
+            task_id = fresh.get('task_id') or self._dispatched_task_id(run)
+            if task_id:
+                await self._stop_task_tree(task_id)
+            self.store.update('schedule_run',run['id'],{**fresh,'status':'needs_attention','reason':str(exc) or type(exc).__name__})
         return self.store.get('schedule_run',run['id'])
+
+    def _dispatch_guard(self, run):
+        fresh = self.store.get('schedule_run', run['id'])
+        if not fresh or fresh['status'] not in {'dispatching','running'}:
+            raise PermissionError('Scheduled dispatch was stopped before execution')
+        self._run_authority(fresh)
+
+    async def _approve_initial_plan(self, run, task):
+        if task.get('engine', 'internal') != 'internal' or task.get('mode') != 'agent' or task['status'] != 'awaiting_approval':
+            return
+        metadata = self.store.get('task', task['id'])
+        if not metadata or metadata.get('runner_id'):
+            return
+        pending = [a for a in self.workspace.agents.approvals(task['id']) if a['status'] == 'pending']
+        if not pending or any(a['kind'] != 'plan' for a in pending):
+            return
+        principal, grant = self._run_authority(run)
+        for approval in pending:
+            await self.workspace.state.agent.resolve_approval(task['id'], approval['id'], 'approved')
+            self.store.log(principal.id, 'task', task['id'], 'delegation.plan_approved', {'grant_id':grant['id']})
 
     async def _reconcile_command(self,run):
         command=self.workspace.agents.get_runbook_run(run['runbook_run_id'])
@@ -367,3 +497,7 @@ class AutomationService:
         if self._worker:
             self._worker.cancel()
             await asyncio.gather(self._worker,return_exceptions=True)
+        workers = list(self._dispatch_workers.values())
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)

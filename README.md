@@ -36,6 +36,9 @@ legacy pairing expires. Full release acceptance remains in progress. See the
 
 The process prints LAN URLs, an optional Cloudflare URL, and a QR code. Open the URL or scan the QR. Sessions keep running if you disconnect.
 
+For unattended schedules, agent teams, remote control and browser/computer tools,
+see [Autonomous agents and remote control](docs/autonomous-agents.md).
+
 ## Desktop app
 
 The native desktop host bundles the Python server, independent React DOM workspace,

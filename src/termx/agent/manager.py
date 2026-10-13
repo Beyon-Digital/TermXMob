@@ -86,6 +86,7 @@ class AgentManager:
         self._computer = ComputerController()
         self._tools = default_registry()
         self.browser = None  # AppState attaches the managed broker after mounting.
+        self.execution_authority: Callable[[str], None] | None = None
         self._scheduler = CallScheduler(self._tools)
         self._http = ProviderHttpRuntime()
         self._metrics: dict[str, TaskMetrics] = {}
@@ -120,8 +121,8 @@ class AgentManager:
         )
         self._project_files = project_files
         for task in self.store.list_tasks(limit=500):
-            # Native engines own their recovery. Budget approvals are durable
-            # safe boundaries and must remain paused across host restarts.
+            # Native engines own their recovery. Initial plans and budget
+            # approvals are durable safe boundaries across host restarts.
             if task.get("engine") not in (None, "internal"):
                 continue
             if (task.get("runtime") or {}).get("tree_budget_resume") and task["status"] in ACTIVE_STATUSES:
@@ -131,7 +132,7 @@ class AgentManager:
                     self._pause_budget(task["id"], list(runtime.get("history") or []), int(runtime.get("step") or 0), monotonic(), "shared_resume")
                 continue
             if task["status"] == "awaiting_approval" and any(
-                a["kind"] == "budget" and a["status"] == "pending"
+                a["kind"] in {"plan", "budget"} and a["status"] == "pending"
                 for a in self.store.approvals(task["id"])
             ):
                 continue
@@ -414,6 +415,7 @@ class AgentManager:
         upload_ids = list(runtime.get("uploads") or [])
         cancel = self._cancel.setdefault(task_id, cancel or asyncio.Event())
         try:
+            self._check_execution_authority(task_id)
             engine = ContextEngine(task["cwd"])
             manifest = await self._budget_await(task_id, _race_cancel(engine.snapshot(), cancel))
             self._context_engines[task_id] = engine
@@ -861,6 +863,16 @@ class AgentManager:
 
     # Execution -------------------------------------------------------
 
+    def _check_execution_authority(self, task_id: str) -> None:
+        if self.execution_authority is None:
+            return
+        try:
+            self.execution_authority(task_id)
+        except (PermissionError, KeyError) as exc:
+            self._emit(task_id, "task.authority.revoked", {"reason": str(exc)})
+            self._cancel.setdefault(task_id, asyncio.Event()).set()
+            raise asyncio.CancelledError from exc
+
     async def _drive(
         self,
         task_id: str,
@@ -881,6 +893,7 @@ class AgentManager:
         self._emit(task_id, "task.status", {"status": "running"})
         try:
             while True:
+                self._check_execution_authority(task_id)
                 task = self._task(task_id)
                 limits = task["limits"]
                 if cancel.is_set():
@@ -1159,6 +1172,7 @@ class AgentManager:
         groups = self._scheduler.schedule(calls, ctx)
         index = 0
         for group in groups:
+            self._check_execution_authority(task_id)
             preset=self.store.task_agent(task)
             if preset and preset.get('tools'):
                 for entry in group:
@@ -1482,6 +1496,7 @@ class AgentManager:
         decision: str,
     ) -> None:
         try:
+            self._check_execution_authority(task_id)
             payload = dict(checkpoint["payload"])
             history = list(payload.get("history") or [])
             step = int(payload.get("step") or 0)
@@ -1579,6 +1594,7 @@ class AgentManager:
             self._fail(task_id, exc)
 
     async def _invoke_tool(self, entry: Any, ctx: ToolContext) -> ToolOutcome:
+        self._check_execution_authority(ctx.task_id)
         call = entry.call
         if ctx.cancel.is_set():
             raise asyncio.CancelledError

@@ -777,18 +777,31 @@ class _XTest:
                 self.button(button, True)
                 self.button(button, False)
 
+    def _keysym(self, name: str) -> int:
+        # XStringToKeysym expects symbolic names ("space", "exclam"), not
+        # literal whitespace/punctuation. X11 character keysyms match Latin-1;
+        # other Unicode characters use the explicitly tagged keysym range.
+        if len(name) == 1:
+            special = {"\n": "Return", "\r": "Return", "\t": "Tab"}.get(name)
+            if special:
+                return int(self.x11.XStringToKeysym(special.encode("ascii")))
+            value = ord(name)
+            return value if value < 256 else 0x01000000 | value
+        return int(self.x11.XStringToKeysym(name.encode("utf-8")))
+
     def keycode(self, keysym_name: str) -> int | None:
-        keysym = self.x11.XStringToKeysym(keysym_name.encode("utf-8"))
+        keysym = self._keysym(keysym_name)
         if not keysym:
             return None
         code = self.x11.XKeysymToKeycode(self.display, keysym)
         return int(code) or None
 
-    def needs_shift(self, code: int) -> bool:
-        """True when the keysym sits on the shifted level of this keycode."""
+    def needs_shift(self, code: int, keysym_name: str) -> bool:
+        """Apply Shift only when the requested symbol is on the shifted level."""
+        wanted = self._keysym(keysym_name)
         unshifted = self.x11.XkbKeycodeToKeysym(self.display, code, 0, 0)
-        char = self.x11.XkbKeycodeToKeysym(self.display, code, 0, 1)
-        return False if not unshifted else bool(char and char != unshifted)
+        shifted = self.x11.XkbKeycodeToKeysym(self.display, code, 0, 1)
+        return bool(wanted != unshifted and wanted == shifted)
 
     def press(self, code: int, shift: bool = False) -> None:
         shift_code = self.keycode("Shift_L") if shift else None
@@ -918,7 +931,7 @@ def _xtest_key(key: str, action: str) -> bool:
     if action == "up":
         adapter.key(code, False)
         return True
-    adapter.press(code, shift=len(key) == 1 and adapter.needs_shift(code))
+    adapter.press(code, shift=len(key) == 1 and adapter.needs_shift(code, name))
     return True
 
 
@@ -926,11 +939,14 @@ def _xtest_text(data: str) -> bool:
     adapter = _xtest()
     if adapter is None:
         return False
+    events = []
     for char in data:
         code = adapter.keycode(char)
         if code is None:
-            return False
-        adapter.press(code, shift=adapter.needs_shift(code))
+            raise InputError(f"Character {char!r} is unavailable in the active X11 keyboard layout; use clipboard paste")
+        events.append((code, adapter.needs_shift(code, char)))
+    for code, shift in events:
+        adapter.press(code, shift=shift)
     return True
 
 
