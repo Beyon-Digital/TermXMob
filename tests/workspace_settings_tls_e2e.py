@@ -82,6 +82,17 @@ def run(destination):
                 form.get_by_role('button',name='Save memory changes',exact=True).click();dialog.get_by_text('Memory updated',exact=True).wait_for()
                 assert state.workspace.store.get('memory',memory['id'])['content']=='Keep this unsaved security decision'
                 dialog.get_by_role('button',name='Delete',exact=True).click();review=page.get_by_role('dialog',name='Delete?',exact=True);review.wait_for();review.get_by_role('button',name='Cancel',exact=True).click();assert state.workspace.store.get('memory',memory['id'])
+                # A successful validation request must not commit the source draft.
+                nav.get_by_role('button',name='Plugins & skills',exact=True).click()
+                dialog.get_by_label('Skill folder name',exact=True).fill('inspect-fixture')
+                instructions='---\nname: inspect-fixture\ndescription: Inspect a temporary fixture without changing files.\n---\nRead the selected fixture and report findings.\n'
+                dialog.get_by_label('Skill instructions',exact=True).fill(instructions)
+                dialog.get_by_role('button',name='Validate skill',exact=True).click()
+                dialog.get_by_text('Skill metadata and instructions validated',exact=True).wait_for()
+                page.once('dialog',lambda prompt:prompt.dismiss());nav.get_by_role('button',name='Memory',exact=True).click()
+                assert dialog.get_by_label('Skill instructions',exact=True).input_value()==instructions
+                page.once('dialog',lambda prompt:prompt.accept());nav.get_by_role('button',name='Memory',exact=True).click()
+                report['checks'].append('successful skill validation preserves unsaved draft and guarded navigation')
                 # All categories remain reachable through one registry.
                 for category in ['Models & engines','Cloud accounts','Agents','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Appearance','Keyboard shortcuts','Safety & Auto Review','General']:
                     nav.get_by_role('button',name=category,exact=True).click();assert nav.get_by_role('button',name=category,exact=True).get_attribute('aria-current')=='page'

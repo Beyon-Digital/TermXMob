@@ -111,6 +111,7 @@
   ],
   "checks": [
     "TLS configuration saved to isolated profile; no listener/trust installed",
+    "successful skill validation preserves unsaved draft and guarded navigation",
     "one sticky Settings entry; no drawer category duplication",
     "all 14 categories reachable",
     "memory edit/save and draft guards",

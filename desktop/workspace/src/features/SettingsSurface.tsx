@@ -6,7 +6,17 @@ import {settingsCategories,canonicalSettingsCategory} from '../lib/settings-cate
 import './settings-surface.css';
 const SaveContext=createContext<()=>()=>void>(()=>()=>{});
 export const useSettingsSave=()=>useContext(SaveContext);
-export function useSettingsRequest(){const beginSave=useSettingsSave();return async function request<T=unknown>(...args:Parameters<typeof baseRequest<T>>){const saved=beginSave();const result=await baseRequest<T>(...args);if(!['GET','HEAD','OPTIONS'].includes((args[1]?.method||'GET').toUpperCase()))saved();return result}}
+function commitsSettings(path:string,init?:RequestInit){
+ if(['GET','HEAD','OPTIONS'].includes((init?.method||'GET').toUpperCase()))return false;
+ // These POSTs inspect or exercise a draft; they never persist that form.
+ if(/(?:^|\/)(?:[^/]*-)?(?:validate|preview|test|evaluate|begin|probe|inspect|export|call)(?:[/?#]|$)/.test(path))return false;
+ if(path.split('?')[0]==='/graphql'){
+  try{return typeof init?.body==='string'&&/^\s*mutation\b/.test(JSON.parse(init.body).query||'')}catch{return false}
+ }
+ return true;
+}
+export function useSettingsRequest(){const beginSave=useSettingsSave();return async function request<T=unknown>(...args:Parameters<typeof baseRequest<T>>){const saved=beginSave();const result=await baseRequest<T>(...args);if(commitsSettings(String(args[0]),args[1]))saved();return result}}
+
 
 export function SettingsNavigation({category,onSelect}:{category:string;onSelect:(id:string)=>void}){
  const selected=canonicalSettingsCategory(category);
@@ -31,7 +41,7 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
  return <Dialog open onOpenChange={open=>{if(!open&&discard()){reset();onClose()}}}><DialogContent ref={setSurface} className="settings-surface" onCloseAutoFocus={event=>{if(!opener.current?.isConnected){const target=document.querySelector<HTMLElement>('[aria-label="Show sidebar"]');if(target){event.preventDefault();target.focus()}}}} onPointerDownOutside={event=>event.preventDefault()}>
   <header className="settings-title"><DialogTitle>Settings</DialogTitle><DialogDescription>Configure your account, this host and workspace capabilities.</DialogDescription>{context}</header>
   <SettingsNavigation category={category} onSelect={select}/>
-  <SaveContext.Provider value={beginSave}><div className="settings-content" onClickCapture={event=>{const target=event.target as HTMLElement;action.current=target.closest('form,.manager-form,.creation-form,.safety-config')||target.closest('section')}} onSubmitCapture={event=>{action.current=event.target as HTMLElement}} onChangeCapture={event=>{const target=event.target as HTMLElement;if(target.closest('[aria-label="Search settings"], [data-settings-filter], [data-settings-autosave], [aria-label="Theme preference"]'))return;revision.current++;const scope=target.closest('form,.manager-form,.creation-form,.safety-config')||target.closest('section')||target;edits.current.set(scope,revision.current);dirtyNow.current=true;setDirty(true)}}><SettingsActions>{children}</SettingsActions></div></SaveContext.Provider>
+  <SaveContext.Provider value={beginSave}><div className="settings-content" onClickCapture={event=>{const target=event.target as HTMLElement;action.current=target.closest('form,.manager-form,.creation-form,.safety-config')||target.closest('article,tr,.manager-item,.safety-rule')||target.closest('section')}} onSubmitCapture={event=>{action.current=event.target as HTMLElement}} onChangeCapture={event=>{const target=event.target as HTMLElement;if(target.closest('[aria-label="Search settings"], [data-settings-filter], [data-settings-autosave], [aria-label="Theme preference"]'))return;revision.current++;const scope=target.closest('form,.manager-form,.creation-form,.safety-config')||target.closest('section')||target;edits.current.set(scope,revision.current);dirtyNow.current=true;setDirty(true)}}><SettingsActions>{children}</SettingsActions></div></SaveContext.Provider>
   {dirty&&<span className="settings-draft-status" role="status">Unsaved settings changes</span>}
  </DialogContent></Dialog>
 }
