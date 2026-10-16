@@ -12,7 +12,8 @@ const budgets = [
   ['max_subagents_total', 'Total subagents', 8, 32],
 ] as const;
 const split = (value: string) => [...new Set(value.split(/[\n,]/).map(item => item.trim()).filter(Boolean))];
-export function AgentPresetEditor({ preset, onSave, onCancel }: {
+export function AgentPresetEditor({ preset, onSave, onCancel,engines=[] }: {
+  engines?:{id:string;label:string}[];
   preset?: Preset; onSave: (input: Preset) => Promise<unknown>; onCancel?: () => void;
 }) {
   const [original] = useState(preset);
@@ -51,10 +52,10 @@ export function AgentPresetEditor({ preset, onSave, onCancel }: {
   const field=(key:string,label:string,multiline=false)=><label className="manager-field"><span>{label}</span>{multiline?<textarea aria-label={label} value={draft[key]} disabled={busy} onChange={event=>change(key,event.target.value)}/>:<Input aria-label={label} value={draft[key]} required={key==='name'} disabled={busy} onChange={event=>change(key,event.target.value)}/>}</label>;
   return <form className="manager-form" aria-label={preset?'Edit agent preset':'Create agent preset'} onSubmit={save}>
     <p className="manager-help">Presets configure future runs. Saving never retargets a running task or grants tool authority. {original && `Source revision: ${original.file_revision || 'unavailable'}.`}</p>
-    {field('name','Name')}{field('description','Purpose')}{field('instructions','Instructions',true)}{field('engine','Default engine for future sessions')}{field('model','Default model for future sessions')}
+    {field('name','Name')}{field('description','Purpose')}{field('instructions','Instructions',true)}<label className="manager-field"><span>Default engine for future sessions</span><select aria-label="Default engine for future sessions" value={draft.engine} disabled={busy} onChange={event=>change('engine',event.target.value)}><option value="inherit">Use the session’s engine</option>{engines.map(engine=><option key={engine.id} value={engine.id}>{engine.label}</option>)}{draft.engine!=='inherit'&&!engines.some(engine=>engine.id===draft.engine)&&<option value={draft.engine}>Current configured engine · {draft.engine}</option>}</select></label><details><summary>Advanced · default model name</summary>{field('model','Default model for future sessions')}</details>
     <fieldset className="provider-capabilities"><legend>Tools</legend><label><input type="checkbox" checked={draft.allTools} disabled={busy} onChange={event=>change('allTools',event.target.checked)}/>Inherit all host-authorized tools</label>
       <p className="manager-help">Inherited tools may include future host-authorized tools. An explicit empty list permits no tools. Host policy and denied tool IDs still apply.</p>
-      {!draft.allTools && field('tools','Allowed tool IDs (one per line)',true)}{field('toolsets','Toolset IDs (one per line)',true)}{field('deny_tools','Denied tool IDs (one per line)',true)}
+      {!draft.allTools&&<div className="settings-tool-choices">{[['read_file','Read project files'],['search_files','Search project files'],['write_file','Write project files'],['run_shell','Run shell commands'],['mcp_catalog','Inspect connected tools'],['mcp_call','Use connected tools']].map(([id,label])=><label key={id}><input type="checkbox" checked={split(draft.tools).includes(id)} disabled={busy} onChange={event=>change('tools',event.target.checked?[...split(draft.tools),id].join('\n'):split(draft.tools).filter(value=>value!==id).join('\n'))}/>{label}</label>)}</div>}<details><summary>Advanced · exact tool names and toolsets</summary>{!draft.allTools && field('tools','Allowed tool IDs (one per line)',true)}{field('toolsets','Toolset IDs (one per line)',true)}{field('deny_tools','Denied tool IDs (one per line)',true)}</details>
     </fieldset>
     <McpPresetBindings value={draft.mcp_connections as McpBinding[]} disabled={busy} onChange={bindings=>{change('mcp_connections',bindings);if(bindings.length&&!draft.allTools)change('tools',[...new Set([...split(draft.tools),'mcp_catalog','mcp_call'])].join('\n'))}}/>
     <fieldset className="provider-capabilities"><legend>Run budget</legend>{budgets.map(([key,label,,max])=><label key={key} className="manager-field"><span>{label}</span><Input type="number" min={1} max={max} step={1} required disabled={busy} value={draft[key]} onChange={event=>change(key,event.target.value)}/></label>)}</fieldset>

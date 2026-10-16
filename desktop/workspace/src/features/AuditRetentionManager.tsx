@@ -1,11 +1,13 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
-import {json,request} from '../lib/api';
+import {json} from '../lib/api';
 import {useAccessLifecycle} from './useAccessLifecycle';
 type Policy={retention_days:number;max_bytes:number;max_events:number};
 type Result={removed_events:number;retained_events:number;retained_bytes:number;policy:Policy};
 export default function AuditRetentionManager({onError}:{onError:(error:unknown)=>void}){
+ const request=useSettingsRequest();
  const [policy,setPolicy]=useState<Policy|null>(null),[busy,setBusy]=useState(false),[result,setResult]=useState<Result|null>(null),[confirmed,setConfirmed]=useState(false);
  const dirty=useRef(false),lifecycle=useAccessLifecycle(()=>{setBusy(false);setConfirmed(false);setResult(null)});
  useEffect(()=>{if(!lifecycle.current())return;let alive=true;const current=lifecycle.capture();const controller=new AbortController();request<Policy>('/auth/admin/audit/retention',{signal:controller.signal}).then(value=>{if(alive&&current()&&!dirty.current)setPolicy(value)}).catch(error=>{if(alive&&current())onError(error)});return()=>{alive=false;controller.abort()}},[onError,lifecycle.refresh]);

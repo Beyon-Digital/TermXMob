@@ -21,14 +21,15 @@ from termx.graphql.errors import resolver
 from termx.graphql.inputs import NotifyInput, PairInput, PermissionsInput
 from termx.graphql import types as T
 from termx.machine import machine_snapshot
-from termx.net import connect_url, http_urls
+from termx.net import connect_url
+from termx.lan_tls import connection_urls
 
 Ctx = Info[TermxContext, None]
 
 
 def _connect_target(state: Any) -> tuple[str, str | None]:
     tunnel = state.tunnels.status_public()
-    urls = http_urls(state.port)
+    urls = connection_urls(state)
     remote = next(
         (
             url
@@ -75,7 +76,7 @@ class CoreQueries:
         public_passcode = None if state.identity.configured else state.auth.passcode
         return T.ConnectInfo.wrap(
             {
-                "urls": http_urls(state.port),
+                "urls": connection_urls(state),
                 "tunnel_url": tunnel_url,
                 "passcode": public_passcode or "",
                 "connect_url": connect_url(target, public_passcode),

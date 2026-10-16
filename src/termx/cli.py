@@ -52,7 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="termx",
         description="Host interactive terminal sessions and connect from your phone or browser.",
     )
-    parser.add_argument("--host", default="0.0.0.0", help="Bind address (default 0.0.0.0)")
+    parser.add_argument("--host", default="127.0.0.1", help="Private loopback bind address (default 127.0.0.1)")
+    parser.add_argument('--lan-tls', action='store_true', help='Enable the separate HTTPS/WSS LAN listener (manual CA trust required)')
+    parser.add_argument('--lan-host', default='0.0.0.0', help='HTTPS listener bind address')
+    parser.add_argument('--lan-port', type=int, default=8788, help='HTTPS listener port (no fallback)')
+    parser.add_argument('--lan-name', action='append', default=[], help='Additional resolving .local name or private IP SAN; repeatable')
+    parser.add_argument('--lan-rotate-identity', action='store_true', help='Deliberately replace the LAN identity; every client must trust and pair again')
     parser.add_argument("--port", type=int, default=8787, help="Bind port (default 8787)")
     parser.add_argument('--config-dir', default=None, help='Private host state profile directory')
     parser.add_argument('--service-worker', action='store_true', help=argparse.SUPPRESS)
@@ -143,14 +148,14 @@ def print_banner(urls: list[str], tunnel_url: str | None, passcode: str | None) 
     out()
     out("termx")
     for url in urls:
-        out(f"  local  {connect_url(url, passcode)}")
+        out(f"  local  {url}")
     if tunnel_url:
-        out(f"  tunnel {connect_url(tunnel_url, passcode)}")
+        out(f"  tunnel {tunnel_url}")
     if passcode:
-        out(f"  passcode {passcode}")
+        out("  passcode configured (redacted; sign in or pair from Settings)")
     else:
         out("  passcode off")
-    qr_target = connect_url(tunnel_url or (urls[-1] if urls else "http://127.0.0.1:8787"), passcode)
+    qr_target = tunnel_url or (urls[-1] if urls else "http://127.0.0.1:8787")
     out()
     qr = qr_ascii(qr_target)
     try:
@@ -176,7 +181,7 @@ async def _wait_started(server: uvicorn.Server, task: "asyncio.Task[None]", time
 
 
 async def _start_server(
-    app: object, host: str, port: int, *, strict: bool = False
+    app: object, host: str, port: int, *, strict: bool = False, tls=None, lifespan="auto"
 ) -> tuple[uvicorn.Server, "asyncio.Task[None]", int] | None:
     import socket
 
@@ -184,6 +189,8 @@ async def _start_server(
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     for candidate in candidates:
         sock = socket.socket(family, socket.SOCK_STREAM)
+        if family == socket.AF_INET6:
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
         if os.name == "nt":
             # On Windows SO_REUSEADDR allows hijacking a port another process
             # is using; exclusive use makes the bind fail instead.
@@ -204,7 +211,14 @@ async def _start_server(
             port=actual,
             log_level="warning",
             ws="auto",
+            access_log=False,
+            proxy_headers=tls is None,
+            forwarded_allow_ips=["127.0.0.1", "::1"],
+            lifespan=lifespan,
         )
+        if tls is not None:
+            config.load()
+            config.ssl = tls
         server = uvicorn.Server(config)
         serve_task = asyncio.create_task(server.serve(sockets=[sock]))
         if await _wait_started(server, serve_task):
@@ -254,7 +268,29 @@ async def _serve_owned(args: argparse.Namespace, instance) -> int:
     state = AppState(passcode=args.passcode, port=args.port)
     state.host_instance=instance
     app = create_app(state, web_dir=web_dir if web_dir.is_dir() else None)
+    from termx.lan_tls import advertised_names, load_identity, ssl_context
+    from termx.identity_http import loopback
+    if not loopback(args.host):
+        raise RuntimeError('The broker must bind to loopback. Use --lan-tls for HTTPS/WSS LAN access.')
+    if getattr(args, 'lan_rotate_identity', False) and not getattr(args, 'lan_tls', False):
+        raise RuntimeError('--lan-rotate-identity requires --lan-tls and deliberate client re-pairing')
     managed=getattr(args,'service_worker',False)
+    lan_options = None
+    saved_lan = instance.root / 'lan-tls-settings.json'
+    if saved_lan.exists():
+        from termx.host_instance import private_owned
+        import json
+        private_owned(saved_lan)
+        from termx.lan_tls_http import LanSettings
+        lan_options = LanSettings.model_validate_json(saved_lan.read_text()).model_dump()
+    if getattr(args, 'lan_tls', False):
+        lan_options = {'enabled': True, 'host': args.lan_host, 'port': args.lan_port, 'names': args.lan_name}
+    if lan_options:
+        from termx.lan_tls_http import LanSettings
+        lan_options = LanSettings.model_validate(lan_options).model_dump()
+    if lan_options and lan_options.get('enabled'):
+        state.lan_identity = load_identity(instance.root, advertised_names(lan_options['host'], lan_options['names']), rotate=getattr(args, 'lan_rotate_identity', False))
+        state.lan_port = lan_options['port']
     started = await _start_server(app, args.host, args.port, strict=managed)
     if started is None:
         if not args.desktop:
@@ -262,6 +298,23 @@ async def _serve_owned(args: argparse.Namespace, instance) -> int:
             print(f"termx: could not bind {args.host}:{args.port}{suffix}", flush=True)
         return 73 if managed else 0
     server, serve_task, actual_port = started
+    lan_started = None
+    renewal_task = None
+    if getattr(state, 'lan_identity', None):
+        lan_context = ssl_context(state.lan_identity)
+        lan_started = await _start_server(app, lan_options['host'], lan_options['port'], strict=True, tls=lan_context, lifespan='off')
+        if lan_started is None:
+            server.should_exit = True
+            await serve_task
+            raise RuntimeError('LAN HTTPS could not bind. Choose an available --lan-port; no plaintext fallback was opened.')
+        state.lan_port = lan_started[2]
+        async def maintain_identity():
+            while True:
+                await asyncio.sleep(60)
+                names = advertised_names(lan_options['host'], lan_options['names'])
+                if state.lan_identity.renew(names):
+                    lan_context.load_cert_chain(state.lan_identity.bundle)
+        renewal_task = asyncio.create_task(maintain_identity())
     state.host_runtime=instance.publish(host=args.host,port=actual_port,managed=managed)
     if managed:
         from dataclasses import asdict
@@ -275,6 +328,8 @@ async def _serve_owned(args: argparse.Namespace, instance) -> int:
 
     def _request_shutdown() -> None:
         server.should_exit = True
+        if lan_started:
+            lan_started[0].should_exit = True
 
     state.request_shutdown = _request_shutdown
     if args.parent_pid:
@@ -301,13 +356,16 @@ async def _serve_owned(args: argparse.Namespace, instance) -> int:
             status = await state.tunnels.start_quick_cloudflare()
             tunnel_url = status.url
         if args.desktop:
-            urls = http_urls(actual_port, args.host)
+            urls = [*http_urls(actual_port, args.host), *(state.lan_identity.metadata(state.lan_port)["urls"] if getattr(state,"lan_identity",None) else [])]
             notify.ready(actual_port, urls, tunnel_url)
-            body = connect_url(tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}"), None if state.identity.configured else args.passcode)
+            body = tunnel_url or (urls[-1] if urls else f"http://127.0.0.1:{actual_port}")
             notify.notify("Termx is running", body, kind="ready", url=tunnel_url or urls[0])
         elif not managed:
-            print_banner(http_urls(actual_port, args.host), tunnel_url, None if state.identity.configured else args.passcode)
-        await serve_task
+            print_banner([*http_urls(actual_port, args.host), *(state.lan_identity.metadata(state.lan_port)["urls"] if getattr(state,"lan_identity",None) else [])], tunnel_url, None if state.identity.configured else args.passcode)
+        pending = [serve_task, *([lan_started[1], renewal_task] if lan_started else [])]
+        done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            await task
     except (asyncio.CancelledError, KeyboardInterrupt):
         server.should_exit = True
         if not serve_task.done():
@@ -317,6 +375,12 @@ async def _serve_owned(args: argparse.Namespace, instance) -> int:
                 pass
     finally:
         server.should_exit = True
+        if renewal_task:
+            renewal_task.cancel()
+            await asyncio.gather(renewal_task, return_exceptions=True)
+        if lan_started:
+            lan_started[0].should_exit = True
+            await lan_started[1]
         await shutdown_state(state)
         if not serve_task.done():
             serve_task.cancel()
@@ -355,6 +419,6 @@ def main() -> None:
             raise SystemExit(status)
     except KeyboardInterrupt:
         pass
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError, PermissionError) as exc:
         print(str(exc),file=sys.stderr,flush=True)
         raise SystemExit(73) from None

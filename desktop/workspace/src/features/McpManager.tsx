@@ -1,13 +1,15 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
-import {json,request} from '../lib/api';
+import {json,request as baseRequest} from '../lib/api';
 import McpCredentialForm from './McpCredentialForm';
 import McpConnectionForm,{type McpDefinition,type McpProject} from './McpConnectionForm';
 type Catalog={tools?:{name:string;description?:string;inputSchema?:unknown}[]};
 type Connection={id:string;label:string;definition:McpDefinition;definition_digest:string;credential_configured:boolean;catalog?:Catalog;runtime:{connected?:boolean;catalog?:Catalog};auth_url_pending?:string;trust:string;allowed_projects:string[];transport:string};
-async function gql<T>(query:string,variables:Record<string,unknown>={}){const result=await request<{data:T;errors?:{message:string}[]}>('/graphql',json('POST',{query,variables}));if(result.errors?.length)throw new Error(result.errors.map(error=>error.message).join('\n'));return result.data}
+async function gql<T>(query:string,variables:Record<string,unknown>={}){const result=await baseRequest<{data:T;errors?:{message:string}[]}>('/graphql',json('POST',{query,variables}));if(result.errors?.length)throw new Error(result.errors.map(error=>error.message).join('\n'));return result.data}
 export default function McpManager({projectId,admin,search,version,onChanged}:{projectId:string|null;admin:boolean;search:string;version:number;onChanged:()=>void}){
+ const request=useSettingsRequest();
  const [connections,setConnections]=useState<Connection[]>([]),[projects,setProjects]=useState<McpProject[]>([]),[editing,setEditing]=useState<Connection|null>(null),[inspecting,setInspecting]=useState<Connection|null>(null),[catalog,setCatalog]=useState<Catalog|null>(null),[tool,setTool]=useState(''),[argumentsText,setArguments]=useState('{}'),[result,setResult]=useState<unknown>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('');const generation=useRef(0);
  useEffect(()=>{const ticket=++generation.current;setLoading(true);setError('');setEditing(null);setInspecting(null);setCatalog(null);setBusy(false);gql<{mcp_connections:Connection[];projects:McpProject[]}>('query($project:String){mcp_connections(project_id:$project){id label transport trust allowed_projects definition definition_digest credential_configured catalog runtime auth_url_pending} projects{id name}}',{project:admin?null:projectId}).then(value=>{if(ticket===generation.current){setConnections(value.mcp_connections);setProjects(value.projects)}}).catch(reason=>{if(ticket===generation.current)setError(String(reason instanceof Error?reason.message:reason))}).finally(()=>{if(ticket===generation.current)setLoading(false)});return()=>{generation.current++}},[projectId,admin,version]);
  async function mutate(fn:()=>Promise<unknown>,message:string,refresh=true){const ticket=generation.current;setBusy(true);setError('');setNotice('');try{await fn();if(ticket!==generation.current)return false;setNotice(message);if(refresh)onChanged();return true}catch(reason){if(ticket===generation.current)setError(reason instanceof Error?reason.message:String(reason));return false}finally{if(ticket===generation.current)setBusy(false)}}

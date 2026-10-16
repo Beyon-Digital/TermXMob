@@ -399,7 +399,9 @@ def mount_identity(app, state: AppState) -> None:
             csrf(request,credential(request))
         response.headers['Cache-Control'] = 'no-store'
         try:
-            return pairing.issue(actor,body.scopes,legacy_token=body.legacy_token,associate_legacy=body.associate_legacy)
+            result = pairing.issue(actor,body.scopes,legacy_token=body.legacy_token,associate_legacy=body.associate_legacy)
+            from termx.lan_tls import binding_for
+            return {**result, 'tls': binding_for(state)}
         except AuthenticationError as exc:
             raise HTTPException(403,str(exc)) from exc
 

@@ -383,6 +383,7 @@ pub async fn workspace_request(
             "/auth/me",
             "/auth/methods",
             "/auth/access",
+            "/auth/lan-tls",
             "/auth/sessions",
             "/auth/pair/issue",
             "/auth/pair/revoke",

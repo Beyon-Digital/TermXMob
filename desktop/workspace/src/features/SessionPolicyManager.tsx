@@ -1,12 +1,14 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
-import {ApiError,json,request} from '../lib/api';
+import {ApiError,json} from '../lib/api';
 import {useAccessLifecycle} from './useAccessLifecycle';
 
 type Policy={revision:number;idle_ttl_seconds:number;absolute_ttl_seconds:number;access_ttl_seconds:number};
 type Result=Policy&{expired_sessions:number};
 export default function SessionPolicyManager({onError}:{onError:(error:unknown)=>void}){
+ const request=useSettingsRequest();
  const [policy,setPolicy]=useState<Policy|null>(null),[draft,setDraft]=useState<Policy|null>(null),[version,setVersion]=useState(0),[busy,setBusy]=useState(false),[conflict,setConflict]=useState(false),[status,setStatus]=useState('');
  const dirty=useRef(false),lifecycle=useAccessLifecycle(()=>{setBusy(false);setStatus('')});
  const policyNow=useRef(policy);policyNow.current=policy;

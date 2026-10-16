@@ -44,9 +44,16 @@ class SessionGuard:
         if protected and managed and query_token and query_token.count(".") == 2:
             await self._reject(scope, receive, send, 401, "session credentials cannot be sent in a URL")
             return
-        if protected and scope["scheme"] not in {"https", "wss"} and not loopback(peer):
+        if (protected or path.startswith("/auth/")) and scope["scheme"] not in {"https", "wss"} and not loopback(peer):
             await self._reject(scope, receive, send, 403, "TLS is required for remote access")
             return
+        # Browser Origin is mandatory to validate whenever supplied, including
+        # bearer/query-authenticated sockets. Discovery and LAN membership grant nothing.
+        if scope['type'] == 'websocket' and headers.get('origin'):
+            scheme = 'https' if scope['scheme'] == 'wss' else 'http'
+            if not same_origin(headers['origin'], scheme, headers.get('host', '')):
+                await self._reject(scope, receive, send, 403, 'same-origin socket required')
+                return
         cookies = SimpleCookie()
         with suppress(Exception):
             cookies.load(headers.get("cookie", ""))

@@ -1,8 +1,8 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
-import {request} from '../lib/api';
 
 type Row=Record<string,any>;
 const send=(value:unknown,method='POST'):RequestInit=>({method,headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
@@ -19,6 +19,7 @@ export function matchesExtensionMetadata(row:Row,search:string){
  return terms.every(term=>value.includes(term));
 }
 export default function ExtensionManager({data,projectId,onChanged,search=''}:{data:Row;projectId:string|null;onChanged:()=>void;search?:string}){
+ const request=useSettingsRequest();
  const [sources,setSources]=useState<Row>({sources:[]}),[compat,setCompat]=useState<Row[]>([]),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const [scope,setScope]=useState(projectId?'project':'user'),[name,setName]=useState(''),[markdown,setMarkdown]=useState(''),[digest,setDigest]=useState<string|null>(null),[loaded,setLoaded]=useState(false),[versions,setVersions]=useState<Row[]>([]),[conflict,setConflict]=useState<Row|null>(null);
  const [preview,setPreview]=useState<Row|null>(null),[packages,setPackages]=useState<Row[]>([]),[registryId,setRegistryId]=useState(''),[registryName,setRegistryName]=useState(''),[kind,setKind]=useState('public_https'),[location,setLocation]=useState(''),[credential,setCredential]=useState(''),[rotating,setRotating]=useState<Row|null>(null),[rotatingCredential,setRotatingCredential]=useState('');

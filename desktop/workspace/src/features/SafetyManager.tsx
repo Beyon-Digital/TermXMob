@@ -1,7 +1,7 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useCallback,useEffect,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
-import {request} from '../lib/api';
 import './browser.css';
 import {GeneralPolicyManager} from './GeneralPolicyManager';
 type Config={provider_id:string;model:string;version:string;evaluation_id:string};
@@ -12,6 +12,7 @@ type Review={id:string;status:string;decision:string;reason:string;target:string
 type Rule={id:string;revision?:number;decision:string;expires_at:number;scope:{project_id:string;tool_id:string;target:string;intended_effect:string;run_id:string;[key:string]:unknown}};
 const post=(body:unknown):RequestInit=>({method:'POST',body:JSON.stringify(body)});
 export function SafetyManager(){
+ const request=useSettingsRequest();
  const [state,setState]=useState<{configuration:Config|null;evaluations:Evaluation[];active:boolean}|null>(null),[providers,setProviders]=useState<Provider[]>([]),[reviews,setReviews]=useState<Review[]>([]),[rules,setRules]=useState<Rule[]>([]);
  const [providerId,setProviderId]=useState(''),[version,setVersion]=useState(''),[configure,setConfigure]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[admin,setAdmin]=useState(false);
  const [includePricing,setIncludePricing]=useState(false),[pricing,setPricing]=useState<Pricing>({currency:'',input_per_million:'',cached_input_per_million:'',output_per_million:'',source:'',effective_date:'',version:''});
