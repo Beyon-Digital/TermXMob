@@ -52,8 +52,9 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
   useEffect(()=>{setEditingMemory(null);setEditingPreset(null)},[section,projectId]);
   const admin = (me.principal?.scopes || []).includes('host-admin');
   useEffect(() => { let cancelled = false; request<Row>('/auth/me').then(value => { if (!cancelled) setMe(value) }).catch(() => {}); return () => { cancelled = true } }, []);
+  useEffect(()=>{setData({});setDraft({});setPreview(null);setSelected('')},[section,projectId,admin]);
   useEffect(() => {
-    let cancelled = false; setLoading(true); setError(''); setDraft({}); setPreview(null); setSelected('');
+    let cancelled = false; setLoading(true); setError('');
     async function load(): Promise<Row> {
       if (section === 'models') return gql('{ engines { id label installed version auth_state error capabilities } agent_providers { id name kind model base_url secret_configured capabilities } acp_registry }');
       if (section === 'agents') return gql('{ engines { id label installed } custom_agents { id name description instructions engine model enabled tools tools_mode toolsets deny_tools limits approval_mode sandbox_profile file_revision mcp_connections } }');
@@ -96,7 +97,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
     <main className="manager-main"><header className="manager-heading"><div><h1>{groups.find(([id]) => id === section)?.[1] || 'Workspace settings'}</h1><p>{projectId ? 'Settings for this project and your account.' : 'Manage capabilities, permissions and continuity.'}</p></div><Button variant="secondary" disabled={loading || busy} onClick={() => {if(window.dispatchEvent(new Event('termx-settings-leave',{cancelable:true})))setVersion(v => v + 1)}}>Refresh</Button></header>
       <Input className="manager-search" placeholder="Search this manager…" aria-label="Search settings" value={search} onChange={e => setSearch(e.target.value)} />
       {error && <div role="alert" className="manager-error">{error}<button onClick={() => setVersion(v => v + 1)}>Retry</button></div>}{notice && <div role="status" className="manager-notice">{notice}</div>}
-      {loading && !['extensions','automations'].includes(section) ? <Empty>Loading current settings…</Empty> : <>
+      {loading && !Object.keys(data).length && !['extensions','automations'].includes(section) ? <Empty>Loading current settings…</Empty> : <>
       {section === 'cloud' && <CloudAccounts search={search}/>}
       {section === 'models' && <><h2>Installed engines</h2>{(data.engines || []).filter(matches).map((engine: Row) => <Item key={engine.id} title={engine.label} meta={`${engine.installed ? 'Installed' : 'Needs installation'} · ${engine.auth_state || 'Unknown account status'}${engine.version ? ` · ${engine.version}` : ''}`}>
         {action('Inspect capabilities', () => setPreview(engine), true)}{action('Refresh models', () => mutate(async () => { const value = await gql('query($id:String!){engine_models(engine_id:$id)}', { id: engine.id }); setPreview(value); return value }, 'Model catalog refreshed', false), true)}
