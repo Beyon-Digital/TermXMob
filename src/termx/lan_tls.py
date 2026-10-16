@@ -64,7 +64,7 @@ def advertised_names(bind: str, extra: list[str]) -> list[str]:
         if candidate.version != address.version or (not wildcard and candidate != address):
             raise ValueError('Additional IP SANs must be reachable on the selected listener interface and address family')
         names.append(value)
-    return sorted(set(names))
+    return sorted({supported_name(name) for name in names})
 
 
 
@@ -117,6 +117,9 @@ class LanIdentity:
 
     def renew(self, names: list[str], *, now: datetime | None = None) -> bool:
         now = now or datetime.now(UTC)
+        names = sorted({supported_name(name) for name in names})
+        if self.ca.not_valid_before_utc > now or self.certificate.not_valid_before_utc > now:
+            raise RuntimeError('LAN TLS certificate is not valid yet. Check the host clock; identity was not replaced.')
         if self.ca.not_valid_after_utc <= now + timedelta(days=31):
             raise RuntimeError('LAN TLS identity expires soon. Stop the host and deliberately rotate it, then trust and pair each client again.')
         if names == self.names and self.certificate.not_valid_after_utc > now + timedelta(days=7):

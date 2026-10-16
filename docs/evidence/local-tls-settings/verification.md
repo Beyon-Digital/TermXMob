@@ -26,3 +26,13 @@ The standard Playwright browser download was forbidden by the environment's CDN 
 ## Remaining platform gates
 
 No Swift/Kotlin compiler, Xcode/iOS SDK, Android SDK/Gradle, mobile devices, macOS desktop or Windows desktop is available here. Native compilation and installed-device TLS/camera/secure-store/file/LSP/PTY/computer/background/touch/keyboard/safe-area execution are unverified. Native drafts must remain unreleased until positive and adversarial TLS tests pass on those platforms. JS mocks, autolinking and browser screenshots do not qualify them. No CI reruns or release/deploy jobs were requested.
+
+## Review follow-up (2026-10-16)
+
+- Initial companion CI passed type checking, all 84 tests and web export. Initial host workspace CI passed all 325 tests, production build and rendered accessibility/updater checks; native media-policy Rust compilation passed on Linux, macOS and Windows.
+- Host full Python CI found an obsolete native smoke selector on all platforms. The smoke now opens Home then uses the retained Home view tabs, and opens canonical General Settings before signing out. Windows owner-DACL proof passed. The single macOS automation timeout passed locally (25 native-fixture/autonomy tests); its next CI execution remains the arbiter.
+- The independent TLS review hardened SAN validation during renewal, rejects future-dated persisted identities without replacing them, handles malformed Origins as denials, and preserves the admitted WebSocket session binding across GraphQL initialization. Targeted security/native-fixture regressions: **59 passed**, 6.53 s. Native fixture/autonomy checks: **25 passed**, 2.96 s.
+- Settings now follows `visualViewport` resize/scroll for mobile software keyboards; its eight focused tests and TypeScript/Vite production build passed. The bounded real-host responsive proof passed again after this change with zero page errors and zero tested axe violations. Physical-device keyboard/touch behavior remains unqualified. CI now runs this responsive proof and retains its artifacts.
+- Companion native policy source was compiled with real Apple Security APIs on macOS CI: valid chain accepted; wrong CA/SAN/hostname, expired/future leaf/anchor and fingerprint mismatch rejected. The actual Expo Swift/Kotlin compilation jobs were added separately; initial setup failures (obsolete SDK tools package and missing pinned Skia binaries) were corrected. Consult the PR's latest checks for their final result. Companion review regression: 13 transport tests passed; TypeScript passed.
+
+These records distinguish local/browser and native-framework proof from installed-app acceptance. No installed iOS/Android app, native GUI or OS browser trust journey is claimed.

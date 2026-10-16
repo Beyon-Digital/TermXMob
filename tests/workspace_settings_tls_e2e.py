@@ -4,7 +4,7 @@ python tests/workspace_settings_tls_e2e.py OUTPUT_DIR
 Uses an installed Chromium; never bypasses TLS, installs a CA, or contacts AI.
 """
 from __future__ import annotations
-import json, os, socket, sys, tempfile, threading
+import json, os, shutil, socket, sys, tempfile, threading
 from pathlib import Path
 from time import monotonic,sleep
 import uvicorn
@@ -34,7 +34,7 @@ def run(destination):
             sleep(.05)
         try:
             with sync_playwright() as playwright:
-                browser=playwright.chromium.launch(executable_path=os.environ.get('TERMX_TEST_CHROMIUM','/usr/bin/chromium'),headless=True)
+                browser=playwright.chromium.launch(executable_path=os.environ.get('TERMX_TEST_CHROMIUM') or shutil.which('chromium'),headless=True)
                 page=browser.new_page(viewport={'width':1440,'height':1000},reduced_motion='reduce')
                 page.on('pageerror',lambda error:report['errors'].append(str(error)))
                 page.goto(f'http://127.0.0.1:{port}/')

@@ -112,10 +112,11 @@ class SessionGuard:
         revoked = False
         disconnected = False
         initial_version = initial_identity.principal.policy_version if initial_identity else None
+        initial_session = (initial_identity.session_id, initial_identity.principal.id) if initial_identity else None
         validation_lock = asyncio.Lock()
 
         async def invalid():
-            nonlocal initial_version, initial_scopes
+            nonlocal initial_version, initial_scopes, initial_session
             # Each frame still resolves current durable session/principal state.
             # Serialize snapshots without holding the event loop during SQLite IO.
             async with validation_lock:
@@ -123,6 +124,11 @@ class SessionGuard:
                 if token and initial_scopes is None:
                     initial_scopes = scopes
                 if current:
+                    binding = (current.session_id, current.principal.id)
+                    if initial_session is None:
+                        initial_session = binding
+                    elif binding != initial_session:
+                        return True
                     if initial_version is None:
                         initial_version = current.principal.policy_version
                     elif initial_version != current.principal.policy_version:

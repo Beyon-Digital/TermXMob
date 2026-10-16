@@ -6,7 +6,7 @@ The inventory covers the shared TermXMob desktop/browser workspace, including co
 
 - [x] Before: repeated operations/access categories in the main drawer and a second settings rail. After: Home/Overview, searchable folder-grouped conversations, and one sticky Settings entry.
 - [x] One category registry supplies the canonical settings rail, compact horizontal chips, legacy route aliases and command destinations. Existing `/manage/*` links open the same content inside the dialog/sheet. Projects/Runs remain Home views; Media remains a workspace surface.
-- [x] Settings uses the existing Radix modal focus scope: trap, Escape, keyboard navigation, return focus and a navigation-button fallback when resizing unmounts the opener. Mobile uses dynamic viewport height, safe-area padding and contained scrolling.
+- [x] Settings uses the existing Radix modal focus scope: trap, Escape, keyboard navigation, return focus and a navigation-button fallback when resizing unmounts the opener. Mobile follows visual viewport resize/scroll to keep fields visible above the software keyboard, with safe-area padding and contained scrolling.
 - [x] A scope selector keeps account/host settings and project-specific hooks, memory, tools and runners reachable. Scope/category changes, history navigation, refresh/cancel and close protect drafts.
 - [x] The shared form shell validates native field constraints before older div-form save handlers run. Destructive settings actions require review before dispatching their original handler. No backend permission or irreversible cloud action is executed merely by opening settings.
 - [x] Successful writes clean only the unchanged form that initiated them; failed requests and edits made during a pending save remain protected. Unsaved values, including secrets, are not serialized by this shell.
@@ -44,7 +44,7 @@ See `desktop/workspace/third-party/AI_ELEMENTS_PROVENANCE.md` for the actual cop
 
 ## Verification and evidence
 
-- Full final workspace suite: 325 tests passed across 77 files. The production TypeScript/Vite build passed. Exact bounded commands and platform limits are recorded in the verification report.
+- Initial full workspace suite: 325 tests passed across 77 files. The production TypeScript/Vite build passed. Exact bounded commands and platform limits are recorded in the verification report.
 - Real-host rendered proof: `tests/workspace_settings_tls_e2e.py`; widths 1440, 768 and 390, both light and dark; focus trap, chip overflow, manager URLs, all 14 categories, isolated TLS configuration save, memory edit/save, discarded-navigation refusal, Escape and destructive cancellation.
 - Axe 4.10.3: zero violations in the tested 1440px and 390px settings states for WCAG 2 A/AA and 2.1 AA tags. This is a bounded scan, not a whole-product accessibility certification.
 - Screenshots/report: `docs/evidence/local-tls-settings/`. They use a temporary host account and state. No real credentials or user conversations are included.

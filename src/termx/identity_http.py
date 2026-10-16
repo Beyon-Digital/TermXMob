@@ -33,7 +33,10 @@ def loopback(peer: str) -> bool:
 def same_origin(origin: str | None, scheme: str, host: str) -> bool:
     if not origin:
         return False
-    value = urlsplit(origin)
+    try:
+        value = urlsplit(origin)
+    except ValueError:
+        return False
     return value.scheme == scheme and value.netloc == host and not value.path and not value.query and not value.fragment
 
 

@@ -160,3 +160,20 @@ def test_address_advertisement_matches_listener_family_and_interface(monkeypatch
     assert advertised_names('192.168.1.4',[])==['192.168.1.4']
     with pytest.raises(ValueError,match='address family'):advertised_names('0.0.0.0',['fd00::1'])
     with pytest.raises(ValueError,match='interface'):advertised_names('192.168.1.4',['192.168.1.5'])
+
+
+def test_renewal_never_broadens_supported_names_or_replaces_a_future_identity(tmp_path,monkeypatch):
+    now=datetime.now(timezone.utc)
+    identity=load_identity(tmp_path,['127.0.0.1'],now=now)
+    original=identity.bundle.read_bytes()
+    with pytest.raises(ValueError):identity.renew(['127.0.0.1','8.8.8.8'])
+    with pytest.raises(RuntimeError,match='host clock'):identity.renew(['127.0.0.1'],now=now-timedelta(days=1))
+    assert identity.bundle.read_bytes()==original
+    monkeypatch.setattr('termx.lan_tls.lan_ipv4_addresses',lambda:['8.8.8.8'])
+    with pytest.raises(ValueError):advertised_names('0.0.0.0',[])
+
+
+@pytest.mark.parametrize('origin',['https://[','null','https://user@localhost','https://localhost/path'])
+def test_malformed_or_non_origin_values_are_rejected_without_parser_failure(origin):
+    from termx.identity_http import same_origin
+    assert same_origin(origin,'https','localhost') is False

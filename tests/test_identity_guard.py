@@ -100,3 +100,26 @@ def test_disconnect_suppresses_only_expected_child_cancellation(disconnect, fail
                 await result
 
     asyncio.run(run())
+
+
+def test_graphql_init_cannot_replace_the_session_bound_at_socket_admission():
+    """A valid JWT for another device is not a replacement socket proof."""
+    import json
+    state=AppState(passcode=None)
+    state.identity.setup_owner('socket-binding-owner','isolated-binding-password-123')
+    async def run():
+        first=await state.identity.login('local-password',{'username':'socket-binding-owner','password':'isolated-binding-password-123'},peer='local')
+        other=await state.identity.login('local-password',{'username':'socket-binding-owner','password':'isolated-binding-password-123'},peer='local')
+        incoming,outgoing=asyncio.Queue(),asyncio.Queue()
+        async def app(scope,receive,send):
+            await send({'type':'websocket.accept'})
+            message=await receive()
+            if message['type']!='websocket.disconnect':await send({'type':'websocket.send','text':'unexpected admission'})
+        scope={'type':'websocket','path':'/graphql','scheme':'wss','client':('127.0.0.1',1),'query_string':b'',
+               'headers':[(b'authorization',('Bearer '+first.access_token).encode())]}
+        guard=asyncio.create_task(SessionGuard(app,state)(scope,incoming.get,outgoing.put))
+        assert (await asyncio.wait_for(outgoing.get(),3))['type']=='websocket.accept'
+        await incoming.put({'type':'websocket.receive','text':json.dumps({'type':'connection_init','payload':{'headers':{'Authorization':'Bearer '+other.access_token}}})})
+        assert (await asyncio.wait_for(outgoing.get(),3))=={'type':'websocket.close','code':4401}
+        await asyncio.wait_for(guard,3)
+    asyncio.run(run())
