@@ -12,7 +12,7 @@ describe('managed mobile pairing',()=>{
  it('issues explicit account-scoped permissions without automatically granting administration',async()=>{
   render(<ManagedPairingForm actor={actor}/>);expect(screen.getByLabelText('Host administration')).not.toBeChecked();fireEvent.click(screen.getByRole('button',{name:'Create one-use pairing ticket'}));
   await screen.findByLabelText('One-use pairing ticket');expect(mocked).toHaveBeenCalledWith('/auth/pair/issue',expect.objectContaining({method:'POST',body:JSON.stringify({scopes:['machine-view','files-read','agent-view']})}));
-  expect(screen.getByLabelText('Host ID')).toHaveValue('fixture-host');expect(screen.getByText(/This session: fixture-session/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Host identity')).toHaveValue('fixture-host');expect(screen.queryByText(/This session: fixture-session/)).not.toBeInTheDocument();
  });
  it('requires separate legacy consent and clears supplied evidence after issue',async()=>{
   render(<ManagedPairingForm actor={actor}/>);fireEvent.click(screen.getByLabelText('Associate an existing legacy device with this account'));fireEvent.change(screen.getByLabelText('Legacy device token'),{target:{value:'legacy-fixture-only'}});expect(screen.getByRole('button',{name:'Create one-use pairing ticket'})).toBeDisabled();fireEvent.click(screen.getByLabelText(/I explicitly associate/));fireEvent.click(screen.getByRole('button',{name:'Create one-use pairing ticket'}));

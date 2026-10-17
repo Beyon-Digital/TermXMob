@@ -1,15 +1,17 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useState} from 'react';
 import {Server, Cloud, Terminal, CircleCheck, Settings2} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
-import {json,request,type Project} from '../lib/api';
+import {json,type Project} from '../lib/api';
 import './machine-runners.css';
 
 export type MachineRunner={id:string;project:string;status:string;configuration:{kind?:string;name?:string;provider?:string;host?:string;user?:string;port?:number;root?:string;region?:string;instance_id?:string;last_error?:string|null}};
 const defaults={name:'',provider:'ssh',host:'',user:'ubuntu',port:22,root:'/home/ubuntu/workspace',identity_file:'',known_hosts_file:'',python_bootstrap:'python3.14',region:'',profile:'',instance_id:'',trust_machine:false};
 
 export default function MachineRunners({rows,projects,projectId,refresh}:{rows:MachineRunner[];projects:Project[];projectId:string|null;refresh:()=>Promise<void>}){
+ const request=useSettingsRequest();
  const [form,setForm]=useState(defaults),[project,setProject]=useState(''),[open,setOpen]=useState(false),[busy,setBusy]=useState(''),[error,setError]=useState(''),[review,setReview]=useState<{id:string;action:string}|null>(null),[cloudStatus,setCloudStatus]=useState<Record<string,string>>({});
  const targetProject=projectId||project;
  const change=(key:string,value:string|number|boolean)=>setForm(old=>({...old,[key]:value}));

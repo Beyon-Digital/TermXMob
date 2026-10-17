@@ -428,8 +428,9 @@ def main():
             username,password = 'native-fixture-owner','isolated-native-fixture-password-123'
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True
+            driver.click('//nav[@aria-label="Main navigation"]//button[normalize-space()="Home / Overview"]','xpath')
             for label, heading in [('Projects','Projects'),('Runs','Runs'),('Overview','Control plane')]:
-                driver.click('//nav[@aria-label="Control plane navigation"]//button[normalize-space()="'+label+'"]','xpath')
+                driver.click('//nav[@aria-label="Control plane views"]//button[normalize-space()="'+label+'"]','xpath')
                 wait(lambda:driver.script('return document.querySelector(".control-heading h1")?.textContent === arguments[0]',heading),'native control plane '+label)
                 assert_workspace(driver)
             report['steps']['native_control_plane_navigation'] = True
@@ -529,6 +530,9 @@ def main():
             driver.call('POST','/refresh',{})
             password_signin(driver,username,password)
             report['steps']['live_native_session_revocation'] = True
+            driver.click('//div[contains(@class,"sidebar-foot")]//button[normalize-space()="Settings"]','xpath')
+            wait(lambda:driver.element('.settings-surface'),'canonical native settings dialog')
+            driver.click('//nav[@aria-label="Settings categories"]//button[normalize-space()="General"]','xpath')
             driver.click('[aria-label="Sign out"]')
             wait(lambda:driver.element('.sign-in'),'native logout')
             driver.call('DELETE','/cookie')

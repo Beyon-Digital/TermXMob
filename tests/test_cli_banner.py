@@ -12,8 +12,9 @@ def test_connection_banner_keeps_host_ready_for_redirected_output(monkeypatch, e
     monkeypatch.setattr('sys.stdout', stream)
     print_banner(['http://127.0.0.1:8787'], None, 'owned-banner-fixture')
     output = data.getvalue().decode(encoding)
-    assert 'http://127.0.0.1:8787?k=owned-banner-fixture' in output
-    assert 'passcode owned-banner-fixture' in output
+    assert 'http://127.0.0.1:8787' in output
+    assert 'owned-banner-fixture' not in output
+    assert 'passcode configured (redacted' in output
     if encoding == 'cp1252':
         assert 'Open the connection link below.' in output
         assert '\\u258' not in output

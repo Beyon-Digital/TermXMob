@@ -1,0 +1,134 @@
+{
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "bounds": {
+        "x": 160,
+        "y": 90,
+        "width": 1120,
+        "height": 820
+      },
+      "category_layout": {
+        "scroll": 207,
+        "width": 207,
+        "display": "block"
+      },
+      "page_overflow": false,
+      "focus_trapped": true
+    },
+    {
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "bounds": {
+        "x": 160,
+        "y": 90,
+        "width": 1120,
+        "height": 820
+      },
+      "category_layout": {
+        "scroll": 207,
+        "width": 207,
+        "display": "block"
+      },
+      "page_overflow": false,
+      "focus_trapped": true
+    },
+    {
+      "width": 768,
+      "height": 900,
+      "theme": "dark",
+      "bounds": {
+        "x": 32,
+        "y": 40,
+        "width": 704,
+        "height": 820
+      },
+      "category_layout": {
+        "scroll": 207,
+        "width": 207,
+        "display": "block"
+      },
+      "page_overflow": false,
+      "focus_trapped": true
+    },
+    {
+      "width": 768,
+      "height": 900,
+      "theme": "light",
+      "bounds": {
+        "x": 32,
+        "y": 40,
+        "width": 704,
+        "height": 820
+      },
+      "category_layout": {
+        "scroll": 207,
+        "width": 207,
+        "display": "block"
+      },
+      "page_overflow": false,
+      "focus_trapped": true
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "bounds": {
+        "x": 0,
+        "y": 16,
+        "width": 390,
+        "height": 828
+      },
+      "category_layout": {
+        "scroll": 1681,
+        "width": 388,
+        "display": "flex"
+      },
+      "page_overflow": false,
+      "focus_trapped": true
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "bounds": {
+        "x": 0,
+        "y": 16,
+        "width": 390,
+        "height": 828
+      },
+      "category_layout": {
+        "scroll": 1681,
+        "width": 388,
+        "display": "flex"
+      },
+      "page_overflow": false,
+      "focus_trapped": true
+    }
+  ],
+  "checks": [
+    "TLS configuration saved to isolated profile; no listener/trust installed",
+    "successful skill validation preserves unsaved draft and guarded navigation",
+    "one sticky Settings entry; no drawer category duplication",
+    "all 14 categories reachable",
+    "memory edit/save and draft guards",
+    "destructive cancellation leaves record intact",
+    "Escape close and focus return",
+    "focus trap at all tested widths",
+    "shareable manager routes"
+  ],
+  "errors": [],
+  "axe": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    }
+  ]
+}

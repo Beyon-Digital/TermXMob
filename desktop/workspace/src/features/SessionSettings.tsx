@@ -75,5 +75,5 @@ export default function SessionSettings({open,onOpenChange,session,running,turns
    <VoiceControls key={session.id} sessionId={session.id} projectId={session.project_id||null} ownerId={ownerId} visible={visible&&open} reply={reply} onTranscript={onTranscript}/>
   </section>
  </div>;
- return <Dialog open onOpenChange={onOpenChange}><DialogContent className={compact?'settings-sheet':'settings-dialog'}><DialogTitle>Session settings</DialogTitle><DialogDescription>Engine, model, tools and budget for this conversation. Applies to the next turn.</DialogDescription>{compact?<div className="sheet-scroll">{body}</div>:body}</DialogContent></Dialog>;
+ return <Dialog open onOpenChange={value=>{if(!value&&BUDGET_FIELDS.some(field=>runBudget[field.key]!==({...DEFAULT_RUN_BUDGET,...session.run_limits})[field.key])&&!window.confirm('Discard unsaved run budget changes?'))return;onOpenChange(value)}}><DialogContent className={compact?'settings-sheet':'settings-dialog'}><DialogTitle>Session settings</DialogTitle><DialogDescription>Engine, model, tools and budget for this conversation. Applies to the next turn.</DialogDescription>{compact?<div className="sheet-scroll">{body}</div>:body}</DialogContent></Dialog>;
 }

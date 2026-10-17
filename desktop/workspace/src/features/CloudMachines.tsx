@@ -1,9 +1,10 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useEffect,useRef,useState} from 'react';
 import {Cloud,HardDrive,Network,Server,Trash2} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
-import {json,request,type Project} from '../lib/api';
+import {json,type Project} from '../lib/api';
 import {useObservationActive} from '../lib/use-observation-active';
 import type {CloudAccount} from './CloudAccounts';
 import './cloud-machines.css';
@@ -16,6 +17,7 @@ type Deployment={id:string;provider:string;plan:Plan;status:string;error?:string
 type Review={id:string;expires:number;plan:Plan;billing:string;cleanup_resources:string[];identity:{account:string}};
 const initial:Plan={account_id:'',project_id:'',name:'',region:'',zone:'',size:'',image:'',network_mode:'managed',network:'',subnet:'',network_cidr:'10.42.0.0/16',subnet_cidr:'10.42.1.0/24',ssh_cidr:'',public_ip:true,allow_sudo:false,boot:{size_gb:32,type:''},volumes:[],cleanup:'lifetime',lifetime_hours:1,accept_cost:false,trust_machine:false};
 export default function CloudMachines({projectId,projects,onChange}:{projectId:string|null;projects:Project[];onChange:()=>Promise<void>}){
+ const request=useSettingsRequest();
  const [accounts,setAccounts]=useState<CloudAccount[]>([]),[rows,setRows]=useState<Deployment[]>([]),[open,setOpen]=useState(false),[plan,setPlan]=useState<Plan>({...initial,project_id:projectId||''}),[catalog,setCatalog]=useState<Catalog>({}),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[review,setReview]=useState<Review|null>(null),[cleanup,setCleanup]=useState<string|null>(null);
  const active=useObservationActive(),requestId=useRef(crypto.randomUUID()),generation=useRef(0);
  const change=<K extends keyof Plan>(key:K,value:Plan[K])=>{setPlan(old=>({...old,[key]:value}));setReview(null);requestId.current=crypto.randomUUID()};

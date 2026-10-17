@@ -1,8 +1,9 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useEffect,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
-import {json,request} from '../lib/api';
+import {json} from '../lib/api';
 import {useAccessLifecycle} from './useAccessLifecycle';
 type Member={principal_id:string;source:string;expires:number|null};
 type Group={id:string;label:string;organization_id:string|null;role:string;trusted_execution:boolean;revision:number;memberships:Member[];mappings:{issuer:string;claim_value:string}[];projects:{project_id:string;scopes:string[]}[]};
@@ -10,6 +11,7 @@ type Inventory={groups:Group[];organizations:{id:string;label:string}[];issuers:
 type Principal={id:string;display_name:string;enabled:number};
 const fresh={label:'',organization_id:'',role:'viewer',trusted_execution:false};
 export default function IdentityGroupsManager({projects=[],onError}:{projects?:{id:string;name:string}[];onError:(error:unknown)=>void}){
+ const request=useSettingsRequest();
  const [inventory,setInventory]=useState<Inventory>({groups:[],organizations:[],issuers:[]}),[principals,setPrincipals]=useState<Principal[]>([]),[version,setVersion]=useState(0),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[form,setForm]=useState(fresh),[selected,setSelected]=useState<Group|null>(null),[orgName,setOrgName]=useState(''),[principal,setPrincipal]=useState(''),[days,setDays]=useState(7),[issuer,setIssuer]=useState(''),[claim,setClaim]=useState(''),[project,setProject]=useState(''),[scopes,setScopes]=useState('files-read,agent-view');
  const lifecycle=useAccessLifecycle(()=>{setBusy(false);setStatus('')});
  useEffect(()=>{if(!lifecycle.current())return;let cancelled=false;const current=lifecycle.capture();const controller=new AbortController();Promise.all([request<Inventory>('/auth/admin/groups',{signal:controller.signal}),request<Principal[]>('/auth/admin/principals',{signal:controller.signal})]).then(([groups,people])=>{if(!cancelled&&current()){setInventory(groups);setPrincipals(people)}}).catch(error=>{if(!cancelled&&current())onError(error)});return()=>{cancelled=true;controller.abort()}},[version,onError,lifecycle.refresh]);

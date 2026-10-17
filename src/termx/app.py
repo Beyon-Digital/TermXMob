@@ -372,6 +372,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     app.add_middleware(SessionGuard, state=state)
     mount_identity(app, state)
+    from termx.lan_tls_http import mount_lan_tls
+    mount_lan_tls(app, state)
     from termx.authorization_http import mount_authorization
     from termx.development.http import mount_development
     mount_authorization(app, state)
@@ -449,7 +451,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
 
     def _connect_target() -> tuple[str, str | None]:
         tunnel = state.tunnels.status_public()
-        urls = http_urls(state.port)
+        from termx.lan_tls import connection_urls
+        urls = connection_urls(state)
         # Phones cannot reach loopback, so the QR/pairing link must prefer the LAN
         # address when one exists.
         remote = next(

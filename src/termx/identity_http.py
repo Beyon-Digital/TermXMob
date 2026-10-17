@@ -33,7 +33,10 @@ def loopback(peer: str) -> bool:
 def same_origin(origin: str | None, scheme: str, host: str) -> bool:
     if not origin:
         return False
-    value = urlsplit(origin)
+    try:
+        value = urlsplit(origin)
+    except ValueError:
+        return False
     return value.scheme == scheme and value.netloc == host and not value.path and not value.query and not value.fragment
 
 
@@ -399,7 +402,9 @@ def mount_identity(app, state: AppState) -> None:
             csrf(request,credential(request))
         response.headers['Cache-Control'] = 'no-store'
         try:
-            return pairing.issue(actor,body.scopes,legacy_token=body.legacy_token,associate_legacy=body.associate_legacy)
+            result = pairing.issue(actor,body.scopes,legacy_token=body.legacy_token,associate_legacy=body.associate_legacy)
+            from termx.lan_tls import binding_for
+            return {**result, 'tls': binding_for(state)}
         except AuthenticationError as exc:
             raise HTTPException(403,str(exc)) from exc
 

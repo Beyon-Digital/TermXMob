@@ -1,7 +1,7 @@
+import {useSettingsRequest} from './SettingsSurface';
 import { useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { request } from '../lib/api';
 
 export interface MemoryRecord {
   id: string; revision: number; content: string; provenance: string;
@@ -12,6 +12,7 @@ export interface MemoryRecord {
 export function MemoryEditor({ memory, onSaved, onCancel }: {
   memory: MemoryRecord; onSaved: () => void; onCancel: () => void;
 }) {
+ const request=useSettingsRequest();
   const [original] = useState(memory);
   const [content, setContent] = useState(memory.content);
   const [provenance, setProvenance] = useState(memory.provenance);

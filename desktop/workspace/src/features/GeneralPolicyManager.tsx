@@ -1,10 +1,11 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
-import {request} from '../lib/api';
 
 export type CodingPolicy={id:string;version:number;effect:'allow'|'deny';scope_type:string;scope_id:string;display:string;tool:string;expires_at:number|null;revoked:boolean;editable:boolean;policy_source:string;binding:Record<string,unknown>;[key:string]:unknown};
 export function GeneralPolicyManager(){
+ const request=useSettingsRequest();
  const [rows,setRows]=useState<CodingPolicy[]|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[query,setQuery]=useState('');const epoch=useRef(0),activeWrite=useRef<symbol|null>(null);
  const load=useCallback(async()=>{const generation=++epoch.current;try{const result=await request<{rules:CodingPolicy[]}>('/api/workspace/coding-policies');if(generation===epoch.current){setRows(result.rules);setError('')}}catch(error){if(generation===epoch.current)setError(error instanceof Error?error.message:'Policies unavailable.')}},[]);
  useEffect(()=>{void load();const invalidate=()=>{epoch.current++;activeWrite.current=null;setRows(null);setBusy(false);setError('Workspace observation paused. Unlock and refresh to inspect current policies.')};const resume=()=>{void load()};window.addEventListener('termx-locked',invalidate);window.addEventListener('termx-session-unlocked',resume);return()=>{epoch.current++;window.removeEventListener('termx-locked',invalidate);window.removeEventListener('termx-session-unlocked',resume)}},[load]);

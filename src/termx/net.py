@@ -24,14 +24,13 @@ def lan_ipv4_addresses() -> list[str]:
 
 
 def http_urls(port: int, host: str = "0.0.0.0") -> list[str]:
-    urls = [f"http://127.0.0.1:{port}"]
-    if host not in {"0.0.0.0", "::", "127.0.0.1"}:
-        urls.append(f"http://{host}:{port}")
-    for ip in lan_ipv4_addresses():
-        url = f"http://{ip}:{port}"
-        if url not in urls:
-            urls.append(url)
-    return urls
+    # Only advertise addresses the plaintext broker actually serves. LAN access
+    # is advertised by the independent TLS listener, never guessed as HTTP.
+    address = f'[{host}]' if ':' in host else host
+    if host in {'0.0.0.0', '::'}:
+        return [f'http://127.0.0.1:{port}']
+    return [f'http://{address}:{port}']
+
 
 
 def qr_ascii(data: str) -> str:

@@ -1,7 +1,8 @@
+import {useSettingsRequest} from './SettingsSurface';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
-import {json,request,type Session} from '../lib/api';
+import {json,type Session} from '../lib/api';
 import {useObservationActive} from '../lib/use-observation-active';
 import './schedules.css';
 import ScheduleBrowserPermission,{type BrowserPermissionDraft,type ScheduledBrowserPermission} from './ScheduleBrowserPermission';
@@ -15,6 +16,7 @@ const date=(n?:number|null)=>n?new Date(n*1000).toLocaleString():'—';
 const describe=(s:Spec)=>s.kind==='cron'?`${s.expression} · ${s.timezone}`:s.kind==='daily'?`Daily at ${s.time} · ${s.timezone}`:s.kind==='once'?`Once · ${date(s.at)}`:`Every ${(s.seconds||0)/60} minutes`;
 
 export default function ScheduleManager({projectId,sessionId,search='',version=0}:{projectId:string|null;sessionId:string|null;search?:string;version?:number}){
+ const request=useSettingsRequest();
  const [data,setData]=useState<Catalog>(empty),[sessions,setSessions]=useState<Session[]>([]),[error,setError]=useState(''),[notice,setNotice]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
  const [editing,setEditing]=useState<Schedule|'new'|null>(null),[selected,setSelected]=useState(''),[conversation,setConversation]=useState(sessionId||'');
  const [taskKind,setTaskKind]=useState('agent'),[command,setCommand]=useState(''),[browserDraft,setBrowserDraft]=useState<BrowserPermissionDraft>({enabled:false,permission:null});
