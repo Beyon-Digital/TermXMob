@@ -1,27 +1,28 @@
 import {useEffect,useState} from 'react';
+import {Bot,Check,ChevronRight,Cpu,Mic,Settings2,Wrench} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Select} from '../components/ui/select';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import PresetPicker,{type AgentPreset} from './PresetPicker';
-import SessionModelControls from './SessionModelControls';
+import SessionAccess from './SessionAccess';
 import VoiceControls from './VoiceControls';
-import {request,type Session,type Engine,type Provider,type Project} from '../lib/api';
+import {request,type Session,type Engine,type Provider} from '../lib/api';
+import './chat-composer.css';
 
 type Runner={id:string;project:string;status:string;configuration:{image:string;name?:string;kind?:string;root?:string}};
 type RunnerAccount={provider_id:string;credential_ref:string;name:string;models:string[]};
 type Extension={id:string;description:string;version:string};
-type ReasoningOption={id:string;name?:string;category?:string;type?:string;currentValue?:string;options?:{value:string;name?:string}[]};
-type ReasoningConfig={config_options?:ReasoningOption[];model_configurations?:Record<string,{config_options?:ReasoningOption[]}>;stale?:boolean;refresh_error?:string|null};
 
-const BUDGET_FIELDS:{key:string;label:string;min:number;max:number;step:number;format:(value:number)=>string}[]=[
- {key:'max_steps',label:'Steps',min:16,max:1024,step:8,format:value=>value+' steps'},
- {key:'max_seconds',label:'Wall clock',min:300,max:86400,step:300,format:value=>value>=3600?Math.round(value/360)/10+' h':Math.round(value/60)+' min'},
- {key:'shell_timeout_s',label:'Shell timeout',min:10,max:1800,step:10,format:value=>value+' s'},
- {key:'max_parallel_subagents',label:'Parallel sub-agents',min:1,max:8,step:1,format:value=>String(value)},
- {key:'max_subagents_total',label:'Total sub-agents',min:1,max:32,step:1,format:value=>String(value)},
-];
-
-const DEFAULT_RUN_BUDGET={max_steps:256,max_seconds:14400,shell_timeout_s:120,max_parallel_subagents:3,max_subagents_total:8};
+// Keep Balanced aligned with termx.agent.limits.DEFAULT_LIMITS. A profile is
+// applied only when selected; opening settings never replaces existing limits.
+export const DEFAULT_RUN_BUDGET={max_steps:256,max_seconds:14400,shell_timeout_s:120,max_parallel_subagents:3,max_subagents_total:8};
+export const RUN_PROFILES=[
+ {id:'quick',name:'Quick',description:'Small, focused tasks.',limits:{max_steps:64,max_seconds:1800,shell_timeout_s:120,max_parallel_subagents:1,max_subagents_total:3}},
+ {id:'balanced',name:'Balanced',description:'Everyday work with room to delegate.',limits:DEFAULT_RUN_BUDGET},
+ {id:'extended',name:'Extended',description:'Larger tasks with more time and capacity.',limits:{max_steps:1024,max_seconds:28800,shell_timeout_s:180,max_parallel_subagents:4,max_subagents_total:16}},
+] as const;
+const sections=[{id:'agent',label:'Agent',icon:Bot},{id:'tools',label:'Tools',icon:Wrench},{id:'execution',label:'Runtime',icon:Cpu},{id:'voice',label:'Voice',icon:Mic}] as const;
+type Section=typeof sections[number]['id'];
 
 export type SessionSettingsProps={open:boolean;onOpenChange:(open:boolean)=>void;session:Session|null;running:boolean;turnsCount:number;ownerId?:string;visible?:boolean;
  runnerOptions:Runner[];runnerAccounts:RunnerAccount[];
@@ -30,50 +31,48 @@ export type SessionSettingsProps={open:boolean;onOpenChange:(open:boolean)=>void
  patch:(changes:Record<string,unknown>)=>Promise<void>;onError:(error:unknown)=>void;onRefresh:()=>void;
  reply:string;onTranscript:(text:string)=>void;onConversationSettings:()=>void};
 
-export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,providers,models,favorites,favoriteKey,onFavorite,onEngine,patch,onError,onRefresh,reply,onTranscript,onConversationSettings}:SessionSettingsProps){
- const [compact,setCompact]=useState(()=>typeof window!=='undefined'&&window.matchMedia?window.matchMedia('(max-width:850px)').matches:false);
- useEffect(()=>{if(typeof window==='undefined'||!window.matchMedia)return;const media=window.matchMedia('(max-width:850px)'),listener=(event:MediaQueryListEvent)=>setCompact(event.matches);setCompact(media.matches);media.addEventListener('change',listener);return()=>media.removeEventListener('change',listener)},[]);
+export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,onEngine,patch,onError,reply,onTranscript,onConversationSettings}:SessionSettingsProps){
+ const [section,setSection]=useState<Section>('agent'),[savingProfile,setSavingProfile]=useState<string|null>(null);
+ useEffect(()=>{setSection('agent');setSavingProfile(null)},[session?.id,open]);
  const [presets,setPresets]=useState<AgentPreset[]>([]),[presetsLoading,setPresetsLoading]=useState(false);
  useEffect(()=>{setPresets([]);if(!open||!session||!visible)return;setPresetsLoading(true);let cancelled=false;const query=new URLSearchParams({engine:session.engine});if(session.project_id)query.set('project_id',session.project_id);if(session.runner_id)query.set('runner_id',session.runner_id);request<{presets:AgentPreset[]}>('/api/workspace/presets?'+query).then(value=>{if(!cancelled)setPresets(value.presets||[])}).catch(error=>{if(!cancelled)onError(error)}).finally(()=>{if(!cancelled)setPresetsLoading(false)});return()=>{cancelled=true}},[open,session?.id,session?.engine,session?.runner_id,session?.custom_agent_revision,visible]);
- const [extensions,setExtensions]=useState<Extension[]>([]);
- useEffect(()=>{setExtensions([]);if(!open||!session||!visible)return;let cancelled=false;request<{extensions:Extension[]}>('/api/workspace/available-extensions'+(session.project_id?'?project_id='+encodeURIComponent(session.project_id):'')).then(value=>{if(!cancelled)setExtensions(value.extensions)}).catch(error=>{if(!cancelled)onError(error)});return()=>{cancelled=true}},[open,session?.id,session?.project_id,visible]);
- const [runBudget,setRunBudget]=useState<Record<string,number>>(DEFAULT_RUN_BUDGET);
- const [savingBudget,setSavingBudget]=useState(false);
- useEffect(()=>{setRunBudget({...DEFAULT_RUN_BUDGET,...session?.run_limits})},[session?.id,JSON.stringify(session?.run_limits)]);
- const [reasoning,setReasoning]=useState<ReasoningConfig|null>(null),[reasoningLoading,setReasoningLoading]=useState(false),[effortDraft,setEffortDraft]=useState<Record<string,number>>({});
- const effortSelection=JSON.stringify([session?.id,session?.engine,session?.model,session?.runner_id]);
- useEffect(()=>{let cancelled=false;setReasoning(null);setReasoningLoading(false);setEffortDraft({});if(!open||!session||session.engine==='internal'||session.runner_id)return;setReasoningLoading(true);request<ReasoningConfig>('/api/workspace/sessions/'+session.id+'/reasoning').then(value=>{if(!cancelled)setReasoning(value)}).catch(error=>{if(!cancelled)onError(error)}).finally(()=>{if(!cancelled)setReasoningLoading(false)});return()=>{cancelled=true}},[effortSelection,open]);
- const selectedCatalogue=session?.model?reasoning?.model_configurations?.[session.model]:reasoning;
- const effortOptions=(selectedCatalogue?.config_options||[]).filter(option=>['thought_level','reasoning','effort'].includes(option.category||'')&&option.type==='select'&&option.options?.length);
- async function commitEffort(option:ReasoningOption,index:number){if(!session)return;const values=(option.options||[]).map(entry=>entry.value),value=values[index];setEffortDraft(old=>{const next={...old};delete next[option.id];return next});if(!value||value===session.reasoning_config?.[option.id])return;try{await patch({reasoning_config:{...session.reasoning_config,[option.id]:value}})}catch(error){onError(error)}}
+ const [extensions,setExtensions]=useState<Extension[]>([]),[extensionsLoading,setExtensionsLoading]=useState(false);
+ useEffect(()=>{setExtensions([]);if(!open||!session||!visible||section!=='tools')return;let cancelled=false;setExtensionsLoading(true);request<{extensions:Extension[]}>('/api/workspace/available-extensions'+(session.project_id?'?project_id='+encodeURIComponent(session.project_id):'')).then(value=>{if(!cancelled)setExtensions(value.extensions||[])}).catch(error=>{if(!cancelled)onError(error)}).finally(()=>{if(!cancelled)setExtensionsLoading(false)});return()=>{cancelled=true}},[open,session?.id,session?.project_id,visible,section]);
  if(!open||!session)return null;
- const body=<div className="settings-body">
-  <div className="settings-group"><button className="settings-line" onClick={onConversationSettings}><span>Conversation</span><small>Rename, move between projects</small></button></div>
-  <section className="settings-group"><h3>Model</h3>
-   <div className="settings-field"><SessionModelControls session={session} engines={engines} providers={providers} runnerAccounts={runnerAccounts} models={models} favorites={favorites} favoriteKey={favoriteKey} running={running} onFavorite={onFavorite} onEngine={onEngine} onPatch={patch} onRefresh={onRefresh} onError={onError}/></div>
-   {effortOptions.map(option=>{const values=(option.options||[]).map(entry=>entry.value);const stored=session.reasoning_config?.[option.id];const fallback=option.currentValue&&values.includes(option.currentValue)?option.currentValue:values[0];const index=effortDraft[option.id]??Math.max(0,values.indexOf(stored||fallback));const label=option.options?.[index]?.name||values[index];return <div className="effort-field" key={option.id}><label className="settings-label"><span>{option.name||'Reasoning effort'}</span><output>{stored?label:'Default · '+label}</output></label><input type="range" className="effort-range" min={0} max={values.length-1} step={1} value={index} disabled={running||reasoningLoading} aria-label={(option.name||'Reasoning effort')+' level'} onChange={event=>setEffortDraft(old=>({...old,[option.id]:Number(event.target.value)}))} onPointerUp={()=>void commitEffort(option,index)} onKeyUp={event=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))void commitEffort(option,index)}} onBlur={()=>void commitEffort(option,index)}/><div className="effort-marks">{values.map((value,mark)=><span key={value} className={mark===index?'on':''}>{option.options?.[mark]?.name||value}</span>)}</div></div>})}
-  </section>
-  <section className="settings-group"><h3>Agent</h3>
-   <div className="settings-field"><span className="settings-label"><span>Preset</span><output>{presets.find(row=>row.id===session.custom_agent_id)?.name||(session.custom_agent_id?'Unavailable selected preset':'Default agent')}</output></span><PresetPicker loading={presetsLoading} presets={presets} value={session.custom_agent_id} disabled={running||(session.engine!=='internal'&&!!turnsCount)} onChange={id=>void patch({custom_agent_id:id})}/>
-   {session.custom_agent_id&&<Button size="sm" variant="outline" disabled={running||(session.engine!=='internal'&&!!turnsCount)} onClick={()=>void patch({custom_agent_id:session.custom_agent_id})}>Refresh preset binding</Button>}
-   {session.engine!=='internal'&&!!turnsCount&&<p>This native conversation keeps its preset. Create a new conversation to choose another.</p>}</div>
-   {(extensions.length>0||session.engine==='claude')&&<div className="settings-field"><span className="settings-label"><span>Session tools</span><output>{session.workflow==='browser'?'Browser only':(session.extension_ids?.length?session.extension_ids.length+' skills':'All tools')}</output></span>
-   {session.engine==='claude'&&<label>Tool workflow<Select aria-label="Session tool workflow" disabled={running||!!turnsCount} value={session.workflow||'coding'} onChange={event=>patch({workflow:event.target.value==='browser'?'browser':null})}><option value="coding">Coding tools</option><option value="browser">Browser only</option></Select></label>}
-   {session.workflow==='browser'&&<p>Start a task, then hand it a tab from Browser. This dedicated conversation uses only controlled browser tools.</p>}
-   {extensions.map(extension=><label className="settings-check" key={extension.id}><input type="checkbox" disabled={running} checked={session.extension_ids?.includes(extension.id)||false} onChange={event=>patch({extension_ids:event.target.checked?[...(session.extension_ids||[]),extension.id]:(session.extension_ids||[]).filter(id=>id!==extension.id)})}/>{extension.id} <small>{extension.version} · {extension.description}</small></label>)}</div>}
-  </section>
-  {session.engine==='internal'&&<section className="settings-group"><h3>Execution</h3>
-   <div className="settings-field"><label className="settings-label"><span>Location</span></label><Select aria-label="Session execution location" value={session.runner_id||''} disabled={running} onChange={event=>{if(!event.target.value){void patch({runner_id:null,runner_credential_ref:null});return}const account=runnerAccounts.find(account=>account.provider_id===session.provider_id&&account.models.includes(session.model||''));if(!account){onError(new Error('Select a configured API provider and an explicit model before choosing a cloud runner.'));return}void patch({runner_id:event.target.value,runner_credential_ref:account.credential_ref})}}><option value="">This machine · {session.cwd}</option>{runnerOptions.filter(runner=>runner.status==='ready'&&runner.project===(session.project_id||'')).map(runner=><option key={runner.id} value={runner.id}>{runner.configuration.name||runner.configuration.image||runner.id} · {runner.configuration.root||'/workspace'}</option>)}</Select>
-   {session.runner_id&&<p>Explicit account: {session.runner_credential_ref}. The internal agent runs on the selected target at {runnerOptions.find(row=>row.id===session.runner_id)?.configuration.root||'/workspace'}. {runnerOptions.find(row=>row.id===session.runner_id)?.configuration.kind==='machine'?'Commands use the machine’s SSH account permissions.':'Execution is inside an isolated container.'} Host hooks and native engines require local execution.</p>}
-   {!runnerOptions.length&&<p>Connect a machine or enroll an isolated container in Runners before selecting cloud execution.</p>}</div>
-  </section>}
-  <section className="settings-group"><h3>Run budget</h3>
-   {BUDGET_FIELDS.map(field=><label className="effort-field" key={field.key}><span className="settings-label"><span>{field.label}</span><output>{field.format(runBudget[field.key]??field.min)}</output></span><input type="range" className="effort-range" min={field.min} max={field.max} step={field.step} value={runBudget[field.key]??field.min} disabled={running||savingBudget} aria-label={'Run '+field.key} onChange={event=>setRunBudget(old=>({...old,[field.key]:Number(event.target.value)}))}/></label>)}
-   <Button size="sm" variant="outline" disabled={running||savingBudget} onClick={async()=>{setSavingBudget(true);try{await patch({run_limits:runBudget})}catch(error){onError(error)}finally{setSavingBudget(false)}}}>{savingBudget?'Saving run budget…':'Save run budget'}</Button>
-  </section>
-  <section className="settings-group"><h3>Voice</h3>
-   <VoiceControls key={session.id} sessionId={session.id} projectId={session.project_id||null} ownerId={ownerId} visible={visible&&open} reply={reply} onTranscript={onTranscript}/>
-  </section>
- </div>;
- return <Dialog open onOpenChange={value=>{if(!value&&BUDGET_FIELDS.some(field=>runBudget[field.key]!==({...DEFAULT_RUN_BUDGET,...session.run_limits})[field.key])&&!window.confirm('Discard unsaved run budget changes?'))return;onOpenChange(value)}}><DialogContent className={compact?'settings-sheet':'settings-dialog'}><DialogTitle>Session settings</DialogTitle><DialogDescription>Engine, model, tools and budget for this conversation. Applies to the next turn.</DialogDescription>{compact?<div className="sheet-scroll">{body}</div>:body}</DialogContent></Dialog>;
+ const limits={...DEFAULT_RUN_BUDGET,...session.run_limits};
+ const profile=RUN_PROFILES.find(item=>Object.entries(item.limits).every(([key,value])=>limits[key as keyof typeof limits]===value));
+ const engineChoices=[{id:'internal',name:'TermX Agent'},...engines.filter(item=>item.id!=='internal')];
+ if(!engineChoices.some(item=>item.id===session.engine))engineChoices.push({id:session.engine,name:session.engine});
+ const presetLocked=running||(session.engine!=='internal'&&!!turnsCount);
+ return <Dialog open onOpenChange={onOpenChange}><DialogContent className="chat-control-dialog session-settings-dialog">
+  <DialogTitle>Session settings</DialogTitle><DialogDescription>Agent, tools, and runtime settings for this conversation.</DialogDescription>
+  <nav className="session-settings-nav" aria-label="Session settings sections">{sections.map(item=>{const Icon=item.icon;return <button key={item.id} type="button" aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)}><Icon size={15}/>{item.label}</button>})}</nav>
+  <div className="session-settings-content">
+   {section==='agent'&&<section className="session-settings-pane" aria-label="Agent settings">
+    <label>Engine<Select aria-label="Session engine" value={session.engine} disabled={running} onChange={event=>{onOpenChange(false);onEngine(event.target.value)}}>{engineChoices.map(item=><option key={item.id} value={item.id}>{item.name||item.id}</option>)}</Select></label>
+    {turnsCount>0&&<p className="control-description">Switching engines creates a linked conversation with the context you choose.</p>}
+    <div className="agent-preset-field"><PresetPicker loading={presetsLoading} presets={presets} value={session.custom_agent_id} disabled={presetLocked} onChange={id=>void patch({custom_agent_id:id})}/>
+     {session.custom_agent_id&&<Button size="sm" variant="ghost" disabled={presetLocked} onClick={()=>void patch({custom_agent_id:session.custom_agent_id})}>Refresh preset binding</Button>}
+     {session.engine!=='internal'&&!!turnsCount&&<p className="control-description">This conversation keeps its current agent preset.</p>}
+    </div>
+    <fieldset className="run-profile-field"><legend>Run style</legend><p className="control-description">{profile?'Choose how much room the agent has to work.':'Your existing custom limits are preserved. Choose a style to replace them.'}</p>
+     <div className="run-profile-options">{RUN_PROFILES.map(item=><label className={'run-profile-option '+(profile?.id===item.id?'selected':'')} key={item.id}><input type="radio" name="run-profile" value={item.id} checked={profile?.id===item.id} disabled={running||!!savingProfile} onChange={async()=>{setSavingProfile(item.id);try{await patch({run_limits:{...item.limits}})}catch(error){onError(error)}finally{setSavingProfile(null)}}}/><span><strong>{item.name}{item.id==='balanced'&&<small>Default</small>}</strong><small>{savingProfile===item.id?'Saving…':item.description}</small></span>{profile?.id===item.id&&<Check size={16}/>}</label>)}</div>
+    </fieldset>
+   </section>}
+   {section==='tools'&&<section className="session-settings-pane" aria-label="Tools and access">
+    <h3>Tools and skills</h3><p className="control-description">Choose skills for this conversation. Your account and project permissions still apply.</p>
+    {session.engine==='claude'&&<label>Workflow<Select aria-label="Session tool workflow" disabled={running||!!turnsCount} value={session.workflow||'coding'} onChange={event=>void patch({workflow:event.target.value==='browser'?'browser':null})}><option value="coding">Coding tools</option><option value="browser">Browser only</option></Select></label>}
+    {session.workflow==='browser'&&<p className="control-description">Hand a tab to this conversation from Browser when you start a task.</p>}
+    {extensionsLoading?<p className="control-description" role="status">Loading available skills…</p>:extensions.length?<div className="session-extension-list">{extensions.map(extension=><label className="session-extension" key={extension.id}><input type="checkbox" disabled={running} checked={session.extension_ids?.includes(extension.id)||false} onChange={event=>void patch({extension_ids:event.target.checked?[...(session.extension_ids||[]),extension.id]:(session.extension_ids||[]).filter(id=>id!==extension.id)})}/><span><strong>{extension.id}</strong><small>{extension.description||extension.version}</small></span></label>)}</div>:<p className="control-description">The engine’s default tools are available. Add custom skills in Managers.</p>}
+    <SessionAccess session={session} onError={onError}/>
+   </section>}
+   {section==='execution'&&<section className="session-settings-pane" aria-label="Execution settings">
+    <h3>Where your agent runs</h3>
+    {session.engine==='internal'?<><label>Location<Select aria-label="Session execution location" value={session.runner_id||''} disabled={running} onChange={event=>{if(!event.target.value){void patch({runner_id:null,runner_credential_ref:null});return}const account=runnerAccounts.find(account=>account.provider_id===session.provider_id&&account.models.includes(session.model||''));if(!account){onError(new Error('Select a configured API provider and an explicit model before choosing a cloud runner.'));return}void patch({runner_id:event.target.value,runner_credential_ref:account.credential_ref})}}><option value="">This machine</option>{runnerOptions.filter(runner=>runner.status==='ready'&&runner.project===(session.project_id||'')).map(runner=><option key={runner.id} value={runner.id}>{runner.configuration.name||runner.configuration.image||runner.id}</option>)}</Select></label><p className="control-description runtime-location">{session.runner_id?(runnerOptions.find(row=>row.id===session.runner_id)?.configuration.root||'/workspace'):session.cwd||'Current project folder'}</p>{!runnerOptions.length&&<p className="control-description">Connect a machine in Runners to work remotely.</p>}</>:<p className="control-description">{engineChoices.find(item=>item.id===session.engine)?.name||session.engine} runs on this machine using its connected account.</p>}
+   </section>}
+   {section==='voice'&&<section className="session-settings-pane" aria-label="Voice settings"><h3>Voice</h3><VoiceControls key={session.id} sessionId={session.id} projectId={session.project_id||null} ownerId={ownerId} visible={visible&&open} reply={reply} onTranscript={onTranscript}/></section>}
+  </div>
+  {running&&<p className="control-running-note" role="status">The current task keeps its settings. Make changes after it finishes.</p>}
+  <button className="conversation-settings-link" type="button" onClick={onConversationSettings}><Settings2 size={15}/><span>Conversation settings<small>Rename or move to another sidebar group</small></span><ChevronRight size={15}/></button>
+ </DialogContent></Dialog>;
 }

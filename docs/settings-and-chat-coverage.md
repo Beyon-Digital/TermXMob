@@ -34,13 +34,15 @@ The inventory covers the shared TermXMob desktop/browser workspace, including co
 | Appearance; AppearanceChoices | Dark/light/system | Same controls are reused inline in canonical Settings, so a second settings dialog is unnecessary. Immediate local persistence remains. |
 | Keyboard shortcuts; Keybindings | Edit/reset/conflicts | Canonical category, existing immediate per-account persistence, conflict behavior retained. |
 | Safety & Auto Review; SafetyManager; GeneralPolicyManager | Evaluate/activate/disable a reviewer; inspect decisions; remember/edit/revoke browser/coding policy | Named provider selector and billing/security consequences retained; shared validation, destructive review and successful-write lifecycle. No paid evaluation run. |
-| Contextual SessionSettings / conversation settings | Session engine/model/preset/extensions, run budget, execution location, reasoning, voice, title/group | Contextual controls remain with chat; unsaved run-budget close is guarded. Existing session controls and voice tests remain. Sidebar grouping preserves the execution project. |
+| Contextual SessionSettings / conversation settings | Session engine/model/preset/extensions, run budget, execution location, reasoning, voice, title/group | Floating composer contains model/mode and advertised effort controls. The header opens engine/preset and session options; Quick/Balanced/Extended profiles replace individual budget sliders while preserving existing custom limits. Session writes share a per-conversation revision queue and authentication fences. Sidebar grouping preserves the execution project. |
 
 Exact provider trust configurations, registry manifests, diagnostic records and uncommon tool IDs remain accessible for expert users. They are not discarded or converted into guessed model/provider identifiers. Provider-specific external IDs that users must obtain from their provider stay explicitly labeled.
 
 ## Chat source integration
 
 See `desktop/workspace/third-party/AI_ELEMENTS_PROVENANCE.md` for the actual copied package/source and license. Message/Markdown/code, tools, prompt input, attachments, approval and clarification components adapt existing TermX state. No AI backend migration or paid provider request was needed.
+
+The subsequent [session recovery and chat redesign](session-agent-chat-fixes.md) adds native event correlation, nested agent activity, lazily loaded saved history, keyboard-accessible Markdown, and the simplified composer/header controls. Its [verification record](evidence/session-agent-chat/verification.md) supersedes the initial chat test counts below.
 
 ## Verification and evidence
 

@@ -1,11 +1,11 @@
 import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/react';
 import {afterEach,it,expect,vi} from 'vitest';
 import Chat from './Chat';
-import {sessionDrafts,draftWrites,submittingDrafts} from '../lib/drafts';
+import {sessionDrafts,draftWrites,submittingDrafts,draftSubmissionOwners} from '../lib/drafts';
 import {acceptTransferredDraft} from '../lib/redock-state';
 import {request,type Session} from '../lib/api';
 vi.mock('../lib/api',()=>({gql:vi.fn(async()=>({engine_models:[]})),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
-afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();vi.clearAllMocks()});
+afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();vi.clearAllMocks()});
 const row=(id:string):Session=>({id,title:id,engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,turns:[]});
 it('accepts a returned draft after remote metadata refresh and panel remount without inventing local edits',()=>{
  const original={...row('returned-draft'),draft_text:'Previously saved draft'};
@@ -36,6 +36,58 @@ it('retains a real unsaved local edit and rejects a conflicting returned draft',
 it('preserves and flushes a draft when switching faster than the autosave delay',async()=>{const a=row('a'),b=row('b');vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;const current=path.includes('/a')?a:b;if(init?.method==='PATCH'){Object.assign(current,JSON.parse(init.body as string).changes);current.revision++}return {...current} as any});const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const {rerender}=render(<Chat session={{...a}} {...props}/>);fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Unsent work'}});rerender(<Chat session={{...b}} {...props}/>);rerender(<Chat session={{...a}} {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Unsent work');await waitFor(()=>expect(a.draft_text).toBe('Unsent work'))});
 
 it('retains unsent text through a real panel unmount and stale metadata remount',async()=>{const a=row('unmount');vi.mocked(request).mockImplementation(async(path,init)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);const props={session:{...a},engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const panel=render(<Chat {...props}/>);fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Draft while loading Workbench'}});panel.unmount();render(<Chat {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Draft while loading Workbench')});
+
+it('keeps a mode change behind the in-flight draft save so their revisions cannot collide',async()=>{
+ const a=row('draft-mode-race'),errors=vi.fn();let release!:()=>void,reads=0;
+ const draftGate=new Promise<void>(resolve=>release=resolve);
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;
+  if(path.includes('runner-agents'))return {accounts:[]} as any;
+  if(path.endsWith('/queue'))return {queue:[]} as any;
+  if(path==='/api/workspace/sessions/'+a.id+'?turns=false'){reads++;return {...a} as any}
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);
+   if(body.changes.draft_text)await draftGate;
+   if(body.revision!==a.revision)throw Error('Session changed; reload before saving');
+   Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Draft survives choosing another mode'}});
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(true));
+ fireEvent.click(screen.getByRole('button',{name:'Session mode'}));fireEvent.click(screen.getByRole('radio',{name:/^Agent/}));
+ await act(async()=>{await Promise.resolve()});expect(reads).toBe(1);
+ release();await waitFor(()=>expect(a.mode).toBe('agent'));
+ expect(a.draft_text).toBe('Draft survives choosing another mode');expect(a.revision).toBe(3);expect(errors).not.toHaveBeenCalled();
+});
+
+it.each(['termx-signed-out','termx-session-locked'])('does not apply a pending mode save after %s invalidates its revision read',async(event)=>{
+ const a=row('mode-auth-boundary-'+event),refresh=vi.fn(),errors=vi.fn();let release!:(value:Session)=>void,signal:AbortSignal|undefined;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {queue:[]} as any;
+  if(path.endsWith('?turns=false')){signal=init?.signal as AbortSignal;return new Promise<Session>(resolve=>release=resolve) as any}
+  return {...a} as any;
+ });
+ render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={refresh} onError={errors}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Session mode'}));fireEvent.click(screen.getByRole('radio',{name:/^Agent/}));
+ await waitFor(()=>expect(release).toBeDefined());window.dispatchEvent(new Event(event));
+ await act(async()=>{release({...a});await Promise.resolve()});
+ expect(signal?.aborted).toBe(true);expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(false);expect(refresh).not.toHaveBeenCalled();expect(errors).not.toHaveBeenCalled();
+});
+
+it('does not dispatch a pre-logout send after its pending draft flush settles',async()=>{
+ const a={...row('send-auth-boundary'),draft_text:'Old account intent'},errors=vi.fn();let release!:()=>void;
+ draftWrites.set(a.id,new Promise<void>(resolve=>release=resolve));
+ vi.mocked(request).mockImplementation(async(path)=>path==='/api/runners'?[] as any:path.includes('runner-agents')?{accounts:[]} as any:path.endsWith('/queue')?{queue:[]} as any:{...a} as any);
+ render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(submittingDrafts.has(a.id)).toBe(true));
+ window.dispatchEvent(new Event('termx-signed-out'));
+ const newOwner=Symbol();draftSubmissionOwners.set(a.id,newOwner);submittingDrafts.add(a.id);
+ await act(async()=>{release();await Promise.resolve()});
+ expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+ expect(draftSubmissionOwners.get(a.id)).toBe(newOwner);expect(submittingDrafts.has(a.id)).toBe(true);expect(errors).not.toHaveBeenCalled();
+});
 
 it('never discards a saved local draft because unrelated metadata advanced the revision',()=>{const a={...row('advanced'),revision:99};sessionDrafts.set(a.id,{text:'Preserve through zoom and layout',saved:'Preserve through zoom and layout',dirty:false,revision:2});render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);expect(screen.getByLabelText('Message')).toHaveValue('Preserve through zoom and layout')});
 

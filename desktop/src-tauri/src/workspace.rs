@@ -136,6 +136,15 @@ fn entry(host: &str) -> Result<Entry, String> {
     }
     Entry::new(SERVICE, host).map_err(|_| "OS secure credential storage unavailable".into())
 }
+fn refresh_credential(host: &str) -> Result<String, String> {
+    match entry(host)?.get_password() {
+        Ok(secret) => Ok(secret),
+        Err(keyring::Error::NoEntry) => Err("Sign in required".into()),
+        // An unavailable or temporarily locked OS keyring does not revoke
+        // the account and must not clear every workspace window's state.
+        Err(_) => Err("OS secure credential storage unavailable; try again".into()),
+    }
+}
 fn save(session: &mut MemorySession, response: &Value) -> Result<(), String> {
     let access = response["access_token"]
         .as_str()
@@ -161,9 +170,7 @@ fn refresh(app: &AppHandle, port: u16, session: &mut MemorySession) -> Result<()
     if session.host_id.is_empty() {
         session.host_id = host_identity(port)?;
     }
-    let secret = entry(&session.host_id)?
-        .get_password()
-        .map_err(|_| "Sign in required")?;
+    let secret = refresh_credential(&session.host_id)?;
     let result = call(
         port,
         "/auth/refresh",
@@ -178,11 +185,17 @@ fn refresh(app: &AppHandle, port: u16, session: &mut MemorySession) -> Result<()
         let _ = app.emit("termx-session-locked", json!({}));
         return Err("Session locked; unlock required".into());
     }
-    if result.status != 200 {
+    if result.status == 401 {
         let _ = entry(&session.host_id)?.delete_credential();
         session.access.clear();
         session.expires = 0;
         return Err("Session expired or revoked; sign in again".into());
+    }
+    if result.status != 200 {
+        return Err(format!(
+            "Session refresh unavailable (HTTP {}); try again",
+            result.status
+        ));
     }
     if let Err(error) = save(session, &result.body) {
         // A rotated refresh token that failed secure persistence is never
@@ -330,6 +343,16 @@ pub async fn workspace_resume_sso(app: AppHandle, window: WebviewWindow) -> Resu
             None,
             None,
         )?;
+        if result.status == 423 {
+            let _ = app.emit("termx-session-locked", json!({}));
+            return Err("Session locked; unlock required".into());
+        }
+        if result.status != 200 && result.status != 401 {
+            return Err(format!(
+                "SSO session refresh unavailable (HTTP {}); try again",
+                result.status
+            ));
+        }
         // Callback refresh credentials never remain in the webview after adoption.
         for (label, view) in app.webview_windows() {
             if workspace_label(&label) {
@@ -497,9 +520,7 @@ pub async fn workspace_lock_state(app: AppHandle, window: WebviewWindow) -> Resu
             .lock()
             .map_err(|_| "Session coordinator unavailable")?;
         session.host_id = host_identity(port)?;
-        let secret = entry(&session.host_id)?
-            .get_password()
-            .map_err(|_| "Sign in required")?;
+        let secret = refresh_credential(&session.host_id)?;
         let result = call(
             port,
             "/auth/lock-state",
@@ -508,8 +529,14 @@ pub async fn workspace_lock_state(app: AppHandle, window: WebviewWindow) -> Resu
             None,
             None,
         )?;
-        if result.status != 200 {
+        if result.status == 401 {
             return Err("Session expired or revoked; sign in again".into());
+        }
+        if result.status != 200 {
+            return Err(format!(
+                "Session lock status unavailable (HTTP {}); try again",
+                result.status
+            ));
         }
         Ok(result.body)
     })
@@ -537,7 +564,7 @@ pub async fn workspace_unlock(
         let state=app.state::<NativeSession>();
         let mut session=state.0.lock().map_err(|_| "Session coordinator unavailable")?;
         session.host_id=host_identity(port)?;
-        let secret=entry(&session.host_id)?.get_password().map_err(|_| "Sign in required")?;
+        let secret=refresh_credential(&session.host_id)?;
         let result=call(port,"/auth/unlock","POST",Some(json!({"refresh_token":secret,"method":method,"username":username,"password":password,"assertion":assertion})),None,None)?;
         if result.status!=200 {return Err(result.body["detail"].as_str().unwrap_or("Unlock failed").into());}
         if let Err(error)=save(&mut session,&result.body) {
@@ -571,9 +598,7 @@ pub async fn workspace_unlock_oidc(
             .lock()
             .map_err(|_| "Session coordinator unavailable")?;
         session.host_id = host_identity(port)?;
-        let secret = entry(&session.host_id)?
-            .get_password()
-            .map_err(|_| "Sign in required")?;
+        let secret = refresh_credential(&session.host_id)?;
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(30))
             .redirects(0)

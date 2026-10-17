@@ -537,6 +537,81 @@ def test_acp_cancel_timeout_closes_unresponsive_agent(tmp_path):
     asyncio.run(run())
 
 
+def test_acp_large_protocol_frame_and_noisy_stderr_do_not_interrupt_turn(tmp_path):
+    """Real SDK + subprocess: log pipes and a >64 KiB JSON frame must drain."""
+    async def run():
+        events = []
+        engine = _engine(events, [], {
+            "FAKE_ACP_STDERR_BYTES": str(512 * 1024),
+            "FAKE_ACP_LARGE_CHUNK_BYTES": str(256 * 1024),
+        })
+        engine.configure_launch({"startup_timeout_s": 2})
+        try:
+            # Probe uses a separate transient transport and needs the same
+            # stderr handling as a long-lived session.
+            descriptor = await engine.probe()
+            assert descriptor.error is None
+            binding = await engine.create_session(EffectiveRunConfiguration(cwd=str(tmp_path)))
+            state = engine._sessions[binding.binding_id]
+            await engine.send(binding, "continue despite verbose output")
+            await _wait_turn(engine, binding)
+            completed = [e for _, e in events if e.type == "engine.turn.completed"]
+            assert completed[-1].payload["status"] == "completed"
+            assert any(len(e.payload.get("delta", "")) == 256 * 1024 for _, e in events)
+            assert len(state.get("stderr_tail", b"")) <= 64 * 1024
+            assert state.get("stderr_tail")
+            assert not any(e.type == "engine.session.lost" for _, e in events)
+            assert "diagnostic-only" not in str([e.payload for _, e in events])
+        finally:
+            await engine.shutdown()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure", ["stdout_closed", "reader_failed"])
+def test_acp_protocol_disconnect_marks_session_lost_and_resumes_without_replay(tmp_path, failure):
+    async def run():
+        store = AgentStore(tmp_path / "agent.db", tmp_path / "artifacts")
+        gateway = EngineGateway(store, store.append_event)
+        log = tmp_path / "requests.jsonl"
+        env = {"FAKE_ACP_STATE_FILE": str(tmp_path / "native.json"), "FAKE_ACP_LOG": str(log)}
+        if failure == "stdout_closed":
+            env["FAKE_ACP_CLOSE_STDOUT"] = "1"
+        else:
+            env["FAKE_ACP_INVALID_FRAME"] = "1"
+        engine = _engine([], [], env)
+        engine._event_sink = gateway.on_engine_event
+        gateway.register(engine)
+        conv = store.create_conversation(cwd=str(tmp_path))
+        kw = {"cwd": str(tmp_path), "engine": "fake-acp", "conversation_id": conv["id"]}
+        try:
+            task = await gateway.create_task(prompt="first user request", **kw)
+            binding = gateway._binding_for_task(task["id"])
+            state = engine._sessions[binding.binding_id]
+            await asyncio.wait_for(asyncio.shield(state["process_watch"]), 2)
+            assert not state["process_lost"]  # the protocol failed before the OS process
+            assert state["proc"].returncode is not None  # unusable process was reaped
+            assert binding.status == "lost"
+            assert store.get_task(task["id"])["status"] == "failed"
+            assert store.get_engine_session(binding.binding_id)["status"] == "lost"
+            if failure == "stdout_closed":
+                assert store.get_task(task["id"])["result"] == "partial before disconnect"
+            engine._spawn_env.pop("FAKE_ACP_CLOSE_STDOUT", None)
+            engine._spawn_env.pop("FAKE_ACP_INVALID_FRAME", None)
+            next_task = await gateway.create_task(prompt="explicit follow-up", **kw)
+            resumed = gateway._binding_for_task(next_task["id"])
+            await _wait_turn(engine, resumed)
+            assert resumed.native_session_id == binding.native_session_id
+            assert state["proc"].returncode is not None
+            assert store.get_task(next_task["id"])["status"] == "completed"
+            requests = [json.loads(line) for line in log.read_text().splitlines()]
+            assert len([r for r in requests if r.get("method") == "session/prompt"]) == 2
+            assert len([r for r in requests if r.get("method") == "session/load"]) == 1
+        finally:
+            await gateway.shutdown()
+            store.close()
+    asyncio.run(run())
+
+
 def test_acp_relative_file_boundary_and_terminal_output_tail(tmp_path):
     (tmp_path / "sample.txt").write_bytes(b"one\ntwo\n")
     async def run():

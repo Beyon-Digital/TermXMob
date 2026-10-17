@@ -10,12 +10,19 @@ import strawberry
 from strawberry import relay
 from strawberry.scalars import JSON
 from strawberry.types import Info
-from termx.graphql.errors import fail
+from termx.graphql.errors import fail, resolver
 
 def principal(info):
-    current=info.context.state.identity.resolve(info.context.secret)
+    current=info.context.state.identity.resolve(info.context.secret,allow_locked=True)
     if not current:fail(401,'Managed sign-in required')
+    if current.locked:fail(423,'Session locked; unlock required')
     return current.principal
+
+def current_principal(info,owner):
+    current=principal(info)
+    if current.id!=owner.id or current.policy_version!=owner.policy_version:
+        fail(403,'Session authorization changed; reload the conversation')
+    return current
 
 def session_node(row):
     return WorkspaceSessionNode(id=row['id'],canonical_id=row['id'],title=row['title'],
@@ -32,6 +39,7 @@ class WorkspaceSessionNode(relay.Node):
     snapshot:JSON
 
     @classmethod
+    @resolver
     def resolve_nodes(cls,*,info:Info,node_ids:Iterable[str],required=False):
         owner=principal(info);service=info.context.state.workspace;result=[]
         for identifier in node_ids:
@@ -39,6 +47,7 @@ class WorkspaceSessionNode(relay.Node):
             except (KeyError,PermissionError):
                 if required:fail(404,'Session not found')
                 result.append(None)
+        current_principal(info,owner)
         return result
 
 @strawberry.type
@@ -51,10 +60,12 @@ class WorkspaceTurnNode(relay.Node):
     task_id:str|None
 
     @strawberry.field
+    @resolver
     def task(self,info:Info)->JSON|None:
         if not self.task_id:return None
         service=info.context.state.workspace
-        service.record(principal(info),'conversation',self.session_id,scope='agent-view')
+        owner=principal(info)
+        service.record(owner,'conversation',self.session_id,scope='agent-view')
         task=service.agents.get_task(self.task_id)
         if not task:return None
         fields={'id','prompt','cwd','provider_id','model','status','limits','mode','parent_id','plan','result','error','engine','created_at','updated_at'}
@@ -65,9 +76,11 @@ class WorkspaceTurnNode(relay.Node):
         if task['status'] in {'running','awaiting_approval','paused','cancelling','recovering','recovery_confirmation_required','planning'}:
             result['events']=service.agents.events(self.task_id,tail_limit=200)
             result['approvals']=service.agents.approvals(self.task_id)
+        service.record(current_principal(info,owner),'conversation',self.session_id,scope='agent-view')
         return result
 
     @classmethod
+    @resolver
     def resolve_nodes(cls,*,info:Info,node_ids:Iterable[str],required=False):
         owner=principal(info);service=info.context.state.workspace;result=[]
         for identifier in node_ids:
@@ -79,6 +92,7 @@ class WorkspaceTurnNode(relay.Node):
             except (KeyError,PermissionError):
                 if required:fail(404,'Turn not found')
                 result.append(None)
+        current_principal(info,owner)
         return result
 
 def turn_node(row):
@@ -158,8 +172,10 @@ class DesktopWorkspaceQueries:
         return result
 
     @strawberry.field
+    @resolver
     def workspace_turns(self,info:Info,session_id:str,first:int|None=None,after:str|None=None,last:int|None=None,before:str|None=None)->WorkspaceTurnConnection:
-        service=info.context.state.workspace;service.session(principal(info),session_id,turns=False)
+        owner=principal(info)
+        service=info.context.state.workspace;service.record(owner,'conversation',session_id,scope='agent-view')
         if last is not None and (first is not None or after is not None):fail(400,'Choose forward or backward pagination')
         size=last if last is not None else first or 50
         if not 1<=size<=200:fail(400,'Page size must be between 1 and 200')
@@ -169,6 +185,7 @@ class DesktopWorkspaceQueries:
             before_sequence=read_cursor(before,session_id) if before else None,descending=backward,limit=size+1)
         visible=list(reversed(rows[:size])) if backward else rows[:size]
         edges=[WorkspaceTurnEdge(cursor=cursor(session_id,row['sequence']),node=turn_node(row)) for row in visible]
+        service.record(current_principal(info,owner),'conversation',session_id,scope='agent-view')
         return WorkspaceTurnConnection(edges=edges,page_info=WorkspacePageInfo(has_next_page=bool(before) if backward else len(rows)>size,
             has_previous_page=len(rows)>size if backward else sequence>0,start_cursor=edges[0].cursor if edges else None,end_cursor=edges[-1].cursor if edges else None))
 

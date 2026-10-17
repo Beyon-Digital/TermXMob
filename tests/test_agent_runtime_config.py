@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from time import monotonic
 
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from _gql import data, err_status
 from test_agent import FakeAdapter, build_manager, wait_for_status
 from termx.agent.limits import resolve_limits
-from termx.agent.providers import ProviderCall, ProviderTurn
+from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderTurn
 from termx.app import AppState, create_app
 from termx.config import ConfigStore
 
@@ -140,3 +142,44 @@ def test_graphql_host_agent_configuration_is_applied_and_reloaded(tmp_path):
         assert out["agent_configuration"]["provider_timeout_s"] == 500
         assert err_status(client, '{ agent_configuration }') == 401
     assert ConfigStore(state.store.path).get().agent.limits["max_steps"] == 1500
+
+
+@pytest.mark.parametrize("visible_output", [False, True])
+def test_internal_premature_sse_eof_retries_only_before_visible_output(tmp_path, visible_output):
+    async def run():
+        requests = []
+        async def handler(request):
+            requests.append(json.loads(request.content))
+            if len(requests) == 1:
+                # A cleanly closed HTTP stream without the required terminal
+                # response is still a transport failure, not a successful turn.
+                events = ([{"type": "response.output_text.delta", "delta": "Partial answer"}]
+                          if visible_output else [{"type": "response.created", "response": {"id": "first"}}])
+            else:
+                events = [
+                    {"type": "response.output_text.delta", "delta": "Recovered answer"},
+                    {"type": "response.completed", "response": {"id": "second", "status": "completed",
+                     "output": [{"type": "message", "content": [{"type": "output_text", "text": "Recovered answer"}]}]}},
+                ]
+            return httpx.Response(200, text="".join(f"data: {json.dumps(event)}\n\n" for event in events))
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            adapter = OpenAIResponsesAdapter(base_url="https://fixture.invalid", model="fixture", api_key="",
+                                             capabilities=["functions"], client=client)
+            manager, store = build_manager(tmp_path, adapter)
+            try:
+                task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path), provider_id="fake", mode="ask")
+                done = await wait_for_status(store, task["id"], "failed" if visible_output else "completed", timeout=3)
+                events = store.events(task["id"])
+                assert len(requests) == (1 if visible_output else 2)
+                assert not any(event["type"] == "tool.started" for event in events)
+                if visible_output:
+                    assert "without a completion event" in done["error"]
+                    failure = next(event for event in events if event["type"] == "provider.failed")
+                    assert failure["payload"]["retry_suppressed"]
+                else:
+                    assert done["result"] == "Recovered answer"
+                    assert any(event["type"] == "provider.retry" for event in events)
+            finally:
+                await manager.close()
+                store.close()
+    asyncio.run(run())

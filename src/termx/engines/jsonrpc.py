@@ -63,6 +63,7 @@ class JsonlProcess:
         self._write_lock = asyncio.Lock()
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        self._server_requests: set[asyncio.Task[None]] = set()
         self._closed = asyncio.Event()
         self._stderr_tail = ""
         self.exit_code: int | None = None
@@ -73,7 +74,7 @@ class JsonlProcess:
 
     @property
     def running(self) -> bool:
-        return self._proc is not None and self._proc.returncode is None
+        return self._proc is not None and self._proc.returncode is None and not self._closed.is_set()
 
     @property
     def stderr_tail(self) -> str:
@@ -157,7 +158,9 @@ class JsonlProcess:
                 if not isinstance(msg, dict):
                     continue
                 if "method" in msg and "id" in msg:
-                    asyncio.create_task(self._dispatch_server_request(msg))
+                    task = asyncio.create_task(self._dispatch_server_request(msg))
+                    self._server_requests.add(task)
+                    task.add_done_callback(self._server_requests.discard)
                 elif "method" in msg:
                     if self._on_notification:
                         try:
@@ -186,6 +189,10 @@ class JsonlProcess:
                     fut.set_exception(TransportClosed("engine process closed stdout"))
             self._pending.clear()
             self._closed.set()
+            # Requests waiting for human approval must not outlive the peer
+            # that asked them or leak into a later connection's session.
+            for task in list(self._server_requests):
+                task.cancel()
             if self._on_close:
                 try:
                     self._on_close()
@@ -246,9 +253,12 @@ class JsonlProcess:
                 except TimeoutError:
                     pass
         self.exit_code = self._proc.returncode
-        for task in (self._reader_task, self._stderr_task):
+        tasks = [task for task in (self._reader_task, self._stderr_task, *self._server_requests)
+                 if task is not None and task is not asyncio.current_task()]
+        for task in tasks:
             if task and not task.done():
                 task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         self._closed.set()
 
     async def wait_closed(self, timeout: float = 10.0) -> bool:

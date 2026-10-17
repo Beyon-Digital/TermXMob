@@ -745,6 +745,7 @@ class AgentStore:
         self, binding_id: str, *, task_id: str | None = None,
         status: str | None = None, payload: dict[str, Any] | None = None,
         conversation_id: str | None = None,
+        native_session_id: str | None = None,
     ) -> dict[str, Any] | None:
         changes: dict[str, Any] = {"updated_at": time()}
         if task_id is not None:
@@ -755,6 +756,8 @@ class AgentStore:
             changes["payload"] = _json(payload)
         if conversation_id is not None:
             changes["conversation_id"] = conversation_id
+        if native_session_id is not None:
+            changes["native_session_id"] = native_session_id
         assignments = ", ".join(f"{k} = ?" for k in changes)
         with self._lock:
             self._db.execute(

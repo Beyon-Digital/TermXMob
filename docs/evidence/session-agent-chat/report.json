@@ -1,0 +1,821 @@
+{
+  "status": "passed",
+  "checks": [
+    "Completed history loads once on expansion; nested persisted agents and tool results render",
+    "Model, mode and profile choices persist; engine switch opens reviewable linked-fork flow",
+    "Composer and dialogs fit desktop, 390px, 320px and short keyboard-like viewports in both themes",
+    "Expired access cookie refreshes through real auth flow; account, conversation and draft survive reload",
+    "Advertised native effort slider persists using a refreshed canonical revision",
+    "Active task loader and stop action render; execution settings remain immutable",
+    "Local password session remains authenticated; no inference or new task dispatch"
+  ],
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "region": {
+        "x": 249,
+        "y": 139,
+        "width": 1189,
+        "height": 832,
+        "right": 1438,
+        "bottom": 971
+      },
+      "composer": {
+        "x": 447.5,
+        "y": 803,
+        "width": 792,
+        "height": 128,
+        "right": 1239.5,
+        "bottom": 931
+      },
+      "draftBody": {
+        "x": 462.5,
+        "y": 820,
+        "width": 762,
+        "height": 48,
+        "right": 1224.5,
+        "bottom": 868
+      },
+      "controlRow": {
+        "x": 462.5,
+        "y": 880,
+        "width": 762,
+        "height": 40,
+        "right": 1224.5,
+        "bottom": 920
+      },
+      "toolbar": {
+        "x": 249,
+        "y": 139,
+        "width": 1189,
+        "height": 54,
+        "right": 1438,
+        "bottom": 193
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 462.5,
+          "y": 884,
+          "width": 36,
+          "height": 36,
+          "right": 498.5,
+          "bottom": 920,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 501.5,
+          "y": 885,
+          "width": 75.65625,
+          "height": 34,
+          "right": 577.15625,
+          "bottom": 919,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 582.15625,
+          "y": 885,
+          "width": 104.8125,
+          "height": 34,
+          "right": 686.96875,
+          "bottom": 919,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 1188.5,
+          "y": 884,
+          "width": 36,
+          "height": 36,
+          "right": 1224.5,
+          "bottom": 920,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "region": {
+        "x": 249,
+        "y": 139,
+        "width": 1189,
+        "height": 832,
+        "right": 1438,
+        "bottom": 971
+      },
+      "composer": {
+        "x": 447.5,
+        "y": 803,
+        "width": 792,
+        "height": 128,
+        "right": 1239.5,
+        "bottom": 931
+      },
+      "draftBody": {
+        "x": 462.5,
+        "y": 820,
+        "width": 762,
+        "height": 48,
+        "right": 1224.5,
+        "bottom": 868
+      },
+      "controlRow": {
+        "x": 462.5,
+        "y": 880,
+        "width": 762,
+        "height": 40,
+        "right": 1224.5,
+        "bottom": 920
+      },
+      "toolbar": {
+        "x": 249,
+        "y": 139,
+        "width": 1189,
+        "height": 54,
+        "right": 1438,
+        "bottom": 193
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 462.5,
+          "y": 884,
+          "width": 36,
+          "height": 36,
+          "right": 498.5,
+          "bottom": 920,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 501.5,
+          "y": 885,
+          "width": 75.65625,
+          "height": 34,
+          "right": 577.15625,
+          "bottom": 919,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 582.15625,
+          "y": 885,
+          "width": 104.8125,
+          "height": 34,
+          "right": 686.96875,
+          "bottom": 919,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 1188.5,
+          "y": 884,
+          "width": 36,
+          "height": 36,
+          "right": 1224.5,
+          "bottom": 920,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "region": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 647,
+        "right": 388,
+        "bottom": 804
+      },
+      "composer": {
+        "x": 11,
+        "y": 615,
+        "width": 367,
+        "height": 154,
+        "right": 378,
+        "bottom": 769
+      },
+      "draftBody": {
+        "x": 23,
+        "y": 630,
+        "width": 343,
+        "height": 77,
+        "right": 366,
+        "bottom": 707
+      },
+      "controlRow": {
+        "x": 23,
+        "y": 719,
+        "width": 343,
+        "height": 40,
+        "right": 366,
+        "bottom": 759
+      },
+      "toolbar": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 48,
+        "right": 388,
+        "bottom": 205
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 23,
+          "y": 723,
+          "width": 36,
+          "height": 36,
+          "right": 59,
+          "bottom": 759,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 62,
+          "y": 724,
+          "width": 47.859375,
+          "height": 34,
+          "right": 109.859375,
+          "bottom": 758,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 114.859375,
+          "y": 724,
+          "width": 92.984375,
+          "height": 34,
+          "right": 207.84375,
+          "bottom": 758,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 330,
+          "y": 723,
+          "width": 36,
+          "height": 36,
+          "right": 366,
+          "bottom": 759,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "region": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 647,
+        "right": 388,
+        "bottom": 804
+      },
+      "composer": {
+        "x": 11,
+        "y": 615,
+        "width": 367,
+        "height": 154,
+        "right": 378,
+        "bottom": 769
+      },
+      "draftBody": {
+        "x": 23,
+        "y": 630,
+        "width": 343,
+        "height": 77,
+        "right": 366,
+        "bottom": 707
+      },
+      "controlRow": {
+        "x": 23,
+        "y": 719,
+        "width": 343,
+        "height": 40,
+        "right": 366,
+        "bottom": 759
+      },
+      "toolbar": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 48,
+        "right": 388,
+        "bottom": 205
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 23,
+          "y": 723,
+          "width": 36,
+          "height": 36,
+          "right": 59,
+          "bottom": 759,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 62,
+          "y": 724,
+          "width": 47.859375,
+          "height": 34,
+          "right": 109.859375,
+          "bottom": 758,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 114.859375,
+          "y": 724,
+          "width": 92.984375,
+          "height": 34,
+          "right": 207.84375,
+          "bottom": 758,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 330,
+          "y": 723,
+          "width": 36,
+          "height": 36,
+          "right": 366,
+          "bottom": 759,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 320,
+      "height": 740,
+      "theme": "dark",
+      "region": {
+        "x": 1,
+        "y": 199,
+        "width": 317,
+        "height": 501,
+        "right": 318,
+        "bottom": 700
+      },
+      "composer": {
+        "x": 11,
+        "y": 511,
+        "width": 297,
+        "height": 154,
+        "right": 308,
+        "bottom": 665
+      },
+      "draftBody": {
+        "x": 23,
+        "y": 526,
+        "width": 273,
+        "height": 77,
+        "right": 296,
+        "bottom": 603
+      },
+      "controlRow": {
+        "x": 23,
+        "y": 615,
+        "width": 273,
+        "height": 40,
+        "right": 296,
+        "bottom": 655
+      },
+      "toolbar": {
+        "x": 1,
+        "y": 199,
+        "width": 317,
+        "height": 48,
+        "right": 318,
+        "bottom": 247
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 23,
+          "y": 619,
+          "width": 36,
+          "height": 36,
+          "right": 59,
+          "bottom": 655,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 62,
+          "y": 620,
+          "width": 47.859375,
+          "height": 34,
+          "right": 109.859375,
+          "bottom": 654,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 114.859375,
+          "y": 620,
+          "width": 92.984375,
+          "height": 34,
+          "right": 207.84375,
+          "bottom": 654,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 260,
+          "y": 619,
+          "width": 36,
+          "height": 36,
+          "right": 296,
+          "bottom": 655,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 320,
+      "height": 740,
+      "theme": "light",
+      "region": {
+        "x": 1,
+        "y": 199,
+        "width": 317,
+        "height": 501,
+        "right": 318,
+        "bottom": 700
+      },
+      "composer": {
+        "x": 11,
+        "y": 511,
+        "width": 297,
+        "height": 154,
+        "right": 308,
+        "bottom": 665
+      },
+      "draftBody": {
+        "x": 23,
+        "y": 526,
+        "width": 273,
+        "height": 77,
+        "right": 296,
+        "bottom": 603
+      },
+      "controlRow": {
+        "x": 23,
+        "y": 615,
+        "width": 273,
+        "height": 40,
+        "right": 296,
+        "bottom": 655
+      },
+      "toolbar": {
+        "x": 1,
+        "y": 199,
+        "width": 317,
+        "height": 48,
+        "right": 318,
+        "bottom": 247
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 23,
+          "y": 619,
+          "width": 36,
+          "height": 36,
+          "right": 59,
+          "bottom": 655,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 62,
+          "y": 620,
+          "width": 47.859375,
+          "height": 34,
+          "right": 109.859375,
+          "bottom": 654,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 114.859375,
+          "y": 620,
+          "width": 92.984375,
+          "height": 34,
+          "right": 207.84375,
+          "bottom": 654,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 260,
+          "y": 619,
+          "width": 36,
+          "height": 36,
+          "right": 296,
+          "bottom": 655,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "height": 420,
+      "theme": "dark",
+      "region": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 223,
+        "right": 388,
+        "bottom": 380
+      },
+      "composer": {
+        "x": 11,
+        "y": 263,
+        "width": 367,
+        "height": 109,
+        "right": 378,
+        "bottom": 372
+      },
+      "draftBody": {
+        "x": 23,
+        "y": 276,
+        "width": 343,
+        "height": 39,
+        "right": 366,
+        "bottom": 315
+      },
+      "controlRow": {
+        "x": 23,
+        "y": 323,
+        "width": 343,
+        "height": 40,
+        "right": 366,
+        "bottom": 363
+      },
+      "toolbar": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 48,
+        "right": 388,
+        "bottom": 205
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 23,
+          "y": 327,
+          "width": 36,
+          "height": 36,
+          "right": 59,
+          "bottom": 363,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 62,
+          "y": 328,
+          "width": 47.859375,
+          "height": 34,
+          "right": 109.859375,
+          "bottom": 362,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 114.859375,
+          "y": 328,
+          "width": 92.984375,
+          "height": 34,
+          "right": 207.84375,
+          "bottom": 362,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 330,
+          "y": 327,
+          "width": 36,
+          "height": 36,
+          "right": 366,
+          "bottom": 363,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "height": 420,
+      "theme": "light",
+      "region": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 223,
+        "right": 388,
+        "bottom": 380
+      },
+      "composer": {
+        "x": 11,
+        "y": 263,
+        "width": 367,
+        "height": 109,
+        "right": 378,
+        "bottom": 372
+      },
+      "draftBody": {
+        "x": 23,
+        "y": 276,
+        "width": 343,
+        "height": 39,
+        "right": 366,
+        "bottom": 315
+      },
+      "controlRow": {
+        "x": 23,
+        "y": 323,
+        "width": 343,
+        "height": 40,
+        "right": 366,
+        "bottom": 363
+      },
+      "toolbar": {
+        "x": 1,
+        "y": 157,
+        "width": 387,
+        "height": 48,
+        "right": 388,
+        "bottom": 205
+      },
+      "controls": [
+        {
+          "name": "Attach image",
+          "x": 23,
+          "y": 327,
+          "width": 36,
+          "height": 36,
+          "right": 59,
+          "bottom": 363,
+          "covered": false
+        },
+        {
+          "name": "Session mode",
+          "x": 62,
+          "y": 328,
+          "width": 47.859375,
+          "height": 34,
+          "right": 109.859375,
+          "bottom": 362,
+          "covered": false
+        },
+        {
+          "name": "Model and effort",
+          "x": 114.859375,
+          "y": 328,
+          "width": 92.984375,
+          "height": 34,
+          "right": 207.84375,
+          "bottom": 362,
+          "covered": false
+        },
+        {
+          "name": "Send message",
+          "x": 330,
+          "y": 327,
+          "width": 36,
+          "height": 36,
+          "right": 366,
+          "bottom": 363,
+          "covered": false
+        }
+      ],
+      "overflow": false,
+      "pageOverflow": false
+    }
+  ],
+  "axe": [
+    {
+      "surface": "chat",
+      "width": 1440,
+      "theme": "dark",
+      "violations": []
+    },
+    {
+      "surface": "session settings",
+      "width": 1440,
+      "theme": "dark",
+      "violations": []
+    },
+    {
+      "surface": "model settings",
+      "width": 1440,
+      "theme": "dark",
+      "violations": []
+    },
+    {
+      "surface": "chat",
+      "width": 1440,
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "surface": "session settings",
+      "width": 1440,
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "surface": "model settings",
+      "width": 1440,
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "surface": "chat",
+      "width": 390,
+      "theme": "dark",
+      "violations": []
+    },
+    {
+      "surface": "session settings",
+      "width": 390,
+      "theme": "dark",
+      "violations": []
+    },
+    {
+      "surface": "model settings",
+      "width": 390,
+      "theme": "dark",
+      "violations": []
+    },
+    {
+      "surface": "chat",
+      "width": 390,
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "surface": "session settings",
+      "width": 390,
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "surface": "model settings",
+      "width": 390,
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "surface": "effort slider",
+      "width": 390,
+      "theme": "light",
+      "violations": []
+    }
+  ],
+  "errors": [],
+  "task_reads": [
+    "/api/workspace/tasks/274a3056e55e41229d04908895c522f8"
+  ],
+  "provider_requests": [],
+  "fixture": "real password auth and stores; offline capabilities only",
+  "asset_count": 70,
+  "refresh_recovery": {
+    "refresh_statuses": [
+      200
+    ],
+    "same_principal": true,
+    "same_conversation": true,
+    "draft_preserved": true
+  }
+}

@@ -113,6 +113,7 @@ class ClaudeEngine:
             "model": cfg.model or None,
             "can_use_tool": self._make_can_use_tool(binding),
             "include_partial_messages": True,
+            "forward_subagent_text": True,
             "permission_mode": "plan" if cfg.mode=="ask" else "default",
         }
         if self._executable:
@@ -283,7 +284,7 @@ class ClaudeEngine:
         binding.updated_at = time.time()
         self._bindings[binding.binding_id] = binding
         self._sessions[binding.binding_id] = {
-            "resume_id": binding.native_session_id,
+            "resume_id": None if binding.native_session_id.startswith("pending_") else binding.native_session_id,
             "binding": binding,
         }
         return binding
@@ -297,7 +298,8 @@ class ClaudeEngine:
         if reader and not reader.done():raise ValueError('Native turn is still running')
         if state.get('client'):
             await state['client'].disconnect()
-        state.update(client=None,options=self._options(cfg,binding),cfg=cfg,resume_id=binding.native_session_id)
+        state.update(client=None,options=self._options(cfg,binding),cfg=cfg,
+                     resume_id=None if binding.native_session_id.startswith("pending_") else binding.native_session_id)
 
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
@@ -305,11 +307,16 @@ class ClaudeEngine:
         if state is None:
             raise ValueError("no claude session state")
         binding.status = "active"
+        state["stream_messages"] = {}
+        state["cancel_requested"] = False
         self._emit(binding, "engine.turn.started", {"prompt_chars": len(prompt)})
 
         async def _run() -> None:
             try:
                 await self._run_turn(binding, state, prompt, attachments)
+            except asyncio.CancelledError:
+                self._emit(binding, "engine.turn.completed", {"status": "interrupted"})
+                raise
             except Exception as exc:
                 self._emit(binding, "engine.turn.completed",
                            {"status": "failed", "error": {"message": str(exc)}})
@@ -358,35 +365,102 @@ class ClaudeEngine:
                     self._emit(binding, "engine.session.bound",
                                {"native_session_id": sid})
             if isinstance(message, ResultMessage):
+                interrupted = state.get("cancel_requested") or getattr(message, "terminal_reason", None) in {
+                    "aborted_streaming", "aborted_tools",
+                }
+                failed = bool(getattr(message, "is_error", False))
+                from termx.agent.policy import redact
+                details = "; ".join(str(error) for error in (getattr(message, "errors", None) or []))
+                details = details or getattr(message, "result", None) or getattr(message, "subtype", "")
                 self._emit(binding, "engine.turn.completed", {
-                    "status": "completed" if getattr(message, "is_error", False) is False else "failed",
+                    "status": "interrupted" if interrupted else "failed" if failed else "completed",
                     "stop_reason": getattr(message, "subtype", ""),
                     "result": getattr(message, "result", None),
+                    **({"error": {"message": redact(str(details))[:1000]}} if failed and not interrupted else {}),
                     "usage": _bounded(getattr(message, "usage", {}) or {}),
                     "cost_usd": getattr(message, "total_cost_usd", None),
                 })
                 return
-        self._emit(binding, "engine.turn.completed", {"status": "completed"})
+        self._emit(binding, "engine.turn.completed", {
+            "status": "interrupted" if state.get("cancel_requested") else "failed",
+            "error": {"message": "Claude response stream ended before a terminal result. The request was not replayed."},
+        })
 
     def _map_message(self, binding: EngineSessionBinding, message: Any) -> None:
-        from claude_agent_sdk import AssistantMessage, SystemMessage, UserMessage
+        from claude_agent_sdk import AssistantMessage, StreamEvent, SystemMessage, UserMessage
+        from termx.agent.providers import _redact_value
         name = type(message).__name__
-        if isinstance(message, AssistantMessage):
-            for block in getattr(message, "content", []) or []:
+        state = self._sessions.get(binding.binding_id, {})
+        parent = getattr(message, "parent_tool_use_id", None)
+        ancestry = {"parent_call_id": parent} if parent else {}
+        streams = state.setdefault("stream_messages", {})
+        if isinstance(message, StreamEvent):
+            event = message.event
+            if event.get("type") == "message_start":
+                streams[parent] = {"id": (event.get("message") or {}).get("id"), "blocks": {}}
+                return
+            if event.get("type") not in {"content_block_start", "content_block_delta"}:
+                return
+            block = event.get("content_block") or event.get("delta") or {}
+            kind = block.get("type")
+            if kind in {"text", "text_delta"}:
+                etype, field = "engine.message.delta", "text"
+            elif kind in {"thinking", "thinking_delta"}:
+                etype, field = "engine.reasoning.delta", "thinking"
+            else:
+                # Tool input deltas are incomplete JSON; emit the actual tool
+                # call once its complete AssistantMessage arrives below.
+                return
+            delta = block.get(field) or ""
+            if not isinstance(delta, str) or not delta:
+                return
+            stream = streams.setdefault(parent, {"id": None, "blocks": {}})
+            key = (event.get("index", 0), field)
+            stream["blocks"][key] = stream["blocks"].get(key, "") + delta
+            self._emit(binding, etype, {"delta": delta, "message_id": stream["id"], **ancestry})
+        elif isinstance(message, AssistantMessage):
+            stream = streams.pop(parent, {})
+            message_id = getattr(message, "message_id", None)
+            if message_id and stream.get("id") != message_id:
+                stream = {}
+            for index, block in enumerate(getattr(message, "content", []) or []):
                 bname = type(block).__name__
                 if bname == "TextBlock":
-                    self._emit(binding, "engine.message.delta",
-                               {"delta": getattr(block, "text", "")})
+                    text = getattr(block, "text", "")
+                    streamed = stream.get("blocks", {}).get((index, "text"), "")
+                    # The SDK follows partial deltas with the complete block.
+                    # Emit only the unsent suffix, preserving the complete
+                    # fallback for agents that never send partial events.
+                    delta = text[len(streamed):] if text.startswith(streamed) else text
+                    if delta:
+                        self._emit(binding, "engine.message.delta",
+                                   {"delta": delta, "message_id": message_id, **ancestry})
                 elif bname == "ToolUseBlock":
                     tool_input=getattr(block,'input',{}) or {}
                     if str(getattr(block,'name','')).endswith('__browser_action'):
                         tool_input={**tool_input,'args':{k:('[input withheld]' if k in {'text','data','data_base64'} else v) for k,v in (tool_input.get('args') or {}).items()}}
                     self._emit(binding, "engine.tool.started", {
+                        "call_id": getattr(block, "id", ""),
                         "tool": getattr(block, "name", ""),
-                        "input": _bounded(tool_input)})
+                        "input": _bounded(_redact_value(tool_input)), **ancestry})
                 elif bname == "ThinkingBlock":
-                    self._emit(binding, "engine.reasoning.delta",
-                               {"delta": getattr(block, "thinking", "")})
+                    text = getattr(block, "thinking", "")
+                    streamed = stream.get("blocks", {}).get((index, "thinking"), "")
+                    delta = text[len(streamed):] if text.startswith(streamed) else text
+                    if delta:
+                        self._emit(binding, "engine.reasoning.delta",
+                                   {"delta": delta, "message_id": message_id, **ancestry})
+        elif isinstance(message, UserMessage):
+            content = getattr(message, "content", []) or []
+            for block in content if isinstance(content, list) else []:
+                if type(block).__name__ == "ToolResultBlock":
+                    failed = getattr(block, "is_error", False) is True
+                    self._emit(binding, "engine.tool.failed" if failed else "engine.tool.completed", {
+                        "call_id": getattr(block, "tool_use_id", ""),
+                        "status": "failed" if failed else "completed",
+                        "output": _bounded(_redact_value(getattr(block, "content", None))),
+                        **ancestry,
+                    })
         elif isinstance(message, SystemMessage):
             self._emit(binding, "engine.session.info",
                        _bounded(getattr(message, "data", {}) or {}))
@@ -396,6 +470,8 @@ class ClaudeEngine:
 
     async def cancel(self, binding: EngineSessionBinding) -> None:
         state = self._sessions.get(binding.binding_id)
+        if state is not None:
+            state["cancel_requested"] = True
         if state and state.get("client"):
             try:
                 await state["client"].interrupt()

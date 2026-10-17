@@ -18,6 +18,7 @@ from typing import Any
 
 from .. import __version__ as TERMX_VERSION
 from .env import probe_version, resolve_executable
+from .event_payloads import bounded_fields, text_chunks
 from .jsonrpc import JsonlProcess, JsonRpcError, TransportClosed, platform_spawn_env
 from .types import (
     AUTH_AUTHENTICATED,
@@ -87,6 +88,9 @@ class CodexEngine:
         self._model_rows: list[dict[str,Any]] = []
         self.browser_service = None
         self._review_items = {}
+        # Partial text is followed by complete agentMessage snapshots. Track
+        # each item independently so a fallback snapshot cannot duplicate it.
+        self._message_text: dict[tuple[str, str], str] = {}
 
     # ------------------------------------------------------------------ probe
 
@@ -249,6 +253,7 @@ class CodexEngine:
             self._initialized = True
 
     def _on_conn_lost(self) -> None:
+        self._message_text.clear()
         for binding in self._bindings.values():
             if binding.status not in ("closed",):
                 binding.status = SESSION_LOST
@@ -416,6 +421,7 @@ class CodexEngine:
         binding.updated_at = time.time()
         self._threads.pop(binding.native_session_id, None)
         self._bindings.pop(binding.binding_id, None)
+        self._forget_message_text(binding.binding_id)
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         await self._ensure_conn()
@@ -431,6 +437,19 @@ class CodexEngine:
         self._initialized = False
 
     # ----------------------------------------------------------------- events
+
+    def _forget_message_text(self, binding_id: str) -> None:
+        for key in [key for key in self._message_text if key[0] == binding_id]:
+            self._message_text.pop(key, None)
+
+    def _emit_text(self, binding: EngineSessionBinding, etype: str, params: dict[str, Any],
+                   text: str, native: dict[str, Any]) -> None:
+        metadata = bounded_fields({key: value for key, value in params.items() if key not in {"delta", "item"}},
+                                  keep={"threadId", "turnId", "itemId", "parent_call_id"},
+                                  limit=MAX_RAW_EVENT_BYTES // 4)
+        budget = MAX_RAW_EVENT_BYTES - len(json.dumps(metadata, default=str)) - 16
+        for chunk in text_chunks(text, budget):
+            self._emit(binding, etype, {**metadata, "delta": chunk}, native)
 
     def _emit(self, binding: EngineSessionBinding, etype: str,
               payload: dict[str, Any], native: dict[str, Any] | None = None) -> None:
@@ -458,11 +477,13 @@ class CodexEngine:
 
         if method == "turn/started":
             if binding:
+                self._forget_message_text(binding.binding_id)
                 binding.status = "active"
                 self._emit(binding, "engine.turn.started", _bounded(params))
             return
         if method == "turn/completed":
             if binding:
+                self._forget_message_text(binding.binding_id)
                 status = turn.get("status", "completed")
                 binding.status = "idle"
                 self._emit(binding, "engine.turn.completed",
@@ -484,7 +505,33 @@ class CodexEngine:
                 native["item_id"] = item["id"]
             if params.get("itemId"):
                 native["item_id"] = params["itemId"]
-            self._emit(binding, mapped, _bounded(params), native)
+            if isinstance(params.get("delta"), str):
+                delta = params["delta"]
+                if mapped == "engine.message.delta":
+                    key = (binding.binding_id, str(native.get("item_id") or ""))
+                    self._message_text[key] = self._message_text.get(key, "") + delta
+                else:
+                    from termx.agent.policy import redact
+                    delta = redact(delta)
+                self._emit_text(binding, mapped, params, delta, native)
+                return
+            if method == "item/completed" and item.get("type") == "agentMessage" and isinstance(item.get("text"), str):
+                key = (binding.binding_id, str(item.get("id") or ""))
+                previous = self._message_text.get(key, "")
+                text = item["text"]
+                # The completed item is a snapshot, including any final suffix
+                # omitted from deltas. Emit full text when no deltas arrived.
+                suffix = text[len(previous):] if text.startswith(previous) else ""
+                self._message_text[key] = text
+                self._emit_text(binding, "engine.message.delta", {**params, "itemId": item.get("id")}, suffix, native)
+            payload = dict(params)
+            if isinstance(payload.get("item"), dict):
+                payload["item"] = bounded_fields(payload["item"], keep={
+                    "id", "type", "status", "tool", "server", "exitCode", "durationMs", "parent_call_id",
+                }, limit=MAX_RAW_EVENT_BYTES * 3 // 4)
+            self._emit(binding, mapped, bounded_fields(payload, keep={
+                "threadId", "turnId", "itemId", "parent_call_id", "item",
+            }, limit=MAX_RAW_EVENT_BYTES), native)
             return
         if method in ("turn/plan/updated", "turn/diff/updated", "thread/tokenUsage/updated"):
             if binding:

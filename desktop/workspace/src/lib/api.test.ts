@@ -1,5 +1,5 @@
 import {describe,it,expect,vi,beforeEach,afterEach} from 'vitest';
-import {request,unlockWorkspace} from './api';
+import {gql,request,unlockWorkspace} from './api';
 vi.mock('./native',()=>({nativeWorkspace:()=>false}));
 beforeEach(()=>{document.cookie='termx_csrf=csrf-fixture';localStorage.clear()});
 afterEach(()=>vi.unstubAllGlobals());
@@ -26,4 +26,63 @@ it('rejects a backslash-normalized foreign origin',async()=>{
  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
  await expect(request('/\\other.example/private')).rejects.toThrow('workspace origin');
  expect(fetch).not.toHaveBeenCalled();
+});
+
+describe('refresh failure recovery',()=>{
+ it.each([403,429,500,503])('keeps the workspace signed in when refresh returns HTTP %s',async(status)=>{
+  const signedOut=vi.fn();window.addEventListener('termx-signed-out',signedOut);
+  vi.stubGlobal('fetch',vi.fn(async(path:string)=>new Response('{}',{status:path==='/auth/refresh'?status:401})));
+  try{await expect(request('/api/fixture')).rejects.toMatchObject({status});expect(signedOut).not.toHaveBeenCalled();}
+  finally{window.removeEventListener('termx-signed-out',signedOut);}
+ });
+ it('does not rotate a refresh credential after a transient current-session failure',async()=>{
+  const fetch=vi.fn(async(path:string)=>new Response('{}',{status:path==='/auth/me'?503:401}));vi.stubGlobal('fetch',fetch);
+  await expect(request('/api/fixture')).rejects.toMatchObject({status:503});
+  expect(fetch.mock.calls.map(([path])=>path)).toEqual(['/api/fixture','/auth/me']);
+ });
+ it('locks without rotating when another window already locked the current session',async()=>{
+  const locked=vi.fn(),signedOut=vi.fn();window.addEventListener('termx-session-locked',locked);window.addEventListener('termx-signed-out',signedOut);
+  const fetch=vi.fn(async(path:string)=>new Response('{}',{status:path==='/auth/me'?423:401}));vi.stubGlobal('fetch',fetch);
+  try{await expect(request('/api/fixture')).rejects.toMatchObject({status:423});expect(locked).toHaveBeenCalledOnce();expect(signedOut).not.toHaveBeenCalled();expect(fetch).toHaveBeenCalledTimes(2);}
+  finally{window.removeEventListener('termx-session-locked',locked);window.removeEventListener('termx-signed-out',signedOut);}
+ });
+ it('signs out only when the host rejects the retained refresh credential',async()=>{
+  const signedOut=vi.fn();window.addEventListener('termx-signed-out',signedOut);vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}',{status:401})));
+  try{await expect(request('/api/fixture')).rejects.toMatchObject({status:401});expect(signedOut).toHaveBeenCalledOnce();}
+  finally{window.removeEventListener('termx-signed-out',signedOut);}
+ });
+ it('bounds a stalled refresh without clearing the workspace or replaying the request',async()=>{
+  vi.useFakeTimers();const signedOut=vi.fn();window.addEventListener('termx-signed-out',signedOut);
+  try{
+   const fetch=vi.fn((path:string,init:RequestInit)=>path==='/auth/refresh'?new Promise<Response>((_,reject)=>init.signal!.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')))):Promise.resolve(new Response('{}',{status:401})));vi.stubGlobal('fetch',fetch);
+   const outcome=request('/api/fixture').catch(error=>error);await vi.advanceTimersByTimeAsync(30001);
+   expect(await outcome).toMatchObject({status:504});expect(signedOut).not.toHaveBeenCalled();expect(fetch.mock.calls.filter(([path])=>path==='/api/fixture')).toHaveLength(1);
+  }finally{window.removeEventListener('termx-signed-out',signedOut);vi.useRealTimers();}
+ });
+});
+
+describe('GraphQL session recovery',()=>{
+ const denied={errors:[{message:'Managed sign-in required',extensions:{code:'UNAUTHENTICATED',http_status:401}}]};
+ it('recovers a read whose access credential expires during nested turn resolution',async()=>{
+  let attempts=0;const fetch=vi.fn(async(path:string)=>{
+   if(path==='/auth/me')return new Response('{}',{status:401});
+   if(path==='/auth/refresh')return new Response('{}');
+   return new Response(JSON.stringify(attempts++?{data:{nodes:[{task:{id:'task'}}]}}:denied));
+  });vi.stubGlobal('fetch',fetch);
+  expect(await gql('# Tail poll\n query($ids:[ID!]!){nodes(ids:$ids){... on WorkspaceTurnNode{task}}}',{ids:['turn']})).toEqual({nodes:[{task:{id:'task'}}]});
+  expect(fetch.mock.calls.map(([path])=>path)).toEqual(['/graphql','/auth/me','/auth/refresh','/graphql']);
+ });
+ it('never replays a mutation after a field reports lost authentication',async()=>{
+  const fetch=vi.fn(async()=>new Response(JSON.stringify(denied)));vi.stubGlobal('fetch',fetch);
+  await expect(gql('mutation { create_session { id } }')).rejects.toMatchObject({status:401});expect(fetch).toHaveBeenCalledOnce();
+ });
+ it('preserves permission errors without refreshing the account',async()=>{
+  const fetch=vi.fn(async()=>new Response(JSON.stringify({errors:[{message:'Project access denied',extensions:{code:'FORBIDDEN',http_status:403}}]})));vi.stubGlobal('fetch',fetch);
+  await expect(gql('{ workspace_turns(session_id:"private"){edges{node{id}}} }')).rejects.toMatchObject({status:403,message:'Project access denied'});expect(fetch).toHaveBeenCalledOnce();
+ });
+ it('bounds recovery to one replay when a read still lacks authentication',async()=>{
+  const fetch=vi.fn(async(path:string)=>new Response(JSON.stringify(path==='/graphql'?denied:{})));vi.stubGlobal('fetch',fetch);
+  await expect(gql('{ workspace_sessions { edges { node { id } } } }')).rejects.toMatchObject({status:401});
+  expect(fetch.mock.calls.map(([path])=>path)).toEqual(['/graphql','/auth/me','/graphql']);
+ });
 });

@@ -5,16 +5,23 @@ let refreshing:Promise<void>|undefined;
 const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('termx-session-state'):undefined;
 channel?.addEventListener('message',event=>{if(['signed-out','session-locked','session-unlocked'].includes(event.data))window.dispatchEvent(new Event('termx-'+event.data))});
 function locked(){channel?.postMessage('session-locked');window.dispatchEvent(new Event('termx-session-locked'));}
+function signedOut(){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));}
 export async function refreshSession(){
  if(refreshing)return refreshing;
  refreshing=(async()=>{
-  if(!navigator.locks)throw new ApiError(401,'Session expired. Sign in again; this browser cannot safely coordinate refresh across windows.');
+  // The native bridge owns refresh credentials and serializes all windows.
+  if(nativeWorkspace()){await request('/auth/me',{},false);return;}
+  if(!navigator.locks)throw new ApiError(503,'This browser cannot safely coordinate session refresh across windows. Open the workspace in a browser with secure Web Locks support.');
   await navigator.locks.request('termx-session-refresh',async()=>{
-   const current=await fetch('/auth/me',{credentials:'same-origin'});
-   if(current.ok)return; // Another window already refreshed while this one waited.
-   const response=await fetch('/auth/refresh',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Termx-CSRF':csrf()},body:'{}'});
-   if(response.status===423){locked();throw new ApiError(423,'Session locked; unlock required');}
-   if(!response.ok){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));throw new ApiError(401,'Session expired or revoked. Sign in again.');}
+   try{await request('/auth/me',{},false);return;} // Another window may have refreshed while this one waited.
+   catch(error){if(!(error instanceof ApiError)||error.status!==401)throw error;}
+   try{await request('/auth/refresh',{method:'POST',body:'{}'},false);}
+   catch(error){
+    // A timeout, unavailable host, CSRF race or locked session is not proof
+    // that the refresh family was revoked. Keep the authenticated UI intact.
+    if(error instanceof ApiError&&error.status===401){signedOut();throw new ApiError(401,'Session expired or revoked. Sign in again.');}
+    throw error;
+   }
   });
  })().finally(()=>{refreshing=undefined});return refreshing;
 }
@@ -22,7 +29,7 @@ export async function request<T>(path:string,init:RequestInit={},retry=true):Pro
  if(!path.startsWith('/')||path.startsWith('//')||path.includes('\\'))throw new Error('API requests must stay on this workspace origin');
  if(nativeWorkspace() && !path.startsWith('/auth/oidc/')){
   try { const response=await nativeRequest<T>(path,init);if(response.status===423)locked();if(response.status<200||response.status>=300){const value=response.body as {detail?:unknown};throw new ApiError(response.status,typeof value?.detail==='string'?value.detail:JSON.stringify(value));}return response.body; }
-  catch(error){if(error instanceof ApiError)throw error;const message=error instanceof Error?error.message:String(error);if(/Session locked/.test(message)){locked();throw new ApiError(423,message);}if(/expired|revoked|Sign in required/.test(message)){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));throw new ApiError(401,message);}throw new Error(message);}
+  catch(error){if(error instanceof ApiError)throw error;const message=error instanceof Error?error.message:String(error);if(message==='Session locked; unlock required'){locked();throw new ApiError(423,message);}if(['Sign in required','Session expired or revoked; sign in again','SSO session expired or revoked; sign in again'].includes(message)){signedOut();throw new ApiError(401,message);}throw new Error(message);}
  }
  const headers=new Headers(init.headers);
  if(init.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');
@@ -44,11 +51,32 @@ export async function request<T>(path:string,init:RequestInit={},retry=true):Pro
  if(response.status===204)return undefined as T;
  return payload as T;
 }
-export async function gql<T>(query:string,variables:Record<string,unknown>={}):Promise<T>{const body=await request<{data?:T;errors?:{message:string}[]}>('/graphql',{method:'POST',body:JSON.stringify({query,variables})});if(body.errors?.length)throw new Error(body.errors.map(error=>error.message).join('\n'));return body.data!;}
+type GraphQLFailure={message:string;extensions?:{code?:string;http_status?:number}};
+type GraphQLResponse<T>={data?:T|null;errors?:GraphQLFailure[]};
+function graphQLStatus(error:GraphQLFailure){return error.extensions?.http_status||({UNAUTHENTICATED:401,FORBIDDEN:403,LOCKED:423,NOT_FOUND:404,CONFLICT:409} as Record<string,number>)[error.extensions?.code||''];}
+export async function gql<T>(query:string,variables:Record<string,unknown>={}):Promise<T>{
+ const execute=()=>request<GraphQLResponse<T>>('/graphql',{method:'POST',body:JSON.stringify({query,variables})});
+ let body=await execute();
+ // GraphQL can report a JWT expiring during nested field resolution with
+ // HTTP 200. Retry only a read operation; a partially executed mutation
+ // must never be replayed merely because one field lost authentication.
+ const readOnly=/^(?:\s|#[^\r\n]*(?:\r?\n|$))*(?:query\b|\{)/.test(query);
+ if(readOnly&&body.errors?.some(error=>graphQLStatus(error)===401)){
+  await refreshSession();body=await execute();
+ }
+ if(body.errors?.length){
+  const status=body.errors.map(graphQLStatus).find(status=>status===423)||body.errors.map(graphQLStatus).find(Boolean);
+  if(status===423)locked();
+  const message=body.errors.map(error=>error.message).join('\n');
+  throw status?new ApiError(status,message):new Error(message);
+ }
+ if(body.data==null)throw new Error('The host returned no GraphQL data. Refresh and try again.');
+ return body.data;
+}
 export function json(method:string,data?:unknown):RequestInit{return {method,body:data===undefined?undefined:JSON.stringify(data)}};
-export async function signOut(){if(nativeWorkspace())await nativeSignOut();else await request('/auth/logout',json('POST',{}),false);channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));}
+export async function signOut(){if(nativeWorkspace())await nativeSignOut();else await request('/auth/logout',json('POST',{}),false);signedOut();}
 export interface Project{id:string;path:string;name:string}
-export interface Task{id:string;status:string;prompt:string;result?:string;error?:string;engine?:string;limits?:Record<string,number>;events?:{type:string;payload:Record<string,unknown>;sequence:number}[];approvals?:{id:string;status:string;kind:string;payload:Record<string,unknown>}[];children?:Task[]}
+export interface Task{id:string;status:string;prompt:string;result?:string;error?:string;engine?:string;limits?:Record<string,number>;events?:{type:string;payload:Record<string,unknown>;sequence:number}[];activity_truncated?:boolean;approvals?:{id:string;status:string;kind:string;payload:Record<string,unknown>}[];children?:Task[]}
 export interface Turn{id:string;prompt:string;task_id?:string;task?:Task;sequence:number}
 export interface Session{reasoning_config?:Record<string,string>;custom_agent_id?:string|null;custom_agent_revision?:string|null;id:string;title:string;project_id?:string;cwd?:string;engine:string;provider_id?:string;model?:string;mode:string;pinned:boolean;archived:boolean;draft_text:string;draft_context?:import('./context').ContextItem[];revision:number;turns?:Turn[];linked_from?:string;updated_at:number;scroll:number;scroll_anchor?:import('./conversation-position').ConversationAnchor|null;extension_ids?:string[];workflow?:string|null;hasEarlier?:boolean;group_id?:string|null;runner_id?:string|null;runner_credential_ref?:string|null;run_limits?:Record<string,number>;latest_status?:string|null;worktree_id?:string|null;worktree_digest?:string|null;worktree_branch?:string|null}
 export interface Engine{id:string;name?:string;available?:boolean;capabilities?:Record<string,unknown>}

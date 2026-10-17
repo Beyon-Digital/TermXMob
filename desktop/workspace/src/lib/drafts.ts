@@ -5,5 +5,6 @@ export type Draft={text:string;saved:string;dirty:boolean;revision?:number;conte
 export const sessionDrafts=new Map<string,Draft>();
 export const draftWrites=new Map<string,Promise<void>>();
 export const submittingDrafts=new Set<string>();
+export const draftSubmissionOwners=new Map<string,symbol>();
 export const consumedTransfers=new Set<string>();
-if(typeof window!=='undefined')window.addEventListener('termx-signed-out',()=>{sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();consumedTransfers.clear()});
+if(typeof window!=='undefined')window.addEventListener('termx-signed-out',()=>{sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();consumedTransfers.clear()});
