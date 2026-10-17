@@ -18,6 +18,7 @@ See the [change explanation](../../session-agent-chat-fixes.md) for causes, beha
 | Local password access-cookie expiry | Refresh **200**; same principal, same conversation, saved draft preserved |
 | Task dispatch isolation | Five seeded tasks unchanged; no inference or new task dispatched |
 | Rust formatting and whitespace | Passed |
+| Actual native crate compile in PR CI | Passed on Linux, Windows, and macOS at implementation commit `6946d134` |
 
 The full frontend suite includes the 10,000-turn virtualization regression, which keeps fewer than 50 message rows mounted. Focused counts above overlap with the complete suite and are not additional tests.
 
@@ -102,4 +103,6 @@ The [machine-readable report](report.json) contains all viewport geometry, the i
 
 The Rust source passes formatting. Local `cargo check --locked --manifest-path desktop/src-tauri/Cargo.toml` stopped at missing Linux GLib/pkg-config prerequisites before compiling the changed workspace module; it is **not** recorded as a successful native compile.
 
-The existing `native-permission-check.yml` pull-request workflow covers changes to `workspace.rs` and compiles the actual crate on Linux, Windows, and macOS. Its result must be checked on the PR. Installed-app keyring behavior, a physical mobile software keyboard, and live ACP/vendor services still require their corresponding native/device/service qualification. This change has not been merged, packaged, or deployed to an installed app.
+The subsequent [native PR workflow run](https://github.com/Beyon-Digital/TermXMob/actions/runs/39054602282) at implementation commit `6946d134b5b6bf0d5601009605e467ab4bde24e4` passed on Linux, Windows, and macOS. It compiled the actual crate, including `workspace.rs`, and ran the selected updater tests and platform-policy verification. This closes the source-compilation limitation from the local environment. The current head's checks remain visible on [PR #42](https://github.com/Beyon-Digital/TermXMob/pull/42).
+
+Installed-app keyring behavior, a physical mobile software keyboard, and live ACP/vendor services still require their corresponding native/device/service qualification. This change has not been merged, packaged, or deployed to an installed app.

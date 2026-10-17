@@ -220,7 +220,11 @@ def test_jsonrpc_stdout_loss_rejects_followups_and_cancels_pending_callbacks():
             "os.close(sys.stdout.fileno())\n"
             "sys.stdin.read()\n"
         )
-        peer = JsonlProcess([sys.executable, "-u", "-c", script], on_server_request=on_request)
+        # The Windows venv redirector retains a copy of the stdout writer
+        # while its child runs. This stdlib fixture needs the real interpreter
+        # so closing stdout produces EOF without terminating the process.
+        executable = sys._base_executable if sys.platform == "win32" else sys.executable
+        peer = JsonlProcess([executable, "-u", "-c", script], on_server_request=on_request)
         await peer.start()
         try:
             await asyncio.wait_for(entered.wait(), 2)

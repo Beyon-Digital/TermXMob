@@ -579,6 +579,10 @@ def test_acp_protocol_disconnect_marks_session_lost_and_resumes_without_replay(t
         else:
             env["FAKE_ACP_INVALID_FRAME"] = "1"
         engine = _engine([], [], env)
+        if failure == "stdout_closed" and sys.platform == "win32":
+            # The venv redirector retains stdout's writer until child exit;
+            # run this stdlib EOF fixture directly so the process stays alive.
+            engine._executable = sys._base_executable
         engine._event_sink = gateway.on_engine_event
         gateway.register(engine)
         conv = store.create_conversation(cwd=str(tmp_path))
