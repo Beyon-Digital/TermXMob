@@ -1,0 +1,53 @@
+{
+  "source_commit": "1094609da6b390ec46438f9cd32f5cb3dfa1acad",
+  "source_tree": "1ca0d2b7200144f1105153c3f43a91e831410919",
+  "pr_checkout_commit": "17bdffac0ce230a93ee8a766df21e92de09b3c69",
+  "pr_checkout_tree_matches_source": true,
+  "source_ci": {
+    "run": 37692827265,
+    "status": "passed",
+    "frontend": {
+      "passed": 245,
+      "files": 64
+    },
+    "linux": {
+      "passed": 1089,
+      "skipped": 147,
+      "seconds": 190.58
+    },
+    "macos": {
+      "passed": 1120,
+      "skipped": 116,
+      "seconds": 275.19
+    }
+  },
+  "windows_contracts": {
+    "run": 37692827271,
+    "status": "passed",
+    "passed": 247,
+    "skipped": 1,
+    "seconds": 248.09,
+    "native_dacl_passed": 3,
+    "owned_printwindow_digest": "sha256:7364f03cf0787b011eb589929895045ef8c64e9d6268536a32dfe3c572fe62ac"
+  },
+  "native_compile": {
+    "run": 37692827283,
+    "status": "passed",
+    "platforms": [
+      "ubuntu-22.04",
+      "windows-2022",
+      "macos-14"
+    ],
+    "runtime_resources_override": "Source compilation only; bundle resources overridden. Actual packaging requires real staged runtime."
+  },
+  "artifact_only_dispatch": {
+    "run": 37693649699,
+    "url": "https://github.com/Beyon-Digital/TermXMob/actions/runs/37693649699",
+    "created_at_utc": "2026-10-07T22:03:24Z",
+    "release_tag": "",
+    "draft": true,
+    "include_intel": true,
+    "source_sha_verified": true
+  },
+  "qualification_limit": "Source and focused actual Windows worker contracts qualified. New final-DMG notarization contract tests are synthetic; actual Apple ticket/signature/package hashes, frozen runtime/full Windows suite and installed-app lifecycle are separate pending artifact gates. PR installed-Mac job remains fixture-only. Live media/reviewer provider qualification remains pending."
+}
