@@ -68,7 +68,7 @@ def run(destination, axe_source):
                         # breadcrumb after authenticated deep-link restoration.
                         if zoom == 200:
                             page.get_by_role('button',name='Show sidebar',exact=True).click()
-                        page.get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
+                        page.get_by_role('complementary',name='Projects and conversations',exact=True).get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
                         hide_sidebar=page.get_by_role('navigation',name='Workspace navigation',exact=True).get_by_role('button',name='Hide sidebar',exact=True)
                         if zoom == 200 and hide_sidebar.is_visible():
                             hide_sidebar.click()
