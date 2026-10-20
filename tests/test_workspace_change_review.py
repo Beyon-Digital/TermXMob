@@ -138,9 +138,11 @@ def test_read_only_review_never_executes_repository_fsmonitor(workspace):
     checkout = Path(tree['path'])
     marker = root.parent / 'fsmonitor-executed'
     hook = root.parent / 'fsmonitor-hook.sh'
-    hook.write_text('#!/bin/sh\n: > ' + shlex.quote(str(marker)) + "\nprintf 'review-token\\0/\\0'\n")
+    # Git for Windows runs hooks through sh: retain LF and shell-native paths.
+    hook.write_text('#!/bin/sh\n: > ' + shlex.quote(marker.as_posix()) + "\nprintf 'review-token\\0/\\0'\n",
+                    encoding='utf-8', newline='\n')
     hook.chmod(0o700)
-    git_ops._require_ok(git_ops._git(str(checkout), 'config', 'core.fsmonitor', str(hook)))
+    git_ops._require_ok(git_ops._git(str(checkout), 'config', 'core.fsmonitor', shlex.quote(hook.as_posix())))
     (checkout / 'base.txt').write_text('review this real change\n')
     # Verify the configured hook is active before checking the read-only port.
     git_ops._require_ok(git_ops._git(str(checkout), 'status', '--porcelain'))

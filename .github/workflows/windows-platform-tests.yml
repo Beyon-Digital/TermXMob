@@ -43,6 +43,7 @@ on:
       - 'tests/test_skill_sources.py'
       - 'tests/test_workspace_preset_tools_edit.py'
       - 'tests/test_workspace_change_review.py'
+      - 'tests/test_workspace_swarms.py'
       - '.github/workflows/windows-platform-tests.yml'
 
 permissions:
@@ -91,11 +92,13 @@ jobs:
           tests/test_desktop_host_stop_cli.py tests/test_cli_banner.py tests/test_agent_registry_newlines.py
           tests/test_https_registries.py tests/test_mcp_authority.py
           tests/test_skill_sources.py tests/test_workspace_preset_tools_edit.py
-      - name: Verify bounded Git launcher and descendant cleanup
+      - name: Verify Git review, launcher cleanup and coordinator fixtures
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.dependencies.outcome == 'success' }}
         run: >-
           uv run --no-sync pytest -q
           tests/test_workspace_change_review.py::test_git_launcher_descendants_have_a_bounded_capture_lifetime
+          tests/test_workspace_change_review.py::test_read_only_review_never_executes_repository_fsmonitor
+          tests/test_workspace_swarms.py::test_team_rejects_ineligible_coordinator
       - name: Upload owned PrintWindow evidence
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@v4
