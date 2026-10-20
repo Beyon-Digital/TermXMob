@@ -3,14 +3,20 @@ import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import {json,request} from '../lib/api';
+import {useObservationActive} from '../lib/use-observation-active';
 export type QueuedPrompt={id:string;revision:number;prompt:string;status:string;reason?:string|null;task_id?:string;expires_at:number;target:Record<string,unknown>;target_digest:string;attachments?:{name:string}[];context?:unknown[]};
 type Review={target:Record<string,unknown>;target_digest:string};
-export default function PromptQueue({sessionId,changed,onError,onRefresh,onTask}:{sessionId:string;changed:number;onError:(error:unknown)=>void;onRefresh:()=>void;onTask?:(taskId:string)=>void}){
+export default function PromptQueue({sessionId,changed,onError,onRefresh,onTask,visible=true}:{sessionId:string;changed:number;onError:(error:unknown)=>void;onRefresh:()=>void;onTask?:(taskId:string)=>void;visible?:boolean}){
+ const observing=useObservationActive(visible),observation=useRef(observing),read=useRef<AbortController|null>(null);observation.current=observing;
  const [items,setItems]=useState<QueuedPrompt[]>([]),[open,setOpen]=useState<QueuedPrompt|null>(null),[review,setReview]=useState<Review|null>(null),[busy,setBusy]=useState(false);const current=useRef(sessionId),generation=useRef(0),alive=useRef(true);if(current.current!==sessionId){current.current=sessionId;generation.current++}const fresh=(id:string,ticket:number)=>alive.current&&current.current===id&&generation.current===ticket;
  useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[]);
- async function refresh(){const id=sessionId,ticket=generation.current;try{const value=await request<{items:QueuedPrompt[]}>('/api/workspace/sessions/'+id+'/queue');if(fresh(id,ticket))setItems(value.items||[])}catch(error){if(fresh(id,ticket))onError(error)}}
- useEffect(()=>{setBusy(false);setItems([]);setOpen(null);setReview(null);void refresh();const timer=setInterval(()=>void refresh(),1500);return()=>clearInterval(timer)},[sessionId]);
- useEffect(()=>{void refresh()},[changed]);
+ async function refresh(){
+  if(!observation.current||(read.current&&!read.current.signal.aborted))return;
+  const id=sessionId,ticket=generation.current,controller=new AbortController();read.current=controller;
+  try{const value=await request<{items:QueuedPrompt[]}>('/api/workspace/sessions/'+id+'/queue',{signal:controller.signal});if(!controller.signal.aborted&&observation.current&&fresh(id,ticket))setItems(value.items||[])}catch(error){if(!controller.signal.aborted&&observation.current&&fresh(id,ticket))onError(error)}finally{if(read.current===controller)read.current=null}
+ }
+ useEffect(()=>{setBusy(false);setItems([]);setOpen(null);setReview(null)},[sessionId]);
+ useEffect(()=>{if(!observing)return;void refresh();const timer=setInterval(()=>void refresh(),1500);return()=>{clearInterval(timer);read.current?.abort()}},[sessionId,observing,changed]);
  async function act(fn:()=>Promise<unknown>){setBusy(true);const id=sessionId,ticket=generation.current;try{await fn();if(fresh(id,ticket)){setOpen(null);setReview(null);await refresh();onRefresh()}}catch(error){if(fresh(id,ticket))onError(error)}finally{if(fresh(id,ticket))setBusy(false)}}
  const pending=items.filter(item=>['queued','blocked','dispatching'].includes(item.status));
  const history=items.filter(item=>!['queued','blocked','dispatching'].includes(item.status));

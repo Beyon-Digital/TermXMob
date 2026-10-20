@@ -8,6 +8,13 @@ Env knobs:
 - FAKE_ACP_HANG: "1" — prompt never resolves until session/cancel.
 - FAKE_ACP_NO_MODE: "1" — omit native mode selectors (including legacy modes).
 - FAKE_ACP_DEFAULT_MODE: native mode used by a new session (default "ask").
+- FAKE_ACP_STDERR_BYTES: emit this many diagnostic bytes before initialization
+  and before each prompt (exercises pipe backpressure without a real agent).
+- FAKE_ACP_LARGE_CHUNK_BYTES: emit one text update of this size per prompt.
+- FAKE_ACP_CLOSE_STDOUT: close the protocol stream during a prompt but keep
+  the OS process alive, simulating a broken native connection.
+- FAKE_ACP_INVALID_FRAME: send a JSON array instead of a JSON-RPC object,
+  simulating a failed SDK reader while the OS process remains alive.
 """
 
 from __future__ import annotations
@@ -206,6 +213,21 @@ def handle(msg: dict) -> None:
         return
     if method == "session/prompt":
         sid = params.get("sessionId")
+        noisy = int(os.environ.get("FAKE_ACP_STDERR_BYTES", "0"))
+        if noisy:
+            sys.stderr.write("diagnostic-only " + "x" * noisy)
+            sys.stderr.flush()
+        large = int(os.environ.get("FAKE_ACP_LARGE_CHUNK_BYTES", "0"))
+        if large:
+            chunk(sid, "x" * large)
+        if os.environ.get("FAKE_ACP_CLOSE_STDOUT") == "1":
+            chunk(sid, "partial before disconnect")
+            os.close(sys.stdout.fileno())
+            return
+        if os.environ.get("FAKE_ACP_INVALID_FRAME") == "1":
+            sys.stdout.write("[]\n")
+            sys.stdout.flush()
+            return
         text = "".join(
             b.get("text", "") for b in params.get("prompt", [])
             if isinstance(b, dict) and b.get("type") == "text")
@@ -259,6 +281,10 @@ def handle(msg: dict) -> None:
 
 def main() -> None:
     _load_state()
+    noisy = int(os.environ.get("FAKE_ACP_STDERR_BYTES", "0"))
+    if noisy:
+        sys.stderr.write("startup-diagnostic-only " + "x" * noisy)
+        sys.stderr.flush()
     for line in sys.stdin:
         line = line.strip()
         if not line:

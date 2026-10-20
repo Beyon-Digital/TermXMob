@@ -636,10 +636,21 @@ class EngineGateway:
 
         if event.type == "engine.message.delta":
             delta = event.payload.get("delta") or event.payload.get("text") or ""
-            self._result_buffers.setdefault(binding_id, []).append(str(delta))
+            if not event.payload.get("parent_call_id"):
+                self._result_buffers.setdefault(binding_id, []).append(str(delta))
+        elif event.type == "engine.session.bound":
+            # Some engines learn their durable ID only after their first
+            # prompt. Persist it immediately so restart/resume never sends
+            # Claude's temporary pending_* placeholder back to the engine.
+            binding = self._bindings.get(binding_id)
+            native_id = event.payload.get("native_session_id")
+            if binding is not None and native_id == binding.native_session_id:
+                self._store.update_engine_session(binding_id, native_session_id=native_id,
+                                                  payload=binding.as_dict())
+                self._store.update_task(task_id, engine_native_id=native_id)
         elif event.type == "engine.item.completed":
             item = event.payload.get("item") or {}
-            if item.get("type") == "agentMessage" and item.get("text"):
+            if item.get("type") == "agentMessage" and item.get("text") and not event.payload.get("parent_call_id"):
                 buf = self._result_buffers.setdefault(binding_id, [])
                 if not buf or not "".join(buf).strip():
                     buf.append(str(item["text"]))
@@ -650,21 +661,29 @@ class EngineGateway:
                 if approval['status']=='pending' and approval['payload'].get('engine_request_id')==event.payload.get('request_id'):
                     resolved=self._store.resolve_approval(approval['id'],'denied')
                     self._emit(task_id,'approval.resolved',{'approval':resolved})
-            self._store.update_task(task_id,status='running')
+            task = self._store.get_task(task_id)
+            if task and task["status"] == "awaiting_approval" and not any(
+                approval["status"] == "pending" for approval in self._store.approvals(task_id)
+            ):
+                self._store.update_task(task_id,status='running')
         elif event.type == "engine.session.lost":
             self._store.update_engine_session(binding_id, status="lost")
             task = self._store.get_task(task_id)
             if task and task["status"] in {"running", "planning", "awaiting_approval", "cancelling"}:
-                self._store.update_task(
-                    task_id, status="failed",
-                    error="Engine process exited; session may be resumable",
-                )
-                self._emit(task_id, "task.failed", {"message": "Engine process exited; session may be resumable"})
+                self._finish_turn(binding_id, task_id, {
+                    "status": "failed",
+                    "error": {"message": "Engine connection closed; session may be resumable"},
+                })
 
     def _finish_turn(self, binding_id: str, task_id: str,
                      payload: dict[str, Any]) -> None:
         status = str(payload.get("status") or "completed")
-        result = "".join(self._result_buffers.pop(binding_id, [])) or None
+        final_text = payload.get("result")
+        result = "".join(self._result_buffers.pop(binding_id, [])) or (final_text if isinstance(final_text, str) else None)
+        for approval in self._store.approvals(task_id):
+            if approval["status"] == "pending":
+                resolved = self._store.resolve_approval(approval["id"], "denied")
+                self._emit(task_id, "approval.resolved", {"approval": resolved})
         if status == "completed":
             self._store.update_task(task_id, status="completed", result=result)
             self._emit(task_id, "task.completed", {"result": result})
@@ -682,7 +701,9 @@ class EngineGateway:
                        {"message": message or "engine turn failed"})
         record = self._store.get_engine_session(binding_id)
         if record:
-            self._store.update_engine_session(binding_id, status="idle")
+            binding = self._bindings.get(binding_id)
+            lost = record["status"] == "lost" or (binding is not None and binding.status in {"lost", "closed"})
+            self._store.update_engine_session(binding_id, status="lost" if lost else "idle")
 
     async def approval_sink(self, binding_id: str, token: str, method: str,
                             params: dict[str, Any], kind: str) -> str:

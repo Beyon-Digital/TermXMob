@@ -220,6 +220,24 @@ def test_native_tokens_and_bounded_device_migration():
     assert state.auth.check(new.json()["access_token"])
 
 
+def test_graphql_challenges_missing_access_cookie_before_nested_resolvers():
+    client,state=client_and_state()
+    enrolled=setup(client)
+    retained=client.cookies.get('termx_refresh')
+    client.cookies.delete('termx_access')  # Browser removes it after five minutes.
+    query={'query':'{workspace_sessions(first:1){edges{node{id}}}}'}
+    headers={**ORIGIN,'X-Termx-CSRF':enrolled['csrf_token']}
+    challenge=client.post('/graphql',headers=headers,json=query)
+    assert challenge.status_code==401,challenge.text
+    assert client.cookies.get('termx_refresh')==retained
+    renewed=client.post('/auth/refresh',headers=headers,json={})
+    assert renewed.status_code==200,renewed.text
+    assert renewed.json()['session_id']==enrolled['session_id']
+    loaded=client.post('/graphql',headers={**ORIGIN,'X-Termx-CSRF':renewed.json()['csrf_token']},json=query)
+    assert loaded.status_code==200 and not loaded.json().get('errors'),loaded.text
+    assert state.identity.resolve(client.cookies.get('termx_access'))
+
+
 def test_unconfigured_remote_closed_and_setup_local_only(tmp_path):
     state = AppState()
     # Authentication entry is public even when a clean checkout has no built UI.

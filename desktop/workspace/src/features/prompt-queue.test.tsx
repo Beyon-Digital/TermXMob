@@ -8,8 +8,8 @@ vi.mock('../lib/api',()=>({request:vi.fn(),gql:vi.fn(),json:(method:string,data:
 vi.mock('./VoiceControls',()=>({default:()=>null}));
 const api=vi.mocked(request),graph=vi.mocked(gql),error=vi.fn();
 const session={id:'conversation',title:'Current work',project_id:'project',cwd:'/project',engine:'internal',model:'fixture',provider_id:'fixture',mode:'agent',pinned:false,archived:false,revision:1,updated_at:1,scroll:0,draft_text:'',turns:[{id:'turn',prompt:'Active work',sequence:1,task:{id:'active-task',prompt:'Active work',status:'running'}}]} as Session;
-beforeEach(()=>{api.mockReset();graph.mockReset();graph.mockResolvedValue({engine_models:[]});error.mockReset();sessionDrafts.clear();consumedTransfers.clear();api.mockImplementation(async(path)=>path.endsWith('/queue')?{items:[]}:path.includes('presets')?{presets:[]}:path.includes('available-extensions')?{extensions:[]}:path.includes('/runners')?{runners:[]}:path.includes('/capabilities')?{accounts:[]}:session);vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}})});
-afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks()});
+beforeEach(()=>{api.mockReset();graph.mockReset();graph.mockResolvedValue({engine_models:[]});error.mockReset();sessionDrafts.clear();consumedTransfers.clear();api.mockImplementation(async(path)=>path.endsWith('/queue')?{items:[]}:path.includes('presets')?{presets:[]}:path.includes('available-extensions')?{extensions:[]}:path.includes('/runners')?[]:path.includes('/capabilities')?{accounts:[]}:session);vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}})});
+afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks()});
 const props={session,engines:[],providers:[],onSelect:vi.fn(),onRefresh:vi.fn(),onError:error};
 it('names queue and interrupt separately, binds the exact snapshot and preserves edits arriving during queued admission',async()=>{
  let resolve!:(value:unknown)=>void;api.mockImplementation(async(path,init)=>path.endsWith('/queue')&&init?.method==='POST'?new Promise(value=>{resolve=value}):path.endsWith('/queue')?{items:[]}:path.includes('presets')?{presets:[]}:path.includes('available-extensions')?{extensions:[]}:session);
@@ -58,14 +58,39 @@ it('keeps recovery awaiting confirmation active, queues follow-ups and blocks co
  expect(screen.queryByRole('button',{name:'Send message'})).toBeNull();
  expect(screen.getByRole('button',{name:'Stop task'})).toBeEnabled();
  fireEvent.keyDown(input,{key:'Enter'});
- expect(api.mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
- fireEvent.click(screen.getByRole('button',{name:'Session engine and model'}));
- expect(screen.getByRole('combobox',{name:'Session engine'})).toBeDisabled();
- expect(screen.getByRole('combobox',{name:'Session provider'})).toBeDisabled();
- expect(screen.getByRole('combobox',{name:'Session model'})).toBeDisabled();
- expect(screen.getByRole('combobox',{name:'Session mode'})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:'Close'}));
- fireEvent.click(screen.getByRole('button',{name:'Queue next'}));
  await waitFor(()=>expect(api.mock.calls.some(([path,init])=>path.endsWith('/queue')&&init?.method==='POST')).toBe(true));
  expect(api.mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Choose agent and engine'}));
+ expect(screen.getByRole('combobox',{name:'Session engine'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Close'}));
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));
+ expect(screen.getByRole('combobox',{name:'Session provider'})).toBeDisabled();
+ expect(screen.getByRole('combobox',{name:'Session model'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Close'}));
+ fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ for(const radio of screen.getAllByRole('radio'))expect(radio).toBeDisabled();
+ expect(api.mock.calls.filter(([path,init])=>path.endsWith('/queue')&&init?.method==='POST')).toHaveLength(1);
+});
+
+
+it('observes the queue only while its panel is visible in a focused foreground window',async()=>{
+ vi.useFakeTimers();api.mockResolvedValue({items:[]});
+ const props={sessionId:'conversation',changed:0,onError:error,onRefresh:vi.fn()};
+ const view=render(<PromptQueue {...props} visible={false}/>);
+ await act(async()=>{vi.advanceTimersByTime(4500)});expect(api).not.toHaveBeenCalled();
+ view.rerender(<PromptQueue {...props} visible/>);await act(async()=>{});expect(api).toHaveBeenCalledTimes(1);
+ await act(async()=>{vi.advanceTimersByTime(1500)});expect(api).toHaveBeenCalledTimes(2);
+ view.rerender(<PromptQueue {...props} visible={false}/>);await act(async()=>{vi.advanceTimersByTime(4500)});expect(api).toHaveBeenCalledTimes(2);
+ view.rerender(<PromptQueue {...props} visible/>);await act(async()=>{});expect(api).toHaveBeenCalledTimes(3);
+ act(()=>window.dispatchEvent(new Event('blur')));await act(async()=>{vi.advanceTimersByTime(4500)});expect(api).toHaveBeenCalledTimes(3);
+ act(()=>window.dispatchEvent(new Event('focus')));await act(async()=>{});expect(api).toHaveBeenCalledTimes(4);
+});
+
+it('aborts a queue read when hidden and suppresses its late error without discarding a saved draft',async()=>{
+ let reject!:(error:Error)=>void;api.mockImplementation(()=>new Promise((_,failed)=>{reject=failed}));
+ sessionDrafts.set('conversation',{text:'Keep my work',saved:'',dirty:true});
+ const props={sessionId:'conversation',changed:0,onError:error,onRefresh:vi.fn()};
+ const view=render(<PromptQueue {...props} visible/>);const signal=api.mock.calls[0][1]?.signal;
+ view.rerender(<PromptQueue {...props} visible={false}/>);expect(signal?.aborted).toBe(true);
+ await act(async()=>reject(new Error('Late connection failure')));expect(error).not.toHaveBeenCalled();expect(sessionDrafts.get('conversation')?.text).toBe('Keep my work');
 });

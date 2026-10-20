@@ -240,9 +240,11 @@ def mount_workspace(app,state):
 
     def principal(request):
         raw=extract_passcode(authorization=request.headers.get('authorization')) or request.cookies.get(ACCESS_COOKIE)
-        session=state.identity.resolve(raw)
+        session=state.identity.resolve(raw,allow_locked=True)
         if not session:
             raise HTTPException(401,'Managed sign-in required')
+        if session.locked:
+            raise HTTPException(423,'Session locked; unlock required')
         return session.principal
 
     def call(fn,*args,**kwargs):
@@ -484,10 +486,11 @@ def mount_workspace(app,state):
         return {'cancelled':True}
 
     @router.get('/tasks/{identifier}')
-    def task(request:Request,identifier:str):
+    def task(request:Request,identifier:str,activity:bool=False):
         actor=principal(request);call(workspace.record,actor,'task',identifier)
         fields={'id','prompt','cwd','provider_id','model','status','limits','mode','parent_id','plan','result','error','engine','created_at','updated_at','execution_location'}
         remaining=[100]
+        activity_remaining=[1000]
         seen=set()
         def tree(tid,depth=0):
             call(workspace.record,actor,'task',tid)
@@ -505,6 +508,15 @@ def mount_workspace(app,state):
             result['worktree']=state.agent_store.task_worktree(tid) or ({'worktree_id':metadata['worktree_id'],'worktree_path':metadata.get('cwd'),'branch':metadata.get('worktree_branch'),'source':'session'} if metadata.get('worktree_id') else None)
             if value.get('engine')=='internal' and hasattr(state.agent,'tree_budget'):
                 result['tree_budget']=state.agent.tree_budget.snapshot(tid)
+            if activity:
+                limit=min(300,activity_remaining[0])
+                # Read only a bounded tail, plus one record to disclose omitted
+                # history. A spent tree budget still probes one record so an
+                # empty task is distinguishable from unavailable activity.
+                events=state.agent_store.events(tid,tail_limit=limit+1)
+                result['activity_truncated']=len(events)>limit
+                result['events']=events[-limit:] if limit else []
+                activity_remaining[0]-=len(result['events'])
             result['children']=[]
             result['truncated']=False
             for child in state.agent_store.children(tid):
@@ -516,7 +528,15 @@ def mount_workspace(app,state):
                     break
                 result['children'].append(tree(child['id'],depth+1))
             return result
-        return tree(identifier)
+        result=tree(identifier)
+        # Disk reads can outlive a session or a resource grant. Check every
+        # returned node again before publishing its prompt and tool output.
+        current=principal(request)
+        if current.id!=actor.id or current.policy_version!=actor.policy_version:
+            raise HTTPException(403,'Session authorization changed; reload the task')
+        for tid in seen:
+            call(workspace.record,current,'task',tid)
+        return result
 
     @router.post('/tasks/{identifier}/cancel')
     async def cancel_task(request:Request,identifier:str):

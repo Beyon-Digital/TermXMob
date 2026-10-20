@@ -78,6 +78,12 @@ class SessionGuard:
         locked_actor=None
         if protected and scope['type']=='http' and managed:
             effective=token or raw_cookie
+            # Browsers remove the short-lived access cookie at its deadline.
+            # Return a transport auth challenge before GraphQL executes any
+            # fields, so the client can refresh the retained HttpOnly family.
+            if path.startswith('/graphql') and not (effective or query_token):
+                await self._reject(scope,receive,send,401,'Sign in required')
+                return
             locked_actor=await asyncio.to_thread(service.resolve,effective,allow_locked=True)
             if effective and effective.count('.')==2 and locked_actor is None and await asyncio.to_thread(self.state.auth.scopes,effective) is None:
                 await self._reject(scope,receive,send,401,'Session expired or revoked; sign in again')

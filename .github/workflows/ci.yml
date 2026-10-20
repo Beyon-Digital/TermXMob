@@ -38,6 +38,7 @@ jobs:
           uv run --no-sync playwright install --with-deps chromium
           uv run --no-sync python tests/workspace_accessibility_e2e.py desktop/build/accessibility desktop/workspace/node_modules/axe-core/axe.min.js
           uv run --no-sync python tests/workspace_settings_tls_e2e.py desktop/build/settings-tls
+          uv run --no-sync python tests/workspace_chat_recovery_e2e.py desktop/build/chat-recovery
           uv run --no-sync python tests/updater_ui_e2e.py desktop/build/updater-ui desktop/workspace/node_modules/axe-core/axe.min.js
       - uses: actions/upload-artifact@v4
         if: always()
@@ -47,6 +48,7 @@ jobs:
             desktop/build/accessibility
             desktop/build/updater-ui
             desktop/build/settings-tls
+            desktop/build/chat-recovery
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-browser-workspace

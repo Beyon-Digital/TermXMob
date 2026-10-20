@@ -201,6 +201,45 @@ def test_jsonrpc_malformed_lines_skipped():
     asyncio.run(run())
 
 
+def test_jsonrpc_stdout_loss_rejects_followups_and_cancels_pending_callbacks():
+    """A live OS process with a dead protocol stream is not a live peer."""
+    async def run():
+        entered = asyncio.Event()
+        cancelled = asyncio.Event()
+        async def on_request(method, params):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        script = (
+            "import json, os, sys\n"
+            "sys.stdout.write(json.dumps({'method':'approve','id':'native-request','params':{}})+'\\n')\n"
+            "sys.stdout.flush()\n"
+            "sys.stdin.readline()\n"
+            "os.close(sys.stdout.fileno())\n"
+            "sys.stdin.read()\n"
+        )
+        # The Windows venv redirector retains a copy of the stdout writer
+        # while its child runs. This stdlib fixture needs the real interpreter
+        # so closing stdout produces EOF without terminating the process.
+        executable = sys._base_executable if sys.platform == "win32" else sys.executable
+        peer = JsonlProcess([executable, "-u", "-c", script], on_server_request=on_request)
+        await peer.start()
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            await peer.notify("disconnect-fixture")
+            assert await peer.wait_closed(2)
+            assert peer._proc.returncode is None
+            assert not peer.running
+            await asyncio.wait_for(cancelled.wait(), 2)
+            with pytest.raises(TransportClosed):
+                await peer.request("must-not-reuse", timeout=.05)
+        finally:
+            await peer.close()
+    asyncio.run(run())
+
+
 # -------------------------------------------------------------------- codex
 
 

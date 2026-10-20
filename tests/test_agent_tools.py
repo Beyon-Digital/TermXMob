@@ -781,6 +781,78 @@ def test_provider_runtime_evict_defers_close_with_loop(monkeypatch):
     asyncio.run(run())
 
 
+def test_provider_runtime_retirement_waits_for_an_active_response_stream(monkeypatch):
+    import httpx
+    import termx.agent.runtime as runtime_mod
+
+    monkeypatch.setattr(runtime_mod, "_EVICT_GRACE_S", .01)
+
+    async def run():
+        emitted = asyncio.Event()
+        finish = asyncio.Event()
+        class Stream(httpx.AsyncByteStream):
+            closed = False
+            async def __aiter__(self):
+                yield b"first"
+                await finish.wait()
+                if self.closed:
+                    raise httpx.ReadError("Fixture transport was closed mid-stream")
+                yield b"second"
+            async def aclose(self):
+                self.closed = True
+        class Transport(httpx.AsyncBaseTransport):
+            def __init__(self): self.stream = Stream()
+            async def handle_async_request(self, request):
+                return httpx.Response(200, stream=self.stream)
+            async def aclose(self):
+                await self.stream.aclose()
+                finish.set()
+        # Replace only transport creation. Exercise the actual pooled HTTPX
+        # client and its response lifecycle without opening a network socket.
+        monkeypatch.setattr("httpx._client.AsyncHTTPTransport", lambda **kwargs: Transport())
+        runtime = ProviderHttpRuntime()
+        client = runtime.client_for("fixture", timeout_s=1, headers={})
+        async def consume():
+            parts = []
+            async with client.stream("GET", "https://fixture.invalid") as response:
+                async for chunk in response.aiter_bytes():
+                    parts.append(chunk)
+                    emitted.set()
+            return b"".join(parts)
+        stream = asyncio.create_task(consume())
+        try:
+            await asyncio.wait_for(emitted.wait(), 1)
+            runtime.evict("fixture")
+            await asyncio.sleep(.05)  # past the shortened grace period
+            assert not client.is_closed
+            assert not stream.done()
+            finish.set()
+            assert await asyncio.wait_for(stream, 1) == b"firstsecond"
+            await asyncio.wait_for(asyncio.gather(*runtime._pending), 1)
+            assert client.is_closed
+        finally:
+            finish.set()
+            await asyncio.gather(stream, return_exceptions=True)
+            await runtime.aclose()
+    asyncio.run(run())
+
+
+def test_provider_runtime_updates_timeout_without_replacing_active_request_settings():
+    async def run():
+        runtime = ProviderHttpRuntime()
+        client = runtime.client_for("fixture", timeout_s=5, headers={})
+        try:
+            started_request = client.build_request("GET", "https://fixture.invalid")
+            same = runtime.client_for("fixture", timeout_s=30, headers={})
+            next_request = same.build_request("GET", "https://fixture.invalid")
+            assert same is client
+            assert started_request.extensions["timeout"]["read"] == 5
+            assert next_request.extensions["timeout"]["read"] == 30
+        finally:
+            await runtime.aclose()
+    asyncio.run(run())
+
+
 def test_run_check_ask_refusal(env):
     _, make_ctx, _ = env
     outcome = asyncio.run(

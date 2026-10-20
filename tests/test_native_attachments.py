@@ -64,7 +64,7 @@ def test_acp_image_requires_advertised_capability_and_preserves_protocol_content
             content.extend(kwargs['prompt']);return SimpleNamespace(stop_reason='end_turn',usage=None)
         engine=AcpEngine(event_sink=lambda *a:None,approval_sink=lambda *a:None)
         binding=EngineSessionBinding.new('fixture','native-session',cwd='/tmp')
-        state={'conn':SimpleNamespace(prompt=prompt),'turn_task':None}
+        state={'conn':SimpleNamespace(prompt=prompt),'turn_task':None,'proc':SimpleNamespace(returncode=None)}
         engine._sessions[binding.binding_id]=state
         with pytest.raises(ValueError,match='does not advertise'):
             await engine.send(binding,'inspect image',[IMAGE])

@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import asyncio
+import pytest
 from termx.app import AppState,create_app
 
 def test_node_identity_cursor_connections_and_cross_user_isolation(tmp_path,monkeypatch):
@@ -74,3 +75,58 @@ def test_slow_projection_keeps_host_loop_responsive_and_rechecks_revocation(tmp_
         result=await task
         assert result.errors and not (result.data or {}).get('workspace_sessions')
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('surface',['page','task','node'])
+def test_turn_reads_do_not_stall_agent_loop_and_recheck_revocation(tmp_path,monkeypatch,surface):
+    import base64
+    import threading
+    from termx.graphql.context import TermxContext
+    from termx.graphql.schema import schema
+    state=AppState();owner=state.identity.setup_owner('owner','strong-password-fixture')
+    credentials=asyncio.run(state.identity.login('local-password',{'username':'owner','password':'strong-password-fixture'},peer='local'))
+    create_app(state)
+    session=state.workspace.create_session(owner,title='Live task',cwd=str(tmp_path))
+    task=state.agent_store.create_task(prompt='Read fixture',cwd=str(tmp_path),provider_id='fixture',model='fixture',limits={})
+    state.agent_store.update_task(task['id'],status='running')
+    turn=state.agent_store.add_conversation_turn(session['id'],prompt='Read fixture',task_id=task['id'])
+    entered,release=threading.Event(),threading.Event()
+    service=state.workspace if surface=='node' else state.agent_store
+    method={'page':'workspace_turns_page','task':'events','node':'session'}[surface]
+    original=getattr(service,method)
+    def slow(*args,**kwargs):
+        result=original(*args,**kwargs)
+        entered.set()
+        assert release.wait(3),'Turn read worker was never released'
+        return result
+    monkeypatch.setattr(service,method,slow)
+    document='query($id:String!){workspace_turns(session_id:$id,last:1){edges{node{canonical_id task}}}}'
+    variables={'id':session['id']}
+    if surface=='node':
+        document='query($id:ID!){node(id:$id){... on WorkspaceTurnNode{canonical_id}}}'
+        variables={'id':base64.b64encode(('WorkspaceTurnNode:'+turn['id']).encode()).decode()}
+    async def run():
+        pending=asyncio.create_task(schema.execute(document,variable_values=variables,context_value=TermxContext(state,credentials.access_token)))
+        try:
+            for _ in range(100):
+                if entered.is_set():break
+                await asyncio.sleep(.01)
+            assert entered.is_set() and not pending.done(),'Conversation read blocked the host event loop'
+            state.identity.revoke(credentials.session_id,owner.id)
+        finally:release.set()
+        result=await pending
+        assert result.errors,'A revoked session received a completed conversation read'
+        assert result.errors[0].extensions['http_status']==401
+    asyncio.run(run())
+
+
+def test_turn_lock_is_reported_as_lock_instead_of_account_revocation(tmp_path):
+    from termx.graphql.context import TermxContext
+    from termx.graphql.schema import schema
+    state=AppState();state.identity.setup_owner('owner','strong-password-fixture');create_app(state)
+    credentials=asyncio.run(state.identity.login('local-password',{'username':'owner','password':'strong-password-fixture'},peer='local'))
+    actor=state.identity.resolve(credentials.access_token)
+    state.session_locks.lock(actor)
+    result=asyncio.run(schema.execute('{workspace_sessions{edges{node{id}}}}',context_value=TermxContext(state,credentials.access_token)))
+    assert result.errors[0].extensions=={'code':'LOCKED','http_status':423}
+    assert state.session_locks.refresh_identity(credentials.refresh_token).session_id==credentials.session_id

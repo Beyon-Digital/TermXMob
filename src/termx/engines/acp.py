@@ -15,10 +15,12 @@ import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from .env import probe_version, resolve_executable
+from .event_payloads import bounded_fields
 from .types import (
     AUTH_UNKNOWN,
     EffectiveRunConfiguration,
@@ -30,6 +32,7 @@ from .types import (
 )
 
 MAX_RAW_EVENT_BYTES = 8 * 1024
+STDERR_TAIL_BYTES = 64 * 1024
 FS_IO_MAX = 2 * 1024 * 1024
 TERMINAL_OUTPUT_CAP = 1 * 1024 * 1024
 
@@ -111,6 +114,15 @@ class _SessionClient:
             text = content.get("text") if isinstance(content, dict) else None
             self._emit(mapped, {"delta": text or "", "update": _bounded(data)},
                        session_id=session_id)
+        elif mapped in {"engine.tool.started", "engine.tool.progress"}:
+            # Tool output can exceed the raw-event cap. Keep its call identity
+            # and terminal status outside independently bounded rich fields.
+            from termx.agent.policy import redact
+            if isinstance(data.get("title"), str):
+                data["title"] = redact(data["title"])[:512]
+            self._emit(mapped, bounded_fields(data, keep={
+                "sessionUpdate", "toolCallId", "status", "kind", "title", "parent_call_id",
+            }, limit=MAX_RAW_EVENT_BYTES), session_id=session_id)
         elif mapped:
             self._emit(mapped, _bounded(data), session_id=session_id)
         else:
@@ -515,13 +527,55 @@ class AcpEngine:
     # ------------------------------------------------------------- plumbing
 
     def _spawn(self):
+        return self._spawn_client(_ProcessOwner(self))
+
+    @asynccontextmanager
+    async def _spawn_client(self, client: _SessionClient, *,
+                            cwd: str | None = None,
+                            state: dict[str, Any] | None = None):
         from acp.stdio import spawn_agent_process
         argv = self._argv()
-        client = _ProcessOwner(self)
-        return spawn_agent_process(
-            client, argv[0], *argv[1:],
-            env=self._launch_env(),
-        )
+        stderr_task = None
+        try:
+            async with spawn_agent_process(
+                client, argv[0], *argv[1:], env=self._launch_env(), cwd=cwd,
+            ) as (conn, proc):
+                # The SDK pipes stderr but does not read it. Drain from startup
+                # through shutdown so verbose logs cannot block the agent or
+                # prevent process.wait() from completing. Keep diagnostics local;
+                # native stderr may contain account information or credentials.
+                stderr_task = asyncio.create_task(self._drain_stderr(proc, state))
+                yield conn, proc
+        finally:
+            if stderr_task is not None:
+                stderr_task.cancel()
+                await asyncio.gather(stderr_task, return_exceptions=True)
+
+    @staticmethod
+    async def _drain_stderr(proc: asyncio.subprocess.Process,
+                            state: dict[str, Any] | None) -> None:
+        if proc.stderr is None:
+            return
+        try:
+            while chunk := await proc.stderr.read(4096):
+                if state is not None:
+                    state["stderr_tail"] = (state.get("stderr_tail", b"") + chunk)[-STDERR_TAIL_BYTES:]
+        except (OSError, ValueError):
+            pass
+
+    @staticmethod
+    def _receive_task(state: dict[str, Any]) -> asyncio.Task[Any] | None:
+        # agent-client-protocol is pinned to 0.12.1. It exposes no public
+        # disconnect waiter; this is the SDK's owned protocol-reader task.
+        # Observe it without cancelling or reading its stdout concurrently.
+        return getattr(getattr(state.get("conn"), "_conn", None), "_recv_task", None)
+
+    def _session_live(self, state: dict[str, Any]) -> bool:
+        reader = self._receive_task(state)
+        return (state["proc"].returncode is None
+                and not state.get("transport_lost")
+                and not state.get("process_lost")
+                and (reader is None or not reader.done()))
 
     def _argv(self) -> list[str]:
         executable = (resolve_executable(self.executable_name, override=self._override)
@@ -578,14 +632,9 @@ class AcpEngine:
         return binding
 
     def _spawn_for(self, state: dict[str, Any], cwd: str | None = None):
-        from acp.stdio import spawn_agent_process
         client = _SessionClient(self, session_id="", state=state)  # rebound below
         state["client"] = client
-        argv = self._argv()
-        return spawn_agent_process(
-            client, argv[0], *argv[1:],
-            env=self._launch_env(), cwd=cwd or None,
-        )
+        return self._spawn_client(client, cwd=cwd or None, state=state)
 
     @staticmethod
     def _option_values(option: dict[str, Any]) -> list[str]:
@@ -777,7 +826,7 @@ class AcpEngine:
                      cfg: EffectiveRunConfiguration | None = None) -> EngineSessionBinding:
         if binding.binding_id in self._sessions:
             old = self._sessions[binding.binding_id]
-            if old["proc"].returncode is None:
+            if self._session_live(old):
                 return old["binding"]
             await self.close(old["binding"])
         state: dict[str, Any] = {}
@@ -812,18 +861,40 @@ class AcpEngine:
         return binding
 
     async def _watch_process(self, state: dict[str, Any]) -> None:
-        await state["proc"].wait()
+        exited = asyncio.create_task(state["proc"].wait())
+        reader = self._receive_task(state)
+        try:
+            await asyncio.wait({exited, reader} if reader is not None else {exited},
+                               return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            exited.cancel()
+            await asyncio.gather(exited, return_exceptions=True)
         binding = state["binding"]
-        if binding.status == "closed":
+        if binding.status == "closed" or state.get("closing"):
             return
-        state["process_lost"] = True
+        state["process_lost"] = state["proc"].returncode is not None
+        state["transport_lost"] = True
+        binding.status = SESSION_LOST
+        binding.updated_at = time.time()
         self._cancel_permissions(binding)
         turn = state.get("turn_task")
         if turn is not None and not turn.done():
             turn.cancel()
             await asyncio.gather(turn, return_exceptions=True)
-        binding.status = "lost"
-        self._emit(binding, "engine.session.lost", {"message": "ACP agent process exited"})
+        self._emit(binding, "engine.session.lost", {
+            "message": "ACP agent process exited" if state["process_lost"] else "ACP agent connection closed",
+            "process_exited": state["process_lost"],
+        })
+        # A process that still runs after losing its protocol cannot be safely
+        # controlled. Reap it and the host terminals now; retain only the lost
+        # binding so a later explicit user turn can session/load it.
+        try:
+            await asyncio.shield(self._transport_cleanup(state))
+        except Exception:
+            # Keep the state reachable for strict shutdown to retry/report.
+            self._emit(binding, "engine.session.cleanup_failed", {
+                "message": "ACP connection closed but transport cleanup did not finish",
+            })
 
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
@@ -833,6 +904,9 @@ class AcpEngine:
         state = self._sessions.get(binding.binding_id)
         if state is None:
             raise ValueError("no live ACP session")
+        if not self._session_live(state):
+            binding.status = SESSION_LOST
+            raise ConnectionError("ACP agent connection closed; resume the session before sending")
         if state.get("turn_task") is not None and not state["turn_task"].done():
             raise ValueError("ACP session already has an active turn")
         if images and not self._agent_capabilities.get("promptCapabilities", {}).get("image", False):
@@ -865,17 +939,20 @@ class AcpEngine:
                 })
             except asyncio.CancelledError:
                 self._emit(binding, "engine.turn.completed", {
-                    "status": "failed" if state.get("process_lost") else "interrupted",
-                    **({"error": {"message": "ACP agent process exited during this turn"}}
-                       if state.get("process_lost") else {}),
+                    "status": "failed" if state.get("transport_lost") else "interrupted",
+                    **({"error": {"message": "ACP agent connection closed during this turn"}}
+                       if state.get("transport_lost") else {}),
                 })
                 raise
             except Exception as exc:
+                if not self._session_live(state):
+                    state["transport_lost"] = True
+                    binding.status = SESSION_LOST
                 self._emit(binding, "engine.turn.completed",
                            {"status": "interrupted" if state.get("cancel_requested") else "failed",
                             "error": {"message": str(exc)}})
             finally:
-                if binding.status != "closed":
+                if binding.status not in {"closed", SESSION_LOST}:
                     binding.status = "idle"
                 binding.updated_at = time.time()
 
@@ -945,6 +1022,7 @@ class AcpEngine:
     async def close(self, binding: EngineSessionBinding) -> None:
         state = self._sessions.get(binding.binding_id)
         if state is not None:
+            state["closing"] = True
             self._cancel_permissions(binding)
             watch = state.get("process_watch")
             if watch is not None and watch is not asyncio.current_task():
@@ -954,28 +1032,43 @@ class AcpEngine:
             if turn is not None and not turn.done():
                 turn.cancel()
                 await asyncio.gather(turn, return_exceptions=True)
-            failure = None
-            client = state.get("client")
-            if client is not None:
-                try:
-                    await client.cleanup()
-                except Exception as exc:
-                    failure = exc
-            ctx = state.get("ctx")
-            if ctx is not None:
-                try:
-                    await ctx.__aexit__(None, None, None)
-                except Exception as exc:
-                    failure = failure or exc
-            if failure is not None:
-                raise RuntimeError('ACP transport shutdown failed') from failure
-            process = state.get('proc')
-            if process is not None and process.returncode is None:
-                raise RuntimeError('ACP transport process remains active after shutdown')
+            await asyncio.shield(self._transport_cleanup(state))
         self._sessions.pop(binding.binding_id, None)
         binding.status = "closed"
         binding.updated_at = time.time()
         self._bindings.pop(binding.binding_id, None)
+
+    def _transport_cleanup(self, state: dict[str, Any]) -> asyncio.Task[None]:
+        # Disconnect observation, cancellation and a follow-up attach may all
+        # converge here. Exactly one task owns SDK __aexit__, even when the
+        # requesting HTTP coroutine is cancelled while cleanup is underway.
+        cleanup = state.get("transport_cleanup")
+        if cleanup is None or (cleanup.done() and (cleanup.cancelled() or cleanup.exception())):
+            cleanup = asyncio.create_task(self._close_transport(state))
+            state["transport_cleanup"] = cleanup
+        return cleanup
+
+    @staticmethod
+    async def _close_transport(state: dict[str, Any]) -> None:
+        failure = None
+        client = state.get("client")
+        if client is not None:
+            try:
+                await client.cleanup()
+            except Exception as exc:
+                failure = exc
+        ctx = state.get("ctx")
+        if ctx is not None and not state.get("context_exited"):
+            try:
+                await ctx.__aexit__(None, None, None)
+                state["context_exited"] = True
+            except Exception as exc:
+                failure = failure or exc
+        if failure is not None:
+            raise RuntimeError("ACP transport shutdown failed") from failure
+        process = state.get("proc")
+        if process is not None and process.returncode is None:
+            raise RuntimeError("ACP transport process remains active after shutdown")
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         # Spawn a transient agent and ask — ACP list is capability-gated.

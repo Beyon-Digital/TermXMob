@@ -454,7 +454,10 @@ class OpenAIResponsesAdapter:
                     message = error.get("message") if isinstance(error, dict) else str(error)
                     raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider stream failed"))
         if final is None:
-            raise ProviderError("Provider stream ended without a completion event")
+            # An HTTP 200 stream can still terminate before its terminal SSE
+            # event. Let the existing bounded retry policy recover only when
+            # no visible output has been emitted; it never replays tool effects.
+            raise ProviderError("Provider stream ended without a completion event", network=True)
         if final.get("error"):
             error = final["error"]
             message = error.get("message") if isinstance(error, dict) else str(error)
