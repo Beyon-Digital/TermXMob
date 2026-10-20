@@ -6,6 +6,9 @@ from typing import Any
 
 async def shutdown_state(state: Any, timeout: float = 3.0) -> None:
     """Stop tunnels, desktop pumps, RTC, virtual displays, then kill PTY groups."""
+    characters = getattr(state, "characters", None)
+    if characters is not None:
+        await _invoke(getattr(characters, "close", None), timeout=timeout)
     debug = getattr(state, "debug", None)
     if debug is not None:
         await _invoke(getattr(debug, "close", None), timeout=timeout)

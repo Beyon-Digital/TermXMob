@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-companion-home"
+description = "Enables the companion_home command without any pre-configured scope."
+commands.allow = ["companion_home"]
+
+[[permission]]
+identifier = "deny-companion-home"
+description = "Denies the companion_home command without any pre-configured scope."
+commands.deny = ["companion_home"]

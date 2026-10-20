@@ -390,6 +390,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_project_pins(app, state)
     from termx.media.http import mount_media
     mount_media(app, state)
+    from termx.characters.http import mount_characters
+    mount_characters(app, state)
     from termx.runners.http import mount_runners
     mount_runners(app, state)
     from termx.runners.cloud.http import mount_cloud
