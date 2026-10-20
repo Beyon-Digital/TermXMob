@@ -164,7 +164,7 @@ def run(destination):
                     page.get_by_role('button', name='Continue with password', exact=True).click()
                     composer = page.get_by_role('textbox', name='Message', exact=True)
                     expect(composer).to_be_enabled(timeout=25000)
-                    page.get_by_role('navigation', name='Workspace layout').get_by_role('button', name='Chat', exact=True).click()
+                    page.get_by_role('navigation', name='Workspace view').get_by_role('button', name='Chat', exact=True).click()
                     expect(page.get_by_role('heading', name='Session recovery is ready')).to_be_visible()
                     page.get_by_role('log').evaluate('(node)=>node.scrollTop=0')
                     page.screenshot(path=str(output/'first-desktop-dark.png'))
@@ -199,7 +199,7 @@ def run(destination):
                     page.get_by_role('dialog', name='Choose a mode', exact=True).get_by_text('Ask', exact=True).click()
                     expect(page.get_by_role('button', name='Session mode', exact=True)).to_contain_text('Ask')
                     assert state.workspace.session(owner, conversation['id'], turns=False)['mode'] == 'ask'
-                    page.get_by_role('button', name='Choose agent and engine', exact=True).click()
+                    page.get_by_role('button', name='Session options', exact=True).click()
                     settings = page.get_by_role('dialog', name='Session settings', exact=True)
                     settings.get_by_text('Extended', exact=True).click()
                     expect(settings.get_by_role('radio', name='Extended', exact=False)).to_be_checked()
@@ -214,9 +214,8 @@ def run(destination):
                     def set_theme(theme):
                         if page.locator('html').get_attribute('data-theme') == theme:
                             return
-                        show = page.get_by_role('button', name='Show sidebar', exact=True)
-                        if show.count() and show.is_visible(): show.click()
-                        page.get_by_role('complementary', name='Projects and conversations').get_by_role('button', name='Settings', exact=True).click()
+                        page.get_by_role('button', name='Workspace actions', exact=True).click()
+                        page.get_by_role('button', name='Appearance', exact=True).click()
                         preferences = page.get_by_role('dialog', name='Settings', exact=True)
                         preferences.get_by_role('navigation', name='Settings categories').get_by_role('button', name='Appearance', exact=True).click()
                         preferences.get_by_role('radio', name=theme.title(), exact=True).check()
@@ -231,7 +230,7 @@ def run(destination):
                         assert not failures, failures
 
                     def bounds(width, height):
-                        values = page.locator('.chat-region').evaluate('''node=>{const rect=n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};const controls=[...node.querySelectorAll('.composer-controls button')].map(n=>({name:n.getAttribute('aria-label'),...rect(n),covered:!n.contains(document.elementFromPoint(n.getBoundingClientRect().x+n.clientWidth/2,n.getBoundingClientRect().y+n.clientHeight/2))}));return {region:rect(node),composer:rect(node.querySelector('.composer')),draftBody:rect(node.querySelector('.composer-draft-body')),controlRow:rect(node.querySelector('.composer-controls')),toolbar:rect(node.querySelector('.chat-toolbar')),controls,overflow:node.querySelector('.composer-controls').scrollWidth>node.querySelector('.composer-controls').clientWidth,pageOverflow:document.documentElement.scrollWidth>innerWidth}}''')
+                        values = page.locator('.chat-region').evaluate('''node=>{const rect=n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};const controls=[...node.querySelectorAll('.composer-controls button')].map(n=>({name:n.getAttribute('aria-label'),...rect(n),covered:!n.contains(document.elementFromPoint(n.getBoundingClientRect().x+n.clientWidth/2,n.getBoundingClientRect().y+n.clientHeight/2))}));return {region:rect(node),composer:rect(node.querySelector('.composer')),draftBody:rect(node.querySelector('.composer-draft-body')||node.querySelector('textarea[aria-label="Message"]')),controlRow:rect(node.querySelector('.composer-controls')),toolbar:rect(node.querySelector('.conversation-surface-header')),controls,overflow:node.querySelector('.composer-controls').scrollWidth>node.querySelector('.composer-controls').clientWidth,pageOverflow:document.documentElement.scrollWidth>innerWidth}}''')
                         assert not values['overflow'] and not values['pageOverflow'], values
                         for box in [values['composer'], values['toolbar'], *values['controls']]:
                             assert box['x'] >= -1 and box['right'] <= width+1 and box['y'] >= -1 and box['bottom'] <= height+1, box
@@ -245,7 +244,7 @@ def run(destination):
                         page.set_viewport_size({'width': width, 'height': height})
                         for theme in ['dark', 'light']:
                             set_theme(theme)
-                            hide = page.get_by_role('button', name='Hide sidebar', exact=True)
+                            hide = page.get_by_role('navigation', name='Workspace navigation', exact=True).get_by_role('button', name='Hide sidebar', exact=True)
                             if width <= 850 and hide.count() and hide.is_visible(): hide.click()
                             composer.fill('Keep this draft while changing models and settings.\nThe next message stays right here.')
                             values = bounds(width, height)

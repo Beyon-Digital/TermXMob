@@ -101,10 +101,15 @@ def test_native_transport_preserves_keepalive_and_never_replays_a_lost_command(t
 
 def test_native_artifact_canvas_is_allowed_only_through_existing_window_guards():
     source=(Path(__file__).resolve().parents[1]/'desktop/src-tauri/src/workspace.rs').read_text()
+    panel_gate = re.search(r'fn valid_panel\(panel: &str\) -> bool \{\s*\[([\s\S]*?)\]\s*\.contains\(&panel\)\s*\}', source)
+    assert panel_gate is not None, 'Native panels must use the shared exact allowlist'
+    assert set(re.findall(r'"([^"]+)"', panel_gate.group(1))) == {
+        'chat', 'workbench', 'browser', 'computer', 'artifacts', 'review', 'terminal',
+    }
     for name in ('workspace_redock','workspace_detach'):
         body=source.split('fn '+name,1)[1].split('#[tauri::command]',1)[0]
         assert 'trusted(&app, &window)?' in body
-        assert '["chat", "workbench", "browser", "computer", "artifacts"]' in body
+        assert '!valid_panel(&panel)' in body
         assert 'valid_session_id(&session_id)' in body
 
 
@@ -128,7 +133,14 @@ def test_every_native_workspace_handler_has_a_scoped_explicit_app_acl():
     assert companion_handlers == companion_manifest == {'companion_capabilities', 'companion_home'}
     capability = json.loads((root/'capabilities/default.json').read_text())
     allowed = set(capability['permissions'])-{'core:default'}
-    assert len(handlers) == 13 and manifest == handlers
+    expected_workspace_commands = {
+        'workspace_login', 'workspace_resume_sso', 'workspace_request',
+        'workspace_logout', 'workspace_lock_state', 'workspace_unlock',
+        'workspace_unlock_oidc', 'workspace_detach', 'workspace_fullscreen',
+        'workspace_redock', 'workspace_redock_accept', 'workspace_redock_commit',
+        'workspace_redock_cancel', 'workspace_binary',
+    }
+    assert handlers == manifest == expected_workspace_commands
     assert allowed == {'allow-'+command.replace('_','-') for command in handlers | companion_handlers}
     assert '.app_manifest(manifest)' in build and 'tauri_build::try_build(' in build
     assert capability['windows'] == ['main','connect','workspace-*']

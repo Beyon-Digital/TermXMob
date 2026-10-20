@@ -8,7 +8,7 @@ import json, os, shutil, socket, sys, tempfile, threading
 from pathlib import Path
 from time import monotonic,sleep
 import uvicorn
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 def run(destination):
@@ -41,11 +41,15 @@ def run(destination):
                 page.get_by_label('Username',exact=True).fill('settings-fixture');page.get_by_label('Password',exact=True).fill('settings-fixture-password-123');page.get_by_role('button',name='Continue with password').click()
                 page.get_by_role('button',name='Settings',exact=True).wait_for(timeout=20000)
                 sidebar=page.get_by_role('complementary',name='Projects and conversations')
-                assert sidebar.get_by_role('button',name='Settings',exact=True).count()==1
+                workspace_nav=page.get_by_role('navigation',name='Workspace navigation',exact=True)
+                opener=workspace_nav.get_by_role('button',name='Settings',exact=True)
+                assert opener.count()==1
+                assert sidebar.get_by_role('button',name='Settings',exact=True).count()==0
                 assert sidebar.get_by_role('button',name='Access & sessions',exact=True).count()==0
-                assert sidebar.get_by_role('button',name='Home / Overview',exact=True).count()==1
+                assert workspace_nav.get_by_role('button',name='Home',exact=True).count()==1
+                assert sidebar.get_by_role('button',name='Home',exact=True).count()==0
                 page.screenshot(path=str(output/'drawer-desktop.png'))
-                opener=page.get_by_role('button',name='Settings',exact=True);opener.click()
+                opener.click()
                 dialog=page.get_by_role('dialog',name='Settings',exact=True);dialog.wait_for()
                 categories=['Models & engines','Cloud accounts','Agents','Characters','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Appearance','Keyboard shortcuts','Safety & Auto Review','General']
                 nav=dialog.get_by_role('navigation',name='Settings categories')
@@ -106,7 +110,9 @@ def run(destination):
                 for width in [1440,390]:
                     page.set_viewport_size({'width':width,'height':900});result=page.evaluate('async()=>{const result=await axe.run(document.querySelector(".settings-surface"),{runOnly:{type:"tag",values:["wcag2a","wcag2aa","wcag21aa"]}});return result.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))}')
                     report['axe'].append({'width':width,'violations':result});assert not result,result
-                page.set_viewport_size({'width':1440,'height':1000});dialog.get_by_role('button',name='Close',exact=True).click();assert not dialog.is_visible();assert page.get_by_role('button',name='Show sidebar',exact=True).evaluate('(node)=>node===document.activeElement')
+                page.set_viewport_size({'width':1440,'height':1000});dialog.get_by_role('button',name='Close',exact=True).click()
+                expect(dialog).to_be_hidden()
+                expect(opener).to_be_focused()
                 report['checks'] += ['one sticky Settings entry; no drawer category duplication',f'all {len(categories)} categories reachable, including Characters','memory edit/save and draft guards','destructive cancellation leaves record intact','Escape close and focus return','focus trap at all tested widths','shareable manager routes']
                 assert not report['errors'],report['errors']
                 browser.close()

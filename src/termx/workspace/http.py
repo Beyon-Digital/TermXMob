@@ -315,6 +315,31 @@ def mount_workspace(app,state):
             return result
         raise HTTPException(400,'Unknown file operation')
 
+    def review_target(request, identifier, worktree_id):
+        actor=principal(request)
+        row=call(workspace.record,actor,'conversation',identifier,scope='git-read')
+        if not row.get('project_id'):raise HTTPException(409,'Choose a project conversation to review changes.')
+        bound,pid=call(workspace.session_files,actor,identifier,'git-read',expected_worktree=worktree_id)
+        return bound.project(pid)['path']
+
+    @router.get('/sessions/{identifier}/changes')
+    def changes(request:Request,identifier:str,worktree_id:str|None=None):
+        from termx.workspace.change_review import snapshot
+        root=review_target(request,identifier,worktree_id)
+        result=call(snapshot,root)
+        checked=review_target(request,identifier,worktree_id)
+        if checked!=root:raise HTTPException(409,'Conversation checkout changed. Refresh the review.')
+        return result
+
+    @router.get('/sessions/{identifier}/changes/diff')
+    def change_diff(request:Request,identifier:str,path:str,worktree_id:str|None=None):
+        from termx.workspace.change_review import diff
+        root=review_target(request,identifier,worktree_id)
+        result=call(diff,root,path)
+        checked=review_target(request,identifier,worktree_id)
+        if checked!=root:raise HTTPException(409,'Conversation checkout changed. Refresh the review.')
+        return result
+
     @router.put('/sessions/{identifier}/files')
     def save_file(request:Request,identifier:str,body:FileInput):
         bound,pid=call(workspace.session_files,principal(request),identifier,'files-write',expected_worktree=body.worktree_id)

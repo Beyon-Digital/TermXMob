@@ -1,0 +1,44 @@
+import {render,screen,fireEvent,cleanup,waitFor,act} from '@testing-library/react';
+import {afterEach,beforeEach,it,expect,vi} from 'vitest';
+import ChangeReview from './ChangeReview';
+import {request,type Session} from '../lib/api';
+import {useSessionChanges,type SessionChangesSource} from '../lib/session-changes';
+vi.mock('../lib/api',()=>({request:vi.fn()}));
+vi.mock('../lib/session-changes',async()=>{const actual=await vi.importActual<typeof import('../lib/session-changes')>('../lib/session-changes');return {...actual,useSessionChanges:vi.fn()}});
+const project={id:'project',name:'Project',path:'/main'};
+const session:Session={id:'chat',project_id:'project',cwd:'/isolated',worktree_id:'tree',title:'Review',engine:'internal',mode:'agent',pinned:false,archived:false,draft_text:'',revision:1,updated_at:0,scroll:0};
+const files=[{path:'src/one.ts',status:'modified' as const,index:'M',worktree:'M',staged:true,untracked:false,additions:1,deletions:1,binary:false,reviewable:true},{path:'two.txt',status:'added' as const,index:'?',worktree:'?',staged:false,untracked:true,additions:1,deletions:0,binary:false,reviewable:true}];
+const base:SessionChangesSource={scope:'first',available:true,unavailableReason:null,data:{repo:true,branch:'codex/review',head:'head',files,additions:2,deletions:1,counts_complete:true,truncated:false},loading:false,error:null,refresh:vi.fn(async()=>{})};
+const patch='diff --git a/src/one.ts b/src/one.ts\n--- a/src/one.ts\n+++ b/src/one.ts\n@@ -1 +1 @@\n-before text\n+after text\n';
+beforeEach(()=>{vi.mocked(useSessionChanges).mockReturnValue(base);vi.mocked(request).mockImplementation(async path=>({path:new URLSearchParams(path.split('?')[1]).get('path'),diff:path.includes('two.txt')?'--- /dev/null\n+++ b/two.txt\n@@ -0,0 +1 @@\n+new file\n':patch,binary:false,truncated:false,additions:1,deletions:1}) as any)});
+afterEach(()=>{cleanup();vi.clearAllMocks()});
+it('reviews the selected checkout with file navigation, numbered diff modes and open-in-editor actions',async()=>{
+ const open=vi.fn();render(<ChangeReview project={project} session={session} onError={vi.fn()} onOpenFile={open}/>);
+ expect(await screen.findByText('after text')).toBeInTheDocument();
+ expect(vi.mocked(request).mock.calls[0][0]).toBe('/api/workspace/sessions/chat/changes/diff?worktree_id=tree&path=src%2Fone.ts');
+ expect(screen.getByLabelText('Unified diff for src/one.ts')).toBeVisible();
+ fireEvent.click(screen.getByLabelText('Open file in editor'));expect(open).toHaveBeenCalledWith('src/one.ts');
+ fireEvent.click(screen.getByLabelText('Review actions'));fireEvent.click(screen.getByText('Split diff'));
+ expect(screen.getByLabelText('Split diff for src/one.ts')).toHaveTextContent('BeforeAfter');
+ fireEvent.click(screen.getByLabelText('Hide changed files'));expect(screen.getByLabelText('Changed files')).not.toBeVisible();
+ fireEvent.click(screen.getByLabelText('Show changed files'));expect(screen.getByLabelText('Changed files')).toBeVisible();
+ const first=screen.getByLabelText('src/one.ts, Modified');first.focus();fireEvent.keyDown(first,{key:'ArrowDown'});
+ expect(await screen.findByText('new file')).toBeInTheDocument();
+ expect(screen.getByLabelText('two.txt, Added')).toHaveFocus();
+ fireEvent.click(screen.getByLabelText('Refresh changes'));expect(base.refresh).toHaveBeenCalled();
+});
+it('ignores a late diff from a conversation or checkout that is no longer selected',async()=>{
+ let release!:(data:unknown)=>void;vi.mocked(request).mockImplementation(async path=>path.includes('/chat/')?new Promise(resolve=>{release=resolve}):{path:'src/one.ts',diff:patch.replace('after text','new checkout text'),binary:false,truncated:false} as any);
+ const props={project,session,onError:vi.fn()};const view=render(<ChangeReview {...props}/>);await waitFor(()=>expect(release).toBeDefined());
+ vi.mocked(useSessionChanges).mockReturnValue({...base,scope:'next'});view.rerender(<ChangeReview {...props} session={{...session,id:'next',cwd:'/next',worktree_id:'next'}}/>);
+ expect(await screen.findByText('new checkout text')).toBeInTheDocument();
+ await act(async()=>release({path:'src/one.ts',diff:patch.replace('after text','stale leaked content'),binary:false,truncated:false}));
+ expect(screen.queryByText('stale leaked content')).not.toBeInTheDocument();
+});
+it('explains binary files and cloud checkout limits without a false local diff',async()=>{
+ vi.mocked(request).mockResolvedValue({path:'src/one.ts',diff:'',binary:true,truncated:false});const props={project,session,onError:vi.fn()};const view=render(<ChangeReview {...props}/>);
+ expect(await screen.findByText('Binary file changed')).toBeInTheDocument();
+ vi.mocked(useSessionChanges).mockReturnValue({...base,data:null,available:false,unavailableReason:'Cloud changes belong to the runner workspace.'});vi.mocked(request).mockClear();
+ view.rerender(<ChangeReview {...props} session={{...session,runner_id:'cloud'}}/>);
+ expect(screen.getByText('Cloud changes belong to the runner workspace.')).toBeInTheDocument();expect(vi.mocked(request)).not.toHaveBeenCalled();
+});

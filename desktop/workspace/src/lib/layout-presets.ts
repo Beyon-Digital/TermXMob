@@ -1,5 +1,5 @@
 import {defaultGeometry,layouts,validateDockMap,type DockMap,type DockGeometry} from './docking';
-export const persistentLayouts=['chat','workbench','browser','computer','artifacts','review'] as const;
+export const persistentLayouts=['chat','workbench','browser','computer','artifacts','review','terminal'] as const;
 export type PersistentLayout=typeof persistentLayouts[number];
 export type LayoutSnapshot={layout:PersistentLayout|'focus';dock:DockMap;left:boolean;right:boolean;bottom:boolean;dockGeometry:DockGeometry;sidebarWidth:number;rightWidth:number};
 export type NamedLayout={id:string;name:string;snapshot:LayoutSnapshot;updated:number};
@@ -11,7 +11,7 @@ export function layoutSnapshot(value:unknown):LayoutSnapshot|null{
  const dock=validateDockMap(row.dock,row.layout);if(!dock)return null;
  return {layout:row.layout,dock,left:row.left!==false,right:row.right!==false,bottom:row.bottom!==false,sidebarWidth:dimension(row.sidebarWidth,244,200,420),rightWidth:dimension(row.rightWidth,380,240,800),dockGeometry:{left:dimension(row.dockGeometry?.left,220,180,800),split:dimension(row.dockGeometry?.split,420,180,800),bottom:dimension(row.dockGeometry?.bottom,260,120,700)}};
 }
-export function defaultLayout(layout:PersistentLayout):LayoutSnapshot{return {layout,dock:{...layouts[layout]},left:true,right:true,bottom:true,dockGeometry:{...defaultGeometry},sidebarWidth:244,rightWidth:380}}
+export function defaultLayout(layout:PersistentLayout):LayoutSnapshot{return {layout,dock:{...layouts[layout]},left:!['workbench','review'].includes(layout),right:true,bottom:true,dockGeometry:{...defaultGeometry},sidebarWidth:244,rightWidth:380}}
 export function layoutDevice(storage:Storage=localStorage){const key='termx-layout-device-v1';let value=storage.getItem(key);if(!value||!/^[a-zA-Z0-9-]{8,128}$/.test(value)){value=crypto.randomUUID();storage.setItem(key,value)}return value}
 export class LayoutPresetStore{
  readonly key:string;

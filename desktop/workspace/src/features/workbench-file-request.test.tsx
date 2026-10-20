@@ -1,0 +1,43 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {act,cleanup,render,screen,waitFor} from '@testing-library/react';
+import {EditorView} from '@codemirror/view';
+import Workbench from './Workbench';
+import {request,type Session} from '../lib/api';
+vi.mock('../lib/api',()=>({gql:vi.fn(),request:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
+vi.mock('./TerminalPanel',()=>({default:()=>null}));
+vi.mock('./Debugger',()=>({default:()=>null}));
+vi.mock('./Delivery',()=>({default:()=>null}));
+vi.mock('./Preview',()=>({default:()=>null}));
+vi.mock('../lib/lsp',()=>({LanguageClient:class{},fileUri:()=>'',relativeFileUri:()=>null,positionAt:()=>({line:0,character:0})}));
+const project={id:'project',name:'Fixture',path:'/fixture'};
+const session:Session={id:'chat',cwd:'/fixture',project_id:'project',worktree_id:null,title:'Chat',engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:0,scroll:0};
+const fileRequest={id:1,sessionId:'chat',root:'/fixture',path:'src/note.txt',line:2};
+const readRequests=()=>vi.mocked(request).mock.calls.filter(([path])=>new URLSearchParams(path.split('?')[1]).get('operation')==='read');
+beforeEach(()=>{vi.mocked(request).mockResolvedValue({entries:[],worktrees:[],path:'src/note.txt',content:'first\nsecond\nthird\nfourth',revision:'v1',editable:true});Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:()=>[new DOMRect(0,0,10,20)]});Object.defineProperty(Range.prototype,'getBoundingClientRect',{configurable:true,value:()=>new DOMRect(0,0,10,20)})});
+afterEach(()=>{cleanup();vi.clearAllMocks()});
+it('opens a session-bound external file request at its line and preserves a dirty buffer on repeated requests',async()=>{
+ const error=vi.fn(),props={project,session,visible:true,bottom:false,onError:error};
+ const view=render(<Workbench {...props} fileRequest={fileRequest}/>);
+ await waitFor(()=>expect(view.container.querySelector('.cm-content')).toHaveTextContent('second'));
+ const host=view.container.querySelector<HTMLElement>('.cm-editor');if(!host)throw Error('CodeMirror editor was not mounted');
+ const editor=EditorView.findFromDOM(host);if(!editor)throw Error('CodeMirror view was not attached');
+ await waitFor(()=>expect(editor.state.doc.lineAt(editor.state.selection.main.head).number).toBe(2));
+ expect(readRequests()).toHaveLength(1);expect(readRequests()[0][0]).toContain('/api/workspace/sessions/chat/files?');expect(new URLSearchParams(readRequests()[0][0].split('?')[1]).get('path')).toBe('src/note.txt');
+ act(()=>editor.dispatch({changes:{from:0,to:5,insert:'unsaved first'}}));expect(screen.getByRole('button',{name:'Save file'})).toBeEnabled();
+ view.rerender(<Workbench {...props} fileRequest={{...fileRequest,id:2,line:3}}/>);
+ await waitFor(()=>expect(editor.state.doc.lineAt(editor.state.selection.main.head).number).toBe(3));
+ expect(editor.state.doc.toString()).toBe('unsaved first\nsecond\nthird\nfourth');expect(screen.getByRole('button',{name:'Save file'})).toBeEnabled();expect(readRequests()).toHaveLength(1);expect(error).not.toHaveBeenCalled();
+});
+it.each([{sessionId:'another-chat',root:'/fixture'},{sessionId:'chat',root:'/another-checkout'}])('ignores an external request for a mismatched session or execution root: %j',async scope=>{
+ const error=vi.fn();render(<Workbench project={project} session={session} visible bottom={false} onError={error} fileRequest={{...fileRequest,...scope}}/>);
+ await waitFor(()=>expect(request).toHaveBeenCalled());await act(async()=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))) });
+ expect(readRequests()).toHaveLength(0);expect(screen.queryByLabelText('File path')).not.toBeInTheDocument();expect(screen.getByText('Open a file to start editing')).toBeVisible();expect(error).not.toHaveBeenCalled();
+});
+it('drops an external file read and caret request that finish after its conversation checkout changes',async()=>{
+ let release!:(value:unknown)=>void;vi.mocked(request).mockImplementation(path=>new URLSearchParams(path.split('?')[1]).get('operation')==='read'?new Promise(resolve=>{release=resolve}):Promise.resolve({entries:[],worktrees:[]}));
+ const error=vi.fn(),props={project,visible:true,bottom:false,onError:error};const view=render(<Workbench {...props} session={session} fileRequest={fileRequest}/>);
+ await waitFor(()=>expect(release).toBeTypeOf('function'));
+ view.rerender(<Workbench {...props} session={{...session,id:'other-chat',cwd:'/other'}} fileRequest={fileRequest}/>);
+ await act(async()=>release({path:'src/note.txt',content:'Old checkout text',revision:'old',editable:true}));
+ expect(screen.queryByLabelText('File path')).not.toBeInTheDocument();expect(view.container.querySelector('.cm-content')).not.toHaveTextContent('Old checkout text');expect(screen.getByText('Open a file to start editing')).toBeVisible();expect(error).not.toHaveBeenCalled();
+});

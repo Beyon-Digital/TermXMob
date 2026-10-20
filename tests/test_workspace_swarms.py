@@ -79,8 +79,9 @@ def test_team_rejects_ineligible_coordinator(tmp_path, change):
         workspace, manager, store, task = await setup_team(tmp_path)
         try:
             if 'parent_id' in change:
-                store._db.execute('UPDATE tasks SET parent_id=? WHERE id=?', (change['parent_id'], task['id']))
-                store._db.commit()
+                # The live coordinator also uses this connection from budget threads.
+                with store._lock, store._db:
+                    store._db.execute('UPDATE tasks SET parent_id=? WHERE id=?', (change['parent_id'], task['id']))
             else:
                 store.update_task(task['id'], **change)
             with pytest.raises(ValueError):

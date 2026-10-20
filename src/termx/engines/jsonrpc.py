@@ -235,6 +235,7 @@ class JsonlProcess:
     async def close(self, *, kill_after: float = 3.0) -> None:
         if self._proc is None:
             return
+        graceful_deadline = time.monotonic() + max(0, kill_after)
         if self._proc.stdin:
             try:
                 self._proc.stdin.close()
@@ -243,23 +244,44 @@ class JsonlProcess:
         try:
             await asyncio.wait_for(self._proc.wait(), timeout=kill_after)
         except TimeoutError:
-            self._proc.terminate()
-            try:
-                await asyncio.wait_for(self._proc.wait(), timeout=kill_after)
-            except TimeoutError:
-                self._proc.kill()
+            # Process.wait can retain inherited-pipe EOF waiters after the
+            # direct child has exited. Never signal an already reaped child.
+            if self._proc.returncode is None:
+                try:
+                    self._proc.terminate()
+                except ProcessLookupError:
+                    pass
                 try:
                     await asyncio.wait_for(self._proc.wait(), timeout=kill_after)
                 except TimeoutError:
-                    pass
+                    if self._proc.returncode is None:
+                        try:
+                            self._proc.kill()
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            await asyncio.wait_for(self._proc.wait(), timeout=kill_after)
+                        except TimeoutError:
+                            pass
         self.exit_code = self._proc.returncode
-        tasks = [task for task in (self._reader_task, self._stderr_task, *self._server_requests)
-                 if task is not None and task is not asyncio.current_task()]
-        for task in tasks:
-            if task and not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        self._closed.set()
+        try:
+            stderr = self._stderr_task
+            if (self.exit_code is not None and stderr is not None
+                    and stderr is not asyncio.current_task() and not stderr.done()):
+                # A process can close stdout before its final stderr read runs.
+                # Preserve startup diagnostics without letting an inherited writer
+                # extend the caller's graceful cleanup deadline.
+                remaining = min(.25, max(0, graceful_deadline - time.monotonic()))
+                if remaining:
+                    await asyncio.wait({stderr}, timeout=remaining)
+        finally:
+            tasks = [task for task in (self._reader_task, self._stderr_task, *self._server_requests)
+                     if task is not None and task is not asyncio.current_task()]
+            for task in tasks:
+                if task and not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._closed.set()
 
     async def wait_closed(self, timeout: float = 10.0) -> bool:
         try:
