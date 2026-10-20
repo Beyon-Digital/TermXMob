@@ -264,6 +264,8 @@ class MediaProvider:
         try:
             if operation == 'image-generate':
                 payload = {'model':model, 'prompt':request['prompt'], 'n':1}
+                if request.get('background') == 'transparent' and model.startswith('gpt-image'):
+                    payload.update(background='transparent', output_format='png')
                 if model.startswith('dall-e'):
                     payload['response_format'] = 'b64_json'
                 response = await self.bounded_post(client,base+'/images/generations', headers=headers, json=payload)
@@ -277,7 +279,8 @@ class MediaProvider:
                 if operation == 'transcribe' and not mime.startswith('audio/'):
                     raise HTTPException(400, 'Transcription requires audio')
                 response = await self.bounded_post(client,base+('/images/edits' if operation == 'image-edit' else '/audio/transcriptions'), headers=headers,
-                    data={'model':model, **({'prompt':request['prompt']} if operation == 'image-edit' else {})},
+                    data={'model':model, **({'prompt':request['prompt']} if operation == 'image-edit' else {}),
+                          **({'background':'transparent','output_format':'png'} if operation == 'image-edit' and request.get('background') == 'transparent' and model.startswith('gpt-image') else {})},
                     files={'image' if operation=='image-edit' else 'file':('input.'+{'audio/webm':'webm','audio/ogg':'ogg','audio/mp4':'m4a','audio/mpeg':'mp3','image/jpeg':'jpg','image/webp':'webp'}.get(mime,'png' if operation=='image-edit' else 'wav'), raw,mime)})
             elif operation == 'speak':
                 response = await self.bounded_post(client,base+'/audio/speech',headers=headers,json={'model':model,'input':request['prompt'],'voice':request.get('voice','alloy'),'response_format':'mp3'})

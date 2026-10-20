@@ -36,8 +36,11 @@ extern "C" {
         wheel2: i32,
         wheel3: i32,
     ) -> CGEventRef;
-    fn CGEventCreateKeyboardEvent(source: CGEventSourceRef, virtual_key: u16, key_down: bool)
-        -> CGEventRef;
+    fn CGEventCreateKeyboardEvent(
+        source: CGEventSourceRef,
+        virtual_key: u16,
+        key_down: bool,
+    ) -> CGEventRef;
     fn CGEventKeyboardSetUnicodeString(event: CGEventRef, length: usize, string: *const u16);
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventPost(tap: u32, event: CGEventRef);
@@ -90,7 +93,14 @@ pub fn modifier_flags(names: &[String]) -> u64 {
     flags
 }
 
-pub fn mouse(x: f64, y: f64, action: &str, button: i32, dragging: bool, flags: u64) -> Result<(), String> {
+pub fn mouse(
+    x: f64,
+    y: f64,
+    action: &str,
+    button: i32,
+    dragging: bool,
+    flags: u64,
+) -> Result<(), String> {
     let point = CGPoint { x, y };
     let (down, up, drag) = if button == 2 {
         (RIGHT_MOUSE_DOWN, RIGHT_MOUSE_UP, RIGHT_MOUSE_DRAGGED)
@@ -112,9 +122,8 @@ pub fn mouse(x: f64, y: f64, action: &str, button: i32, dragging: bool, flags: u
         "right_click" => RIGHT_MOUSE_DOWN,
         _ => MOUSE_MOVED,
     };
-    let event = unsafe {
-        CGEventCreateMouseEvent(source(), event_type, point, (button - 1).max(0) as u32)
-    };
+    let event =
+        unsafe { CGEventCreateMouseEvent(source(), event_type, point, (button - 1).max(0) as u32) };
     if event.is_null() {
         return Err("cannot create a mouse event".to_string());
     }
@@ -128,8 +137,9 @@ pub fn mouse(x: f64, y: f64, action: &str, button: i32, dragging: bool, flags: u
         } else {
             LEFT_MOUSE_UP
         };
-        let release =
-            unsafe { CGEventCreateMouseEvent(source(), up_type, point, (button - 1).max(0) as u32) };
+        let release = unsafe {
+            CGEventCreateMouseEvent(source(), up_type, point, (button - 1).max(0) as u32)
+        };
         if flags != 0 && !release.is_null() {
             unsafe { CGEventSetFlags(release, flags) };
         }
@@ -225,7 +235,8 @@ pub fn text(data: &str, flags: u64) -> Result<(), String> {
 }
 
 /// Physical key codes for keys that have no Unicode representation.
-pub fn key_code(name: &str) -> Option<u16> {    let code = match name {
+pub fn key_code(name: &str) -> Option<u16> {
+    let code = match name {
         "return" | "enter" => 36,
         "tab" => 48,
         "space" | " " => 49,

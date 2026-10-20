@@ -5,7 +5,7 @@ export const settingsCategories = [
  {id:'extensions',label:'Plugins & skills'}, {id:'connections',label:'Tools & connections'},
  {id:'memory',label:'Memory'}, {id:'hooks',label:'Hooks'},
  {id:'automations',label:'Automations'}, {id:'runners',label:'Runners'},
- {id:'access',label:'Access & sessions'}, {id:'appearance',label:'Appearance'},
+ {id:'access',label:'Access & sessions'}, {id:'characters',label:'Characters'}, {id:'appearance',label:'Appearance'},
  {id:'shortcuts',label:'Keyboard shortcuts'}, {id:'safety',label:'Safety & Auto Review'},
 ] as const;
 const aliases:Record<string,string>={plugins:'extensions',skills:'extensions',engines:'models',schedules:'automations',goals:'automations',sessions:'access',mcp:'connections'};

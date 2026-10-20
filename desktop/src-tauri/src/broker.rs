@@ -17,9 +17,9 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(target_os = "macos")]
 use std::os::unix::net::{UnixListener, UnixStream};
 
-use std::sync::OnceLock;
 #[cfg(target_os = "macos")]
 use std::sync::Mutex;
+use std::sync::OnceLock;
 #[cfg(target_os = "macos")]
 use std::thread;
 
@@ -51,7 +51,6 @@ pub fn start(app: tauri::AppHandle, log: impl Fn(&str) + Send + 'static) -> Opti
     let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     let path_string = path.to_string_lossy().to_string();
     let _ = SOCKET_PATH.set(path_string.clone());
-
 
     let log_path = path_string.clone();
     thread::spawn(move || {
@@ -94,7 +93,10 @@ fn serve(mut stream: UnixStream) -> std::io::Result<()> {
         let request: Value = match serde_json::from_str(&line) {
             Ok(value) => value,
             Err(error) => {
-                write_json(&mut stream, json!({"ok": false, "error": format!("bad request: {error}")}))?;
+                write_json(
+                    &mut stream,
+                    json!({"ok": false, "error": format!("bad request: {error}")}),
+                )?;
                 continue;
             }
         };
@@ -195,9 +197,14 @@ fn handle_request(stream: &mut UnixStream, request: &Value) -> std::io::Result<b
                 .and_then(Value::as_i64)
                 .unwrap_or(400) as i32;
 
-            let _guard = CAPTURE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+            let _guard = CAPTURE_LOCK
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
             if let Err(error) = crate::capture::start(display, width, height, fps) {
-                write_json(stream, json!({"ok": false, "kind": "error", "error": error}))?;
+                write_json(
+                    stream,
+                    json!({"ok": false, "kind": "error", "error": error}),
+                )?;
                 return Ok(true);
             }
             match crate::capture::frame(quality, timeout) {
@@ -208,13 +215,22 @@ fn handle_request(stream: &mut UnixStream, request: &Value) -> std::io::Result<b
                     stream.flush()?;
                 }
                 Err(crate::capture::FrameError::Waiting) => {
-                    write_json(stream, json!({"ok": false, "kind": "waiting", "error": "no frame yet"}))?;
+                    write_json(
+                        stream,
+                        json!({"ok": false, "kind": "waiting", "error": "no frame yet"}),
+                    )?;
                 }
                 Err(crate::capture::FrameError::Denied(message)) => {
-                    write_json(stream, json!({"ok": false, "kind": "denied", "error": message}))?;
+                    write_json(
+                        stream,
+                        json!({"ok": false, "kind": "denied", "error": message}),
+                    )?;
                 }
                 Err(crate::capture::FrameError::Other(message)) => {
-                    write_json(stream, json!({"ok": false, "kind": "error", "error": message}))?;
+                    write_json(
+                        stream,
+                        json!({"ok": false, "kind": "error", "error": message}),
+                    )?;
                 }
             }
         }
@@ -233,7 +249,10 @@ fn handle_request(stream: &mut UnixStream, request: &Value) -> std::io::Result<b
             write_json(stream, json!({"ok": false, "error": "missing op"}))?;
         }
         other => {
-            write_json(stream, json!({"ok": false, "error": format!("unknown op {other}")}))?;
+            write_json(
+                stream,
+                json!({"ok": false, "error": format!("unknown op {other}")}),
+            )?;
         }
     }
     Ok(true)
@@ -261,10 +280,20 @@ fn apply_input(request: &Value) -> Result<(), String> {
         .unwrap_or(0);
     match kind {
         "mouse" => {
-            let action = request.get("event").and_then(Value::as_str).unwrap_or("move");
+            let action = request
+                .get("event")
+                .and_then(Value::as_str)
+                .unwrap_or("move");
             let button = request.get("button").and_then(Value::as_i64).unwrap_or(1) as i32;
-            let dragging = request.get("dragging").and_then(Value::as_bool).unwrap_or(false);
-            if request.get("relative").and_then(Value::as_bool).unwrap_or(false) {
+            let dragging = request
+                .get("dragging")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if request
+                .get("relative")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
                 // Trackpad-style input: movement is a delta, and button events
                 // apply wherever the cursor currently is (no warping).
                 let dx = request.get("dx").and_then(Value::as_f64).unwrap_or(0.0);
@@ -316,4 +345,3 @@ fn apply_input(request: &Value) -> Result<(), String> {
         other => Err(format!("unknown input kind {other}")),
     }
 }
-
