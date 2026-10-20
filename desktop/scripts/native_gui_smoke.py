@@ -428,7 +428,7 @@ def main():
             username,password = 'native-fixture-owner','isolated-native-fixture-password-123'
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True
-            driver.click('//nav[@aria-label="Main navigation"]//button[normalize-space()="Home / Overview"]','xpath')
+            driver.click('//nav[@aria-label="Workspace navigation"]//button[@aria-label="Home"]','xpath')
             for label, heading in [('Projects','Projects'),('Runs','Runs'),('Overview','Control plane')]:
                 driver.click('//nav[@aria-label="Control plane views"]//button[normalize-space()="'+label+'"]','xpath')
                 wait(lambda:driver.script('return document.querySelector(".control-heading h1")?.textContent === arguments[0]',heading),'native control plane '+label)

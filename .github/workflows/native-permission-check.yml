@@ -57,6 +57,7 @@ jobs:
         run: |
           cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml updater::tests
           cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml companions::
+          cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml workspace::tests
       - uses: astral-sh/setup-uv@v5
       - name: Verify bundle prerequisites and compiled macOS policy
         run: uv run --locked pytest -q tests/test_native_media_permission.py

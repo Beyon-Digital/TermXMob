@@ -1,0 +1,38 @@
+/* Compact chrome and neutral surfaces keep the current task dominant. */
+.workspace-shell{--background:#1f1f1f;--foreground:#dedede;--surface:#252526;--sidebar:#181818;--muted:#2b2b2d;--secondary:#a1a1a6;--border:#303033;--accent:#a5d6b4;--accent-soft:#26352c;background:var(--background);color:var(--foreground)}
+:root[data-theme=light] .workspace-shell{--background:#fff;--foreground:#28282b;--surface:#f9f9fa;--sidebar:#f3f3f4;--muted:#e8e8eb;--secondary:#64646c;--border:#e2e2e5;--accent:#177344;--accent-soft:#e4eee7}
+.workspace-navigation{display:flex;flex:none;position:relative;min-height:0;z-index:15;background:var(--sidebar)}
+.workspace-activity-rail{width:44px;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 3px;border-right:1px solid var(--border);color:var(--secondary);background:var(--sidebar);z-index:22}
+.workspace-activity-rail .button{width:36px;height:36px;border-radius:4px}.workspace-activity-rail .button[aria-current]{color:var(--foreground);background:var(--muted)}
+.workspace-shell .sidebar{position:relative;inset:auto;transform:none!important;box-shadow:none;padding:0 8px 8px;gap:3px;border-right:1px solid var(--border);max-width:calc(100vw - 52px);height:100%;z-index:21}
+.workspace-shell .sidebar-brand{height:41px;min-height:41px;padding-left:8px}.workspace-shell .sidebar-brand strong{font-size:14px;letter-spacing:-.25px;font-weight:600}.workspace-shell .sidebar .button{border-radius:4px}
+.workspace-shell .sidebar-new{font-size:12px;height:30px;padding:6px 8px;margin:3px 0 9px}
+.sidebar-section-heading{display:flex;align-items:center;gap:6px;height:26px;padding-left:8px;color:var(--secondary);font-size:11px;font-weight:500}.sidebar-section-heading>span{flex:1}.sidebar-section-heading>.button{height:24px;width:24px}
+.workspace-shell .workspace-search{height:29px;margin:3px 0 5px;font-size:12px;border:1px solid var(--border);border-radius:4px}
+.sidebar-filters{padding:0 8px;color:var(--secondary);font-size:11px;margin:0 0 4px}.sidebar-filters summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;min-height:23px}.sidebar-filters summary::-webkit-details-marker{display:none}.sidebar-filters[open]{background:var(--surface);padding-bottom:6px;border-radius:4px}.sidebar-filters .select{height:28px;font-size:11px;width:100%;border-radius:4px}.sidebar-filters .button{height:28px}
+.workspace-shell .project-group{height:32px;font-size:11px;padding:5px 7px;gap:6px}.workspace-shell .project-group-row{min-height:32px}.workspace-shell .project-group-row>.project-group{padding-right:24px}
+.workspace-shell .session-row,.workspace-shell .session-row>button{height:30px;border-radius:4px;font-size:12px}.workspace-shell .session-row>button{padding:5px 9px 5px 15px;gap:7px}.workspace-shell .session-row>button>img{width:13px;height:13px;opacity:.65}.workspace-shell .session-row.selected{color:var(--foreground);background:var(--muted)}.workspace-shell .row-actions{top:2px;right:2px}.workspace-shell .row-actions button{height:26px}.workspace-shell .session-row>button .status-dot{flex:0 0 5px;width:5px;height:5px;overflow:visible}
+.workspace-shell .sidebar-foot{border-top:1px solid var(--border);padding-top:7px;margin-top:5px}.sidebar-behavior{display:flex;flex-direction:row;gap:4px;align-items:center;margin:0;color:var(--secondary);padding-left:6px}.sidebar-behavior .select{flex:1;height:28px;background:transparent;border-color:transparent;font-size:11px;padding:4px}
+.workspace-shell .resize-handle{width:2px;min-width:2px;opacity:0;z-index:24;margin-left:-2px}.workspace-shell .resize-handle:hover,.workspace-shell .resize-handle:focus-visible{opacity:1}
+.navigation-floating>.sidebar{position:absolute;left:44px;top:5px;bottom:5px;height:calc(100% - 10px);border:1px solid var(--border);border-radius:7px;box-shadow:8px 10px 30px #0005}.navigation-backdrop{position:fixed;inset:0;z-index:20;background:#0005;cursor:default}
+.workspace-shell .workspace-header{height:41px;min-height:41px;gap:10px;padding:0 10px;background:var(--sidebar)}.workspace-shell .breadcrumb{font-size:12px;gap:7px;overflow:hidden;flex-shrink:1}.workspace-shell .breadcrumb>span{max-width:170px;overflow:hidden;text-overflow:ellipsis}.workspace-shell .breadcrumb strong{max-width:420px;font-size:12px;font-weight:400}
+.workspace-shell .layout-tabs{flex-shrink:0;gap:1px;padding:2px;border:1px solid var(--border);border-radius:5px;background:transparent}.workspace-shell .layout-tabs button{padding:4px 9px;border-radius:3px;gap:5px;font-size:11px}.workspace-shell .layout-tabs button[aria-current]{background:var(--muted)}.workspace-shell .workspace-header>.button{width:28px;height:28px}
+.workspace-shell .status-bar{min-height:24px;padding:0 10px;gap:4px 13px;font-size:10px;background:var(--sidebar);flex-wrap:nowrap;overflow:hidden}.workspace-shell .status-bar>.status-context{max-width:min(55%,600px);flex:0 1 auto}.workspace-shell .status-bar>button{font-size:10px;min-height:23px;padding:2px 4px}
+.workspace-menu-label{display:block;color:var(--secondary);font-size:10px;font-weight:500;padding:4px 8px;text-transform:uppercase;letter-spacing:.4px}.workspace-command-menu hr{border:0;border-top:1px solid var(--border);margin:5px 0}.workspace-command-menu .workspace-menu-select{display:flex;flex-direction:row;align-items:center;justify-content:space-between;font-size:12px;gap:8px;margin:0;padding:5px 8px}.workspace-menu-select .select{width:auto;max-width:140px;height:28px;font-size:11px}.workspace-command-menu kbd{font-size:9px;opacity:.6;margin-left:auto}
+@media(max-width:850px){.workspace-shell .workspace-header{height:42px;min-height:42px;padding:0 7px;gap:5px}.workspace-shell .breadcrumb>span,.workspace-shell .breadcrumb>svg{display:none}.workspace-shell .breadcrumb strong{max-width:250px}.workspace-shell .status-bar .status-context{display:none}.workspace-shell .control-return{font-size:11px;padding:0 6px}.workspace-shell .sidebar{min-width:200px}.workspace-shell .workspace-activity-rail{padding-top:4px}.navigation-floating>.sidebar{top:0;bottom:0;height:100%;border-radius:0 7px 7px 0}.workspace-shell .layout-tabs button{padding:5px 7px}}
+@media(max-width:460px){.workspace-shell .breadcrumb strong{max-width:130px}.workspace-shell .layout-tabs button svg{display:none}.workspace-shell .status-bar{gap:8px}.workspace-shell .status-bar>button{font-size:9px}}
+
+/* The header ellipsis is the entry point for secondary views at every width. */
+.workspace-shell .workspace-header>.button[aria-label="Workspace actions"]{display:inline-flex}
+
+@media(max-width:850px){.workspace-shell .workspace-header .breadcrumb{display:flex}.workspace-shell .layout-tabs button{width:auto;min-width:32px}}
+
+.workspace-view-actions{display:flex;align-items:center;gap:1px;flex-shrink:0}
+.workspace-view-actions>.button{height:27px;width:27px;border-radius:4px;color:var(--secondary)}
+.workspace-view-actions>.button:hover{color:var(--foreground)}
+.dock-terminal .terminal-region{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;width:100%}
+.dock-terminal .terminal-toolbar{min-height:34px;padding:0 12px;gap:9px;border-bottom:1px solid var(--border)}
+.dock-terminal .terminal-toolbar>span:first-child,.dock-terminal .terminal-keyboard-hint{display:none}
+.dock-terminal .terminal-host{flex:1;min-height:0;overflow:hidden;padding:8px}
+@media(max-width:850px){.workspace-view-actions>.button:not(:last-child){display:none}.workspace-shell .breadcrumb strong{max-width:170px}.workspace-view-actions{gap:0}}
+@media(max-width:460px){.workspace-shell .breadcrumb strong{max-width:110px}.workspace-view-actions>.button{width:25px}.workspace-shell .workspace-header{gap:3px}}

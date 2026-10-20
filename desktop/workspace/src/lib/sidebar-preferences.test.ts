@@ -1,0 +1,4 @@
+import {expect,it} from 'vitest';
+import {readSidebarPreference,saveSidebarPreference} from './sidebar-preferences';
+it('keeps sidebar choices scoped to the account and hover reveals transient',()=>{localStorage.clear();saveSidebarPreference('first',{hover:true,open:true});expect(readSidebarPreference('first')).toEqual({hover:true,open:false});expect(readSidebarPreference('second')).toBeNull();saveSidebarPreference('second',{hover:false,open:false});expect(readSidebarPreference('second')).toEqual({hover:false,open:false})});
+it('recovers safely from unavailable storage and invalid values',()=>{expect(readSidebarPreference('owner',{getItem:()=>'{'})).toBeNull();expect(readSidebarPreference('owner',{getItem:()=>'{"hover":"true","open":true}'})).toBeNull();expect(()=>saveSidebarPreference('owner',{hover:false,open:true},{setItem:()=>{throw Error('Storage full')}})).not.toThrow()});

@@ -37,6 +37,25 @@ window opens a credential-free session/panel URL against the same backend.
 
 ## Layout
 
+The workspace has focused Chat and Code views, compact editor controls, and pinned,
+collapsed, or hover-revealed navigation. See [Workspace UI](../docs/workspace-ui.md)
+for the reference layouts, sidebar behavior, and verification.
+
+Chat includes contextual actions for checkout changes, Browser, Terminal, and Files.
+These open workspace tabs beside the existing conversation. The tab launcher and
+panel menu support side, bottom, full-view, and separate-window presentations;
+closing and reopening a workspace tab preserves its mounted content. Full view can
+retain the same conversation draft in a floating composer. Window fullscreen is a
+separate native/browser command.
+
+The Changes tab provides read-only, numbered unified or split diffs for the selected
+conversation checkout, including staged, unstaged, and untracked files. Local file
+references in chat open the editor in that same checkout. Default shortcuts include
+Command/Ctrl+W to close a workspace tab, Command/Ctrl+Shift+T to reopen one,
+Command/Ctrl+J for the bottom panel, and Control+Command+F for macOS fullscreen.
+The [Workspace UI guide](../docs/workspace-ui.md) documents the exact scope, browser
+page-tab shortcuts, reviewed Codex references, and verification limits.
+
 | Path | Purpose |
 | --- | --- |
 | `bootstrap/` | Tiny loading page shown until the backend is ready |

@@ -13,8 +13,12 @@ use std::ffi::{c_char, c_void, CStr};
 
 extern "C" {
     fn termx_capture_start(display_id: u32, max_width: i32, max_height: i32, fps: i32) -> i32;
-    fn termx_capture_frame(out: *mut *mut u8, out_len: *mut usize, timeout_ms: i32, quality: i32)
-        -> i32;
+    fn termx_capture_frame(
+        out: *mut *mut u8,
+        out_len: *mut usize,
+        timeout_ms: i32,
+        quality: i32,
+    ) -> i32;
     fn termx_capture_stop();
     fn termx_bridge_last_error() -> *const c_char;
     fn termx_bridge_free(ptr: *mut c_void);

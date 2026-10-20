@@ -1,0 +1,4 @@
+import {expect,it} from 'vitest';
+import {workspaceFilePath} from './workspace-files';
+it('opens references relative to exactly the selected checkout',()=>{expect(workspaceFilePath('src/app.ts','/projects/app')).toBe('src/app.ts');expect(workspaceFilePath('/projects/app/src/app.ts','/projects/app')).toBe('src/app.ts');expect(workspaceFilePath('file:///projects/app/src/a%20b.ts','/projects/app')).toBe('src/a b.ts');expect(workspaceFilePath('C:\\project\\src\\a.ts','C:\\project')).toBe('src/a.ts')});
+it('rejects other checkouts, external URLs, remote file hosts, and traversal beyond the root',()=>{for(const path of ['/projects/application/a.ts','/other/a.ts','../secret','src/../../secret','https://example.com/a.ts','file://remote/projects/app/a.ts','src/\0a.ts'])expect(workspaceFilePath(path,'/projects/app')).toBeNull()});

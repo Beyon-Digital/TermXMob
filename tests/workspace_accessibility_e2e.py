@@ -69,8 +69,9 @@ def run(destination, axe_source):
                         if zoom == 200:
                             page.get_by_role('button',name='Show sidebar',exact=True).click()
                         page.get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
-                        if zoom == 200 and page.get_by_role('button',name='Hide sidebar',exact=True).is_visible():
-                            page.get_by_role('button',name='Hide sidebar',exact=True).click()
+                        hide_sidebar=page.get_by_role('navigation',name='Workspace navigation',exact=True).get_by_role('button',name='Hide sidebar',exact=True)
+                        if zoom == 200 and hide_sidebar.is_visible():
+                            hide_sidebar.click()
                         page.wait_for_function("""()=>{const t=document.querySelector('textarea[aria-label="Message"]'),b=document.querySelector('button[aria-label="Session options"]');return !!t&&!t.disabled&&!!b&&!b.disabled}""",timeout=60000)
                     except Exception:
                         page.screenshot(path=str(destination / f"startup-failure-{zoom}.png"))
