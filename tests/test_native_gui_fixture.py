@@ -123,10 +123,13 @@ def test_every_native_workspace_handler_has_a_scoped_explicit_app_acl():
     handlers = set(re.findall(r'workspace::(workspace_\w+)', main.split('.invoke_handler(', 1)[1].split('.plugin(', 1)[0]))
     build = (root/'build.rs').read_text()
     manifest = set(re.findall(r'"(workspace_\w+)"', build.split('AppManifest::new().commands(', 1)[1]))
+    companion_handlers = set(re.findall(r'companions::(companion_\w+)', main.split('.invoke_handler(', 1)[1].split('.plugin(', 1)[0]))
+    companion_manifest = set(re.findall(r'"(companion_\w+)"', build.split('AppManifest::new().commands(', 1)[1]))
+    assert companion_handlers == companion_manifest == {'companion_capabilities', 'companion_home'}
     capability = json.loads((root/'capabilities/default.json').read_text())
     allowed = set(capability['permissions'])-{'core:default'}
     assert len(handlers) == 13 and manifest == handlers
-    assert allowed == {'allow-'+command.replace('_','-') for command in handlers}
+    assert allowed == {'allow-'+command.replace('_','-') for command in handlers | companion_handlers}
     assert '.app_manifest(manifest)' in build and 'tauri_build::try_build(' in build
     assert capability['windows'] == ['main','connect','workspace-*']
     assert capability['remote']['urls'] == ['http://127.0.0.1:*']
@@ -134,6 +137,10 @@ def test_every_native_workspace_handler_has_a_scoped_explicit_app_acl():
     for command in handlers:
         command_body = source.split('fn '+command+'(',1)[1].split('#[tauri::command]',1)[0]
         assert 'trusted(&app, &window)?' in command_body, command
+    companion_source = (root/'src/companions.rs').read_text()
+    for command in companion_handlers:
+        command_body = companion_source.split('fn '+command+'(',1)[1].split('#[tauri::command]',1)[0]
+        assert 'crate::workspace::trusted(&app, &window)?' in command_body, command
     gate = source.split('fn trusted(',1)[1].split('fn safe_host_path(',1)[0]
     for boundary in ['!workspace_label(window.label())', 'url.scheme() != "http"',
                      'url.host_str() != Some("127.0.0.1")',

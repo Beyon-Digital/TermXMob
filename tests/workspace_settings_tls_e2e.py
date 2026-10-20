@@ -47,7 +47,11 @@ def run(destination):
                 page.screenshot(path=str(output/'drawer-desktop.png'))
                 opener=page.get_by_role('button',name='Settings',exact=True);opener.click()
                 dialog=page.get_by_role('dialog',name='Settings',exact=True);dialog.wait_for()
-                nav=dialog.get_by_role('navigation',name='Settings categories');assert nav.get_by_role('button').count()==14
+                categories=['Models & engines','Cloud accounts','Agents','Characters','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Appearance','Keyboard shortcuts','Safety & Auto Review','General']
+                nav=dialog.get_by_role('navigation',name='Settings categories')
+                assert nav.get_by_role('button').count()==len(categories)
+                for category in categories:
+                    assert nav.get_by_role('button',name=category,exact=True).count()==1
                 nav.get_by_role('button',name='Access & sessions',exact=True).click();dialog.get_by_role('heading',name='Local network HTTPS',exact=True).wait_for()
                 assert page.url.endswith('/manage/access')
                 # Stage and undo configuration on a throwaway profile. The proof
@@ -94,7 +98,7 @@ def run(destination):
                 page.once('dialog',lambda prompt:prompt.accept());nav.get_by_role('button',name='Memory',exact=True).click()
                 report['checks'].append('successful skill validation preserves unsaved draft and guarded navigation')
                 # All categories remain reachable through one registry.
-                for category in ['Models & engines','Cloud accounts','Agents','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Appearance','Keyboard shortcuts','Safety & Auto Review','General']:
+                for category in categories:
                     nav.get_by_role('button',name=category,exact=True).click();assert nav.get_by_role('button',name=category,exact=True).get_attribute('aria-current')=='page'
                 nav.get_by_role('button',name='Memory',exact=True).click()
                 axe=Path(__file__).resolve().parents[1]/'desktop/workspace/node_modules/axe-core/axe.min.js'
@@ -103,7 +107,7 @@ def run(destination):
                     page.set_viewport_size({'width':width,'height':900});result=page.evaluate('async()=>{const result=await axe.run(document.querySelector(".settings-surface"),{runOnly:{type:"tag",values:["wcag2a","wcag2aa","wcag21aa"]}});return result.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))}')
                     report['axe'].append({'width':width,'violations':result});assert not result,result
                 page.set_viewport_size({'width':1440,'height':1000});dialog.get_by_role('button',name='Close',exact=True).click();assert not dialog.is_visible();assert page.get_by_role('button',name='Show sidebar',exact=True).evaluate('(node)=>node===document.activeElement')
-                report['checks'] += ['one sticky Settings entry; no drawer category duplication','all 14 categories reachable','memory edit/save and draft guards','destructive cancellation leaves record intact','Escape close and focus return','focus trap at all tested widths','shareable manager routes']
+                report['checks'] += ['one sticky Settings entry; no drawer category duplication',f'all {len(categories)} categories reachable, including Characters','memory edit/save and draft guards','destructive cancellation leaves record intact','Escape close and focus return','focus trap at all tested widths','shareable manager routes']
                 assert not report['errors'],report['errors']
                 browser.close()
         finally:
