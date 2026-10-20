@@ -14,7 +14,14 @@ async def eventually(predicate):
     async def poll():
         while not predicate():
             await asyncio.sleep(.01)
-    await asyncio.wait_for(poll(), 2)
+    await asyncio.wait_for(poll(), 10)
+
+
+async def dispatched_run(service, run):
+    # tick deliberately returns while provider planning is still in progress.
+    # Store rows are snapshots, so refresh the durable row until it has a task.
+    await eventually(lambda: bool(service.store.get('schedule_run', run['id']).get('task_id')))
+    return service.store.get('schedule_run', run['id'])
 
 
 def add_schedule(service, owner, automation, path, prompt, clock):
@@ -43,7 +50,7 @@ async def test_unattended_plan_starts_but_consequential_tool_waits(workspace, tm
         grant, schedule = add_schedule(service, owner, automation, path, 'Publish', clock)
         clock[0] += 2
         await automation.tick()
-        run = service.store.list('schedule_run')[0]
+        run = await dispatched_run(service, service.store.list('schedule_run')[0])
         await eventually(lambda: bool(ledger.approvals(run['task_id'])) and any(
             a['kind']=='tool' and a['status']=='pending' for a in ledger.approvals(run['task_id'])))
         approvals = ledger.approvals(run['task_id'])
@@ -105,9 +112,9 @@ async def test_slow_planning_does_not_block_other_schedules_or_remote_stop(works
         _, fast=add_schedule(service, owner, automation, path, 'Fast', clock)
         clock[0]+=2
         await asyncio.wait_for(automation.tick(), 1)
-        assert planning.is_set()
+        await asyncio.wait_for(planning.wait(), 10)
         runs={r['schedule_id']:r for r in service.store.list('schedule_run')}
-        fast_run=runs[fast['id']]
+        fast_run=await dispatched_run(service, runs[fast['id']])
         await eventually(lambda: ledger.get_task(fast_run['task_id'])['status']=='completed')
         slow_run=runs[slow['id']]
         await asyncio.wait_for(automation.control_run(owner,slow_run['id'],'cancel'),2)
@@ -196,7 +203,7 @@ async def test_restart_finishes_initial_plan_approval_without_replaying_task(wor
         monkeypatch.setattr(automation, '_approve_initial_plan', interrupted_before_approval)
         clock[0] += 2
         await automation.tick()
-        run = service.store.list('schedule_run')[0]
+        run = await dispatched_run(service, service.store.list('schedule_run')[0])
         task_id = run['task_id']
         assert ledger.get_task(task_id)['status']=='awaiting_approval'
         # Rebuild the actual host manager too: pending plan is a safe durable

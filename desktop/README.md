@@ -11,6 +11,10 @@ dockable editing, terminals, browser/computer tools and delivery. The separate
 Expo app is the mobile remote controller. See
 [the product boundary and task workflow](../docs/task-workspace.md).
 
+**Settings → Characters** provides agent companions, native desktop roaming,
+character generation, frame previews and pack tools. See
+[living characters](../docs/characters.md) for setup and platform behavior.
+
 ```
 Termx.app / Termx.exe / termx.AppImage
 └── Tauri shell (Rust)

@@ -9,6 +9,8 @@
   ],
   "permissions": [
     "core:default",
+    "allow-companion-capabilities",
+    "allow-companion-home",
     "allow-workspace-login",
     "allow-workspace-resume-sso",
     "allow-workspace-request",

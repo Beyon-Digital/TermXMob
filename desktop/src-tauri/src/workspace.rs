@@ -60,7 +60,7 @@ pub fn legacy_allowed(port: u16) -> bool {
         .map(|response| response.status == 200 && response.body["configured"] == false)
         .unwrap_or(false)
 }
-fn trusted(app: &AppHandle, window: &WebviewWindow) -> Result<u16, String> {
+pub(crate) fn trusted(app: &AppHandle, window: &WebviewWindow) -> Result<u16, String> {
     let backend = app
         .try_state::<crate::backend::Backend>()
         .ok_or("Host unavailable")?;
@@ -247,6 +247,7 @@ fn install_access_cookie(app: &AppHandle, credentials: &Value) -> Result<(), Str
                 .map_err(|_| "Could not protect native control transports")?;
         }
     }
+    crate::companions::authenticated(app);
     Ok(())
 }
 fn clear_access_cookies(app: &AppHandle) {
@@ -288,6 +289,111 @@ pub fn gql_native(
         return None;
     }
     response.body.get("data").cloned()
+}
+/// Rust-owned companion transport. No credential or arbitrary URL crosses the
+/// webview boundary; the verified local host and API allowlist stay native.
+pub(crate) fn companion_read(app: &AppHandle, path: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    if !safe_host_path(path)
+        || !(path == "/api/companions/runtime" || path.starts_with("/api/characters/packs/"))
+    {
+        return Err("Invalid character resource".into());
+    }
+    let backend = app
+        .try_state::<crate::backend::Backend>()
+        .ok_or("Host unavailable")?;
+    backend.verify_identity()?;
+    let port = backend.port();
+    let state = app.state::<NativeSession>();
+    let access = {
+        let mut session = state.0.lock().map_err(|_| "Session unavailable")?;
+        if session.expires <= now() + 20 {
+            refresh(app, port, &mut session)?;
+        }
+        session.access.clone()
+    };
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(4))
+        .redirects(0)
+        .build();
+    let request = |token: &str| {
+        agent
+            .get(&format!("http://127.0.0.1:{port}{path}"))
+            .set("Authorization", &format!("Bearer {token}"))
+            .call()
+    };
+    let mut response = request(&access);
+    if matches!(&response, Err(ureq::Error::Status(401, _))) {
+        // Another bridge request may already have rotated credentials. Avoid
+        // refreshing twice while preserving the shared refresh critical section.
+        let token = {
+            let mut session = state.0.lock().map_err(|_| "Session unavailable")?;
+            if session.access == access {
+                refresh(app, port, &mut session)?;
+            }
+            session.access.clone()
+        };
+        backend.verify_identity()?;
+        response = request(&token);
+    }
+    let response = match response {
+        Ok(response) => response,
+        Err(ureq::Error::Status(423, _)) => {
+            let _ = app.emit("termx-session-locked", json!({}));
+            return Err("Session locked; unlock required".into());
+        }
+        Err(_) => return Err("Character host unavailable or session locked".into()),
+    };
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(16 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "Character transfer interrupted")?;
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err("Character resource too large".into());
+    }
+    Ok(bytes)
+}
+/// Persist the native context menu's deliberate hide action using this user's
+/// current preferences. This path never falls back to the admin bootstrap.
+pub(crate) fn companion_hide_preference(app: &AppHandle, id: &str) -> Result<(), String> {
+    // Serialize the entire read/modify/write so concurrent native hide actions
+    // cannot replace each other's persisted hidden-pet preferences.
+    static UPDATE: Mutex<()> = Mutex::new(());
+    let _update = UPDATE
+        .lock()
+        .map_err(|_| "Companion preferences unavailable")?;
+    let snapshot: Value = serde_json::from_slice(&companion_read(app, "/api/companions/runtime")?)
+        .map_err(|_| "Invalid companion preferences")?;
+    let mut hidden = snapshot["preferences"]["hidden"]
+        .as_array()
+        .cloned()
+        .ok_or("Missing companion preferences")?;
+    if !hidden.iter().any(|v| v.as_str() == Some(id)) {
+        hidden.push(json!(id));
+    }
+    let backend = app
+        .try_state::<crate::backend::Backend>()
+        .ok_or("Host unavailable")?;
+    backend.verify_identity()?;
+    let state = app.state::<NativeSession>();
+    let mut session = state.0.lock().map_err(|_| "Session unavailable")?;
+    if session.expires <= now() + 20 {
+        refresh(app, backend.port(), &mut session)?;
+    }
+    let response = call(
+        backend.port(),
+        "/api/companions/preferences",
+        "PATCH",
+        Some(json!({"hidden":hidden})),
+        Some(&session.access),
+        None,
+    )?;
+    if response.status != 200 {
+        return Err("Could not save companion visibility".into());
+    }
+    Ok(())
 }
 #[tauri::command]
 pub async fn workspace_login(
@@ -691,6 +797,7 @@ pub async fn workspace_logout(app: AppHandle, window: WebviewWindow) -> Result<(
         session.access.clear();
         session.expires = 0;
         clear_access_cookies(&app);
+        let _ = app.emit("termx-session-locked", json!({}));
         match removed {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
             Err(_) => return Err("Could not remove OS session credential".into()),

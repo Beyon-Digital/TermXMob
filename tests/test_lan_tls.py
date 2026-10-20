@@ -17,6 +17,7 @@ from termx.cli import _start_server, build_parser
 from termx.identity_guard import SessionGuard
 from termx.lan_tls import load_identity, ssl_context, spki, supported_name, advertised_names
 from termx.net import http_urls
+from termx.private_files import private_path_permissions
 
 
 def test_identity_persists_renews_addresses_and_requires_deliberate_rotation(tmp_path):
@@ -36,8 +37,8 @@ def test_identity_persists_renews_addresses_and_requires_deliberate_rotation(tmp
     sans=rotated.certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     assert 'laptop.local' in sans.get_values_for_type(x509.DNSName)
     assert {str(ip) for ip in sans.get_values_for_type(x509.IPAddress)}=={'127.0.0.1','192.168.1.10','fd00::1'}
-    assert all(path.stat().st_mode&0o077==0 for path in rotated.root.iterdir())
-    assert rotated.root.stat().st_mode&0o077==0
+    assert all(private_path_permissions(path) for path in rotated.root.iterdir())
+    assert private_path_permissions(rotated.root)
 
 
 @pytest.mark.parametrize('name',['8.8.8.8','example.com','*.local','x.local/evil','fe80::1%eth0','0.0.0.0','::','x..local','-host.local'])

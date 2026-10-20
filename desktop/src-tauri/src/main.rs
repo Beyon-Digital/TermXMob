@@ -1,6 +1,7 @@
 mod backend;
 mod broker;
 mod capture;
+mod companions;
 mod config;
 mod host_service;
 mod input_macos;
@@ -75,6 +76,8 @@ fn main() {
         .manage(workspace::NativeSession::default())
         .manage(workspace::RedockCoordinator::default())
         .invoke_handler(tauri::generate_handler![
+            companions::companion_capabilities,
+            companions::companion_home,
             workspace::workspace_login,
             workspace::workspace_resume_sso,
             workspace::workspace_request,
@@ -126,6 +129,7 @@ fn main() {
             let backend = backend::Backend::new(handle.clone())?;
             app.manage(backend.clone());
             backend.start();
+            companions::start(&handle);
             ui::first_run_onboarding(&handle, desktop_config.onboarded);
             logging::desktop(&handle, "termx desktop started");
             Ok(())
@@ -148,6 +152,7 @@ fn main() {
                 }
             }
             RunEvent::Exit => {
+                companions::shutdown();
                 QUITTING.store(true, Ordering::SeqCst);
                 if let Some(backend) = app.try_state::<backend::Backend>() {
                     backend.stop();

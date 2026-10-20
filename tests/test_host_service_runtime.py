@@ -20,7 +20,14 @@ def fixture_service(tmp_path,monkeypatch,port):
     controller.install(port=port,bootstrap_passcode='fixture-service-bootstrap',web_dir=str(tmp_path/'web'))
     environment={**os.environ,'TERMX_ENGINE_STARTUP_REFRESH':'0','TERMX_AGENTS_DIR':str(tmp_path/'agents'),
         'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'src'),'TERMX_DESKTOP':'0'}
-    command=[sys.executable,'-m','termx','--service-worker','--config-dir',str(controller.root)]
+    # Windows venv python.exe is a redirector with its own PID. Record the
+    # actual interpreter PID independently before entering the real CLI.
+    worker = (
+        "import os, pathlib, runpy; "
+        f"pathlib.Path({str(tmp_path/'worker.pid')!r}).write_text(str(os.getpid())); "
+        "runpy.run_module('termx', run_name='__main__')"
+    )
+    command=[sys.executable,'-c',worker,'--service-worker','--config-dir',str(controller.root)]
     return controller,environment,command
 
 
@@ -37,7 +44,8 @@ def test_real_service_worker_proof_duplicate_exclusion_and_intentional_stop(tmp_
                 assert monotonic()<deadline,controller.status()
                 sleep(.1)
             status=controller.status()
-            assert status['managed'] and status['pid']==process.pid and status['port']==port
+            worker_pid=int((tmp_path/'worker.pid').read_text())
+            assert status['managed'] and status['pid']==worker_pid and status['port']==port
             assert 'proof_token' not in json.dumps(status) and 'fixture-service-bootstrap' not in json.dumps(status)
             duplicate=subprocess.run(command,env=environment,capture_output=True,text=True,timeout=15)
             assert duplicate.returncode==73 and 'already owns this profile' in duplicate.stderr
@@ -58,6 +66,7 @@ def test_real_service_worker_proof_duplicate_exclusion_and_intentional_stop(tmp_
             (tmp_path/'service-proof.json').write_text(json.dumps({'passed':True,
                 'supervisor':'isolated command fixture; no OS user service registered',
                 'worker':'actual termx --service-worker subprocess','initial_status':status,
+                'launcher_pid':process.pid,'worker_pid':worker_pid,
                 'duplicate_exit':duplicate.returncode,'intentional_stop_exit':process.returncode,
                 'private_runtime_removed':not controller.runtime_path.exists(),'model_calls':False},indent=2))
         finally:
