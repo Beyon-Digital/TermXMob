@@ -1,7 +1,10 @@
 from pathlib import Path
 import os
 import shlex
+import signal
+import subprocess
 import sys
+import textwrap
 
 import pytest
 
@@ -250,8 +253,18 @@ def test_oversized_tracked_diff_is_capped_while_draining_the_git_pipe(workspace,
     git_ops._require_ok(git_ops._git(str(checkout), 'add', '--', 'base.txt'))
     git_ops._require_ok(git_ops._git(str(checkout), 'commit', '-m', 'Oversized review fixture'))
     (checkout / 'base.txt').write_text('new line\n' * cap)
-    original = change_review.subprocess.Popen
+    process_type = '_WindowsGitProcess' if os.name == 'nt' else 'Popen'
+    process_module = change_review if os.name == 'nt' else change_review.subprocess
+    original = getattr(process_module, process_type)
     captured = []
+    capture = change_review._capture
+    stored = []
+
+    def observe_storage(command, *args, **kwargs):
+        result = capture(command, *args, **kwargs)
+        if 'diff' in command and '--numstat' not in command:
+            stored.append(len(result.stdout.encode()))
+        return result
 
     class RecordedPipe:
         def __init__(self, pipe):
@@ -275,9 +288,89 @@ def test_oversized_tracked_diff_is_capped_while_draining_the_git_pipe(workspace,
         return process
 
     monkeypatch.setattr(change_review, 'MAX_PREVIEW_BYTES', cap)
-    monkeypatch.setattr(change_review.subprocess, 'Popen', observe_patch_pipe)
+    monkeypatch.setattr(change_review, '_capture', observe_storage)
+    monkeypatch.setattr(process_module, process_type, observe_patch_pipe)
     preview = change_review.diff(str(checkout), 'base.txt')
     assert preview['truncated'] and not preview['binary']
     assert preview['additions'] is None and preview['deletions'] is None
     assert len(preview['diff'].encode()) <= cap
-    assert len(captured) == 1 and captured[0].bytes_read == cap + 1
+    assert len(captured) == 1 and captured[0].bytes_read >= cap + 1
+    assert stored == [cap + 1]
+
+
+@pytest.mark.parametrize('mode', ['overflow', 'orphan_stderr', 'timeout'])
+def test_git_launcher_descendants_have_a_bounded_capture_lifetime(tmp_path, mode):
+    # Probe in another interpreter: the test still fails promptly if a future
+    # implementation regresses to an unbounded pipe close/join. The emulated
+    # grandchild also exits independently after five seconds as a final guard.
+    child = tmp_path / 'writer.py'
+    child.write_text(textwrap.dedent('''
+        import os, pathlib, sys, threading, time
+        threading.Thread(target=lambda: (time.sleep(5), os._exit(0)), daemon=True).start()
+        pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))
+        if sys.argv[2] == 'overflow':
+            os.write(1, b'x' * (256 * 1024))
+        elif sys.argv[2] == 'orphan_stderr':
+            os.close(1)
+        time.sleep(5)
+    '''))
+    launcher = tmp_path / 'launcher.py'
+    launcher.write_text(textwrap.dedent('''
+        import subprocess, sys
+        child = subprocess.Popen([sys.executable, '-S', sys.argv[1], sys.argv[2], sys.argv[3]])
+        if sys.argv[3] != 'orphan_stderr':
+            child.wait()
+    '''))
+    marker = tmp_path / 'child.pid'
+    probe = tmp_path / 'probe.py'
+    probe.write_text(textwrap.dedent('''
+        import os, pathlib, subprocess, sys, time
+        from fastapi import HTTPException
+        from termx.workspace import change_review
+        change_review.GIT_TIMEOUT = 1.5
+        change_review.GIT_CLEANUP_TIMEOUT = 1
+        print('capture probe ready', flush=True)
+        started = time.monotonic()
+        try:
+            result = change_review._capture(
+                [sys.executable, '-S', sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]],
+                dict(os.environ), limit=1024, truncate=True)
+            assert sys.argv[4] == 'overflow'
+            assert result.truncated and result.stdout == 'x' * 1025
+        except HTTPException as error:
+            assert sys.argv[4] != 'overflow' and error.status_code == 504, error
+        assert time.monotonic() - started < 3, 'Capture exceeded its total lifetime bound'
+        pid = int(pathlib.Path(sys.argv[3]).read_text())
+        if os.name == 'nt':
+            import _winapi
+            try:
+                handle = _winapi.OpenProcess(0x00100000, False, pid)
+            except OSError:
+                pass  # The owned child no longer exists.
+            else:
+                try:
+                    assert _winapi.WaitForSingleObject(handle, 500) == _winapi.WAIT_OBJECT_0, 'Child survived its job'
+                finally:
+                    _winapi.CloseHandle(handle)
+        else:
+            status = subprocess.run(['ps', '-p', str(pid), '-o', 'stat='], capture_output=True,
+                                    text=True, timeout=.5)
+            assert status.returncode != 0 or status.stdout.strip().startswith('Z'), 'Child survived its process group'
+        print('bounded capture and descendant termination verified')
+    '''))
+    options = {'start_new_session': True} if os.name == 'posix' else {
+        'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
+    process = subprocess.Popen([sys.executable, str(probe), str(launcher), str(child), str(marker), mode],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **options)
+    try:
+        # Interpreter/package startup is outside the strict capture-time check.
+        output, errors = process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        if os.name == 'posix':
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+        process.wait(timeout=1)
+        pytest.fail('Git launcher regression probe exceeded its independent startup deadline')
+    assert process.returncode == 0, output + errors
+    assert 'bounded capture and descendant termination verified' in output

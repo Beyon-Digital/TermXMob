@@ -4,8 +4,10 @@ from __future__ import annotations
 import difflib
 import os
 import shutil
+import signal
 import stat
 import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,6 +21,187 @@ MAX_PREVIEW_BYTES = 1024 * 1024
 MAX_GIT_OUTPUT_BYTES = 8 * MAX_PREVIEW_BYTES
 MAX_INDEX_BYTES = 64 * MAX_PREVIEW_BYTES
 GIT_TIMEOUT = 30
+GIT_CLEANUP_TIMEOUT = 1
+
+
+class _WindowsGitProcess:
+    """Own the launcher and every descendant before its first instruction runs."""
+
+    def __init__(self, command, env):
+        import _winapi
+        import ctypes
+        import ctypes.wintypes as wt
+        import msvcrt
+        from termx.sandbox import _win_shim as win
+
+        self._api, self._win = _winapi, win
+        self._handle = self._job = None
+        self.stdout = self.stderr = None
+        self.returncode = None
+        descriptors, inherited = [], []
+        thread = None
+        try:
+            self._job = win._kernel32.CreateJobObjectW(None, None)
+            if not self._job:
+                raise win._last_error()
+            limits = win._JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            limits.BasicLimitInformation.LimitFlags = win._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if not win._kernel32.SetInformationJobObject(self._job, win._JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                                                       ctypes.byref(limits), ctypes.sizeof(limits)):
+                raise win._last_error()
+            input_fd = os.open(os.devnull, os.O_RDONLY)
+            descriptors.append(input_fd)
+            output_read, output_write = os.pipe()
+            descriptors.extend((output_read, output_write))
+            error_read, error_write = os.pipe()
+            descriptors.extend((error_read, error_write))
+            current = _winapi.GetCurrentProcess()
+            for descriptor in (input_fd, output_write, error_write):
+                inherited.append(_winapi.DuplicateHandle(current, msvcrt.get_osfhandle(descriptor), current,
+                                                        0, True, _winapi.DUPLICATE_SAME_ACCESS))
+            startup = subprocess.STARTUPINFO()
+            startup.dwFlags = subprocess.STARTF_USESTDHANDLES
+            startup.hStdInput, startup.hStdOutput, startup.hStdError = inherited
+            startup.lpAttributeList = {'handle_list': inherited}
+            flags = win._CREATE_SUSPENDED | win._CREATE_UNICODE_ENVIRONMENT | subprocess.CREATE_NO_WINDOW
+            self._handle, thread, self.pid, _ = _winapi.CreateProcess(
+                command[0], subprocess.list2cmdline(command), None, None, True, flags, env, None, startup)
+            if not win._kernel32.AssignProcessToJobObject(self._job, self._handle):
+                raise win._last_error()
+            member = wt.BOOL()
+            win._kernel32.IsProcessInJob.argtypes = [wt.HANDLE, wt.HANDLE, ctypes.POINTER(wt.BOOL)]
+            win._kernel32.IsProcessInJob.restype = wt.BOOL
+            if not win._kernel32.IsProcessInJob(self._handle, self._job, ctypes.byref(member)) or not member.value:
+                raise OSError('Git process is outside its owned job')
+            self.stdout = os.fdopen(output_read, 'rb', buffering=0)
+            descriptors.remove(output_read)
+            self.stderr = os.fdopen(error_read, 'rb', buffering=0)
+            descriptors.remove(error_read)
+            if win._kernel32.ResumeThread(thread) == 0xffffffff:
+                raise win._last_error()
+        except BaseException:
+            try:
+                self.kill_tree()
+                if self._handle is not None:
+                    try:
+                        _winapi.TerminateProcess(self._handle, 1)
+                    except OSError:
+                        pass  # Job termination may already have exited it.
+                    _winapi.WaitForSingleObject(self._handle, int(GIT_CLEANUP_TIMEOUT * 1000))
+            finally:
+                self.close()
+                for source in (self.stdout, self.stderr):
+                    if source is not None:
+                        source.close()
+            raise
+        finally:
+            if thread is not None:
+                _winapi.CloseHandle(thread)
+            for handle in inherited:
+                _winapi.CloseHandle(handle)
+            for descriptor in descriptors:
+                os.close(descriptor)
+
+    def poll(self):
+        if self.returncode is None and self._api.WaitForSingleObject(self._handle, 0) == self._api.WAIT_OBJECT_0:
+            self.returncode = self._api.GetExitCodeProcess(self._handle)
+        return self.returncode
+
+    def kill_tree(self):
+        if self._job is not None:
+            self._win._kernel32.TerminateJobObject(self._job, 1)
+
+    def wait(self, timeout):
+        if self._api.WaitForSingleObject(self._handle, max(0, int(timeout * 1000))) == self._api.WAIT_TIMEOUT:
+            raise subprocess.TimeoutExpired('git', timeout)
+        return self.poll()
+
+    def close(self):
+        if self._job is not None:
+            self._win._kernel32.CloseHandle(self._job)
+            self._job = None
+        if self._handle is not None:
+            self._api.CloseHandle(self._handle)
+            self._handle = None
+
+
+def _capture(command, env, *, limit, truncate):
+    """Bound storage and the complete process/pipe lifetime, including launchers."""
+    deadline = time.monotonic() + GIT_TIMEOUT
+    if os.name == 'nt':
+        process = _WindowsGitProcess(command, env)
+        kill_tree = process.kill_tree
+    else:
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, env=env, start_new_session=True, bufsize=0)
+
+        def kill_tree():
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    output, errors = bytearray(), bytearray()
+    exceeded, error_exceeded, reader_failed, changed = Event(), Event(), Event(), Event()
+
+    def drain(source, target, budget, overflow):
+        try:
+            while chunk := source.read(65536):
+                # Continue draining after the cap: a launcher may be waiting for
+                # a child that inherited both pipes. Never leave it pipe-blocked.
+                target.extend(chunk[:max(0, budget + 1 - len(target))])
+                if len(target) > budget:
+                    overflow.set()
+                    changed.set()
+        except (OSError, ValueError):
+            reader_failed.set()
+        finally:
+            source.close()  # The reader exclusively owns its unbuffered pipe.
+            changed.set()
+
+    readers = [Thread(target=drain, args=(process.stdout, output, limit, exceeded), daemon=True),
+               Thread(target=drain, args=(process.stderr, errors, 65536, error_exceeded), daemon=True)]
+    timed_out = False
+    try:
+        for reader in readers:
+            reader.start()
+        while process.poll() is None or any(reader.is_alive() for reader in readers):
+            if exceeded.is_set() or error_exceeded.is_set() or reader_failed.is_set():
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            changed.wait(min(remaining, .02))
+            changed.clear()
+    finally:
+        # Retain Windows Job ownership even if the redirector has already exited.
+        # No context-manager exit, implicit wait, buffered close, or unbounded join.
+        kill_tree()
+        cleanup_deadline = time.monotonic() + GIT_CLEANUP_TIMEOUT
+        try:
+            process.wait(timeout=max(0, cleanup_deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        for reader, source in zip(readers, (process.stdout, process.stderr)):
+            if reader.ident is None:
+                source.close()  # No reader owns this pipe if thread start failed.
+            else:
+                reader.join(timeout=max(0, cleanup_deadline - time.monotonic()))
+        timed_out = timed_out or any(reader.is_alive() for reader in readers)
+        if os.name == 'nt':
+            process.close()
+    if timed_out:
+        raise HTTPException(504, 'Git command timed out')
+    if reader_failed.is_set():
+        raise HTTPException(502, 'Git review output could not be read')
+    if error_exceeded.is_set() or (exceeded.is_set() and not truncate):
+        raise HTTPException(413, 'Git review output exceeds the review limit')
+    result = subprocess.CompletedProcess(command, 0 if exceeded.is_set() else process.returncode,
+                                         bytes(output).decode('utf-8', 'ignore' if exceeded.is_set() else 'strict'),
+                                         bytes(errors).decode('utf-8', 'replace'))
+    result.truncated = exceeded.is_set()
+    return result
 
 
 def _environment(*, configuration=False) -> dict[str, str]:
@@ -38,42 +221,7 @@ def _git(root: str, *args: str, env=None, limit=MAX_GIT_OUTPUT_BYTES, truncate=F
     if executable is None:
         raise HTTPException(400, 'Git is not installed on this host')
     command = [executable, '-C', root, '--no-optional-locks', '-c', 'core.fsmonitor=false', *args]
-    with subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, env=env or _environment()) as process:
-        output, errors = bytearray(), bytearray()
-        exceeded, error_exceeded = Event(), Event()
-
-        def drain(source, target, budget, overflow):
-            while chunk := source.read(min(65536, budget + 1 - len(target))):
-                target.extend(chunk)
-                if len(target) > budget:
-                    overflow.set()
-                    try:
-                        process.kill()
-                    except ProcessLookupError:
-                        pass
-                    break
-
-        readers = [Thread(target=drain, args=(process.stdout, output, limit, exceeded), daemon=True),
-                   Thread(target=drain, args=(process.stderr, errors, 65536, error_exceeded), daemon=True)]
-        for reader in readers:
-            reader.start()
-        try:
-            process.wait(timeout=GIT_TIMEOUT)
-        except subprocess.TimeoutExpired as exc:
-            process.kill()
-            process.wait()
-            raise HTTPException(504, 'Git command timed out') from exc
-        finally:
-            for reader in readers:
-                reader.join()
-        if error_exceeded.is_set() or (exceeded.is_set() and not truncate):
-            raise HTTPException(413, 'Git review output exceeds the review limit')
-        result = subprocess.CompletedProcess(command, 0 if exceeded.is_set() else process.returncode,
-                                             bytes(output).decode('utf-8', 'ignore' if exceeded.is_set() else 'strict'),
-                                             bytes(errors).decode('utf-8', 'replace'))
-        result.truncated = exceeded.is_set()
-        return result
+    return _capture(command, env or _environment(), limit=limit, truncate=truncate)
 
 
 def _copy_metadata(source: Path, destination: Path):
