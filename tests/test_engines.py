@@ -181,6 +181,165 @@ def test_jsonrpc_survives_process_exit():
     asyncio.run(run())
 
 
+def test_jsonrpc_close_finishes_inflight_stderr_after_child_exit():
+    """A scheduled stderr read must finish before startup error classification."""
+    async def run():
+        peer = JsonlProcess([sys.executable, '-u', '-c',
+                             "import sys; print('Read-only file system', file=sys.stderr)"])
+        entered, release = asyncio.Event(), asyncio.Event()
+        drain = peer._drain_stderr
+
+        async def inflight_drain():
+            entered.set()
+            await release.wait()
+            # Hold the read across scheduler turns without relying on elapsed
+            # wall-clock timing or the operating system's pipe delivery order.
+            for _ in range(10):
+                await asyncio.sleep(0)
+            await drain()
+
+        peer._drain_stderr = inflight_drain
+        await peer.start()
+        await entered.wait()
+        await asyncio.wait_for(peer._proc.wait(), 5)
+        release.set()
+        await peer.close(kill_after=.5)
+        assert peer.stderr_tail == 'Read-only file system\n'
+        assert peer._stderr_task.done() and not peer._stderr_task.cancelled()
+    asyncio.run(run())
+
+
+def test_jsonrpc_close_bounds_stderr_that_never_reaches_eof():
+    """An inherited stderr writer must not prevent protocol cleanup."""
+    async def run():
+        peer = JsonlProcess([sys.executable, '-u', '-c', 'pass'])
+        await peer.start()
+        # Model a descendant retaining the stderr writer after the direct child
+        # exits. Keep the real process lifecycle, with a controlled open stream.
+        entered = asyncio.Event()
+
+        class HeldStderr(asyncio.StreamReader):
+            async def read(self, size=-1):
+                entered.set()
+                return await super().read(size)
+
+        stderr = HeldStderr()
+        stderr.feed_data(b'captured startup diagnostic\n')
+        peer._proc.stderr = stderr
+        await entered.wait()
+        await asyncio.wait_for(peer._proc.wait(), 5)
+        started = time.monotonic()
+        await asyncio.wait_for(peer.close(kill_after=.05), .5)
+        assert time.monotonic() - started < .5
+        assert peer.stderr_tail == 'captured startup diagnostic\n'
+        assert peer._stderr_task.done()
+        assert not peer._server_requests and not peer.running
+    asyncio.run(run())
+
+
+def test_jsonrpc_cancelled_close_cleans_up_pending_stderr(monkeypatch):
+    async def run():
+        peer = JsonlProcess([sys.executable, '-u', '-c', 'pass'])
+        await peer.start()
+        peer._proc.stderr = asyncio.StreamReader()
+        await asyncio.wait_for(peer._proc.wait(), 5)
+        draining = asyncio.Event()
+        wait = asyncio.wait
+
+        async def observed_wait(tasks, **kwargs):
+            if peer._stderr_task in tasks:
+                draining.set()
+            return await wait(tasks, **kwargs)
+
+        monkeypatch.setattr('termx.engines.jsonrpc.asyncio.wait', observed_wait)
+        closing = asyncio.create_task(peer.close(kill_after=1))
+        try:
+            await asyncio.wait_for(draining.wait(), 1)
+            closing.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await closing
+            assert peer._stderr_task.done()
+            assert peer._reader_task.done()
+            assert peer._closed.is_set()
+        finally:
+            await peer.close(kill_after=.01)
+    asyncio.run(run())
+
+
+def test_jsonrpc_close_handles_a_descendant_retaining_stderr(tmp_path):
+    async def run():
+        stop = tmp_path / 'release-stderr-writer'
+        exit_parent = tmp_path / 'release-direct-child'
+        parent_ready = tmp_path / 'direct-child-ready-to-exit'
+        writer = (
+            'from pathlib import Path\nimport time\n'
+            f'stop = Path({str(stop)!r})\n'
+            'deadline = time.monotonic() + 5\n'
+            'while not stop.exists() and time.monotonic() < deadline:\n'
+            '    time.sleep(.01)\n'
+        )
+        executable = sys._base_executable if sys.platform == 'win32' else sys.executable
+        script = (
+            'import subprocess, sys, time\nfrom pathlib import Path\n'
+            f'subprocess.Popen({[executable, "-u", "-c", writer]!r}, '
+            'stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)\n'
+            "print('startup diagnostic', file=sys.stderr, flush=True)\n"
+            "print('{\"method\":\"writer-ready\"}', flush=True)\n"
+            'sys.stdin.read()\n'
+            f'Path({str(parent_ready)!r}).touch()\n'
+            f'exit_parent = Path({str(exit_parent)!r})\n'
+            'deadline = time.monotonic() + 5\n'
+            'while not exit_parent.exists() and time.monotonic() < deadline:\n'
+            '    time.sleep(.01)\n'
+        )
+        ready = asyncio.Event()
+        peer = JsonlProcess([executable, '-u', '-c', script],
+                            on_notification=lambda *_: ready.set())
+        await peer.start()
+        wait = peer._proc.wait
+        try:
+            await asyncio.wait_for(ready.wait(), 5)
+            peer._proc.stdin.close()
+
+            async def child_ready():
+                while not parent_ready.exists():
+                    await asyncio.sleep(.01)
+
+            await asyncio.wait_for(child_ready(), 5)
+            waiting = asyncio.Event()
+
+            async def pending_wait():
+                waiting.set()
+                code = await wait()
+                # Some asyncio backends keep Process.wait pending until all
+                # inherited pipes close. Retain that behavior on every platform.
+                await asyncio.shield(peer._stderr_task)
+                return code
+
+            peer._proc.wait = pending_wait
+            started = time.monotonic()
+            closing = asyncio.create_task(peer.close(kill_after=.5))
+            await waiting.wait()
+            assert peer._proc.returncode is None
+            # The process wait is pending while the child exits. asyncio may
+            # retain that waiter until the descendant also closes stderr.
+            exit_parent.touch()
+            await asyncio.wait_for(closing, 1.5)
+            assert time.monotonic() - started < 1.5
+            assert peer.exit_code == 0
+            assert peer.stderr_tail == 'startup diagnostic\n'
+            assert peer._stderr_task.done()
+        finally:
+            # The only descendant belongs to this fixture, checks this scratch
+            # marker, and also exits on its own five-second safety deadline.
+            stop.touch()
+            exit_parent.touch()
+            peer._proc.wait = wait
+            await peer.close(kill_after=1)
+            await asyncio.wait_for(peer._proc.stderr.read(), 2)
+    asyncio.run(run())
+
+
 def test_jsonrpc_malformed_lines_skipped():
     """A peer that emits garbage lines must not wedge the reader."""
     async def run():

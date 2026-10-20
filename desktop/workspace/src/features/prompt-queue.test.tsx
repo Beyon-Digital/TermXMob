@@ -13,12 +13,12 @@ afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllM
 const props={session,engines:[],providers:[],onSelect:vi.fn(),onRefresh:vi.fn(),onError:error};
 it('names queue and interrupt separately, binds the exact snapshot and preserves edits arriving during queued admission',async()=>{
  let resolve!:(value:unknown)=>void;api.mockImplementation(async(path,init)=>path.endsWith('/queue')&&init?.method==='POST'?new Promise(value=>{resolve=value}):path.endsWith('/queue')?{items:[]}:path.includes('presets')?{presets:[]}:path.includes('available-extensions')?{extensions:[]}:session);
- render(<Chat {...props}/>);const input=screen.getByRole('textbox',{name:'Message'});fireEvent.change(input,{target:{value:'Queued original'}});fireEvent.click(screen.getByRole('button',{name:'Queue next'}));await waitFor(()=>expect(resolve).toBeTypeOf('function'));
- fireEvent.change(input,{target:{value:'New unrelated draft'}});resolve({id:'queued-one',status:'queued'});await waitFor(()=>expect(screen.getByRole('button',{name:'Queue next'})).toBeEnabled());
+ render(<Chat {...props}/>);const input=screen.getByRole('textbox',{name:'Message'});fireEvent.change(input,{target:{value:'Queued original'}});fireEvent.click(screen.getByRole('button',{name:'Running task actions'}));fireEvent.click(screen.getByRole('button',{name:'Queue next'}));await waitFor(()=>expect(resolve).toBeTypeOf('function'));
+ fireEvent.change(input,{target:{value:'New unrelated draft'}});resolve({id:'queued-one',status:'queued'});await waitFor(()=>expect(screen.getByRole('button',{name:'Running task actions'})).toBeEnabled());
  expect(input).toHaveValue('New unrelated draft');const sent=api.mock.calls.find(([path,init])=>path.endsWith('/queue')&&init?.method==='POST');expect(JSON.parse(String(sent?.[1]?.body))).toMatchObject({prompt:'Queued original'});expect(api.mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
 });
 it('interrupt requires an explicit consequence confirmation and names the original active task',async()=>{
- render(<Chat {...props}/>);fireEvent.change(screen.getByRole('textbox',{name:'Message'}),{target:{value:'Do this instead'}});fireEvent.click(screen.getByRole('button',{name:'Interrupt current task'}));expect(api.mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
+ render(<Chat {...props}/>);fireEvent.change(screen.getByRole('textbox',{name:'Message'}),{target:{value:'Do this instead'}});fireEvent.click(screen.getByRole('button',{name:'Running task actions'}));fireEvent.click(screen.getByRole('button',{name:'Interrupt current task'}));expect(api.mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
  fireEvent.click(screen.getByRole('button',{name:'Stop current task and queue draft'}));await waitFor(()=>expect(api.mock.calls.some(([path,init])=>path.endsWith('/queue')&&init?.method==='POST')).toBe(true));
  const sent=api.mock.calls.find(([path,init])=>path.endsWith('/queue')&&init?.method==='POST');expect(JSON.parse(String(sent?.[1]?.body))).toMatchObject({prompt:'Do this instead',interrupt_task_id:'active-task'});
 });
@@ -47,7 +47,7 @@ it('retains cancelled and dispatched follow-ups in collapsed history without rep
 it('a pending cancel from an earlier A→B→A mount cannot strand busy or alter the new queue',async()=>{
  let release!:(value:unknown)=>void;const item={id:'item',revision:1,prompt:'Queue A',status:'queued',expires_at:2000,target:{}};
  api.mockImplementation(async(path,init)=>init?.method==='DELETE'?new Promise(value=>{release=value}):{items:[item]});
- const props={changed:0,onError:error,onRefresh:vi.fn()};const view=render(<PromptQueue {...props} sessionId="A"/>);await screen.findByRole('button',{name:'Cancel queued follow-up'});fireEvent.click(screen.getByRole('button',{name:'Cancel queued follow-up'}));expect(screen.getByRole('button',{name:'Cancel queued follow-up'})).toBeDisabled();view.rerender(<PromptQueue {...props} sessionId="B"/>);view.rerender(<PromptQueue {...props} sessionId="A"/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Cancel queued follow-up'})).toBeEnabled());await act(async()=>release({cancelled:true}));expect(props.onRefresh).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
+ const props={changed:0,onError:error,onRefresh:vi.fn()};const view=render(<PromptQueue {...props} sessionId="A"/>);await screen.findByText('1 queued follow-up');fireEvent.click(screen.getByText('1 queued follow-up'));fireEvent.click(screen.getByRole('button',{name:'Cancel queued follow-up'}));expect(screen.getByRole('button',{name:'Cancel queued follow-up'})).toBeDisabled();view.rerender(<PromptQueue {...props} sessionId="B"/>);view.rerender(<PromptQueue {...props} sessionId="A"/>);await screen.findByText('1 queued follow-up');fireEvent.click(screen.getByText('1 queued follow-up'));await waitFor(()=>expect(screen.getByRole('button',{name:'Cancel queued follow-up'})).toBeEnabled());await act(async()=>release({cancelled:true}));expect(props.onRefresh).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
 });
 
 it('keeps recovery awaiting confirmation active, queues follow-ups and blocks conflicting execution settings',async()=>{
@@ -60,7 +60,7 @@ it('keeps recovery awaiting confirmation active, queues follow-ups and blocks co
  fireEvent.keyDown(input,{key:'Enter'});
  await waitFor(()=>expect(api.mock.calls.some(([path,init])=>path.endsWith('/queue')&&init?.method==='POST')).toBe(true));
  expect(api.mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
- fireEvent.click(screen.getByRole('button',{name:'Choose agent and engine'}));
+ fireEvent.click(screen.getByRole('button',{name:'Session options'}));
  expect(screen.getByRole('combobox',{name:'Session engine'})).toBeDisabled();
  fireEvent.click(screen.getByRole('button',{name:'Close'}));
  fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));

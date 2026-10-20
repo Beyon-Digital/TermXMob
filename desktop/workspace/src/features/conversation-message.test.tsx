@@ -119,8 +119,30 @@ it('renders structured Markdown and a real waiting state without treating user t
   expect(screen.getByRole('region', {name: 'Code block'})).toHaveAttribute('tabindex', '0');
   expect(screen.getByText('print("ready")')).toBeVisible();
   rerender(<ConversationMessage role="assistant" text="" task={task({status: 'awaiting_approval', events: []})} {...props}/>);
-  expect(screen.getByRole('status')).toHaveTextContent('Waiting for your approval');
+  expect(screen.getAllByRole('status').some(element => element.textContent?.includes('Waiting for your approval'))).toBe(true);
+  expect(screen.getByRole('button', {name: 'Review task'})).toBeVisible();
   expect(document.querySelector('.response-skeleton')).toBeNull();
   rerender(<ConversationMessage role="user" text="<b>literal</b> **text**" {...props}/>);
   expect(screen.getByText('<b>literal</b> **text**')).toBeVisible();
+});
+
+it('keeps a long tool stream collapsed and makes failures visible before inspection', () => {
+ const events = Array.from({length: 12}, (_, index) => event(index + 1, index === 11 ? 'tool.failed' : 'tool.finished', {call: {name: 'read_file', call_id: 'read-' + index, arguments: {path: 'src/file-' + index + '.ts'}}, result: {ok: index !== 11}}));
+ render(<ConversationMessage role="assistant" text="Review complete" task={task({events})} {...callbacks()}/>);
+ const summary = screen.getByRole('button', {name: /View activity/});
+ expect(summary).toHaveAttribute('aria-expanded', 'false');expect(summary).toHaveTextContent('12 tools');expect(summary).toHaveTextContent('1 failed');
+ expect(screen.queryByRole('list', {name: 'Tool activity'})).not.toBeInTheDocument();
+ fireEvent.click(summary);expect(screen.getByRole('button', {name: /Read file · src\/file-0.ts/})).toBeVisible();
+});
+
+it('opens file references in parent and lazily loaded delegated answers using the current session callback', async () => {
+ const open = vi.fn(), value = task({result: 'Update `src/App.tsx:12`.'});
+ mocked.mockResolvedValue({...value, events: [], children: [task({id: 'reviewer', prompt: 'Inspect configuration', result: 'See [configuration](config.json#L3).', events: []})]});
+ const props = callbacks();render(<ConversationMessage role="assistant" text={value.result!} task={value} onOpenFile={open} {...props}/>);
+ fireEvent.click(screen.getByRole('button', {name: 'Open file src/App.tsx:12'}));expect(open).toHaveBeenLastCalledWith('src/App.tsx', 12);
+ expect(mocked).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button', {name: /View activity/}));
+ fireEvent.click(await screen.findByRole('button', {name: /Agent Inspect configuration/}));
+ fireEvent.click(screen.getByRole('button', {name: 'Open file config.json:3'}));expect(open).toHaveBeenLastCalledWith('config.json', 3);
+ fireEvent.click(screen.getByRole('button', {name: /Open agent session/}));expect(props.onSupervise).toHaveBeenCalledWith('reviewer');
+ expect(mocked).toHaveBeenCalledTimes(1);
 });

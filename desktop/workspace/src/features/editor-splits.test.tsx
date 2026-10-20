@@ -15,12 +15,16 @@ it('edits the same real buffer in two views without losing dirty content when th
  const {container}=render(<Workbench project={{id:'project',name:'Project',path:'/fixture'}} visible bottom={false} onError={()=>{}}/>);
  fireEvent.click(await screen.findByRole('button',{name:'main.txt'}));
  await waitFor(()=>expect(container.querySelector('.cm-content')).toHaveTextContent('Original content'));
+ fireEvent.click(screen.getByRole('button',{name:'Editor actions'}));
  fireEvent.change(screen.getByLabelText('Editor split layout'),{target:{value:'vertical'}});
+ fireEvent.keyDown(document,{key:'Escape'});
  await waitFor(()=>expect(container.querySelectorAll('.cm-editor')).toHaveLength(2));
  const editors=container.querySelectorAll<HTMLElement>('.cm-editor');const secondary=EditorView.findFromDOM(editors[1])!;
  act(()=>secondary.dispatch({changes:{from:0,to:secondary.state.doc.length,insert:'Unsent split edits'}}));
  await waitFor(()=>expect(EditorView.findFromDOM(editors[0])!.state.doc.toString()).toBe('Unsent split edits'));
+ fireEvent.click(screen.getByRole('button',{name:'Editor actions'}));
  fireEvent.change(screen.getByLabelText('Editor split layout'),{target:{value:'none'}});
+ fireEvent.keyDown(document,{key:'Escape'});
  expect(container.querySelectorAll('.cm-editor')).toHaveLength(1);expect(container.querySelector('.cm-content')).toHaveTextContent('Unsent split edits');
  fireEvent.click(screen.getByRole('button',{name:'Save file'}));
  await waitFor(()=>expect(vi.mocked(gql).mock.calls.some(([,variables])=>(variables as any)?.input?.content==='Unsent split edits')).toBe(true));await waitFor(()=>expect(screen.getByRole('button',{name:'Save file'})).toBeDisabled());
@@ -37,7 +41,9 @@ it('edits an enrolled session checkout through the scoped API and preserves its 
  act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Edited isolated content'}}));fireEvent.click(screen.getByRole('button',{name:'Save file'}));
  await waitFor(()=>expect(vi.mocked(request).mock.calls.some(([path,init])=>path==='/api/workspace/sessions/chat/files'&&JSON.parse(init!.body as string).worktree_id==='tree'&&JSON.parse(init!.body as string).content==='Edited isolated content')).toBe(true));
  act(()=>editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:'Unsaved retained edits'}}));
- fireEvent.change(screen.getByLabelText('Session checkout'),{target:{value:''}});await waitFor(()=>expect(changed).toHaveBeenCalled());
+ fireEvent.click(screen.getByRole('button',{name:'Project actions'}));
+ fireEvent.change(screen.getByLabelText('Session checkout'),{target:{value:''}});
+ fireEvent.keyDown(document,{key:'Escape'});await waitFor(()=>expect(changed).toHaveBeenCalled());
  rerender(<Workbench project={project} session={{...session,cwd:'/main',worktree_id:null}} onTargetChange={changed} visible bottom={false} onError={errors}/>);
  fireEvent.click(screen.getByRole('button',{name:'Save file'}));await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({message:expect.stringContaining('original conversation and checkout')})));
  expect(container.querySelector('.cm-content')).toHaveTextContent('Unsaved retained edits');
