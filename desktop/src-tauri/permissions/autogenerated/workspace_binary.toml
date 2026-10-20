@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-binary"
+description = "Enables the workspace_binary command without any pre-configured scope."
+commands.allow = ["workspace_binary"]
+
+[[permission]]
+identifier = "deny-workspace-binary"
+description = "Denies the workspace_binary command without any pre-configured scope."
+commands.deny = ["workspace_binary"]

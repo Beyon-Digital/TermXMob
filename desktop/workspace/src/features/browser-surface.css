@@ -1,0 +1,47 @@
+/* The page stays primary; routine tools are revealed deliberately. */
+.compact-browser.browser-workspace{container-type:inline-size;overflow:hidden;min-height:0}
+.compact-browser .browser-tabstrip{gap:3px;min-height:33px;padding:2px 5px;overflow:hidden;border-bottom:1px solid var(--border);background:var(--sidebar)}
+.compact-browser .browser-tabs{gap:2px;overflow:auto;scrollbar-width:thin;flex:0 1 auto}
+.compact-browser .browser-tabs>.button{height:28px;min-width:70px;max-width:190px;padding:4px 9px;border-radius:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;justify-content:flex-start}
+.compact-browser .browser-tabstrip>.button{width:27px;height:27px;flex-shrink:0;border-radius:4px;color:var(--secondary)}
+.compact-browser .browser-address{min-height:38px;padding:4px 7px;gap:3px;background:var(--background);border-bottom:1px solid var(--border)}
+.compact-browser .browser-address>.button{height:28px;min-width:27px;padding:4px 6px;font-size:12px;color:var(--secondary)}
+.compact-browser .browser-address>.input{min-width:50px;height:28px;border-radius:5px;background:var(--surface);font-size:11px;border:1px solid var(--border)}
+.compact-browser .browser-address>img{width:12px;height:12px;opacity:.6;margin:0 4px}
+.compact-browser .browser-profile-label{font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.compact-browser .browser-control{min-height:36px;padding:4px 9px;gap:6px;background:var(--surface);border-bottom:1px solid var(--border);font-size:11px}
+.compact-browser .browser-control>img{width:13px;height:13px}
+.compact-browser .browser-control>.button{height:26px;font-size:10px;padding:3px 7px;border-radius:5px}
+.compact-browser .browser-control>span:first-of-type{flex:1;min-width:140px}
+.compact-browser .browser-control>span:last-of-type:not(:first-of-type){font-size:10px;opacity:.75}
+.compact-browser .browser-main{flex:1;min-height:0;overflow:hidden}
+.compact-browser .browser-page{flex:1;min-height:0;max-height:none;background:var(--background)}
+.compact-browser .browser-live-view{background:#fff}
+.compact-browser .browser-activity{width:270px;padding:12px;gap:10px;border-left:1px solid var(--border);font-size:12px}
+.compact-browser .browser-activity h3{font-size:12px;margin:4px 0 8px}
+.compact-browser .browser-activity p{font-size:11px;line-height:1.6}
+.compact-browser .browser-badge{min-height:24px;border-radius:5px;font-size:10px;padding:3px 8px}
+.compact-browser .browser-private-notice p{margin-bottom:0}
+.compact-browser .browser-routine-tools{display:flex;flex-direction:column;gap:8px}
+.compact-browser .browser-routine-tools>h3{margin:0}
+.compact-browser .browser-routine-tools>label{margin:4px 0;font-size:11px}
+.compact-browser .browser-routine-tools .button{height:28px;font-size:11px}
+.compact-browser .browser-routine-tools>.browser-actions{flex-wrap:wrap}
+.compact-browser .browser-routine-tools small{font-size:10px}
+.compact-browser.browser-workspace select,.compact-browser .browser-routine-tools select{height:29px;font-size:11px;padding:4px 7px;border-radius:5px}
+.compact-browser .browser-diagnostics{min-height:29px;padding:2px 7px;gap:7px;background:var(--sidebar);font-size:10px;flex-shrink:0;position:sticky;bottom:0}
+.compact-browser .browser-diagnostics>.button{height:25px;font-size:10px;padding:3px 5px}
+.compact-browser .browser-diagnostics>.button-icon{width:25px}
+.compact-browser .browser-page-options{margin-left:auto;position:relative}
+.compact-browser .browser-page-options>summary{font-size:10px;min-height:24px;padding:5px;white-space:nowrap}
+.compact-browser .browser-page-options>div{position:absolute;right:0;bottom:29px;z-index:3;display:flex;flex-direction:column;gap:8px;padding:12px;width:220px;background:var(--surface);border:1px solid var(--border);border-radius:7px;box-shadow:0 6px 24px #0004}
+.compact-browser .browser-page-options form{margin:0;gap:5px;min-width:0}
+.compact-browser .browser-page-options label{margin:0;font-size:11px;flex-direction:row;align-items:center;justify-content:space-between}
+.compact-browser .browser-page-options input{width:100%;min-width:0;height:29px;font-size:11px}
+.compact-browser .browser-page-options select{height:29px;font-size:11px;padding:4px;border-radius:5px}
+.compact-browser .browser-grant{max-height:min(65%,430px);flex-shrink:0;overflow:auto;padding:14px;gap:8px;font-size:12px}
+.compact-browser .browser-grant label{margin:5px 0}
+.compact-browser .browser-empty{padding:28px;font-size:12px}
+.compact-browser .browser-empty h2{font-size:20px}
+@container(max-width:720px){.compact-browser .browser-main{flex-direction:column}.compact-browser .browser-activity{width:100%;max-height:45%;flex:0 1 auto;border-left:0;border-top:1px solid var(--border);min-height:80px}.compact-browser .browser-profile-label{display:none}.compact-browser .browser-control>span:first-of-type{min-width:100px}.compact-browser .browser-control>span:last-of-type:not(:first-of-type){display:none}}
+@container(max-width:420px){.compact-browser .browser-control{gap:4px;padding:4px 6px}.compact-browser .browser-control>.button{font-size:10px;padding-inline:5px}.compact-browser .browser-control>span:first-of-type{font-size:10px}.compact-browser .browser-address{padding-inline:4px}.compact-browser .browser-empty{padding:20px}.compact-browser .browser-tabs>.button{max-width:140px}}

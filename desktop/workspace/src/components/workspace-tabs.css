@@ -1,0 +1,30 @@
+.workspace-tabbed{position:relative;isolation:isolate}
+.workspace-tabbed .dock-pane-header{height:34px;min-height:34px;padding:0 5px;gap:1px;overflow:visible;flex-shrink:0}
+.dock-tab-strip{display:flex;align-items:stretch;flex:1;min-width:0;height:100%;overflow:auto;scrollbar-width:none;gap:0}
+.workspace-tabbed .dock-tab-strip>button{flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0 11px;min-width:50px;font-size:11px;color:var(--secondary);border-bottom:1px solid transparent;white-space:nowrap}
+.workspace-tabbed .dock-tab-strip>button[aria-selected=true]{color:var(--foreground);border-bottom-color:var(--foreground)}
+.workspace-tabbed .dock-tab-strip>button:hover{background:var(--muted)}
+.workspace-tabbed .dock-pane-header>.button{flex-shrink:0;height:25px;width:25px;border-radius:4px}
+.workspace-tabbed .dock-pane-header>.button:disabled{opacity:.22}
+.workspace-tabbed .dock-pane-header>svg{flex-shrink:0;width:9px}
+.workspace-tabbed .dock-pane-content{min-width:0;min-height:0}
+.workspace-tabbed .dock-floating-chat{position:absolute!important;grid-area:auto!important;inset:auto auto 16px 50%;transform:translateX(-50%);width:min(680px,calc(100% - 32px));height:min(580px,calc(100% - 70px));max-height:calc(100% - 70px);z-index:25;overflow:hidden;border:1px solid var(--border);border-radius:15px;background:var(--background);box-shadow:0 8px 36px #0004}
+.workspace-tabbed .dock-floating-chat>.dock-pane-header{background:var(--surface);height:28px;min-height:28px;border-bottom:0;padding:0 9px}
+.workspace-tabbed .dock-floating-chat .dock-tab-strip>button{padding:0 5px;border-bottom:0;font-size:10px}
+.workspace-tabbed .dock-floating-chat.chat-compact{height:auto;max-height:min(55vh,450px)}
+.dock-floating-chat.chat-compact .coding-session>.conversation-scroll{display:none}
+.dock-floating-chat.chat-compact .conversation-surface-header nav,.dock-floating-chat.chat-compact .conversation-task-state small{display:none}
+.dock-floating-chat.chat-compact .conversation-surface-header{min-height:0;padding:0 14px;border:0}
+.dock-floating-chat.chat-compact .conversation-surface-header:has(.conversation-task-state:empty){display:none}
+.dock-floating-chat.chat-compact .conversation-surface-header:has(.conversation-task-state.completed){display:none}
+.dock-floating-chat .coding-session>.composer-container{padding:7px 10px 10px;max-width:none;margin:0;width:100%;overflow:auto}
+.dock-floating-chat .coding-session .composer{box-shadow:none;border-color:transparent;background:var(--surface);border-radius:10px}
+.dock-floating-chat .coding-session .composer textarea{min-height:42px;max-height:150px}
+.dock-floating-chat .coding-session .composer-hint{display:none}
+.dock-floating-chat .coding-session .conversation-scroll{padding:12px 16px}
+.dock-floating-chat.chat-compact .jump-latest{display:none}
+@media(max-width:850px){.workspace-tabbed .dock-pane{min-width:0}.workspace-tabbed .dock-pane-header{padding:0 3px;gap:0}.workspace-tabbed .dock-tab-strip>button{padding:0 8px;min-width:44px}.workspace-tabbed .dock-pane-header>.button{width:24px;height:26px}.workspace-tabbed .dock-pane-header>svg{display:none}.workspace-tabbed .dock-floating-chat{bottom:9px;width:calc(100% - 16px);border-radius:12px}.workspace-tabbed .dock-floating-chat.chat-compact{max-height:60vh}}
+/* Size containment is useful for full transcripts but must not collapse an
+   intrinsic-height floating composer to zero. */
+.workspace-tabbed .dock-floating-chat.chat-compact>.dock-pane-content{flex:0 1 auto;display:block;max-height:calc(55vh - 28px);overflow:auto}
+.dock-floating-chat.chat-compact .chat-region.coding-session{container-type:inline-size;flex:0 1 auto}
