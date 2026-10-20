@@ -78,12 +78,16 @@ def _git(root: str, *args: str, env=None, limit=MAX_GIT_OUTPUT_BYTES, truncate=F
 
 def _copy_metadata(source: Path, destination: Path):
     with source.open('rb') as incoming, destination.open('wb') as outgoing:
+        metadata = os.fstat(incoming.fileno())
         remaining = MAX_INDEX_BYTES
         while chunk := incoming.read(min(65536, remaining + 1)):
             remaining -= len(chunk)
             if remaining < 0:
                 raise HTTPException(413, 'Git review metadata exceeds the review limit')
             outgoing.write(chunk)
+    # Git compares worktree timestamps with the index's own timestamp to detect
+    # racy-clean entries. Giving the copy a fresh mtime can hide same-size edits.
+    os.utime(destination, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
 
 
 @contextmanager

@@ -204,7 +204,7 @@ def test_jsonrpc_close_finishes_inflight_stderr_after_child_exit():
         await asyncio.wait_for(peer._proc.wait(), 5)
         release.set()
         await peer.close(kill_after=.5)
-        assert peer.stderr_tail == 'Read-only file system\n'
+        assert peer.stderr_tail.replace('\r\n', '\n') == 'Read-only file system\n'
         assert peer._stderr_task.done() and not peer._stderr_task.cancelled()
     asyncio.run(run())
 
@@ -327,7 +327,7 @@ def test_jsonrpc_close_handles_a_descendant_retaining_stderr(tmp_path):
             await asyncio.wait_for(closing, 1.5)
             assert time.monotonic() - started < 1.5
             assert peer.exit_code == 0
-            assert peer.stderr_tail == 'startup diagnostic\n'
+            assert peer.stderr_tail.replace('\r\n', '\n') == 'startup diagnostic\n'
             assert peer._stderr_task.done()
         finally:
             # The only descendant belongs to this fixture, checks this scratch

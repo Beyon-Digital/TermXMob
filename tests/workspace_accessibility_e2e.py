@@ -13,7 +13,7 @@ import sys
 import threading
 from time import monotonic,sleep
 import uvicorn
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 def contrast(hex_one,hex_two):
@@ -82,7 +82,14 @@ def run(destination, axe_source):
                     for theme in ('dark','light'):
                         current=page.locator('html').get_attribute('data-theme') or 'dark'
                         if current!=theme:
-                            page.get_by_role('button',name='Appearance',exact=True).click();page.get_by_role('radio',name=theme.title(),exact=True).check();page.get_by_role('button',name='Close',exact=True).click()
+                            page.get_by_role('button',name='Workspace actions',exact=True).click()
+                            page.get_by_role('button',name='Appearance',exact=True).click()
+                            preferences=page.get_by_role('dialog',name='Settings',exact=True)
+                            preferences.get_by_role('navigation',name='Settings categories').get_by_role('button',name='Appearance',exact=True).click()
+                            preferences.get_by_role('radio',name=theme.title(),exact=True).check()
+                            preferences.get_by_role('button',name='Close',exact=True).click()
+                            expect(preferences).to_be_hidden()
+                            expect(page.locator('html')).to_have_attribute('data-theme',theme)
                         page.add_script_tag(path=str(axe))
                         assert page.evaluate('axe.version')=='4.10.3'
                         # Include WCAG AA contrast, names, landmarks and ARIA in the rendered DOM.
@@ -112,8 +119,18 @@ def run(destination, axe_source):
                         # at least six text lines and a usable horizontal viewport.
                         assert workbench['editor_viewport']['height']>=120,workbench['editor_viewport']
                         assert workbench['editor_viewport']['width']>=240,workbench['editor_viewport']
-                        workbench['split_selector_visible']=page.get_by_role('combobox',name='Editor split layout').evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('.editor-tabs').getBoundingClientRect();return b.height>=24&&b.top>=p.top&&b.bottom<=p.bottom}")
-                        assert workbench['split_selector_visible'],'Editor split selector is clipped by its toolbar'
+                        editor_actions=page.get_by_role('button',name='Editor actions',exact=True)
+                        workbench['editor_actions_visible']=editor_actions.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('.editor-tab-bar').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom}")
+                        assert workbench['editor_actions_visible'],'Editor actions trigger is clipped by its toolbar'
+                        # Advanced editor controls are revealed through the keyboard-accessible menu.
+                        editor_actions.focus();page.keyboard.press('Enter')
+                        editor_menu=page.get_by_role('dialog',name='Editor actions',exact=True)
+                        split_selector=editor_menu.get_by_role('combobox',name='Editor split layout',exact=True)
+                        expect(split_selector).to_be_visible()
+                        workbench['split_selector_visible']=split_selector.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('[role=dialog]').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom&&p.left>=0&&p.top>=0&&p.right<=innerWidth&&p.bottom<=innerHeight}")
+                        assert workbench['split_selector_visible'],'Editor split selector or its menu is clipped'
+                        page.keyboard.press('Escape')
+                        expect(editor_menu).to_be_hidden();expect(editor_actions).to_be_focused()
                         report['states'].append({'theme':theme,'zoom_percent':zoom,'layout':'workbench','reduced_motion':True,**workbench})
                         page.screenshot(path=str(destination/f'workbench-{theme}-{zoom}.png'))
                         page.keyboard.press('Control+1')

@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import shlex
 import sys
 
@@ -213,8 +214,15 @@ def test_review_keeps_clean_crlf_checkout_clean_with_autocrlf_enabled(workspace)
     from termx import git_ops
     checkout = Path(tree['path'])
     git_ops._require_ok(git_ops._git(str(checkout), 'config', 'core.autocrlf', 'true'))
-    git_ops._require_ok(git_ops._git(str(checkout), 'checkout-index', '--force', '--', 'base.txt'))
-    assert b'\r\n' in (checkout / 'base.txt').read_bytes()
+    (checkout / 'base.txt').unlink()
+    git_ops._require_ok(git_ops._git(str(checkout), 'checkout-index', '--force', '--index', '--', 'base.txt'))
+    source = checkout / 'base.txt'
+    assert b'\r\n' in source.read_bytes()
+    metadata = source.stat()
+    # Make Git check the actual CRLF contents rather than trusting cached stat
+    # data. The effective autocrlf setting must keep this logically clean.
+    os.utime(source, ns=(metadata.st_atime_ns, metadata.st_mtime_ns - 2_000_000_000))
+    assert git_ops._require_ok(git_ops._git(str(checkout), '--no-optional-locks', 'status', '--porcelain', '--', 'base.txt')) == ''
     assert all(item['path'] != 'base.txt' for item in change_review.snapshot(str(checkout))['files'])
 
 
