@@ -1,0 +1,82 @@
+/* Familiar editor proportions: narrow activity rail, compact tree, quiet chrome. */
+.workbench{background:var(--background)}
+.workbench .explorer-tools{display:flex;align-items:center;gap:3px;height:28px;min-height:28px;padding:0 7px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:0;background:var(--sidebar)}
+.explorer-tools>.button{width:27px;height:25px;border-radius:3px;color:var(--secondary);padding:4px}
+.explorer-tools>.button[aria-pressed=true]{color:var(--foreground);background:var(--muted)}
+.explorer-tools>.button:hover{color:var(--foreground)}
+.workbench .file-explorer{width:204px;min-width:160px;flex-direction:column;overflow:hidden;padding:0;background:var(--sidebar)}
+.workbench .explorer-header{height:35px;min-height:35px;display:flex;align-items:center;gap:2px;padding:0 7px 0 14px;font-size:11px;color:var(--secondary)}
+.workbench .explorer-header .button{width:24px;height:25px;border-radius:4px;padding:4px}
+.workbench .explorer-content{flex:1;min-height:0;overflow:auto;scrollbar-width:thin}
+.workbench .explorer-root{display:flex;align-items:center;gap:4px;width:100%;padding:6px 7px;text-align:left;font-size:11px;border-top:1px solid var(--border)}
+.explorer-root strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workbench .file-row{height:25px;gap:5px;border-radius:0;padding:3px 7px;font-size:12px}
+.workbench .file-row svg{flex-shrink:0;color:var(--secondary)}
+.workbench .file-row.selected{background:var(--muted)}
+.workbench .file-row.selected>span:last-child{color:var(--foreground)}
+.tree-indent{width:13px;flex-shrink:0}
+.explorer-empty{font-size:12px;color:var(--secondary);padding:14px;line-height:1.6}
+.workbench .explorer-search{display:flex;align-items:center;margin:4px 8px 10px;gap:2px}
+.workbench .explorer-search .input{height:29px;font-size:12px;padding:5px 8px;border-radius:3px}
+.workbench .search-result{height:auto;min-height:36px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:5px 12px}
+.search-result small{font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workbench .editor-tab-bar{display:flex;height:35px;min-height:35px;background:var(--sidebar);border-bottom:1px solid var(--border)}
+.workbench .editor-tabs{height:34px;min-height:34px;border:0;flex:1;min-width:0;overflow:auto;scrollbar-width:none;background:transparent}
+.workbench .editor-tab{height:35px;min-width:112px;max-width:240px;border-top:1px solid transparent;border-bottom:1px solid var(--border)}
+.workbench .editor-tab.selected{border-top-color:var(--accent);border-bottom-color:var(--background)}
+.workbench .editor-tab>button:first-child{display:flex;align-items:center;gap:7px;padding:7px 11px;min-width:0;font-size:12px}
+.editor-tab>button:first-child svg{flex-shrink:0;color:var(--secondary)}
+.editor-tab>button:first-child span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workbench .editor-tab>button:last-child{opacity:0;width:21px;min-width:21px;margin-right:4px;border-radius:3px}
+.workbench .editor-tab.selected>button:last-child,.workbench .editor-tab:hover>button:last-child,.workbench .editor-tab:focus-within>button:last-child{opacity:1}
+.workbench .editor-tab>button:last-child:hover{background:var(--muted)}
+.editor-tab-actions{display:flex;align-items:center;gap:1px;padding:0 5px;flex-shrink:0}
+.editor-tab-actions>.button{height:26px;width:27px;border-radius:4px}
+.workbench .editor-breadcrumbs{height:27px;min-height:27px;display:flex;align-items:center;gap:4px;padding:0 13px;color:var(--secondary);font-size:11px;overflow:hidden;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,var(--border) 40%,transparent)}
+.editor-breadcrumbs>span{display:flex;align-items:center;gap:4px;min-width:0}
+.editor-breadcrumbs>span:last-of-type{color:var(--foreground);overflow:hidden;text-overflow:ellipsis}
+.editor-breadcrumbs small{margin-left:auto;font-size:10px}
+.workbench .editor-host .cm-content{padding:9px 0}
+.workbench .editor-host .cm-gutters{color:var(--secondary);opacity:.75;padding-right:14px}
+.workbench .editor-empty{gap:17px;min-height:100px}
+.editor-empty>svg{opacity:.25}
+.workbench .editor-empty p{font-size:15px;color:var(--secondary)}
+.editor-empty>button{display:flex;align-items:center;gap:24px;font-size:12px;color:var(--foreground)}
+.editor-empty kbd{font:inherit;color:var(--secondary)}
+.workbench .editor-empty small{font-size:11px;opacity:.7}
+.workbench .secondary-editor>label{margin:0;min-height:30px;flex-direction:row;padding:3px 9px;font-size:11px;color:var(--secondary)}
+.workbench .secondary-editor select{border:0;border-radius:0;background:transparent;font-size:11px;padding:2px;min-width:0;flex:1}
+.workbench .language-results{position:relative;padding:10px 14px;max-height:180px;overflow:auto;border-top:1px solid var(--border);background:var(--surface)}
+.workbench .language-results>.button{position:absolute;right:8px;top:5px;width:24px;height:24px}
+.workbench .language-results pre{margin:0;padding-right:24px;font-size:11px}
+.workbench .bottom-panel{height:clamp(130px,28vh,255px);max-height:40%;min-height:96px}
+.workbench .bottom-panel>nav{gap:17px;padding:0 13px;height:33px;min-height:33px;border-bottom:1px solid color-mix(in srgb,var(--border) 40%,transparent)}
+.workbench .bottom-panel>nav button{font-size:11px;padding:9px 0 7px;white-space:nowrap;border-bottom:1px solid transparent}
+.workbench .bottom-panel>nav button.active{border-bottom-color:var(--foreground)}
+.workbench .terminal-toolbar{gap:9px;padding:0 13px;min-height:27px;height:27px}
+.workbench .terminal-toolbar .button{height:25px;font-size:11px;padding:2px 6px;border-radius:3px}
+.workbench .terminal-keyboard-hint{display:none}
+.problems-tab-pane{flex:1;min-height:0;overflow:auto;font-size:12px;padding:7px 0}
+.problems-tab-pane>p{padding:9px 15px;color:var(--secondary)}
+.problem-row{display:flex;align-items:center;gap:15px;width:100%;text-align:left;padding:5px 15px;font-size:12px}
+.problem-row:hover{background:var(--muted)}
+.problem-row>span{flex:1;min-width:0}
+.problem-row>small{font-size:11px;white-space:nowrap}
+.workbench .delivery-page{padding:8px 12px;font-size:12px;overflow:visible}
+.workbench .delivery-page .creation-heading h3{font-size:12px}
+.workbench .delivery-page label{gap:5px;margin:11px 0;font-size:11px}
+.workbench .delivery-page .input,.workbench .delivery-page select{font-size:11px;height:29px;border-radius:3px;padding:4px 6px}
+.workbench .delivery-page .creation-actions{gap:5px;flex-wrap:wrap}
+.workbench .delivery-page .button{height:26px;font-size:10px;border-radius:3px;padding:3px 6px;white-space:normal}
+.workbench .delivery-page details{font-size:11px}
+.workbench .delivery-page details summary{cursor:pointer;padding:7px 0}
+.workbench .delivery-page pre{font-size:10px}
+.dock-workspace .dock-pane-header{height:30px;min-height:30px;padding:0 6px;gap:3px;background:var(--sidebar);font-size:11px;color:var(--secondary)}
+.dock-workspace .dock-pane-header>svg{opacity:0;transition:opacity .1s;cursor:grab}
+.dock-workspace .dock-pane-header:hover>svg,.dock-workspace .dock-pane-header:focus-within>svg{opacity:.5}
+.dock-workspace .dock-pane-header>button.active{font-weight:500}
+.dock-workspace .dock-pane-header>.button{width:24px;height:24px;padding:3px}
+@media(max-width:1100px){.workbench .file-explorer{width:176px;min-width:140px}}
+@media(max-width:850px){.workbench .file-explorer{width:165px}.workbench .editor-empty small{max-width:220px;text-align:center;line-height:1.6}.workbench .bottom-panel>nav{gap:12px}.workbench .editor-tab-actions{padding:0 2px}}
+@media(max-width:560px){.workbench .file-explorer{width:145px;min-width:130px}.workbench .editor-empty>button{gap:9px;flex-direction:column}.workbench .editor-empty p{font-size:12px}.workbench .editor-tab{min-width:100px}.workbench .editor-breadcrumbs{padding:0 7px}.workbench .bottom-panel>nav{gap:8px;padding:0 8px}.workbench .bottom-panel>nav button{font-size:10px}.problem-row{align-items:flex-start;flex-direction:column;gap:3px}}
+@media(prefers-reduced-motion:reduce){.dock-workspace .dock-pane-header>svg{transition:none}}
