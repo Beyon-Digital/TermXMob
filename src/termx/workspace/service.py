@@ -428,7 +428,10 @@ class WorkspaceService:
                     raise ValueError('Reading anchor does not belong to this conversation')
             if key == 'scroll' and (isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=100_000_000):
                 raise ValueError('Invalid scroll position')
-            if isinstance(value,str) and len(value)> (64000 if key=='draft_text' else 200):
+            # cwd is derived above from an enrolled checkout or registered
+            # project, never accepted from the caller. Its existing filesystem
+            # path follows project validation, not the UI text/ID length cap.
+            if key!='cwd' and isinstance(value,str) and len(value)> (64000 if key=='draft_text' else 200):
                 raise ValueError('Session setting exceeds its size limit')
         if changes.get('engine', row['engine']) != row['engine']:
             raise Conflict('Change engines using a reviewed linked fork')

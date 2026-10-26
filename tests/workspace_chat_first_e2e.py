@@ -529,6 +529,12 @@ def run(destination):
                 assert child_task_row['status'] == 'completed'
                 assert sum(event['type'] == 'tool.finished' and event['payload'].get('call_id') == Path(child_task_row['cwd']).name + '-read-once'
                            for event in state.agent_store.events(child_task_row['id'])) == 1
+            report['multi_project_backend'] = {'parent': {key: state.agent_store.get_task(multi_parent).get(key)
+                for key in ('id', 'status', 'result', 'error', 'engine', 'updated_at')},
+                'children': [{'id': value['id'], 'cwd': value['cwd'], 'status': value['status']} for value in project_children],
+                'actual_file_reads': adapter.project_evidence}
+            print(json.dumps({'stage': 'multi-project-backend-completed', 'parent_task_id': multi_parent,
+                'child_count': len(project_children)}), flush=True)
             expect(page.get_by_text('Two project review results:', exact=False).last).to_be_visible(timeout=30000)
             assert page.url.endswith('/session/' + primary_id)
             assert all(marker in state.agent_store.get_task(multi_parent)['result'] for marker in

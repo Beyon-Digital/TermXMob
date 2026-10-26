@@ -300,7 +300,14 @@ def test_coordinator_finishing_during_creation_cancels_registered_child(tmp_path
     asyncio.run(run())
 
 
-def test_planning_child_is_enrolled_and_can_be_cancelled_before_dispatch_returns(tmp_path):
+def test_planning_child_is_enrolled_and_can_be_cancelled_before_dispatch_returns(tmp_path, monkeypatch):
+    from termx.agent import worktrees
+
+    # A caller may put pytest's basetemp inside this source checkout. This
+    # scenario needs only a small non-Git project, not a worktree of an
+    # accidentally discovered ancestor repository before provider planning.
+    monkeypatch.setattr(worktrees, 'git_root', lambda cwd: None)
+
     class SlowPlanningAdapter(WaitingAdapter):
         def __init__(self):
             super().__init__()
@@ -335,7 +342,8 @@ def test_planning_child_is_enrolled_and_can_be_cancelled_before_dispatch_returns
             assert len(enrolled) == 1
             child = enrolled[0]
             assert store.get_task(child)['status'] == 'planning'
-            assert any(e['type'] == 'task.isolation' for e in store.events(child))
+            isolation = next(e['payload'] for e in store.events(child) if e['type'] == 'task.isolation')
+            assert isolation['kind'] == 'snapshot'
             manager.cancel(child)
             result = await asyncio.wait_for(dispatch, timeout=3)
             assert not result['ok']

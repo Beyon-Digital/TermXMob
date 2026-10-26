@@ -77,6 +77,36 @@ def test_review_rejects_checkout_switch_during_read_and_removed_enrollment(works
     assert client.get(url, params={'worktree_id': tree['id']}).status_code == 403
 
 
+def test_checkout_switch_accepts_long_enrolled_paths_without_relaxing_session_inputs(workspace):
+    service, owner, path = workspace
+    deep = path.resolve()
+    # Exercise real legal paths above the text cap even with a short basetemp.
+    # Keep each added component small for the supported desktop filesystems.
+    while len(str(deep / 'project')) <= 200:
+        remaining = 201 - len(str(deep / 'project'))
+        deep /= 'd' * min(48, max(1, remaining - 1))
+    deep.mkdir(parents=True, exist_ok=True)
+    service, owner, root, tree, row, _, _ = setup((service, owner, deep))
+    checkout = str(Path(tree['path']).resolve())
+    assert len(str(root)) > 200 and len(checkout) > 200
+
+    project = service.update_session(owner, row['id'], revision=row['revision'], changes={'worktree_id': None})
+    assert project['cwd'] == str(root) and project['worktree_id'] is None
+    selected = service.update_session(owner, row['id'], revision=project['revision'], changes={'worktree_id': tree['id']})
+    assert selected['cwd'] == checkout and selected['worktree_id'] == tree['id']
+    assert service.store.get('conversation', row['id'])['cwd'] == checkout
+    assert service.agents.get_conversation(row['id'])['cwd'] == checkout
+
+    with pytest.raises(ValueError, match='Unsupported session setting'):
+        service.update_session(owner, row['id'], revision=selected['revision'], changes={'cwd': str(root)})
+    renamed = service.update_session(owner, row['id'], revision=selected['revision'], changes={'title': 't' * 200})
+    assert renamed['title'] == 't' * 200
+    for changes in ({'title': 't' * 201}, {'provider_id': 'p' * 201}):
+        with pytest.raises(ValueError, match='Session setting exceeds its size limit'):
+            service.update_session(owner, row['id'], revision=renamed['revision'], changes=changes)
+    assert service.session(owner, row['id'])['revision'] == renamed['revision']
+
+
 def test_binary_and_large_new_files_have_explicit_preview_limits(workspace):
     _, _, root, tree, row, client, _ = setup(workspace)
     checkout = Path(tree['path'])

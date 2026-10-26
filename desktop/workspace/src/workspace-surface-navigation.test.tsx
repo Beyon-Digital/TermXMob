@@ -44,13 +44,14 @@ afterEach(()=>{cleanup();configure({asyncUtilTimeout:1000});vi.unstubAllGlobals(
 it.each(['Open editor','Open src/app.ts:7'])('reveals a closed Files tab through %s without replacing unsaved buffers',async(action)=>{
  render(<App/>);
  await waitFor(()=>expect(screen.getByRole('button',{name:action})).toBeEnabled());
- fireEvent.click(screen.getByRole('button',{name:'Code'}));
+ fireEvent.click(screen.getByRole('button',{name:'Workspace actions'}));
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Workspace actions'})).getByRole('button',{name:'Files & code'}));
  const buffer=await screen.findByRole('textbox',{name:'Unsaved editor buffer'});
  fireEvent.change(buffer,{target:{value:'unsaved change'}});
  fireEvent.click(within(screen.getByRole('region',{name:'editor panel'})).getByRole('button',{name:'Close Files tab'}));
  await waitFor(()=>expect(buffer).not.toBeVisible());
  expect(new LayoutPresetStore(fixture.owner).arrangement('workbench').dock.editor).toBe('hidden');
- fireEvent.click(screen.getByRole('button',{name:'Chat'}));
+ fireEvent.click(screen.getByRole('button',{name:'Back to chat'}));
  fireEvent.click(screen.getByRole('button',{name:action}));
  await waitFor(()=>expect(buffer).toBeVisible());
  expect(screen.getByRole('textbox',{name:'Unsaved editor buffer'})).toBe(buffer);

@@ -1,6 +1,9 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import App from './App';
+// Evaluate the real lazy conversation module before the journey starts. The
+// first composer assertion must wait for data, not its dependency graph.
+import './features/Chat';
 import {type Session} from './lib/api';
 import {consumedTransfers,draftSubmissionOwners,draftWrites,sessionDrafts,submittingDrafts} from './lib/drafts';
 
@@ -41,8 +44,12 @@ beforeEach(()=>{
  mocks.gql.mockImplementation(async(query:string,variables:Record<string,unknown>={})=>{
   if(query.includes('workspace_sessions('))return {workspace_sessions:{edges:[...rows.values()].map(snapshot=>({node:{snapshot:structuredClone(snapshot)}})),pageInfo:{hasNextPage:false,endCursor:null}}};
   if(query.includes('nodes(ids:')){
-   const id=atob((variables.ids as string[])[0]).slice('WorkspaceSessionNode:'.length),snapshot=rows.get(id);
-   if(!snapshot)throw Error('Unknown fixture conversation '+id);return {nodes:[{snapshot:structuredClone(snapshot)}]};
+   return {nodes:(variables.ids as string[]).map(encoded=>{
+    const key=atob(encoded);
+    if(key.startsWith('WorkspaceSessionNode:')){const snapshot=rows.get(key.slice('WorkspaceSessionNode:'.length));return snapshot?{snapshot:structuredClone(snapshot)}:null;}
+    if(key.startsWith('WorkspaceTurnNode:')){const id=key.slice('WorkspaceTurnNode:'.length),turn=[...rows.values()].flatMap(row=>row.turns||[]).find(turn=>turn.id===id);return turn?{task:structuredClone(turn.task)}:null;}
+    throw Error('Unknown fixture node '+key);
+   })};
   }
   if(query.includes('workspace_turns('))return {workspace_turns:variables.id==='focused'&&!historyReleased?await focusedHistory.promise:emptyTurns()};
   if(query.includes('agent_providers'))return {projects:[],engines:[],agent_providers:[provider]};
