@@ -136,8 +136,8 @@ it('puts account setup before engines and keeps model favorites collapsed withou
  mocked.mockImplementation(async(path)=>path==='/auth/me'?{principal:{id:'setup-owner',scopes:['host-admin','agent-run']}}:{data:{engines:[{id:'acp',label:'ACP worker',installed:true,protocol:{name:'acp',auth_methods:[{id:'browser',name:'Continue in browser'}]}}],agent_providers:[],acp_registry:[]}} as any);
  render(<Managers embedded section="models" projectId={null} sessionId={null}/>);
  await screen.findByRole('button',{name:'Continue in browser'});
- const accounts=screen.getByRole('heading',{name:'Provider accounts',exact:true});
- const engines=screen.getByRole('heading',{name:'Installed engines',exact:true});
+ const accounts=screen.getByRole('heading',{name:/^Provider accounts$/});
+ const engines=screen.getByRole('heading',{name:/^Installed engines$/});
  const add=screen.getByText('Add provider account',{selector:'summary'});
  expect(accounts.compareDocumentPosition(engines)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  expect(add.compareDocumentPosition(engines)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

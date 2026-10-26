@@ -129,7 +129,8 @@ it('starts a generic new chat without a hidden project or folder from a cancelle
  expect(within(dialog).getByRole('combobox',{name:'Project'})).toHaveValue('');
  expect(within(dialog).getByLabelText('Add a project folder')).toHaveValue('');
  expect(mocks.request.mock.calls.some(([path,init])=>path==='/api/workspace/sessions'&&(init as RequestInit)?.method==='POST')).toBe(false);
- expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft');
+ fireEvent.click(within(dialog).getByRole('button',{name:/^Close$/}));
+ await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
 });
 
 

@@ -4,7 +4,7 @@ import ProviderAccountForm from './ProviderAccountForm';
 afterEach(cleanup);
 it('guides provider selection, clears a key when its destination changes, and keeps capabilities advanced',()=>{
  render(<ProviderAccountForm busy={false} onSave={vi.fn()}/>);
- const provider=screen.getByRole('combobox',{name:'Provider',exact:true});
+ const provider=screen.getByRole('combobox',{name:/^Provider$/});
  expect(provider).toHaveAccessibleName('Provider');expect(provider).toHaveValue('openai');
  expect(screen.queryByLabelText('Provider API address')).not.toBeInTheDocument();
  fireEvent.change(screen.getByLabelText('API key'),{target:{value:'synthetic-write-only'}});

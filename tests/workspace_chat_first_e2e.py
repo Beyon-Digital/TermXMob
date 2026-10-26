@@ -325,6 +325,8 @@ def run(destination):
             form.get_by_label('Provider API address', exact=True).fill('http://127.0.0.1:1/v1')
             form.get_by_label('API key', exact=True).fill('fixture-not-a-real-key')
             form.get_by_label('Default model for future sessions', exact=True).fill('fixture')
+            shot('03a-first-account-form-accessible')
+            audit('first-provider-account-form')
             form.get_by_role('button', name='Save account', exact=True).click()
             expect(settings.get_by_text('Provider account saved', exact=True)).to_be_visible(timeout=30000)
             settings.get_by_role('button', name='Close', exact=True).click()
