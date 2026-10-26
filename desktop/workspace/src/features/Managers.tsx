@@ -20,6 +20,7 @@ import IdentityGroupsManager from './IdentityGroupsManager';
 import AuditRetentionManager from './AuditRetentionManager';
 import ScheduleManager from './ScheduleManager';
 import SessionPolicyManager from './SessionPolicyManager';
+import HookSettings from './HookSettings';
 
 type Row = Record<string, any>;
 export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void; embedded?: boolean }
@@ -38,6 +39,7 @@ function download(name: string, value: unknown) {
 }
 function Json({ value }: { value: unknown }) { return <details><summary>Advanced · exact configuration</summary><pre className="manager-json">{JSON.stringify(value, null, 2)}</pre></details> }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="manager-field"><span>{label}</span>{children}</label> }
+function Disclosure({title,children}:{title:string;children:React.ReactNode}){const [visited,setVisited]=useState(false);return <details className="manager-disclosure" onToggle={event=>{if(event.currentTarget.open)setVisited(true)}}><summary>{title}</summary>{visited&&<div className="manager-disclosure-body">{children}</div>}</details>}
 function Empty({ children }: { children: React.ReactNode }) { return <div className="manager-empty">{children}</div> }
 function Item({ title, meta, children }: { title: string; meta?: React.ReactNode; children?: React.ReactNode }) { return <article className="manager-item"><div><h3>{title}</h3>{meta && <p>{meta}</p>}</div><div className="manager-item-actions">{children}</div></article> }
 function EngineAuthentication({engine,busy,canAuthenticate,onAuthenticate}:{engine:Row;busy:boolean;canAuthenticate:boolean;onAuthenticate:(methodId:string)=>unknown}){
@@ -70,6 +72,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
   const [editingMemory,setEditingMemory]=useState<Row|null>(null);
   const [editingPreset,setEditingPreset]=useState<Row|null>(null);
   useEffect(()=>{setEditingMemory(null);setEditingPreset(null)},[section,projectId]);
+  useEffect(()=>{setSearch('')},[section]);
   const admin = (me.principal?.scopes || []).includes('host-admin');
   useEffect(() => { let cancelled = false; request<Row>('/auth/me').then(value => { if (!cancelled) setMe(value) }).catch(() => {}); return () => { cancelled = true } }, []);
   useEffect(()=>{setData({});setDraft({});setPreview(null);setSelected('')},[section,projectId,admin]);
@@ -80,7 +83,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       if (section === 'agents') return gql('{ engines { id label installed } custom_agents { id name description instructions engine model enabled tools tools_mode toolsets deny_tools limits approval_mode sandbox_profile file_revision mcp_connections } }');
       if (section === 'connections') return {};
       if (section === 'memory') return request<Row>(`/api/workspace/memory${scoped(projectId)}`);
-      if (section === 'hooks') { const [hooks, runs] = await Promise.all([request<Row>(`/api/workspace/hooks${scoped(projectId)}`), request<Row>(`/api/workspace/hook-runs${scoped(projectId)}`)]); return { ...hooks, ...runs } }
+      if (section === 'hooks') return {};
       if (section === 'automations') return {};
       if (section === 'extensions') return request<Row>('/api/workspace/extensions');
       if (section === 'access') {
@@ -104,7 +107,6 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
   const mutate = async (fn: () => Promise<unknown>, message: string, refresh = true) => { const saved=beginSave(); setBusy(true); setError(''); setNotice(''); try { const result = await fn(); if(refresh)saved(); if(section==='models')onCapabilitiesChanged?.(); setNotice(message); if (refresh) setVersion(v => v + 1); return result } catch (exc) { setError(exc instanceof Error ? exc.message : String(exc)); return null } finally { setBusy(false) } };
   const post = (path: string, value: unknown, message: string, method = 'POST') => mutate(() => request(path, body(value, method)), message);
   const jsonDraft = (key: string, fallback: unknown) => JSON.parse(draft[key] || JSON.stringify(fallback));
-  const argvDraft=(value:string)=>value?.trim().startsWith("[")?JSON.parse(value):value?.split("\n").map(item=>item.trim()).filter(Boolean)||[];
   const confirmDelete = (path: string, message: string) => mutate(() => request(path, { method: 'DELETE' }), message);
   const textarea = (key: string, label: string, placeholder = '') => <Field label={label}><textarea required={["memoryContent","hookArgv"].includes(key)} value={draft[key] || ''} placeholder={placeholder} onChange={e => change(key, e.target.value)} /></Field>;
   const input = (key: string, label: string, options: { placeholder?: string; type?: string; defaultValue?: string } = {}) => <Field label={label}><Input required={["provenance","personName","hookCwd"].includes(key)} min={key==='retention'||key==='hookTimeout'?1:undefined} max={key==='retention'?3650:key==='hookTimeout'?60:undefined} value={draft[key] ?? options.defaultValue ?? ''} type={options.type || 'text'} placeholder={options.placeholder} onChange={e => change(key, e.target.value)} /></Field>;
@@ -138,18 +140,15 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       {editingMemory && <MemoryEditor key={editingMemory.id} memory={editingMemory as any} onCancel={()=>setEditingMemory(null)} onSaved={()=>{setEditingMemory(null);setNotice('Memory updated');setVersion(v=>v+1)}}/>}
       <details open><summary>Add memory</summary><div className="manager-form">{textarea('memoryContent', 'Fact or decision')}{input('provenance', 'Source or reason')}{input('retention', 'Retention in days', { type: 'number', defaultValue: '30' })}{action('Save memory', () => post('/api/workspace/memory', { content: draft.memoryContent, provenance: draft.provenance, project_id: projectId, retention_days: Number(draft.retention || 30) }, 'Memory saved'))}{action('Export memory', () => mutate(async () => { const value = await request(`/api/workspace/memory/export${scoped(projectId)}`); download('termx-memory.json', value) }, 'Memory exported', false), true)}</div></details></>}
 
-      {section === 'hooks' && <><h2>Project lifecycle</h2>{!projectId && <Empty>Select a project to configure lifecycle hooks.</Empty>}{(data.hooks || []).filter(matches).map((hook: Row) => <Item key={hook.id} title={hook.event.replaceAll('_', ' ')} meta={`${hook.argv.join(' ')} · timeout ${hook.timeout_s}s · ${hook.enabled ? 'Enabled' : 'Disabled'}`}>
-        {action(hook.enabled ? 'Disable' : 'Enable', () => post(`/api/workspace/hooks/${hook.id}`, { enabled: !hook.enabled, revision: hook.revision }, 'Hook updated', 'PATCH'), true)}{action('Remove', () => confirmDelete(`/api/workspace/hooks/${hook.id}`, 'Hook removed'), true)}</Item>)}
-      {projectId && <details open><summary>Add a hook</summary><div className="manager-form">{select('hookEvent', 'When to run', [['before_turn','Before turn'],['after_turn','After turn'],['task_failed','Task failed']], 'before_turn')}{textarea('hookArgv', 'Executable and arguments (one per line)', 'python\nscripts/check.py')}{input('hookCwd', 'Folder within the selected project')}{input('hookTimeout', 'Timeout in seconds', { type: 'number', defaultValue: '10' })}{action('Save disabled hook', () => mutate(() => request('/api/workspace/hooks', body({ project_id: projectId, event: draft.hookEvent || 'before_turn', argv: argvDraft(draft.hookArgv), cwd: draft.hookCwd, timeout_s: Number(draft.hookTimeout || 10), enabled: false, capabilities: [] })), 'Hook saved; enable it after reviewing its command'))}<p className="manager-help">Hooks execute project code. The host checks file permissions and enforces timeout and sandbox policy.</p></div></details>}
-      <details><summary>Execution history</summary><Json value={data.runs || []} /></details></>}
+      {section === 'hooks' && <HookSettings search={search} version={version}/>}
 
       {section === 'automations' && <ScheduleManager projectId={projectId} sessionId={sessionId} search={search} version={version}/>}
 
       {section === 'extensions' && <ExtensionManager key={projectId||'global'} data={data} projectId={projectId} search={search} onChanged={()=>setVersion(v=>v+1)}/>}
 
-      {section === 'connections' && <McpManager projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
+      {section === 'connections' && <McpManager ownerKey={me.principal?.id?(me.host_id||location.origin)+':'+me.principal.id:undefined} projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
 
-      {section === 'access' && <>{admin&&<><LanTlsSettings/><HostServiceSettings/></>}{me.principal?.id && me.session_id && me.host_id && <ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/>}<h2>Your sessions</h2><p className="manager-help">{data.access?.role || 'Member'} · {data.access?.runtime_boundary || 'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>
+      {section === 'access' && <>{admin&&<Disclosure title="Host connectivity"><LanTlsSettings/><HostServiceSettings/></Disclosure>}{me.principal?.id && me.session_id && me.host_id && <Disclosure title="Pair a device"><ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/></Disclosure>}<h2>Your sessions</h2><p className="manager-help">{data.access?.role || 'Member'} · {data.access?.runtime_boundary || 'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>
       {(data.sessions || []).filter(matches).map((session:Row) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>
         {!session.revoked && action('Revoke session',()=>confirmDelete(`/auth/sessions/${session.id}`,'Session revoked'),true)}</Item>)}
       {admin && <><h2>People and project access</h2>{(data.principals || []).filter(matches).map((principal:Row) => <Item key={principal.id} title={principal.display_name} meta={`${principal.role || 'No role'} · ${principal.enabled ? 'Enabled' : 'Disabled'}${principal.trusted_execution ? ' · Trusted host execution' : ''}`}>
@@ -160,9 +159,9 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
         {input('issuer','Identity issuer')}{input('subject','Stable identity subject')}{action('Bind verified identity',()=>post(`/auth/admin/principals/${selected}/bindings`,{issuer:draft.issuer,subject:draft.subject},'Explicit identity mapping saved'))}
       </div>}
       <details><summary>Add a person</summary><div className="manager-form">{input('personName','Name or local username')}{input('personPassword','Local password (leave empty for SSO)',{type:'password'})}{select('newRole','Initial role',[['viewer','Viewer'],['operator','Operator'],['admin','Administrator']],'viewer')}{action('Create account',()=>post('/auth/admin/principals',{name:draft.personName,password:draft.personPassword || null,role:draft.newRole || 'viewer'},'Account created'))}</div></details>
-      <IdentityGroupsManager projects={data.identityProjects||[]} onError={setIdentityError}/>
-      <AuditRetentionManager onError={setIdentityError}/>
-      <SessionPolicyManager onError={setIdentityError}/>
+      <Disclosure title="Groups and resource permissions"><IdentityGroupsManager projects={data.identityProjects||[]} onError={setIdentityError}/></Disclosure>
+      <Disclosure title="Audit retention"><AuditRetentionManager onError={setIdentityError}/></Disclosure>
+      <Disclosure title="Session policy"><SessionPolicyManager onError={setIdentityError}/></Disclosure>
       <h2>Sign-in methods</h2>{(data.adapters || []).map((adapter:Row)=><Item key={adapter.id} title={adapter.label} meta={`${adapter.enabled ? 'Enabled' : 'Disabled'} · ${adapter.health} · v${adapter.version}`}>
         {action('Check health',()=>post(`/auth/admin/adapters/${adapter.id}/health`,{},'Method health checked'),true)}{action(adapter.enabled ? 'Disable and revoke sessions' : 'Enable',()=>post(`/auth/admin/adapters/${adapter.id}`,{enabled:!adapter.enabled,session_policy:'revoke'},'Sign-in method updated','PUT'),true)}</Item>)}
       <details><summary>Configure enterprise identity</summary><div className="manager-form"><p className="manager-help">Advanced administrator setup. Keep issuer, signing trust and security consequences visible when testing a provider.</p>{textarea('authConfig','Advanced provider trust configuration',JSON.stringify(data.configuration?.configuration,null,2))}{input('testAdapter','Adapter ID to test')}{input('authEvidence','Signed assertion test evidence (masked)',{type:'password',placeholder:'{"assertion":"…"}'})}

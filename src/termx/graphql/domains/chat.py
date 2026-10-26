@@ -733,13 +733,20 @@ class ChatMutations:
     @strawberry.mutation
     @resolver
     async def call_mcp_tool(
-        self, info: Ctx, conn_id: str, tool: str, input: McpToolCallInput | None = None,project_id: str | None = None
+        self, info: Ctx, conn_id: str, tool: str, input: McpToolCallInput | None = None,
+        project_id: str | None = None, expected_definition_digest: str | None = None
     ) -> JSON:
         ctx = info.context
         ctx.require('agent-control')
         ctx.require('agent-run')
         conn = _conn_or_404(ctx.state, conn_id)
-        authorize_mcp(ctx.state,conn,'agent-run',credential=ctx.secret,project_id=project_id)
+        def validate(current):
+            # Authority precedes the optional reviewed-definition comparison,
+            # including the pool's final check immediately before the effect.
+            authorize_mcp(ctx.state,current,'agent-run',credential=ctx.secret,project_id=project_id)
+            if expected_definition_digest is not None and definition_digest(current) != expected_definition_digest:
+                raise HTTPException(409,'MCP definition changed; inspect and confirm the current connection before calling a tool')
+        validate(conn)
         fq = conn.id
         catalog = ctx.state.mcp_pool.catalog(fq,project_id=project_id) or {}
         approved = conn.approved_tools
@@ -754,7 +761,7 @@ class ChatMutations:
             if not isinstance(arguments,dict) or len(json.dumps(arguments).encode())>64000:raise HTTPException(400,'Provide bounded MCP tool arguments')
             result = await ctx.state.mcp_pool.call_tool(
                 fq, tool, dict(arguments),project_id=project_id,
-                authorize=lambda current:authorize_mcp(ctx.state,current,'agent-run',credential=ctx.secret,project_id=project_id)
+                authorize=validate
             )
         except McpConnectionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

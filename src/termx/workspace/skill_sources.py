@@ -14,6 +14,7 @@ import re
 import stat
 from contextlib import contextmanager
 from pathlib import Path
+from fastapi import HTTPException
 
 from termx.agent.policy import redact
 from termx.discovery.roots import default_roots
@@ -166,7 +167,15 @@ class SkillSourceService:
             except PermissionError:
                 if scope=='user':continue
                 raise
-            roots.append({'scope':scope,'project_id':pid,'path':str(base.joinpath(*parts))})
+            editable=True
+            try:self._root(principal,scope,project_id,write=True)
+            except PermissionError:editable=False
+            except HTTPException as exc:
+                if exc.status_code!=403:raise
+                editable=False
+            roots.append({'scope':scope,'project_id':pid,'path':str(base.joinpath(*parts)),
+                'editable':editable,'read_only_reason':None if editable else
+                    'Your current permissions allow reading this source, but not saving changes.'})
             try:
                 with directory(base,[*parts,'skills']) as (path,fd):
                     # os.scandir(fd) follows the retained directory object.

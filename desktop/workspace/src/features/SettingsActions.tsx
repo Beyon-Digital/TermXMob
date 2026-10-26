@@ -16,7 +16,10 @@ export default function SettingsActions({children}:{children:ReactNode}){
    if(invalid){event.preventDefault();event.stopPropagation();setError(invalid.validationMessage||'Review the highlighted field before saving.');invalid.reportValidity();invalid.focus();return}
   }
   setError('');
-  if(/^(cancel|refresh|close editor|load current|load native|restore as draft|use current|edit |update authentication|new scheduled task|enroll)/i.test(label)&&!window.dispatchEvent(new Event('termx-settings-leave',{cancelable:true}))){event.preventDefault();event.stopPropagation();return}
+  // Closing an action review preserves its underlying draft. Do not treat
+  // its Cancel button as leaving or discarding the settings editor.
+  const cancelsReview=/^cancel(?:\s|$)/i.test(label)&&!!button.closest('[data-reviewed-action]');
+  if(/^(cancel|refresh|close editor|load current|load native|restore as draft|use current|edit |update authentication|new scheduled task|enroll)/i.test(label)&&!cancelsReview&&!window.dispatchEvent(new Event('termx-settings-leave',{cancelable:true}))){event.preventDefault();event.stopPropagation();return}
   if(/^(delete|remove|revoke|tear down|stop runner|end legacy|disable.*revoke|disable model review|prune with)/i.test(label)&&!button.closest('[data-reviewed-action]')){
    event.preventDefault();event.stopPropagation();
    const row=button.closest('article,tr,.manager-preview,.safety-rule');

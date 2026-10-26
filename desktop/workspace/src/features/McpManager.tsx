@@ -1,20 +1,149 @@
-import {useSettingsRequest} from './SettingsSurface';
+import {useSettingsSave} from './SettingsSurface';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
-import {Input} from '../components/ui/input';
 import {json,request as baseRequest} from '../lib/api';
 import McpCredentialForm from './McpCredentialForm';
 import McpConnectionForm,{type McpDefinition,type McpProject} from './McpConnectionForm';
 type Catalog={tools?:{name:string;description?:string;inputSchema?:unknown}[]};
 type Connection={id:string;label:string;definition:McpDefinition;definition_digest:string;credential_configured:boolean;catalog?:Catalog;runtime:{connected?:boolean;catalog?:Catalog};auth_url_pending?:string;trust:string;allowed_projects:string[];transport:string};
+type ReviewedCall={connection:Connection;tool:string;target:string|null;arguments:Record<string,unknown>;text:string;inspection:number};
+type CallReceipt={state:'pending'|'uncertain';started_at:number;attempt:string};
+type UnconfirmedCall={key:string;call:ReviewedCall;receipt:CallReceipt};
+const receiptPrefix='termx-mcp-call-v1:',receiptLimit=64;
+function canonical(value:unknown):string{
+ if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+ if(value!==null&&typeof value==='object')return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical((value as Record<string,unknown>)[key])).join(',')+'}';
+ const text=JSON.stringify(value);if(text===undefined)throw Error('Tool arguments cannot be canonicalized.');return text;
+}
+async function receiptKey(owner:string,call:ReviewedCall){
+ if(!crypto.subtle)throw Error('This browser cannot protect tool call receipts. No call was sent.');
+ const hash=async(text:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');
+ return receiptPrefix+await hash(owner)+':'+await hash(canonical([owner,call.connection.id,call.connection.definition_digest,call.target,call.tool,call.arguments]));
+}
+function readReceipt(key:string):CallReceipt|null{
+ const raw=sessionStorage.getItem(key);if(raw===null)return null;
+ const value=JSON.parse(raw) as Partial<CallReceipt>;
+ if(!value||!['pending','uncertain'].includes(value.state||'')||typeof value.started_at!=='number'||!Number.isFinite(value.started_at)||typeof value.attempt!=='string'||!value.attempt||value.attempt.length>64||Object.keys(value).some(key=>!['state','started_at','attempt'].includes(key)))throw Error('The previous tool call receipt cannot be read safely. Review its outcome before starting another instruction.');
+ return value as CallReceipt;
+}
+function writeReceipt(key:string,value:CallReceipt){
+ if(sessionStorage.getItem(key)===null){let count=0;for(let index=0;index<sessionStorage.length;index++)if(sessionStorage.key(index)?.startsWith(receiptPrefix))count++;if(count>=receiptLimit)throw Error('There are 64 unconfirmed tool calls. Review their outcomes before starting another instruction.');}
+ const text=JSON.stringify(value);sessionStorage.setItem(key,text);if(sessionStorage.getItem(key)!==text)throw Error('The tool call receipt could not be preserved. No new call was sent.');
+}
+function removeReceipt(key:string,attempt:string){if(readReceipt(key)?.attempt!==attempt)return;sessionStorage.removeItem(key);if(sessionStorage.getItem(key)!==null)throw Error('The tool call receipt could not be cleared. Review the previous outcome before another instruction.');}
 async function gql<T>(query:string,variables:Record<string,unknown>={}){const result=await baseRequest<{data:T;errors?:{message:string}[]}>('/graphql',json('POST',{query,variables}));if(result.errors?.length)throw new Error(result.errors.map(error=>error.message).join('\n'));return result.data}
-export default function McpManager({projectId,admin,search,version,onChanged}:{projectId:string|null;admin:boolean;search:string;version:number;onChanged:()=>void}){
- const request=useSettingsRequest();
- const [connections,setConnections]=useState<Connection[]>([]),[projects,setProjects]=useState<McpProject[]>([]),[editing,setEditing]=useState<Connection|null>(null),[inspecting,setInspecting]=useState<Connection|null>(null),[catalog,setCatalog]=useState<Catalog|null>(null),[tool,setTool]=useState(''),[argumentsText,setArguments]=useState('{}'),[result,setResult]=useState<unknown>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('');const generation=useRef(0);
- useEffect(()=>{const ticket=++generation.current;setLoading(true);setError('');setEditing(null);setInspecting(null);setCatalog(null);setBusy(false);gql<{mcp_connections:Connection[];projects:McpProject[]}>('query($project:String){mcp_connections(project_id:$project){id label transport trust allowed_projects definition definition_digest credential_configured catalog runtime auth_url_pending} projects{id name}}',{project:admin?null:projectId}).then(value=>{if(ticket===generation.current){setConnections(value.mcp_connections);setProjects(value.projects)}}).catch(reason=>{if(ticket===generation.current)setError(String(reason instanceof Error?reason.message:reason))}).finally(()=>{if(ticket===generation.current)setLoading(false)});return()=>{generation.current++}},[projectId,admin,version]);
- async function mutate(fn:()=>Promise<unknown>,message:string,refresh=true){const ticket=generation.current;setBusy(true);setError('');setNotice('');try{await fn();if(ticket!==generation.current)return false;setNotice(message);if(refresh)onChanged();return true}catch(reason){if(ticket===generation.current)setError(reason instanceof Error?reason.message:String(reason));return false}finally{if(ticket===generation.current)setBusy(false)}}
- const canUse=(connection:Connection)=>connection.allowed_projects.length===0?admin:!!projectId&&connection.allowed_projects.includes(projectId);
- async function connect(connection:Connection){const ticket=generation.current;await mutate(async()=>{const response=await gql<{connect_mcp_connection:{status:string;catalog?:Catalog;note?:string}}>('mutation($id:String!,$project:String){connect_mcp_connection(conn_id:$id,project_id:$project){status catalog note auth_url}}',{id:connection.id,project:projectId});if(ticket===generation.current&&response.connect_mcp_connection.catalog){setCatalog(response.connect_mcp_connection.catalog);setInspecting(connection)}},'Connection checked against this execution project')}
- async function inspect(connection:Connection){setInspecting(connection);setResult(null);setCatalog(connection.catalog||connection.runtime.catalog||null);setTool('');setArguments('{}')}
- return <section aria-label="Tool connection configuration"><h2>Tool connections</h2><p className="manager-help">{projectId?'Current execution project: '+(projects.find(project=>project.id===projectId)?.name||projectId):'Select a project before using a project-scoped connection.'} The host checks the exact execution project before resolving secrets, connecting or calling a tool.</p>{error&&<p role="alert" className="manager-error">{error}</p>}{notice&&<p role="status">{notice}</p>}{loading?<p>Loading current connections…</p>:<>{connections.filter(connection=>(connection.label+' '+connection.id).toLowerCase().includes(search.toLowerCase())).map(connection=><article className="manager-item" key={connection.id}><div><h3>{connection.label||connection.id}</h3><p>{connection.transport} · {connection.runtime.connected?'Connected':'Disconnected'} · {connection.trust}</p><p>{connection.allowed_projects.length?'Only: '+connection.allowed_projects.map(id=>projects.find(project=>project.id===id)?.name||id).join(', '):'Host-wide · administrator only'} · {connection.credential_configured?'Credential configured':'No managed credential'}</p>{!canUse(connection)&&<p>Unavailable for the selected execution project.</p>}</div><div className="manager-item-actions"><Button variant="secondary" disabled={busy} onClick={()=>void inspect(connection)}>Inspect tools and permissions</Button>{connection.runtime.connected?<Button variant="secondary" disabled={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!){disconnect_mcp_connection(conn_id:$id)}',{id:connection.id}),'Connection disconnected')}>Disconnect</Button>:<Button variant="secondary" disabled={busy||!canUse(connection)||connection.trust!=='trusted'||!connection.definition.enabled} onClick={()=>void connect(connection)}>Connect in current project</Button>}{admin&&<><Button variant="secondary" disabled={busy} onClick={()=>setEditing(connection)}>Edit connection</Button>{connection.trust!=='trusted'&&<Button variant="secondary" disabled={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!,$digest:String!){trust_mcp_connection(conn_id:$id,expected_digest:$digest)}',{id:connection.id,digest:connection.definition_digest}),'Reviewed connection trusted')}>Trust reviewed connection</Button>}<Button variant="secondary" disabled={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!,$digest:String!){delete_mcp_connection(conn_id:$id,expected_digest:$digest)}',{id:connection.id,digest:connection.definition_digest}),'Connection removed')}>Remove connection</Button></>}{connection.auth_url_pending&&<a href={connection.auth_url_pending} target="_blank" rel="noopener noreferrer">Complete connection sign-in</a>}</div></article>)}</>}{inspecting&&<section className="manager-form" aria-label="Connection permission inspection"><h3>{inspecting.label} permissions</h3><p>Configured allowed tools: {inspecting.definition.approved_tools.length?inspecting.definition.approved_tools.join(', '):'None'}. Definition changes are applied to future connections, subject to current authority.</p><details><summary>Exact connection configuration</summary><pre role="region" tabIndex={0} aria-label="Connection configuration" className="manager-json">{JSON.stringify(inspecting.definition,null,2)}</pre></details>{catalog?.tools?.length?<><label>Tool to inspect<select aria-label="Tool to inspect" value={tool} onChange={event=>{setTool(event.target.value);setResult(null)}}><option value="">Select a catalog tool</option>{catalog.tools.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}</select></label>{tool&&<><p>{catalog.tools.find(item=>item.name===tool)?.description}</p><pre role="region" tabIndex={0} aria-label="Selected tool input schema" className="manager-json">{JSON.stringify(catalog.tools.find(item=>item.name===tool)?.inputSchema,null,2)}</pre><label>Tool arguments<textarea aria-label="Tool arguments" value={argumentsText} onChange={event=>setArguments(event.target.value)}/></label><Button disabled={busy||!canUse(inspecting)||(!inspecting.definition.approved_tools.includes('*')&&!inspecting.definition.approved_tools.includes(tool))} onClick={()=>{const ticket=generation.current;void mutate(async()=>{const response=await gql<{call_mcp_tool:unknown}>('mutation($id:String!,$tool:String!,$input:McpToolCallInput!,$project:String){call_mcp_tool(conn_id:$id,tool:$tool,input:$input,project_id:$project)}',{id:inspecting.id,tool,input:{arguments:JSON.parse(argumentsText)},project:projectId});if(ticket===generation.current)setResult(response.call_mcp_tool)},'Selected tool completed in this project',false)}}>Call selected tool</Button><p>This explicitly executes the selected tool with these arguments. It can change the connected service.</p></>}</>:<p>Connect after reviewing trust and scope to load the live catalog.</p>}{result!==null&&<pre role="region" tabIndex={0} aria-label="Tool result" className="manager-json">{JSON.stringify(result,null,2)}</pre>}<Button variant="secondary" onClick={()=>setInspecting(null)}>Close connection inspection</Button></section>}{admin&&editing&&<section><McpConnectionForm key={editing.id} connection={editing.definition} projects={projects} busy={busy} onCancel={()=>setEditing(null)} onSave={value=>mutate(async()=>{if(editing.runtime.connected)await gql('mutation($id:String!){disconnect_mcp_connection(conn_id:$id)}',{id:editing.id});await gql('mutation($input:McpConnectionInput!){create_mcp_connection(input:$input)}',{input:{data:value,expected_digest:editing.definition_digest}})},'Connection settings saved')}/><McpCredentialForm key={editing.id+':credential'} connection={editing.definition} busy={busy} onSave={(binding,value,kind)=>mutate(()=>gql('mutation($id:String!,$binding:String!,$value:String,$digest:String!,$kind:String!){set_mcp_credential(conn_id:$id,binding:$binding,value:$value,expected_digest:$digest,kind:$kind)}',{id:editing.id,binding,value,digest:editing.definition_digest,kind}),'Credential binding updated; reconnect explicitly')}/></section>} {admin&&<details><summary>Add a tool connection</summary><McpConnectionForm projects={projects} busy={busy} onSave={value=>mutate(()=>gql('mutation($input:McpConnectionInput!){create_mcp_connection(input:$input)}',{input:{data:value}}),'Untrusted connection saved')}/></details>}</section>
+export default function McpManager({projectId,admin,search,version,onChanged,ownerKey}:{projectId:string|null;admin:boolean;search:string;version:number;onChanged:()=>void;ownerKey?:string}){
+ const beginSave=useSettingsSave();
+ const [connections,setConnections]=useState<Connection[]>([]),[projects,setProjects]=useState<McpProject[]>([]),[editing,setEditing]=useState<Connection|null>(null),[inspecting,setInspecting]=useState<Connection|null>(null),[catalog,setCatalog]=useState<Catalog|null>(null),[tool,setTool]=useState(''),[targets,setTargets]=useState<Record<string,string>>({}),[argumentsText,setArguments]=useState('{}'),[advanced,setAdvanced]=useState(false),[reviewed,setReviewed]=useState<ReviewedCall|null>(null),[result,setResult]=useState<unknown>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const generation=useRef(0),inspection=useRef(0),flight=useRef<symbol|null>(null);
+ const [unconfirmed,setUnconfirmed]=useState<UnconfirmedCall|null>(null),[acknowledged,setAcknowledged]=useState(false);
+ useEffect(()=>{
+  const ticket=++generation.current;inspection.current++;flight.current=null;
+  setLoading(true);setError('');setNotice('');setEditing(null);setInspecting(null);setCatalog(null);setTargets({});setAdvanced(false);setReviewed(null);setUnconfirmed(null);setAcknowledged(false);setResult(null);setBusy(false);
+  gql<{mcp_connections:Connection[];projects:McpProject[]}>('query($project:String){mcp_connections(project_id:$project){id label transport trust allowed_projects definition definition_digest credential_configured catalog runtime auth_url_pending} projects{id name}}',{project:admin?null:projectId}).then(value=>{if(ticket===generation.current){setConnections(value.mcp_connections);setProjects(value.projects)}}).catch(reason=>{if(ticket===generation.current)setError(reason instanceof Error?reason.message:String(reason))}).finally(()=>{if(ticket===generation.current)setLoading(false)});
+  return()=>{generation.current++;inspection.current++};
+ },[projectId,admin,version,ownerKey]);
+ async function mutate(fn:()=>Promise<unknown>,message:string,refresh=true,persisted=false){
+  if(flight.current)return false;
+  const operation=Symbol(),ticket=generation.current,saved=persisted?beginSave():undefined;flight.current=operation;setBusy(true);setError('');setNotice('');
+  try{const outcome=await fn();if(ticket!==generation.current||outcome===false)return false;setNotice(message);saved?.();if(refresh)onChanged();return true}
+  catch(reason){if(ticket===generation.current)setError(reason instanceof Error?reason.message:String(reason));return false}
+  finally{if(ticket===generation.current&&flight.current===operation){flight.current=null;setBusy(false)}}
+ }
+ const allowedTargets=(connection:Connection)=>projects.filter(project=>connection.allowed_projects.includes(project.id));
+ const targetFor=(connection:Connection):string|null=>{
+  if(!connection.allowed_projects.length)return null;
+  const allowed=allowedTargets(connection);if(allowed.length===1)return allowed[0].id;
+  return allowed.some(project=>project.id===targets[connection.id])?targets[connection.id]:'';
+ };
+ const canUse=(connection:Connection)=>connection.allowed_projects.length?!!targetFor(connection):admin;
+ const targetLabel=(target:string|null)=>target===null?'This host (administrator)':projects.find(project=>project.id===target)?.name||target||'Choose an execution project';
+ const approved=(connection:Connection,name:string)=>connection.definition.approved_tools.includes('*')||connection.definition.approved_tools.includes(name);
+ const usable=(connection:Connection)=>canUse(connection)&&connection.trust==='trusted'&&connection.definition.enabled;
+ function invalidateCall(){inspection.current++;setReviewed(null);setUnconfirmed(null);setAcknowledged(false);setResult(null);setError('');setNotice('')}
+ function inspect(connection:Connection,nextCatalog=connection.catalog||connection.runtime.catalog||null){invalidateCall();setInspecting(connection);setCatalog(nextCatalog);setTool('');setArguments('{}');setAdvanced(false)}
+ function chooseTarget(connection:Connection,target:string){invalidateCall();setTargets(current=>({...current,[connection.id]:target}))}
+ async function connect(connection:Connection){
+  if(!usable(connection))return;
+  const ticket=generation.current,view=inspection.current,target=targetFor(connection);
+  await mutate(async()=>{
+   const response=await gql<{connect_mcp_connection:{status:string;catalog?:Catalog;note?:string}}>('mutation($id:String!,$project:String){connect_mcp_connection(conn_id:$id,project_id:$project){status catalog note auth_url}}',{id:connection.id,project:target});
+   if(ticket===generation.current&&view===inspection.current&&response.connect_mcp_connection.catalog)inspect(connection,response.connect_mcp_connection.catalog);
+  },'Connection checked for '+targetLabel(target));
+ }
+ function reviewCall(){
+  if(!ownerKey||!inspecting||!usable(inspecting)||!approved(inspecting,tool)||!catalog?.tools?.some(item=>item.name===tool)||flight.current)return;
+  setError('');setResult(null);setReviewed(null);
+  try{
+   const args:unknown=JSON.parse(argumentsText);
+   if(!args||typeof args!=='object'||Array.isArray(args))throw Error('Tool arguments must be a JSON object.');
+   const text=JSON.stringify(args,null,2);
+   if(new TextEncoder().encode(text).length>64000)throw Error('Tool arguments must fit within 64,000 bytes.');
+   setReviewed({connection:inspecting,tool,target:targetFor(inspecting),arguments:args as Record<string,unknown>,text,inspection:inspection.current});
+  }catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
+ }
+ function confirmCall(){
+  const call=reviewed;
+  if(!ownerKey||!call||!inspecting||call.inspection!==inspection.current||call.connection.id!==inspecting.id||call.connection.definition_digest!==inspecting.definition_digest||call.tool!==tool||call.target!==targetFor(inspecting)||!usable(inspecting)||!approved(inspecting,call.tool))return;
+  setReviewed(null);const ticket=generation.current;
+  void mutate(async()=>{
+   const key=await receiptKey(ownerKey,call);if(ticket!==generation.current||call.inspection!==inspection.current)return false;
+   const previous=readReceipt(key);
+   if(previous){setUnconfirmed({key,call,receipt:previous});setAcknowledged(false);throw Error('An identical tool call has an unconfirmed outcome. It will not be repeated automatically.');}
+   const receipt:CallReceipt={state:'pending',started_at:Date.now(),attempt:crypto.randomUUID()};writeReceipt(key,receipt);
+   try{
+    const response=await gql<{call_mcp_tool:unknown}>('mutation($id:String!,$tool:String!,$input:McpToolCallInput!,$project:String,$digest:String){call_mcp_tool(conn_id:$id,tool:$tool,input:$input,project_id:$project,expected_definition_digest:$digest)}',{id:call.connection.id,tool:call.tool,input:{arguments:call.arguments},project:call.target,digest:call.connection.definition_digest});
+    if(ticket===generation.current&&call.inspection===inspection.current)setResult(response.call_mcp_tool);
+    removeReceipt(key,receipt.attempt);
+   }catch(reason){
+    // The pool rechecks authority after tool execution too. Even a 4xx error
+    // cannot prove that a non-idempotent service action did not happen.
+    const uncertain:CallReceipt={...receipt,state:'uncertain'};try{if(readReceipt(key)?.attempt===receipt.attempt)writeReceipt(key,uncertain)}catch{/* The original pending receipt remains protective. */}
+    if(ticket===generation.current&&call.inspection===inspection.current){setUnconfirmed({key,call,receipt:uncertain});setAcknowledged(false)}
+    throw reason;
+   }
+  },'Selected tool completed for '+targetLabel(call.target),false);
+ }
+ function acknowledgeInstruction(){
+  if(!unconfirmed||!acknowledged||busy)return;
+  try{if(readReceipt(unconfirmed.key)?.attempt!==unconfirmed.receipt.attempt)throw Error('The earlier call receipt changed. Inspect this instruction again before acknowledging it.');removeReceipt(unconfirmed.key,unconfirmed.receipt.attempt);setUnconfirmed(null);setAcknowledged(false);setReviewed(null);setError('');setNotice('Acknowledged as a new instruction. Review the exact tool call again before confirming.');}
+  catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
+ }
+ return <section aria-label="Tool connection configuration"><h2>Tool connections</h2>
+  <p className="manager-help">Choose an execution target for each connection. Only accessible projects in its allowlist are offered. The host checks current permissions before resolving credentials, connecting or calling a tool.</p>
+  {error&&<p role="alert" className="manager-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
+  {loading?<p>Loading current connections…</p>:<>{connections.filter(connection=>(connection.label+' '+connection.id).toLowerCase().includes(search.toLowerCase())).map(connection=><article className="manager-item" key={connection.id}>
+   <div><h3>{connection.label||connection.id}</h3><p>{connection.transport} · {connection.runtime.connected?'Connected':'Disconnected'} · {connection.trust}</p><p>{connection.allowed_projects.length?'Only: '+connection.allowed_projects.map(id=>projects.find(project=>project.id===id)?.name||id).join(', '):'Host-wide · administrator only'} · {connection.credential_configured?'Credential configured':'No managed credential'}</p>
+    {connection.allowed_projects.length?(allowedTargets(connection).length?<label data-settings-filter>Execution target<select aria-label={'Connection target for '+connection.label} value={targetFor(connection)||''} disabled={busy||allowedTargets(connection).length===1} onChange={event=>chooseTarget(connection,event.target.value)}>{allowedTargets(connection).length!==1&&<option value="">Choose a project</option>}{allowedTargets(connection).map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>:<p>No accessible project is in this connection’s allowlist.</p>):<p>Execution target: This host (administrator)</p>}
+   </div><div className="manager-item-actions"><Button variant="secondary" disabled={busy} onClick={()=>inspect(connection)}>Inspect tools and permissions</Button>
+    {connection.runtime.connected?admin?<Button variant="secondary" disabled={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!){disconnect_mcp_connection(conn_id:$id)}',{id:connection.id}),'Connection disconnected')}>Disconnect</Button>:<p>Disconnect requires a host administrator.</p>:<Button variant="secondary" disabled={busy||!usable(connection)} onClick={()=>void connect(connection)}>Connect</Button>}
+    {admin&&<><Button variant="secondary" disabled={busy} onClick={()=>setEditing(connection)}>Edit connection</Button>{connection.trust!=='trusted'&&<Button variant="secondary" disabled={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!,$digest:String!){trust_mcp_connection(conn_id:$id,expected_digest:$digest)}',{id:connection.id,digest:connection.definition_digest}),'Reviewed connection trusted',true,true)}>Trust reviewed connection</Button>}<Button variant="secondary" disabled={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!,$digest:String!){delete_mcp_connection(conn_id:$id,expected_digest:$digest)}',{id:connection.id,digest:connection.definition_digest}),'Connection removed',true,true)}>Remove connection</Button></>}
+    {connection.auth_url_pending&&<a href={connection.auth_url_pending} target="_blank" rel="noopener noreferrer">Complete connection sign-in</a>}
+   </div></article>)}</>}
+  {inspecting&&<section className="manager-form" data-settings-filter aria-label="Connection permission inspection"><h3>{inspecting.label} permissions</h3><p>Inspection reads the saved catalog and configuration. It does not connect or run a tool. Workers continue to use each conversation’s current permissions.</p><p>Configured allowed tools: {inspecting.definition.approved_tools.length?inspecting.definition.approved_tools.join(', '):'None'}. Definition changes are applied to future connections, subject to current authority.</p>
+   <details><summary>Exact connection configuration</summary><pre role="region" tabIndex={0} aria-label="Connection configuration" className="manager-json">{JSON.stringify(inspecting.definition,null,2)}</pre></details>
+   {catalog?.tools?.length?<><label>Tool to inspect<select aria-label="Tool to inspect" value={tool} disabled={busy} onChange={event=>{invalidateCall();setTool(event.target.value);setAdvanced(false)}}><option value="">Select a catalog tool</option>{catalog.tools.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+    {tool&&<><p>{catalog.tools.find(item=>item.name===tool)?.description}</p><pre role="region" tabIndex={0} aria-label="Selected tool input schema" className="manager-json">{JSON.stringify(catalog.tools.find(item=>item.name===tool)?.inputSchema,null,2)}</pre>
+     <details key={inspecting.id+':'+tool} open={advanced}><summary onClick={event=>{event.preventDefault();setAdvanced(value=>!value);setReviewed(null)}}>Advanced · run this tool</summary>{advanced&&<><p>This explicitly calls the connected service and can change it. This is a direct settings action, outside a conversation’s approval flow.</p><p>Execution target: <strong>{targetLabel(targetFor(inspecting))}</strong></p><p>The connection must be trusted and enabled, and the selected tool must be approved. The host rechecks authority when it receives the call.</p>{!ownerKey&&<p>Tool execution requires a verified account and host identity.</p>}<label>Tool arguments<textarea aria-label="Tool arguments" disabled={busy} value={argumentsText} onChange={event=>{invalidateCall();setArguments(event.target.value)}}/></label><Button disabled={busy||!ownerKey||!!unconfirmed||!usable(inspecting)||!approved(inspecting,tool)} onClick={reviewCall}>Call selected tool</Button>
+      {reviewed&&<section data-reviewed-action aria-label="Review tool call"><h4>Confirm this tool call</h4><p>Connection: {reviewed.connection.label} ({reviewed.connection.id})</p><p>Tool: {reviewed.tool}</p><p>Reviewed definition: {reviewed.connection.definition_digest}</p><p>Execution target: {targetLabel(reviewed.target)}{reviewed.target&&' ('+reviewed.target+')'}</p><pre role="region" tabIndex={0} aria-label="Exact tool call arguments" className="manager-json">{reviewed.text}</pre><Button disabled={busy} onClick={confirmCall}>Confirm tool call</Button><Button variant="secondary" disabled={busy} onClick={()=>setReviewed(null)}>Cancel tool call</Button></section>}
+      {unconfirmed&&<section role="status" aria-label="Unconfirmed tool call"><h4>Earlier tool call outcome is unconfirmed</h4><p>The call may still be running or may have changed the service. This identical instruction is blocked, including after reopening this panel.</p><p>Connection: {unconfirmed.call.connection.label} ({unconfirmed.call.connection.id})</p><p>Tool: {unconfirmed.call.tool}</p><p>Reviewed definition: {unconfirmed.call.connection.definition_digest}</p><p>Execution target: {targetLabel(unconfirmed.call.target)}{unconfirmed.call.target&&' ('+unconfirmed.call.target+')'}</p><pre role="region" tabIndex={0} aria-label="Unconfirmed tool call arguments" className="manager-json">{unconfirmed.call.text}</pre><p>Check the service or its records first. A new instruction does not cancel the earlier call or prevent repeated effects.</p><label><span><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event=>setAcknowledged(event.target.checked)}/>I reviewed this exact call and authorize a new instruction that may repeat its effects.</span></label><Button disabled={busy||!acknowledged} onClick={acknowledgeInstruction}>Acknowledge new instruction</Button></section>}
+     </>}
+     </details>
+    </>}
+   </>:<p>Connect after reviewing trust and scope to load the live catalog.</p>}
+   {result!==null&&<pre role="region" tabIndex={0} aria-label="Tool result" className="manager-json">{JSON.stringify(result,null,2)}</pre>}
+   <Button variant="secondary" onClick={()=>{invalidateCall();setInspecting(null)}}>Close connection inspection</Button>
+  </section>}
+  {admin&&editing&&<section>
+   <McpConnectionForm key={editing.id} connection={editing.definition} projects={projects} busy={busy} onCancel={()=>setEditing(null)} onSave={value=>mutate(async()=>{
+    if(editing.runtime.connected)await gql('mutation($id:String!){disconnect_mcp_connection(conn_id:$id)}',{id:editing.id});
+    await gql('mutation($input:McpConnectionInput!){create_mcp_connection(input:$input)}',{input:{data:value,expected_digest:editing.definition_digest}});
+   },'Connection settings saved',true,true)}/>
+   <McpCredentialForm key={editing.id+':credential'} connection={editing.definition} busy={busy} onSave={(binding,value,kind)=>mutate(
+    ()=>gql('mutation($id:String!,$binding:String!,$value:String,$digest:String!,$kind:String!){set_mcp_credential(conn_id:$id,binding:$binding,value:$value,expected_digest:$digest,kind:$kind)}',{id:editing.id,binding,value,digest:editing.definition_digest,kind}),
+    'Credential binding updated; reconnect explicitly',true,true
+   )}/>
+  </section>}
+  {admin&&<details><summary>Add a tool connection</summary><McpConnectionForm projects={projects} busy={busy} onSave={value=>mutate(()=>gql('mutation($input:McpConnectionInput!){create_mcp_connection(input:$input)}',{input:{data:value}}),'Untrusted connection saved',true,true)}/></details>}
+ </section>
 }
