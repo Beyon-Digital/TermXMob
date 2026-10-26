@@ -152,7 +152,8 @@ class ToolRegistry:
     _SUBAGENT_TOOLS = frozenset(
         {"spawn_subagent", "await_subagents", "subagent_status", "cancel_subagent",
          "managed_session_status", "message_managed_session", "cancel_managed_session",
-         "list_agent_projects", "spawn_project_agent"}
+         "list_agent_projects", "spawn_project_agent","list_agent_engines","list_agent_sessions",
+         "review_managed_session","adopt_managed_session","spawn_engine_agent"}
     )
 
     def provider_tools(

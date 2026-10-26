@@ -350,6 +350,48 @@ def test_cross_project_delegation_uses_explicit_authorized_target(tmp_path):
     asyncio.run(run())
 
 
+def test_parent_approval_wrapper_cannot_grant_after_child_scope_revocation(tmp_path,monkeypatch):
+    from fastapi import HTTPException
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await manager._spawn_subagent(parent['id'],parent,spawn_call(),manager._cancel[parent['id']])
+            approval=ledger.create_approval(child['task_id'],'tool',{'title':'Synthetic action awaiting review'})
+            manager._escalate_child_approval(parent['id'],child['task_id'],'Researcher',approval)
+            wrapper=next(row for row in ledger.approvals(parent['id']) if row['status']=='pending')
+            original=workspace.record
+            def revoked(principal,kind,identifier,**kwargs):
+                if kind=='task' and identifier==child['task_id'] and kwargs.get('scope')=='agent-control':
+                    raise HTTPException(403,'Child project control revoked')
+                return original(principal,kind,identifier,**kwargs)
+            monkeypatch.setattr(workspace,'record',revoked)
+            with pytest.raises(HTTPException) as denied:
+                await manager.resolve_approval(parent['id'],wrapper['id'],'approved')
+            assert denied.value.status_code==403
+            assert ledger.get_approval(wrapper['id'])['status']=='pending'
+            assert ledger.get_approval(approval['id'])['status']=='pending'
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
+def test_scheduled_main_grant_cannot_inject_or_coordinate_other_conversations(tmp_path):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            with pytest.raises(PermissionError,match='specific target conversation'):
+                await workspace.send(owner,primary['id'],prompt='Scheduled inspection',request_id='scheduled-primary',delegation_id='synthetic-grant')
+            assert ledger.list_tasks()==[]  # No provider/context preparation began.
+            parent=await running_primary(workspace,owner,manager,primary)
+            metadata=workspace.store.get('task',parent['id'])
+            workspace.store.update('task',parent['id'],{**metadata,'delegation_id':'synthetic-grant'},metadata['revision'])
+            for name in ('managed_session_status','message_managed_session','cancel_managed_session','list_agent_sessions'):
+                with pytest.raises(PermissionError,match='specific target conversation'):
+                    await workspace.orchestrator.command(parent['id'],ProviderCall(type='function',call_id=name,name=name,arguments={}))
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
 def test_existing_primary_can_reopen_with_view_authority_without_allowing_creation(tmp_path):
     async def run():
         workspace,owner,manager,ledger,primary=setup(tmp_path)

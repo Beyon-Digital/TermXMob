@@ -1,0 +1,8 @@
+.orchestrator-adoption{border-top:1px solid var(--border);padding-top:14px;margin-top:4px}
+.orchestrator-adoption>.control-description{margin-bottom:0}
+.adoption-review-dialog{width:min(580px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto}
+.adoption-review-dialog>p{font-size:13px;line-height:1.6}
+.adoption-review-target{display:grid;grid-template-columns:90px minmax(0,1fr);gap:7px 14px;font-size:13px;padding:14px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.adoption-review-target dt{color:var(--secondary)}.adoption-review-target dd{margin:0;color:var(--foreground);overflow-wrap:anywhere;white-space:pre-wrap}
+.adoption-review-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+@media(max-width:480px){.adoption-review-actions>.button{flex:1 1 auto}.adoption-review-target{grid-template-columns:70px minmax(0,1fr);gap:7px 10px}}

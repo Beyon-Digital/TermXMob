@@ -11,11 +11,13 @@ import asyncio
 from typing import AsyncGenerator
 
 import strawberry
+from fastapi import HTTPException
 from strawberry.types import Info
 
 from termx.graphql.context import TermxContext
-from termx.graphql.errors import fail
+from termx.graphql.errors import fail, to_graphql_error
 from termx.graphql import types as T
+from termx.workspace.public_events import context_task_events
 
 Ctx = Info[TermxContext, None]
 
@@ -49,7 +51,12 @@ class Subscription:
         self, info: Ctx, task_id: str, after: int = 0
     ) -> AsyncGenerator[T.TaskEventEnvelope, None]:
         ctx = info.context
-        ctx.require_resource('agent-view', 'task', task_id)
+        def require_task():
+            try:
+                ctx.require_resource('agent-view', 'task', task_id)
+            except HTTPException as exc:
+                raise to_graphql_error(exc) from exc
+        require_task()
         state = ctx.state
         if state.agent_store.get_task(task_id) is None:
             fail(404, "task not found")
@@ -57,12 +64,14 @@ class Subscription:
         cursor = max(0, after)
         try:
             for event in state.agent_store.events(task_id, after=cursor):
-                yield T.TaskEventEnvelope.wrap(event)
+                require_task()
+                yield T.TaskEventEnvelope.wrap(context_task_events(ctx, [event])[0])
                 cursor = max(cursor, int(event["sequence"]))
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=20)
                 except asyncio.TimeoutError:
+                    require_task()
                     yield T.TaskEventEnvelope.wrap(
                         {"type": "heartbeat", "sequence": cursor, "task_id": task_id}
                     )
@@ -70,7 +79,8 @@ class Subscription:
                 sequence = int(event["sequence"])
                 if sequence <= cursor:
                     continue
-                yield T.TaskEventEnvelope.wrap(event)
+                require_task()
+                yield T.TaskEventEnvelope.wrap(context_task_events(ctx, [event])[0])
                 cursor = sequence
         finally:
             state.agent.unsubscribe(task_id, queue)

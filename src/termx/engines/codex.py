@@ -33,6 +33,8 @@ from .types import (
 )
 
 MAX_RAW_EVENT_BYTES = 8 * 1024
+MAX_UNPROVEN_EVENTS = 128
+MAX_UNPROVEN_BYTES = 512 * 1024
 
 EventSink = Callable[[str, EngineEvent], None]
 # (binding_id, request_token, wire_method, params, approval_kind) -> TermX approval id
@@ -91,6 +93,12 @@ class CodexEngine:
         # Partial text is followed by complete agentMessage snapshots. Track
         # each item independently so a fallback snapshot cannot duplicate it.
         self._message_text: dict[tuple[str, str], str] = {}
+        self._send_generations: dict[str, int] = {}
+        self._retired_turns: dict[str, set[str]] = {}
+        self._proven_turns: dict[str, set[str]] = {}
+        self._unproven_notifications: dict[str, list[tuple[str, str, dict[str, Any]]]] = {}
+        self._unproven_bytes: dict[str, int] = {}
+        self._unproven_overflow: set[str] = set()
 
     # ------------------------------------------------------------------ probe
 
@@ -254,6 +262,9 @@ class CodexEngine:
 
     def _on_conn_lost(self) -> None:
         self._message_text.clear()
+        self._unproven_notifications.clear()
+        self._unproven_bytes.clear()
+        self._unproven_overflow.clear()
         for binding in self._bindings.values():
             if binding.status not in ("closed",):
                 binding.status = SESSION_LOST
@@ -332,7 +343,16 @@ class CodexEngine:
         inputs: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         inputs.extend({"type":"image", "url":f"data:{item['mime']};base64,{item['data']}"} for item in image_attachments(attachments))
         effective=dict(binding.extensions_snapshot.get("turn_configuration",{}))
-        self._emit(binding,"engine.configuration.applied",effective)
+        generation = self._send_generations.get(binding.binding_id, 0) + 1
+        self._send_generations[binding.binding_id] = generation
+        dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+        if binding.native_turn_id:
+            self._retired_turns.setdefault(binding.binding_id, set()).add(binding.native_turn_id)
+        binding.native_turn_id = None
+        self._discard_unproven(binding.binding_id)
+        self._forget_message_text(binding.binding_id)
+        self._emit(binding, "engine.configuration.applied", effective,
+                   {"dispatch_id": dispatch_id} if dispatch_id else {})
         params: dict[str, Any] = {"threadId": binding.native_session_id, "input": inputs,**effective}
         if binding.extensions_snapshot.get('managed_task_id') and self.browser_service:
             params.update(approvalsReviewer='user', approvalPolicy='untrusted')
@@ -341,9 +361,27 @@ class CodexEngine:
         binding.status = "active"
         result = await self._conn.request("turn/start", params, timeout=30)
         turn = (result or {}).get("turn") or {}
-        binding.native_turn_id = turn.get("id")
-        binding.updated_at = time.time()
-        return binding.native_turn_id
+        turn_id = turn.get("id") if isinstance(turn.get("id"), str) else None
+        if (
+            self._bindings.get(binding.binding_id) is binding
+            and self._send_generations.get(binding.binding_id) == generation
+            and binding.extensions_snapshot.get("termx_dispatch_id") == dispatch_id
+            and binding.status not in {"lost", "closed"}
+            and binding.native_turn_id in (None, turn_id)
+            and (not self._retired_turn(binding, turn_id) or binding.native_turn_id == turn_id)
+        ):
+            binding.native_turn_id = turn_id
+            binding.updated_at = time.time()
+            if turn_id:
+                self._proven_turns.setdefault(binding.binding_id, set()).add(turn_id)
+                self._emit(binding, "engine.turn.bound", {"turn_id": turn_id}, {
+                    "turn_id": turn_id,
+                    **({"dispatch_id": dispatch_id} if dispatch_id else {}),
+                })
+                self._flush_unproven(binding, turn_id)
+        # Return this RPC's actual ID even if a newer dispatch now owns the
+        # binding. The gateway must not mistake the newer turn for this send.
+        return turn_id
 
     async def steer(self, binding: EngineSessionBinding, text: str) -> bool:
         if not binding.native_turn_id:
@@ -422,6 +460,10 @@ class CodexEngine:
         self._threads.pop(binding.native_session_id, None)
         self._bindings.pop(binding.binding_id, None)
         self._forget_message_text(binding.binding_id)
+        self._send_generations.pop(binding.binding_id, None)
+        self._retired_turns.pop(binding.binding_id, None)
+        self._proven_turns.pop(binding.binding_id, None)
+        self._discard_unproven(binding.binding_id)
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         await self._ensure_conn()
@@ -454,10 +496,74 @@ class CodexEngine:
     def _emit(self, binding: EngineSessionBinding, etype: str,
               payload: dict[str, Any], native: dict[str, Any] | None = None) -> None:
         native_ids = {"session_id": binding.native_session_id}
-        if binding.native_turn_id:
+        # Notification callers pass an explicit dictionary, including {} when
+        # the wire omitted its turn identity. Never relabel them as the binding's
+        # latest turn, which may already belong to another task.
+        if native is None and binding.native_turn_id:
             native_ids["turn_id"] = binding.native_turn_id
         native_ids.update(native or {})
         self._event_sink(binding.binding_id, EngineEvent(etype, payload, native_ids))
+
+    def _retired_turn(self, binding: EngineSessionBinding, turn_id: str | None) -> bool:
+        if not turn_id:
+            return False
+        if turn_id in self._retired_turns.get(binding.binding_id, set()):
+            return True
+        owners = binding.extensions_snapshot.get("termx_turn_owners") or {}
+        owner = owners.get(turn_id) if isinstance(owners, dict) else None
+        dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+        return bool(owner and dispatch_id and owner != dispatch_id)
+
+    @staticmethod
+    def _wire_turn_id(params: dict[str, Any]) -> str | None:
+        turn = params.get("turn")
+        identifier = params.get("turnId") or (turn.get("id") if isinstance(turn, dict) else None)
+        return identifier if isinstance(identifier, str) and identifier else None
+
+    def _stale_turn(self, binding: EngineSessionBinding, turn_id: str | None) -> bool:
+        current = binding.native_turn_id
+        different_active_turn = (
+            turn_id and current and turn_id != current and binding.status == "active"
+            and not self._retired_turn(binding, current)
+        )
+        return bool(binding.status in {"lost", "closed"} or self._retired_turn(binding, turn_id) or different_active_turn)
+
+    def _proven_turn(self, binding: EngineSessionBinding, turn_id: str) -> bool:
+        if turn_id in self._proven_turns.get(binding.binding_id, set()):
+            return True
+        owners = binding.extensions_snapshot.get("termx_turn_owners") or {}
+        dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+        return bool(dispatch_id and isinstance(owners, dict) and owners.get(turn_id) == dispatch_id)
+
+    def _discard_unproven(self, binding_id: str) -> None:
+        self._unproven_notifications.pop(binding_id, None)
+        self._unproven_bytes.pop(binding_id, None)
+        self._unproven_overflow.discard(binding_id)
+
+    def _queue_unproven(self, binding: EngineSessionBinding, turn_id: str,
+                        method: str, params: dict[str, Any]) -> None:
+        identifier = binding.binding_id
+        if identifier in self._unproven_overflow:
+            return
+        pending = self._unproven_notifications.setdefault(identifier, [])
+        size = self._unproven_bytes.get(identifier, 0) + len(json.dumps(params, default=str).encode())
+        if len(pending) >= MAX_UNPROVEN_EVENTS or size > MAX_UNPROVEN_BYTES:
+            self._discard_unproven(identifier)
+            self._unproven_overflow.add(identifier)
+            dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+            self._emit(binding, "engine.turn.correlation.failed" if dispatch_id else "engine.event.uncorrelated", {
+                "message": "Unproven native activity exceeded the private replay limit and was discarded.",
+            }, {"dispatch_id": dispatch_id} if dispatch_id else {})
+            return
+        pending.append((turn_id, method, params))
+        self._unproven_bytes[identifier] = size
+
+    def _flush_unproven(self, binding: EngineSessionBinding, turn_id: str) -> None:
+        pending = self._unproven_notifications.get(binding.binding_id, [])
+        self._discard_unproven(binding.binding_id)
+        for identifier, method, params in pending:
+            if identifier == turn_id:
+                self._on_notification(method, params)
 
     def _binding_for(self, params: dict[str, Any]) -> EngineSessionBinding | None:
         thread_id = params.get("threadId") or (params.get("thread") or {}).get("id")
@@ -472,30 +578,66 @@ class CodexEngine:
             return
         binding = self._binding_for(params)
         turn = params.get("turn") or {}
-        if binding is not None and turn.get("id"):
-            binding.native_turn_id = turn.get("id") or binding.native_turn_id
+        turn_id = self._wire_turn_id(params)
+        native: dict[str, Any] = {"turn_id": turn_id} if turn_id else {}
+        previous_turn_id = binding.native_turn_id if binding else None
+        if binding is not None:
+            missing_turn = (
+                previous_turn_id and not turn_id and (
+                    method in _ITEM_EVENTS or method in {
+                        "turn/started", "turn/completed", "turn/plan/updated", "turn/diff/updated",
+                    }
+                )
+            )
+            if self._stale_turn(binding, turn_id) or missing_turn:
+                diagnostic = {
+                    "method": method,
+                    "ignored": "missing_native_turn" if missing_turn else "stale_native_turn",
+                }
+                if self._retired_turn(binding, turn_id):
+                    diagnostic["params"] = params
+                self._emit(binding, "engine.raw", bounded_fields(
+                    diagnostic, keep={"method", "ignored"}, limit=MAX_RAW_EVENT_BYTES
+                ), native)
+                return
+            if (
+                turn_id and binding.extensions_snapshot.get("termx_dispatch_id")
+                and method != "turn/started" and not self._proven_turn(binding, turn_id)
+            ):
+                self._queue_unproven(binding, turn_id, method, params)
+                return
+            if turn_id:
+                if previous_turn_id and previous_turn_id != turn_id:
+                    self._retired_turns.setdefault(binding.binding_id, set()).add(previous_turn_id)
+                binding.native_turn_id = turn_id
 
         if method == "turn/started":
             if binding:
-                self._forget_message_text(binding.binding_id)
+                if turn_id:
+                    self._proven_turns.setdefault(binding.binding_id, set()).add(turn_id)
+                if turn_id != previous_turn_id:
+                    self._forget_message_text(binding.binding_id)
                 binding.status = "active"
-                self._emit(binding, "engine.turn.started", _bounded(params))
+                self._emit(binding, "engine.turn.started", _bounded(params), native)
+                if turn_id:
+                    self._flush_unproven(binding, turn_id)
             return
         if method == "turn/completed":
             if binding:
                 self._forget_message_text(binding.binding_id)
                 status = turn.get("status", "completed")
                 binding.status = "idle"
+                if turn_id:
+                    self._retired_turns.setdefault(binding.binding_id, set()).add(turn_id)
                 self._emit(binding, "engine.turn.completed",
-                           {"status": status, "error": turn.get("error")})
+                           {"status": status, "error": turn.get("error")}, native)
             return
         if method == "serverRequest/resolved":
             if binding:
-                self._emit(binding, "engine.approval.resolved", _bounded(params))
+                self._emit(binding, "engine.approval.resolved", _bounded(params), native)
             return
         mapped = _ITEM_EVENTS.get(method)
         if mapped and binding:
-            native: dict[str, Any] = {}
             item = params.get("item") or {}
             if method == 'item/completed' and self.browser_service:
                 reviewed = self._review_items.pop((binding.binding_id, item.get('id')), None)
@@ -538,16 +680,16 @@ class CodexEngine:
                 name = {"turn/plan/updated": "engine.plan.updated",
                         "turn/diff/updated": "engine.diff.updated",
                         "thread/tokenUsage/updated": "engine.usage"}[method]
-                self._emit(binding, name, _bounded(params))
+                self._emit(binding, name, _bounded(params), native)
             return
         if method.startswith("account/"):
             if method == "account/updated":
                 self._account["account"] = {"type": params.get("authMode"), "planType": params.get("planType")}
             for b in self._bindings.values():
-                self._emit(b, "engine.account", _bounded(params))
+                self._emit(b, "engine.account", _bounded(params), native)
             return
         if binding:
-            self._emit(binding, "engine.raw", {"method": method, "params": _bounded(params)})
+            self._emit(binding, "engine.raw", {"method": method, "params": _bounded(params)}, native)
 
     async def _on_server_request(self, method: str, params: dict[str, Any]) -> Any:
         binding = self._binding_for(params)
@@ -564,6 +706,16 @@ class CodexEngine:
         if binding is None or self._approval_sink is None:
             return ({"decision": "decline"} if kind != "elicitation"
                     else {"action": "decline", "content": None})
+        if self._stale_turn(binding, self._wire_turn_id(params)):
+            # Fence old requests before policy/browser auto-review as well as
+            # the approval sink. None may mint a permit for a retired turn.
+            if method == "item/permissions/requestApproval":
+                return {"permissions": {}, "scope": "turn"}
+            if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval"}:
+                return {"decision": "decline"}
+            if method == "mcpServer/elicitation/request":
+                return {"action": "decline", "content": None}
+            raise JsonRpcError(-32000, "Request belongs to an inactive Codex turn")
         if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"} and self.browser_service:
             from termx.engines.action_review import authorize,consume_reviewed
             from termx.auto_review import ActionBlocked
@@ -585,7 +737,8 @@ class CodexEngine:
                 binding.binding_id, token, method, _bounded(params), kind)
             self._emit(binding, "engine.approval.requested",
                        {"method": method, "kind": kind, "request_id": token,
-                        "approval_id": approval_id, "request": _bounded(params)})
+                        "approval_id": approval_id, "request": _bounded(params)},
+                       {"turn_id": self._wire_turn_id(params)} if self._wire_turn_id(params) else {})
             return await fut
         finally:
             self._pending_decisions.pop(token, None)

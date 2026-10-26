@@ -13,6 +13,7 @@ from termx.workspace.extensions import ExtensionService
 from termx.workspace.skill_sources import SkillSourceService
 from termx.workspace.service import WorkspaceService
 from termx.workspace.store import Conflict
+from termx.workspace.public_events import public_task_events
 
 
 class Input(BaseModel):
@@ -26,6 +27,13 @@ class OrchestratorInput(Input):
 class ChildControlInput(Input):
     owner: str
     revision: int = Field(ge=1)
+
+
+class AdoptConversationInput(Input):
+    session_id: str = Field(min_length=1,max_length=128)
+    expected_revision: int = Field(ge=1)
+    review_digest: str = Field(min_length=64,max_length=64)
+    request_id: str = Field(min_length=8,max_length=128)
 
 
 class SessionInput(Input):
@@ -303,8 +311,21 @@ def mount_workspace(app,state):
         return call(workspace.orchestrator.activity,principal(request),after=after)
 
     @router.post('/orchestrator/children/{identifier}/control')
-    def orchestrator_control(request:Request,identifier:str,body:ChildControlInput):
+    async def orchestrator_control(request:Request,identifier:str,body:ChildControlInput):
         return call(workspace.orchestrator.control,principal(request),identifier,**body.model_dump())
+
+    @router.get('/orchestrator/adoption-preview/{identifier}')
+    def adoption_preview(request:Request,identifier:str):
+        return call(workspace.orchestrator.native.review,principal(request),identifier)
+
+    @router.post('/orchestrator/adopt')
+    def adopt_conversation(request:Request,body:AdoptConversationInput):
+        actor=principal(request)
+        call(workspace.orchestrator.ensure,actor)
+        from termx.agent.providers import ProviderCall
+        invocation=ProviderCall(type='function',call_id=body.request_id,name='adopt_managed_session',
+            arguments={'session_id':body.session_id,'expected_revision':body.expected_revision,'review_digest':body.review_digest})
+        return call(workspace.orchestrator.native.adopt,actor,'user:'+actor.id,invocation)
 
     @router.post('/sessions')
     def create_session(request:Request,body:SessionInput):
@@ -566,7 +587,7 @@ def mount_workspace(app,state):
                 # empty task is distinguishable from unavailable activity.
                 events=state.agent_store.events(tid,tail_limit=limit+1)
                 result['activity_truncated']=len(events)>limit
-                result['events']=events[-limit:] if limit else []
+                result['events']=public_task_events(workspace,actor,events[-limit:]) if limit else []
                 activity_remaining[0]-=len(result['events'])
             result['children']=[]
             result['truncated']=False
@@ -574,6 +595,9 @@ def mount_workspace(app,state):
                 if child['id'] in seen:continue
                 try:workspace.record(actor,'task',child['id'])
                 except (KeyError,PermissionError):continue
+                except HTTPException as exc:
+                    if exc.status_code not in {403,404}:raise
+                    continue
                 if depth>=8 or remaining[0]<=0:
                     result['truncated']=True
                     break

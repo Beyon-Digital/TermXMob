@@ -11,6 +11,7 @@ from strawberry import relay
 from strawberry.scalars import JSON
 from strawberry.types import Info
 from termx.graphql.errors import fail, resolver
+from termx.workspace.public_events import public_task_events, public_task_approvals
 
 def principal(info):
     current=info.context.state.identity.resolve(info.context.secret,allow_locked=True)
@@ -76,8 +77,8 @@ class WorkspaceTurnNode(relay.Node):
         for key in ('worktree_id','worktree_digest','worktree_branch','execution_location'):
             if key in metadata:result[key]=metadata[key]
         if task['status'] in {'running','awaiting_approval','paused','cancelling','recovering','recovery_confirmation_required','planning'}:
-            result['events']=service.agents.events(self.task_id,tail_limit=200)
-            result['approvals']=service.agents.approvals(self.task_id)
+            result['events']=public_task_events(service,owner,service.agents.events(self.task_id,tail_limit=200))
+            result['approvals']=public_task_approvals(service,owner,service.agents.approvals(self.task_id))
         current=current_principal(info,owner)
         service.record(current,'conversation',self.session_id,scope='agent-view')
         if metadata.get('coordination_report'):

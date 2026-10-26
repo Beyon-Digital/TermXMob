@@ -23,6 +23,7 @@ from termx.config import config_dir
 from termx.identity import Principal
 from termx.workspace.store import Conflict, WorkspaceStore
 from termx.workspace.presets import resolve_preset,available_presets
+from termx.workspace.public_events import public_task_events, public_task_approvals
 
 
 class WorkspaceService:
@@ -97,6 +98,10 @@ class WorkspaceService:
         relation = self.orchestrator.relation(identifier)
         if not relation or relation['owner'] != principal.id or Path(cwd).resolve() != Path(relation['cwd']).resolve():
             return False
+        if relation.get('origin')=='native' and (relation.get('isolation') or {}).get('kind')=='snapshot':
+            self.record(principal,'conversation',relation['parent_session_id'],scope=scope)
+            self.require(principal,scope,relation['target_project_id'],relation['source_cwd'])
+            return Path(cwd).resolve().is_relative_to(self.scratch_root(principal.id)) and Path(cwd).is_dir()
         task = self.agents.get_task(relation['task_id'])
         if not task or task.get('parent_id') != relation['parent_task_id'] or Path(task['cwd']).resolve() != Path(cwd).resolve():
             return False
@@ -266,8 +271,8 @@ class WorkspaceService:
                     if task_meta.get('coordination_report'):
                         task['result'],task['coordination_report']=self.orchestrator.public_report(principal,task_meta['coordination_report'])
                     if task['status'] in ACTIVE_STATUSES:
-                        task['events'] = self.agents.events(task['id'],tail_limit=200)
-                        task['approvals'] = self.agents.approvals(task['id'])
+                        task['events'] = public_task_events(self, principal, self.agents.events(task['id'],tail_limit=200))
+                        task['approvals'] = public_task_approvals(self, principal, self.agents.approvals(task['id']))
                 turn['task'] = task
         if row.get('worktree_id'):
             try:
@@ -626,10 +631,26 @@ class WorkspaceService:
                 else:
                     attempted_native = True
                     from termx.mcp.scope import authorize as authorize_mcp
+                    def native_guard():
+                        self.record(principal,'conversation',identifier,scope='agent-run')
+                        if dispatch_guard:dispatch_guard(row)
+                        if _coordinator_task_id:
+                            self.orchestrator.actor_for_task(_coordinator_task_id)
+                            relation=self.orchestrator.relation(identifier)
+                            if not relation or relation['control_owner']!='orchestrator':
+                                raise Conflict('Child control changed before native dispatch')
+                    def native_cleanup_guard():
+                        relation=self.orchestrator.relation(identifier)
+                        if not relation or relation['control_owner']!='user':return True
+                        # A still-authorized human owns an already-attempted
+                        # native send. Old coordinator cleanup cannot stop it.
+                        self.record(principal,'conversation',identifier,scope='agent-run')
+                        return False
                     task = await self.state.engines.create_task(prompt=prompt,cwd=row['cwd'],engine=row['engine'],
                         model=row.get('model'),mode=row['mode'],workspace_mode=row['mode'],config_options=row.get('reasoning_config') or {},limits=limits,conversation_id=identifier,attachments=attachments,workflow=row.get('workflow'),custom_agent=profile,
                         mcp_project_id=row.get('project_id'),mcp_authorize=lambda conn:authorize_mcp(self.state,conn,'agent-run',principal=principal,project_id=row.get('project_id'),cwd=row['cwd'],resource_id=identifier),
-                        on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
+                        parent_id=_coordinator_task_id,dispatch_guard=native_guard,cleanup_guard=native_cleanup_guard,
+                        on_created=lambda tid:self._coordinator_created(_coordinator_task_id,principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context) if _coordinator_task_id else self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                     if not self.store.get('task',task['id']):
                         self._dispatch_created(principal,row,request_id,task['id'],managed_session_id,delegation_id,turn_prompt,submitted_prompt,context)
                 # Creation callbacks attach the canonical turn before starting
@@ -647,6 +668,8 @@ class WorkspaceService:
                 raise
 
     def validate_delegation(self,principal,row,identifier):
+        if self.orchestrator.is_primary(principal.id,row['id']):
+            raise PermissionError('Scheduled grants cannot run the persistent main agent across conversation contexts. Schedule a specific target conversation instead.')
         grant=self.record(principal,'delegation',identifier,scope='agent-control')
         if grant['revoked'] or grant['expires_at']<=time() or grant['policy_version']!=principal.policy_version or grant.get('execution_target')!=self.execution_target(row):
             raise PermissionError('Delegated execution authority expired, changed or was revoked')
@@ -728,7 +751,13 @@ class WorkspaceService:
                 raise Conflict('Child control changed before dispatch')
             self._dispatch_created(principal,row,key,tid,*args)
             manager.emit_external(tid,'task.delegation',{'agent':row.get('title') or 'Agent task',
-                'call_id':key,'task':args[2] if len(args)>2 else '', 'session_id':row['id']})
+                'call_id':relation.get('dispatch_call_id') or key,'task':args[2] if len(args)>2 else '', 'session_id':row['id']})
+            if (self.agents.get_task(tid) or {}).get('engine','internal')!='internal':
+                self.orchestrator.native.created(parent_id,tid,relation)
+                manager.emit_external(parent_id,'subagent.started',{'child_id':tid,
+                    'call_id':relation.get('dispatch_call_id') or key,'agent':row.get('title') or 'Agent task',
+                    'task':args[2] if len(args)>2 else '', 'isolation':relation.get('isolation'),
+                    'project_id':row.get('project_id'),'source_cwd':relation.get('source_cwd')})
             manager._subagent_handles(parent_id)  # Enroll cancellation and approval relay before planning yields.
         except BaseException:
             manager.cancel(tid)
@@ -901,6 +930,7 @@ class WorkspaceService:
     async def close(self):
         self._closed=True
         self.state.agent._listeners.discard(self._on_event)
+        await self.orchestrator.native.close()
         for worker in list(self._workers):
             worker.cancel()
         await asyncio.gather(*self._workers,return_exceptions=True)

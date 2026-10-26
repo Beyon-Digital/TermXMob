@@ -95,3 +95,6 @@
 .coordination-report-source>.button{font-size:11px;padding-inline:6px;height:28px;flex-shrink:0}
 .coordination-report-status{font-size:11px;white-space:nowrap}.coordination-report-status.failed{color:var(--destructive)}.coordination-report-status.attention{color:var(--warning)}
 @container(max-width:420px){.coordination-report-source{flex-wrap:wrap}.coordination-report-source>.button{margin-left:24px}.coordination-report-source>span:first-of-type{min-width:calc(100% - 34px)}.coordination-report-status{margin-left:24px}.coordination-report-status+.button{margin-left:auto}}
+
+.response-cancellation{display:flex;align-items:flex-start;gap:10px;padding:13px 15px;margin:18px 0 10px;border:1px solid var(--border);background:var(--surface);border-radius:12px;color:var(--secondary);font-size:12px;line-height:1.6}
+.response-cancellation>svg{flex:none;margin-top:3px}.response-cancellation strong{font-weight:550;color:var(--foreground)}.response-cancellation p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.response-cancellation .button{color:inherit;padding-left:0}

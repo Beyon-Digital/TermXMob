@@ -82,6 +82,10 @@ class _SessionClient:
                                {"session_id": session_id or self._session_id})
 
     async def session_update(self, session_id: str, update: Any, **kw: Any) -> None:
+        # ACP notifications carry only the native session in this protocol.
+        # Do not stamp the mutable current host dispatch onto an unsolicited
+        # update: late chunks cannot be attributed across reused prompt turns.
+        # The awaited prompt coroutine below has its own captured dispatch.
         tag = getattr(update, "session_update", None) or type(update).__name__
         data = _model_dump(update)
         self._binding(session_id)
@@ -870,8 +874,13 @@ class AcpEngine:
             exited.cancel()
             await asyncio.gather(exited, return_exceptions=True)
         binding = state["binding"]
-        if binding.status == "closed" or state.get("closing"):
+        if (binding.status == "closed" or state.get("closing")
+                or self._sessions.get(binding.binding_id) is not state):
             return
+        dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+        native = {"session_id": binding.native_session_id}
+        if isinstance(dispatch_id, str) and dispatch_id:
+            native["dispatch_id"] = dispatch_id
         state["process_lost"] = state["proc"].returncode is not None
         state["transport_lost"] = True
         binding.status = SESSION_LOST
@@ -884,7 +893,7 @@ class AcpEngine:
         self._emit(binding, "engine.session.lost", {
             "message": "ACP agent process exited" if state["process_lost"] else "ACP agent connection closed",
             "process_exited": state["process_lost"],
-        })
+        }, native)
         # A process that still runs after losing its protocol cannot be safely
         # controlled. Reap it and the host terminals now; retain only the lost
         # binding so a later explicit user turn can session/load it.
@@ -894,7 +903,7 @@ class AcpEngine:
             # Keep the state reachable for strict shutdown to retry/report.
             self._emit(binding, "engine.session.cleanup_failed", {
                 "message": "ACP connection closed but transport cleanup did not finish",
-            })
+            }, native)
 
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
@@ -913,22 +922,42 @@ class AcpEngine:
             raise ValueError("ACP agent does not advertise image input capability")
         content = [TextContentBlock(type="text", text=prompt)]
         content.extend(ImageContentBlock(type="image",data=item['data'],mimeType=item['mime']) for item in images)
+        dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+        generation = object()
+        state["dispatch_generation"] = generation
+        turn_context = {"cancel_requested": False}
+        state["turn_context"] = turn_context
+        prompt_started = asyncio.Event()
+        native = {"session_id": binding.native_session_id}
+        if isinstance(dispatch_id, str) and dispatch_id:
+            native["dispatch_id"] = dispatch_id
+
+        def current() -> bool:
+            return (self._sessions.get(binding.binding_id) is state
+                    and state.get("dispatch_generation") is generation
+                    and binding.extensions_snapshot.get("termx_dispatch_id") == dispatch_id)
+
         binding.status = "active"
         state["cancel_requested"] = False
-        state["prompt_started"] = asyncio.Event()
-        self._emit(binding, "engine.turn.started", {"prompt_chars": len(prompt)})
+        state["prompt_started"] = prompt_started
+        self._emit(binding, "engine.turn.started", {"prompt_chars": len(prompt)}, native)
 
         async def _run_prompt() -> None:
             try:
-                state["prompt_started"].set()
+                prompt_started.set()
+                if not current():
+                    self._emit(binding, "engine.turn.completed", {
+                        "status": "interrupted", "stop_reason": "superseded_before_prompt",
+                    }, native)
+                    return
                 resp = await state["conn"].prompt(
-                    session_id=binding.native_session_id,
+                    session_id=native["session_id"],
                     prompt=content,
                 )
                 stop = str(getattr(resp, "stop_reason", "") or "")
                 usage = _model_dump(getattr(resp, "usage", None))
                 status = {"end_turn": "completed", "cancelled": "interrupted"}.get(stop, "failed")
-                if state.get("cancel_requested"):
+                if turn_context.get("cancel_requested"):
                     status = "interrupted"
                 self._emit(binding, "engine.turn.completed", {
                     "status": status,
@@ -936,25 +965,26 @@ class AcpEngine:
                     "usage": usage,
                     **({"error": {"message": f"ACP agent stopped: {stop}. Check the agent's native configuration and run budget."}}
                        if status == "failed" else {}),
-                })
+                }, native)
             except asyncio.CancelledError:
                 self._emit(binding, "engine.turn.completed", {
                     "status": "failed" if state.get("transport_lost") else "interrupted",
                     **({"error": {"message": "ACP agent connection closed during this turn"}}
                        if state.get("transport_lost") else {}),
-                })
+                }, native)
                 raise
             except Exception as exc:
-                if not self._session_live(state):
+                if current() and not self._session_live(state):
                     state["transport_lost"] = True
                     binding.status = SESSION_LOST
                 self._emit(binding, "engine.turn.completed",
-                           {"status": "interrupted" if state.get("cancel_requested") else "failed",
-                            "error": {"message": str(exc)}})
+                           {"status": "interrupted" if turn_context.get("cancel_requested") else "failed",
+                            "error": {"message": str(exc)}}, native)
             finally:
-                if binding.status not in {"closed", SESSION_LOST}:
-                    binding.status = "idle"
-                binding.updated_at = time.time()
+                if current():
+                    if binding.status not in {"closed", SESSION_LOST}:
+                        binding.status = "idle"
+                    binding.updated_at = time.time()
 
         # session/prompt resolves at turn end — run it in a task so callers
         # (and the HTTP request) return once the turn has started.
@@ -965,6 +995,8 @@ class AcpEngine:
         state = self._sessions.get(binding.binding_id)
         if state is not None:
             state["cancel_requested"] = True
+            if state.get("turn_context") is not None:
+                state["turn_context"]["cancel_requested"] = True
             self._cancel_permissions(binding)
             try:
                 if state.get("prompt_started") is not None:

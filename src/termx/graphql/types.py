@@ -15,6 +15,8 @@ from typing import Any, Self
 
 import strawberry
 from strawberry.scalars import JSON
+from strawberry.types import Info
+from termx.graphql.errors import resolver
 
 
 class DictBacked:
@@ -608,12 +610,33 @@ class AgentTask(DictBacked):
     conversation_id: str | None
     custom_agent_id: str | None
     parent_id: str | None
-    runtime: JSON | None
+    @strawberry.field
+    @resolver
+    def runtime(self, info: Info) -> JSON | None:
+        from termx.workspace.public_events import context_task_runtime
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return context_task_runtime(info.context, value.get('runtime'))
     metrics: JSON | None
     created_at: float | None
     updated_at: float | None
-    events: JSON | None
-    approvals: JSON | None
+    @strawberry.field
+    @resolver
+    def events(self, info: Info) -> JSON | None:
+        from termx.workspace.public_events import context_task_events
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        events = value.get('events')
+        return context_task_events(info.context, events) if events is not None else None
+
+    @strawberry.field
+    @resolver
+    def approvals(self, info: Info) -> JSON | None:
+        from termx.workspace.public_events import context_task_approvals
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        approvals = value.get('approvals')
+        return context_task_approvals(info.context, approvals) if approvals is not None else None
     artifacts: JSON | None
 
 

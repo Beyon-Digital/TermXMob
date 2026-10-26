@@ -6,13 +6,19 @@ import {taskState} from '../lib/task-presentation';
 import {useObservationActive} from '../lib/use-observation-active';
 import './orchestrator-status.css';
 
+export type CoordinationLimits = {
+  time_budget?: string; tool_steps?: string; tokens?: string; cost?: string;
+  steer?: string; resume?: string; approvals?: string; tools_filter?: string;
+  elapsed_deadline_seconds?: number;
+};
 export type OrchestratorChild = {
-  session_id: string; task_id: string; title: string; status: string;
+  session_id: string; task_id: string | null; title: string; status: string;
+  engine: string; origin: 'native' | 'adopted' | 'delegated'; capability_limits: CoordinationLimits;
   result?: string | null; error?: string | null; control_owner: 'user' | 'orchestrator';
   revision: number; updated_at: number; parent_session_id: string;
 };
 export type OrchestratorActivity = {
-  id: string; sequence: number; kind: string; session_id: string; task_id?: string;
+  id: string; sequence: number; kind: string; session_id: string; task_id?: string | null;
   status?: string; message: string; created_at: number;
 };
 export type OrchestratorSnapshot = {
@@ -22,6 +28,35 @@ type Props = {
   ownerId: string; selected: string; enabled: boolean; onOpen: (id: string) => void;
   onPrimary?: (id: string) => void; onRefresh?: () => void;
 };
+
+function engineLabel(engine?: string) {
+  return ({internal: 'TermX Agent', codex: 'Codex', claude: 'Claude', acp: 'ACP agent'} as Record<string, string>)[engine || ''] || engine || 'Engine not reported';
+}
+function childState(child: OrchestratorChild) {
+  const state = taskState(child.status);
+  return !child.task_id && child.status === 'idle' ? {...state, label: 'No task started'} : state;
+}
+function capabilityLabel(value: string) {
+  return ({native: 'Native engine support', gateway: 'TermX gateway', os: 'Operating system', advisory: 'Advisory only', unsupported: 'Unavailable', unverified: 'Not verified'} as Record<string, string>)[value] || value.replaceAll('_', ' ');
+}
+function ChildEngineDetails({child}: {child: OrchestratorChild}) {
+  const limits = child.capability_limits;
+  if (!limits) return null;
+  const deadline = limits.elapsed_deadline_seconds;
+  return <details className="orchestrator-engine-details" aria-label={'Engine details for ' + child.title}>
+    <summary>Engine capabilities &amp; limits</summary>
+    {child.control_owner === 'user' && <p>Coordinator monitoring applies after you give the main agent control. The engine retains its own settings.</p>}
+    <dl>
+      <dt>Engine</dt><dd>{engineLabel(child.engine)}</dd>
+      {limits.time_budget && <><dt>Time allowance</dt><dd>{limits.time_budget === 'shared-host' ? 'Shared host time budget' : limits.time_budget === 'host-monitoring' ? 'Host monitoring; existing task limits are retained' : capabilityLabel(limits.time_budget)}</dd></>}
+      {limits.tool_steps && <><dt>Work allowance</dt><dd>{limits.tool_steps === 'shared-host' ? 'Shared host tool-step budget' : limits.tool_steps === 'native-max-turns' ? 'Native turn limit; individual tool calls are not counted' : limits.tool_steps === 'unmeasured' ? 'Tool steps are not measured by TermX' : capabilityLabel(limits.tool_steps)}</dd></>}
+      {limits.tokens && <><dt>Token usage</dt><dd>{limits.tokens === 'unmeasured' ? 'Not measured or capped by TermX' : capabilityLabel(limits.tokens)}</dd></>}
+      {limits.cost && <><dt>Cost</dt><dd>{limits.cost === 'unmeasured' ? 'Not measured or capped by TermX' : capabilityLabel(limits.cost)}</dd></>}
+      {([['steer', 'Steering'], ['resume', 'Resume'], ['approvals', 'Approvals'], ['tools_filter', 'Tool restrictions']] as const).map(([key, label]) => limits[key] ? <div key={key}><dt>{label}</dt><dd>{capabilityLabel(limits[key]!)}</dd></div> : null)}
+      {typeof deadline === 'number' && Number.isFinite(deadline) && deadline > 0 && <><dt>Elapsed-time safety ceiling</dt><dd>{deadline % 3600 === 0 ? `${deadline / 3600} hours` : `${deadline} seconds`} while the main agent is in control</dd></>}
+    </dl>
+  </details>;
+}
 
 /** The primary chat owns coordination; inspecting a child never starts work. */
 export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, onPrimary, onRefresh}: Props) {
@@ -102,8 +137,10 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     {child ? <div className="orchestrator-child-banner">
       <Button variant="ghost" size="sm" onClick={() => primary && onOpen(primary.id)}><ArrowLeft size={13}/>Main agent</Button>
       <span>{child.control_owner === 'user' ? 'You are directing this chat' : 'Managed by your main agent'}</span>
-      <Button variant="outline" size="sm" disabled={!!busy || isStale || !observing} onClick={() => void changeControl(child)}>{busy === child.session_id ? 'Updating…' : child.control_owner === 'user' ? 'Return to main agent' : 'Take control'}</Button>
-      <p>{child.control_owner === 'user' ? 'The main agent can see progress, but waits for you to return control before steering this chat.' : 'Take control to direct this agent yourself. Its progress still returns to your main chat.'}</p>
+      <Button variant="outline" size="sm" disabled={!!busy || isStale || !observing} onClick={() => void changeControl(child)}>{busy === child.session_id ? 'Updating…' : child.control_owner === 'user' ? child.origin === 'adopted' ? 'Give main agent control' : 'Return to main agent' : 'Take control'}</Button>
+      <p>{child.origin === 'adopted' && child.control_owner === 'user' ? 'This existing chat is included in updates. You stay in control until you give the main agent control.' : child.control_owner === 'user' ? 'The main agent can see progress, but waits for you to return control before steering this chat.' : 'Take control to direct this agent yourself. Its progress still returns to your main chat.'}</p>
+      <p className="orchestrator-engine-label">Engine: {engineLabel(child.engine)}{child.origin === 'adopted' ? ' · Existing chat' : ''}</p>
+      <ChildEngineDetails child={child}/>
     </div> : <div className="orchestrator-summary">
       <Button variant="ghost" size="sm" className="orchestrator-disclosure" aria-expanded={expanded} aria-controls="orchestrator-detail" onClick={() => setExpanded(value => !value)}>
         {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}<GitBranch size={14}/><span>Delegated work</span>
@@ -118,9 +155,11 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
       {current && !children.length && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
       {current?.children_truncated && <p>Showing up to 100 delegated chats, prioritizing active work. Other conversations remain available in chat history.</p>}
       {ordered.length > 0 && <ul className="orchestrator-children">{ordered.map(row => <li key={row.session_id}>
-        <button className="orchestrator-child-link" onClick={() => onOpen(row.session_id)}><strong>{row.title || 'Delegated task'}</strong><span className={'orchestrator-state ' + taskState(row.status).tone}>{taskState(row.status).label}</span><ChevronRight size={13}/></button>
+        <button className="orchestrator-child-link" onClick={() => onOpen(row.session_id)}><strong>{row.title || 'Delegated task'}</strong><span className={'orchestrator-state ' + childState(row).tone}>{childState(row).label}</span><ChevronRight size={13}/></button>
         <small>{row.control_owner === 'user' ? 'You are in control' : 'Main agent is coordinating'}</small>
+        <small className="orchestrator-engine-label">Engine: {engineLabel(row.engine)}{row.origin === 'adopted' ? ' · Existing chat' : ''}</small>
         {row.error ? <p className="orchestrator-child-error">{row.error}</p> : row.result ? <p>{row.result}</p> : null}
+        <ChildEngineDetails child={row}/>
       </li>)}</ul>}
       {recent.length > 0 && <details className="orchestrator-activity"><summary>Recent updates</summary><ol>{recent.map(item => <li key={item.id || item.sequence}><time dateTime={new Date(item.created_at * 1000).toISOString()}>{new Date(item.created_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</time><span>{item.message}</span>{item.session_id && <button onClick={() => onOpen(item.session_id)}>Open chat</button>}</li>)}</ol></details>}
     </div>}

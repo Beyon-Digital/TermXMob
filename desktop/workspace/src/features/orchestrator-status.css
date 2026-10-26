@@ -11,6 +11,14 @@
 .orchestrator-child-link{display:flex;align-items:center;gap:9px;padding:2px 0;width:100%;text-align:left;background:none;border:0;color:var(--foreground);cursor:pointer;font:inherit;min-height:30px}
 .orchestrator-child-link strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .orchestrator-children>li>small{font-size:10px;color:var(--secondary)}
+.orchestrator-engine-label{display:block;margin:3px 0 0;color:var(--secondary)}
+.orchestrator-engine-details{margin-top:7px;font-size:11px;line-height:1.5}
+.orchestrator-engine-details summary{cursor:pointer;color:var(--foreground);padding:3px 0;min-height:26px}
+.orchestrator-engine-details p{margin:5px 0;max-width:75ch}
+.orchestrator-engine-details dl{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:4px 12px;margin:6px 0 3px}
+.orchestrator-engine-details dl>div{display:contents}
+.orchestrator-engine-details dt{color:var(--secondary)}.orchestrator-engine-details dd{margin:0;color:var(--foreground);overflow-wrap:anywhere}
+.orchestrator-child-banner>.orchestrator-engine-details{width:100%;margin-top:0}
 .orchestrator-children>li>p{margin:5px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .orchestrator-state{font-size:10px;white-space:nowrap;color:var(--secondary)}
 .orchestrator-state.attention,.orchestrator-child-error{color:var(--foreground)}
@@ -25,5 +33,5 @@
 .orchestrator-child-banner>span{flex:1;color:var(--foreground);font-size:11px}.orchestrator-child-banner>p{width:100%;font-size:11px;line-height:1.45;margin:0;padding-left:3px;max-width:90ch}
 .orchestrator-error{display:flex;align-items:center;gap:10px;padding:7px 18px;line-height:1.4;color:var(--foreground);background:var(--surface)}
 .orchestrator-error>span{flex:1;overflow-wrap:anywhere}.orchestrator-error>.button{flex:none}
-.orchestrator-status button:focus-visible,.orchestrator-activity summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.orchestrator-status button:focus-visible,.orchestrator-status summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(max-width:600px){.orchestrator-summary{padding:5px 8px}.orchestrator-detail{padding:0 12px 12px;max-height:34vh}.orchestrator-child-banner{padding:7px 10px;gap:6px}.orchestrator-child-banner>span{min-width:120px}.orchestrator-disclosure small{font-size:10px;margin-left:0}.orchestrator-error{padding:7px 10px;flex-wrap:wrap}.orchestrator-error>span{flex-basis:100%}.orchestrator-activity li{flex-wrap:wrap;gap:4px 8px}.orchestrator-activity li>span{flex-basis:75%}}

@@ -1,6 +1,6 @@
 # TermX chat-first implementation and verification
 
-Status: implemented and verified. The final frozen production bundle passed the complete rendered main-agent journey and real host restart proof. All heavy validation processes are stopped.
+Status: checkpoint `89fb066` implemented and verified. Its frozen production bundle passed the complete rendered main-agent journey and graceful host restart proof. The later native/ACP and abrupt-crash extension has [separate verification](orchestration-extension-2026-10-25.md); this checkpoint's passing results do not establish that extension.
 
 ## Source separation
 
@@ -76,11 +76,11 @@ All session screenshot artifacts total approximately 6.3 MiB. No generated frame
 
 ## Isolated review preview
 
-The final tested bundle is also served at `http://127.0.0.1:8797` using the existing Python runtime and task-local `runtime-state`. Its verified workspace contract is 3 and it remains unconfigured: no owner account or model credential was created for this persistent preview. First-run host passcode: `termx-ui-synthetic` (a disposable local fixture value). It has no tunnel and engine startup discovery is disabled. Owned PID 2770 / exec 4484 when launched; verify identity before stopping it. The earlier Vite 5197 and old scratch daemon were stopped explicitly; unrelated apps/services were not stopped.
+The checkpoint bundle was served at `http://127.0.0.1:8797` using the existing Python runtime and task-local `runtime-state`. Its verified workspace contract is 3 and it remains unconfigured: no owner account or model credential was created for this persistent preview. First-run host passcode: `termx-ui-synthetic` (a disposable local fixture value). It has no tunnel and engine startup discovery is disabled. Owned PID 2770 / exec 4484 was stopped cleanly with exit 0 during the extension validation pause; the listener is absent. A matched final frontend/backend preview will be started after extension verification. The earlier Vite 5197 and old scratch daemon were stopped explicitly; unrelated apps/services were not stopped.
 
 ## Limits
 
-Automatic delegation to native/ACP adapters is not implemented. These engines remain independently usable; Main agent clearly uses Internal Agent. Live provider results, native credential stores, installed Tauri behavior, physical-device access and other operating systems are untested. No provider key was reused from LedgerMind/Nyay and no paid call was made. Native/reference UI inspection was unavailable through the current supported CUA inventory; official references inform interaction requirements without a parity claim.
+At this checkpoint automatic delegation to native/ACP adapters is not implemented. These engines remain independently usable; Main agent clearly uses Internal Agent. The later extension connects their existing adapters and has separate tests. Live provider results, native credential stores, installed Tauri behavior, physical-device access and other operating systems are untested. No provider key was reused from LedgerMind/Nyay and no paid call was made. Native/reference UI inspection was unavailable through the current supported CUA inventory; official references inform interaction requirements without a parity claim.
 
 
 Additional limits: managed guest-browser website navigation was not exercised; the Browser panel/draft boundary was. Host restart was graceful with completed/cancelled workers; an abrupt in-flight process crash is not established by that browser check. The existing generic cancelled-task error caption still calls its metadata reason an error, although the actual Cancelled status and single cancellation action are correct; this low-priority copy issue remains. Current main-agent summaries are bounded to 100 child chats, prioritize active/attention work, and disclose truncation; other conversations remain inspectable in history.

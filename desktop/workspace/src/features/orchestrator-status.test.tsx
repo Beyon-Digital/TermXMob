@@ -5,7 +5,7 @@ import {request, type Session} from '../lib/api';
 
 vi.mock('../lib/api', () => ({request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
 const api = vi.mocked(request), open = vi.fn(), primary = vi.fn(), refreshed = vi.fn();
-const child: OrchestratorChild = {session_id: 'child-chat', task_id: 'child-task', title: 'Review access controls', status: 'awaiting_approval', control_owner: 'orchestrator', revision: 7, updated_at: 1000, parent_session_id: 'main'};
+const child: OrchestratorChild = {session_id: 'child-chat', task_id: 'child-task', title: 'Review access controls', status: 'awaiting_approval', engine: 'internal', origin: 'delegated', capability_limits: {time_budget: 'shared-host', tool_steps: 'shared-host', tokens: 'unmeasured', cost: 'unmeasured'}, control_owner: 'orchestrator', revision: 7, updated_at: 1000, parent_session_id: 'main'};
 const snapshot = (children = [child]): OrchestratorSnapshot => ({
   session: {id: 'main', title: 'Main agent'} as Session, children,
   activity: [{id: 'update', sequence: 1, kind: 'child.updated', session_id: 'child-chat', task_id: 'child-task', status: 'awaiting_approval', message: 'Access review needs a decision.', created_at: 1000}], cursor: 1,
@@ -134,4 +134,45 @@ it('does not show unrelated conversation content or a nonexistent primary', asyn
   api.mockResolvedValue({session: null, children: [], activity: [], cursor: 0});
   view.rerender(<OrchestratorStatus {...props} ownerId="fresh-owner" selected=""/>);
   await waitFor(() => expect(screen.queryByText('Delegated work')).not.toBeInTheDocument());
+});
+
+
+it('reports the actual native engine and capability limits without claiming tool, token, or cost caps', async () => {
+  const native: OrchestratorChild = {...child, engine: 'custom-acp-reviewer', origin: 'native', status: 'running', capability_limits: {
+    time_budget: 'shared-host', tool_steps: 'unmeasured', tokens: 'unmeasured', cost: 'unmeasured',
+    steer: 'unverified', resume: 'native', approvals: 'gateway', tools_filter: 'advisory', elapsed_deadline_seconds: 86400,
+  }};
+  api.mockResolvedValue(snapshot([native]));
+  render(<OrchestratorStatus {...props}/>);
+  await screen.findByText('1 in progress');
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  expect(screen.getByText('Engine: custom-acp-reviewer')).toBeVisible();
+  const details = screen.getByLabelText('Engine details for Review access controls');
+  expect(details).not.toHaveAttribute('open');
+  fireEvent.click(screen.getByText('Engine capabilities & limits'));
+  expect(details).toHaveAttribute('open');
+  expect(screen.getByText('Tool steps are not measured by TermX')).toBeVisible();
+  expect(screen.getAllByText('Not measured or capped by TermX')).toHaveLength(2);
+  expect(screen.getByText('Not verified')).toBeVisible();
+  expect(screen.getByText('Advisory only')).toBeVisible();
+  expect(screen.getByText('24 hours while the main agent is in control')).toBeVisible();
+  expect(api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+});
+
+it('keeps an adopted idle chat user-owned until the user explicitly grants main-agent control', async () => {
+  const adopted: OrchestratorChild = {...child, task_id: null, engine: 'codex', origin: 'adopted', status: 'idle', control_owner: 'user', capability_limits: {time_budget: 'host-monitoring', tool_steps: 'unmeasured'}};
+  api.mockImplementation(async (_path, init) => init?.method === 'POST' ? {...adopted, control_owner: 'orchestrator', revision: 8} : snapshot([adopted]));
+  const view = render(<OrchestratorStatus {...props}/>);
+  await screen.findByText('1 finished or idle');
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  expect(screen.getByText('No task started')).toBeVisible();
+  expect(screen.getByText('Engine: Codex · Existing chat')).toBeVisible();
+  view.rerender(<OrchestratorStatus {...props} selected="child-chat"/>);
+  expect(screen.getByText('This existing chat is included in updates. You stay in control until you give the main agent control.')).toBeVisible();
+  expect(screen.queryByRole('button', {name: 'Return to main agent'})).not.toBeInTheDocument();
+  expect(api.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  fireEvent.click(screen.getByRole('button', {name: 'Give main agent control'}));
+  await waitFor(() => expect(open).toHaveBeenCalledWith('main'));
+  expect(api.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  expect(api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body).toBe(JSON.stringify({owner: 'orchestrator', revision: 7}));
 });
