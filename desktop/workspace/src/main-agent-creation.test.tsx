@@ -131,3 +131,29 @@ it('starts a generic new chat without a hidden project or folder from a cancelle
  expect(mocks.request.mock.calls.some(([path,init])=>path==='/api/workspace/sessions'&&(init as RequestInit)?.method==='POST')).toBe(false);
  expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft');
 });
+
+
+it('a delayed project registration cannot retarget a newer creation dialog',async()=>{
+ const registered=deferred<{register_project:{id:string;name:string;path:string}}>();
+ const target={id:'late-project',name:'Late project',path:'/synthetic/late-project'};
+ const previous=mocks.gql.getMockImplementation()!;
+ mocks.gql.mockImplementation((query:string,...args:any[])=>query.includes('register_project')?registered.promise:query.includes('agent_providers')?Promise.resolve({projects:[target],engines:[],agent_providers:[provider]}):previous(query,...args));
+ render(<App/>);
+ await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
+ fireEvent.click(screen.getByRole('button',{name:'New chat'}));
+ let dialog=await screen.findByRole('dialog',{name:'New conversation'});
+ fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ fireEvent.change(within(dialog).getByLabelText('Add a project folder'),{target:{value:target.path}});
+ const create=within(dialog).getByRole('button',{name:'Create conversation'});
+ await waitFor(()=>expect(create).toBeEnabled());fireEvent.click(create);
+ await waitFor(()=>expect(mocks.gql.mock.calls.some(([query])=>String(query).includes('register_project'))).toBe(true));
+ fireEvent.click(within(dialog).getByRole('button',{name:'Close',exact:true}));
+ fireEvent.click(screen.getByRole('button',{name:'New chat'}));
+ dialog=await screen.findByRole('dialog',{name:'New conversation'});
+ fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ await act(async()=>registered.resolve({register_project:target}));
+ await waitFor(()=>expect(within(dialog).getByRole('button',{name:'Create conversation'})).toBeEnabled());
+ expect(within(dialog).getByRole('combobox',{name:'Project'})).toHaveValue('');
+ expect(within(dialog).getByLabelText('Add a project folder')).toHaveValue('');
+ expect(location.pathname).toBe('/session/previous');
+});

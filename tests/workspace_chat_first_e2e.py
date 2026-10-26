@@ -40,12 +40,15 @@ class DeterministicAdapter:
         self.release_child = threading.Event()
         self.release_late_child = threading.Event()
         self.hold_started = threading.Event()
+        self.project_evidence = []
 
     async def test(self):
         self.test_requests += 1
         raise AssertionError('A connection test must require a final explicit action')
 
     async def plan(self, prompt, cwd, manifest):
+        if 'Coordinate two synthetic projects' in prompt:
+            return {'summary': 'Review two explicitly enrolled project roots', 'steps': ['List authorized projects', 'Delegate separate read-only checks', 'Return both source results'], 'tools': ['list_agent_projects', 'spawn_project_agent', 'await_subagents'], 'risks': []}, 'multi-project-plan'
         return {'summary': prompt, 'steps': ['Delegate the synthetic read-only check', 'Consolidate its result'],
                 'tools': ['spawn_subagent'], 'risks': []}, 'fixture-plan'
 
@@ -54,6 +57,42 @@ class DeterministicAdapter:
         self.calls.append(prompt)
         self.turns[prompt] = self.turns.get(prompt, 0) + 1
         count = self.turns[prompt]
+        def outputs():
+            return [json.loads(item['output']) for item in kwargs.get('input_items') or []
+                    if item.get('type') == 'function_call_output' and isinstance(item.get('output'), str)]
+        def tool_turn(identifier, calls):
+            return ProviderTurn(identifier, '', calls, {}, [{'type': 'function_call',
+                'call_id': call.call_id, 'name': call.name, 'arguments': json.dumps(call.arguments)} for call in calls])
+        if 'Verify project evidence for ' in prompt:
+            slug = 'alpha-project' if 'alpha-project' in prompt else 'beta-project'
+            if count == 1:
+                return tool_turn(slug + '-read', [ProviderCall(type='function', call_id=slug + '-read-once',
+                    name='read_file', arguments={'path': 'sample.txt'})])
+            source = next(value for value in reversed(outputs()) if value.get('path') == 'sample.txt')
+            assert source.get('ok') is True and isinstance(source.get('content'), str), source
+            expected = 'ALPHA_PRIVATE_SYNTHETIC_EVIDENCE' if slug == 'alpha-project' else 'BETA_PRIVATE_SYNTHETIC_EVIDENCE'
+            other = 'BETA_PRIVATE_SYNTHETIC_EVIDENCE' if slug == 'alpha-project' else 'ALPHA_PRIVATE_SYNTHETIC_EVIDENCE'
+            assert source['content'].strip() == expected and other not in json.dumps(kwargs.get('input_items')), source
+            self.project_evidence.append({'cwd': kwargs['cwd'], 'content': source['content'].strip(), 'project': slug})
+            return ProviderTurn(slug + '-verified', slug + ': ' + source['content'].strip(), [], {}, [])
+        if 'Coordinate two synthetic projects' in prompt:
+            if count == 1:
+                return tool_turn('multi-list', [ProviderCall(type='function', call_id='multi-project-list-once',
+                    name='list_agent_projects', arguments={})])
+            if count == 2:
+                projects = next(value['projects'] for value in reversed(outputs()) if 'projects' in value)
+                targets = [project for project in projects if project['name'] in {'alpha-project', 'beta-project'}]
+                assert len(targets) == 2, projects
+                return tool_turn('multi-spawn', [ProviderCall(type='function', call_id='multi-spawn-' + project['id'],
+                    name='spawn_project_agent', arguments={'project_id': project['id'], 'agent': project['name'] + ' reviewer',
+                    'task': 'Verify project evidence for ' + project['name'] + ' by reading sample.txt.', 'mode': 'ask'}) for project in targets])
+            if count == 3:
+                return tool_turn('multi-await', [ProviderCall(type='function', call_id='multi-project-await-once',
+                    name='await_subagents', arguments={})])
+            results = next(value['children'] for value in reversed(outputs()) if 'children' in value)
+            assert len(results) == 2 and all(child['status'] == 'completed' for child in results.values()), results
+            return ProviderTurn('multi-consolidated', 'Two project review results:\n' + '\n'.join(
+                sorted(child['result'] for child in results.values())), [], {}, [])
         if 'Hold synthetic coordinator' in prompt:
             self.hold_started.set()
             await asyncio.Event().wait()
@@ -431,6 +470,74 @@ def run(destination):
             expect(page.get_by_role('button', name='Close navigation', exact=True)).to_be_visible()
             page.keyboard.press('Escape')
             expect(show).to_be_focused()
+            # Enroll two actual roots through chat UI; main delegates using real
+            # authorized IDs and production read_file, never injected child results.
+            page.set_viewport_size({'width': 1440, 'height': 900})
+            if page.get_by_role('button', name='Show sidebar', exact=True).is_visible():
+                page.get_by_role('button', name='Show sidebar', exact=True).click()
+            project_roots = {}
+            for slug, marker in [('alpha-project', 'ALPHA_PRIVATE_SYNTHETIC_EVIDENCE'),
+                                 ('beta-project', 'BETA_PRIVATE_SYNTHETIC_EVIDENCE')]:
+                project_root = root / 'synthetic-projects' / slug
+                project_root.mkdir(parents=True)
+                (project_root / 'sample.txt').write_text(marker + '\n')
+                page.get_by_role('button', name='New chat', exact=True).click()
+                creation = page.get_by_role('dialog', name='New conversation', exact=True)
+                creation.get_by_label('Conversation title', exact=True).fill(slug + ' context')
+                creation.get_by_text('Project & agent options', exact=True).click()
+                expect(creation.get_by_role('combobox', name='Project', exact=True)).to_have_value('')
+                expect(creation.get_by_label('Add a project folder', exact=True)).to_have_value('')
+                creation.get_by_label('Add a project folder', exact=True).fill(str(project_root))
+                creation.get_by_role('button', name='Create conversation', exact=True).click()
+                wait(lambda: '/session/' in page.url and not page.url.endswith(primary_id), 'Project chat did not open')
+                enrolled_id = page.url.rsplit('/', 1)[-1]
+                enrolled = state.workspace.session(owner, enrolled_id, turns=False)
+                assert enrolled['cwd'] == str(project_root) and enrolled['project_id']
+                project_roots[enrolled['project_id']] = str(project_root)
+                assert not state.agent_store.workspace_turns_page(enrolled_id, limit=1)
+                page.get_by_role('button', name=re.compile(r'^Main agent')).first.click()
+                wait(lambda: page.url.endswith('/session/' + primary_id), 'Main did not reopen after project enrollment')
+            composer.fill('Coordinate two synthetic projects')
+            page.get_by_role('button', name='Send message', exact=True).click()
+            def multi_turn():
+                return next((turn for turn in state.agent_store.workspace_turns_page(primary_id, descending=True, limit=30)
+                    if turn['prompt'] == 'Coordinate two synthetic projects'
+                    and state.agent_store.get_task(turn['task_id']).get('engine') != 'coordination'), None)
+            wait(multi_turn, 'Multi-project main turn was not persisted')
+            multi_parent = multi_turn()['task_id']
+            approval_deadline = monotonic() + 90
+            approved_ids = set()
+            while state.agent_store.get_task(multi_parent)['status'] not in {'completed', 'failed', 'cancelled'}:
+                if monotonic() > approval_deadline:
+                    raise AssertionError('Multi-project approvals/execution did not finish within the bounded fixture deadline')
+                pending = [item for item in state.agent_store.approvals(multi_parent) if item['status'] == 'pending']
+                if pending:
+                    approved_ids.update(item['id'] for item in pending)
+                    approve_pending()
+                else:
+                    page.wait_for_timeout(100)
+            assert state.agent_store.get_task(multi_parent)['status'] == 'completed'
+            project_children = state.agent_store.children(multi_parent)
+            assert len(project_children) == 2 and len(approved_ids) >= 2
+            assert len(adapter.project_evidence) == 2
+            for child_task_row in project_children:
+                metadata = state.workspace.store.get('task', child_task_row['id'])
+                assert metadata['project_id'] in project_roots
+                assert child_task_row['cwd'] == project_roots[metadata['project_id']]
+                assert child_task_row['status'] == 'completed'
+                assert sum(event['type'] == 'tool.finished' and event['payload'].get('call_id') == Path(child_task_row['cwd']).name + '-read-once'
+                           for event in state.agent_store.events(child_task_row['id'])) == 1
+            expect(page.get_by_text('Two project review results:', exact=False).last).to_be_visible(timeout=30000)
+            assert page.url.endswith('/session/' + primary_id)
+            assert all(marker in state.agent_store.get_task(multi_parent)['result'] for marker in
+                       ['ALPHA_PRIVATE_SYNTHETIC_EVIDENCE', 'BETA_PRIVATE_SYNTHETIC_EVIDENCE'])
+            shot('09b-two-projects-consolidated-in-main')
+            audit('two-projects-consolidated-main')
+            report['multi_project'] = {'parent_task_id': multi_parent, 'child_count': 2,
+                'actual_file_reads': adapter.project_evidence, 'explicit_approvals': len(approved_ids),
+                'main_route_preserved': True, 'context_roots_distinct': len(set(project_roots.values())) == 2}
+            report['checks'].append('UI enrolls two synthetic project roots; real authorized project tools spawn separate read-only children, each reads only its own file once and main consolidates actual results without chat switching')
+            composer.fill('Retain main draft while inspecting tools')
             wait(lambda: state.workspace.session(owner, primary_id, turns=False)['draft_text'] == 'Retain main draft while inspecting tools',
                  'Final main draft did not persist before restart')
             assert any(cookie['name'] == 'termx_refresh' for cookie in context.cookies())
