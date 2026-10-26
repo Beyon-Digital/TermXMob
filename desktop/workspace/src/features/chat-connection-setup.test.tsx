@@ -58,3 +58,15 @@ it('drops a late failed connection response after the user opens another chat',a
  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
  expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
+
+
+it.each(['unauthenticated','expired'])('requires native sign-in when the installed engine explicitly reports %s',authState=>{
+ const connect=vi.fn();
+ const view=render(<ChatConnectionSetup {...props} session={{...session,engine:'codex'}} engines={[{id:'codex',name:'Codex',available:true,auth_state:authState,auth_detail:'Continue sign-in on this host.'}]} onConnect={connect}/>);
+ expect(screen.getByRole('heading',{name:'Reconnect this engine'})).toBeVisible();
+ expect(screen.getByText('Continue sign-in on this host.')).toBeVisible();
+ expect(screen.queryByRole('button',{name:'Use for this chat'})).not.toBeInTheDocument();
+ view.rerender(<ChatConnectionSetup {...props} session={{...session,engine:'codex'}} engines={[{id:'codex',name:'Codex',available:true,auth_state:'unknown'}]} onConnect={connect}/>);
+ expect(screen.queryByRole('region',{name:'Connect this chat'})).not.toBeInTheDocument();
+ expect(connect).not.toHaveBeenCalled();
+});

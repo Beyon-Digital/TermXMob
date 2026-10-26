@@ -18,10 +18,24 @@ afterEach(() => {cleanup(); vi.restoreAllMocks();});
 
 it('shows the source decision in Main while delegated work is collapsed, with no navigation or ownership change', async () => {
   const open = vi.fn();
-  api.mockImplementation(async path => path === '/api/workspace/orchestrator'
-    ? {session: {id: 'main'} as Session, children: [child], activity: [], cursor: 7} as any : task);
+  let completeSnapshot!: (value: unknown) => void, completeSource!: (value: Task) => void;
+  const snapshotRead = new Promise(resolve => {completeSnapshot = resolve;});
+  const sourceRead = new Promise<Task>(resolve => {completeSource = resolve;});
+  api.mockImplementation(async path => {
+    if (path === '/api/workspace/orchestrator') return await snapshotRead;
+    if (path === '/api/workspace/tasks/source%2Ftask?activity=false') return await sourceRead;
+    throw Error('Unexpected request in Main decision fixture: ' + path);
+  });
   render(<OrchestratorStatus ownerId="owner" selected="main" enabled onOpen={open}/>);
-  await screen.findByRole('button', {name: 'Review action'});
+  expect(api.mock.calls.some(([path]) => path === '/api/workspace/orchestrator')).toBe(true);
+  // Two independent effects are involved: the coordinator snapshot mounts the
+  // source reader, then its authenticated task read mounts the exact review.
+  // Settle each boundary explicitly instead of starting an expensive DOM poll
+  // before the nested effect exists on an overloaded test host.
+  await act(async () => completeSnapshot({session: {id: 'main'} as Session, children: [child], activity: [], cursor: 7}));
+  expect(api.mock.calls.filter(([path]) => path === '/api/workspace/tasks/source%2Ftask?activity=false')).toHaveLength(1);
+  await act(async () => completeSource(task));
+  expect(screen.getByRole('button', {name: 'Review action'})).toBeVisible();
   expect(screen.getByRole('button', {name: /Delegated work/})).toHaveAttribute('aria-expanded', 'false');
   expect(screen.getByRole('article', {name: 'Requests from Native reviewer'})).toBeVisible();
   expect(screen.getByText('Main agent is coordinating')).toBeVisible();

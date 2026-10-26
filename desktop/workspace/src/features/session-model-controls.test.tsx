@@ -42,3 +42,12 @@ it('selects the first configured model when explicitly switching to a local acco
  fireEvent.change(screen.getByRole('combobox',{name:'Session provider'}),{target:{value:'next-account'}});
  expect(patch).toHaveBeenCalledWith({provider_id:'next-account',model:'next-one',reasoning_config:{}});
 });
+
+
+it('shows unknown native account status and the last host check without claiming a connected account',()=>{
+ render(<SessionModelControls {...base} session={{...session,engine:'codex',provider_id:undefined}} engines={[{id:'codex',name:'Codex',available:true,auth_state:'unknown',error:'Account check timed out'}]} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));
+ expect(screen.getByText('Uses Codex on this host. Its account status has not been verified by TermX.')).toBeVisible();
+ expect(screen.getByText('Last engine check: Account check timed out')).toBeVisible();
+ expect(screen.queryByText(/connected account/i)).not.toBeInTheDocument();
+});

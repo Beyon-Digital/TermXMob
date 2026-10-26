@@ -7,8 +7,9 @@ import {request,type Session,type Provider} from '../lib/api';
 
 vi.mock('../lib/api',()=>({gql:vi.fn(async()=>({engine_models:[]})),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
 afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();vi.clearAllMocks()});
-const row=(id:string,active=false):Session=>({id,title:id,engine:'internal',mode:'agent',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,turns:active?[{id:id+'-turn',prompt:'Current task',sequence:1,task:{id:id+'-task',prompt:'Current task',status:'running',events:[]}}]:[]});
-const props={engines:[],providers:[],onSelect:vi.fn(),onRefresh:vi.fn(),onError:vi.fn()};
+const fixtureProvider:Provider={id:'fixture-account',name:'Configured fixture account',model:'fixture-model',secret_configured:true,capabilities:['functions']};
+const row=(id:string,active=false):Session=>({id,title:id,engine:'internal',provider_id:fixtureProvider.id,model:'fixture-model',mode:'agent',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,turns:active?[{id:id+'-turn',prompt:'Current task',sequence:1,task:{id:id+'-task',prompt:'Current task',status:'running',events:[]}}]:[]});
+const props={engines:[],providers:[fixtureProvider],onSelect:vi.fn(),onRefresh:vi.fn(),onError:vi.fn()};
 function baseResponse(path:string,session:Session){if(path==='/api/runners')return [];if(path.includes('runner-agents'))return {accounts:[]};if(path.endsWith('/queue'))return {items:[]};return {...session}}
 
 it('starts with goals and inserts a suggestion into the draft without dispatching it',()=>{
@@ -23,7 +24,7 @@ it('starts with goals and inserts a suggestion into the draft without dispatchin
 
 it('offers connection setup while preserving a typed first message',()=>{
  const session=row('connection'),configure=vi.fn();vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
- render(<Chat session={session} {...props} onConfigureAgent={configure}/>);
+ render(<Chat session={session} {...props} providers={[]} onConfigureAgent={configure}/>);
  fireEvent.change(screen.getByRole('textbox',{name:'Message'}),{target:{value:'My first task'}});
  fireEvent.click(screen.getByRole('button',{name:'Set up connection'}));
  expect(configure).toHaveBeenCalledOnce();expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('My first task');
@@ -112,13 +113,13 @@ it('keeps the main failure review visible after a later direct child report',()=
 const connectedAccount:Provider={id:'connected-account',name:'Connected account',model:'model-one, model-two',secret_configured:true,capabilities:['functions']};
 
 it('connects a newly saved account to the same main chat explicitly and sends its preserved draft',async()=>{
- const session={...row('first-main'),draft_text:'Keep this first task'};
+ const session={...row('first-main'),provider_id:undefined,model:undefined,draft_text:'Keep this first task'} as Session;
  vi.mocked(request).mockImplementation(async(path,init)=>{
   if(path==='/api/workspace/sessions/first-main'&&init?.method==='PATCH'){Object.assign(session,JSON.parse(String(init.body)).changes);session.revision++;return {...session} as any}
   if(path.endsWith('/turns'))return {id:'first-task'} as any;
   return baseResponse(path,session) as any;
  });
- const view=render(<Chat session={{...session}} {...props} coordinating/>);
+ const view=render(<Chat session={{...session}} {...props} providers={[]} coordinating/>);
  const composer=screen.getByRole('textbox',{name:'Message'});
  expect(screen.getByRole('button',{name:'Send message'})).toBeDisabled();
  fireEvent.keyDown(composer,{key:'Enter',code:'Enter'});
@@ -164,8 +165,43 @@ it('keeps connection repair available after history and preserves a draft when i
 it('keeps Stop available when a main task is running and its connection is no longer configured',async()=>{
  const session=row('running-without-account',true);
  vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
- render(<Chat session={session} {...props} coordinating/>);
+ render(<Chat session={session} {...props} providers={[]} coordinating/>);
  const stop=screen.getByRole('button',{name:'Stop task'});
  expect(stop).toBeEnabled();fireEvent.click(stop);
  await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/cancel'))).toHaveLength(1));
+});
+
+
+it('blocks an ordinary unconfigured chat before dispatch or a failed retry receipt is created',()=>{
+ const session={...row('ordinary-unconfigured'),provider_id:undefined,model:undefined,draft_text:'Keep my ordinary task'} as Session;
+ vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
+ render(<Chat session={session} {...props} providers={[]}/>);
+ const composer=screen.getByRole('textbox',{name:'Message'});
+ expect(screen.getByRole('button',{name:'Send message'})).toBeDisabled();
+ fireEvent.keyDown(composer,{key:'Enter',code:'Enter'});
+ expect(composer).toHaveValue('Keep my ordinary task');
+ expect(screen.getByRole('alert')).toHaveTextContent('Connect an account and model before sending');
+ expect(sessionDrafts.get(session.id)?.submission).toBeUndefined();
+ expect(screen.queryByRole('button',{name:'Retry send'})).not.toBeInTheDocument();
+ expect(vi.mocked(request).mock.calls.some(([path,init])=>init?.method==='POST'&&(path.endsWith('/turns')||path.endsWith('/queue')))).toBe(false);
+});
+
+it('blocks an unavailable native engine without inventing a local provider requirement',()=>{
+ const session={...row('unavailable-native'),engine:'codex',provider_id:undefined,model:undefined,draft_text:'Keep the native task'} as Session;
+ vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
+ render(<Chat session={session} {...props} engines={[]} providers={[]}/>);
+ expect(screen.getByRole('heading',{name:'Reconnect this engine'})).toBeVisible();
+ expect(screen.getByRole('button',{name:'Send message'})).toBeDisabled();
+ fireEvent.keyDown(screen.getByRole('textbox',{name:'Message'}),{key:'Enter'});
+ expect(screen.getByRole('alert')).toHaveTextContent('Reconnect this engine before sending');
+ expect(sessionDrafts.get(session.id)?.submission).toBeUndefined();
+ expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+});
+
+it('keeps the selected runner account contract separate from local provider readiness',()=>{
+ const session={...row('runner-chat'),runner_id:'runner-one',runner_credential_ref:'runner-credential',provider_id:'runner-account',model:'runner-model',draft_text:'Run remotely'};
+ vi.mocked(request).mockImplementation(async(path)=>path.includes('runner-agents')?{accounts:[{provider_id:'runner-account',credential_ref:'runner-credential',name:'Runner account',models:['runner-model']}]} as any:baseResponse(path,session) as any);
+ render(<Chat session={session} {...props} providers={[]}/>);
+ expect(screen.getByRole('button',{name:'Send message'})).toBeEnabled();
+ expect(screen.queryByRole('region',{name:'Connect this chat'})).not.toBeInTheDocument();
 });

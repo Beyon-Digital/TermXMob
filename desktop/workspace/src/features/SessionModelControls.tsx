@@ -17,6 +17,8 @@ export default function SessionModelControls({session,engines,providers,runnerAc
  const runnerAccount=runnerAccounts.find(item=>item.provider_id===session?.provider_id);
  const account=providers.find(item=>item.id===session?.provider_id);
  const engine=engines.find(item=>item.id===session?.engine);
+ const engineName=engine?.name||'This engine';
+ const engineAccount=!engine||engine.available===false?'This engine is unavailable on this host. Check its installation in Models & engines.':['unauthenticated','expired'].includes(engine.auth_state||'')?'Sign in to '+engineName+' on this host, then refresh Models & engines.':engine.auth_state==='authenticated'?engineName+' reports that it is signed in on this host.':engine.auth_state==='not_required'?engineName+' reports that sign-in is not required.':'Uses '+engineName+' on this host. Its account status has not been verified by TermX.';
  const connectionMissing=session?.engine==='internal'&&!session.runner_id&&!account?.secret_configured;
  const accounts=session?.runner_id?runnerAccounts.map(item=>({id:item.provider_id,name:item.name})):providers.map(item=>({id:item.id,name:item.name}));
  if(session?.provider_id&&!accounts.some(item=>item.id===session.provider_id))accounts.push({id:session.provider_id,name:'Unavailable account ('+session.provider_id+')'});
@@ -35,7 +37,7 @@ export default function SessionModelControls({session,engines,providers,runnerAc
     const selected=runnerAccounts.find(item=>item.provider_id===event.target.value);
     onPatch(session.runner_id?{reasoning_config:{},provider_id:event.target.value,runner_credential_ref:selected?.credential_ref||null,model:selected?.models[0]||null}:{provider_id:event.target.value,model:configuredModels(providers.find(item=>item.id===event.target.value))[0]||null,reasoning_config:{}});
    }}><option value="">Choose provider</option>{accounts.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</Select></label><p className="control-description">{session.runner_id?(runnerAccount?runnerAccount.name+' · Connected runner account':'Choose a connected runner account.'):account?(account.secret_configured?'Connected account.':'Connect this account in Models & engines.'):!providers.length?'Add an account in Models & engines to choose its models.':'Choose an account for this conversation.'}</p></div>}
-   {session?.engine!=='internal'&&<p className="control-description">{engine?.available===false?'This engine is unavailable. Check its connection in Models & engines.':'Uses '+(engine?.name||'the selected engine')+'’s connected account.'}</p>}
+   {session?.engine!=='internal'&&<><p className="control-description">{engineAccount}</p>{engine?.auth_detail&&<p className="control-description">{engine.auth_detail}</p>}{engine?.error&&<p className="control-description">Last engine check: {engine.error}</p>}</>}
    {running&&<p className="control-running-note" role="status">The current task keeps its settings. You can change them when it finishes.</p>}
   </DialogContent></Dialog>
  </>;
