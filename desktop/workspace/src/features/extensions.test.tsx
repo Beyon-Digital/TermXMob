@@ -1,12 +1,137 @@
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import ExtensionManager,{matchesExtensionMetadata} from './ExtensionManager';
 import Managers from './Managers';
 import {request} from '../lib/api';
 vi.mock('../lib/api',()=>({request:vi.fn()}));const mocked=vi.mocked(request);afterEach(cleanup);beforeEach(()=>{mocked.mockReset()});
 const source={scope:'project',folder:'inspect',digest:'disk-one',markdown:'Original instructions',name:'Inspect',bytes:21};
-function defaults(path:string){if(path.includes('/compatibility'))return {sources:[]};if(path.endsWith('/skill-sources?project_id=p'))return {sources:[source],roots:[],diagnostics:[]};if(path.includes('/versions?'))return {versions:[]};return source}
+const projectRoot={scope:'project',project_id:'p',path:'/projects/p/.agents',editable:true};
+function defaults(path:string){if(path.includes('/compatibility'))return {sources:[]};if(path.endsWith('/skill-sources?project_id=p'))return {sources:[source],roots:[projectRoot],diagnostics:[]};if(path.includes('/versions?'))return {versions:[]};return source}
 describe('extension sources and registries',()=>{
+ it('opens an advertised editable host source without a project picker and saves its exact revision',async()=>{
+  const hostSource={...source,scope:'user',effective_for_publish:true};
+  mocked.mockImplementation(async(path,init)=>{
+   if(init?.method==='PUT')return {...hostSource,digest:'host-saved'};
+   if(path==='/api/workspace/skill-sources')return {sources:[hostSource],roots:[{scope:'user',project_id:null,path:'/host/.agents',editable:true}],precedence:'Project overrides user',diagnostics:[]};
+   if(path.includes('/compatibility'))return {sources:[]};
+   if(path.includes('/versions?'))return {versions:[]};
+   return hostSource;
+  });
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('Original instructions');
+  expect(screen.getByText('Add a skill').closest('details')).toHaveAttribute('open');
+  expect(screen.queryByRole('combobox',{name:'Skill scope'})).not.toBeInTheDocument();
+  expect(screen.queryByText('Project overrides user')).not.toBeInTheDocument();
+  expect(screen.getByText('/host/.agents').closest('details')).not.toHaveAttribute('open');
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'Host worker instructions'}});
+  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+  await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(true));
+  expect(JSON.parse(String(mocked.mock.calls.find(([,init])=>init?.method==='PUT')![1]?.body))).toMatchObject({scope:'user',project_id:null,markdown:'Host worker instructions',expected_digest:'disk-one'});
+ });
+ it('keeps source locations and the add editor collapsed until requested without discarding a collapsed draft',async()=>{
+  mocked.mockImplementation(async(path)=>path.includes('/compatibility')?{sources:[]}:{sources:[],roots:[{scope:'user',project_id:null,path:'/host/.agents',editable:true}],diagnostics:[]});
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  const add=await screen.findByText('Add a skill');expect(add.closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByText('Source locations').closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(add);await waitFor(()=>expect(add.closest('details')).toHaveAttribute('open'));
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'Keep this draft'}});
+  fireEvent.click(add);await waitFor(()=>expect(add.closest('details')).not.toHaveAttribute('open'));
+  fireEvent.click(add);await waitFor(()=>expect(add.closest('details')).toHaveAttribute('open'));
+  expect(screen.getByLabelText('Skill instructions')).toHaveValue('Keep this draft');
+ });
+ it.each([
+  {name:'missing',roots:[]},
+  {name:'read-only',roots:[{...projectRoot,editable:false,read_only_reason:'Project source is read-only'}]},
+  {name:'different project',roots:[{...projectRoot,project_id:'other'}]},
+ ])('does not infer source write authority from a $name root or the selected project ID',async({roots})=>{
+  mocked.mockImplementation(async(path)=>path.endsWith('/skill-sources?project_id=p')?{sources:[source],roots,diagnostics:[]}:defaults(path) as any);
+  render(<ExtensionManager data={{}} projectId="p" onChanged={vi.fn()}/>);
+  expect(await screen.findByRole('heading',{name:'Inspect'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Edit source'})).not.toBeInTheDocument();
+  expect(screen.queryByText('Add a skill')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'View source'}));await screen.findByDisplayValue('Original instructions');
+  expect(screen.getByLabelText('Skill instructions')).toHaveAttribute('readonly');
+  expect(screen.getByRole('button',{name:'Save source'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Review skill publication'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Export source'})).toBeEnabled();
+  expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
+ });
+ it('refreshes revoked root authority without dropping the draft or borrowing a host root for a project write',async()=>{
+  let editable=true;
+  mocked.mockImplementation(async(path,init)=>{
+   if(init?.method==='PUT')return {...source,digest:'saved'};
+   if(path.endsWith('/skill-sources?project_id=p'))return {sources:[source],roots:[{...projectRoot,editable,read_only_reason:editable?null:'Project permission was revoked'},{scope:'user',path:'/host/.agents',project_id:null,editable:true}],diagnostics:[]};
+   return defaults(path) as any;
+  });
+  render(<ExtensionManager data={{}} projectId="p" onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('Original instructions');
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'Keep the project draft'}});
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh sources'})).toBeEnabled());
+  editable=false;fireEvent.click(screen.getByRole('button',{name:'Refresh sources'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh sources'})).toBeEnabled());
+  expect(screen.getByLabelText('Skill instructions')).toHaveValue('Keep the project draft');
+  expect(screen.getByLabelText('Skill instructions')).toHaveAttribute('readonly');
+  expect(screen.getByRole('button',{name:'Save source'})).toBeDisabled();
+  expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
+  editable=true;fireEvent.click(screen.getByRole('button',{name:'Refresh sources'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Save source'})).toBeEnabled());
+  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+  await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(true));
+  expect(JSON.parse(String(mocked.mock.calls.find(([,init])=>init?.method==='PUT')![1]?.body))).toMatchObject({scope:'project',project_id:'p',expected_digest:'disk-one',markdown:'Keep the project draft'});
+ });
+ it('ignores a late source read after switching to another project editor',async()=>{
+  let completeOld!:(value:unknown)=>void;
+  mocked.mockImplementation(async(path)=>{
+   if(path.includes('/compatibility'))return {sources:[]};
+   if(path.includes('/skill-sources?')){const id=new URLSearchParams(path.split('?')[1]).get('project_id');return {sources:[{...source,name:'Inspect '+id}],roots:[{...projectRoot,project_id:id}],diagnostics:[]}}
+   if(path.includes('/versions?'))return {versions:[]};
+   if(path.includes('/source?')&&new URLSearchParams(path.split('?')[1]).get('project_id')==='p')return new Promise(resolve=>{completeOld=resolve});
+   return {...source,markdown:'Q source instructions',digest:'q-digest'};
+  });
+  const view=render(<ExtensionManager data={{}} projectId="p" onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));
+  view.rerender(<ExtensionManager data={{}} projectId="q" onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('Q source instructions');
+  await act(async()=>completeOld({...source,markdown:'Old project instructions',digest:'old'}));
+  expect(screen.getByLabelText('Skill instructions')).toHaveValue('Q source instructions');
+  expect(screen.queryByDisplayValue('Old project instructions')).not.toBeInTheDocument();
+  expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
+ });
+ it('cannot apply an earlier project save acknowledgement to a newer draft target',async()=>{
+  let completeOld!:(value:unknown)=>void;
+  mocked.mockImplementation(async(path,init)=>{
+   if(init?.method==='PUT'){const body=JSON.parse(String(init.body));if(body.project_id==='p')return new Promise(resolve=>{completeOld=resolve});return {...source,markdown:body.markdown,digest:'q-saved'}}
+   if(path.includes('/compatibility'))return {sources:[]};
+   if(path.includes('/skill-sources?')){const id=new URLSearchParams(path.split('?')[1]).get('project_id');return {sources:[{...source,name:'Inspect '+id}],roots:[{...projectRoot,project_id:id}],diagnostics:[]}}
+   if(path.includes('/versions?'))return {versions:[]};
+   if(path.includes('/source?')&&new URLSearchParams(path.split('?')[1]).get('project_id')==='q')return {...source,markdown:'Q source instructions',digest:'q-digest'};
+   return source;
+  });
+  const view=render(<ExtensionManager data={{}} projectId="p" onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('Original instructions');
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'P saved instructions'}});
+  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+  view.rerender(<ExtensionManager data={{}} projectId="q" onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('Q source instructions');
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'Q unsaved instructions'}});
+  await act(async()=>completeOld({...source,markdown:'P saved instructions',digest:'p-saved'}));
+  expect(screen.getByLabelText('Skill instructions')).toHaveValue('Q unsaved instructions');
+  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+  await waitFor(()=>expect(mocked.mock.calls.filter(([,init])=>init?.method==='PUT')).toHaveLength(2));
+  expect(JSON.parse(String(mocked.mock.calls.filter(([,init])=>init?.method==='PUT')[1][1]?.body))).toMatchObject({project_id:'q',expected_digest:'q-digest',markdown:'Q unsaved instructions'});
+ });
+ it('retains the actual reviewed skill installation path for an editable authorized root',async()=>{
+  const preview={id:'review',digest:'review-digest',bundle:{id:'inspect',version:'1'},permission_diff:{added:[],removed:[]},dependencies:[]};
+  const changed=vi.fn();
+  mocked.mockImplementation(async(path)=>path.endsWith('/publish-preview')?preview:path==='/api/workspace/extension-previews/review/install'?{id:'installed'}:defaults(path) as any);
+  render(<ExtensionManager data={{}} projectId="p" onChanged={changed}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'}));await screen.findByDisplayValue('Original instructions');
+  fireEvent.click(screen.getByRole('button',{name:'Review skill publication'}));
+  await screen.findByRole('heading',{name:'Review inspect · 1'});
+  fireEvent.click(screen.getByRole('button',{name:'Install reviewed version'}));
+  await waitFor(()=>expect(changed).toHaveBeenCalledOnce());
+  expect(JSON.parse(String(mocked.mock.calls.find(([path])=>path==='/api/workspace/extension-previews/review/install')![1]?.body))).toEqual({digest:'review-digest'});
+ });
  it('searches safe inventory metadata with all terms while excluding credentials and source drafts',()=>{
   expect(matchesExtensionMetadata({name:'Inspect Code',scope:'project'},'PROJECT inspect')).toBe(true);
   expect(matchesExtensionMetadata({name:'Inspect',scope:'user'},'project inspect')).toBe(false);

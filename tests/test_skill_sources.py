@@ -88,6 +88,59 @@ def test_project_grants_and_live_revocation_do_not_borrow_host_admin(sources):
     with pytest.raises((PermissionError,HTTPException)):skills.read(user,scope='project',project_id='p',name='inspect')
 
 
+def test_skill_root_editability_is_advertised_without_creating_directories(sources):
+    skills,_,owner,project=sources
+    user_root=skills.workspace.state.agents_root
+    assert not user_root.exists() and not (project/'.agents').exists()
+    roots=skills.list(owner,'p')['roots']
+    assert {(root['scope'],root['project_id'],root['editable']) for root in roots}=={
+        ('user',None,True),('project','p',True)}
+    assert all(root['read_only_reason'] is None for root in roots)
+    assert not user_root.exists() and not (project/'.agents').exists()
+
+
+def test_skill_root_readonly_and_live_write_revocation_keep_read_inventory(sources):
+    skills,_,owner,project=sources
+    saved=save(skills,owner)
+    authz=skills.workspace.state.authorization;identity=skills.workspace.state.identity
+    user=identity.create_principal('Scoped source editor',['files-read','files-write','agent-view'])
+    authz.set_role(user.id,'operator');authz.grant_project(user.id,'p',['files-read','agent-view'])
+    user=identity.principal_by_id(user.id)
+    readonly=skills.list(user,'p')
+    assert len(readonly['roots'])==1 and readonly['roots'][0]['scope']=='project'
+    assert readonly['roots'][0]['editable'] is False and readonly['roots'][0]['read_only_reason']
+    assert readonly['sources'][0]['folder']=='inspect'
+    with pytest.raises((PermissionError,HTTPException)):
+        skills.save(user,scope='project',project_id='p',name='inspect',markdown=TEXT+' denied',expected_digest=saved['digest'])
+    authz.grant_project(user.id,'p',['files-read','files-write','agent-view'])
+    assert skills.list(user,'p')['roots'][0]['editable'] is True
+    updated=skills.save(user,scope='project',project_id='p',name='inspect',markdown=TEXT+' edited',expected_digest=saved['digest'])
+    authz.grant_project(user.id,'p',['files-read','agent-view'])
+    assert skills.list(user,'p')['roots'][0]['editable'] is False
+    with pytest.raises((PermissionError,HTTPException)):
+        skills.save(user,scope='project',project_id='p',name='inspect',markdown=TEXT+' revoked',expected_digest=updated['digest'])
+    assert (project/'.agents/skills/inspect/SKILL.md').read_text()==TEXT+' edited'
+
+
+def test_skill_root_editability_does_not_borrow_another_project_grant(sources):
+    skills,_,owner,project=sources
+    other=project.parent/'other-project';other.mkdir()
+    skills.workspace.state.projects=SimpleNamespace(projects=lambda:[{'id':'p','path':str(project)},{'id':'q','path':str(other)}])
+    authz=skills.workspace.state.authorization;identity=skills.workspace.state.identity
+    user=identity.create_principal('Two project reader',['files-read','files-write','agent-view'])
+    authz.set_role(user.id,'operator')
+    authz.grant_project(user.id,'p',['files-read','files-write','agent-view'])
+    authz.grant_project(user.id,'q',['files-read','agent-view'])
+    user=identity.principal_by_id(user.id)
+    first=skills.list(user,'p')['roots'];second=skills.list(user,'q')['roots']
+    assert len(first)==len(second)==1
+    assert first[0]['project_id']=='p' and first[0]['editable'] is True
+    assert second[0]['project_id']=='q' and second[0]['editable'] is False
+    with pytest.raises((PermissionError,HTTPException)):
+        skills.save(user,scope='project',project_id='q',name='inspect',markdown=TEXT,expected_digest=None)
+    assert not (other/'.agents').exists()
+
+
 def test_compatibility_import_is_read_only_and_never_inherits_trust(sources,monkeypatch):
     skills,extensions,owner,project=sources
     skills.compatibility_home=project.parent/'isolated-home'
