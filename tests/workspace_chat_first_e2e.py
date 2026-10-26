@@ -135,7 +135,7 @@ def run(destination):
               'fixture': 'Real HTTP/auth/stores/agent runtime; deterministic no-network inference boundary',
               'live_provider_calls': 0, 'native_tauri_tested': False}
     with tempfile.TemporaryDirectory(prefix='termx-chat-first-') as temporary:
-        root = Path(temporary)
+        root = Path(temporary).resolve()
         os.environ.update(TERMX_CONFIG_DIR=str(root / 'config'), TERMX_AGENTS_DIR=str(root / 'agents'),
                           TERMX_ENGINE_STARTUP_REFRESH='0')
         from termx.app import AppState, create_app
@@ -494,7 +494,7 @@ def run(destination):
                 wait(lambda: '/session/' in page.url and not page.url.endswith(primary_id), 'Project chat did not open')
                 enrolled_id = page.url.rsplit('/', 1)[-1]
                 enrolled = state.workspace.session(owner, enrolled_id, turns=False)
-                assert enrolled['cwd'] == str(project_root) and enrolled['project_id']
+                assert Path(enrolled['cwd']).resolve() == project_root.resolve() and enrolled['project_id'], {'requested': str(project_root), 'actual': enrolled['cwd'], 'project_id': enrolled['project_id']}
                 project_roots[enrolled['project_id']] = str(project_root)
                 assert not state.agent_store.workspace_turns_page(enrolled_id, limit=1)
                 page.get_by_role('button', name=re.compile(r'^Main agent')).first.click()
