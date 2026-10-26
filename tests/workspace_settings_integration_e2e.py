@@ -352,11 +352,11 @@ def run(destination):
             inspection.get_by_role('button', name='Close connection inspection', exact=True).click()
             card.get_by_role('button', name='Trust reviewed connection', exact=True).click()
             expect(card.get_by_role('button', name='Connect', exact=True)).to_be_disabled()
-            selector.select_option(alpha['id']); card.get_by_role('button', name='Connect', exact=True).click()
+            selector.select_option(beta['id']); card.get_by_role('button', name='Connect', exact=True).click()
             expect(card.get_by_role('button', name='Disconnect', exact=True)).to_be_visible(timeout=30000)
             # A refreshed inventory reauthorizes the explicit target; select it
             # again if the host snapshot replaced the connection state.
-            selector.select_option(alpha['id'])
+            selector.select_option(beta['id'])
             card.get_by_role('button', name='Inspect tools and permissions', exact=True).click()
             inspection.get_by_role('combobox', name='Tool to inspect', exact=True).select_option('add')
             expect(inspection.get_by_role('button', name='Call selected tool', exact=True)).not_to_be_visible()
@@ -364,7 +364,7 @@ def run(destination):
             inspection.get_by_role('textbox', name='Tool arguments', exact=True).fill('{"a":7,"b":5}')
             inspection.get_by_role('button', name='Call selected tool', exact=True).click()
             review = inspection.get_by_role('region', name='Review tool call', exact=True)
-            expect(review).to_contain_text(alpha['name']); expect(review).to_contain_text(alpha['id'])
+            expect(review).to_contain_text(beta['name']); expect(review).to_contain_text(beta['id'])
             assert len(mutations('call_mcp_tool')) == before_call
             review.get_by_role('button', name='Cancel tool call', exact=True).click()
             assert len(mutations('call_mcp_tool')) == before_call
@@ -372,7 +372,7 @@ def run(destination):
             review.get_by_role('button', name='Confirm tool call', exact=True).click()
             result = inspection.get_by_role('region', name='Tool result', exact=True)
             expect(result).to_contain_text('12', timeout=30000)
-            calls = mutations('call_mcp_tool'); assert len(calls) == before_call + 1 and calls[-1]['project'] == alpha['id']
+            calls = mutations('call_mcp_tool'); assert len(calls) == before_call + 1 and calls[-1]['project'] == beta['id']
             report['actual_stdio_result'] = json.loads(result.inner_text())
             assert state.mcp_registry().get('ui-settings-tools').approved_tools == ['add']
             # Same authenticated owner, but a connection-disallowed project: host must deny.
