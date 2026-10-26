@@ -151,3 +151,68 @@ it('refreshes newly created presets when the retained conversation becomes visib
  expect(await screen.findByRole('option',{name:'New scoped preset · internal',hidden:true})).toBeInTheDocument();
  expect(screen.getByLabelText('Message')).toHaveValue('Keep this draft while configuring tools');
 });
+
+it('advances an acknowledged autosave baseline while preserving newer typing and its next save',async()=>{
+ const a=row('autosave-ack'),errors=vi.fn();let acknowledge!:(value?:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {items:[]} as any;
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);if(body.changes.draft_text==='First edit')await new Promise(resolve=>acknowledge=resolve);
+   if(body.revision!==a.revision)throw Error('Revision changed');Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'First edit'}});await waitFor(()=>expect(acknowledge).toBeDefined());
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Newer edit'}});
+ await act(async()=>acknowledge());
+ await waitFor(()=>expect(a.draft_text).toBe('Newer edit'));
+ expect(screen.getByLabelText('Message')).toHaveValue('Newer edit');expect(sessionDrafts.get(a.id)?.saved).toBe('Newer edit');expect(sessionDrafts.get(a.id)?.dirty).toBe(false);expect(errors).not.toHaveBeenCalled();
+});
+
+it('still rejects a real external draft written after our acknowledged autosave',async()=>{
+ const a=row('autosave-external'),errors=vi.fn();let acknowledge!:(value?:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {items:[]} as any;
+  // The external writer changes the host after our ACK and before B's fresh read.
+  if(path.endsWith('?turns=false')&&a.draft_text==='First edit'&&sessionDrafts.get(a.id)?.saved==='First edit'&&sessionDrafts.get(a.id)?.text==='Newer local edit'){a.draft_text='Actual edit from another window';a.revision++;}
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);if(body.changes.draft_text==='First edit')await new Promise(resolve=>acknowledge=resolve);
+   if(body.revision!==a.revision)throw Error('Revision changed');Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'First edit'}});await waitFor(()=>expect(acknowledge).toBeDefined());
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Newer local edit'}});
+ await act(async()=>acknowledge());await waitFor(()=>expect(sessionDrafts.get(a.id)?.saved).toBe('First edit'));
+ await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({message:expect.stringContaining('changed in another window')})));
+ expect(a.draft_text).toBe('Actual edit from another window');expect(screen.getByLabelText('Message')).toHaveValue('Newer local edit');expect(sessionDrafts.get(a.id)?.saved).toBe('First edit');expect(sessionDrafts.get(a.id)?.dirty).toBe(true);
+ expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH'&&JSON.parse(init.body as string).changes.draft_text==='Newer local edit')).toBe(false);
+});
+
+it('preserves newer unsent text when another window wins the revision after our fresh read',async()=>{
+ const a=row('autosave-revision-conflict'),errors=vi.fn();let acknowledge!:(value?:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {items:[]} as any;
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);
+   if(body.changes.draft_text==='Acknowledged A')await new Promise(resolve=>acknowledge=resolve);
+   if(body.changes.draft_text==='Unsent B'){
+    // A different window commits after B's GET returned its revision.
+    a.draft_text='External C';a.revision++;
+    throw Object.assign(new Error('Session changed; reload before saving'),{status:409});
+   }
+   if(body.revision!==a.revision)throw Error('Fixture revision conflict');Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Acknowledged A'}});await waitFor(()=>expect(acknowledge).toBeDefined());
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Unsent B'}});
+ await act(async()=>acknowledge());
+ await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({status:409})));
+ expect(a.draft_text).toBe('External C');expect(screen.getByLabelText('Message')).toHaveValue('Unsent B');
+ expect(sessionDrafts.get(a.id)).toMatchObject({text:'Unsent B',saved:'Acknowledged A',dirty:true});
+ expect(vi.mocked(request).mock.calls.filter(([,init])=>init?.method==='PATCH'&&JSON.parse(init.body as string).changes.draft_text==='Unsent B')).toHaveLength(1);
+});

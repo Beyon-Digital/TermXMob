@@ -7,6 +7,7 @@ import {type Engine, type Project, type Provider, type Session} from '../lib/api
 import {listSessions, SessionCache} from '../lib/workspace-data';
 import {taskState} from '../lib/task-presentation';
 import './control-plane.css';
+import {latestExecutionTask} from '../lib/conversation-messages';
 
 export type ControlPage = 'overview' | 'projects' | 'tasks';
 export type ExecutionView = 'chat' | 'workbench' | 'review' | 'browser' | 'computer';
@@ -120,7 +121,7 @@ function RunInspector({row, enabled, onClose, onOpen}: {row: Session; enabled: b
     void read(); const timer = setInterval(() => void read(), 3000);
     return () => { stopped = true; cache.clear(); clearInterval(timer); };
   }, [row.id, enabled]);
-  const current = session || row, task = session?.turns?.at(-1)?.task;
+  const current = session || row, task = latestExecutionTask(session?.turns||[]);
   const pending = task?.approvals?.filter(approval => approval.status === 'pending') || [];
   return <aside className="control-inspector" aria-label="Run inspector"><div className="control-section-heading"><h2>Run inspector</h2><Button size="icon" variant="ghost" aria-label="Close run inspector" onClick={onClose}><X size={16}/></Button></div><Status value={task?.status || current.latest_status}/><h3>{current.title}</h3>
     {error && <p className="control-error" role="alert">{error}. Refreshing automatically; details may be stale.</p>}

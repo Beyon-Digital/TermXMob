@@ -1,0 +1,27 @@
+.chat-region.coding-session .chat-welcome{width:100%;min-height:100%;padding:32px 0 40px;box-sizing:border-box;text-align:left}
+.chat-welcome-content{width:100%;max-width:620px;margin:auto}
+.chat-welcome h2{font-size:clamp(24px,3cqw,34px);font-weight:550;line-height:1.25;letter-spacing:-1px;margin:0 0 14px;color:var(--foreground)}
+.chat-region.coding-session .chat-welcome p{max-width:520px;font-size:14px;line-height:1.7;color:var(--secondary);margin:0 0 28px}
+.chat-starters{display:grid;gap:4px}
+.chat-starters>button{display:flex;align-items:center;gap:14px;padding:12px 10px;text-align:left;border-radius:9px;background:transparent;transition:background .12s;width:100%;color:var(--foreground)}
+.chat-starters>button:hover{background:var(--surface)}
+.chat-starters>button>svg{flex-shrink:0;color:var(--secondary)}
+.chat-starters>button>svg:last-child{opacity:0}
+.chat-starters>button:is(:hover,:focus-visible)>svg:last-child{opacity:1}
+.chat-starters>button>span{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.chat-starters strong{font-size:13px;font-weight:500}
+.chat-starters small{font-size:12px;color:var(--secondary);line-height:1.5}
+.chat-connection-help{display:flex;align-items:center;gap:16px;padding:17px 0 0;margin-top:24px;border-top:1px solid var(--border)}
+.chat-connection-help>span{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px}
+.chat-connection-help strong{font-size:12px;font-weight:550}
+.chat-connection-help small{color:var(--secondary);font-size:12px;line-height:1.6}
+.chat-connection-help>.button{flex-shrink:0;font-size:12px}
+@container(max-width:520px){
+ .chat-region.coding-session .chat-welcome{padding:24px 0}
+ .chat-welcome h2{font-size:26px;letter-spacing:-.6px}
+ .chat-region.coding-session .chat-welcome p{font-size:13px;line-height:1.6;margin-bottom:18px}
+ .chat-starters>button{padding:10px 4px;gap:12px}
+ .chat-starters small{font-size:11px}
+ .chat-connection-help{align-items:flex-start;flex-direction:column;gap:10px;margin-top:18px}
+}
+@media(prefers-reduced-motion:reduce){.chat-starters>button{transition:none}}

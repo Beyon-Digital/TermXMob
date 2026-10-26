@@ -36,3 +36,23 @@
 .dock-terminal .terminal-host{flex:1;min-height:0;overflow:hidden;padding:8px}
 @media(max-width:850px){.workspace-view-actions>.button:not(:last-child){display:none}.workspace-shell .breadcrumb strong{max-width:170px}.workspace-view-actions{gap:0}}
 @media(max-width:460px){.workspace-shell .breadcrumb strong{max-width:110px}.workspace-view-actions>.button{width:25px}.workspace-shell .workspace-header{gap:3px}}
+
+/* Chat is the home surface. Tools appear only when requested. */
+.workspace-shell{--background:#1c1e20;--foreground:#e8e9e9;--surface:#242729;--sidebar:#17191b;--muted:#303437;--secondary:#afb4b7;--border:#34383b;--accent:#a5d6b4;--accent-soft:#293b30}
+:root[data-theme=light] .workspace-shell{--background:#fff;--foreground:#24282b;--surface:#f8f9f9;--sidebar:#f4f6f5;--muted:#e7ebea;--secondary:#5d666b;--border:#dce2df;--accent:#1d6d42;--accent-soft:#e5f1e9}
+.workspace-navigation.navigation-open:not(.navigation-floating)>.workspace-activity-rail{display:none}
+.workspace-shell .sidebar-brand{height:54px;min-height:54px;padding:0 8px}.workspace-shell .sidebar-brand strong{font-size:17px;font-weight:650;letter-spacing:-.7px}
+.workspace-shell .sidebar{padding:0 10px 10px}.workspace-shell .sidebar .sidebar-primary{width:100%;justify-content:flex-start;gap:12px;height:62px;padding:9px 11px;margin:1px 0 5px;border:1px solid transparent;border-radius:9px;text-align:left;font-size:13px}
+.workspace-shell .sidebar-primary.selected{border-color:var(--border);background:var(--surface)}.sidebar-primary>span:last-child{display:flex;flex-direction:column;gap:3px}.sidebar-primary small{font-size:11px;font-weight:400;color:var(--secondary)}
+.main-agent-mark{width:25px;height:27px;display:grid;grid-template-columns:repeat(3,4px);align-items:center;gap:3px;justify-content:center;flex:none}.main-agent-mark i{display:block;width:4px;height:14px;border-radius:3px;background:var(--accent)}.main-agent-mark i:nth-child(2){height:24px}.main-agent-mark i:nth-child(3){height:18px}
+.workspace-shell .sidebar-new{height:35px;font-size:13px;gap:10px;margin:4px 0 16px;padding-left:12px}.workspace-shell .sidebar-section-heading{font-size:12px;height:30px;padding-left:10px}.workspace-shell .sidebar-filters{font-size:11px}.sidebar-filters>label{font-size:11px;gap:3px;margin-top:8px}
+.workspace-shell .session-row,.workspace-shell .session-row>button{height:36px;font-size:13px;border-radius:6px}.workspace-shell .session-row>button{padding:7px 10px;gap:8px}.workspace-shell .row-actions{top:5px}.workspace-shell .sidebar-empty{font-size:12px;line-height:1.6;padding:12px}
+.workspace-shell .sidebar-operations{justify-content:flex-start;gap:9px;width:100%;font-size:12px;height:34px;padding:6px 9px}.workspace-shell .sidebar-behavior{margin-top:5px}.workspace-shell .sidebar-behavior .select{font-size:10px;color:var(--secondary)}
+.workspace-shell .workspace-header{height:50px;min-height:50px;background:var(--background);border-bottom-color:transparent;padding:0 18px}.workspace-shell .breadcrumb{font-size:12px}.workspace-shell .breadcrumb strong{font-size:14px;font-weight:550}.workspace-shell .layout-tabs{border:0}.workspace-shell .layout-tabs button{font-size:12px;padding:5px 10px}.workspace-shell .status-bar{background:var(--background);border-top-color:transparent}
+.conversation-home{display:flex;flex-direction:column;min-height:0;height:100%;width:100%;overflow:hidden}.conversation-home>.chat-region{flex:1;min-height:0}.main-agent-error{margin:12px 20px;padding:14px;border:1px solid var(--border);border-radius:9px;background:var(--surface);font-size:13px}.main-agent-error p{margin:0 0 10px}
+.new-chat-context{margin:2px 0 16px;padding:12px;border:1px solid var(--border);border-radius:8px}.new-chat-context summary{cursor:pointer;font-size:13px;font-weight:550}.new-chat-context p{font-size:12px;color:var(--secondary);line-height:1.5}.new-chat-context[open]>label{margin-top:12px}.new-chat-context .preset-picker{margin-top:12px}
+@media(max-width:850px){.workspace-shell .workspace-header{padding:0 10px;height:46px;min-height:46px}.workspace-shell .sidebar .sidebar-primary{height:60px}.workspace-shell .breadcrumb>span{display:none}.workspace-shell .breadcrumb strong{max-width:190px}.workspace-shell .layout-tabs{display:none}.conversation-home{max-width:100%}}
+@media(prefers-reduced-motion:reduce){.workspace-shell *{scroll-behavior:auto!important}}
+
+/* A lone conversation does not need a second row of Chat tabs. */
+.workspace-shell .dock-workspace[data-single-chat=true]>.dock-conversation>.dock-pane-header{display:none}

@@ -243,7 +243,8 @@ def test_waiting_plan_coordinator_accepts_team_without_live_worker(tmp_path):
             assert result['ok']
             child = result['members'][0]['task_id']
             delegation = next(e['payload'] for e in store.events(child) if e['type'] == 'task.delegation')
-            assert delegation == {'agent': 'Worker 0', 'task': 'Inspect area 0', 'call_id': 'swarm:waiting:0'}
+            assert {key:delegation[key] for key in ('agent','task','call_id')} == {'agent': 'Worker 0', 'task': 'Inspect area 0', 'call_id': 'swarm:waiting:0'}
+            assert len(delegation['dispatch_digest'])==64
             assert any(e['type'] == 'task.isolation' for e in store.events(child))
         finally:
             await asyncio.sleep(0)

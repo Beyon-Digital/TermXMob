@@ -441,6 +441,8 @@ class EngineGateway:
         task_id = task["id"]
         self._emit(task_id,"engine.configuration.resolved",cfg.as_dict())
         if on_created:on_created(task_id)
+        if await self._abort_stopped_start(task_id, adapter, binding):
+            return self._store.get_task(task_id, include_events=True) or task
         cfg.tools['managed_task_id']=task_id
         if workflow=='browser':
             # Trusted identity is bound later by the explicit browser handoff.
@@ -455,9 +457,15 @@ class EngineGateway:
             try:
                 binding = await adapter.create_session(cfg)
             except Exception as exc:
+                if await self._abort_stopped_start(task_id, adapter):
+                    return self._store.get_task(task_id, include_events=True) or task
                 self._store.update_task(task_id, status="failed", error=str(exc))
                 self._emit(task_id, "task.failed", {"message": str(exc)})
                 raise ValueError(f"{engine} session failed to start: {exc}") from exc
+            # Stop can arrive before a new binding exists. Its late session
+            # must be closed rather than enrolled and sent the cancelled prompt.
+            if await self._abort_stopped_start(task_id, adapter, binding):
+                return self._store.get_task(task_id, include_events=True) or task
             binding.conversation_id = conversation_id
             binding.extensions_snapshot['mcp_scope']=mcp_snapshot
             self._bindings[binding.binding_id] = binding
@@ -477,14 +485,20 @@ class EngineGateway:
                                     engine_native_id=binding.native_session_id)
             configure = getattr(adapter, "configure_session", None)
             if configure:
+                if await self._abort_stopped_start(task_id, adapter, binding):
+                    return self._store.get_task(task_id, include_events=True) or task
                 try:
                     await configure(binding, cfg)
                 except Exception as exc:
+                    if await self._abort_stopped_start(task_id, adapter, binding):
+                        return self._store.get_task(task_id, include_events=True) or task
                     self._store.update_task(task_id, status="failed", error=str(exc))
                     self._store.update_engine_session(binding.binding_id, task_id=task_id,
                                                       status="idle", payload=binding.as_dict())
                     self._emit(task_id, "task.failed", {"message": str(exc)})
                     raise ValueError(f"{engine} configuration failed: {exc}") from exc
+            if await self._abort_stopped_start(task_id, adapter, binding):
+                return self._store.get_task(task_id, include_events=True) or task
             self._store.update_engine_session(
                 binding.binding_id, task_id=task_id, status="active",
                 payload=binding.as_dict())
@@ -518,6 +532,8 @@ class EngineGateway:
         })
         if configuration is not None:
             self._emit(task_id, "engine.session.info", configuration)
+        if await self._abort_stopped_start(task_id, adapter, binding):
+            return self._store.get_task(task_id, include_events=True) or task
         try:
             text = prompt if not instructions else (
                 f'You are the "{custom_agent["name"]}" agent. Follow these '
@@ -528,10 +544,56 @@ class EngineGateway:
             else:
                 await adapter.send(binding, text)
         except Exception as exc:
+            if await self._abort_stopped_start(task_id, adapter, binding):
+                return self._store.get_task(task_id, include_events=True) or task
             self._store.update_task(task_id, status="failed", error=str(exc))
             self._emit(task_id, "task.failed", {"message": str(exc)})
             raise ValueError(f"{engine} turn failed to start: {exc}") from exc
         return self._store.get_task(task_id, include_events=True) or task
+
+    async def _abort_stopped_start(self, task_id: str, adapter: EngineAdapter,
+                                  binding: EngineSessionBinding | None = None) -> bool:
+        """Recheck durable Stop after native startup/configuration yields.
+
+        Cancellation may have no binding to interrupt yet. A session returned
+        later belongs to that stopped attempt and must never receive its prompt.
+        Cleanup failures remain visible; they never restore dispatch authority.
+        """
+        task = self._store.get_task(task_id)
+        if task and task['status'] in {'running', 'planning', 'awaiting_approval'}:
+            return False
+        failure = None
+        if binding is not None:
+            if binding.status != 'closed':
+                try:
+                    await adapter.cancel(binding)
+                except Exception as exc:
+                    failure = exc
+                if binding.status != 'closed':
+                    try:
+                        await adapter.close(binding)
+                    except Exception as exc:
+                        failure = exc
+                    else:
+                        failure = None  # A confirmed close also settles a failed interrupt.
+                else:
+                    failure = None
+            self._bindings.pop(binding.binding_id, None)
+            self._binding_task.pop(binding.binding_id, None)
+            self._result_buffers.pop(binding.binding_id, None)
+            record = self._store.get_engine_session(binding.binding_id)
+            if record:
+                self._store.update_engine_session(binding.binding_id, status='lost', payload=binding.as_dict())
+        current = self._store.get_task(task_id)
+        if current and current['status'] == 'cancelling':
+            self._store.update_task(task_id, status='cancelled', error='Cancelled before the native turn started')
+            self._emit(task_id, 'task.cancelled', {'message':'Cancelled before the native turn started'})
+        if failure is not None:
+            message = 'Task stopped before dispatch; native session cleanup could not be confirmed. Restart the engine before continuing.'
+            if current:
+                self._emit(task_id, 'engine.session.cleanup.failed', {'message':message, 'error_type':type(failure).__name__})
+            raise ValueError(message) from failure
+        return True
 
     async def cancel(self, task_id: str) -> dict[str, Any] | None:
         task = self._store.get_task(task_id)
@@ -677,6 +739,13 @@ class EngineGateway:
 
     def _finish_turn(self, binding_id: str, task_id: str,
                      payload: dict[str, Any]) -> None:
+        current = self._store.get_task(task_id)
+        if current is None or current['status'] in {'completed', 'failed', 'cancelled'}:
+            # The raw engine event is already persisted by on_engine_event.
+            # A delayed/duplicate completion cannot replace a confirmed outcome
+            # or produce another task terminal event for orchestration listeners.
+            self._result_buffers.pop(binding_id, None)
+            return
         status = str(payload.get("status") or "completed")
         final_text = payload.get("result")
         result = "".join(self._result_buffers.pop(binding_id, [])) or (final_text if isinstance(final_text, str) else None)

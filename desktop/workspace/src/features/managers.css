@@ -6,3 +6,5 @@
 .provider-capabilities label.manager-field{display:grid}.provider-capabilities label:not(.manager-field),.manager-choice{flex-direction:row;align-items:center;gap:10px}.manager-choice{min-height:44px;font-size:13px}
 
 .model-catalog-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.model-catalog-actions button{white-space:normal;text-align:left}
+
+.provider-account-form>label,.provider-account-form>details>label{display:grid;gap:7px;font-size:13px}.provider-account-form>details>label{margin:14px 0}.provider-destination{overflow-wrap:anywhere;margin:0}.provider-destination strong{font-weight:500;color:var(--foreground)}.provider-test-dialog dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 18px;font-size:13px;line-height:1.6}.provider-test-dialog dt{color:var(--secondary)}.provider-test-dialog dd{margin:0;overflow-wrap:anywhere}

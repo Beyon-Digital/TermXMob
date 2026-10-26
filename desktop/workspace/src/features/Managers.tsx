@@ -6,6 +6,7 @@ import CloudAccounts from './CloudAccounts';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import { request } from '../lib/api';
 import './managers.css';
 import ProviderAccountForm from './ProviderAccountForm';
@@ -47,6 +48,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [search, setSearch] = useState(''), [version, setVersion] = useState(0);
   const [draft, setDraft] = useState<Row>({}), [preview, setPreview] = useState<Row | null>(null), [selected, setSelected] = useState<string>('');
   const [editingProvider,setEditingProvider]=useState<Row|null>(null);
+  const [testProvider,setTestProvider]=useState<Row|null>(null);
   const [editingMemory,setEditingMemory]=useState<Row|null>(null);
   const [editingPreset,setEditingPreset]=useState<Row|null>(null);
   useEffect(()=>{setEditingMemory(null);setEditingPreset(null)},[section,projectId]);
@@ -104,7 +106,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
         <details><summary>Account sign-in</summary><Input aria-label={`Sign-in method for ${engine.label}`} placeholder="Method ID from engine account settings" value={draft[`method-${engine.id}`] || ''} onChange={e => change(`method-${engine.id}`, e.target.value)} />{action('Sign in', () => mutate(() => gql('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}', { id: engine.id, method: draft[`method-${engine.id}`] || '' }), 'Sign-in request completed'))}</details>
       </Item>)}{preview && <details open><summary>Selected engine capabilities/catalog</summary><Json value={preview} /></details>}
       {me.principal?.id&&<ModelFavoritesManager ownerId={me.principal.id} engines={data.engines||[]} accounts={data.agent_providers||[]} search={search}/>}
-      <h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider: Row) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => mutate(() => gql('mutation($id:String!){test_agent_provider(provider_id:$id)}', { id: provider.id }), 'Provider connection tested'), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
+      <h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider: Row) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => setTestProvider(provider), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
       {admin && editingProvider && <ProviderAccountForm key={editingProvider.id} account={editingProvider as any} busy={busy} onCancel={()=>setEditingProvider(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account updated');if(result!==null)setEditingProvider(null);return result}}/>}
       {admin && <details><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={input=>mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account saved')}/></details>}
       {admin && <details><summary>Install a compatible engine</summary><div className="manager-form">{input('registryId', 'Registry package ID')}{action('Refresh registry', () => mutate(() => gql('mutation{refresh_acp_registry}'), 'Registry refreshed'))}{action('Install engine', () => mutate(() => gql('mutation($id:String!){install_acp_runner(registry_id:$id)}', { id: draft.registryId }), 'Engine installed'))}<Json value={data.acp_registry} /></div></details>}<p className="manager-help">Choose an engine or model in each chat composer. Account changes do not retarget running sessions. API-key providers and subscription engines use separate billing.</p></>}
@@ -152,6 +154,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       </>}
       </>}
     </main>
+    <Dialog open={!!testProvider} onOpenChange={open=>{if(!open)setTestProvider(null)}}>{testProvider&&<DialogContent className="provider-test-dialog"><DialogTitle>Test {testProvider.name||testProvider.id}?</DialogTitle><DialogDescription>This sends a short model request to your provider. Provider charges may apply.</DialogDescription><dl><dt>Destination</dt><dd>{testProvider.base_url||'Configured provider endpoint'}</dd><dt>Model</dt><dd>{testProvider.model||'No default model selected'}</dd><dt>Test message</dt><dd>Reply with only OK.</dd></dl>{!testProvider.model&&<p role="alert">Edit this account and choose a default model before sending a test.</p>}<div className="manager-item-actions"><Button variant="secondary" onClick={()=>setTestProvider(null)}>Cancel test</Button><Button disabled={busy||!testProvider.model} onClick={()=>{const provider=testProvider;setTestProvider(null);void mutate(async()=>{const result=await gql('mutation($id:String!){test_agent_provider(provider_id:$id)}',{id:provider.id});const response=result.test_agent_provider;if(response?.status!=='connected'&&response?.ok!==true)throw new Error(response?.message||'The provider did not confirm the test request.');return result},'Provider connection tested',false)}}>Send test request</Button></div></DialogContent>}</Dialog>
   </section>;
 }
 export default Managers;

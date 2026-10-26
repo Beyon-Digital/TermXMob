@@ -24,14 +24,14 @@ export const RUN_PROFILES=[
 const sections=[{id:'agent',label:'Agent',icon:Bot},{id:'tools',label:'Tools',icon:Wrench},{id:'execution',label:'Runtime',icon:Cpu},{id:'voice',label:'Voice',icon:Mic}] as const;
 type Section=typeof sections[number]['id'];
 
-export type SessionSettingsProps={open:boolean;onOpenChange:(open:boolean)=>void;session:Session|null;running:boolean;turnsCount:number;ownerId?:string;visible?:boolean;
+export type SessionSettingsProps={coordinating?:boolean;open:boolean;onOpenChange:(open:boolean)=>void;session:Session|null;running:boolean;turnsCount:number;ownerId?:string;visible?:boolean;
  runnerOptions:Runner[];runnerAccounts:RunnerAccount[];
  engines:Engine[];providers:Provider[];models:string[];favorites:string[];favoriteKey:string;
  onFavorite:()=>void;onEngine:(engine:string)=>void;
  patch:(changes:Record<string,unknown>)=>Promise<void>;onError:(error:unknown)=>void;onRefresh:()=>void;
  reply:string;onTranscript:(text:string)=>void;onConversationSettings:()=>void};
 
-export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,onEngine,patch,onError,reply,onTranscript,onConversationSettings}:SessionSettingsProps){
+export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,onEngine,patch,onError,reply,onTranscript,onConversationSettings,coordinating=false}:SessionSettingsProps){
  const [section,setSection]=useState<Section>('agent'),[savingProfile,setSavingProfile]=useState<string|null>(null);
  useEffect(()=>{setSection('agent');setSavingProfile(null)},[session?.id,open]);
  const [presets,setPresets]=useState<AgentPreset[]>([]),[presetsLoading,setPresetsLoading]=useState(false);
@@ -49,8 +49,9 @@ export default function SessionSettings({open,onOpenChange,session,running,turns
   <nav className="session-settings-nav" aria-label="Session settings sections">{sections.map(item=>{const Icon=item.icon;return <button key={item.id} type="button" aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)}><Icon size={15}/>{item.label}</button>})}</nav>
   <div className="session-settings-content">
    {section==='agent'&&<section className="session-settings-pane" aria-label="Agent settings">
-    <label>Engine<Select aria-label="Session engine" value={session.engine} disabled={running} onChange={event=>{onOpenChange(false);onEngine(event.target.value)}}>{engineChoices.map(item=><option key={item.id} value={item.id}>{item.name||item.id}</option>)}</Select></label>
-    {turnsCount>0&&<p className="control-description">Switching engines creates a linked conversation with the context you choose.</p>}
+    <label>Engine<Select aria-label="Session engine" value={session.engine} disabled={running||coordinating} onChange={event=>{if(coordinating)return;onOpenChange(false);onEngine(event.target.value)}}>{engineChoices.map(item=><option key={item.id} value={item.id}>{item.name||item.id}</option>)}</Select></label>
+    {coordinating&&<p className="control-description">Main agent uses Internal Agent for delegation. Start a focused chat to use other installed engines.</p>}
+    {!coordinating&&turnsCount>0&&<p className="control-description">Switching engines creates a linked conversation with the context you choose.</p>}
     <div className="agent-preset-field"><PresetPicker loading={presetsLoading} presets={presets} value={session.custom_agent_id} disabled={presetLocked} onChange={id=>void patch({custom_agent_id:id})}/>
      {session.custom_agent_id&&<Button size="sm" variant="ghost" disabled={presetLocked} onClick={()=>void patch({custom_agent_id:session.custom_agent_id})}>Refresh preset binding</Button>}
      {session.engine!=='internal'&&!!turnsCount&&<p className="control-description">This conversation keeps its current agent preset.</p>}

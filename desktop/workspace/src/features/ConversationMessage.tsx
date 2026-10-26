@@ -105,11 +105,15 @@ function ResponseLoader({task}: {task: Task}) {
 function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise, onRefresh, onError}: Props) {
   const [copied, setCopied] = useState(false);
   const content = task ? text || taskResponseText(task) : text;
-  const ongoing = taskIsActive(task?.status);
+  const report=task?.coordination_report;
+  const reportStatus=report?.source_status||({'task.completed':'completed','task.failed':'failed','task.cancelled':'cancelled','approval.requested':'awaiting_approval','task.recovery.blocked':'recovery_confirmation_required'} as Record<string,string>)[report?.kind||''];
+  const reportState=reportStatus==='unavailable'?{label:'Unavailable',tone:'failed'}:reportStatus?taskState(reportStatus):{label:'Update',tone:''};
+  const ongoing = !report&&taskIsActive(task?.status);
   async function copy() {try {await navigator.clipboard.writeText(content); setCopied(true);} catch (error) {onError(error);}}
   if (role === 'user') return <Message from="user"><MessageContent><p className="user-message-text">{text}</p></MessageContent></Message>;
   return <Message from="assistant"><MessageContent>
-    {task && <RunActivity key={task.id} task={task} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible}/>}
+    {report&&<div className="coordination-report-source" role="note" aria-label="Delegated agent report"><Bot size={16} aria-hidden="true"/><span><strong>{report.label||'Delegated agent'}</strong><small>Direct agent report</small></span><span className={'coordination-report-status '+reportState.tone}>{reportState.label}</span>{report.source_task_id&&<Button size="sm" variant="ghost" onClick={()=>onSupervise(report.source_task_id!)}>Open source task</Button>}</div>}
+    {task && !report && <RunActivity key={task.id} task={task} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible}/>}
     {content ? <ConversationResponse onOpenFile={onOpenFile} mode={ongoing ? 'streaming' : 'static'} isAnimating={ongoing}>{content}</ConversationResponse> : task ? <ResponseLoader task={task}/> : null}
     {task?.error && <div className="response-error" role="alert"><CircleAlert size={16} aria-hidden="true"/><div><strong>The task stopped with an error</strong><p>{task.error}</p><Button size="sm" variant="ghost" onClick={() => onSupervise(task.id)}>Review task</Button></div></div>}
     {task && (['recovery_confirmation_required', 'paused'].includes(task.status) || (task.status === 'awaiting_approval' && !task.approvals?.some(approval => approval.status === 'pending'))) && <div className="task-attention" role="status"><span>{task.status === 'recovery_confirmation_required' ? 'Recovery needs your confirmation.' : task.status === 'paused' ? 'This task is paused.' : 'This task needs your approval.'}</span><Button variant="outline" size="sm" onClick={() => onSupervise(task.id)}>Review task</Button></div>}
@@ -118,7 +122,7 @@ function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise
       : <GeneralApprovalCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError}/>)}
     {(content || task) && <div className="response-actions message-actions" aria-label="Response actions">
       {content && <Button size="icon" variant="ghost" aria-label={copied ? 'Answer copied' : 'Copy answer'} title={copied ? 'Copied' : 'Copy answer'} onClick={() => void copy()}>{copied ? <Check size={15}/> : <Copy size={15}/>}</Button>}
-      {task && <Button variant="ghost" size="icon" onClick={() => onSupervise(task.id)} aria-label="Inspect task" title="Inspect task"><MoreHorizontal size={16}/></Button>}
+      {task && !report && <Button variant="ghost" size="icon" onClick={() => onSupervise(task.id)} aria-label="Inspect task" title="Inspect task"><MoreHorizontal size={16}/></Button>}
     </div>}
   </MessageContent></Message>;
 }

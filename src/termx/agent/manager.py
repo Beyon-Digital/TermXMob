@@ -1636,6 +1636,11 @@ class AgentManager:
             if linked:
                 prior = self.store.get_task(str(linked))
                 if prior is not None:
+                    if prior.get('engine')=='coordination':
+                        # The workspace supplies a fresh, permission-filtered
+                        # child snapshot. Stored report references are not
+                        # model turns and must never bypass that live check.
+                        continue
                     entry["task_status"] = prior["status"]
                     entry["result"] = str(
                         prior.get("result") or prior.get("error") or ""
@@ -1998,11 +2003,14 @@ class AgentManager:
         task: dict[str, Any],
         call: ProviderCall,
         cancel: asyncio.Event,
+        *, verified_target: dict[str, Any] | None = None,
+        target_authorize: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         # Isolation preparation yields to other calls. Reserve admission through
         # child registration so concurrent callers cannot exceed the same cap.
         async with self._spawn_locks[task_id]:
-            return await self._spawn_subagent_locked(task_id, task, call, cancel)
+            return await self._spawn_subagent_locked(task_id, task, call, cancel,
+                **({'verified_target':verified_target,'target_authorize':target_authorize} if verified_target else {}))
 
     async def _spawn_subagent_locked(
         self,
@@ -2010,7 +2018,26 @@ class AgentManager:
         task: dict[str, Any],
         call: ProviderCall,
         cancel: asyncio.Event,
+        *, verified_target: dict[str, Any] | None = None,
+        target_authorize: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
+        dispatch_digest = hashlib.sha256(json.dumps({'arguments':call.arguments,'target':verified_target}, sort_keys=True).encode()).hexdigest()
+        if target_authorize:
+            target_authorize()
+        # Tool replay after a disconnected response must return the existing
+        # durable child, never create a second action for the same call ID.
+        for existing in self.store.children(task_id):
+            delegation = self.store.events(existing['id'], event_types=('task.delegation',), tail_limit=1)
+            if not delegation or delegation[-1]['payload'].get('call_id') != call.call_id:
+                continue
+            previous = delegation[-1]['payload']
+            if previous.get('dispatch_digest') != dispatch_digest:
+                return {'ok':False, 'error':'Delegation call ID was reused with changed content; inspect the existing child', 'task_id':existing['id']}
+            orchestrator = getattr(self,'orchestrator',None)
+            relation = next((row for row in orchestrator.store.list('delegated_session') if row['task_id']==existing['id']),None) if orchestrator else None
+            return {'ok':existing['status'] not in {'failed','cancelled'}, 'status':existing['status'],
+                'task_id':existing['id'], 'session_id':relation['id'] if relation else None,
+                'reused':True, 'result':str(existing.get('result') or existing.get('error') or '')[:4000]}
         current = self.store.get_task(task_id)
         if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
             return {'ok': False, 'error': 'The coordinator is no longer accepting sub-agents'}
@@ -2054,16 +2081,20 @@ class AgentManager:
         def attach(child_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
             nonlocal isolation
             created_ids.append(child_id)
+            if target_authorize:
+                target_authorize()
             self._subscribers[child_id].add(queue)
             if self.browser:
                 authority=self.browser.records.get('agent-task-authority',task_id)
-                if authority:self.browser.records.put('agent-task-authority',child_id,{**authority,'id':child_id,'delegated_by':task_id})
+                if authority:self.browser.records.put('agent-task-authority',child_id,{**authority,'id':child_id,'delegated_by':task_id,
+                    **({'project_id':verified_target['project_id']} if verified_target else {})})
             child = self._task(child_id)
             if child_execution == 'worktree':
                 record = self.store.task_worktree(child_id)
                 isolation = {'kind':'worktree', 'path':child['cwd'], 'branch':record['branch'],
-                             'base_ref':record['base_ref'], 'base_path':task['cwd'], 'automatic_apply':False}
-            self._emit(child_id, 'task.delegation', {'agent':agent, 'task':prompt, 'call_id':call.call_id})
+                             'base_ref':record['base_ref'], 'base_path':verified_target['cwd'] if verified_target else task['cwd'], 'automatic_apply':False}
+            self._emit(child_id, 'task.delegation', {'agent':agent, 'task':prompt, 'call_id':call.call_id,'dispatch_digest':dispatch_digest,
+                **({'project_id':verified_target['project_id'],'source_cwd':verified_target['cwd']} if verified_target else {})})
             self._emit(child_id, 'task.isolation', isolation)
             handle = _SubagentHandle(parent_id=task_id, child_id=child_id, call_id=call.call_id,
                                      agent=agent, queue=queue, parent_cancel=cancel)
@@ -2072,13 +2103,15 @@ class AgentManager:
             # Enroll and supervise the worker before provider planning yields.
             # The desktop can inspect/cancel it even while creation is pending.
             self._emit(task_id, 'subagent.started', {'call_id':call.call_id, 'agent':agent,
-                       'task':prompt, 'child_id':child_id, 'isolation':isolation})
+                       'task':prompt, 'child_id':child_id, 'isolation':isolation,
+                       **({'project_id':verified_target['project_id'],'source_cwd':verified_target['cwd']} if verified_target else {})})
             handle.watcher = asyncio.create_task(self._watch_child(task_id, handle),
                                                 name=f'termx-subagent-{child_id[:8]}')
 
         child_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
         child_mode='ask' if str(call.arguments.get('mode') or '').strip().lower()=='ask' else 'agent'
-        child_cwd=task['cwd'];child_execution='direct';isolation={'kind':'read-only','path':child_cwd}
+        child_cwd=verified_target['cwd'] if verified_target else task['cwd']
+        child_execution='direct';isolation={'kind':'read-only','path':child_cwd}
         snapshot_path=None
         if child_mode=='agent':
             if await asyncio.to_thread(worktrees.git_root,child_cwd):
@@ -2106,6 +2139,8 @@ class AgentManager:
             if snapshot_path:await asyncio.to_thread(shutil.rmtree, snapshot_path, True)
             return {'ok': False, 'error': 'Coordinator stopped while preparing the worker workspace'}
         try:
+            if target_authorize:
+                target_authorize()
             child = await _race_cancel(self.create_task(
             prompt=child_prompt,
             cwd=child_cwd,
@@ -2144,8 +2179,17 @@ class AgentManager:
         # The parent's approved plan covers the delegation itself, so the child's
         # plan is approved on its behalf; its consequential tool checks are
         # escalated to the parent for the user to decide.
+        if target_authorize:
+            try:target_authorize()
+            except (PermissionError,ValueError,KeyError):
+                self.cancel(child_id)
+                raise
         await self._auto_approve(child_id, kind="plan")
-        return {"ok": True, "status": "running", "task_id": child_id}
+        orchestrator = getattr(self,'orchestrator',None)
+        metadata = orchestrator.store.get('task',child_id) if orchestrator else None
+        relation = orchestrator.relation((metadata or {}).get('conversation_id') or '') if orchestrator else None
+        return {"ok": True, "status": "running", "task_id": child_id,
+            'session_id':relation['id'] if relation else None}
 
     async def _watch_child(self, parent_id: str, handle: _SubagentHandle) -> None:
         """Relay a child's events onto the parent's stream until it terminates.
@@ -2328,11 +2372,22 @@ class AgentManager:
         targets, missing = self._subagent_targets(task_id, call)
         cancelled: list[str] = []
         already_finished: list[str] = []
+        user_controlled: list[str] = []
         for child_id, handle in targets.items():
             if handle.done.is_set():
                 already_finished.append(child_id)
                 continue
-            self.cancel(child_id)
+            orchestrator=getattr(self,'orchestrator',None)
+            if orchestrator:
+                with orchestrator.store.lock:
+                    metadata=orchestrator.store.get('task',child_id)
+                    relation=orchestrator.relation((metadata or {}).get('conversation_id') or '')
+                    if relation and relation['control_owner']=='user':
+                        user_controlled.append(child_id)
+                        continue
+                    self.cancel(child_id)
+            else:
+                self.cancel(child_id)
             cancelled.append(child_id)
             self._emit(
                 task_id,
@@ -2340,10 +2395,11 @@ class AgentManager:
                 {"call_id": call.call_id, "child_id": child_id, "agent": handle.agent},
             )
         return {
-            "ok": not missing,
+            "ok": not missing and not user_controlled,
             "cancelled": cancelled,
             "already_finished": already_finished,
             "missing": missing,
+            'user_controlled':user_controlled,
         }
 
     def _escalate_child_approval(
@@ -2353,6 +2409,12 @@ class AgentManager:
         agent: str,
         approval: dict[str, Any],
     ) -> None:
+        parent=self.store.get_task(task_id)
+        if not parent or parent['status'] not in ACTIVE_STATUSES or parent['status']=='cancelling':
+            # A child may finish or request permission after the coordinator's
+            # turn ends. Its own decision remains durable; never resurrect the
+            # terminal parent or fabricate a worker waiting for that decision.
+            return
         inner = dict(approval.get("payload") or {})
         inner.pop("history", None)
         inner.pop("remaining_calls", None)
@@ -2381,7 +2443,16 @@ class AgentManager:
             if kind is not None and approval["kind"] != kind:
                 continue
             try:
-                await self.resolve_approval(task_id, approval["id"], "approved")
+                orchestrator=getattr(self,'orchestrator',None)
+                if orchestrator:
+                    with orchestrator.store.lock:
+                        metadata=orchestrator.store.get('task',task_id)
+                        relation=orchestrator.relation((metadata or {}).get('conversation_id') or '')
+                        if relation and relation['control_owner']=='user':
+                            return
+                        await self.resolve_approval(task_id, approval["id"], "approved")
+                else:
+                    await self.resolve_approval(task_id, approval["id"], "approved")
             except (KeyError, ValueError):
                 continue
 

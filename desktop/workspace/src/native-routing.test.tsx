@@ -35,7 +35,7 @@ it.each([
  ['/session/conversation%20with%20spaces', {selected:'conversation with spaces',manager:''}],
  ['/?layout=workbench', {selected:'',manager:''}],
  ['/manage/agents', {selected:'',manager:'agents'}],
- ['/', {selected:'',manager:'overview'}],
+ ['/', {selected:'',manager:''}],
 ])('restores the requested authenticated surface after sign-out: %s',(initial,expected)=>{
  history.replaceState(null,'',initial);
  expect(workspaceRoute()).toEqual(expected);

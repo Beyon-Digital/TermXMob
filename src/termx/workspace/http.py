@@ -19,6 +19,15 @@ class Input(BaseModel):
     model_config=ConfigDict(extra='forbid')
 
 
+class OrchestratorInput(Input):
+    session_id: str | None = Field(default=None,min_length=1,max_length=128)
+
+
+class ChildControlInput(Input):
+    owner: str
+    revision: int = Field(ge=1)
+
+
 class SessionInput(Input):
     title: str=Field(default='',max_length=200)
     project_id: str | None=None
@@ -279,6 +288,23 @@ def mount_workspace(app,state):
     @router.get('/sessions')
     def sessions(request:Request,query:str='',archived:bool=False,project_id:str|None=None):
         return {'sessions':call(workspace.sessions,principal(request),query=query,archived=archived,project_id=project_id)}
+
+    @router.get('/orchestrator')
+    def orchestrator(request:Request):
+        return call(workspace.orchestrator.snapshot,principal(request))
+
+    @router.post('/orchestrator/ensure')
+    def ensure_orchestrator(request:Request,body:OrchestratorInput):
+        return call(workspace.orchestrator.ensure,principal(request),**body.model_dump())
+
+    @router.get('/orchestrator/activity')
+    def orchestrator_activity(request:Request,after:int=0):
+        if after<0:raise HTTPException(400,'Activity cursor must be nonnegative')
+        return call(workspace.orchestrator.activity,principal(request),after=after)
+
+    @router.post('/orchestrator/children/{identifier}/control')
+    def orchestrator_control(request:Request,identifier:str,body:ChildControlInput):
+        return call(workspace.orchestrator.control,principal(request),identifier,**body.model_dump())
 
     @router.post('/sessions')
     def create_session(request:Request,body:SessionInput):
@@ -594,8 +620,11 @@ def mount_workspace(app,state):
 
     @router.post('/tasks/{identifier}/steer')
     async def steer(request:Request,identifier:str,body:TaskMessage):
-        actor=principal(request);call(workspace.record,actor,'task',identifier,scope='agent-control')
+        actor=principal(request);metadata=call(workspace.record,actor,'task',identifier,scope='agent-control')
         task=state.agent_store.get_task(identifier)
+        if not task:raise HTTPException(404,'Task not found')
+        if task['status'] not in {'running','awaiting_approval'}:raise HTTPException(409,'Only an active task can be steered')
+        call(workspace.orchestrator.claim_user,actor,metadata.get('conversation_id') or '')
         if getattr(state,'runner_agents',None) and state.runner_agents.owns(task):
             return call(state.runner_agents.steer,identifier,body.message)
         if task.get('engine','internal')!='internal':

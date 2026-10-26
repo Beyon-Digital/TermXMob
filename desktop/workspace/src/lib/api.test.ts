@@ -29,6 +29,18 @@ it('rejects a backslash-normalized foreign origin',async()=>{
 });
 
 describe('refresh failure recovery',()=>{
+ it('shows ordinary sign-in for a fresh browser without posting a refresh with no CSRF proof',async()=>{
+  document.cookie='termx_csrf=; Max-Age=0';
+  const signedOut=vi.fn();window.addEventListener('termx-signed-out',signedOut);
+  const fetch=vi.fn(async(_path:string)=>new Response('{}',{status:401}));vi.stubGlobal('fetch',fetch);
+  try{await expect(request('/auth/me')).rejects.toMatchObject({status:401,message:'Session expired or revoked. Sign in again.'});expect(fetch.mock.calls.map(([path])=>path)).toEqual(['/auth/me','/auth/me']);expect(signedOut).not.toHaveBeenCalled();}
+  finally{window.removeEventListener('termx-signed-out',signedOut);}
+ });
+ it('preserves current access without a readable CSRF cookie when the current-session check succeeds',async()=>{
+  document.cookie='termx_csrf=; Max-Age=0';let reads=0;
+  const fetch=vi.fn(async(path:string)=>new Response(path==='/auth/me'?'{}':'{"ok":true}',{status:path==='/auth/me'?200:reads++?200:401}));vi.stubGlobal('fetch',fetch);
+  expect(await request('/api/fixture')).toEqual({ok:true});expect(fetch.mock.calls.some(([path])=>path==='/auth/refresh')).toBe(false);
+ });
  it.each([403,429,500,503])('keeps the workspace signed in when refresh returns HTTP %s',async(status)=>{
   const signedOut=vi.fn();window.addEventListener('termx-signed-out',signedOut);
   vi.stubGlobal('fetch',vi.fn(async(path:string)=>new Response('{}',{status:path==='/auth/refresh'?status:401})));

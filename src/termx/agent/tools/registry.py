@@ -150,7 +150,9 @@ class ToolRegistry:
         return self._specs.get(call.name)
 
     _SUBAGENT_TOOLS = frozenset(
-        {"spawn_subagent", "await_subagents", "subagent_status", "cancel_subagent"}
+        {"spawn_subagent", "await_subagents", "subagent_status", "cancel_subagent",
+         "managed_session_status", "message_managed_session", "cancel_managed_session",
+         "list_agent_projects", "spawn_project_agent"}
     )
 
     def provider_tools(

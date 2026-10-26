@@ -112,3 +112,13 @@
 .chat-region.coding-session .composer-mode-chip{height:28px;font-size:11px;font-weight:400;padding:0 6px;color:var(--secondary);gap:5px}
 .dock-floating-chat.chat-compact .coding-session>.composer-container{max-height:none}
 @container(max-width:340px){.chat-region.coding-session .composer-mode-chip{padding:0 3px}.chat-region.coding-session .composer-mode-chip>svg:first-child{display:none}.chat-region.coding-session .model-effort-label{display:none}}
+
+/* Keep follow-ups and uncertain dispatch recovery within the conversation. */
+.chat-region.coding-session .composer-retry{display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.55;padding:9px 10px;background:var(--warning-soft);border:1px solid var(--warning);border-radius:9px;color:var(--foreground);margin-bottom:10px}
+.composer-retry>span{flex:1;min-width:0}.composer-retry>.button{flex-shrink:0;color:var(--foreground);font-size:11px}
+.composer-action-error{font-size:12px;line-height:1.5;color:var(--destructive);margin:0 3px 10px;overflow-wrap:anywhere}
+.chat-region.coding-session .composer-controls>.composer-queue{font-size:11px;height:29px;gap:5px;padding:0 6px;flex-shrink:0;color:var(--foreground)}
+.model-connection-notice{padding:12px 14px;border:1px solid var(--border);border-radius:12px;margin:4px 0 20px;background:var(--background)}
+.model-connection-notice p{font-size:12px;line-height:1.6;color:var(--secondary);margin:0 0 10px}
+.model-connection-notice p:last-child{margin:0}
+@container(max-width:520px){.chat-region.coding-session .composer-controls>.composer-queue{width:27px;padding:0;justify-content:center}.composer-queue>span{display:none}.chat-region.coding-session .composer-retry{align-items:flex-start;flex-direction:column;gap:3px}}

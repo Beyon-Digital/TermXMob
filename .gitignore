@@ -40,3 +40,7 @@ desktop/src-tauri/resources/backend.pid
 desktop/signing.env
 # CI-pinned runtime package integrity must be versioned.
 !desktop/runtime/package-lock.json
+
+# Isolated UI audit captures and CLI session metadata
+.playwright-cli/
+out/
