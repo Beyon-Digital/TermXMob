@@ -198,7 +198,7 @@ def run(destination):
                     raise RuntimeError('Owned test browser startup timed out')
                 sleep(.05)
             debug_port = port_file.read_text().splitlines()[0]
-            browser = playwright.chromium.connect_over_cdp('http://127.0.0.1:' + debug_port, timeout=15000)
+            browser = playwright.chromium.connect_over_cdp('http://127.0.0.1:' + debug_port, timeout=60000)
             context = browser.new_context(viewport={'width': 1440, 'height': 900}, reduced_motion='reduce')
             def network(route):
                 if route.request.url.startswith(base + '/'):

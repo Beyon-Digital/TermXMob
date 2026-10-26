@@ -95,6 +95,7 @@ def run(destination):
             sleep(.05)
         page = browser = context = playwright = chrome = None
         try:
+            print('Stage: owned host started; starting browser driver', flush=True)
             playwright = sync_playwright().start()
             executable = os.environ.get('TERMX_TEST_CHROMIUM') or shutil.which('chromium')
             if not executable and sys.platform == 'darwin':
@@ -114,7 +115,9 @@ def run(destination):
                 if chrome.poll() is not None or monotonic() > deadline:
                     raise RuntimeError('Owned browser did not expose its debug endpoint')
                 sleep(.05)
-            browser = playwright.chromium.connect_over_cdp('http://127.0.0.1:' + port_file.read_text().splitlines()[0], timeout=15000)
+            print('Stage: owned Chrome endpoint ready; connecting', flush=True)
+            browser = playwright.chromium.connect_over_cdp('http://127.0.0.1:' + port_file.read_text().splitlines()[0], timeout=60000)
+            print('Stage: browser connected; opening isolated context', flush=True)
             context = browser.new_context(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
             def network(route):
                 request = route.request
@@ -311,6 +314,8 @@ def run(destination):
             expect(hook_review).to_contain_text(alpha['name']); expect(hook_review).to_contain_text(alpha['path'])
             before = len(posts('/api/workspace/hooks'))
             hook_review.get_by_role('button', name='Cancel review', exact=True).click()
+            expect(hook_review).not_to_be_visible()
+            expect(hook_form.get_by_label('Executable and arguments (one per line)', exact=True)).to_have_value(json.dumps([sys.executable, '-c', 'print("synthetic hook")']))
             assert len(posts('/api/workspace/hooks')) == before
             hook_form.get_by_role('button', name='Review disabled hook', exact=True).click()
             hook_review.get_by_role('button', name='Save disabled hook', exact=True).click()
@@ -367,6 +372,8 @@ def run(destination):
             expect(review).to_contain_text(beta['name']); expect(review).to_contain_text(beta['id'])
             assert len(mutations('call_mcp_tool')) == before_call
             review.get_by_role('button', name='Cancel tool call', exact=True).click()
+            expect(review).not_to_be_visible()
+            expect(inspection.get_by_role('textbox', name='Tool arguments', exact=True)).to_have_value('{"a":7,"b":5}')
             assert len(mutations('call_mcp_tool')) == before_call
             inspection.get_by_role('button', name='Call selected tool', exact=True).click()
             review.get_by_role('button', name='Confirm tool call', exact=True).click()

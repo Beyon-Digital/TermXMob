@@ -4,6 +4,7 @@ import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-libra
 import SettingsSurface,{SettingsNavigation,useSettingsRequest} from './SettingsSurface';
 import {canonicalSettingsCategory,isSettingsCategory,settingsCategories} from '../lib/settings-categories';
 import {request} from '../lib/api';
+import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 vi.mock('../lib/api',()=>({request:vi.fn()}));
 afterEach(()=>{cleanup();vi.restoreAllMocks()});
 function Harness(){const [category,setCategory]=useState('memory'),[open,setOpen]=useState(true);return open?<SettingsSurface category={category} onSelect={setCategory} onClose={()=>setOpen(false)}><Form name="first"/><Form name="second"/></SettingsSurface>:<button>Workspace</button>}
@@ -14,6 +15,28 @@ it('guards Escape and leaves edits in place when discard is refused',()=>{vi.spy
 it('successful writes clean only their unchanged form; another draft remains protected',async()=>{vi.mocked(request).mockResolvedValue({});const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);render(<Harness/>);fireEvent.change(screen.getByRole('textbox',{name:'first'}),{target:{value:'first edit'}});fireEvent.change(screen.getByRole('textbox',{name:'second'}),{target:{value:'second edit'}});fireEvent.click(screen.getByRole('button',{name:'Save first'}));await waitFor(()=>expect(request).toHaveBeenCalled());fireEvent.click(screen.getByRole('button',{name:'Hooks'}));expect(confirm).toHaveBeenCalled();expect(screen.getByRole('textbox',{name:'second'})).toHaveValue('second edit')});
 it('a failed save and edits made while a save is in flight remain dirty',async()=>{let resolve!:(value:unknown)=>void;vi.mocked(request).mockImplementation(()=>new Promise(r=>resolve=r));vi.spyOn(window,'confirm').mockReturnValue(false);render(<Harness/>);fireEvent.change(screen.getByRole('textbox',{name:'first'}),{target:{value:'old'}});fireEvent.click(screen.getByRole('button',{name:'Save first'}));fireEvent.change(screen.getByRole('textbox',{name:'first'}),{target:{value:'new'}});resolve({});await waitFor(()=>expect(screen.getByText('Unsaved settings changes')).toBeInTheDocument());fireEvent.click(screen.getByRole('button',{name:'Hooks'}));expect(screen.getByRole('textbox',{name:'first'})).toHaveValue('new')});
 it('reviews destructive actions before invoking an existing handler and supports cancellation',()=>{render(<Harness/>);const button=screen.getByRole('button',{name:'Delete first'}),handler=vi.fn();button.addEventListener('click',handler);fireEvent.click(button);expect(handler).not.toHaveBeenCalled();const review=screen.getByRole('dialog',{name:'Delete first?'});fireEvent.click(within(review).getByRole('button',{name:'Cancel'}));expect(handler).not.toHaveBeenCalled();fireEvent.click(button);fireEvent.click(screen.getByRole('button',{name:'Confirm delete first'}));expect(handler).toHaveBeenCalledOnce()});
+it('cancels only an action review while preserving a dirty hook draft and its category leave guard',()=>{
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
+ function ReviewedHookDraft(){
+  const [category,setCategory]=useState('hooks'),[review,setReview]=useState(false);
+  return <SettingsSurface category={category} onSelect={setCategory} onClose={()=>{}}><form aria-label="Hook draft"><label>Hook command<input defaultValue="./before-turn"/></label><button type="button" onClick={()=>setReview(true)}>Review hook</button></form><Dialog open={review} onOpenChange={setReview}><DialogContent data-reviewed-action><DialogTitle>Review lifecycle hook</DialogTitle><DialogDescription>Review the exact hook command before saving.</DialogDescription><button type="button" onClick={()=>setReview(false)}>Cancel review</button></DialogContent></Dialog></SettingsSurface>;
+ }
+ render(<ReviewedHookDraft/>);
+ fireEvent.change(screen.getByRole('textbox',{name:'Hook command'}),{target:{value:'./keep-this-draft'}});
+ fireEvent.click(screen.getByRole('button',{name:'Review hook'}));
+ const review=screen.getByRole('dialog',{name:'Review lifecycle hook'});
+ fireEvent.click(within(review).getByRole('button',{name:'Cancel review'}));
+ expect(screen.queryByRole('dialog',{name:'Review lifecycle hook'})).not.toBeInTheDocument();
+ expect(screen.getByRole('dialog',{name:'Settings'})).toBeInTheDocument();
+ expect(confirm).not.toHaveBeenCalled();
+ expect(screen.getByRole('textbox',{name:'Hook command'})).toHaveValue('./keep-this-draft');
+ expect(screen.getByText('Unsaved settings changes')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Memory'}));
+ expect(confirm).toHaveBeenCalledOnce();
+ expect(confirm).toHaveBeenCalledWith('Discard unsaved settings changes?');
+ expect(screen.getByRole('button',{name:'Hooks'})).toHaveAttribute('aria-current','page');
+ expect(screen.getByRole('textbox',{name:'Hook command'})).toHaveValue('./keep-this-draft');
+});
 it('validates legacy div forms before dispatching their save handler',()=>{const save=vi.fn();render(<SettingsSurface category="access" onSelect={()=>{}} onClose={()=>{}}><div className="manager-form"><input aria-label="Retention" type="number" min={1} max={90} defaultValue={0}/><button onClick={save}>Save retention</button></div></SettingsSurface>);fireEvent.click(screen.getByRole('button',{name:'Save retention'}));expect(save).not.toHaveBeenCalled();expect(screen.getByLabelText('Retention')).toHaveFocus();expect(screen.getByRole('alert')).toBeInTheDocument()});
 
 it('fits the visual viewport as a mobile keyboard opens and removes listeners on close',()=>{const viewport=Object.assign(new EventTarget(),{height:844,offsetTop:0});const remove=vi.spyOn(viewport,'removeEventListener');vi.stubGlobal('visualViewport',viewport);const view=render(<Harness/>);const dialog=screen.getByRole('dialog');expect(dialog.style.getPropertyValue('--settings-viewport-height')).toBe('844px');viewport.height=420;viewport.offsetTop=35;act(()=>{viewport.dispatchEvent(new Event('resize'))});expect(dialog.style.getPropertyValue('--settings-viewport-height')).toBe('420px');expect(dialog.style.getPropertyValue('--settings-viewport-top')).toContain('35px');expect(dialog.style.getPropertyValue('--settings-viewport-bottom')).toBe('auto');view.unmount();expect(remove).toHaveBeenCalledTimes(2);vi.unstubAllGlobals()});
