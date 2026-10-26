@@ -146,7 +146,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
 
       {section === 'extensions' && <ExtensionManager key={projectId||'global'} data={data} projectId={projectId} search={search} onChanged={()=>setVersion(v=>v+1)}/>}
 
-      {section === 'connections' && <McpManager projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
+      {section === 'connections' && <McpManager ownerKey={me.principal?.id?(me.host_id||location.origin)+':'+me.principal.id:undefined} projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
 
       {section === 'access' && <>{admin&&<Disclosure title="Host connectivity"><LanTlsSettings/><HostServiceSettings/></Disclosure>}{me.principal?.id && me.session_id && me.host_id && <Disclosure title="Pair a device"><ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/></Disclosure>}<h2>Your sessions</h2><p className="manager-help">{data.access?.role || 'Member'} · {data.access?.runtime_boundary || 'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>
       {(data.sessions || []).filter(matches).map((session:Row) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>

@@ -256,8 +256,13 @@ def run(destination):
             member = state.identity.create_local_user('readonly-settings', 'synthetic-readonly-password-2026', ['files-read', 'files-write', 'agent-view'])
             state.authorization.set_role(member.id, 'operator')
             state.authorization.grant_project(member.id, alpha['id'], ['files-read', 'agent-view'])
-            credentials = asyncio.run(state.identity.login('local-password', {'username': 'readonly-settings', 'password': 'synthetic-readonly-password-2026'}, peer='settings-fixture'))
-            with httpx.Client(base_url=base, headers={'Authorization': 'Bearer ' + credentials.access_token}, timeout=15) as client:
+            # Playwright owns an event loop here; exercise the actual login HTTP
+            # route rather than nesting asyncio.run inside its greenlet.
+            with httpx.Client(base_url=base, timeout=15) as login_client:
+                login = login_client.post('/auth/login', json={'username': 'readonly-settings', 'password': 'synthetic-readonly-password-2026', 'transport': 'bearer'})
+                assert login.status_code == 200, login.text
+                member_token = login.json()['access_token']
+            with httpx.Client(base_url=base, headers={'Authorization': 'Bearer ' + member_token}, timeout=15) as client:
                 response = client.get('/api/workspace/skill-sources', params={'project_id': alpha['id']})
                 assert response.status_code == 200, response.text
                 roots = response.json()['roots']; assert len(roots) == 1 and roots[0]['editable'] is False

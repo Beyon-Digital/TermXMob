@@ -178,6 +178,89 @@ def test_graphql_scopes_compare_swap_and_write_only_credential(tmp_path):
     assert patched['data']['patch_custom_agent']['mcp_connections']==links
 
 
+def _graphql_reviewed_mcp_fixture(tmp_path):
+    """Deterministic GraphQL boundary; no MCP process, network or provider call."""
+    identity,state,client,owner=client_fixture(tmp_path)
+    root=tmp_path/'reviewed-project';root.mkdir();project=state.projects.register(str(root))
+    conn=definition(allowed_projects=[project['id']],approved_tools=['add']);state.mcp_registry().save(conn)
+    effects=[];catalog_reads=[];pool_entries=[];before_authorize=[]
+
+    def catalog(conn_id,*,project_id=None):
+        catalog_reads.append((conn_id,project_id))
+        return {'tools':[{'name':'add','inputSchema':{'type':'object'}}]}
+
+    async def call_tool(conn_id,tool,arguments,*,project_id=None,authorize=None):
+        pool_entries.append((conn_id,project_id))
+        for change in before_authorize:change()
+        assert authorize is not None
+        authorize(state.mcp_registry().get(conn_id))
+        effects.append({'connection':conn_id,'tool':tool,'arguments':arguments,'project':project_id})
+        return {'structured_content':{'fixture':'effect recorded'}}
+
+    state.mcp_pool=SimpleNamespace(catalog=catalog,call_tool=call_tool)
+
+    def call(arguments,*,digest=None,include_digest=True,headers=None):
+        query='mutation($id:String!,$project:String!,$input:McpToolCallInput!,$digest:String){call_mcp_tool(conn_id:$id,tool:"add",input:$input,project_id:$project,expected_definition_digest:$digest)}'
+        variables={'id':conn.id,'project':project['id'],'input':{'arguments':arguments}}
+        if include_digest:variables['digest']=digest
+        else:query=query.replace(',$digest:String','').replace(',expected_definition_digest:$digest','')
+        response=client.post('/graphql',headers=owner if headers is None else headers,json={'query':query,'variables':variables})
+        assert response.status_code==200,response.text
+        return response.json()
+
+    return SimpleNamespace(identity=identity,state=state,conn=conn,project=project,call=call,
+                           effects=effects,catalog_reads=catalog_reads,pool_entries=pool_entries,
+                           before_authorize=before_authorize)
+
+
+def test_graphql_reviewed_mcp_stale_digest_rejected_before_pool_or_effect(tmp_path):
+    fixture=_graphql_reviewed_mcp_fixture(tmp_path)
+    result=fixture.call({'a':2,'b':3},digest='stale-reviewed-definition')
+    assert result['errors'][0]['extensions']['http_status']==409
+    assert 'definition changed' in result['errors'][0]['message']
+    assert fixture.catalog_reads==[] and fixture.pool_entries==[] and fixture.effects==[]
+
+
+@pytest.mark.parametrize('include_digest',[True,False],ids=['reviewed-digest','legacy-omission'])
+def test_graphql_reviewed_mcp_matching_digest_and_legacy_keep_exact_effect(tmp_path,include_digest):
+    fixture=_graphql_reviewed_mcp_fixture(tmp_path)
+    arguments={'a':2,'b':3,'metadata':{'record':'fixture-7','flags':[True,False]}}
+    result=fixture.call(arguments,digest=definition_digest(fixture.conn),include_digest=include_digest)
+    assert not result.get('errors'),result
+    assert result['data']['call_mcp_tool']['result']=={'structured_content':{'fixture':'effect recorded'}}
+    assert fixture.effects==[{'connection':fixture.conn.id,'tool':'add','arguments':arguments,'project':fixture.project['id']}]
+    assert fixture.pool_entries==[(fixture.conn.id,fixture.project['id'])]
+
+
+def test_graphql_reviewed_mcp_denies_authority_before_digest_or_effect(tmp_path,monkeypatch):
+    import termx.graphql.domains.chat as chat_domain
+    fixture=_graphql_reviewed_mcp_fixture(tmp_path)
+    actor=fixture.identity.create_local_user('mcp-no-project-grant',PASSWORD,list(ROLES['operator']))
+    fixture.state.authorization.set_role(actor.id,'operator',trusted_execution=True)
+    token=asyncio.run(fixture.identity.login('local-password',{'username':'mcp-no-project-grant','password':PASSWORD},peer='local')).access_token
+    comparisons=[]
+    monkeypatch.setattr(chat_domain,'definition_digest',lambda conn:comparisons.append(conn.id) or 'current')
+    result=fixture.call({'a':2},digest='stale',headers={'Authorization':'Bearer '+token})
+    assert result['errors'][0]['extensions']['http_status']==403
+    assert comparisons==[] and fixture.catalog_reads==[] and fixture.pool_entries==[] and fixture.effects==[]
+
+
+def test_graphql_reviewed_mcp_rechecks_live_definition_before_final_pool_effect(tmp_path):
+    fixture=_graphql_reviewed_mcp_fixture(tmp_path)
+    reviewed=definition_digest(fixture.conn)
+
+    def change_definition():
+        current=fixture.state.mcp_registry().get(fixture.conn.id)
+        current.label='Changed after the GraphQL entry check'
+        fixture.state.mcp_registry().save(current,expected_digest=reviewed)
+
+    fixture.before_authorize.append(change_definition)
+    result=fixture.call({'a':2,'b':3},digest=reviewed)
+    assert result['errors'][0]['extensions']['http_status']==409
+    assert 'definition changed' in result['errors'][0]['message']
+    assert fixture.pool_entries==[(fixture.conn.id,fixture.project['id'])] and fixture.effects==[]
+
+
 def test_internal_manager_actual_mcp_transport_and_revoked_effect(tmp_path):
     from termx.agent.providers import ProviderCall,ProviderTurn
     from termx.mcp.task_broker import McpTaskBroker

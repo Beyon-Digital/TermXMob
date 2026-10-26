@@ -7,21 +7,46 @@ import McpConnectionForm,{type McpDefinition,type McpProject} from './McpConnect
 type Catalog={tools?:{name:string;description?:string;inputSchema?:unknown}[]};
 type Connection={id:string;label:string;definition:McpDefinition;definition_digest:string;credential_configured:boolean;catalog?:Catalog;runtime:{connected?:boolean;catalog?:Catalog};auth_url_pending?:string;trust:string;allowed_projects:string[];transport:string};
 type ReviewedCall={connection:Connection;tool:string;target:string|null;arguments:Record<string,unknown>;text:string;inspection:number};
+type CallReceipt={state:'pending'|'uncertain';started_at:number;attempt:string};
+type UnconfirmedCall={key:string;call:ReviewedCall;receipt:CallReceipt};
+const receiptPrefix='termx-mcp-call-v1:',receiptLimit=64;
+function canonical(value:unknown):string{
+ if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+ if(value!==null&&typeof value==='object')return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical((value as Record<string,unknown>)[key])).join(',')+'}';
+ const text=JSON.stringify(value);if(text===undefined)throw Error('Tool arguments cannot be canonicalized.');return text;
+}
+async function receiptKey(owner:string,call:ReviewedCall){
+ if(!crypto.subtle)throw Error('This browser cannot protect tool call receipts. No call was sent.');
+ const hash=async(text:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');
+ return receiptPrefix+await hash(owner)+':'+await hash(canonical([owner,call.connection.id,call.connection.definition_digest,call.target,call.tool,call.arguments]));
+}
+function readReceipt(key:string):CallReceipt|null{
+ const raw=sessionStorage.getItem(key);if(raw===null)return null;
+ const value=JSON.parse(raw) as Partial<CallReceipt>;
+ if(!value||!['pending','uncertain'].includes(value.state||'')||typeof value.started_at!=='number'||!Number.isFinite(value.started_at)||typeof value.attempt!=='string'||!value.attempt||value.attempt.length>64||Object.keys(value).some(key=>!['state','started_at','attempt'].includes(key)))throw Error('The previous tool call receipt cannot be read safely. Review its outcome before starting another instruction.');
+ return value as CallReceipt;
+}
+function writeReceipt(key:string,value:CallReceipt){
+ if(sessionStorage.getItem(key)===null){let count=0;for(let index=0;index<sessionStorage.length;index++)if(sessionStorage.key(index)?.startsWith(receiptPrefix))count++;if(count>=receiptLimit)throw Error('There are 64 unconfirmed tool calls. Review their outcomes before starting another instruction.');}
+ const text=JSON.stringify(value);sessionStorage.setItem(key,text);if(sessionStorage.getItem(key)!==text)throw Error('The tool call receipt could not be preserved. No new call was sent.');
+}
+function removeReceipt(key:string,attempt:string){if(readReceipt(key)?.attempt!==attempt)return;sessionStorage.removeItem(key);if(sessionStorage.getItem(key)!==null)throw Error('The tool call receipt could not be cleared. Review the previous outcome before another instruction.');}
 async function gql<T>(query:string,variables:Record<string,unknown>={}){const result=await baseRequest<{data:T;errors?:{message:string}[]}>('/graphql',json('POST',{query,variables}));if(result.errors?.length)throw new Error(result.errors.map(error=>error.message).join('\n'));return result.data}
-export default function McpManager({projectId,admin,search,version,onChanged}:{projectId:string|null;admin:boolean;search:string;version:number;onChanged:()=>void}){
+export default function McpManager({projectId,admin,search,version,onChanged,ownerKey}:{projectId:string|null;admin:boolean;search:string;version:number;onChanged:()=>void;ownerKey?:string}){
  const beginSave=useSettingsSave();
  const [connections,setConnections]=useState<Connection[]>([]),[projects,setProjects]=useState<McpProject[]>([]),[editing,setEditing]=useState<Connection|null>(null),[inspecting,setInspecting]=useState<Connection|null>(null),[catalog,setCatalog]=useState<Catalog|null>(null),[tool,setTool]=useState(''),[targets,setTargets]=useState<Record<string,string>>({}),[argumentsText,setArguments]=useState('{}'),[advanced,setAdvanced]=useState(false),[reviewed,setReviewed]=useState<ReviewedCall|null>(null),[result,setResult]=useState<unknown>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const generation=useRef(0),inspection=useRef(0),flight=useRef<symbol|null>(null);
+ const [unconfirmed,setUnconfirmed]=useState<UnconfirmedCall|null>(null),[acknowledged,setAcknowledged]=useState(false);
  useEffect(()=>{
   const ticket=++generation.current;inspection.current++;flight.current=null;
-  setLoading(true);setError('');setNotice('');setEditing(null);setInspecting(null);setCatalog(null);setTargets({});setAdvanced(false);setReviewed(null);setResult(null);setBusy(false);
+  setLoading(true);setError('');setNotice('');setEditing(null);setInspecting(null);setCatalog(null);setTargets({});setAdvanced(false);setReviewed(null);setUnconfirmed(null);setAcknowledged(false);setResult(null);setBusy(false);
   gql<{mcp_connections:Connection[];projects:McpProject[]}>('query($project:String){mcp_connections(project_id:$project){id label transport trust allowed_projects definition definition_digest credential_configured catalog runtime auth_url_pending} projects{id name}}',{project:admin?null:projectId}).then(value=>{if(ticket===generation.current){setConnections(value.mcp_connections);setProjects(value.projects)}}).catch(reason=>{if(ticket===generation.current)setError(reason instanceof Error?reason.message:String(reason))}).finally(()=>{if(ticket===generation.current)setLoading(false)});
   return()=>{generation.current++;inspection.current++};
- },[projectId,admin,version]);
+ },[projectId,admin,version,ownerKey]);
  async function mutate(fn:()=>Promise<unknown>,message:string,refresh=true,persisted=false){
   if(flight.current)return false;
   const operation=Symbol(),ticket=generation.current,saved=persisted?beginSave():undefined;flight.current=operation;setBusy(true);setError('');setNotice('');
-  try{await fn();if(ticket!==generation.current)return false;setNotice(message);saved?.();if(refresh)onChanged();return true}
+  try{const outcome=await fn();if(ticket!==generation.current||outcome===false)return false;setNotice(message);saved?.();if(refresh)onChanged();return true}
   catch(reason){if(ticket===generation.current)setError(reason instanceof Error?reason.message:String(reason));return false}
   finally{if(ticket===generation.current&&flight.current===operation){flight.current=null;setBusy(false)}}
  }
@@ -35,7 +60,7 @@ export default function McpManager({projectId,admin,search,version,onChanged}:{p
  const targetLabel=(target:string|null)=>target===null?'This host (administrator)':projects.find(project=>project.id===target)?.name||target||'Choose an execution project';
  const approved=(connection:Connection,name:string)=>connection.definition.approved_tools.includes('*')||connection.definition.approved_tools.includes(name);
  const usable=(connection:Connection)=>canUse(connection)&&connection.trust==='trusted'&&connection.definition.enabled;
- function invalidateCall(){inspection.current++;setReviewed(null);setResult(null);setError('');setNotice('')}
+ function invalidateCall(){inspection.current++;setReviewed(null);setUnconfirmed(null);setAcknowledged(false);setResult(null);setError('');setNotice('')}
  function inspect(connection:Connection,nextCatalog=connection.catalog||connection.runtime.catalog||null){invalidateCall();setInspecting(connection);setCatalog(nextCatalog);setTool('');setArguments('{}');setAdvanced(false)}
  function chooseTarget(connection:Connection,target:string){invalidateCall();setTargets(current=>({...current,[connection.id]:target}))}
  async function connect(connection:Connection){
@@ -47,7 +72,7 @@ export default function McpManager({projectId,admin,search,version,onChanged}:{p
   },'Connection checked for '+targetLabel(target));
  }
  function reviewCall(){
-  if(!inspecting||!usable(inspecting)||!approved(inspecting,tool)||!catalog?.tools?.some(item=>item.name===tool)||flight.current)return;
+  if(!ownerKey||!inspecting||!usable(inspecting)||!approved(inspecting,tool)||!catalog?.tools?.some(item=>item.name===tool)||flight.current)return;
   setError('');setResult(null);setReviewed(null);
   try{
    const args:unknown=JSON.parse(argumentsText);
@@ -59,12 +84,30 @@ export default function McpManager({projectId,admin,search,version,onChanged}:{p
  }
  function confirmCall(){
   const call=reviewed;
-  if(!call||!inspecting||call.inspection!==inspection.current||call.connection.id!==inspecting.id||call.connection.definition_digest!==inspecting.definition_digest||call.tool!==tool||call.target!==targetFor(inspecting)||!usable(inspecting)||!approved(inspecting,call.tool))return;
+  if(!ownerKey||!call||!inspecting||call.inspection!==inspection.current||call.connection.id!==inspecting.id||call.connection.definition_digest!==inspecting.definition_digest||call.tool!==tool||call.target!==targetFor(inspecting)||!usable(inspecting)||!approved(inspecting,call.tool))return;
   setReviewed(null);const ticket=generation.current;
   void mutate(async()=>{
-   const response=await gql<{call_mcp_tool:unknown}>('mutation($id:String!,$tool:String!,$input:McpToolCallInput!,$project:String){call_mcp_tool(conn_id:$id,tool:$tool,input:$input,project_id:$project)}',{id:call.connection.id,tool:call.tool,input:{arguments:call.arguments},project:call.target});
-   if(ticket===generation.current&&call.inspection===inspection.current)setResult(response.call_mcp_tool);
+   const key=await receiptKey(ownerKey,call);if(ticket!==generation.current||call.inspection!==inspection.current)return false;
+   const previous=readReceipt(key);
+   if(previous){setUnconfirmed({key,call,receipt:previous});setAcknowledged(false);throw Error('An identical tool call has an unconfirmed outcome. It will not be repeated automatically.');}
+   const receipt:CallReceipt={state:'pending',started_at:Date.now(),attempt:crypto.randomUUID()};writeReceipt(key,receipt);
+   try{
+    const response=await gql<{call_mcp_tool:unknown}>('mutation($id:String!,$tool:String!,$input:McpToolCallInput!,$project:String,$digest:String){call_mcp_tool(conn_id:$id,tool:$tool,input:$input,project_id:$project,expected_definition_digest:$digest)}',{id:call.connection.id,tool:call.tool,input:{arguments:call.arguments},project:call.target,digest:call.connection.definition_digest});
+    if(ticket===generation.current&&call.inspection===inspection.current)setResult(response.call_mcp_tool);
+    removeReceipt(key,receipt.attempt);
+   }catch(reason){
+    // The pool rechecks authority after tool execution too. Even a 4xx error
+    // cannot prove that a non-idempotent service action did not happen.
+    const uncertain:CallReceipt={...receipt,state:'uncertain'};try{if(readReceipt(key)?.attempt===receipt.attempt)writeReceipt(key,uncertain)}catch{/* The original pending receipt remains protective. */}
+    if(ticket===generation.current&&call.inspection===inspection.current){setUnconfirmed({key,call,receipt:uncertain});setAcknowledged(false)}
+    throw reason;
+   }
   },'Selected tool completed for '+targetLabel(call.target),false);
+ }
+ function acknowledgeInstruction(){
+  if(!unconfirmed||!acknowledged||busy)return;
+  try{if(readReceipt(unconfirmed.key)?.attempt!==unconfirmed.receipt.attempt)throw Error('The earlier call receipt changed. Inspect this instruction again before acknowledging it.');removeReceipt(unconfirmed.key,unconfirmed.receipt.attempt);setUnconfirmed(null);setAcknowledged(false);setReviewed(null);setError('');setNotice('Acknowledged as a new instruction. Review the exact tool call again before confirming.');}
+  catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
  }
  return <section aria-label="Tool connection configuration"><h2>Tool connections</h2>
   <p className="manager-help">Choose an execution target for each connection. Only accessible projects in its allowlist are offered. The host checks current permissions before resolving credentials, connecting or calling a tool.</p>
@@ -81,8 +124,9 @@ export default function McpManager({projectId,admin,search,version,onChanged}:{p
    <details><summary>Exact connection configuration</summary><pre role="region" tabIndex={0} aria-label="Connection configuration" className="manager-json">{JSON.stringify(inspecting.definition,null,2)}</pre></details>
    {catalog?.tools?.length?<><label>Tool to inspect<select aria-label="Tool to inspect" value={tool} disabled={busy} onChange={event=>{invalidateCall();setTool(event.target.value);setAdvanced(false)}}><option value="">Select a catalog tool</option>{catalog.tools.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
     {tool&&<><p>{catalog.tools.find(item=>item.name===tool)?.description}</p><pre role="region" tabIndex={0} aria-label="Selected tool input schema" className="manager-json">{JSON.stringify(catalog.tools.find(item=>item.name===tool)?.inputSchema,null,2)}</pre>
-     <details key={inspecting.id+':'+tool} open={advanced}><summary onClick={event=>{event.preventDefault();setAdvanced(value=>!value);setReviewed(null)}}>Advanced · run this tool</summary>{advanced&&<><p>This explicitly calls the connected service and can change it. This is a direct settings action, outside a conversation’s approval flow.</p><p>Execution target: <strong>{targetLabel(targetFor(inspecting))}</strong></p><p>The connection must be trusted and enabled, and the selected tool must be approved. The host rechecks authority when it receives the call.</p><label>Tool arguments<textarea aria-label="Tool arguments" disabled={busy} value={argumentsText} onChange={event=>{invalidateCall();setArguments(event.target.value)}}/></label><Button disabled={busy||!usable(inspecting)||!approved(inspecting,tool)} onClick={reviewCall}>Call selected tool</Button>
-      {reviewed&&<section aria-label="Review tool call"><h4>Confirm this tool call</h4><p>Connection: {reviewed.connection.label} ({reviewed.connection.id})</p><p>Tool: {reviewed.tool}</p><p>Execution target: {targetLabel(reviewed.target)}{reviewed.target&&' ('+reviewed.target+')'}</p><pre role="region" tabIndex={0} aria-label="Exact tool call arguments" className="manager-json">{reviewed.text}</pre><Button disabled={busy} onClick={confirmCall}>Confirm tool call</Button><Button variant="secondary" disabled={busy} onClick={()=>setReviewed(null)}>Cancel tool call</Button></section>}
+     <details key={inspecting.id+':'+tool} open={advanced}><summary onClick={event=>{event.preventDefault();setAdvanced(value=>!value);setReviewed(null)}}>Advanced · run this tool</summary>{advanced&&<><p>This explicitly calls the connected service and can change it. This is a direct settings action, outside a conversation’s approval flow.</p><p>Execution target: <strong>{targetLabel(targetFor(inspecting))}</strong></p><p>The connection must be trusted and enabled, and the selected tool must be approved. The host rechecks authority when it receives the call.</p>{!ownerKey&&<p>Tool execution requires a verified account and host identity.</p>}<label>Tool arguments<textarea aria-label="Tool arguments" disabled={busy} value={argumentsText} onChange={event=>{invalidateCall();setArguments(event.target.value)}}/></label><Button disabled={busy||!ownerKey||!!unconfirmed||!usable(inspecting)||!approved(inspecting,tool)} onClick={reviewCall}>Call selected tool</Button>
+      {reviewed&&<section aria-label="Review tool call"><h4>Confirm this tool call</h4><p>Connection: {reviewed.connection.label} ({reviewed.connection.id})</p><p>Tool: {reviewed.tool}</p><p>Reviewed definition: {reviewed.connection.definition_digest}</p><p>Execution target: {targetLabel(reviewed.target)}{reviewed.target&&' ('+reviewed.target+')'}</p><pre role="region" tabIndex={0} aria-label="Exact tool call arguments" className="manager-json">{reviewed.text}</pre><Button disabled={busy} onClick={confirmCall}>Confirm tool call</Button><Button variant="secondary" disabled={busy} onClick={()=>setReviewed(null)}>Cancel tool call</Button></section>}
+      {unconfirmed&&<section role="status" aria-label="Unconfirmed tool call"><h4>Earlier tool call outcome is unconfirmed</h4><p>The call may still be running or may have changed the service. This identical instruction is blocked, including after reopening this panel.</p><p>Connection: {unconfirmed.call.connection.label} ({unconfirmed.call.connection.id})</p><p>Tool: {unconfirmed.call.tool}</p><p>Reviewed definition: {unconfirmed.call.connection.definition_digest}</p><p>Execution target: {targetLabel(unconfirmed.call.target)}{unconfirmed.call.target&&' ('+unconfirmed.call.target+')'}</p><pre role="region" tabIndex={0} aria-label="Unconfirmed tool call arguments" className="manager-json">{unconfirmed.call.text}</pre><p>Check the service or its records first. A new instruction does not cancel the earlier call or prevent repeated effects.</p><label><span><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event=>setAcknowledged(event.target.checked)}/>I reviewed this exact call and authorize a new instruction that may repeat its effects.</span></label><Button disabled={busy||!acknowledged} onClick={acknowledgeInstruction}>Acknowledge new instruction</Button></section>}
      </>}
      </details>
     </>}
