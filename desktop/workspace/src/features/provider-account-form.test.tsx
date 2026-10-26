@@ -4,14 +4,15 @@ import ProviderAccountForm from './ProviderAccountForm';
 afterEach(cleanup);
 it('guides provider selection, clears a key when its destination changes, and keeps capabilities advanced',()=>{
  render(<ProviderAccountForm busy={false} onSave={vi.fn()}/>);
- expect(screen.getByLabelText('Provider')).toHaveValue('openai');
+ const provider=screen.getByRole('combobox',{name:'Provider',exact:true});
+ expect(provider).toHaveAccessibleName('Provider');expect(provider).toHaveValue('openai');
  expect(screen.queryByLabelText('Provider API address')).not.toBeInTheDocument();
  fireEvent.change(screen.getByLabelText('API key'),{target:{value:'synthetic-write-only'}});
- fireEvent.change(screen.getByLabelText('Provider'),{target:{value:'openrouter'}});
+ fireEvent.change(provider,{target:{value:'openrouter'}});
  expect(screen.getByLabelText('API key')).toHaveValue('');
  expect(screen.getByText('https://openrouter.ai/api/v1')).toBeInTheDocument();
  expect(screen.getByText('Advanced account options').closest('details')).not.toHaveAttribute('open');
- fireEvent.change(screen.getByLabelText('Provider'),{target:{value:'custom'}});
+ fireEvent.change(provider,{target:{value:'custom'}});
  expect(screen.getByLabelText('Provider API address')).toHaveValue('');
  expect(screen.getByRole('button',{name:'Save account'})).toBeDisabled();
 });
