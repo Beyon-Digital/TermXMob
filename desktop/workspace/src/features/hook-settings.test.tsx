@@ -126,3 +126,38 @@ it('bounds the initial catalog page and exposes additional authorized projects e
  expect(api.request.mock.calls.filter(([path])=>path.startsWith('/api/workspace/hooks?'))).toHaveLength(20);expect(api.request.mock.calls.some(([path])=>path.endsWith('project_id=project-20'))).toBe(false);
  fireEvent.click(screen.getByRole('button',{name:'Load more projects'}));await waitFor(()=>expect(api.request.mock.calls.some(([path])=>path.endsWith('project_id=project-20'))).toBe(true));expect(writes()).toHaveLength(0);
 });
+
+it.each([
+ ['create','unmount'],['create','lock'],['enable','unmount'],['enable','lock'],
+])('releases a stale %s preparation receipt after %s without dispatching or blocking the remounted review',async(kind,boundary)=>{
+ const previous=api.request.getMockImplementation()!;
+ let hold=false,settle!: (value:{hooks:Hook[]})=>void,signal:AbortSignal|undefined;
+ api.request.mockImplementation((path:string,init:RequestInit={})=>{
+  if(hold&&path==='/api/workspace/hooks?project_id=alpha'){
+   hold=false;signal=init.signal||undefined;
+   return new Promise(resolve=>{settle=resolve});
+  }
+  return previous(path,init);
+ });
+ const view=render(<HookSettings/>);await ready();
+ if(kind==='create'){
+  const form=fillDraft('alpha');fireEvent.click(form.getByRole('button',{name:'Review disabled hook'}));
+ }else fireEvent.click(within(screen.getByRole('article',{name:'Hook in Alpha'})).getByRole('button',{name:'Enable'}));
+ hold=true;fireEvent.click(screen.getByRole('button',{name:kind==='create'?'Save disabled hook':'Confirm enable'}));
+ await waitFor(()=>expect(settle).toBeTypeOf('function'));
+ if(boundary==='lock')await act(async()=>window.dispatchEvent(new Event('termx-session-locked')));
+ else view.unmount();
+ expect(signal?.aborted).toBe(true);expect(writes()).toHaveLength(0);
+ await act(async()=>settle({hooks:structuredClone(hooks.filter(row=>row.project_id==='alpha'))}));
+ if(boundary==='lock')view.unmount();
+ render(<HookSettings/>);await ready();
+ expect(screen.queryByText(/A hook save is pending|A hook save is unconfirmed/)).not.toBeInTheDocument();
+ if(kind==='create'){
+  const form=fillDraft('alpha');const retry=form.getByRole('button',{name:'Review disabled hook'});expect(retry).toBeEnabled();fireEvent.click(retry);
+  expect(screen.getByRole('dialog',{name:'Save this disabled hook?'})).toBeVisible();
+ }else{
+  const retry=within(screen.getByRole('article',{name:'Hook in Alpha'})).getByRole('button',{name:'Enable'});expect(retry).toBeEnabled();fireEvent.click(retry);
+  expect(screen.getByRole('dialog',{name:'Enable this lifecycle hook?'})).toBeVisible();
+ }
+ expect(writes()).toHaveLength(0);
+});

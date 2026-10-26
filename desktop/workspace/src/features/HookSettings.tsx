@@ -131,7 +131,9 @@ export default function HookSettings({search='',version=0}:{search?:string;versi
    const required=action.kind==='remove'||action.kind==='disable'?['agent-control']:['agent-control','files-read','files-write',...(action.kind==='enable'?action.hook.capabilities:[])];
    if(!allowed(actor,access,action.project.id,required))throw Error('Your current account cannot make this change in the selected project.');
    const current=await request<{hooks:Hook[]}>('/api/workspace/hooks?project_id='+encodeURIComponent(action.project.id),{signal:controller.signal});
-   if(!fresh())return;
+   // No mutation has been dispatched yet. Route cancellation through cleanup
+   // so a stale preparation cannot leave a shared pending receipt behind.
+   if(!fresh())throw Error('Hook preparation was cancelled before dispatch. Review it again before continuing.');
    if(action.kind==='create'){
     const attempt=createAttempt!;attempt.before=new Set(current.hooks.map(hook=>hook.id));dispatched=true;
     const saved=await request<Hook>('/api/workspace/hooks',{...json('POST',action.body),signal:controller.signal});
