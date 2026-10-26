@@ -308,14 +308,14 @@ def run(destination):
             hook_form = hooks.get_by_role('form', name='Create lifecycle hook', exact=True)
             expect(hook_form.get_by_role('combobox', name='Run in project', exact=True)).to_have_value('')
             hook_form.get_by_role('combobox', name='Run in project', exact=True).select_option(alpha['id'])
-            hook_form.get_by_label('Executable and arguments (one per line)', exact=True).fill(json.dumps([sys.executable, '-c', 'print("synthetic hook")']))
+            hook_form.get_by_role('textbox', name='Executable and arguments (one per line)', exact=True).fill(json.dumps([sys.executable, '-c', 'print("synthetic hook")']))
             hook_form.get_by_role('button', name='Review disabled hook', exact=True).click()
             hook_review = page.get_by_role('dialog', name='Save this disabled hook?', exact=True)
             expect(hook_review).to_contain_text(alpha['name']); expect(hook_review).to_contain_text(alpha['path'])
             before = len(posts('/api/workspace/hooks'))
             hook_review.get_by_role('button', name='Cancel review', exact=True).click()
             expect(hook_review).not_to_be_visible()
-            expect(hook_form.get_by_label('Executable and arguments (one per line)', exact=True)).to_have_value(json.dumps([sys.executable, '-c', 'print("synthetic hook")']))
+            expect(hook_form.get_by_role('textbox', name='Executable and arguments (one per line)', exact=True)).to_have_value(json.dumps([sys.executable, '-c', 'print("synthetic hook")']))
             assert len(posts('/api/workspace/hooks')) == before
             hook_form.get_by_role('button', name='Review disabled hook', exact=True).click()
             hook_review.get_by_role('button', name='Save disabled hook', exact=True).click()
@@ -420,6 +420,7 @@ def run(destination):
             report.update(status='failed',error=str(error),traceback=traceback.format_exc())
             if page:
                 try:
+                    report['failure_accessibility_dom'] = page.locator('[role=dialog],section[aria-label],form[aria-label]').evaluate_all('nodes=>nodes.map(node=>({tag:node.tagName,label:node.getAttribute("aria-label"),labelledby:node.getAttribute("aria-labelledby"),state:node.getAttribute("data-state"),ancestors:[node,...function*(x){while(x.parentElement){x=x.parentElement;yield x}}(node)].map(x=>({tag:x.tagName,hidden:x.getAttribute("aria-hidden"),inert:x.inert}))}))')
                     page.screenshot(path=str(frames/'failure.png'));report['visible_text']=page.locator('body').inner_text()
                 except Exception: pass
             raise

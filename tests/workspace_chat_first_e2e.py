@@ -552,9 +552,13 @@ def run(destination):
             before_refresh_calls = len(adapter.calls)
             report['refresh_responses'].clear()
             context.clear_cookies(name='termx_access')
+            assert not any(cookie['name'] == 'termx_access' for cookie in context.cookies())
             page.reload()
+            # Cached drafts can render before authentication revalidation.
+            # Require the actual refresh response rather than racing that UI.
+            wait(lambda: 200 in report['refresh_responses'],
+                 'Access-cookie loss did not complete an actual successful refresh')
             expect(composer).to_have_value('Retain main draft while inspecting tools', timeout=30000)
-            assert 200 in report['refresh_responses'], report['refresh_responses']
             assert page.url.endswith('/session/' + primary_id)
             assert len(adapter.calls) == before_refresh_calls
             me = page.request.get(base + '/auth/me')
