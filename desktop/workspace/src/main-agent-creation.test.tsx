@@ -13,7 +13,6 @@ vi.mock('./lib/project-pins',()=>({loadProjectPins:async()=>({revision:0,project
 vi.mock('./lib/session-changes',()=>({useSessionChanges:()=>({data:null,loading:false})}));
 vi.mock('./lib/workspace-fullscreen',()=>({workspaceFullscreen:async()=>false}));
 vi.mock('./features/OrchestratorStatus',()=>({default:({onOpen}:{onOpen:(id:string)=>void})=><button onClick={()=>onOpen('other-child')}>Inspect other child</button>}));
-vi.mock('./features/SettingsGeneral',()=>({default:()=>null}));
 vi.mock('./features/SettingsSurface',()=>({default:({children}:{children:React.ReactNode})=><section>{children}</section>}));
 vi.mock('./features/Managers',()=>({default:()=>null}));
 vi.mock('./features/CaptureStatus',()=>({default:()=>null}));
@@ -110,4 +109,25 @@ it('keeps a newer child selection and real send target after the focused history
  expect(turnCalls()[0][0]).toBe('/api/workspace/sessions/other-child/turns');expect(JSON.parse((turnCalls()[0][1] as RequestInit).body as string).prompt).toBe('Run work only in the selected child');
  expect(turnCalls().some(([path])=>path==='/api/workspace/sessions/previous/turns'||path==='/api/workspace/sessions/focused/turns')).toBe(false);
  expect(sessionDrafts.get('focused')?.text).toBe('Draft belonging only to focused');expect(rows.get('previous')?.draft_text).toBe('Previous conversation draft');expect(screen.queryByText(/draft changed in another window/i)).toBeNull();
+});
+
+
+it('starts a generic new chat without a hidden project or folder from a cancelled creation',async()=>{
+ const previous=mocks.gql.getMockImplementation()!;
+ mocks.gql.mockImplementation((query:string,...args:any[])=>query.includes('agent_providers')?Promise.resolve({projects:[{id:'project-a',name:'Project A',path:'/synthetic/project-a'}],engines:[],agent_providers:[provider]}):previous(query,...args));
+ render(<App/>);
+ await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
+ fireEvent.click(screen.getByRole('button',{name:'New chat'}));
+ let dialog=await screen.findByRole('dialog',{name:'New conversation'});
+ fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ fireEvent.change(within(dialog).getByRole('combobox',{name:'Project'}),{target:{value:'project-a'}});
+ fireEvent.change(within(dialog).getByLabelText('Add a project folder'),{target:{value:'/synthetic/previous-folder'}});
+ fireEvent.click(within(dialog).getByRole('button',{name:'Close',exact:true}));
+ fireEvent.click(screen.getByRole('button',{name:'New chat'}));
+ dialog=await screen.findByRole('dialog',{name:'New conversation'});
+ fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ expect(within(dialog).getByRole('combobox',{name:'Project'})).toHaveValue('');
+ expect(within(dialog).getByLabelText('Add a project folder')).toHaveValue('');
+ expect(mocks.request.mock.calls.some(([path,init])=>path==='/api/workspace/sessions'&&(init as RequestInit)?.method==='POST')).toBe(false);
+ expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft');
 });

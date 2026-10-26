@@ -296,8 +296,8 @@ def run(destination):
             report['axe'].append({'stage': label, 'violations': result, 'page_overflow': overflow})
             assert not result and not overflow, report['axe'][-1]
 
-        def approve_visible(label):
-            trigger = page.get_by_role('button', name='Review action', exact=True)
+        def approve_visible(label, source=None):
+            trigger = (source or page).get_by_role('button', name='Review action', exact=True)
             expect(trigger.first).to_be_visible(timeout=25000)
             trigger.first.click()
             dialog = page.get_by_role('dialog', name='Review action', exact=True)
@@ -358,6 +358,19 @@ def run(destination):
             task_id, child_id = child['task_id'], child['session_id']
             wait(lambda: state.agent_store.approvals(task_id), 'Native permission request did not reach the gateway')
             assert len(native.sent) == 1 and child['engine'] == ENGINE
+            assert page.url.endswith('/session/' + primary_id)
+            # The real source request is actionable from Main without opening
+            # the child, expanding its history, or transferring ownership.
+            source = page.get_by_role('article', name='Requests from Native reviewer', exact=True)
+            expect(source).to_be_visible(timeout=25000)
+            expect(source).to_contain_text('Main agent is coordinating')
+            approve_visible('actual-native-source-approval-in-main', source)
+            wait(native.progress.is_set, 'Native adapter did not receive its exact approval decision')
+            assert len(native.decisions) == 1 and native.decisions[0]['decision'] == 'approve'
+            assert page.url.endswith('/session/' + primary_id)
+            assert next(c for c in snapshot()['children'] if c['session_id'] == child_id)['control_owner'] == 'orchestrator'
+            shot('native-approval-resolved-in-main-without-takeover')
+            audit('native-source-decision-in-main')
             disclosure = page.get_by_role('button', name=re.compile('Delegated work'))
             if disclosure.get_attribute('aria-expanded') != 'true':
                 disclosure.click()
@@ -366,9 +379,6 @@ def run(destination):
             expect(page.get_by_text('Managed by your main agent', exact=True)).to_be_visible()
             page.get_by_role('button', name='Take control', exact=True).click()
             expect(page.get_by_text('You are directing this chat', exact=True)).to_be_visible()
-            approve_visible('actual-native-source-approval')
-            wait(native.progress.is_set, 'Native adapter did not receive its exact approval decision')
-            assert len(native.decisions) == 1 and native.decisions[0]['decision'] == 'approve'
             expect(page.get_by_text('Native fixture progress is visible.', exact=False)).to_be_visible()
             details = page.locator('details[aria-label="Engine details for Native reviewer"]')
             details.locator('summary').click()
@@ -467,7 +477,7 @@ def run(destination):
             assert not report['page_errors'] and not report['external_requests']
             report['checks'] = [
                 'Actual main tool loop lists engines/sessions and passes plan/delegation gates before Gateway dispatch',
-                'Native source permission request routes through real approval storage and exact adapter response',
+                'Native source permission is reviewed in Main through real approval storage and the exact adapter response, without child navigation or ownership transfer',
                 'Native progress/result and honest unsupported/unmeasured capabilities render',
                 'Direct control/followup uses the same native session and returns ownership to main',
                 'Reviewed adoption keeps existing idle conversation identity, no task and user ownership',

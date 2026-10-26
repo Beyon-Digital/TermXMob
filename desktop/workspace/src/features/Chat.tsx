@@ -1,5 +1,6 @@
 import {conversationMessages,latestExecutionTask} from '../lib/conversation-messages';
 import ChatWelcome from './ChatWelcome';
+import ChatConnectionSetup,{chatConnectionProblem} from './ChatConnectionSetup';
 import {Attachments,Attachment,AttachmentPreview,AttachmentInfo,AttachmentRemove} from '../components/ai-elements/attachments';
 import {conversationAnchor,anchorCorrection,type ConversationAnchor} from '../lib/conversation-position';
 import {persistWindowDraft} from '../lib/window-journal';
@@ -35,7 +36,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  const [draft,setDraft]=useState(''),[submissionChange,setSubmissionChange]=useState(0),[modelCatalogue,setModelCatalogue]=useState<{selection:string;models:string[]}>({selection:'',models:[]}),[attachments,setAttachments]=useState<{name:string;mime:string;data:string}[]>([]),[supervised,setSupervised]=useState(''),[renameOpen,setRenameOpen]=useState(false),[name,setName]=useState(''),[group,setGroup]=useState('');
  const [forkEngine,setForkEngine]=useState(''),[forkOpen,setForkOpen]=useState(false),[pendingPrompt,setPendingPrompt]=useState<import('../lib/drafts').PendingSubmission|null>(null);
  const [approvalFocus,setApprovalFocus]=useState<{sessionId:string;taskId:string;messageId:string}|null>(null);
- const [,refreshCancellation]=useState(0),[actionError,setActionError]=useState<{sessionId:string;message:string}|null>(null);
+ const [,refreshCancellation]=useState(0),[actionError,setActionError]=useState<{sessionId:string;message:string;kind?:'connection'}|null>(null);
  const sending=!!session&&submittingDrafts.has(session.id);
  const [queueChange,setQueueChange]=useState(0),[awayFromLatest,setAwayFromLatest]=useState(false),[interruptOpen,setInterruptOpen]=useState(false),[optionsOpen,setOptionsOpen]=useState(false),[runActionsOpen,setRunActionsOpen]=useState(false);
  const scroller=useRef<HTMLDivElement>(null),fileInput=useRef<HTMLInputElement>(null),composer=useRef<HTMLTextAreaElement>(null),lastSaved=useRef(''),dirty=useRef(false),sessionId=useRef<string|null>(null),drafts=useRef(sessionDrafts);
@@ -53,6 +54,8 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  const messages=useMemo(()=>conversationMessages(turns),[turns]);
  const virtual=useVirtualizer({count:messages.length,getScrollElement:()=>scroller.current,estimateSize:()=>140,overscan:8,initialRect:{width:800,height:600},getItemKey:index=>messages[index].id});
  const latest=latestExecutionTask(turns),running=active(latest);
+ const connectionProblem=chatConnectionProblem(session,providers,engines),connectionBlocked=coordinating&&!!connectionProblem;
+ useEffect(()=>{if(!connectionBlocked)setActionError(value=>value?.kind==='connection'?null:value)},[connectionBlocked]);
  useEffect(()=>{setRunActionsOpen(false);setActionError(null)},[session?.id,running]);
  useEffect(()=>{const update=()=>{setSubmissionChange(value=>value+1);const value=sessionId.current?drafts.current.get(sessionId.current):undefined;setPendingPrompt(value?.submission||null);if(value){setDraft(value.text);setContext(value.context||[]);setAttachments(value.attachments||[]);lastSaved.current=value.saved;dirty.current=value.dirty}};window.addEventListener('termx-draft-submission',update);return()=>window.removeEventListener('termx-draft-submission',update)},[]);
  useEffect(()=>{const update=()=>refreshCancellation(value=>value+1);window.addEventListener('termx-task-cancellation',update);return()=>window.removeEventListener('termx-task-cancellation',update)},[]);
@@ -130,18 +133,19 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
 
  useEffect(()=>{if(scroller.current&&messages.length&&scroller.current.scrollHeight-scroller.current.scrollTop-scroller.current.clientHeight<350)virtual.scrollToIndex(messages.length-1,{align:'end'})},[messages.length,latest?.result]);
  async function patch(changes:Record<string,unknown>){
-  if(!session)return;const identifier=session.id,intent=captureSessionWrite();
+  if(!session)return false;const identifier=session.id,intent=captureSessionWrite();
   try{
    await serializeSessionWrite(identifier,async()=>{
     const current=await request<Session>('/api/workspace/sessions/'+identifier+'?turns=false',{signal:intent.signal});
     intent.assertCurrent();
     await request('/api/workspace/sessions/'+identifier,{...json('PATCH',{revision:current.revision,changes}),signal:intent.signal});
    },intent);
-   onRefresh();
-  }catch(error){if(intent.isCurrent())onError(error)}finally{intent.release()}
+   onRefresh();return true;
+  }catch(error){if(intent.isCurrent())onError(error);return false}finally{intent.release()}
  }
  async function send(intent:'send'|'queue'|'interrupt'='send'){
   if(!session||(!draft.trim()&&!pendingPrompt)||submittingDrafts.has(session.id))return;
+  if(connectionBlocked){setActionError({sessionId:session.id,kind:'connection',message:'Connect an account and model before sending. Your draft is still here.'});return}
   const writeIntent=captureSessionWrite(),submission=Symbol();
   const identifier=session.id,prompt=pendingPrompt?.prompt||draft,key=pendingPrompt?.key||crypto.randomUUID(),selected=pendingPrompt?.context||context,selectedImages=pendingPrompt?.attachments||attachments.map(image=>({...image})),operation=pendingPrompt?.intent||intent,interruptTask=pendingPrompt?.interruptTask||(operation==='interrupt'?latest?.id:undefined);
   const pending={prompt,key,context:selected,attachments:selectedImages,intent:operation,interruptTask};
@@ -178,7 +182,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
   {session&&(latest||!!changes?.files)&&<ConversationSurfaceHeader task={latest} changes={changes} onOpenSurface={onOpenSurface} onReviewTask={reviewCurrentTask}/>}
   <div className="conversation-scroll" ref={scroller} tabIndex={0} role="log" aria-label="Conversation messages" aria-live="polite">
    {session?.hasEarlier&&<Button className="history-button" variant="ghost" onClick={onHistory}>Load earlier messages</Button>}
-   {!messages.length?<ChatWelcome session={session} engines={engines} providers={providers} onPrompt={text=>{editDraft(text);composer.current?.focus()}} onConfigureAgent={onConfigureAgent}/>:<div className="message-list" style={{height:virtual.getTotalSize()}}>
+   {!messages.length?<ChatWelcome session={session} engines={engines} providers={providers} onPrompt={text=>{editDraft(text);composer.current?.focus()}} onConfigureAgent={onConfigureAgent} hideConnectionHelp/>:<div className="message-list" style={{height:virtual.getTotalSize()}}>
     {virtual.getVirtualItems().map(item=>{
      const message=messages[item.index];
      return <div key={message.id} data-index={item.index} data-message-id={message.id} ref={virtual.measureElement} className="message-row" style={{transform:`translateY(${item.start}px)`}}>
@@ -189,6 +193,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
   </div>
   {awayFromLatest&&messages.length>0&&<Button className="jump-latest" variant="secondary" size="sm" onClick={()=>{virtual.scrollToIndex(messages.length-1,{align:'end'});setAwayFromLatest(false);scroller.current?.focus()}}>Jump to latest</Button>}
   <div className="composer-container">
+   {session&&connectionProblem&&!running&&<ChatConnectionSetup key={(ownerId||'')+':'+session.id} session={session} providers={providers} engines={engines} enabled={visible&&!sending} onConfigureAgent={onConfigureAgent} onRefresh={onRefresh} onConnect={patch}/>}
    {session?.linked_from&&<div className="session-context"><span title="This conversation is a linked fork"><GitFork size={12}/> Linked fork</span></div>}
    {session&&<PromptQueue visible={visible} sessionId={session.id} changed={queueChange} onError={onError} onRefresh={onRefresh} onTask={setSupervised}/>}
    <PromptInputBody className="composer">
@@ -203,20 +208,20 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
      <SessionModePicker session={session} running={running} onPatch={patch}/>
      <SessionModelControls coordinating={coordinating} session={session} engines={engines} providers={providers} runnerAccounts={runnerAccounts} models={models} favorites={favorites} favoriteKey={favoriteKey} running={running} onFavorite={favorite} onEngine={chooseEngine} onPatch={patch} onRefresh={onRefresh} onError={onError} onConfigureAgent={onConfigureAgent}/>
      <span className="flex-spacer"/>
-     {running&&draft.trim()&&!pendingPrompt&&<Button className="composer-queue" size="sm" variant="ghost" aria-label="Queue follow-up" title="Queue follow-up after this task" disabled={sending} onClick={()=>void send('queue')}><ListPlus size={16}/><span>Queue</span></Button>}
+     {running&&draft.trim()&&!pendingPrompt&&<Button className="composer-queue" size="sm" variant="ghost" aria-label="Queue follow-up" title="Queue follow-up after this task" disabled={sending||connectionBlocked} onClick={()=>void send('queue')}><ListPlus size={16}/><span>Queue</span></Button>}
      {running&&<Button size="icon" variant="ghost" aria-label="Running task actions" title="Queue, interrupt, or steer" aria-haspopup="dialog" aria-expanded={runActionsOpen} onClick={()=>setRunActionsOpen(true)}><MoreHorizontal size={17}/></Button>}
      <Button size="icon" variant="ghost" aria-label="Session options" title="Session options" aria-haspopup="dialog" aria-expanded={optionsOpen} disabled={!session} onClick={()=>setOptionsOpen(true)}><SlidersHorizontal size={15}/></Button>
-     <PromptInputSubmit className="composer-send" status={running?'streaming':sending?'submitted':'ready'} aria-label={running?'Stop task':'Send message'} title={stopping?'Stopping task…':running?'Stop task':pendingPrompt?'Retry pending send':'Send message'} type="button" disabled={!session||stopping||(!running&&((!draft.trim()&&!pendingPrompt)||sending))} onStop={running?()=>void stopTask():undefined} onClick={()=>void send()}>{stopping?<LoaderCircle className="spin" size={16}/>:running?<Square size={14}/>:sending?<LoaderCircle className="spin" size={17}/>:<ArrowUp size={17}/>}</PromptInputSubmit>
+     <PromptInputSubmit className="composer-send" status={running?'streaming':sending?'submitted':'ready'} aria-label={running?'Stop task':'Send message'} title={stopping?'Stopping task…':running?'Stop task':pendingPrompt?'Retry pending send':'Send message'} type="button" disabled={!session||stopping||(!running&&(connectionBlocked||(!draft.trim()&&!pendingPrompt)||sending))} onStop={running?()=>void stopTask():undefined} onClick={()=>void send()}>{stopping?<LoaderCircle className="spin" size={16}/>:running?<Square size={14}/>:sending?<LoaderCircle className="spin" size={17}/>:<ArrowUp size={17}/>}</PromptInputSubmit>
     </PromptInputTools>
    </PromptInputBody>
-   <p className="composer-hint">{stopping?'Stopping task and its delegated agents…':sending?'Sending your message…':pendingPrompt?'Retry the pending message before sending your newer draft.':running?'Enter to queue a follow-up · Shift + Enter for a new line':'Enter to send · Shift + Enter for a new line'}</p>
+   <p className="composer-hint">{stopping?'Stopping task and its delegated agents…':sending?'Sending your message…':connectionBlocked&&!running?'Connect an account and model to send. Your draft stays here.':pendingPrompt?'Retry the pending message before sending your newer draft.':running?'Enter to queue a follow-up · Shift + Enter for a new line':'Enter to send · Shift + Enter for a new line'}</p>
   </div>
   <Dialog open={runActionsOpen&&running} onOpenChange={setRunActionsOpen}><DialogContent className="running-task-dialog"><DialogTitle>While the agent works</DialogTitle><DialogDescription>Choose how to use your follow-up.</DialogDescription><div className="running-task-actions">
-   <Button variant="ghost" aria-label="Queue next" disabled={sending||!!pendingPrompt||!draft.trim()} onClick={()=>{setRunActionsOpen(false);void send('queue')}}><span>Queue next<small>Run your draft as a new turn after this task finishes.</small></span></Button>
-   <Button variant="ghost" aria-label="Interrupt current task" disabled={sending||!draft.trim()||!!pendingPrompt} onClick={()=>{setRunActionsOpen(false);setInterruptOpen(true)}}><span>Interrupt current task<small>Stop this task, then queue your draft. You will review this first.</small></span></Button>
+   <Button variant="ghost" aria-label="Queue next" disabled={sending||connectionBlocked||!!pendingPrompt||!draft.trim()} onClick={()=>{setRunActionsOpen(false);void send('queue')}}><span>Queue next<small>Run your draft as a new turn after this task finishes.</small></span></Button>
+   <Button variant="ghost" aria-label="Interrupt current task" disabled={sending||connectionBlocked||!draft.trim()||!!pendingPrompt} onClick={()=>{setRunActionsOpen(false);setInterruptOpen(true)}}><span>Interrupt current task<small>Stop this task, then queue your draft. You will review this first.</small></span></Button>
    <Button variant="ghost" aria-label="Steer current task" onClick={()=>{setRunActionsOpen(false);if(latest)setSupervised(latest.id)}}><span>Steer current task<small>Add an instruction at the task’s next safe step.</small></span></Button>
   </div></DialogContent></Dialog>
-  <Dialog open={interruptOpen} onOpenChange={setInterruptOpen}><DialogContent><DialogTitle>Interrupt current task</DialogTitle><DialogDescription>Stop this task and its child tasks, then queue your current draft as the next turn. Effects already performed are preserved; this does not undo them.</DialogDescription><p>{draft}</p><Button disabled={sending||!running||!draft.trim()} onClick={()=>{setInterruptOpen(false);void send('interrupt')}}>Stop current task and queue draft</Button></DialogContent></Dialog>
+  <Dialog open={interruptOpen} onOpenChange={setInterruptOpen}><DialogContent><DialogTitle>Interrupt current task</DialogTitle><DialogDescription>Stop this task and its child tasks, then queue your current draft as the next turn. Effects already performed are preserved; this does not undo them.</DialogDescription><p>{draft}</p><Button disabled={sending||connectionBlocked||!running||!draft.trim()} onClick={()=>{setInterruptOpen(false);void send('interrupt')}}>Stop current task and queue draft</Button></DialogContent></Dialog>
   {supervised&&<TaskSupervisor taskId={supervised} onClose={()=>setSupervised('')} onError={onError}/>}
   <SessionSettings coordinating={coordinating} open={optionsOpen} onOpenChange={setOptionsOpen} session={session} running={running} turnsCount={turns.length} ownerId={ownerId} visible={visible} runnerOptions={runnerOptions} runnerAccounts={runnerAccounts} engines={engines} providers={providers} models={models} favorites={favorites} favoriteKey={favoriteKey} onFavorite={favorite} onEngine={chooseEngine} patch={patch} onError={onError} onRefresh={onRefresh} reply={latest?.result||''} onTranscript={text=>editDraft(draft+(draft?'\n\n':'')+text)} onConversationSettings={()=>{if(!session)return;setName(session.title);setGroup((session.group_id===undefined?session.project_id:session.group_id)||'');setRenameOpen(true);setOptionsOpen(false)}}/>
   <Dialog open={renameOpen} onOpenChange={setRenameOpen}><DialogContent><DialogTitle>Conversation settings</DialogTitle><DialogDescription>Moving the sidebar group keeps the execution folder and project permissions.</DialogDescription><label>Name<input className="input" value={name} onChange={event=>setName(event.target.value)} maxLength={200}/></label><label>Sidebar group<Select value={group} onChange={event=>setGroup(event.target.value)}><option value="">Unassigned</option>{projects.map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</Select></label><Button onClick={async()=>{await patch({title:name,group_id:group||null});setRenameOpen(false)}}>Save settings</Button></DialogContent></Dialog>

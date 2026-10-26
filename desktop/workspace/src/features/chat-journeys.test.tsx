@@ -3,7 +3,7 @@ import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/reac
 import Chat from './Chat';
 import ChatWelcome from './ChatWelcome';
 import {draftSubmissionOwners,draftWrites,sessionDrafts,submittingDrafts} from '../lib/drafts';
-import {request,type Session} from '../lib/api';
+import {request,type Session,type Provider} from '../lib/api';
 
 vi.mock('../lib/api',()=>({gql:vi.fn(async()=>({engine_models:[]})),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
 afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();vi.clearAllMocks()});
@@ -106,4 +106,66 @@ it('keeps the main failure review visible after a later direct child report',()=
  vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
  render(<Chat session={session} {...props}/>);
  expect(screen.getByRole('button',{name:'Review current task'})).toHaveTextContent('Review error');
+});
+
+
+const connectedAccount:Provider={id:'connected-account',name:'Connected account',model:'model-one, model-two',secret_configured:true,capabilities:['functions']};
+
+it('connects a newly saved account to the same main chat explicitly and sends its preserved draft',async()=>{
+ const session={...row('first-main'),draft_text:'Keep this first task'};
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/workspace/sessions/first-main'&&init?.method==='PATCH'){Object.assign(session,JSON.parse(String(init.body)).changes);session.revision++;return {...session} as any}
+  if(path.endsWith('/turns'))return {id:'first-task'} as any;
+  return baseResponse(path,session) as any;
+ });
+ const view=render(<Chat session={{...session}} {...props} coordinating/>);
+ const composer=screen.getByRole('textbox',{name:'Message'});
+ expect(screen.getByRole('button',{name:'Send message'})).toBeDisabled();
+ fireEvent.keyDown(composer,{key:'Enter',code:'Enter'});
+ expect(sessionDrafts.get(session.id)?.submission).toBeUndefined();
+ expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+ view.rerender(<Chat session={{...session}} {...props} providers={[connectedAccount]} coordinating/>);
+ expect(screen.getByRole('combobox',{name:'Chat account'})).toHaveValue(connectedAccount.id);
+ expect(screen.getByRole('combobox',{name:'Chat model'})).toHaveValue('model-one');
+ expect(session.provider_id).toBeUndefined();
+ expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(false);
+ fireEvent.change(screen.getByRole('combobox',{name:'Chat model'}),{target:{value:'model-two'}});
+ fireEvent.click(screen.getByRole('button',{name:'Use for this chat'}));
+ await waitFor(()=>expect(session.model).toBe('model-two'));
+ const update=vi.mocked(request).mock.calls.find(([,init])=>init?.method==='PATCH')!;
+ expect(update[0]).toBe('/api/workspace/sessions/first-main');
+ expect(JSON.parse(String(update[1]?.body))).toEqual({revision:1,changes:{provider_id:connectedAccount.id,model:'model-two',reasoning_config:{}}});
+ view.rerender(<Chat session={{...session}} {...props} providers={[connectedAccount]} coordinating/>);
+ expect(screen.queryByRole('region',{name:'Connect this chat'})).not.toBeInTheDocument();
+ expect(composer).toHaveValue('Keep this first task');
+ expect(screen.getByRole('button',{name:'Send message'})).toBeEnabled();
+ fireEvent.click(screen.getByRole('button',{name:'Send message'}));
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/turns'))).toHaveLength(1));
+ const sent=vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/turns'))!;
+ expect(sent[0]).toBe('/api/workspace/sessions/first-main/turns');
+ expect(JSON.parse(String(sent[1]?.body)).prompt).toBe('Keep this first task');
+});
+
+it('keeps connection repair available after history and preserves a draft when its settings write fails',async()=>{
+ const session={...row('repair-main'),draft_text:'Retry my work',provider_id:'removed-account',model:'old-model'};
+ session.turns=[{id:'earlier',prompt:'Previous work',sequence:1,task:{id:'earlier-task',prompt:'Previous work',status:'completed',result:'Earlier answer'}}];
+ vi.mocked(request).mockImplementation(async(path,init)=>{if(init?.method==='PATCH')throw Error('Settings changed in another window');return baseResponse(path,session) as any});
+ render(<Chat session={session} {...props} providers={[connectedAccount]} coordinating/>);
+ fireEvent.click(screen.getByRole('button',{name:'Use for this chat'}));
+ await screen.findByText('The connection was not saved. Your draft is still here; review the error and try again.');
+ expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Retry my work');
+ expect(screen.getByRole('button',{name:'Use for this chat'})).toBeEnabled();
+ expect(screen.getByRole('button',{name:'Send message'})).toBeDisabled();
+ expect(sessionDrafts.get(session.id)?.submission).toBeUndefined();
+ expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
+ expect(props.onError).toHaveBeenCalledWith(expect.objectContaining({message:'Settings changed in another window'}));
+});
+
+it('keeps Stop available when a main task is running and its connection is no longer configured',async()=>{
+ const session=row('running-without-account',true);
+ vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
+ render(<Chat session={session} {...props} coordinating/>);
+ const stop=screen.getByRole('button',{name:'Stop task'});
+ expect(stop).toBeEnabled();fireEvent.click(stop);
+ await waitFor(()=>expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/cancel'))).toHaveLength(1));
 });

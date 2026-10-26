@@ -9,10 +9,10 @@ const starters=[
  {title:'Work on a task',description:'Explain the outcome you want',prompt:'I have a task for you. Help me define the outcome, then work through it with me.',icon:Workflow},
 ];
 
-export default function ChatWelcome({session,engines,providers,onPrompt,onConfigureAgent}:{session:Session|null;engines:Engine[];providers:Provider[];onPrompt:(text:string)=>void;onConfigureAgent?:()=>void}){
+export default function ChatWelcome({session,engines,providers,onPrompt,onConfigureAgent,hideConnectionHelp=false}:{hideConnectionHelp?:boolean;session:Session|null;engines:Engine[];providers:Provider[];onPrompt:(text:string)=>void;onConfigureAgent?:()=>void}){
  const selectedProvider=providers.find(provider=>provider.id===session?.provider_id);
  const selectedEngine=engines.find(engine=>engine.id===session?.engine);
- const needsConnection=!!session&&(session.engine==='internal'&&!session.runner_id?(!selectedProvider?.secret_configured):selectedEngine?.available===false);
+ const needsConnection=!hideConnectionHelp&&!!session&&(session.engine==='internal'?(!session.runner_id&&!selectedProvider?.secret_configured):(!selectedEngine||selectedEngine.available===false));
  return <div className="chat-empty chat-welcome">
   <div className="chat-welcome-content">
    <h2>{session?'What can we work on?':'Start with a conversation'}</h2>

@@ -69,3 +69,65 @@ it('does not claim success when the provider returns a failed connection result'
  fireEvent.click(await screen.findByRole('button',{name:'Test connection'}));fireEvent.click(screen.getByRole('button',{name:'Send test request'}));
  expect(await screen.findByRole('alert')).toHaveTextContent('Provider rejected the model');expect(screen.queryByText('Provider connection tested')).not.toBeInTheDocument();
 });
+
+it('offers advertised ACP sign-in methods and sends the selected exact method once',async()=>{
+ mocked.mockImplementation(async(path,init)=>{
+  if(path==='/auth/me')return {principal:{scopes:['agent-run']}} as any;
+  const payload=JSON.parse(String(init?.body||'{}'));
+  if(payload.query?.includes('authenticate_engine'))return {data:{authenticate_engine:{ok:true,method:payload.variables.method}}} as any;
+  return {data:{engines:[{id:'acp',label:'ACP worker',installed:true,auth_state:'unknown',protocol:{name:'acp',auth_methods:[
+   {id:'browser-account',name:'Continue in browser'},{id:'device-code',label:'Use a device code'},
+   {id:'device-code',name:'Duplicate method'},{id:''},{id:'  '},{id:7},null,
+  ]}}],agent_providers:[]}} as any;
+ });
+ const changed=vi.fn();render(<Managers embedded section="models" projectId={null} sessionId={null} onCapabilitiesChanged={changed}/>);
+ const methods=within(await screen.findByRole('group',{name:'Sign-in methods for ACP worker'}));
+ expect(methods.getAllByRole('button')).toHaveLength(2);
+ expect(screen.queryByPlaceholderText('Method ID from engine account settings')).not.toBeInTheDocument();
+ expect(mocked.mock.calls.some(([,init])=>String(init?.body).includes('authenticate_engine'))).toBe(false);
+ fireEvent.click(methods.getByRole('button',{name:'Use a device code'}));
+ await screen.findByText('Engine sign-in completed');
+ const calls=mocked.mock.calls.filter(([,init])=>String(init?.body).includes('authenticate_engine'));
+ expect(calls).toHaveLength(1);expect(JSON.parse(String(calls[0][1]?.body)).variables).toEqual({id:'acp',method:'device-code'});
+ expect(changed).toHaveBeenCalledOnce();
+ expect(mocked.mock.calls.some(([,init])=>{const payload=JSON.parse(String(init?.body||'{}'));return payload.query?.includes('engines')&&payload.query.includes('auth_detail')&&payload.query.includes('protocol')})).toBe(true);
+});
+
+it('keeps unsupported and uninstalled engine authentication out of the action surface',async()=>{
+ mocked.mockImplementation(async(path)=>path==='/auth/me'?{principal:{scopes:['agent-run']}}:{data:{engines:[
+  {id:'codex',label:'Codex',installed:true,auth_state:'unauthenticated',protocol:{name:'codex-app-server',auth_methods:[{id:'unsupported',name:'Unsupported sign-in'}]}},
+  {id:'claude',label:'Claude',installed:true,auth_state:'unknown',protocol:{name:'claude-agent-sdk'}},
+  {id:'ready',label:'Ready worker',installed:true,auth_state:'authenticated',protocol:{name:'claude-agent-sdk'}},
+  {id:'missing',label:'Missing worker',installed:false,auth_state:'unknown',protocol:{name:'acp',auth_methods:[{id:'browser',name:'Install-only sign-in'}]}},
+  {id:'no-methods',label:'Other worker',installed:true,auth_state:'unknown',protocol:{name:'acp',auth_methods:[]}},
+ ],agent_providers:[]}} as any);
+ render(<Managers embedded section="models" projectId={null} sessionId={null}/>);
+ expect(await screen.findByText('Manage sign-in in the Codex CLI on this host, then refresh to check the account.')).toBeInTheDocument();
+ expect(screen.getByText('Manage sign-in in the Claude CLI on this host, then refresh to check the account.')).toBeInTheDocument();
+ expect(screen.getByText('This engine has no sign-in method available in TermX. Manage its account on this host, then refresh.')).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:/Unsupported sign-in|Install-only sign-in|^Sign in$/})).not.toBeInTheDocument();
+ expect(screen.queryByRole('textbox',{name:/Sign-in method/})).not.toBeInTheDocument();
+ const ready=screen.getByRole('heading',{name:'Ready worker'}).closest('article')!;
+ expect(within(ready).queryByText(/Manage sign-in/)).not.toBeInTheDocument();
+ expect(mocked.mock.calls.some(([,init])=>String(init?.body).includes('authenticate_engine'))).toBe(false);
+});
+
+it('does not offer an engine sign-in mutation without host run permission',async()=>{
+ mocked.mockImplementation(async(path)=>path==='/auth/me'?{principal:{scopes:['agent-view']}}:{data:{engines:[{id:'acp',label:'ACP worker',installed:true,protocol:{name:'acp',auth_methods:[{id:'browser',name:'Continue in browser'}]}}],agent_providers:[]}} as any);
+ render(<Managers embedded section="models" projectId={null} sessionId={null}/>);
+ expect(await screen.findByText('Ask the host owner to connect this engine.')).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Continue in browser'})).not.toBeInTheDocument();
+ expect(mocked.mock.calls.some(([,init])=>String(init?.body).includes('authenticate_engine'))).toBe(false);
+});
+
+it('keeps a failed ACP authentication result visible without claiming sign-in succeeded',async()=>{
+ mocked.mockImplementation(async(path,init)=>{
+  if(path==='/auth/me')return {principal:{scopes:['agent-run']}} as any;
+  const payload=JSON.parse(String(init?.body||'{}'));
+  return payload.query?.includes('authenticate_engine')?{data:{authenticate_engine:{ok:false,message:'The sign-in request expired'}}}:{data:{engines:[{id:'acp',label:'ACP worker',installed:true,protocol:{name:'acp',auth_methods:[{id:'device',name:'Use a device code'}]}}],agent_providers:[]}} as any;
+ });
+ render(<Managers embedded section="models" projectId={null} sessionId={null}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Use a device code'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('The sign-in request expired');
+ expect(screen.queryByText('Engine sign-in completed')).not.toBeInTheDocument();
+});

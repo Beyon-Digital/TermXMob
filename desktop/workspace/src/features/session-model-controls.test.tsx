@@ -33,3 +33,12 @@ it('routes model connection setup back to settings without sending a message',()
 });
 
 it('explains the main agent engine boundary while retaining provider and model choices',()=>{render(<SessionModelControls {...base} coordinating onPatch={vi.fn()}/>);fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));expect(screen.getByText(/can delegate work to installed engines/)).toBeVisible();expect(screen.getByRole('combobox',{name:'Session model'})).toBeEnabled();expect(screen.getByRole('combobox',{name:'Session provider'})).toBeEnabled()});
+
+
+it('selects the first configured model when explicitly switching to a local account',()=>{
+ const patch=vi.fn(),next={id:'next-account',name:'Next account',model:'next-one, next-two',capabilities:['chat'],secret_configured:true};
+ render(<SessionModelControls {...base} providers={[...base.providers,next]} onPatch={patch}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'Session provider'}),{target:{value:'next-account'}});
+ expect(patch).toHaveBeenCalledWith({provider_id:'next-account',model:'next-one',reasoning_config:{}});
+});

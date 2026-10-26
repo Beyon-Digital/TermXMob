@@ -14,7 +14,6 @@ vi.mock('./lib/workspace-fullscreen',()=>({workspaceFullscreen:async()=>false}))
 vi.mock('./lib/workspace-data',()=>({listSessions:async()=>[],SessionCache:class {read=mocks.read;clear(){};history=mocks.read}}));
 vi.mock('./features/Chat',()=>({default:({session,onConfigureAgent}:{session:Session|null;onConfigureAgent:()=>void})=><div><p data-testid="selected-chat">{session?.id||'none'}</p><button onClick={onConfigureAgent}>Configure agent</button></div>}));
 vi.mock('./features/OrchestratorStatus',()=>({default:({onOpen}:{onOpen:(id:string)=>void})=><button onClick={()=>onOpen('child')}>Inspect child</button>}));
-vi.mock('./features/SettingsGeneral',()=>({default:()=> <div data-testid="settings-general">General settings</div>}));
 vi.mock('./features/SettingsSurface',()=>({default:({children,onClose}:{children:React.ReactNode;onClose:()=>void})=><section><button onClick={onClose}>Close settings</button>{children}</section>}));
 vi.mock('./features/Managers',()=>({default:()=> <div data-testid="models-settings">Model settings</div>}));
 vi.mock('./features/CaptureStatus',()=>({default:()=>null}));
@@ -70,9 +69,9 @@ it('keeps newer settings navigation when a manually opened primary resolves late
  fireEvent.click(screen.getAllByRole('button',{name:'Main agent'}).at(-1)!);
  await waitFor(()=>expect(mocks.ensure).toHaveBeenCalledOnce());
  fireEvent.click(screen.getAllByRole('button',{name:'Settings'}).at(-1)!);
- expect(await screen.findByTestId('settings-general')).toBeVisible();
+ expect(await screen.findByRole('heading',{name:'General',exact:true})).toBeVisible();
  await act(async()=>pending.resolve({session:chat('main')}));
- expect(screen.getByTestId('settings-general')).toBeVisible();
+ expect(screen.getByRole('heading',{name:'General',exact:true})).toBeVisible();
  expect(location.pathname).toBe('/manage/general');
 });
 

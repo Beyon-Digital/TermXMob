@@ -4,6 +4,7 @@ import {Button} from '../components/ui/button';
 import {json, request, type Session} from '../lib/api';
 import {taskState} from '../lib/task-presentation';
 import {useObservationActive} from '../lib/use-observation-active';
+import OrchestratorDecisions from './OrchestratorDecisions';
 import './orchestrator-status.css';
 
 export type CoordinationLimits = {
@@ -15,6 +16,7 @@ export type OrchestratorChild = {
   session_id: string; task_id: string | null; title: string; status: string;
   engine: string; origin: 'native' | 'adopted' | 'delegated'; capability_limits: CoordinationLimits;
   result?: string | null; error?: string | null; control_owner: 'user' | 'orchestrator';
+  pending_approvals?: number;
   revision: number; updated_at: number; parent_session_id: string;
 };
 export type OrchestratorActivity = {
@@ -149,6 +151,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
       {attention > 0 && !expanded && <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}><CircleAlert size={13}/>Review</Button>}
     </div>}
     {failure && <div className="orchestrator-error" role="alert"><span>{failure}{isStale && current ? ' Showing the last received state.' : ''}</span><Button variant="ghost" size="sm" disabled={!observing || !!busy} onClick={() => { setError(''); setReadError(''); void refresh(); }}><RefreshCw size={12}/>Refresh status</Button></div>}
+    {!child && primary && selected === primary.id && <OrchestratorDecisions ownerId={ownerId} children={children} enabled={observing && !isStale} onRefresh={() => {void refresh(); onRefresh?.();}}/>}
     {!child && expanded && <div id="orchestrator-detail" className="orchestrator-detail">
       <p>Your main agent coordinates delegated work here. Open a chat to inspect it; take control when you want to direct it yourself.</p>
       {!current && !failure && <p role="status">Loading delegated work…</p>}

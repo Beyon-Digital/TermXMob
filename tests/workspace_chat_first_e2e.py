@@ -271,12 +271,36 @@ def run(destination):
             assert page.url.endswith(primary_id)
             assert len(state.workspace.store.list('orchestrator', owner.id)) == 1
             report['checks'].append('Reload preserves main binding and draft without duplicate primary creation')
-            state.agent.save_provider(provider_id='fixture', kind='openai-compatible', name='Synthetic no-network provider',
-                base_url='http://127.0.0.1:1/v1', model='fixture', capabilities=['shell', 'functions'], api_key='fixture-not-a-real-key')
-            current = state.workspace.session(owner, primary_id, turns=False)
-            state.workspace.update_session(owner, primary_id, revision=current['revision'], changes={'provider_id': 'fixture', 'model': 'fixture'})
-            page.reload()
-            expect(composer).to_be_enabled(timeout=30000)
+            # Exercise the real first-account form and explicit main-chat binding.
+            # The key is synthetic and only the no-network adapter can use it.
+            expect(page.get_by_role('button', name='Send message', exact=True)).to_be_disabled()
+            composer.press('Enter')
+            assert not adapter.calls and not state.agent_store.workspace_turns_page(primary_id, limit=1)
+            page.get_by_role('button', name='Set up connection', exact=True).click()
+            settings = page.get_by_role('dialog', name='Settings', exact=True)
+            expect(settings).to_be_visible()
+            settings.get_by_text('Add provider account', exact=True).click()
+            form = settings.get_by_role('form', name='Add provider account', exact=True)
+            form.get_by_label('Provider', exact=True).select_option('custom')
+            form.get_by_label('Display name', exact=True).fill('Synthetic no-network provider')
+            form.get_by_label('Provider API address', exact=True).fill('http://127.0.0.1:1/v1')
+            form.get_by_label('API key', exact=True).fill('fixture-not-a-real-key')
+            form.get_by_label('Default model for future sessions', exact=True).fill('fixture')
+            form.get_by_role('button', name='Save account', exact=True).click()
+            expect(settings.get_by_text('Provider account saved', exact=True)).to_be_visible(timeout=30000)
+            settings.get_by_role('button', name='Close', exact=True).click()
+            expect(settings).not_to_be_visible()
+            expect(composer).to_have_value('Preserve this unsent main draft')
+            assert state.workspace.session(owner, primary_id, turns=False).get('provider_id') is None
+            page.get_by_role('button', name='Use for this chat', exact=True).click()
+            wait(lambda: state.workspace.session(owner, primary_id, turns=False).get('model') == 'fixture',
+                 'Explicit connection did not bind this main chat')
+            expect(page.get_by_role('button', name='Send message', exact=True)).to_be_enabled()
+            expect(composer).to_have_value('Preserve this unsent main draft')
+            assert page.url.endswith('/session/' + primary_id) and not adapter.calls
+            shot('03b-main-first-account-connected-draft-preserved')
+            audit('main-first-connection')
+            report['checks'].append('Real account form and explicit Use for this chat connect the existing main without inference, retargeting history, changing its ID or losing its draft; unconfigured send creates no failed receipt')
             composer.fill('Coordinate the synthetic check')
             page.get_by_role('button', name='Send message', exact=True).click()
             wait(lambda: bool(state.agent_store.workspace_turns_page(primary_id, limit=1)), 'Main turn was not persisted')

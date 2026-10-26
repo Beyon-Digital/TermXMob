@@ -117,6 +117,7 @@ class OrchestratorService:
             if principal.id not in self._reconciled_owners:
                 self.reconcile(principal,binding['conversation_id'])
                 self._reconciled_owners.add(principal.id)
+            self._flush_reports(principal.id,binding['conversation_id'])
             relations=[row for row in self.store.list('delegated_session',principal.id)
                 if row['parent_session_id']==binding['conversation_id']]
             projections={}
@@ -199,6 +200,37 @@ class OrchestratorService:
                     'task.status','approval.requested','task.completed','task.failed','task.cancelled',
                     'task.recovery.started','task.recovery.blocked')):
                 self._event(relation,task_id,event)
+
+    def _flush_reports(self, owner, identifier):
+        """Drain a bounded durable page; another snapshot continues the cursor.
+
+        Publication is reference-only and does not wake an inference worker.
+        Keeping the cursor on the main binding also makes interrupted delivery
+        safe: AgentStore deduplicates the report's source event before retry.
+        """
+        if self.workspace.active(identifier):
+            return
+        with self.store.lock:
+            binding=self.binding(owner)
+            if not binding or binding['conversation_id']!=identifier:
+                return
+            cursor=int(binding.get('report_delivery_cursor') or 0)
+            rows=[self.store.unpack(row) for row in self.store.db.execute(
+                "SELECT * FROM records WHERE kind='orchestrator_event' AND owner=? "
+                "AND json_extract(body,'$.parent_session_id')=? "
+                "AND json_extract(body,'$.sequence')>? "
+                "ORDER BY json_extract(body,'$.sequence') ASC LIMIT 100",
+                (owner,identifier,cursor)).fetchall()]
+            delivered_through=cursor
+            for row in rows:
+                relation=self.relation(row['session_id'])
+                if relation and not self._inline_report(relation,row):
+                    break  # A new main turn started; leave this event pending.
+                delivered_through=row['sequence']
+            if delivered_through>cursor:
+                current=self.binding(owner)
+                self.store.update('orchestrator',current['id'],
+                    {**current,'report_delivery_cursor':delivered_through},current['revision'])
 
     def activity(self, principal, *, after=0):
         self.workspace.require(principal, 'agent-view')
@@ -348,7 +380,7 @@ class OrchestratorService:
             event_status={'task.completed':'completed','task.failed':'failed','task.cancelled':'cancelled',
                 'approval.requested':'awaiting_approval','task.recovery.blocked':'recovery_confirmation_required'}.get(kind,
                     payload.get('status') if kind=='task.status' else task['status'])
-            message = payload.get('result') or payload.get('message')
+            message = payload.get('result') or payload.get('error') or payload.get('message')
             if kind == 'approval.requested':
                 approval = payload.get('approval') or {}
                 message = (approval.get('payload') or {}).get('title') or 'A child agent needs your approval'
@@ -360,8 +392,8 @@ class OrchestratorService:
                 'parent_session_id': relation['parent_session_id'], 'session_id': relation['id'],
                 'task_id': task_id, 'sequence': sequence, 'kind': kind,
                 'status': event_status, 'message': redact(str(message))[:4000],
+                'source_approval_id':str((payload.get('approval') or {}).get('id') or '') if kind=='approval.requested' else None,
                 'inline_report':kind in {'task.completed','task.failed','task.cancelled','approval.requested','task.recovery.blocked'}
-                    and not self.workspace.active(relation['parent_session_id'])
                     and (kind!='approval.requested' or (self.agents.get_approval(str((payload.get('approval') or {}).get('id') or '')) or {}).get('status')=='pending')
                     and (kind!='task.recovery.blocked' or task['status']=='recovery_confirmation_required')},
                 relation.get('project_id'), event_id)
@@ -383,24 +415,44 @@ class OrchestratorService:
                     pass
 
     def _inline_report(self, relation, event):
-        """Persist a source reference when no main-agent inference is running."""
-        if not event.get('inline_report'):
-            return
+        """Return false only when delivery must wait for the main to be idle.
+
+        Older retained events may have inline_report=False solely because the
+        main was active when they arrived. Derive eligibility from the source
+        kind so a restart repairs those events as well as newly queued ones.
+        """
+        if event['kind'] not in {'task.completed','task.failed','task.cancelled','approval.requested','task.recovery.blocked'}:
+            return True
+        if event['kind']=='approval.requested':
+            approval_id=event.get('source_approval_id')
+            if not approval_id:
+                # Legacy rows did not retain the source request ID. Recover it
+                # only from that exact persisted event, never another request.
+                for original in self.agents.events(event['task_id'],event_types=('approval.requested',)):
+                    source_id=hashlib.sha256((event['task_id']+':'+str(original['id'])).encode()).hexdigest()
+                    if source_id==event['id']:
+                        approval_id=(original.get('payload',{}).get('approval') or {}).get('id')
+                        break
+            approval=self.agents.get_approval(approval_id) if approval_id else None
+            if not approval or approval.get('task_id')!=event['task_id'] or approval['status']!='pending':
+                return True  # A resolved request is history, not a new decision.
+        if event['kind']=='task.recovery.blocked' and (self.agents.get_task(event['task_id']) or {}).get('status')!='recovery_confirmation_required':
+            return True
         ws=self.workspace
         actor=ws.state.identity.principal_by_id(relation['owner'])
-        if not actor:return
+        if not actor:return True
         try:
             ws.record(actor,'conversation',relation['parent_session_id'])
             ws.record(actor,'conversation',relation['id'])
             ws.record(actor,'task',event['task_id'])
         except (KeyError,PermissionError,HTTPException) as exc:
             if not _denied(exc):raise
-            return
+            return True
         with self.store.lock:
-            if ws.active(relation['parent_session_id']):return
+            if ws.active(relation['parent_session_id']):return False
             parent=self.store.get('conversation',relation['parent_session_id'])
             child=self.agents.get_conversation(relation['id'])
-            if not parent or not child:return
+            if not parent or not child:return True
             source={'source_session_id':relation['id'],'source_task_id':event['task_id'],
                 'source_event_id':event['id'],'source_status':event['status'],
                 'kind':event['kind'],'label':child['title']}
@@ -411,6 +463,7 @@ class OrchestratorService:
                     'cwd':parent['cwd'],'coordination_report':source},parent.get('project_id'),report['id'])
             authz=getattr(ws.state,'authorization',None)
             if authz:authz.claim_principal(actor,'task',report['id'],project_id=parent.get('project_id'))
+        return True
 
     def public_report(self, principal, source):
         """Report bodies always follow the source resource's current access."""
@@ -437,10 +490,7 @@ class OrchestratorService:
         elif self.is_primary(metadata['owner'],metadata.get('conversation_id')) and event['type'] in {'task.completed','task.failed','task.cancelled'}:
             # Repair an inline-report reference deferred by a concurrent main
             # turn. This is bounded and never schedules another model request.
-            for row in self.store.list('orchestrator_event',metadata['owner'])[:100]:
-                if row.get('inline_report') and row['parent_session_id']==metadata['conversation_id']:
-                    child=self.relation(row['session_id'])
-                    if child:self._inline_report(child,row)
+            self._flush_reports(metadata['owner'],metadata['conversation_id'])
 
     def context(self, principal, identifier):
         if not self.is_primary(principal.id, identifier):

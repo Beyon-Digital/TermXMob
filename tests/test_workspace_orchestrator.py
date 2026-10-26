@@ -21,6 +21,7 @@ from termx.workspace.store import Conflict, WorkspaceStore
 
 class HoldingAdapter(FakeAdapter):
     async def turn(self, **kwargs):
+        self.turns+=1
         await asyncio.Event().wait()
 
 
@@ -427,5 +428,143 @@ def test_child_report_does_not_replace_failed_main_run_status(tmp_path):
             assert ledger.workspace_conversations_snapshot([primary['id']])[0]['latest_status']=='failed'
             assert ledger.workspace_latest_execution_task(primary['id'])['id']==task['id']
             assert ledger.get_task(task['id'])['error']=='Original main failure'
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('status,payload',[
+    ('completed',{'result':'The child finished while the main was responding.'}),
+    ('failed',{'error':'The child is blocked by a missing synthetic input.'}),
+    ('cancelled',{'message':'The user stopped this child.'}),
+])
+def test_child_terminal_report_waits_for_busy_main_then_arrives_once(tmp_path,status,payload):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await manager._spawn_subagent(parent['id'],parent,spawn_call(),manager._cancel[parent['id']])
+            ledger.update_task(child['task_id'],status=status,**({'result':payload['result']} if 'result' in payload else {'error':payload.get('error') or payload.get('message')}))
+            event=manager._emit(child['task_id'],'task.'+status,payload)
+            reports=lambda:[turn['task'] for turn in workspace.session(owner,primary['id'])['turns']
+                if (turn.get('task') or {}).get('coordination_report')]
+            assert reports()==[]
+            retained=next(row for row in workspace.store.list('orchestrator_event',owner.id)
+                if row['task_id']==child['task_id'] and row['kind']=='task.'+status)
+            assert retained['inline_report'] is True
+            ledger.update_task(parent['id'],status='completed',result='Main turn completed')
+            before=manager._adapter_factory(None,None).turns
+            manager._emit(parent['id'],'task.completed',{'result':'Main turn completed'})
+            assert len(reports())==1
+            assert next(iter(payload.values())) in reports()[0]['result']
+            assert reports()[0]['coordination_report']['source_status']==status
+            workspace.orchestrator.on_event(child['task_id'],event)
+            workspace.orchestrator.snapshot(owner)
+            assert len(reports())==1
+            assert manager._adapter_factory(None,None).turns==before
+            assert ledger.get_task(parent['id'])['status']=='completed'
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
+def test_restart_repairs_legacy_active_main_report_without_inference(tmp_path):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await manager._spawn_subagent(parent['id'],parent,spawn_call(),manager._cancel[parent['id']])
+            ledger.update_task(child['task_id'],status='completed',result='Durable child result before restart')
+            manager._emit(child['task_id'],'task.completed',{'result':'Durable child result before restart'})
+            retained=next(row for row in workspace.store.list('orchestrator_event',owner.id)
+                if row['task_id']==child['task_id'] and row['kind']=='task.completed')
+            # Reproduce an existing retained event from the old implementation.
+            workspace.store.update('orchestrator_event',retained['id'],{**retained,'inline_report':False})
+            ledger.update_task(parent['id'],status='failed',error='Host ended before reporting')
+            from termx.workspace.orchestrator import OrchestratorService
+            workspace.orchestrator=OrchestratorService(workspace)
+            manager.orchestrator=workspace.orchestrator
+            before=manager._adapter_factory(None,None).turns
+            workspace.orchestrator.snapshot(owner)
+            workspace.orchestrator.snapshot(owner)
+            reports=[turn['task'] for turn in workspace.session(owner,primary['id'])['turns']
+                if (turn.get('task') or {}).get('coordination_report')]
+            assert len(reports)==1 and 'Durable child result before restart' in reports[0]['result']
+            assert manager._adapter_factory(None,None).turns==before
+            assert ledger.get_task(parent['id'])['status']=='failed'
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
+def test_deferred_reports_drain_more_than_one_hundred_in_durable_pages(tmp_path):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await manager._spawn_subagent(parent['id'],parent,spawn_call(),manager._cancel[parent['id']])
+            # Seed retained source turns, not 125 live workers or model calls.
+            for number in range(125):
+                task=ledger.create_task(prompt='Stored source turn '+str(number),cwd=primary['cwd'],
+                    provider_id='fixture',model='fixture',limits={},mode='ask',status='completed',parent_id=parent['id'])
+                workspace.store.create('task',owner.id,{'conversation_id':child['session_id'],
+                    'cwd':primary['cwd'],'parent_id':parent['id']},identifier=task['id'])
+                manager._emit(task['id'],'task.completed',{'result':'Retained result '+str(number)})
+            reports=lambda:[turn for turn in ledger.get_conversation(primary['id'],include_turns=True)['turns']
+                if (ledger.get_task(turn['task_id']) or {}).get('engine')=='coordination']
+            assert reports()==[]
+            ledger.update_task(parent['id'],status='completed')
+            manager._emit(parent['id'],'task.completed',{})
+            assert 0<len(reports())<125  # Terminal handling has a strict page bound.
+            cursor=workspace.orchestrator.binding(owner.id)['report_delivery_cursor']
+            workspace.orchestrator.snapshot(owner)
+            assert len(reports())==125
+            assert workspace.orchestrator.binding(owner.id)['report_delivery_cursor']>cursor
+            workspace.orchestrator.snapshot(owner)
+            assert len(reports())==125 and len({turn['task_id'] for turn in reports()})==125
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('decision',['approved','denied'])
+def test_resolved_child_decision_is_not_reintroduced_after_busy_main(tmp_path,decision):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await manager._spawn_subagent(parent['id'],parent,spawn_call(),manager._cancel[parent['id']])
+            approval=ledger.create_approval(child['task_id'],'tool',{'title':'An exact synthetic source request'})
+            manager._emit(child['task_id'],'approval.requested',{'approval':approval})
+            ledger.resolve_approval(approval['id'],decision)
+            ledger.update_task(parent['id'],status='completed')
+            manager._emit(parent['id'],'task.completed',{})
+            workspace.orchestrator.snapshot(owner)
+            reports=[turn for turn in workspace.session(owner,primary['id'])['turns']
+                if (turn.get('task') or {}).get('coordination_report')]
+            assert reports==[]
+            assert ledger.get_approval(approval['id'])['status']==decision
+            assert not [row for row in ledger.approvals(child['task_id']) if row['id']==approval['id'] and row['status']=='pending']
+        finally:await close(workspace,manager,ledger)
+    asyncio.run(run())
+
+
+def test_revoked_source_is_not_delivered_from_deferred_main_reports(tmp_path,monkeypatch):
+    from fastapi import HTTPException
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await manager._spawn_subagent(parent['id'],parent,spawn_call(),manager._cancel[parent['id']])
+            ledger.update_task(child['task_id'],status='completed',result='Restricted deferred result')
+            manager._emit(child['task_id'],'task.completed',{'result':'Restricted deferred result'})
+            original=workspace.record
+            def revoked(principal,kind,identifier,**kwargs):
+                if (kind=='task' and identifier==child['task_id']) or (kind=='conversation' and identifier==child['session_id']):
+                    raise HTTPException(403,'Source project access was revoked')
+                return original(principal,kind,identifier,**kwargs)
+            monkeypatch.setattr(workspace,'record',revoked)
+            ledger.update_task(parent['id'],status='completed')
+            manager._emit(parent['id'],'task.completed',{})
+            workspace.orchestrator.snapshot(owner)
+            reports=[turn for turn in workspace.session(owner,primary['id'])['turns']
+                if (turn.get('task') or {}).get('coordination_report')]
+            assert reports==[]
         finally:await close(workspace,manager,ledger)
     asyncio.run(run())

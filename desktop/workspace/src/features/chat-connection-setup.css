@@ -1,0 +1,9 @@
+.chat-connection-setup{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:14px 16px;margin:0 0 12px;text-align:left}
+.chat-connection-heading h3{font-size:13px;font-weight:550;margin:0 0 5px;color:var(--foreground)}
+.chat-connection-heading p,.chat-connection-note{font-size:12px;line-height:1.6;color:var(--secondary);margin:0 0 10px}
+.chat-connection-setup form{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0 8px}
+.chat-connection-setup form label{display:flex;flex:1 1 140px;min-width:0;flex-direction:column;gap:5px;font-size:12px}
+.chat-connection-setup form label select{width:100%;min-width:0}
+.chat-connection-setup>.button{font-size:12px;padding-left:0}
+.chat-connection-error{font-size:12px;line-height:1.5;color:var(--destructive);margin:8px 0}
+@container(max-width:440px){.chat-connection-setup{padding:12px}.chat-connection-setup form{gap:8px}.chat-connection-setup form label{flex-basis:100%}.chat-connection-setup form>.button{width:100%}}
