@@ -65,7 +65,7 @@ def start_turn(thread_id: str, text: str) -> str:
         item_id = f"item_{seq}"
         notify("item/started", {"item": {"id": item_id, "type": "commandExecution",
                                         "command": ["echo", "hi"], "status": "inProgress"},
-                               "threadId": thread_id})
+                               "threadId": thread_id, "turnId": turn_id})
         req_id = f"req_{seq}"
         pending_approval["id"] = req_id
         pending_approval["thread_id"] = thread_id
@@ -85,14 +85,14 @@ def start_turn(thread_id: str, text: str) -> str:
 def complete_normally(thread_id: str, turn_id: str, text: str) -> None:
     item_id = f"item_{seq}"
     notify("item/started", {"item": {"id": item_id, "type": "agentMessage",
-                                    "text": ""}, "threadId": thread_id})
+                                    "text": ""}, "threadId": thread_id, "turnId": turn_id})
     reply_text = f"fake says: {text[:60]}"
     for chunk in (reply_text[:20], reply_text[20:]):
         notify("item/agentMessage/delta",
-               {"itemId": item_id, "threadId": thread_id, "delta": chunk})
+               {"itemId": item_id, "threadId": thread_id, "turnId": turn_id, "delta": chunk})
     notify("item/completed", {"item": {"id": item_id, "type": "agentMessage",
                                        "text": reply_text},
-                              "threadId": thread_id})
+                              "threadId": thread_id, "turnId": turn_id})
     finish_turn(thread_id, turn_id)
 
 
@@ -116,14 +116,16 @@ def handle(msg: dict) -> None:
                                                    "type": "commandExecution",
                                                    "status": "completed",
                                                    "exitCode": 0},
-                                          "threadId": pending_approval["thread_id"]})
+                                          "threadId": pending_approval["thread_id"],
+                                          "turnId": pending_turn["turn_id"]})
                 complete_normally(pending_approval["thread_id"],
                                   pending_turn["turn_id"], "(after approval)")
             else:
                 notify("item/completed", {"item": {"id": f"item_{seq}",
                                                    "type": "commandExecution",
                                                    "status": "declined"},
-                                          "threadId": pending_approval["thread_id"]})
+                                          "threadId": pending_approval["thread_id"],
+                                          "turnId": pending_turn["turn_id"]})
                 finish_turn(pending_approval["thread_id"],
                             pending_turn["turn_id"], "completed")
             pending_approval.clear()

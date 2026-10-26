@@ -19,6 +19,7 @@ from termx.audit import log_event
 from termx.engines.env import env_diff_report, resolve_executable
 from termx.graphql.context import TermxContext
 from termx.graphql.errors import resolver
+from termx.workspace.public_events import context_task_snapshot
 from termx.graphql.inputs import (
     AgentApprovalInput,
     AgentProviderInput,
@@ -248,7 +249,9 @@ class AgentQueries:
         task = ctx.state.agent_store.export_task(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
-        return task
+        result = context_task_snapshot(ctx, task)
+        ctx.require_resource('agent-view', 'task', task_id)
+        return result
 
     @strawberry.field
     @resolver

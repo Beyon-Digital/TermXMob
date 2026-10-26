@@ -23,6 +23,7 @@ from .types import (
     EngineDescriptor,
     EngineEvent,
     EngineSessionBinding,
+    SESSION_LOST,
 )
 
 EventSink = Callable[[str, EngineEvent], None]
@@ -306,32 +307,60 @@ class ClaudeEngine:
         state = self._sessions.get(binding.binding_id)
         if state is None:
             raise ValueError("no claude session state")
+        dispatch_id = binding.extensions_snapshot.get("termx_dispatch_id")
+        generation = object()
+        state["dispatch_generation"] = generation
+        turn_context = {"cancel_requested": False, "stream_messages": {}}
+        state["turn_context"] = turn_context
+        native = {"session_id": binding.native_session_id}
+        if isinstance(dispatch_id, str) and dispatch_id:
+            native["dispatch_id"] = dispatch_id
+
+        def current() -> bool:
+            return (self._sessions.get(binding.binding_id) is state
+                    and state.get("dispatch_generation") is generation
+                    and binding.extensions_snapshot.get("termx_dispatch_id") == dispatch_id)
+
         binding.status = "active"
-        state["stream_messages"] = {}
+        state["stream_messages"] = turn_context["stream_messages"]
         state["cancel_requested"] = False
-        self._emit(binding, "engine.turn.started", {"prompt_chars": len(prompt)})
+        self._emit(binding, "engine.turn.started", {"prompt_chars": len(prompt)}, native)
 
         async def _run() -> None:
             try:
-                await self._run_turn(binding, state, prompt, attachments)
+                if not current():
+                    self._emit(binding, "engine.turn.completed", {
+                        "status": "interrupted", "stop_reason": "superseded_before_query",
+                    }, native)
+                    return
+                await self._run_turn(binding, state, prompt, attachments,
+                                     native=native, is_current=current, turn_context=turn_context)
             except asyncio.CancelledError:
-                self._emit(binding, "engine.turn.completed", {"status": "interrupted"})
+                self._emit(binding, "engine.turn.completed", {"status": "interrupted"}, native)
                 raise
             except Exception as exc:
                 self._emit(binding, "engine.turn.completed",
-                           {"status": "failed", "error": {"message": str(exc)}})
+                           {"status": "failed", "error": {"message": str(exc)}}, native)
             finally:
-                binding.status = "idle"
-                binding.updated_at = time.time()
+                if current():
+                    if binding.status not in {"closed", SESSION_LOST}:
+                        binding.status = "idle"
+                    binding.updated_at = time.time()
 
         state["reader"] = asyncio.create_task(_run())
         return binding.native_session_id
 
     async def _run_turn(self, binding: EngineSessionBinding,
-                        state: dict[str, Any], prompt: str, attachments: list[dict[str, Any]] | None = None) -> None:
+                        state: dict[str, Any], prompt: str, attachments: list[dict[str, Any]] | None = None,
+                        *, native: dict[str, Any] | None = None,
+                        is_current: Callable[[], bool] | None = None,
+                        turn_context: dict[str, Any] | None = None) -> None:
         from claude_agent_sdk import (
             AssistantMessage, ClaudeSDKClient, ResultMessage, SystemMessage,
         )
+        native = native if native is not None else {}
+        is_current = is_current or (lambda: True)
+        turn_context = turn_context if turn_context is not None else state
         client = state.get("client")
         if client is None:
             options = state.get("options")
@@ -344,6 +373,11 @@ class ClaudeEngine:
             client = ClaudeSDKClient(options=options)
             state["client"] = client
         await client.connect()
+        if not is_current():
+            self._emit(binding, "engine.turn.completed", {
+                "status": "interrupted", "stop_reason": "superseded_before_query",
+            }, native)
+            return
         if attachments:
             from termx.engines.attachments import image_attachments
             content = [{"type":"text", "text":prompt}]
@@ -351,21 +385,31 @@ class ClaudeEngine:
                            for item in image_attachments(attachments))
             async def user_messages():
                 yield {"type":"user","message":{"role":"user","content":content},
-                       "parent_tool_use_id":None,"session_id":binding.native_session_id}
+                       "parent_tool_use_id":None,"session_id":native.get("session_id", binding.native_session_id)}
             await client.query(user_messages())
         else:
             await client.query(prompt)
         async for message in client.receive_response():
-            self._map_message(binding, message)
+            native_pending = native.get("session_id", binding.native_session_id).startswith("pending_")
+            sid = getattr(message, "session_id", None)
+            if isinstance(sid, str) and sid:
+                native["session_id"] = sid
+            turn_id = getattr(message, "turn_id", None)
+            if isinstance(turn_id, str) and turn_id:
+                native["turn_id"] = turn_id
             if isinstance(message, SystemMessage) and getattr(message, "subtype", "") == "init":
                 data = getattr(message, "data", {}) or {}
                 sid = data.get("session_id")
-                if sid and binding.native_session_id.startswith("pending_"):
-                    binding.native_session_id = sid
-                    self._emit(binding, "engine.session.bound",
-                               {"native_session_id": sid})
+                if isinstance(sid, str) and sid:
+                    native["session_id"] = sid
+                    if native_pending:
+                        if is_current():
+                            binding.native_session_id = sid
+                        self._emit(binding, "engine.session.bound",
+                                   {"native_session_id": sid}, native)
+            self._map_message(binding, message, state=turn_context, native=native)
             if isinstance(message, ResultMessage):
-                interrupted = state.get("cancel_requested") or getattr(message, "terminal_reason", None) in {
+                interrupted = turn_context.get("cancel_requested") or getattr(message, "terminal_reason", None) in {
                     "aborted_streaming", "aborted_tools",
                 }
                 failed = bool(getattr(message, "is_error", False))
@@ -379,18 +423,23 @@ class ClaudeEngine:
                     **({"error": {"message": redact(str(details))[:1000]}} if failed and not interrupted else {}),
                     "usage": _bounded(getattr(message, "usage", {}) or {}),
                     "cost_usd": getattr(message, "total_cost_usd", None),
-                })
+                }, native)
                 return
         self._emit(binding, "engine.turn.completed", {
-            "status": "interrupted" if state.get("cancel_requested") else "failed",
+            "status": "interrupted" if turn_context.get("cancel_requested") else "failed",
             "error": {"message": "Claude response stream ended before a terminal result. The request was not replayed."},
-        })
+        }, native)
 
-    def _map_message(self, binding: EngineSessionBinding, message: Any) -> None:
+    def _map_message(self, binding: EngineSessionBinding, message: Any, *,
+                     state: dict[str, Any] | None = None,
+                     native: dict[str, Any] | None = None) -> None:
         from claude_agent_sdk import AssistantMessage, StreamEvent, SystemMessage, UserMessage
         from termx.agent.providers import _redact_value
         name = type(message).__name__
-        state = self._sessions.get(binding.binding_id, {})
+        state = state if state is not None else self._sessions.get(binding.binding_id, {})
+
+        def emit(etype: str, payload: dict[str, Any]) -> None:
+            self._emit(binding, etype, payload, native)
         parent = getattr(message, "parent_tool_use_id", None)
         ancestry = {"parent_call_id": parent} if parent else {}
         streams = state.setdefault("stream_messages", {})
@@ -417,7 +466,7 @@ class ClaudeEngine:
             stream = streams.setdefault(parent, {"id": None, "blocks": {}})
             key = (event.get("index", 0), field)
             stream["blocks"][key] = stream["blocks"].get(key, "") + delta
-            self._emit(binding, etype, {"delta": delta, "message_id": stream["id"], **ancestry})
+            emit(etype, {"delta": delta, "message_id": stream["id"], **ancestry})
         elif isinstance(message, AssistantMessage):
             stream = streams.pop(parent, {})
             message_id = getattr(message, "message_id", None)
@@ -433,13 +482,13 @@ class ClaudeEngine:
                     # fallback for agents that never send partial events.
                     delta = text[len(streamed):] if text.startswith(streamed) else text
                     if delta:
-                        self._emit(binding, "engine.message.delta",
+                        emit("engine.message.delta",
                                    {"delta": delta, "message_id": message_id, **ancestry})
                 elif bname == "ToolUseBlock":
                     tool_input=getattr(block,'input',{}) or {}
                     if str(getattr(block,'name','')).endswith('__browser_action'):
                         tool_input={**tool_input,'args':{k:('[input withheld]' if k in {'text','data','data_base64'} else v) for k,v in (tool_input.get('args') or {}).items()}}
-                    self._emit(binding, "engine.tool.started", {
+                    emit("engine.tool.started", {
                         "call_id": getattr(block, "id", ""),
                         "tool": getattr(block, "name", ""),
                         "input": _bounded(_redact_value(tool_input)), **ancestry})
@@ -448,30 +497,32 @@ class ClaudeEngine:
                     streamed = stream.get("blocks", {}).get((index, "thinking"), "")
                     delta = text[len(streamed):] if text.startswith(streamed) else text
                     if delta:
-                        self._emit(binding, "engine.reasoning.delta",
+                        emit("engine.reasoning.delta",
                                    {"delta": delta, "message_id": message_id, **ancestry})
         elif isinstance(message, UserMessage):
             content = getattr(message, "content", []) or []
             for block in content if isinstance(content, list) else []:
                 if type(block).__name__ == "ToolResultBlock":
                     failed = getattr(block, "is_error", False) is True
-                    self._emit(binding, "engine.tool.failed" if failed else "engine.tool.completed", {
+                    emit("engine.tool.failed" if failed else "engine.tool.completed", {
                         "call_id": getattr(block, "tool_use_id", ""),
                         "status": "failed" if failed else "completed",
                         "output": _bounded(_redact_value(getattr(block, "content", None))),
                         **ancestry,
                     })
         elif isinstance(message, SystemMessage):
-            self._emit(binding, "engine.session.info",
+            emit("engine.session.info",
                        _bounded(getattr(message, "data", {}) or {}))
         else:
-            self._emit(binding, "engine.raw", {"message": name,
+            emit("engine.raw", {"message": name,
                                                "data": _bounded(getattr(message, "__dict__", {}) or {})})
 
     async def cancel(self, binding: EngineSessionBinding) -> None:
         state = self._sessions.get(binding.binding_id)
         if state is not None:
             state["cancel_requested"] = True
+            if state.get("turn_context") is not None:
+                state["turn_context"]["cancel_requested"] = True
         if state and state.get("client"):
             try:
                 await state["client"].interrupt()

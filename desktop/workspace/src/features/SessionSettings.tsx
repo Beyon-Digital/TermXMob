@@ -5,6 +5,7 @@ import {Select} from '../components/ui/select';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import PresetPicker,{type AgentPreset} from './PresetPicker';
 import SessionAccess from './SessionAccess';
+import OrchestratorAdoption from './OrchestratorAdoption';
 import VoiceControls from './VoiceControls';
 import {request,type Session,type Engine,type Provider} from '../lib/api';
 import './chat-composer.css';
@@ -24,14 +25,14 @@ export const RUN_PROFILES=[
 const sections=[{id:'agent',label:'Agent',icon:Bot},{id:'tools',label:'Tools',icon:Wrench},{id:'execution',label:'Runtime',icon:Cpu},{id:'voice',label:'Voice',icon:Mic}] as const;
 type Section=typeof sections[number]['id'];
 
-export type SessionSettingsProps={open:boolean;onOpenChange:(open:boolean)=>void;session:Session|null;running:boolean;turnsCount:number;ownerId?:string;visible?:boolean;
+export type SessionSettingsProps={coordinating?:boolean;open:boolean;onOpenChange:(open:boolean)=>void;session:Session|null;running:boolean;turnsCount:number;ownerId?:string;visible?:boolean;
  runnerOptions:Runner[];runnerAccounts:RunnerAccount[];
  engines:Engine[];providers:Provider[];models:string[];favorites:string[];favoriteKey:string;
  onFavorite:()=>void;onEngine:(engine:string)=>void;
- patch:(changes:Record<string,unknown>)=>Promise<void>;onError:(error:unknown)=>void;onRefresh:()=>void;
+ patch:(changes:Record<string,unknown>)=>Promise<unknown>;onError:(error:unknown)=>void;onRefresh:()=>void;
  reply:string;onTranscript:(text:string)=>void;onConversationSettings:()=>void};
 
-export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,onEngine,patch,onError,reply,onTranscript,onConversationSettings}:SessionSettingsProps){
+export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,onEngine,patch,onError,onRefresh,reply,onTranscript,onConversationSettings,coordinating=false}:SessionSettingsProps){
  const [section,setSection]=useState<Section>('agent'),[savingProfile,setSavingProfile]=useState<string|null>(null);
  useEffect(()=>{setSection('agent');setSavingProfile(null)},[session?.id,open]);
  const [presets,setPresets]=useState<AgentPreset[]>([]),[presetsLoading,setPresetsLoading]=useState(false);
@@ -49,8 +50,9 @@ export default function SessionSettings({open,onOpenChange,session,running,turns
   <nav className="session-settings-nav" aria-label="Session settings sections">{sections.map(item=>{const Icon=item.icon;return <button key={item.id} type="button" aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)}><Icon size={15}/>{item.label}</button>})}</nav>
   <div className="session-settings-content">
    {section==='agent'&&<section className="session-settings-pane" aria-label="Agent settings">
-    <label>Engine<Select aria-label="Session engine" value={session.engine} disabled={running} onChange={event=>{onOpenChange(false);onEngine(event.target.value)}}>{engineChoices.map(item=><option key={item.id} value={item.id}>{item.name||item.id}</option>)}</Select></label>
-    {turnsCount>0&&<p className="control-description">Switching engines creates a linked conversation with the context you choose.</p>}
+    <label>Engine<Select aria-label="Session engine" value={session.engine} disabled={running||coordinating} onChange={event=>{if(coordinating)return;onOpenChange(false);onEngine(event.target.value)}}>{engineChoices.map(item=><option key={item.id} value={item.id}>{item.name||item.id}</option>)}</Select></label>
+    {coordinating&&<p className="control-description">Your main agent runs on TermX Agent and can delegate work to installed engines. Each child chat keeps its engine, approvals, and supported limits.</p>}
+    {!coordinating&&turnsCount>0&&<p className="control-description">Switching engines creates a linked conversation with the context you choose.</p>}
     <div className="agent-preset-field"><PresetPicker loading={presetsLoading} presets={presets} value={session.custom_agent_id} disabled={presetLocked} onChange={id=>void patch({custom_agent_id:id})}/>
      {session.custom_agent_id&&<Button size="sm" variant="ghost" disabled={presetLocked} onClick={()=>void patch({custom_agent_id:session.custom_agent_id})}>Refresh preset binding</Button>}
      {session.engine!=='internal'&&!!turnsCount&&<p className="control-description">This conversation keeps its current agent preset.</p>}
@@ -58,6 +60,7 @@ export default function SessionSettings({open,onOpenChange,session,running,turns
     <fieldset className="run-profile-field"><legend>Run style</legend><p className="control-description">{profile?'Choose how much room the agent has to work.':'Your existing custom limits are preserved. Choose a style to replace them.'}</p>
      <div className="run-profile-options">{RUN_PROFILES.map(item=><label className={'run-profile-option '+(profile?.id===item.id?'selected':'')} key={item.id}><input type="radio" name="run-profile" value={item.id} checked={profile?.id===item.id} disabled={running||!!savingProfile} onChange={async()=>{setSavingProfile(item.id);try{await patch({run_limits:{...item.limits}})}catch(error){onError(error)}finally{setSavingProfile(null)}}}/><span><strong>{item.name}{item.id==='balanced'&&<small>Default</small>}</strong><small>{savingProfile===item.id?'Saving…':item.description}</small></span>{profile?.id===item.id&&<Check size={16}/>}</label>)}</div>
     </fieldset>
+    {!coordinating&&ownerId&&<OrchestratorAdoption ownerId={ownerId} session={session} onRefresh={onRefresh} enabled={visible&&open}/>}
    </section>}
    {section==='tools'&&<section className="session-settings-pane" aria-label="Tools and access">
     <h3>Tools and skills</h3><p className="control-description">Choose skills for this conversation. Your account and project permissions still apply.</p>

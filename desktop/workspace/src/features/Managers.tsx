@@ -6,6 +6,7 @@ import CloudAccounts from './CloudAccounts';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import { request } from '../lib/api';
 import './managers.css';
 import ProviderAccountForm from './ProviderAccountForm';
@@ -39,6 +40,24 @@ function Json({ value }: { value: unknown }) { return <details><summary>Advanced
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="manager-field"><span>{label}</span>{children}</label> }
 function Empty({ children }: { children: React.ReactNode }) { return <div className="manager-empty">{children}</div> }
 function Item({ title, meta, children }: { title: string; meta?: React.ReactNode; children?: React.ReactNode }) { return <article className="manager-item"><div><h3>{title}</h3>{meta && <p>{meta}</p>}</div><div className="manager-item-actions">{children}</div></article> }
+function EngineAuthentication({engine,busy,canAuthenticate,onAuthenticate}:{engine:Row;busy:boolean;canAuthenticate:boolean;onAuthenticate:(methodId:string)=>unknown}){
+  if(!engine.installed)return null;
+  // Only ACP currently exposes authenticate_engine. Other adapters may report
+  // authentication state, but that does not make a sign-in RPC available.
+  const advertised=engine.protocol?.name==='acp'&&Array.isArray(engine.protocol.auth_methods)?engine.protocol.auth_methods:[];
+  const seen=new Set<string>();
+  const methods=advertised.filter((method:Row)=>{if(!method||typeof method.id!=='string'||!method.id.trim()||seen.has(method.id))return false;seen.add(method.id);return true});
+  if(methods.length){
+    if(!canAuthenticate)return <p className="manager-help">Ask the host owner to connect this engine.</p>;
+    return <div className="manager-item-actions" role="group" aria-label={`Sign-in methods for ${engine.label}`}>{methods.map((method:Row)=>{
+      const label=[method.name,method.label].find(value=>typeof value==='string'&&value.trim())||'Connect account';
+      return <Button key={method.id} variant="secondary" disabled={busy} onClick={()=>onAuthenticate(method.id)}>{label}</Button>;
+    })}</div>;
+  }
+  if(['authenticated','not_required'].includes(engine.auth_state))return null;
+  const native=engine.protocol?.name==='codex-app-server'?'Codex CLI':engine.protocol?.name==='claude-agent-sdk'?'Claude CLI':null;
+  return <p className="manager-help">{native?`Manage sign-in in the ${native} on this host, then refresh to check the account.`:'This engine has no sign-in method available in TermX. Manage its account on this host, then refresh.'}</p>;
+}
 
 export function Managers({ section: incoming, projectId, sessionId, onSection, onCapabilitiesChanged, embedded=false }: ManagersProps) {
   const section = canonicalSettingsCategory(incoming);
@@ -47,6 +66,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [search, setSearch] = useState(''), [version, setVersion] = useState(0);
   const [draft, setDraft] = useState<Row>({}), [preview, setPreview] = useState<Row | null>(null), [selected, setSelected] = useState<string>('');
   const [editingProvider,setEditingProvider]=useState<Row|null>(null);
+  const [testProvider,setTestProvider]=useState<Row|null>(null);
   const [editingMemory,setEditingMemory]=useState<Row|null>(null);
   const [editingPreset,setEditingPreset]=useState<Row|null>(null);
   useEffect(()=>{setEditingMemory(null);setEditingPreset(null)},[section,projectId]);
@@ -56,7 +76,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
   useEffect(() => {
     let cancelled = false; setLoading(true); setError('');
     async function load(): Promise<Row> {
-      if (section === 'models') return gql('{ engines { id label installed version auth_state error capabilities } agent_providers { id name kind model base_url secret_configured capabilities } acp_registry }');
+      if (section === 'models') return gql('{ engines { id label installed version auth_state auth_detail protocol error capabilities } agent_providers { id name kind model base_url secret_configured capabilities } acp_registry }');
       if (section === 'agents') return gql('{ engines { id label installed } custom_agents { id name description instructions engine model enabled tools tools_mode toolsets deny_tools limits approval_mode sandbox_profile file_revision mcp_connections } }');
       if (section === 'connections') return {};
       if (section === 'memory') return request<Row>(`/api/workspace/memory${scoped(projectId)}`);
@@ -99,15 +119,16 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       {error && <div role="alert" className="manager-error">{error}<button onClick={() => setVersion(v => v + 1)}>Retry</button></div>}{notice && <div role="status" className="manager-notice">{notice}</div>}
       {loading && !Object.keys(data).length && !['extensions','automations'].includes(section) ? <Empty>Loading current settings…</Empty> : <>
       {section === 'cloud' && <CloudAccounts search={search}/>}
-      {section === 'models' && <><h2>Installed engines</h2>{(data.engines || []).filter(matches).map((engine: Row) => <Item key={engine.id} title={engine.label} meta={`${engine.installed ? 'Installed' : 'Needs installation'} · ${engine.auth_state || 'Unknown account status'}${engine.version ? ` · ${engine.version}` : ''}`}>
-        {action('Inspect capabilities', () => setPreview(engine), true)}{action('Refresh models', () => mutate(async () => { const value = await gql('query($id:String!){engine_models(engine_id:$id)}', { id: engine.id }); setPreview(value); return value }, 'Model catalog refreshed', false), true)}
-        <details><summary>Account sign-in</summary><Input aria-label={`Sign-in method for ${engine.label}`} placeholder="Method ID from engine account settings" value={draft[`method-${engine.id}`] || ''} onChange={e => change(`method-${engine.id}`, e.target.value)} />{action('Sign in', () => mutate(() => gql('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}', { id: engine.id, method: draft[`method-${engine.id}`] || '' }), 'Sign-in request completed'))}</details>
-      </Item>)}{preview && <details open><summary>Selected engine capabilities/catalog</summary><Json value={preview} /></details>}
-      {me.principal?.id&&<ModelFavoritesManager ownerId={me.principal.id} engines={data.engines||[]} accounts={data.agent_providers||[]} search={search}/>}
-      <h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider: Row) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => mutate(() => gql('mutation($id:String!){test_agent_provider(provider_id:$id)}', { id: provider.id }), 'Provider connection tested'), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
+      {section === 'models' && <><h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider: Row) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => setTestProvider(provider), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
       {admin && editingProvider && <ProviderAccountForm key={editingProvider.id} account={editingProvider as any} busy={busy} onCancel={()=>setEditingProvider(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account updated');if(result!==null)setEditingProvider(null);return result}}/>}
       {admin && <details><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={input=>mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account saved')}/></details>}
-      {admin && <details><summary>Install a compatible engine</summary><div className="manager-form">{input('registryId', 'Registry package ID')}{action('Refresh registry', () => mutate(() => gql('mutation{refresh_acp_registry}'), 'Registry refreshed'))}{action('Install engine', () => mutate(() => gql('mutation($id:String!){install_acp_runner(registry_id:$id)}', { id: draft.registryId }), 'Engine installed'))}<Json value={data.acp_registry} /></div></details>}<p className="manager-help">Choose an engine or model in each chat composer. Account changes do not retarget running sessions. API-key providers and subscription engines use separate billing.</p></>}
+      <h2>Installed engines</h2>{(data.engines || []).filter(matches).map((engine: Row) => <Item key={engine.id} title={engine.label} meta={`${engine.installed ? 'Installed' : 'Needs installation'} · ${engine.auth_state || 'Unknown account status'}${engine.version ? ` · ${engine.version}` : ''}`}>
+        {action('Inspect capabilities', () => setPreview(engine), true)}{action('Refresh models', () => mutate(async () => { const value = await gql('query($id:String!){engine_models(engine_id:$id)}', { id: engine.id }); setPreview(value); return value }, 'Model catalog refreshed', false), true)}
+        <EngineAuthentication engine={engine} busy={busy} canAuthenticate={(me.principal?.scopes||[]).includes('agent-run')} onAuthenticate={method=>mutate(async()=>{const result=await gql('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}',{id:engine.id,method});if(result.authenticate_engine?.ok!==true)throw new Error(result.authenticate_engine?.message||'The engine did not confirm sign-in.');return result},'Engine sign-in completed')}/>
+      </Item>)}{preview && <details open><summary>Selected engine capabilities/catalog</summary><Json value={preview} /></details>}
+      {admin && <details><summary>Install a compatible engine</summary><div className="manager-form">{input('registryId', 'Registry package ID')}{action('Refresh registry', () => mutate(() => gql('mutation{refresh_acp_registry}'), 'Registry refreshed'))}{action('Install engine', () => mutate(() => gql('mutation($id:String!){install_acp_runner(registry_id:$id)}', { id: draft.registryId }), 'Engine installed'))}<Json value={data.acp_registry} /></div></details>}
+      {me.principal?.id&&<details><summary>Model favorites</summary><ModelFavoritesManager ownerId={me.principal.id} engines={data.engines||[]} accounts={data.agent_providers||[]} search={search}/></details>}
+      <p className="manager-help">Choose an engine or model in each chat composer. Account changes do not retarget running sessions. API-key providers and subscription engines use separate billing.</p></>}
 
       {section === 'agents' && <><h2>Presets for future sessions</h2>{(data.custom_agents || []).filter(matches).map((agent: Row) => <Item key={agent.id} title={agent.name} meta={agent.description}>{action('Inspect', () => setPreview(agent), true)}{admin && action('Edit preset',()=>setEditingPreset(agent),true)}{admin && action('Remove', () => mutate(() => gql('mutation($id:String!){delete_custom_agent(agent_id:$id){deleted}}', { id: agent.id }), 'Agent preset removed'), true)}</Item>)}{preview && <Json value={preview} />}
       {admin && editingPreset && <AgentPresetEditor engines={(data.engines||[]).filter((row:Row)=>row.installed)} key={editingPreset.id} preset={editingPreset} onCancel={()=>setEditingPreset(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($id:String!,$input:CustomAgentPatchInput!){patch_custom_agent(agent_id:$id,input:$input){id}}',{id:editingPreset.id,input}),'Preset updated for future runs');if(result!==null)setEditingPreset(null);return result}}/>}
@@ -152,6 +173,7 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       </>}
       </>}
     </main>
+    <Dialog open={!!testProvider} onOpenChange={open=>{if(!open)setTestProvider(null)}}>{testProvider&&<DialogContent className="provider-test-dialog"><DialogTitle>Test {testProvider.name||testProvider.id}?</DialogTitle><DialogDescription>This sends a short model request to your provider. Provider charges may apply.</DialogDescription><dl><dt>Destination</dt><dd>{testProvider.base_url||'Configured provider endpoint'}</dd><dt>Model</dt><dd>{testProvider.model||'No default model selected'}</dd><dt>Test message</dt><dd>Reply with only OK.</dd></dl>{!testProvider.model&&<p role="alert">Edit this account and choose a default model before sending a test.</p>}<div className="manager-item-actions"><Button variant="secondary" onClick={()=>setTestProvider(null)}>Cancel test</Button><Button disabled={busy||!testProvider.model} onClick={()=>{const provider=testProvider;setTestProvider(null);void mutate(async()=>{const result=await gql('mutation($id:String!){test_agent_provider(provider_id:$id)}',{id:provider.id});const response=result.test_agent_provider;if(response?.status!=='connected'&&response?.ok!==true)throw new Error(response?.message||'The provider did not confirm the test request.');return result},'Provider connection tested',false)}}>Send test request</Button></div></DialogContent>}</Dialog>
   </section>;
 }
 export default Managers;

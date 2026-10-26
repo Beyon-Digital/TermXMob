@@ -1,9 +1,12 @@
 import {validateArtifactDrafts,type ArtifactDraft} from './artifact-drafts';
 import type {Draft} from './drafts';
+import {encodeDraftSnapshot,decodeDraftSnapshot,type DraftSnapshot} from './draft-snapshot';
 import {isTauri} from '@tauri-apps/api/core';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 export type TransferBuffer={key:string;project_id:string;path:string;content:string;revision:string;editable:boolean;dirty:boolean;root?:string;workspaceSession?:string;worktree?:string|null};
 export type WindowState={version:1;sessionId:string;draft:Draft|null;buffers:TransferBuffer[];artifacts?:ArtifactDraft[];terminalId?:string};
+export type WindowTransferState=Omit<WindowState,'draft'>&{draft:DraftSnapshot|null};
+export function encodeWindowState(state:WindowState):WindowTransferState{const {draft,...rest}=state;return {...structuredClone(rest),draft:draft?encodeDraftSnapshot(draft):null}}
 const current=new Map<string,TransferBuffer[]>();
 const terminals=new Map<string,string>();
 export function rememberTerminal(sessionId:string,id:string){if(id)terminals.set(sessionId,id)}
@@ -25,13 +28,11 @@ export function mergeBuffers(existing:TransferBuffer[],incoming:TransferBuffer[]
  const rows=[...existing];for(const buffer of incoming){const index=rows.findIndex(row=>row.key===buffer.key);if(index<0)rows.push(buffer);else if(rows[index].dirty&&rows[index].content!==buffer.content){const key=buffer.key+':handoff:'+handoff;if(!rows.some(row=>row.key===key))rows.push({...buffer,key})}else if(!rows[index].dirty)rows[index]=buffer}return rows;
 }
 export function validateWindowState(value:unknown):WindowState{
- if(!value||typeof value!=='object'||JSON.stringify(value).length>16*1024*1024)throw new Error('Invalid workspace handoff');
+ if(!value||typeof value!=='object'||new TextEncoder().encode(JSON.stringify(value)).length>16*1024*1024)throw new Error('Invalid workspace handoff');
  const state=value as WindowState;if(state.version!==1||typeof state.sessionId!=='string'||state.sessionId.length>128||!Array.isArray(state.buffers)||state.buffers.length>100)throw new Error('Invalid workspace handoff');
  for(const buffer of state.buffers){if(!buffer||typeof buffer.key!=='string'||typeof buffer.project_id!=='string'||typeof buffer.path!=='string'||buffer.path.startsWith('/')||buffer.path.includes('\\')||buffer.path.split('/').includes('..')||typeof buffer.content!=='string'||buffer.content.length>2*1024*1024||typeof buffer.revision!=='string'||typeof buffer.dirty!=='boolean'||typeof buffer.editable!=='boolean')throw new Error('Invalid editor buffer handoff')}
- if(state.draft&&(typeof state.draft.text!=='string'||typeof state.draft.saved!=='string'||state.draft.text.length>64000||!Array.isArray(state.draft.context||[])||(state.draft.context||[]).length>16))throw new Error('Invalid conversation draft handoff');
- for(const item of state.draft?.attachments||[]){if(typeof item.name!=='string'||item.name.length>255||!['image/png','image/jpeg','image/webp'].includes(item.mime)||typeof item.data!=='string'||item.data.length>2800000)throw new Error('Invalid image attachment handoff')}
- if((state.draft?.attachments||[]).length>4)throw new Error('Invalid image attachment handoff');
- if(state.artifacts!==undefined)state.artifacts=validateArtifactDrafts(state.artifacts);return structuredClone(state);
+ const draft=state.draft?decodeDraftSnapshot(state.draft):null;
+ if(state.artifacts!==undefined)state.artifacts=validateArtifactDrafts(state.artifacts);return {...structuredClone(state),draft};
 }
 export async function receiveBuffers(owner:string,incoming:TransferBuffer[],handoff:string){const existing=mergeBuffers(await restoreBuffers(owner),snapshotBuffers(owner),'restored');const merged=mergeBuffers(existing,incoming,handoff);await persistBuffers(owner,merged);publishBuffers(owner,merged);window.dispatchEvent(new CustomEvent('termx-buffer-handoff',{detail:{owner,buffers:merged}}))}
 if(typeof window!=='undefined')window.addEventListener('termx-signed-out',()=>{current.clear();terminals.clear()});

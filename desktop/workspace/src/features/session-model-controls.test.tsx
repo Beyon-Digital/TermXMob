@@ -22,3 +22,32 @@ it('binds a runner account to its advertised credential reference rather than it
  fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));fireEvent.change(screen.getByRole('combobox',{name:'Session provider'}),{target:{value:'runner-provider'}});
  expect(patch).toHaveBeenCalledWith({provider_id:'runner-provider',runner_credential_ref:'runner-credential-7',model:'runner-model',reasoning_config:{}});
 });
+
+it('keeps an unavailable saved account inspectable instead of displaying a different default',()=>{
+ render(<SessionModelControls {...base} session={{...session,provider_id:'removed-account'}} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));expect(screen.getByRole('combobox',{name:'Session provider'})).toHaveValue('removed-account');expect(screen.getByRole('option',{name:'Unavailable account (removed-account)'})).toBeInTheDocument();
+});
+it('routes model connection setup back to settings without sending a message',()=>{
+ const configure=vi.fn();render(<SessionModelControls {...base} providers={[]} onConfigureAgent={configure} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));fireEvent.click(screen.getByRole('button',{name:'Manage connections'}));expect(configure).toHaveBeenCalledOnce();expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('explains the main agent engine boundary while retaining provider and model choices',()=>{render(<SessionModelControls {...base} coordinating onPatch={vi.fn()}/>);fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));expect(screen.getByText(/can delegate work to installed engines/)).toBeVisible();expect(screen.getByRole('combobox',{name:'Session model'})).toBeEnabled();expect(screen.getByRole('combobox',{name:'Session provider'})).toBeEnabled()});
+
+
+it('selects the first configured model when explicitly switching to a local account',()=>{
+ const patch=vi.fn(),next={id:'next-account',name:'Next account',model:'next-one, next-two',capabilities:['chat'],secret_configured:true};
+ render(<SessionModelControls {...base} providers={[...base.providers,next]} onPatch={patch}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'Session provider'}),{target:{value:'next-account'}});
+ expect(patch).toHaveBeenCalledWith({provider_id:'next-account',model:'next-one',reasoning_config:{}});
+});
+
+
+it('shows unknown native account status and the last host check without claiming a connected account',()=>{
+ render(<SessionModelControls {...base} session={{...session,engine:'codex',provider_id:undefined}} engines={[{id:'codex',name:'Codex',available:true,auth_state:'unknown',error:'Account check timed out'}]} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));
+ expect(screen.getByText('Uses Codex on this host. Its account status has not been verified by TermX.')).toBeVisible();
+ expect(screen.getByText('Last engine check: Account check timed out')).toBeVisible();
+ expect(screen.queryByText(/connected account/i)).not.toBeInTheDocument();
+});

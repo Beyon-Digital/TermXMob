@@ -1309,10 +1309,17 @@ class AgentStore:
         pinned: bool = False,
         archived: bool = False,
         draft: bool = False,
+        identifier: str | None = None,
     ) -> dict[str, Any]:
         now = time()
-        conversation_id = uuid.uuid4().hex[:16]
+        conversation_id = identifier or uuid.uuid4().hex[:16]
         with self._lock:
+            if identifier:
+                existing=self.get_conversation(identifier)
+                if existing:
+                    if existing.get('cwd')!=cwd or existing.get('project_id')!=project_id:
+                        raise ValueError('Conversation identity is bound to another execution target')
+                    return existing
             self._db.execute(
                 """
                 INSERT INTO conversations
@@ -1338,6 +1345,39 @@ class AgentStore:
             )
             self._db.commit()
         return self.get_conversation(conversation_id)  # type: ignore[return-value]
+
+    def add_coordination_report(self, conversation_id: str, *, event_id: str,
+                                source: dict[str, Any], cwd: str, limits: dict[str, Any]) -> dict[str, Any]:
+        """Atomically append one non-inference report reference to a transcript.
+
+        Child output stays in its original authorized task. The workspace
+        resolves this reference under current permissions when rendering it.
+        """
+        task_id=hashlib.sha256(('coordination:'+event_id).encode()).hexdigest()
+        turn_id=hashlib.sha256(('coordination-turn:'+event_id).encode()).hexdigest()
+        now=time()
+        with self._lock:
+            try:
+                if not self.get_conversation(conversation_id):raise KeyError(conversation_id)
+                self._db.execute('INSERT OR IGNORE INTO tasks '
+                    '(id,prompt,cwd,provider_id,model,status,limits,mode,parent_id,engine,result,runtime,created_at,updated_at) '
+                    'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (task_id,'',cwd,'system','No model call','completed',_json(limits),'ask',None,'coordination',
+                     'Agent coordination update. Open the child conversation for its source.',_json({'coordination_source':source}),now,now))
+                existing=self._db.execute('SELECT id FROM conversation_turns WHERE conversation_id=? AND task_id=?',
+                    (conversation_id,task_id)).fetchone()
+                if not existing:
+                    sequence=self._db.execute('SELECT COALESCE(MAX(sequence),0)+1 FROM conversation_turns WHERE conversation_id=?',
+                        (conversation_id,)).fetchone()[0]
+                    self._db.execute('INSERT INTO conversation_turns '
+                        '(id,conversation_id,sequence,task_id,prompt,mode,provider_id,model,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+                        (turn_id,conversation_id,sequence,task_id,'','ask','system','No model call',now))
+                    self._db.execute('UPDATE conversations SET updated_at=? WHERE id=?',(now,conversation_id))
+                self._db.commit()
+            except BaseException:
+                self._db.rollback()
+                raise
+        return self.get_task(task_id)  # type: ignore[return-value]
 
     def list_conversations(
         self, *, archived: bool | None = False, limit: int = 200
@@ -1420,6 +1460,15 @@ class AgentStore:
             self._db.commit()
         return cursor.rowcount > 0
 
+    def workspace_latest_execution_task(self, identifier: str) -> dict | None:
+        """Notification delivery is not the outcome of the user's agent run."""
+        with self._lock:
+            row=self._db.execute(
+                "SELECT t.* FROM conversation_turns ct JOIN tasks t ON t.id=ct.task_id "
+                "WHERE ct.conversation_id=? AND COALESCE(t.engine,'internal')!='coordination' "
+                "ORDER BY ct.sequence DESC LIMIT 1",(identifier,)).fetchone()
+        return self._task(row) if row else None
+
     def workspace_conversations_snapshot(self, identifiers: list[str]) -> list[dict]:
         """Bounded public collection projection without per-conversation reads."""
         identifiers=list(dict.fromkeys(identifiers))
@@ -1428,8 +1477,8 @@ class AgentStore:
         placeholders=','.join('?' for _ in identifiers)
         with self._lock:
             rows=self._db.execute('SELECT c.*,t.status AS latest_status,t.updated_at AS latest_task_updated '
-                'FROM conversations c LEFT JOIN conversation_turns ct ON ct.id=(SELECT id FROM conversation_turns '
-                'WHERE conversation_id=c.id ORDER BY sequence DESC LIMIT 1) '
+                'FROM conversations c LEFT JOIN conversation_turns ct ON ct.id=(SELECT ct2.id FROM conversation_turns ct2 '
+                "JOIN tasks t2 ON t2.id=ct2.task_id WHERE ct2.conversation_id=c.id AND COALESCE(t2.engine,'internal')!='coordination' ORDER BY ct2.sequence DESC LIMIT 1) "
                 'LEFT JOIN tasks t ON t.id=ct.task_id WHERE c.id IN ('+placeholders+')',identifiers).fetchall()
             return [{**self._conversation(row),'latest_status':row['latest_status'],'latest_task_updated':row['latest_task_updated'] or 0} for row in rows]
 

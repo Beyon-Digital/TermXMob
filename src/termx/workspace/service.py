@@ -23,6 +23,7 @@ from termx.config import config_dir
 from termx.identity import Principal
 from termx.workspace.store import Conflict, WorkspaceStore
 from termx.workspace.presets import resolve_preset,available_presets
+from termx.workspace.public_events import public_task_events, public_task_approvals
 
 
 class WorkspaceService:
@@ -35,6 +36,9 @@ class WorkspaceService:
         self._send_locks: dict[str, asyncio.Lock] = {}
         self._workers: set[asyncio.Task] = set()
         self._closed = False
+        from termx.workspace.orchestrator import OrchestratorService
+        self.orchestrator = OrchestratorService(self)
+        state.agent.orchestrator = self.orchestrator
         state.agent._listeners.add(self._on_event)
         state.agent.execution_authority = self.validate_task_execution
 
@@ -60,7 +64,8 @@ class WorkspaceService:
                 if selected and bound.get('worktree_digest')!=selected['digest']:
                     raise PermissionError('Enrolled worktree identity changed; renew the session target')
                 tracked=self.agents.task_worktree(resource_id) if resource_kind=='task' and resource_id else None
-                if not inside and not (selected and Path(cwd).resolve().is_relative_to(Path(selected['path']))) and not (tracked and tracked.get('status') in {'active','kept'} and Path(tracked['base_repo']).resolve()==Path(project['path']).resolve() and Path(tracked['worktree_path']).resolve()==Path(cwd).resolve()):
+                delegated = self.delegated_boundary(principal, resource_kind, resource_id, cwd, scope)
+                if not inside and not delegated and not (selected and Path(cwd).resolve().is_relative_to(Path(selected['path']))) and not (tracked and tracked.get('status') in {'active','kept'} and Path(tracked['base_repo']).resolve()==Path(project['path']).resolve() and Path(tracked['worktree_path']).resolve()==Path(cwd).resolve()):
                     raise PermissionError('Folder is outside the authorized project or tracked task worktree')
             if authz:
                 return
@@ -74,8 +79,46 @@ class WorkspaceService:
                     raise PermissionError('Project authorization is not configured')
         elif cwd and 'host-admin' not in principal.scopes:
             managed=self.scratch_root(principal.id)
-            if not (authz and resource_kind in {'conversation','task'} and resource_id and Path(cwd).resolve().is_relative_to(managed)):
+            if not (authz and resource_kind in {'conversation','task'} and resource_id and (Path(cwd).resolve().is_relative_to(managed) or self.delegated_boundary(principal,resource_kind,resource_id,cwd,scope))):
                 raise PermissionError('Scratch execution requires an owned managed resource or project grant')
+
+    def delegated_boundary(self, principal, kind, identifier, cwd, scope):
+        """A child checkout is authority only through a host-created binding.
+
+        Revalidate both its original parent resource and immutable task checkout;
+        neither a client path nor a stale removed worktree establishes access.
+        """
+        if kind == 'task' and identifier:
+            metadata=self.store.get('task',identifier)
+            if metadata and metadata['owner']==principal.id:
+                return self.delegated_boundary(principal,'conversation',metadata.get('conversation_id'),cwd,scope)
+            return False
+        if kind != 'conversation' or not identifier:
+            return False
+        relation = self.orchestrator.relation(identifier)
+        if not relation or relation['owner'] != principal.id or Path(cwd).resolve() != Path(relation['cwd']).resolve():
+            return False
+        if relation.get('origin')=='native' and (relation.get('isolation') or {}).get('kind')=='snapshot':
+            self.record(principal,'conversation',relation['parent_session_id'],scope=scope)
+            self.require(principal,scope,relation['target_project_id'],relation['source_cwd'])
+            return Path(cwd).resolve().is_relative_to(self.scratch_root(principal.id)) and Path(cwd).is_dir()
+        task = self.agents.get_task(relation['task_id'])
+        if not task or task.get('parent_id') != relation['parent_task_id'] or Path(task['cwd']).resolve() != Path(cwd).resolve():
+            return False
+        parent = self.record(principal, 'conversation', relation['parent_session_id'], scope=scope)
+        if relation.get('target_project_id'):
+            self.require(principal,scope,relation['target_project_id'],relation['source_cwd'])
+        elif parent.get('cwd') != relation['source_cwd']:
+            return False
+        isolation = relation.get('isolation') or {}
+        tracked = self.agents.task_worktree(task['id'])
+        if isolation.get('kind') == 'worktree':
+            return bool(tracked and tracked.get('status') in {'active','kept'} and
+                Path(tracked['worktree_path']).resolve() == Path(cwd).resolve() and
+                Path(tracked['base_repo']).resolve() == Path(relation['source_cwd']).resolve())
+        if isolation.get('kind') == 'snapshot':
+            return Path(cwd).resolve().is_relative_to((self.agents.artifact_dir/'delegations').resolve()) and Path(cwd).is_dir()
+        return isolation.get('kind') == 'read-only' and Path(cwd).resolve() == Path(relation['source_cwd']).resolve()
 
     def scratch_root(self,owner):
         return (self.store.path.parent/'scratch'/hashlib.sha256(owner.encode()).hexdigest()).resolve()
@@ -225,9 +268,11 @@ class WorkspaceService:
                     task = {k:v for k,v in task.items() if k in public_fields}
                     task_meta=self.store.get('task',task['id']) or {}
                     task['execution_location']=task_meta.get('execution_location') or task.get('cwd')
+                    if task_meta.get('coordination_report'):
+                        task['result'],task['coordination_report']=self.orchestrator.public_report(principal,task_meta['coordination_report'])
                     if task['status'] in ACTIVE_STATUSES:
-                        task['events'] = self.agents.events(task['id'],tail_limit=200)
-                        task['approvals'] = self.agents.approvals(task['id'])
+                        task['events'] = public_task_events(self, principal, self.agents.events(task['id'],tail_limit=200))
+                        task['approvals'] = public_task_approvals(self, principal, self.agents.approvals(task['id']))
                 turn['task'] = task
         if row.get('worktree_id'):
             try:
@@ -236,9 +281,12 @@ class WorkspaceService:
             except (PermissionError,OSError,ValueError):
                 row['worktree_branch']=None
                 row['worktree_unavailable']='Selected worktree is unavailable; choose an enrolled checkout before running or editing'
-        latest=self.agents.workspace_turns_page(identifier,descending=True,limit=1)
-        last_task=self.agents.get_task(latest[0]['task_id']) if latest and latest[0].get('task_id') else None
+        last_task=self.agents.workspace_latest_execution_task(identifier)
+        relation = self.orchestrator.relation(identifier)
         return {**row, **conversation, 'revision': row['revision'],'latest_status':(last_task or {}).get('status'),
+                'orchestrator_role':'primary' if self.orchestrator.is_primary(principal.id,identifier) else 'child' if relation else None,
+                'parent_session_id':relation['parent_session_id'] if relation else None,
+                'control_owner':relation['control_owner'] if relation else None,
                 'updated_at': max(row['updated_at'], conversation['updated_at'],(last_task or {}).get('updated_at',0))}
 
     def sessions(self, principal, *, query='', archived=False, project_id=None, limit=500):
@@ -279,8 +327,14 @@ class WorkspaceService:
                             # after removal; all execution/file access still
                             # requires the live enrolled target in require().
                             meta={**meta,'worktree_unavailable':'Selected worktree enrollment is unavailable; choose another checkout before running or editing'}
-                    elif meta.get('cwd') and not Path(meta['cwd']).resolve().is_relative_to(root):continue
-                elif meta.get('cwd') and not snapshot.administrator and not Path(meta['cwd']).resolve().is_relative_to(self.scratch_root(principal.id)):continue
+                    elif meta.get('cwd') and not Path(meta['cwd']).resolve().is_relative_to(root):
+                        try:
+                            if not self.delegated_boundary(principal,'conversation',meta['id'],meta['cwd'],'agent-view'):continue
+                        except (PermissionError,KeyError):continue
+                elif meta.get('cwd') and not snapshot.administrator and not Path(meta['cwd']).resolve().is_relative_to(self.scratch_root(principal.id)):
+                    try:
+                        if not self.delegated_boundary(principal,'conversation',meta['id'],meta['cwd'],'agent-view'):continue
+                    except (PermissionError,KeyError):continue
                 selected.append(meta)
             canonical={}
             for offset in range(0,len(selected),500):
@@ -312,6 +366,9 @@ class WorkspaceService:
 
     def update_session(self, principal, identifier, *, revision, changes):
         row = self.record(principal, 'conversation', identifier, scope='agent-control')
+        if self.orchestrator.is_primary(principal.id,identifier):
+            if changes.get('archived') or changes.get('engine','internal')!='internal' or changes.get('runner_id') or changes.get('workflow'):
+                raise Conflict('The persistent main agent remains a local Internal conversation; use a separate chat for other engines or execution targets')
         allowed = {'title','pinned','archived','draft_text','draft_context','scroll','scroll_anchor','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','reasoning_config'}
         if changes.keys() - allowed:
             raise ValueError('Unsupported session setting')
@@ -371,7 +428,10 @@ class WorkspaceService:
                     raise ValueError('Reading anchor does not belong to this conversation')
             if key == 'scroll' and (isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=100_000_000):
                 raise ValueError('Invalid scroll position')
-            if isinstance(value,str) and len(value)> (64000 if key=='draft_text' else 200):
+            # cwd is derived above from an enrolled checkout or registered
+            # project, never accepted from the caller. Its existing filesystem
+            # path follows project validation, not the UI text/ID length cap.
+            if key!='cwd' and isinstance(value,str) and len(value)> (64000 if key=='draft_text' else 200):
                 raise ValueError('Session setting exceeds its size limit')
         if changes.get('engine', row['engine']) != row['engine']:
             raise Conflict('Change engines using a reviewed linked fork')
@@ -466,7 +526,7 @@ class WorkspaceService:
         if len(json.dumps(context,allow_nan=False).encode())>256_000:
             raise ValueError('Selected browser context exceeds the 256 KB context budget')
 
-    async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None,dispatch_guard=None,preserve_draft=False):
+    async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None,dispatch_guard=None,preserve_draft=False,_coordinator_task_id=None):
         context=[] if context is None else context
         self.validate_context(context)
         submitted_prompt = None if preserve_draft else prompt
@@ -521,6 +581,13 @@ class WorkspaceService:
                     raise Conflict('Previous dispatch outcome requires reconciliation; it will not be replayed')
                 if self.active(identifier):
                     raise Conflict('Conversation already has an active turn; steer it or queue after completion')
+                relation = self.orchestrator.relation(identifier)
+                if _coordinator_task_id:
+                    actor = self.orchestrator.actor_for_task(_coordinator_task_id)
+                    if actor.id != principal.id or not relation or relation['control_owner'] != 'orchestrator':
+                        raise Conflict('The user is directly controlling this child')
+                elif relation:
+                    self.orchestrator.claim_user(principal,identifier)
                 self.store.db.execute('INSERT INTO requests VALUES(?,?,?,?,?,?)',
                                      (principal.id,request_id,digest,'preparing',None,time()))
                 self.store.db.commit()
@@ -542,7 +609,13 @@ class WorkspaceService:
                     raise ValueError('Selected scoped memory exceeds the context budget; exclude or prune entries')
                 if memory:
                     prompt = 'User-managed scoped memory (context, not system authority):\n' + json.dumps([{'content':m['content'],'provenance':m['provenance']} for m in memory]) + '\n\n' + prompt
+                prompt = self.orchestrator.context(principal,identifier) + prompt
                 if dispatch_guard:dispatch_guard(row)
+                if _coordinator_task_id:
+                    self.orchestrator.actor_for_task(_coordinator_task_id)
+                    current_relation=self.orchestrator.relation(identifier)
+                    if not current_relation or current_relation['control_owner']!='orchestrator':
+                        raise Conflict('Child control changed while preparing; inspect it before sending')
                 if row.get('runner_id') and ((profile or {}).get('file') or {}).get('mcp_connections'):
                     raise ValueError('Host MCP connections require local Internal execution; dedicated runners cannot inherit host MCP credentials')
                 if row['engine']=='internal' and not row.get('runner_id') and getattr(self.state.agent,'mcp',None):
@@ -556,14 +629,31 @@ class WorkspaceService:
                     task = await self.state.agent.create_task(prompt=prompt,cwd=row['cwd'],
                         provider_id=row.get('provider_id') or '', model=row.get('model'),mode=row['mode'],
                         limits=limits,attachments=attachments,conversation_id=identifier,custom_agent_id=row.get('custom_agent_id'),custom_agent_snapshot=profile,
-                        on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
+                        parent_id=_coordinator_task_id,
+                        on_created=lambda tid:self._coordinator_created(_coordinator_task_id,principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context) if _coordinator_task_id else self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                 else:
                     attempted_native = True
                     from termx.mcp.scope import authorize as authorize_mcp
+                    def native_guard():
+                        self.record(principal,'conversation',identifier,scope='agent-run')
+                        if dispatch_guard:dispatch_guard(row)
+                        if _coordinator_task_id:
+                            self.orchestrator.actor_for_task(_coordinator_task_id)
+                            relation=self.orchestrator.relation(identifier)
+                            if not relation or relation['control_owner']!='orchestrator':
+                                raise Conflict('Child control changed before native dispatch')
+                    def native_cleanup_guard():
+                        relation=self.orchestrator.relation(identifier)
+                        if not relation or relation['control_owner']!='user':return True
+                        # A still-authorized human owns an already-attempted
+                        # native send. Old coordinator cleanup cannot stop it.
+                        self.record(principal,'conversation',identifier,scope='agent-run')
+                        return False
                     task = await self.state.engines.create_task(prompt=prompt,cwd=row['cwd'],engine=row['engine'],
                         model=row.get('model'),mode=row['mode'],workspace_mode=row['mode'],config_options=row.get('reasoning_config') or {},limits=limits,conversation_id=identifier,attachments=attachments,workflow=row.get('workflow'),custom_agent=profile,
                         mcp_project_id=row.get('project_id'),mcp_authorize=lambda conn:authorize_mcp(self.state,conn,'agent-run',principal=principal,project_id=row.get('project_id'),cwd=row['cwd'],resource_id=identifier),
-                        on_created=lambda tid:self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
+                        parent_id=_coordinator_task_id,dispatch_guard=native_guard,cleanup_guard=native_cleanup_guard,
+                        on_created=lambda tid:self._coordinator_created(_coordinator_task_id,principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context) if _coordinator_task_id else self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                     if not self.store.get('task',task['id']):
                         self._dispatch_created(principal,row,request_id,task['id'],managed_session_id,delegation_id,turn_prompt,submitted_prompt,context)
                 # Creation callbacks attach the canonical turn before starting
@@ -581,6 +671,8 @@ class WorkspaceService:
                 raise
 
     def validate_delegation(self,principal,row,identifier):
+        if self.orchestrator.is_primary(principal.id,row['id']):
+            raise PermissionError('Scheduled grants cannot run the persistent main agent across conversation contexts. Schedule a specific target conversation instead.')
         grant=self.record(principal,'delegation',identifier,scope='agent-control')
         if grant['revoked'] or grant['expires_at']<=time() or grant['policy_version']!=principal.policy_version or grant.get('execution_target')!=self.execution_target(row):
             raise PermissionError('Delegated execution authority expired, changed or was revoked')
@@ -593,6 +685,14 @@ class WorkspaceService:
         """Check unattended authority at execution boundaries, including recovery."""
         row = self.store.get('task', task_id)
         task = self.agents.get_task(task_id)
+        if task and task.get('parent_id'):
+            parent_task=self.agents.get_task(task['parent_id'])
+            if not parent_task or parent_task['status'] in {'cancelled','cancelling'}:
+                raise PermissionError('The coordinator stopped; child work cannot restart')
+            if row:
+                principal=self.state.identity.principal_by_id(row['owner'])
+                if not principal:raise PermissionError('Delegated task owner is no longer active')
+                self.record(principal,'task',task_id,scope='agent-run')
         # Older child metadata predates delegated grants. Resolve its enrolled
         # parent too, so restarting an existing team cannot shed revocation.
         seen = {task_id}
@@ -619,7 +719,8 @@ class WorkspaceService:
     def _dispatch_created(self,principal,row,key,tid,managed_session_id=None,delegation_id=None,turn_prompt=None,submitted_prompt=None,submitted_context=None):
         if delegation_id:
             self.validate_delegation(principal,row,delegation_id)
-        self.store.create('task',principal.id,{'conversation_id':row['id'],'mcp_snapshot':row.get('mcp_snapshot',{}),'reasoning_config':dict(row.get('reasoning_config') or {}),'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+self.state.runners.row(principal.id,row['runner_id'])['configuration'].get('root','/workspace') if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
+        created_task=self.agents.get_task(tid) or {}
+        self.store.create('task',principal.id,{'conversation_id':row['id'],'parent_id':created_task.get('parent_id'),'mcp_snapshot':row.get('mcp_snapshot',{}),'reasoning_config':dict(row.get('reasoning_config') or {}),'cwd':row['cwd'],'runner_id':row.get('runner_id'),'delegation_id':delegation_id,'worktree_id':row.get('worktree_id'),'worktree_digest':row.get('worktree_digest'),'worktree_branch':row.get('worktree_branch'),'execution_location':'runner:'+row['runner_id']+self.state.runners.row(principal.id,row['runner_id'])['configuration'].get('root','/workspace') if row.get('runner_id') else row['cwd']},row.get('project_id'),tid)
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'task', tid, project_id=row.get('project_id'))
         with self.store.lock:
@@ -643,8 +744,32 @@ class WorkspaceService:
                 if unchanged or submitted:
                     self.store.update('conversation',row['id'],{**current,'draft_text':'','draft_context':[]},current['revision'])
 
+    def _coordinator_created(self,parent_id,principal,row,key,tid,*args):
+        """Bind a follow-up child before planning, with no cancellation gap."""
+        manager=self.state.agent
+        try:
+            self.orchestrator.actor_for_task(parent_id)
+            relation=self.orchestrator.relation(row['id'])
+            if not relation or relation['control_owner']!='orchestrator':
+                raise Conflict('Child control changed before dispatch')
+            self._dispatch_created(principal,row,key,tid,*args)
+            manager.emit_external(tid,'task.delegation',{'agent':row.get('title') or 'Agent task',
+                'call_id':relation.get('dispatch_call_id') or key,'task':args[2] if len(args)>2 else '', 'session_id':row['id']})
+            if (self.agents.get_task(tid) or {}).get('engine','internal')!='internal':
+                self.orchestrator.native.created(parent_id,tid,relation)
+                manager.emit_external(parent_id,'subagent.started',{'child_id':tid,
+                    'call_id':relation.get('dispatch_call_id') or key,'agent':row.get('title') or 'Agent task',
+                    'task':args[2] if len(args)>2 else '', 'isolation':relation.get('isolation'),
+                    'project_id':row.get('project_id'),'source_cwd':relation.get('source_cwd')})
+            manager._subagent_handles(parent_id)  # Enroll cancellation and approval relay before planning yields.
+        except BaseException:
+            manager.cancel(tid)
+            raise
+
     async def retry(self,principal,task_id,*,request_id,managed_session_id=None):
         meta=self.record(principal,'task',task_id,scope='agent-control')
+        if meta.get('coordination_report'):
+            raise ValueError('This is a coordination update without a model call; inspect or retry its source child task')
         task=self.agents.get_task(task_id)
         if not task or task['status'] in ACTIVE_STATUSES:
             raise Conflict('Stop the original task before retrying')
@@ -761,17 +886,22 @@ class WorkspaceService:
             parent = self.store.get('task', task_id)
             child_id = (event.get('payload') or {}).get('child_id')
             child = self.agents.get_task(child_id) if child_id else None
+            project_id=(event.get('payload') or {}).get('project_id', (parent or {}).get('project_id'))
+            source_cwd=(event.get('payload') or {}).get('source_cwd',(parent or {}).get('cwd'))
             if parent and child and not self.store.get('task', child_id):
                 self.store.create('task', parent['owner'], {'conversation_id':parent.get('conversation_id'),
-                    'cwd':parent.get('cwd'), 'execution_location':child['cwd'], 'parent_id':task_id,
+                    'cwd':source_cwd, 'execution_location':child['cwd'], 'parent_id':task_id,
                     'delegation_id':parent.get('delegation_id'),
                     'agent_label':event['payload'].get('agent'), 'delegated_task':event['payload'].get('task'),
-                    'isolation':event['payload'].get('isolation')}, parent.get('project_id'), child_id)
+                    'isolation':event['payload'].get('isolation')}, project_id, child_id)
                 lookup = getattr(self, 'principal_lookup', None)
                 actor = lookup(parent['owner']) if lookup else None
                 if actor and getattr(self.state, 'authorization', None):
-                    self.state.authorization.claim_principal(actor, 'task', child_id, project_id=parent.get('project_id'))
+                    self.state.authorization.claim_principal(actor, 'task', child_id, project_id=project_id)
+            if child_id:
+                self.orchestrator.enroll(task_id,child_id,event.get('payload') or {})
             return
+        self.orchestrator.on_event(task_id,event)
         if event.get('type') not in {'task.completed','task.failed'}:
             return
         row = self.store.get('task',task_id)
@@ -803,6 +933,7 @@ class WorkspaceService:
     async def close(self):
         self._closed=True
         self.state.agent._listeners.discard(self._on_event)
+        await self.orchestrator.native.close()
         for worker in list(self._workers):
             worker.cancel()
         await asyncio.gather(*self._workers,return_exceptions=True)

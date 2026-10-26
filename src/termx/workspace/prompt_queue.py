@@ -10,6 +10,7 @@ import hashlib
 import json
 from time import time
 from uuid import uuid4
+from fastapi import HTTPException
 
 from termx.agent.limits import resolve_limits
 from termx.agent.store import ACTIVE_STATUSES
@@ -210,8 +211,17 @@ class PromptQueue:
                 if self._closing:return
                 if row['status']!='queued':continue
                 try:actor=await asyncio.to_thread(self._ready,row)
-                except (PermissionError,ValueError,KeyError) as exc:
-                    await asyncio.to_thread(self.store.update,'prompt_queue',row['id'],{**row,'status':'blocked','reason':str(exc)[:500]},row['revision']);continue
+                except (PermissionError,ValueError,KeyError,HTTPException) as exc:
+                    # Current resource policy uses HTTP errors at this boundary.
+                    # A revoked or removed project pauses only its own queue;
+                    # transient host errors must not masquerade as a denial.
+                    if isinstance(exc,HTTPException) and exc.status_code not in {403,404}:
+                        raise
+                    try:
+                        await asyncio.to_thread(self.store.update,'prompt_queue',row['id'],{**row,'status':'blocked','reason':str(exc)[:500]},row['revision'])
+                    except Conflict:
+                        pass  # A concurrent user cancellation/renewal owns the newer revision.
+                    continue
                 if await asyncio.to_thread(self.workspace.active,row['conversation_id']):continue
                 with self.store.lock:
                     current=self.store.get('prompt_queue',row['id'])

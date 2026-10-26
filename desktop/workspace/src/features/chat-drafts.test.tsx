@@ -6,7 +6,9 @@ import {acceptTransferredDraft} from '../lib/redock-state';
 import {request,type Session} from '../lib/api';
 vi.mock('../lib/api',()=>({gql:vi.fn(async()=>({engine_models:[]})),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
 afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();vi.clearAllMocks()});
+const configuredProviders=[{id:'draft-fixture',name:'Draft fixture account',model:'draft-model',secret_configured:true,capabilities:['functions']}];
 const row=(id:string):Session=>({id,title:id,engine:'internal',mode:'ask',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,turns:[]});
+const connectedRow=(id:string):Session=>({...row(id),provider_id:'draft-fixture',model:'draft-model'});
 it('accepts a returned draft after remote metadata refresh and panel remount without inventing local edits',()=>{
  const original={...row('returned-draft'),draft_text:'Previously saved draft'};
  const returned={...original,draft_text:'Edited in detached window',revision:2};
@@ -77,10 +79,10 @@ it.each(['termx-signed-out','termx-session-locked'])('does not apply a pending m
 });
 
 it('does not dispatch a pre-logout send after its pending draft flush settles',async()=>{
- const a={...row('send-auth-boundary'),draft_text:'Old account intent'},errors=vi.fn();let release!:()=>void;
+ const a={...connectedRow('send-auth-boundary'),draft_text:'Old account intent'},errors=vi.fn();let release!:()=>void;
  draftWrites.set(a.id,new Promise<void>(resolve=>release=resolve));
  vi.mocked(request).mockImplementation(async(path)=>path==='/api/runners'?[] as any:path.includes('runner-agents')?{accounts:[]} as any:path.endsWith('/queue')?{queue:[]} as any:{...a} as any);
- render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ render(<Chat session={a} engines={[]} providers={configuredProviders} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
  fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(submittingDrafts.has(a.id)).toBe(true));
  window.dispatchEvent(new Event('termx-signed-out'));
  const newOwner=Symbol();draftSubmissionOwners.set(a.id,newOwner);submittingDrafts.add(a.id);
@@ -93,18 +95,18 @@ it('never discards a saved local draft because unrelated metadata advanced the r
 
 it('shows reviewable browser refs without metadata in the text and persists/removes them after reload',async()=>{const a=row('context-draft');const item={type:'approved-browser-upload' as const,tab_id:'tab-exact',file:{id:'upload-exact',filename:'notes.txt',sha256:'digest-exact'}};vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(init?.method==='PATCH'){Object.assign(a,JSON.parse(init.body as string).changes);a.revision++}return {...a} as any});const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const incoming={id:'reference-context-test',sessionId:a.id,text:'',attachments:[],context:[item]};const panel=render(<Chat session={{...a}} incoming={incoming} {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('');expect(screen.getByText('notes.txt')).toBeVisible();fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Read these notes'}});await waitFor(()=>expect(a.draft_context).toEqual([item]));panel.unmount();sessionDrafts.clear();render(<Chat session={{...a}} incoming={incoming} {...props}/>);expect(screen.getByLabelText('Message')).toHaveValue('Read these notes');expect(screen.getAllByText('notes.txt')).toHaveLength(1);fireEvent.click(screen.getByLabelText('Remove context notes.txt'));await waitFor(()=>expect(a.draft_context).toEqual([]));expect(screen.queryByText('notes.txt')).toBeNull()});
 
-it('submits the exact inspected context refs with the turn',async()=>{const item={type:'browser-context' as const,context:{tab_id:'tab-public',document_revision:3,title:'Docs',url:'https://fixture.invalid'}};const a={...row('context-send'),draft_text:'Read this page',draft_context:[item]};vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/turns'))).toBeDefined());const body=JSON.parse(vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/turns'))![1]!.body as string);expect(body.prompt).toBe('Read this page');expect(body.context).toEqual([item])});
+it('submits the exact inspected context refs with the turn',async()=>{const item={type:'browser-context' as const,context:{tab_id:'tab-public',document_revision:3,title:'Docs',url:'https://fixture.invalid'}};const a={...connectedRow('context-send'),draft_text:'Read this page',draft_context:[item]};vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);render(<Chat session={a} engines={[]} providers={configuredProviders} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/turns'))).toBeDefined());const body=JSON.parse(vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/turns'))![1]!.body as string);expect(body.prompt).toBe('Read this page');expect(body.context).toEqual([item])});
 
-it('preserves a new unsent instruction typed before the previous send response arrives',async()=>{const a={...row('slow-send'),draft_text:'Submitted instruction'};let release:(value:unknown)=>void=()=>{};vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:path.endsWith('/turns')?await new Promise(resolve=>{release=resolve}):{...a} as any);render(<Chat session={a} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);fireEvent.click(screen.getByLabelText('Send message'));fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Next unsent instruction'}});release({id:'submitted-task'});await waitFor(()=>expect(screen.getByLabelText('Message')).toHaveValue('Next unsent instruction'))});
+it('preserves a new unsent instruction typed before the previous send response arrives',async()=>{const a={...connectedRow('slow-send'),draft_text:'Submitted instruction'};let release:(value:unknown)=>void=()=>{};vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:path.endsWith('/turns')?await new Promise(resolve=>{release=resolve}):{...a} as any);render(<Chat session={a} engines={[]} providers={configuredProviders} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);fireEvent.click(screen.getByLabelText('Send message'));fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Next unsent instruction'}});release({id:'submitted-task'});await waitFor(()=>expect(screen.getByLabelText('Message')).toHaveValue('Next unsent instruction'))});
 
-it('saves the next draft after its own dispatch cleared the submitted draft without a false window conflict',async()=>{const a={...row('dispatch-clear'),draft_text:'Submitted instruction'};let release:(value:unknown)=>void=()=>{};const onError=vi.fn();vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;if(path.endsWith('/turns'))return await new Promise(resolve=>{release=value=>{a.draft_text='';resolve(value)}}) as any;if(init?.method==='PATCH'){Object.assign(a,JSON.parse(init.body as string).changes);a.revision++}return {...a} as any});render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={onError}/>);fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(submittingDrafts.has(a.id)).toBe(true));fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Follow-up while dispatching'}});await new Promise(resolve=>setTimeout(resolve,550));expect(a.draft_text).toBe('Submitted instruction');release({id:'task'});await waitFor(()=>expect(a.draft_text).toBe('Follow-up while dispatching'));expect(screen.getByLabelText('Message')).toHaveValue('Follow-up while dispatching');expect(onError).not.toHaveBeenCalled()});
+it('saves the next draft after its own dispatch cleared the submitted draft without a false window conflict',async()=>{const a={...connectedRow('dispatch-clear'),draft_text:'Submitted instruction'};let release:(value:unknown)=>void=()=>{};const onError=vi.fn();vi.mocked(request).mockImplementation(async(path,init)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;if(path.endsWith('/turns'))return await new Promise(resolve=>{release=value=>{a.draft_text='';resolve(value)}}) as any;if(init?.method==='PATCH'){Object.assign(a,JSON.parse(init.body as string).changes);a.revision++}return {...a} as any});render(<Chat session={{...a}} engines={[]} providers={configuredProviders} onSelect={()=>{}} onRefresh={()=>{}} onError={onError}/>);fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(submittingDrafts.has(a.id)).toBe(true));fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Follow-up while dispatching'}});await new Promise(resolve=>setTimeout(resolve,550));expect(a.draft_text).toBe('Submitted instruction');release({id:'task'});await waitFor(()=>expect(a.draft_text).toBe('Follow-up while dispatching'));expect(screen.getByLabelText('Message')).toHaveValue('Follow-up while dispatching');expect(onError).not.toHaveBeenCalled()});
 
 it('preserves local image attachments through panel replacement without sending them',async()=>{const a=row('image-draft');vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:{...a} as any);const props={session:a,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};const incoming={id:'local-image-transfer',text:'',attachments:[{name:'pending.png',mime:'image/png',data:'YWJj'}]};const panel=render(<Chat {...props} incoming={incoming}/>);expect(screen.getByText('pending.png')).toBeVisible();panel.unmount();render(<Chat {...props}/>);expect(screen.getByText('pending.png')).toBeVisible();expect(sessionDrafts.get(a.id)?.attachments).toEqual(incoming.attachments);expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false)});
 
 it('keeps images attached while a previous text-only dispatch is awaiting its response',async()=>{
- const a={...row('slow-image'),draft_text:'Submitted text'};let release!:(value:unknown)=>void;
+ const a={...connectedRow('slow-image'),draft_text:'Submitted text'};let release!:(value:unknown)=>void;
  vi.mocked(request).mockImplementation(async(path)=>path.includes('available-extensions')?{extensions:[]} as any:path.endsWith('/turns')?await new Promise(resolve=>{release=resolve}):{...a} as any);
- const props={session:a,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};
+ const props={session:a,engines:[],providers:configuredProviders,onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};
  const {rerender}=render(<Chat {...props}/>);fireEvent.click(screen.getByLabelText('Send message'));
  await waitFor(()=>expect(release).toBeDefined());
  const images=[{name:'next.png',mime:'image/png',data:'bmV4dCBieXRlcw=='}];
@@ -121,10 +123,10 @@ it('keeps images attached while a previous text-only dispatch is awaiting its re
 });
 
 it('retries a lost image response with the exact same request key and bytes while preserving new images',async()=>{
- const a={...row('retry-images'),draft_text:'Inspect sent image'},errors=vi.fn();let attempts=0;
+ const a={...connectedRow('retry-images'),draft_text:'Inspect sent image'},errors=vi.fn();let attempts=0;
  vi.mocked(request).mockImplementation(async(path)=>{if(path.includes('available-extensions'))return {extensions:[]} as any;if(path.endsWith('/turns')){if(attempts++===0)throw new Error('Response lost');a.draft_text='';return {id:'accepted'} as any}return {...a} as any});
  const sent=[{name:'sent.png',mime:'image/png',data:'c2VudCBieXRlcw=='}],next={name:'new.png',mime:'image/png',data:'bmV3IGJ5dGVz'};
- const props={session:a,engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:errors};
+ const props={session:a,engines:[],providers:configuredProviders,onSelect:()=>{},onRefresh:()=>{},onError:errors};
  const {rerender}=render(<Chat {...props} incoming={{id:'initial-retry-image',text:'',attachments:sent}}/>);
  fireEvent.click(screen.getByLabelText('Send message'));await waitFor(()=>expect(errors).toHaveBeenCalled());await waitFor(()=>expect(screen.getByLabelText('Send message')).not.toBeDisabled());
  rerender(<Chat {...props} incoming={{id:'next-retry-image',text:'',attachments:[next]}}/>);
@@ -150,4 +152,69 @@ it('refreshes newly created presets when the retained conversation becomes visib
  rerender(<Chat {...props} visible/>);
  expect(await screen.findByRole('option',{name:'New scoped preset · internal',hidden:true})).toBeInTheDocument();
  expect(screen.getByLabelText('Message')).toHaveValue('Keep this draft while configuring tools');
+});
+
+it('advances an acknowledged autosave baseline while preserving newer typing and its next save',async()=>{
+ const a=row('autosave-ack'),errors=vi.fn();let acknowledge!:(value?:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {items:[]} as any;
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);if(body.changes.draft_text==='First edit')await new Promise(resolve=>acknowledge=resolve);
+   if(body.revision!==a.revision)throw Error('Revision changed');Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'First edit'}});await waitFor(()=>expect(acknowledge).toBeDefined());
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Newer edit'}});
+ await act(async()=>acknowledge());
+ await waitFor(()=>expect(a.draft_text).toBe('Newer edit'));
+ expect(screen.getByLabelText('Message')).toHaveValue('Newer edit');expect(sessionDrafts.get(a.id)?.saved).toBe('Newer edit');expect(sessionDrafts.get(a.id)?.dirty).toBe(false);expect(errors).not.toHaveBeenCalled();
+});
+
+it('still rejects a real external draft written after our acknowledged autosave',async()=>{
+ const a=row('autosave-external'),errors=vi.fn();let acknowledge!:(value?:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {items:[]} as any;
+  // The external writer changes the host after our ACK and before B's fresh read.
+  if(path.endsWith('?turns=false')&&a.draft_text==='First edit'&&sessionDrafts.get(a.id)?.saved==='First edit'&&sessionDrafts.get(a.id)?.text==='Newer local edit'){a.draft_text='Actual edit from another window';a.revision++;}
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);if(body.changes.draft_text==='First edit')await new Promise(resolve=>acknowledge=resolve);
+   if(body.revision!==a.revision)throw Error('Revision changed');Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'First edit'}});await waitFor(()=>expect(acknowledge).toBeDefined());
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Newer local edit'}});
+ await act(async()=>acknowledge());await waitFor(()=>expect(sessionDrafts.get(a.id)?.saved).toBe('First edit'));
+ await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({message:expect.stringContaining('changed in another window')})));
+ expect(a.draft_text).toBe('Actual edit from another window');expect(screen.getByLabelText('Message')).toHaveValue('Newer local edit');expect(sessionDrafts.get(a.id)?.saved).toBe('First edit');expect(sessionDrafts.get(a.id)?.dirty).toBe(true);
+ expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH'&&JSON.parse(init.body as string).changes.draft_text==='Newer local edit')).toBe(false);
+});
+
+it('preserves newer unsent text when another window wins the revision after our fresh read',async()=>{
+ const a=row('autosave-revision-conflict'),errors=vi.fn();let acknowledge!:(value?:unknown)=>void;
+ vi.mocked(request).mockImplementation(async(path,init)=>{
+  if(path==='/api/runners')return [] as any;if(path.includes('runner-agents'))return {accounts:[]} as any;if(path.endsWith('/queue'))return {items:[]} as any;
+  if(init?.method==='PATCH'){
+   const body=JSON.parse(init.body as string);
+   if(body.changes.draft_text==='Acknowledged A')await new Promise(resolve=>acknowledge=resolve);
+   if(body.changes.draft_text==='Unsent B'){
+    // A different window commits after B's GET returned its revision.
+    a.draft_text='External C';a.revision++;
+    throw Object.assign(new Error('Session changed; reload before saving'),{status:409});
+   }
+   if(body.revision!==a.revision)throw Error('Fixture revision conflict');Object.assign(a,body.changes);a.revision++;
+  }
+  return {...a} as any;
+ });
+ render(<Chat session={{...a}} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={errors}/>);
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Acknowledged A'}});await waitFor(()=>expect(acknowledge).toBeDefined());
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Unsent B'}});
+ await act(async()=>acknowledge());
+ await waitFor(()=>expect(errors).toHaveBeenCalledWith(expect.objectContaining({status:409})));
+ expect(a.draft_text).toBe('External C');expect(screen.getByLabelText('Message')).toHaveValue('Unsent B');
+ expect(sessionDrafts.get(a.id)).toMatchObject({text:'Unsent B',saved:'Acknowledged A',dirty:true});
+ expect(vi.mocked(request).mock.calls.filter(([,init])=>init?.method==='PATCH'&&JSON.parse(init.body as string).changes.draft_text==='Unsent B')).toHaveLength(1);
 });

@@ -27,7 +27,7 @@ export default function WorkspaceNavigation({open,hover,width,onOpenChange,rail,
    {rail}<span className="flex-spacer"/>{footer}
   </nav>
   {visible&&floating&&narrow&&<button className="navigation-backdrop" aria-label="Close navigation" onClick={close}/>}
-  {visible&&<aside id="workspace-sidebar" className="sidebar" style={{width}} aria-label="Projects and conversations">{children}</aside>}
+  {visible&&<aside id="workspace-sidebar" className="sidebar" style={{width}} aria-label="Chats and agents">{children}</aside>}
   {visible&&!floating&&resize}
  </div>
 }

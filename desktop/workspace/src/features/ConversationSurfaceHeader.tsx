@@ -10,13 +10,13 @@ export type ConversationChanges={files:number;additions?:number;deletions?:numbe
 export default function ConversationSurfaceHeader({task,changes,onOpenSurface,onReviewTask}:{task?:Task;changes?:ConversationChanges;onOpenSurface?:(surface:ConversationSurface)=>void;onReviewTask:()=>void}){
  const state=taskState(task?.status),events=task?.events;
  const activity=useMemo(()=>toolActivities(events||[]).at(-1),[events]);
- const needsReview=!!task&&['awaiting_approval','paused','recovery_confirmation_required'].includes(task.status);
+ const needsReview=!!task&&['awaiting_approval','paused','recovery_confirmation_required','failed'].includes(task.status);
  return <header className="conversation-surface-header" aria-label="Conversation tools">
   <div className={'conversation-task-state '+(task?state.tone:'')} role={task?'status':undefined}>
    {state.active?<LoaderCircle size={12} className="spin"/>:task?<span className={'status-dot '+task.status}/>:null}
    <span>{task?state.label:'Conversation'}</span>{state.active&&activity&&<small title={activity.title}>{activity.title}</small>}
   </div>
-  {needsReview&&<Button size="sm" variant="ghost" className="conversation-task-review" aria-label="Review current task" onClick={onReviewTask}>Review task</Button>}
+  {needsReview&&<Button size="sm" variant="ghost" className="conversation-task-review" aria-label="Review current task" onClick={onReviewTask}>{task?.status==='failed'?'Review error':'Review task'}</Button>}
   <span className="flex-spacer"/>
   {onOpenSurface&&<nav aria-label="Conversation views">
    <Button className="conversation-changes-button" variant="ghost" size="sm" aria-label="Review changes" title="Review changes" onClick={()=>onOpenSurface('review')}>

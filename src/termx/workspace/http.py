@@ -13,10 +13,27 @@ from termx.workspace.extensions import ExtensionService
 from termx.workspace.skill_sources import SkillSourceService
 from termx.workspace.service import WorkspaceService
 from termx.workspace.store import Conflict
+from termx.workspace.public_events import public_task_events, public_task_approvals
 
 
 class Input(BaseModel):
     model_config=ConfigDict(extra='forbid')
+
+
+class OrchestratorInput(Input):
+    session_id: str | None = Field(default=None,min_length=1,max_length=128)
+
+
+class ChildControlInput(Input):
+    owner: str
+    revision: int = Field(ge=1)
+
+
+class AdoptConversationInput(Input):
+    session_id: str = Field(min_length=1,max_length=128)
+    expected_revision: int = Field(ge=1)
+    review_digest: str = Field(min_length=64,max_length=64)
+    request_id: str = Field(min_length=8,max_length=128)
 
 
 class SessionInput(Input):
@@ -280,6 +297,36 @@ def mount_workspace(app,state):
     def sessions(request:Request,query:str='',archived:bool=False,project_id:str|None=None):
         return {'sessions':call(workspace.sessions,principal(request),query=query,archived=archived,project_id=project_id)}
 
+    @router.get('/orchestrator')
+    def orchestrator(request:Request):
+        return call(workspace.orchestrator.snapshot,principal(request))
+
+    @router.post('/orchestrator/ensure')
+    def ensure_orchestrator(request:Request,body:OrchestratorInput):
+        return call(workspace.orchestrator.ensure,principal(request),**body.model_dump())
+
+    @router.get('/orchestrator/activity')
+    def orchestrator_activity(request:Request,after:int=0):
+        if after<0:raise HTTPException(400,'Activity cursor must be nonnegative')
+        return call(workspace.orchestrator.activity,principal(request),after=after)
+
+    @router.post('/orchestrator/children/{identifier}/control')
+    async def orchestrator_control(request:Request,identifier:str,body:ChildControlInput):
+        return call(workspace.orchestrator.control,principal(request),identifier,**body.model_dump())
+
+    @router.get('/orchestrator/adoption-preview/{identifier}')
+    def adoption_preview(request:Request,identifier:str):
+        return call(workspace.orchestrator.native.review,principal(request),identifier)
+
+    @router.post('/orchestrator/adopt')
+    def adopt_conversation(request:Request,body:AdoptConversationInput):
+        actor=principal(request)
+        call(workspace.orchestrator.ensure,actor)
+        from termx.agent.providers import ProviderCall
+        invocation=ProviderCall(type='function',call_id=body.request_id,name='adopt_managed_session',
+            arguments={'session_id':body.session_id,'expected_revision':body.expected_revision,'review_digest':body.review_digest})
+        return call(workspace.orchestrator.native.adopt,actor,'user:'+actor.id,invocation)
+
     @router.post('/sessions')
     def create_session(request:Request,body:SessionInput):
         return call(workspace.create_session,principal(request),**body.model_dump())
@@ -517,6 +564,7 @@ def mount_workspace(app,state):
         remaining=[100]
         activity_remaining=[1000]
         seen=set()
+        nodes={}
         def tree(tid,depth=0):
             call(workspace.record,actor,'task',tid)
             value=state.agent_store.get_task(tid)
@@ -524,6 +572,7 @@ def mount_workspace(app,state):
             seen.add(tid)
             remaining[0]-=1
             result={key:value[key] for key in fields if key in value}
+            nodes[tid]=result
             metadata=workspace.store.get('task',tid) or {}
             result['execution_location']=metadata.get('execution_location') or value.get('cwd')
             result['runner_id']=metadata.get('runner_id')
@@ -531,6 +580,9 @@ def mount_workspace(app,state):
             result['delegated_task']=metadata.get('delegated_task')
             result['isolation']=metadata.get('isolation')
             result['worktree']=state.agent_store.task_worktree(tid) or ({'worktree_id':metadata['worktree_id'],'worktree_path':metadata.get('cwd'),'branch':metadata.get('worktree_branch'),'source':'session'} if metadata.get('worktree_id') else None)
+            # Pending source decisions are separate from optional event history.
+            # Keep their exact IDs; publish only after the final authority checks.
+            result['approvals']=state.agent_store.approvals(tid)
             if value.get('engine')=='internal' and hasattr(state.agent,'tree_budget'):
                 result['tree_budget']=state.agent.tree_budget.snapshot(tid)
             if activity:
@@ -540,7 +592,7 @@ def mount_workspace(app,state):
                 # empty task is distinguishable from unavailable activity.
                 events=state.agent_store.events(tid,tail_limit=limit+1)
                 result['activity_truncated']=len(events)>limit
-                result['events']=events[-limit:] if limit else []
+                result['events']=public_task_events(workspace,actor,events[-limit:]) if limit else []
                 activity_remaining[0]-=len(result['events'])
             result['children']=[]
             result['truncated']=False
@@ -548,6 +600,9 @@ def mount_workspace(app,state):
                 if child['id'] in seen:continue
                 try:workspace.record(actor,'task',child['id'])
                 except (KeyError,PermissionError):continue
+                except HTTPException as exc:
+                    if exc.status_code not in {403,404}:raise
+                    continue
                 if depth>=8 or remaining[0]<=0:
                     result['truncated']=True
                     break
@@ -560,7 +615,12 @@ def mount_workspace(app,state):
         if current.id!=actor.id or current.policy_version!=actor.policy_version:
             raise HTTPException(403,'Session authorization changed; reload the task')
         for tid in seen:
-            call(workspace.record,current,'task',tid)
+            metadata=call(workspace.record,current,'task',tid)
+            if metadata.get('conversation_id'):
+                call(workspace.record,current,'conversation',metadata['conversation_id'])
+            # A parent reference is not authority over a child approval. This
+            # projection also rechecks every nested source before publishing it.
+            nodes[tid]['approvals']=public_task_approvals(workspace,current,nodes[tid]['approvals'])
         return result
 
     @router.post('/tasks/{identifier}/cancel')
@@ -594,8 +654,11 @@ def mount_workspace(app,state):
 
     @router.post('/tasks/{identifier}/steer')
     async def steer(request:Request,identifier:str,body:TaskMessage):
-        actor=principal(request);call(workspace.record,actor,'task',identifier,scope='agent-control')
+        actor=principal(request);metadata=call(workspace.record,actor,'task',identifier,scope='agent-control')
         task=state.agent_store.get_task(identifier)
+        if not task:raise HTTPException(404,'Task not found')
+        if task['status'] not in {'running','awaiting_approval'}:raise HTTPException(409,'Only an active task can be steered')
+        call(workspace.orchestrator.claim_user,actor,metadata.get('conversation_id') or '')
         if getattr(state,'runner_agents',None) and state.runner_agents.owns(task):
             return call(state.runner_agents.steer,identifier,body.message)
         if task.get('engine','internal')!='internal':

@@ -9,6 +9,7 @@ event persistence, and approval routing.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -46,6 +47,9 @@ class EngineGateway:
         self._binding_task: dict[str, str] = {}
         # binding_id -> accumulated assistant text for result recording
         self._result_buffers: dict[str, list[str]] = {}
+        # Unknown wire events await actual turn/start or RPC-response proof.
+        # Raw content stays private and bounded until it has a source owner.
+        self._pending_turn_events: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self.catalogue = EngineCatalogue(self)
         self._custom_runner_ids: set[str] = set()
@@ -282,6 +286,9 @@ class EngineGateway:
         attachments: list[dict[str, Any]] | None = None,
         workflow: str | None = None,
         on_created: Callable[[str],None] | None = None,
+        parent_id: str | None = None,
+        dispatch_guard: Callable[[], None] | None = None,
+        cleanup_guard: Callable[[], bool] | None = None,
         mcp_project_id: str | None = None,
         mcp_authorize: Any = None,
     ) -> dict[str, Any]:
@@ -294,6 +301,8 @@ class EngineGateway:
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
         adapter = self.adapter(engine)
+        if dispatch_guard:
+            dispatch_guard()
         if workspace_mode is not None:
             if workspace_mode not in {'ask','agent'}:raise ValueError('Unknown workspace conversation mode')
             if engine in {'codex','claude'}:mode=workspace_mode
@@ -400,6 +409,8 @@ class EngineGateway:
                 )
                 binding.binding_id = existing["binding_id"]
                 binding.extensions_snapshot = (existing.get("payload") or {}).get("extensions_snapshot", {})
+                if dispatch_guard:
+                    dispatch_guard()
                 try:
                     if hasattr(adapter, "configure_session"):
                         binding = await adapter.attach(binding, cfg=cfg)
@@ -409,6 +420,7 @@ class EngineGateway:
                     self._store.update_engine_session(
                         existing["binding_id"], status="lost")
                     raise ValueError(f"{engine} session could not be resumed: {exc}") from exc
+                await self._check_dispatch(dispatch_guard, adapter, binding)
             if binding is not None:
                 binding.conversation_id = conversation_id
                 self._bindings[binding.binding_id] = binding
@@ -427,6 +439,7 @@ class EngineGateway:
                 # Launch allowed but disclose: filtering is advisory-only.
                 pass
 
+        await self._check_dispatch(dispatch_guard, adapter, binding)
         task = self._store.create_task(
             prompt=prompt,
             cwd=str(root),
@@ -437,10 +450,14 @@ class EngineGateway:
             custom_agent_id=custom_agent["id"] if custom_agent else None,
             engine=engine,
             status="running",
+            parent_id=parent_id,
         )
         task_id = task["id"]
         self._emit(task_id,"engine.configuration.resolved",cfg.as_dict())
         if on_created:on_created(task_id)
+        if await self._abort_stopped_start(task_id, adapter, binding):
+            return self._store.get_task(task_id, include_events=True) or task
+        await self._check_dispatch(dispatch_guard, adapter, binding, task_id)
         cfg.tools['managed_task_id']=task_id
         if workflow=='browser':
             # Trusted identity is bound later by the explicit browser handoff.
@@ -453,11 +470,20 @@ class EngineGateway:
 
         if binding is None:
             try:
+                if dispatch_guard:
+                    dispatch_guard()
                 binding = await adapter.create_session(cfg)
             except Exception as exc:
+                if await self._abort_stopped_start(task_id, adapter):
+                    return self._store.get_task(task_id, include_events=True) or task
                 self._store.update_task(task_id, status="failed", error=str(exc))
                 self._emit(task_id, "task.failed", {"message": str(exc)})
                 raise ValueError(f"{engine} session failed to start: {exc}") from exc
+            # Stop can arrive before a new binding exists. Its late session
+            # must be closed rather than enrolled and sent the cancelled prompt.
+            if await self._abort_stopped_start(task_id, adapter, binding):
+                return self._store.get_task(task_id, include_events=True) or task
+            await self._check_dispatch(dispatch_guard, adapter, binding, task_id)
             binding.conversation_id = conversation_id
             binding.extensions_snapshot['mcp_scope']=mcp_snapshot
             self._bindings[binding.binding_id] = binding
@@ -472,19 +498,31 @@ class EngineGateway:
                 payload=binding.as_dict(),
             )
         else:
+            previous_task_id = self._binding_task.get(binding.binding_id) or (existing or {}).get('task_id')
+            if previous_task_id and (not binding.extensions_snapshot.get('termx_dispatch_id')
+                    or binding.native_turn_id in (binding.extensions_snapshot.get('termx_turn_owners') or {})):
+                self._remember_turn(binding, previous_task_id, binding.native_turn_id)
             self._binding_task[binding.binding_id] = task_id
             self._store.update_task(task_id, engine_session_id=binding.binding_id,
                                     engine_native_id=binding.native_session_id)
             configure = getattr(adapter, "configure_session", None)
             if configure:
+                if await self._abort_stopped_start(task_id, adapter, binding):
+                    return self._store.get_task(task_id, include_events=True) or task
+                await self._check_dispatch(dispatch_guard, adapter, binding, task_id)
                 try:
                     await configure(binding, cfg)
                 except Exception as exc:
+                    if await self._abort_stopped_start(task_id, adapter, binding):
+                        return self._store.get_task(task_id, include_events=True) or task
                     self._store.update_task(task_id, status="failed", error=str(exc))
                     self._store.update_engine_session(binding.binding_id, task_id=task_id,
                                                       status="idle", payload=binding.as_dict())
                     self._emit(task_id, "task.failed", {"message": str(exc)})
                     raise ValueError(f"{engine} configuration failed: {exc}") from exc
+            if await self._abort_stopped_start(task_id, adapter, binding):
+                return self._store.get_task(task_id, include_events=True) or task
+            await self._check_dispatch(dispatch_guard, adapter, binding, task_id)
             self._store.update_engine_session(
                 binding.binding_id, task_id=task_id, status="active",
                 payload=binding.as_dict())
@@ -518,6 +556,10 @@ class EngineGateway:
         })
         if configuration is not None:
             self._emit(task_id, "engine.session.info", configuration)
+        if await self._abort_stopped_start(task_id, adapter, binding):
+            return self._store.get_task(task_id, include_events=True) or task
+        await self._check_dispatch(dispatch_guard, adapter, binding, task_id)
+        self._prepare_turn_dispatch(binding, task_id)
         try:
             text = prompt if not instructions else (
                 f'You are the "{custom_agent["name"]}" agent. Follow these '
@@ -528,10 +570,100 @@ class EngineGateway:
             else:
                 await adapter.send(binding, text)
         except Exception as exc:
+            self._pending_turn_events.pop(binding.binding_id, None)
+            if await self._abort_stopped_start(task_id, adapter, binding):
+                return self._store.get_task(task_id, include_events=True) or task
             self._store.update_task(task_id, status="failed", error=str(exc))
             self._emit(task_id, "task.failed", {"message": str(exc)})
             raise ValueError(f"{engine} turn failed to start: {exc}") from exc
+        if binding.extensions_snapshot.get('termx_correlation_failed') == task_id:
+            await self._abort_stopped_start(task_id, adapter, binding)
+            return self._store.get_task(task_id, include_events=True) or task
+        await self._check_dispatch(dispatch_guard, adapter, binding, task_id, cleanup_guard=cleanup_guard)
         return self._store.get_task(task_id, include_events=True) or task
+
+    async def _check_dispatch(self, guard: Callable[[], None] | None,
+                              adapter: EngineAdapter,
+                              binding: EngineSessionBinding | None = None,
+                              task_id: str | None = None, *,
+                              cleanup_guard: Callable[[], bool] | None = None) -> None:
+        if guard is None:
+            return
+        try:
+            guard()
+        except Exception:
+            if cleanup_guard is not None:
+                should_cleanup = True
+                try:
+                    should_cleanup = cleanup_guard() is not False
+                except Exception:
+                    # A failed ownership check must remain fail-closed.
+                    pass
+                if not should_cleanup:
+                    # Send was attempted and the user now owns its authorized
+                    # work. The old coordinator cannot close that human turn.
+                    raise
+            # A native resume/configuration can yield after the coordinator or
+            # project grant changes. Stop only this attempt and never replay it.
+            current = self._store.get_task(task_id) if task_id else None
+            if current and current['status'] in {'running', 'planning', 'awaiting_approval'}:
+                message = 'Native dispatch authority changed. This attempt was stopped; inspect its task before retrying.'
+                self._store.update_task(task_id, status='failed', error=message)
+                self._emit(task_id, 'task.failed', {'message':message})
+            await self._abort_stopped_start(task_id, adapter, binding)
+            raise
+
+    async def _abort_stopped_start(self, task_id: str | None, adapter: EngineAdapter,
+                                  binding: EngineSessionBinding | None = None) -> bool:
+        """Recheck durable Stop after native startup/configuration yields.
+
+        Cancellation may have no binding to interrupt yet. A session returned
+        later belongs to that stopped attempt and must never receive its prompt.
+        Cleanup failures remain visible; they never restore dispatch authority.
+        """
+        task = self._store.get_task(task_id) if task_id else None
+        if task and task['status'] in {'running', 'planning', 'awaiting_approval'}:
+            return False
+        failure = None
+        if binding is not None:
+            live_binding = self._bindings.get(binding.binding_id)
+            record = self._store.get_engine_session(binding.binding_id)
+            owner_ids = {self._binding_task.get(binding.binding_id), (record or {}).get('task_id')} - {None,task_id}
+            foreign_active = any((self._store.get_task(identifier) or {}).get('status') in {'running','planning','awaiting_approval','cancelling','paused','recovering','recovery_confirmation_required'} for identifier in owner_ids)
+            if live_binding is not None and live_binding is not binding or foreign_active:
+                binding = None  # Cleanup must not touch a different live turn.
+        if binding is not None:
+            if binding.status != 'closed':
+                try:
+                    await adapter.cancel(binding)
+                except Exception as exc:
+                    failure = exc
+                if binding.status != 'closed':
+                    try:
+                        await adapter.close(binding)
+                    except Exception as exc:
+                        failure = exc
+                    else:
+                        failure = None  # A confirmed close also settles a failed interrupt.
+                else:
+                    failure = None
+            self._bindings.pop(binding.binding_id, None)
+            self._binding_task.pop(binding.binding_id, None)
+            self._result_buffers.pop(binding.binding_id, None)
+            self._pending_turn_events.pop(binding.binding_id, None)
+            record = self._store.get_engine_session(binding.binding_id)
+            if record:
+                self._store.update_engine_session(binding.binding_id, status='lost', payload=binding.as_dict())
+        current = self._store.get_task(task_id) if task_id else None
+        if current and current['status'] == 'cancelling':
+            self._store.update_task(task_id, status='cancelled', error='Cancelled before the native turn started')
+            self._emit(task_id, 'task.cancelled', {'message':'Cancelled before the native turn started'})
+        if failure is not None:
+            message = 'Task stopped before dispatch; native session cleanup could not be confirmed. Restart the engine before continuing.'
+            if current:
+                self._emit(task_id, 'engine.session.cleanup.failed', {'message':message, 'error_type':type(failure).__name__})
+            raise ValueError(message) from failure
+        return True
 
     async def cancel(self, task_id: str) -> dict[str, Any] | None:
         task = self._store.get_task(task_id)
@@ -589,11 +721,11 @@ class EngineGateway:
         payload = approval.get("payload") or {}
         token = payload.get("engine_request_id")
         binding = self._binding_for_task(task_id)
+        if task['status'] not in {'running','awaiting_approval'} or binding is None or binding.status in {'closed','lost'} or not token:
+            raise ValueError('This native approval no longer has an active engine request. Inspect the task and resume with an explicit new instruction.')
         resolved = self._store.resolve_approval(
             approval_id, "approved" if decision in {"approved", "approve"} else decision)
         self._emit(task_id, "approval.resolved", {"approval": resolved})
-        if payload.get('engine_method')=='browser.review':
-            self._store.update_task(task_id,status='running')
         if binding is not None and token:
             wire_decision = {
                 "approved": "approve",
@@ -608,11 +740,145 @@ class EngineGateway:
                     remember=remember in {"session", "always", "project"},
                     content=content,
                 )
-            except KeyError:
-                pass  # request already expired engine-side; row stays resolved
+            except (Exception, asyncio.CancelledError) as exc:
+                expired = isinstance(exc, KeyError)
+                message = ('This native permission request expired before the decision could be delivered. Inspect the task before sending a new instruction.'
+                    if expired else 'Native permission delivery could not be confirmed. The decision will not be sent again; inspect the engine and actual task outcome before continuing.')
+                # The durable approval row records the user's choice, not proof
+                # the native process received it. Never revert that row or
+                # retransmit an ambiguous decision on a repeated HTTP request.
+                self._emit(task_id, 'engine.approval.delivery.failed', {
+                    'approval_id':approval_id,'decision':resolved['status'],
+                    'delivery':'expired' if expired else 'uncertain','message':message})
+                self._emit(task_id, 'task.recovery.blocked', {'message':message})
+                current = self._store.get_task(task_id)
+                if current and current['status'] in {'running','planning','awaiting_approval'}:
+                    self._store.update_task(task_id, status='failed', error=message)
+                    self._emit(task_id, 'task.failed', {'message':message})
+                    await self._abort_stopped_start(task_id, self.adapter(binding.engine), binding)
+                elif current and current['status'] == 'cancelling':
+                    await self._abort_stopped_start(task_id, self.adapter(binding.engine), binding)
+                # A final outcome, or a binding reassigned to a newer user turn,
+                # remains authoritative even when the old response is lost.
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                raise ValueError(message) from exc
+            current = self._store.get_task(task_id)
+            if (current and current['status'] == 'awaiting_approval'
+                    and self._binding_task.get(binding.binding_id) == task_id
+                    and binding.status not in {'closed','lost'}
+                    and not any(item['status'] == 'pending' for item in self._store.approvals(task_id))):
+                self._store.update_task(task_id, status='running')
+                self._emit(task_id, 'task.status', {'status':'running'})
         return resolved
 
     # ----------------------------------------------------------- event flow
+
+    @staticmethod
+    def _actual_turn_id(payload: dict[str, Any], native: dict[str, Any] | None = None) -> str | None:
+        turn = payload.get('turn')
+        identifier = ((native or {}).get('turn_id') or payload.get('turnId')
+                      or (turn.get('id') if isinstance(turn, dict) else None))
+        return identifier if isinstance(identifier, str) and identifier else None
+
+    def _persist_turn_owners(self, binding: EngineSessionBinding) -> None:
+        if self._store.get_engine_session(binding.binding_id):
+            self._store.update_engine_session(binding.binding_id, payload=binding.as_dict())
+
+    def _remember_turn(self, binding: EngineSessionBinding, task_id: str,
+                       turn_id: str | None) -> None:
+        if not isinstance(turn_id, str) or not turn_id:
+            return
+        owners = binding.extensions_snapshot.setdefault('termx_turn_owners', {})
+        # Turn IDs are native facts. Once observed, a later task cannot claim
+        # one, even after the same session binding is reused or restored.
+        if turn_id not in owners:
+            owners[turn_id] = task_id
+            self._persist_turn_owners(binding)
+
+    def _prepare_turn_dispatch(self, binding: EngineSessionBinding, task_id: str) -> None:
+        binding.extensions_snapshot['termx_dispatch_id'] = task_id
+        binding.extensions_snapshot.pop('termx_correlation_failed', None)
+        binding.native_turn_id = None
+        self._result_buffers.pop(binding.binding_id, None)
+        self._pending_turn_events.pop(binding.binding_id, None)
+        self._persist_turn_owners(binding)
+
+    def _quarantine_turn_event(self, binding_id: str, task_id: str, event: EngineEvent) -> None:
+        pending = self._pending_turn_events.setdefault(binding_id, {
+            'task_id':task_id, 'events':[], 'bytes':0, 'overflow':False})
+        if pending['task_id'] != task_id:
+            return
+        size = len(json.dumps({'payload':event.payload, 'native':event.native}, default=str).encode())
+        if pending['overflow'] or len(pending['events']) >= 128 or pending['bytes'] + size > 1024 * 1024:
+            pending['overflow'] = True
+            return
+        pending['events'].append(event)
+        pending['bytes'] += size
+
+    def _flush_turn_events(self, binding_id: str, task_id: str, turn_id: str) -> None:
+        pending = self._pending_turn_events.pop(binding_id, None)
+        if not pending or pending['task_id'] != task_id:
+            return
+        if pending['overflow']:
+            self._fail_turn_correlation(binding_id, task_id)
+            return
+        for buffered in pending['events']:
+            if self._actual_turn_id(buffered.payload, buffered.native) == turn_id:
+                self.on_engine_event(binding_id, buffered)
+
+    def _fail_turn_correlation(self, binding_id: str, task_id: str) -> None:
+        message = 'Native turn correlation exceeded its safe event buffer. The request was not replayed; inspect the actual engine outcome before continuing.'
+        current = self._store.get_task(task_id)
+        if current and current['status'] in {'running','planning','awaiting_approval'}:
+            self._store.update_task(task_id, status='failed', error=message)
+            self._emit(task_id, 'task.failed', {'message':message})
+            binding = self._bindings.get(binding_id)
+            if binding:
+                binding.extensions_snapshot['termx_correlation_failed'] = task_id
+                self._persist_turn_owners(binding)
+            self._emit(task_id, 'task.recovery.blocked', {'message':message})
+
+    def _event_task(self, binding_id: str, task_id: str, event: EngineEvent) -> tuple[str, bool]:
+        """Correlate native turn IDs or captured host attempts before mutation.
+
+        A vendor turn ID is never synthesized from a cached binding. Drivers
+        without wire turn IDs may supply the host dispatch captured by their
+        own prompt coroutine; unsolicited session-only chunks remain unscoped.
+        """
+        binding = self._bindings.get(binding_id)
+        if binding is None:
+            return task_id, True
+        turn_id = self._actual_turn_id(event.payload, event.native)
+        dispatch_id = (event.native or {}).get('dispatch_id')
+        owners = binding.extensions_snapshot.get('termx_turn_owners') or {}
+        owner = owners.get(turn_id) if turn_id else None
+        if owner:
+            return owner, owner == task_id and (not dispatch_id or dispatch_id == task_id)
+        if dispatch_id and dispatch_id != task_id:
+            return str(dispatch_id), False
+        turn_scoped = (event.type.startswith(('engine.turn.', 'engine.message.', 'engine.item.',
+                        'engine.tool.', 'engine.reasoning.', 'engine.command.'))
+                       or event.type in {'engine.plan.updated', 'engine.diff.updated'})
+        if turn_id:
+            # Only a previously correlated actual ID is authority here. An
+            # adapter's cached ID may itself have come from an unknown replay.
+            expected = next((identifier for identifier, owner in owners.items() if owner == task_id), None)
+            if expected and expected != turn_id:
+                return task_id, False
+            if (binding.extensions_snapshot.get('termx_dispatch_id') == task_id
+                    and turn_scoped and event.type not in {'engine.turn.started','engine.turn.bound'}
+                    and not dispatch_id):
+                self._quarantine_turn_event(binding_id, task_id, event)
+                return task_id, False
+            self._remember_turn(binding, task_id, turn_id)
+            binding.native_turn_id = turn_id
+            self._persist_turn_owners(binding)
+        elif turn_scoped and any(owner == task_id for owner in owners.values()) and not dispatch_id:
+            # A notification without its actual turn cannot borrow the current
+            # native ID. Keep it inspectable as an uncorrelated diagnostic.
+            return task_id, False
+        return task_id, True
 
     def _binding_for_task(self, task_id: str) -> EngineSessionBinding | None:
         record = self._store.engine_session_for_task(task_id)
@@ -629,12 +895,26 @@ class EngineGateway:
             task_id = record["task_id"] if record else None
         if task_id is None:
             return
+        current_task_id = task_id
+        task_id, applicable = self._event_task(binding_id, task_id, event)
         payload = dict(event.payload)
         if event.native:
             payload["native"] = event.native
+        if not applicable:
+            if task_id != current_task_id and self._store.get_task(task_id):
+                self._emit(task_id, event.type, payload)
+            else:
+                self._emit(current_task_id, 'engine.event.uncorrelated', {
+                    'type':event.type, 'turn_id':self._actual_turn_id(event.payload,event.native),
+                    'payload_bytes':len(json.dumps(payload, default=str).encode()),
+                    'message':'Native activity awaits an actual turn correlation or belongs to an unmatched turn; ambiguous content was withheld and did not change the current task.'})
+            return
         self._emit(task_id, event.type, payload)
 
-        if event.type == "engine.message.delta":
+        if event.type == 'engine.turn.correlation.failed':
+            self._pending_turn_events.pop(binding_id, None)
+            self._fail_turn_correlation(binding_id, task_id)
+        elif event.type == "engine.message.delta":
             delta = event.payload.get("delta") or event.payload.get("text") or ""
             if not event.payload.get("parent_call_id"):
                 self._result_buffers.setdefault(binding_id, []).append(str(delta))
@@ -657,15 +937,18 @@ class EngineGateway:
         elif event.type == "engine.turn.completed":
             self._finish_turn(binding_id, task_id, event.payload)
         elif event.type=='engine.approval.expired':
+            settled_request = False
             for approval in self._store.approvals(task_id):
                 if approval['status']=='pending' and approval['payload'].get('engine_request_id')==event.payload.get('request_id'):
                     resolved=self._store.resolve_approval(approval['id'],'denied')
                     self._emit(task_id,'approval.resolved',{'approval':resolved})
+                    settled_request = True
             task = self._store.get_task(task_id)
-            if task and task["status"] == "awaiting_approval" and not any(
+            if settled_request and task and task["status"] == "awaiting_approval" and not any(
                 approval["status"] == "pending" for approval in self._store.approvals(task_id)
             ):
                 self._store.update_task(task_id,status='running')
+                self._emit(task_id,'task.status',{'status':'running'})
         elif event.type == "engine.session.lost":
             self._store.update_engine_session(binding_id, status="lost")
             task = self._store.get_task(task_id)
@@ -674,9 +957,25 @@ class EngineGateway:
                     "status": "failed",
                     "error": {"message": "Engine connection closed; session may be resumable"},
                 })
+        if event.type in {'engine.turn.started','engine.turn.bound'}:
+            turn_id = self._actual_turn_id(event.payload, event.native)
+            if turn_id:
+                self._flush_turn_events(binding_id, task_id, turn_id)
 
     def _finish_turn(self, binding_id: str, task_id: str,
                      payload: dict[str, Any]) -> None:
+        if self._binding_task.get(binding_id) not in {None, task_id}:
+            return  # A late old turn must not clear a newer turn's buffer.
+        pending = self._pending_turn_events.get(binding_id)
+        if pending and pending['task_id'] == task_id:
+            self._pending_turn_events.pop(binding_id, None)
+        current = self._store.get_task(task_id)
+        if current is None or current['status'] in {'completed', 'failed', 'cancelled'}:
+            # The raw engine event is already persisted by on_engine_event.
+            # A delayed/duplicate completion cannot replace a confirmed outcome
+            # or produce another task terminal event for orchestration listeners.
+            self._result_buffers.pop(binding_id, None)
+            return
         status = str(payload.get("status") or "completed")
         final_text = payload.get("result")
         result = "".join(self._result_buffers.pop(binding_id, [])) or (final_text if isinstance(final_text, str) else None)
@@ -711,6 +1010,15 @@ class EngineGateway:
         task_id = self._binding_task.get(binding_id)
         if task_id is None:
             raise ValueError("no task bound to engine session")
+        task = self._store.get_task(task_id)
+        binding = self._bindings.get(binding_id)
+        if not task or task['status'] not in {'running','awaiting_approval'} or binding is None or binding.status in {'closed','lost'}:
+            raise ValueError('Native permission request belongs to a stopped or unavailable turn')
+        turn_id = self._actual_turn_id(params)
+        owner = (binding.extensions_snapshot.get('termx_turn_owners') or {}).get(turn_id) if turn_id else None
+        if turn_id and ((owner and owner != task_id)
+                or (binding.native_turn_id and binding.native_turn_id != turn_id)):
+            raise ValueError('Native permission request belongs to an earlier turn; it cannot grant access to the current task')
         approval = self._store.create_approval(
             task_id,
             kind,
@@ -722,26 +1030,51 @@ class EngineGateway:
                 "consequence": "Sent to the engine process when resolved",
             },
         )
+        if task['status'] != 'awaiting_approval':
+            self._store.update_task(task_id,status='awaiting_approval')
+            self._emit(task_id, 'task.status', {'status':'awaiting_approval'})
         self._emit(task_id, "approval.requested", {"approval": approval})
-        if method=='browser.review':self._store.update_task(task_id,status='awaiting_approval')
         return str(approval["id"])
 
     # ------------------------------------------------------------ lifecycle
 
     def recover(self) -> int:
         """On host start: live bindings are gone — mark them resumable-lost."""
-        marked = 0
+        affected = set()
         for record in self._store.list_engine_sessions():
             if record["status"] in _ENGINE_ACTIVE:
                 self._store.update_engine_session(
                     record["binding_id"], status="lost")
-                task = self._store.get_task(record["task_id"])
-                if task and task["status"] in {"running", "planning", "awaiting_approval", "cancelling"}:
-                    message = "Host restarted during this turn; resume the native session with a new task"
-                    self._store.update_task(task["id"], status="failed", error=message)
-                    self._emit(task["id"], "task.failed", {"message": message})
-                marked += 1
-        return marked
+                affected.add(record['binding_id'])
+            # A persisted approval cannot answer a process from an earlier host
+            # lifetime, even if its task was already terminal when the host died.
+            self._deny_lost_native_approvals(record['task_id'])
+        from termx.agent.store import ACTIVE_STATUSES
+        before = None
+        while True:
+            page = self._store.task_page(limit=100, before=before, statuses=tuple(ACTIVE_STATUSES))
+            if not page:
+                break
+            before = (page[-1]['updated_at'], page[-1]['id'])
+            for task in page:
+                if task.get('engine') in (None,'internal'):
+                    continue
+                record = self._store.engine_session_for_task(task['id'])
+                cancelling = task['status'] == 'cancelling'
+                message = ('Cancellation was recorded before the host restarted. No native work was replayed.'
+                    if cancelling else 'Host restarted during this turn; resume the native session with a new task'
+                    if record else 'Host restarted during native startup. Inspect the engine before sending a new instruction; no work was replayed.')
+                self._deny_lost_native_approvals(task['id'])
+                self._store.update_task(task['id'], status='cancelled' if cancelling else 'failed', error=message)
+                self._emit(task['id'], 'task.cancelled' if cancelling else 'task.failed', {'message':message})
+                affected.add(record['binding_id'] if record else 'task:'+task['id'])
+        return len(affected)
+
+    def _deny_lost_native_approvals(self, task_id: str) -> None:
+        for approval in self._store.approvals(task_id):
+            if approval['status'] == 'pending':
+                resolved = self._store.resolve_approval(approval['id'], 'denied')
+                self._emit(task_id, 'approval.resolved', {'approval':resolved})
 
     async def shutdown(self, *, strict: bool = False) -> None:
         await self.catalogue.stop()

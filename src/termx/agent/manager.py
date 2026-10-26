@@ -120,24 +120,141 @@ class AgentManager:
             project_id_for=self._project_id,
         )
         self._project_files = project_files
-        for task in self.store.list_tasks(limit=500):
+        self._recover_interrupted_tasks()
+
+    def _recover_interrupted_tasks(self) -> None:
+        # Collect stable pages before changing updated_at. A host may have more
+        # than 500 historical tasks; recent terminal rows must not hide older
+        # interrupted work from recovery.
+        tasks: list[dict[str, Any]] = []
+        before = None
+        while page := self.store.task_page(
+            limit=100, before=before, statuses=sorted(ACTIVE_STATUSES)
+        ):
+            tasks.extend(page)
+            before = (page[-1]["updated_at"], page[-1]["id"])
+        tasks = [task for task in tasks if task.get("engine") in (None, "internal")]
+        by_id = {task["id"]: task for task in tasks}
+
+        def depth(task: dict[str, Any]) -> int:
+            seen = {task["id"]}
+            while task.get("parent_id") in by_id and task["parent_id"] not in seen:
+                task = by_id[task["parent_id"]]
+                seen.add(task["id"])
+            return len(seen)
+
+        # Resolve descendants before their wrappers, including nested agents.
+        tasks.sort(key=depth, reverse=True)
+
+        # Approval payloads are redacted public records, not executable requests.
+        # Only a verified parent-side child binding can be reconstructed without
+        # the private in-memory payload. Settle missing requests before looking
+        # at an older checkpoint, which must never bypass a newer approval.
+        lost_requests: set[str] = set()
+        for task in tasks:
+            runtime = task.get("runtime") or {}
+            if runtime.get("restart_lost_tool_approvals"):
+                lost_requests.add(task["id"])
+            missing: list[dict[str, Any]] = []
+            for approval in self.store.approvals(task["id"]):
+                if approval["status"] != "pending" or approval["kind"] != "tool":
+                    continue
+                if self._recovery_child_approval(task["id"], approval) is not None:
+                    continue
+                missing.append(approval)
+            if missing:
+                # Persist only non-secret approval identities before settling
+                # them. A second crash between this decision and task.failed
+                # must not make an older checkpoint executable next startup.
+                identities = set(runtime.get("restart_lost_tool_approvals") or [])
+                identities.update(approval["id"] for approval in missing)
+                self.store.update_task(task["id"], runtime={
+                    **runtime, "restart_lost_tool_approvals": sorted(identities),
+                })
+                lost_requests.add(task["id"])
+            for approval in missing:
+                self._settle_interrupted_approval(
+                    task["id"], approval, "denied", "host_restart_private_request_lost"
+                )
+
+        for task in tasks:
+            # Mirror an already-settled child decision, or reconstruct only the
+            # verified binding. No tool arguments or remembered grant is rebuilt.
+            for approval in self.store.approvals(task["id"]):
+                if approval["status"] != "pending" or approval["kind"] not in {"tool", "budget"}:
+                    continue
+                inner = self._recovery_child_approval(task["id"], approval)
+                if inner is None:
+                    continue
+                if inner["status"] != "pending":
+                    self._settle_interrupted_approval(
+                        task["id"], approval, inner["status"], "child_decision_recovered"
+                    )
+                else:
+                    payload = approval["payload"]
+                    child = self.store.get_task(str(payload["child_id"]))
+                    if child is None or child["status"] not in ACTIVE_STATUSES:
+                        self._settle_interrupted_approval(
+                            task["id"], approval, "denied", "child_no_longer_waiting"
+                        )
+                        continue
+                    if child.get("engine") not in (None, "internal"):
+                        # The native process/approval future died with the
+                        # host. Gateway recovery owns the inner denial; a
+                        # parent must not fabricate a usable replacement.
+                        self._settle_interrupted_approval(
+                            task["id"], approval, "denied", "child_request_interrupted"
+                        )
+                        continue
+                    self._pending_approval_calls[approval["id"]] = {
+                        "task_id": task["id"],
+                        "child_id": payload["child_id"],
+                        "child_approval_id": inner["id"],
+                    }
+
+            if task["status"] == "cancelling":
+                # Cancellation intent survives a crash even if a prepared or
+                # ambiguous checkpoint exists. Recovery must not resurrect it.
+                self.store.update_task(task["id"], status="cancelled", error="Cancelled by user")
+                self.store.append_event(task["id"], "task.cancelled", {"message": "Cancelled by user"})
+                continue
+            if task["id"] in lost_requests:
+                for approval in self.store.approvals(task["id"]):
+                    if approval["status"] == "pending" and not (approval.get("payload") or {}).get("child_approval_id"):
+                        self._settle_interrupted_approval(
+                            task["id"], approval, "denied", "host_restart_private_request_lost"
+                        )
+                message = (
+                    "The Termx host stopped while a tool was awaiting approval. "
+                    "Its private execution request is no longer available. "
+                    "Send a fresh instruction to review a new request; this approval cannot be resumed."
+                )
+                self.store.update_task(task["id"], status="failed", error=message)
+                self.store.append_event(task["id"], "task.failed", {"message": message})
+                continue
             # Native engines own their recovery. Initial plans and budget
             # approvals are durable safe boundaries across host restarts.
-            if task.get("engine") not in (None, "internal"):
-                continue
             if (task.get("runtime") or {}).get("tree_budget_resume") and task["status"] in ACTIVE_STATUSES:
-                pending_budget = any(a["kind"] == "budget" and a["status"] == "pending" for a in self.store.approvals(task["id"]))
+                pending_budget = any(
+                    a["kind"] == "budget" and a["status"] == "pending"
+                    and not (a.get("payload") or {}).get("child_approval_id")
+                    for a in self.store.approvals(task["id"])
+                )
                 if not pending_budget:
                     runtime = task.get("runtime") or {}
                     self._pause_budget(task["id"], list(runtime.get("history") or []), int(runtime.get("step") or 0), monotonic(), "shared_resume")
                 continue
             if task["status"] == "awaiting_approval" and any(
                 a["kind"] in {"plan", "budget"} and a["status"] == "pending"
+                and not (a.get("payload") or {}).get("child_approval_id")
                 for a in self.store.approvals(task["id"])
             ):
                 continue
             if task["status"] in ACTIVE_STATUSES:
                 checkpoint = self.store.latest_checkpoint(task["id"], kind="execution")
+                if self._managed_action_needs_fresh_instruction(checkpoint):
+                    self._fail_interrupted_managed_action(task["id"], checkpoint)
+                    continue
                 decision = recovery_decision(checkpoint)
                 if decision in {"resume_safe", "resume_committed", "resume_reuse"}:
                     self.store.update_task(task["id"], status="recovering")
@@ -183,6 +300,30 @@ class AgentManager:
                         "task.failed",
                         {"message": "The Termx host stopped before this task completed."},
                     )
+
+    def _recovery_child_approval(
+        self, task_id: str, approval: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        payload = approval.get("payload") or {}
+        child = self.store.get_task(str(payload.get("child_id") or ""))
+        inner = self.store.get_approval(str(payload.get("child_approval_id") or ""))
+        if (
+            child
+            and inner
+            and child.get("parent_id") == task_id
+            and inner["task_id"] == child["id"]
+            and inner["kind"] == approval["kind"]
+        ):
+            return inner
+        return None
+
+    def _settle_interrupted_approval(
+        self, task_id: str, approval: dict[str, Any], decision: str, reason: str
+    ) -> None:
+        settled = self.store.resolve_approval(approval["id"], decision)
+        self.store.append_event(
+            task_id, "approval.resolved", {"approval": settled, "reason": reason}
+        )
 
     # Provider configuration -----------------------------------------
 
@@ -478,6 +619,24 @@ class AgentManager:
                 wrapper = {'task_id':task_id,'child_id':child['id'],'child_approval_id':inner['id']}
                 self._pending_approval_calls[approval_id] = wrapper
         escalation = "child_approval_id" in (self._pending_approval_calls.get(approval_id) or {})
+        orchestrator=getattr(self,'orchestrator',None)
+        if escalation and orchestrator and (orchestrator.store.get('task',task_id) or orchestrator.store.get('task',str((wrapper or {}).get('child_id') or ''))):
+            workspace=orchestrator.workspace
+            parent_metadata=orchestrator.store.get('task',task_id)
+            child_id=str((wrapper or {}).get('child_id') or '')
+            child_metadata=orchestrator.store.get('task',child_id)
+            actor=workspace.state.identity.principal_by_id(parent_metadata['owner']) if parent_metadata else None
+            if not actor or not child_metadata or child_metadata['owner']!=parent_metadata['owner']:
+                raise PermissionError('Child approval ownership is unavailable')
+            workspace.record(actor,'task',task_id,scope='agent-control')
+            for scope in ('agent-view','agent-control'):
+                workspace.record(actor,'task',child_id,scope=scope)
+                if child_metadata.get('conversation_id'):workspace.record(actor,'conversation',child_metadata['conversation_id'],scope=scope)
+            if decision not in {'denied','deny','cancel'}:
+                workspace.record(actor,'task',child_id,scope='agent-run')
+                if child_metadata.get('conversation_id'):workspace.record(actor,'conversation',child_metadata['conversation_id'],scope='agent-run')
+            if (self.store.get_task(child_id) or {}).get('engine','internal')!='internal':
+                raise ValueError('Resolve native engine permissions in their source conversation; this wrapper cannot grant them')
         if task["status"] != "awaiting_approval" and not (
             escalation and approval["status"] == "pending"
         ):
@@ -1281,10 +1440,45 @@ class AgentManager:
                     consent=current_consent
                     base_validate=validate
                     validate=lambda:base_validate() and current_consent()
+                checkpoint = None
                 try:
                     permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,existing_consent=consent,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    checkpoint = self.store.create_checkpoint(
+                        task_id,
+                        kind="execution",
+                        history_cursor=len(history),
+                        plan_step=step,
+                        pending_call_id=call.call_id,
+                        side_effect_state="prepared",
+                        provider_turn_id=turn_id,
+                        payload={
+                            "task_id": task_id,
+                            "call": self._call_payload(call),
+                            "remaining_calls": [self._call_payload(item) for item in calls[index + 1:]],
+                            "history": history,
+                            "step": step,
+                            "started_at": started_at,
+                            # Identity only: never persist or reconstruct a permit.
+                            "action_review": {"id": envelope.action_id, "fingerprint": envelope.fingerprint()},
+                        },
+                    )
+                    self._emit_checkpoint(task_id, checkpoint)
+
+                    async def execute_managed_action():
+                        nonlocal checkpoint
+                        # DecisionBroker consumes the exact permit durably before
+                        # calling this operation. Running therefore describes a
+                        # real authorized execution boundary, not approval wait.
+                        checkpoint = self.store.update_checkpoint(checkpoint["id"], side_effect_state="running")
+                        result = await self._invoke_tool(entry, ctx)
+                        checkpoint = self.store.update_checkpoint(
+                            checkpoint["id"], side_effect_state="completed_uncommitted",
+                            result={"finished": result.finished_payload(call), "output_items": result.output_items(call)},
+                        )
+                        return result
+
                     self._emit(task_id,'tool.started',{'call':call.public()})
-                    outcome=await self.browser.review.execute(envelope,permit['permit'],validate=validate,operation=lambda:self._invoke_tool(entry,ctx))
+                    outcome=await self.browser.review.execute(envelope,permit['permit'],validate=validate,operation=execute_managed_action)
                 except ActionBlocked as exc:
                     outcome=ToolOutcome({'refused':True,'error':exc.record['reason'],'review_id':exc.record['id']})
                 except ReviewRequired as exc:
@@ -1299,7 +1493,19 @@ class AgentManager:
                         self.store.update_task(task_id,status='awaiting_approval',runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
                         self._emit(task_id,'approval.requested',{'approval':approval});self._persist_metrics(task_id)
                         return True,history,step
-                self._emit(task_id,'tool.finished',outcome.finished_payload(call));history.extend(outcome.output_items(call));step+=1;index+=1
+                if checkpoint is not None and checkpoint["side_effect_state"] == "prepared":
+                    # A refusal before the callback has no uncertain effect.
+                    checkpoint = self.store.update_checkpoint(
+                        checkpoint["id"], side_effect_state="completed_uncommitted",
+                        result={"finished": outcome.finished_payload(call), "output_items": outcome.output_items(call)},
+                    )
+                self._emit(task_id,'tool.finished',outcome.finished_payload(call));history.extend(outcome.output_items(call))
+                if checkpoint is not None:
+                    checkpoint = self.store.update_checkpoint(checkpoint["id"], side_effect_state="committed")
+                    self._emit_checkpoint(task_id, checkpoint)
+                if outcome.cancelled:
+                    raise asyncio.CancelledError
+                step+=1;index+=1
                 continue
             if decision.auto_resolved and not (approved_first and index == 0):
                 # A remembered rule or the Agent's own mode resolved this call.
@@ -1449,13 +1655,42 @@ class AgentManager:
 
     # Crash-safe resume --------------------------------------------------
 
+    @staticmethod
+    def _managed_action_needs_fresh_instruction(checkpoint: dict[str, Any] | None) -> bool:
+        return bool(
+            checkpoint
+            and (checkpoint.get("payload") or {}).get("action_review")
+            and checkpoint.get("side_effect_state") in {"prepared", "running"}
+        )
+
+    def _fail_interrupted_managed_action(self, task_id: str, checkpoint: dict[str, Any]) -> dict[str, Any]:
+        message = (
+            "The host stopped before a reviewed action's result was saved. Its exact permit "
+            "cannot be replayed. Inspect the actual state, then send a fresh instruction to "
+            "review a new action; confirming recovery cannot resume this request."
+        )
+        task = self._task(task_id)
+        runtime = task.get("runtime") or {}
+        marker = {"checkpoint_id": checkpoint["id"], "review_id": checkpoint["payload"]["action_review"]["id"]}
+        if runtime.get("recovery_requires_fresh_instruction") != marker or task["status"] != "failed":
+            self.store.update_task(task_id, status="failed", error=message, runtime={
+                **runtime, "recovery_requires_fresh_instruction": marker,
+            })
+            self._emit(task_id, "task.recovery.blocked", {
+                "message": message, "checkpoint_id": checkpoint["id"],
+                "reason": "reviewed_action_requires_fresh_instruction", "actionable": False,
+            })
+            self._emit(task_id, "task.failed", {"message": message})
+        return self._task(task_id)
+
     def pending_recoveries(self) -> list[str]:
         """Task ids marked ``recovering`` at startup, awaiting a resume drive."""
-        return [
-            task["id"]
-            for task in self.store.list_tasks(limit=500)
-            if task["status"] == "recovering"
-        ]
+        found: list[str] = []
+        before = None
+        while page := self.store.task_page(limit=100, before=before, statuses=["recovering"]):
+            found.extend(task["id"] for task in page if task.get("engine") in (None, "internal"))
+            before = (page[-1]["updated_at"], page[-1]["id"])
+        return found
 
     async def recover_task(self, task_id: str, *, confirm: bool = False) -> dict[str, Any]:
         """Resume a task left in ``recovering``/``recovery_confirmation_required``.
@@ -1463,12 +1698,21 @@ class AgentManager:
         Safe decisions (prepared/committed/completed_uncommitted) resume
         immediately; ``running``/ambiguous checkpoints require ``confirm=True``
         and then re-execute from ``prepared`` semantics — a documented risk of
-        a repeated side effect, never taken automatically.
+        a repeated side effect, never taken automatically. Managed reviewed
+        actions without a saved result require a fresh instruction instead:
+        confirmation never recreates or replays a consumed exact permit.
         """
         task = self._task(task_id)
+        if task["status"] == "failed" and (task.get("runtime") or {}).get("recovery_requires_fresh_instruction"):
+            return task
         if task["status"] not in {"recovering", "recovery_confirmation_required"}:
             raise ValueError("task is not awaiting recovery")
+        worker = self._workers.get(task_id)
+        if worker is not None and not worker.done():
+            raise ValueError("task is already running")
         checkpoint = self.store.latest_checkpoint(task_id, kind="execution")
+        if self._managed_action_needs_fresh_instruction(checkpoint):
+            return self._fail_interrupted_managed_action(task_id, checkpoint)
         decision = recovery_decision(checkpoint)
         if decision == "not_resumable":
             raise ValueError("task has no resumable checkpoint")
@@ -1508,7 +1752,7 @@ class AgentManager:
                 "task.recovery.resumed",
                 {"checkpoint_id": checkpoint["id"], "decision": decision},
             )
-            if state in {"completed_uncommitted", "committed"}:
+            if decision in {"resume_reuse", "resume_committed"}:
                 # The side effect completed durably — reuse the stored result
                 # instead of re-executing. History is the pre-call snapshot
                 # plus the stored output items (call-id dedupe covers rows
@@ -1636,6 +1880,11 @@ class AgentManager:
             if linked:
                 prior = self.store.get_task(str(linked))
                 if prior is not None:
+                    if prior.get('engine')=='coordination':
+                        # The workspace supplies a fresh, permission-filtered
+                        # child snapshot. Stored report references are not
+                        # model turns and must never bypass that live check.
+                        continue
                     entry["task_status"] = prior["status"]
                     entry["result"] = str(
                         prior.get("result") or prior.get("error") or ""
@@ -1955,6 +2204,11 @@ class AgentManager:
         for child in children:
             child_id = child["id"]
             if child_id in handles:
+                if child.get('engine','internal')!='internal':
+                    handles[child_id].status=child['status']
+                    if child['status'] not in ACTIVE_STATUSES:
+                        handles[child_id].result=str(child.get('result') or child.get('error') or '')
+                        handles[child_id].done.set()
                 continue
             delegation = next((event['payload'] for event in self.store.events(child_id, tail_limit=1, event_types=('task.delegation',))
                                if event['type'] == 'task.delegation'), {})
@@ -1962,8 +2216,10 @@ class AgentManager:
                                     agent=delegation.get('agent') or 'Sub-agent',
                                     call_id=delegation.get('call_id'))
             handles[child_id] = handle
-            if child["status"] in ACTIVE_STATUSES:
+            if child["status"] in ACTIVE_STATUSES and child.get('engine','internal')=='internal':
                 self._attach_watcher(task_id, handle, child)
+            elif child['status'] in ACTIVE_STATUSES:
+                handle.status=child['status']
             else:
                 handle.status = child["status"]
                 handle.result = str(child.get("result") or child.get("error") or "")
@@ -1998,11 +2254,14 @@ class AgentManager:
         task: dict[str, Any],
         call: ProviderCall,
         cancel: asyncio.Event,
+        *, verified_target: dict[str, Any] | None = None,
+        target_authorize: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         # Isolation preparation yields to other calls. Reserve admission through
         # child registration so concurrent callers cannot exceed the same cap.
         async with self._spawn_locks[task_id]:
-            return await self._spawn_subagent_locked(task_id, task, call, cancel)
+            return await self._spawn_subagent_locked(task_id, task, call, cancel,
+                **({'verified_target':verified_target,'target_authorize':target_authorize} if verified_target else {}))
 
     async def _spawn_subagent_locked(
         self,
@@ -2010,7 +2269,26 @@ class AgentManager:
         task: dict[str, Any],
         call: ProviderCall,
         cancel: asyncio.Event,
+        *, verified_target: dict[str, Any] | None = None,
+        target_authorize: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
+        dispatch_digest = hashlib.sha256(json.dumps({'arguments':call.arguments,'target':verified_target}, sort_keys=True).encode()).hexdigest()
+        if target_authorize:
+            target_authorize()
+        # Tool replay after a disconnected response must return the existing
+        # durable child, never create a second action for the same call ID.
+        for existing in self.store.children(task_id):
+            delegation = self.store.events(existing['id'], event_types=('task.delegation',), tail_limit=1)
+            if not delegation or delegation[-1]['payload'].get('call_id') != call.call_id:
+                continue
+            previous = delegation[-1]['payload']
+            if previous.get('dispatch_digest') != dispatch_digest:
+                return {'ok':False, 'error':'Delegation call ID was reused with changed content; inspect the existing child', 'task_id':existing['id']}
+            orchestrator = getattr(self,'orchestrator',None)
+            relation = next((row for row in orchestrator.store.list('delegated_session') if row['task_id']==existing['id']),None) if orchestrator else None
+            return {'ok':existing['status'] not in {'failed','cancelled'}, 'status':existing['status'],
+                'task_id':existing['id'], 'session_id':relation['id'] if relation else None,
+                'reused':True, 'result':str(existing.get('result') or existing.get('error') or '')[:4000]}
         current = self.store.get_task(task_id)
         if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
             return {'ok': False, 'error': 'The coordinator is no longer accepting sub-agents'}
@@ -2054,16 +2332,20 @@ class AgentManager:
         def attach(child_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
             nonlocal isolation
             created_ids.append(child_id)
+            if target_authorize:
+                target_authorize()
             self._subscribers[child_id].add(queue)
             if self.browser:
                 authority=self.browser.records.get('agent-task-authority',task_id)
-                if authority:self.browser.records.put('agent-task-authority',child_id,{**authority,'id':child_id,'delegated_by':task_id})
+                if authority:self.browser.records.put('agent-task-authority',child_id,{**authority,'id':child_id,'delegated_by':task_id,
+                    **({'project_id':verified_target['project_id']} if verified_target else {})})
             child = self._task(child_id)
             if child_execution == 'worktree':
                 record = self.store.task_worktree(child_id)
                 isolation = {'kind':'worktree', 'path':child['cwd'], 'branch':record['branch'],
-                             'base_ref':record['base_ref'], 'base_path':task['cwd'], 'automatic_apply':False}
-            self._emit(child_id, 'task.delegation', {'agent':agent, 'task':prompt, 'call_id':call.call_id})
+                             'base_ref':record['base_ref'], 'base_path':verified_target['cwd'] if verified_target else task['cwd'], 'automatic_apply':False}
+            self._emit(child_id, 'task.delegation', {'agent':agent, 'task':prompt, 'call_id':call.call_id,'dispatch_digest':dispatch_digest,
+                **({'project_id':verified_target['project_id'],'source_cwd':verified_target['cwd']} if verified_target else {})})
             self._emit(child_id, 'task.isolation', isolation)
             handle = _SubagentHandle(parent_id=task_id, child_id=child_id, call_id=call.call_id,
                                      agent=agent, queue=queue, parent_cancel=cancel)
@@ -2072,13 +2354,15 @@ class AgentManager:
             # Enroll and supervise the worker before provider planning yields.
             # The desktop can inspect/cancel it even while creation is pending.
             self._emit(task_id, 'subagent.started', {'call_id':call.call_id, 'agent':agent,
-                       'task':prompt, 'child_id':child_id, 'isolation':isolation})
+                       'task':prompt, 'child_id':child_id, 'isolation':isolation,
+                       **({'project_id':verified_target['project_id'],'source_cwd':verified_target['cwd']} if verified_target else {})})
             handle.watcher = asyncio.create_task(self._watch_child(task_id, handle),
                                                 name=f'termx-subagent-{child_id[:8]}')
 
         child_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
         child_mode='ask' if str(call.arguments.get('mode') or '').strip().lower()=='ask' else 'agent'
-        child_cwd=task['cwd'];child_execution='direct';isolation={'kind':'read-only','path':child_cwd}
+        child_cwd=verified_target['cwd'] if verified_target else task['cwd']
+        child_execution='direct';isolation={'kind':'read-only','path':child_cwd}
         snapshot_path=None
         if child_mode=='agent':
             if await asyncio.to_thread(worktrees.git_root,child_cwd):
@@ -2106,6 +2390,8 @@ class AgentManager:
             if snapshot_path:await asyncio.to_thread(shutil.rmtree, snapshot_path, True)
             return {'ok': False, 'error': 'Coordinator stopped while preparing the worker workspace'}
         try:
+            if target_authorize:
+                target_authorize()
             child = await _race_cancel(self.create_task(
             prompt=child_prompt,
             cwd=child_cwd,
@@ -2144,8 +2430,17 @@ class AgentManager:
         # The parent's approved plan covers the delegation itself, so the child's
         # plan is approved on its behalf; its consequential tool checks are
         # escalated to the parent for the user to decide.
+        if target_authorize:
+            try:target_authorize()
+            except (PermissionError,ValueError,KeyError):
+                self.cancel(child_id)
+                raise
         await self._auto_approve(child_id, kind="plan")
-        return {"ok": True, "status": "running", "task_id": child_id}
+        orchestrator = getattr(self,'orchestrator',None)
+        metadata = orchestrator.store.get('task',child_id) if orchestrator else None
+        relation = orchestrator.relation((metadata or {}).get('conversation_id') or '') if orchestrator else None
+        return {"ok": True, "status": "running", "task_id": child_id,
+            'session_id':relation['id'] if relation else None}
 
     async def _watch_child(self, parent_id: str, handle: _SubagentHandle) -> None:
         """Relay a child's events onto the parent's stream until it terminates.
@@ -2253,8 +2548,19 @@ class AgentManager:
                 targets[child_id] = handle
         return targets, missing
 
-    @staticmethod
-    def _subagent_summary(handle: _SubagentHandle) -> dict[str, Any]:
+    def _subagent_summary(self,handle: _SubagentHandle) -> dict[str, Any]:
+        orchestrator=getattr(self,'orchestrator',None)
+        if orchestrator and (orchestrator.store.get('task',handle.child_id) or orchestrator.store.get('task',handle.parent_id)):
+            from fastapi import HTTPException
+            metadata=orchestrator.store.get('task',handle.child_id)
+            actor=orchestrator.workspace.state.identity.principal_by_id(metadata['owner']) if metadata else None
+            try:
+                if not actor or not metadata:raise PermissionError('Child ownership is unavailable')
+                orchestrator.workspace.record(actor,'task',handle.child_id,scope='agent-view')
+                if metadata.get('conversation_id'):orchestrator.workspace.record(actor,'conversation',metadata['conversation_id'],scope='agent-view')
+            except (KeyError,PermissionError,HTTPException) as exc:
+                if isinstance(exc,HTTPException) and exc.status_code not in {403,404}:raise
+                return {'child_id':handle.child_id,'status':'unavailable','running':False,'unavailable':True}
         entry: dict[str, Any] = {
             "child_id": handle.child_id,
             "agent": handle.agent,
@@ -2278,7 +2584,7 @@ class AgentManager:
         except (TypeError, ValueError):
             timeout_s = 300.0
         timeout_s = min(600.0, max(0.0, timeout_s))
-        pending = [handle for handle in targets.values() if not handle.done.is_set()]
+        pending = [handle for handle in targets.values() if not handle.done.is_set() and not self._subagent_summary(handle).get('unavailable')]
         timed_out = False
         if pending and timeout_s > 0:
             try:
@@ -2308,7 +2614,7 @@ class AgentManager:
             },
         )
         return {
-            "ok": not missing and not timed_out,
+            "ok": not missing and not timed_out and not any(entry.get('unavailable') for entry in children.values()),
             "timed_out": timed_out,
             "children": children,
             "missing": missing,
@@ -2316,11 +2622,10 @@ class AgentManager:
 
     def _subagent_statuses(self, task_id: str, call: ProviderCall) -> dict[str, Any]:
         targets, missing = self._subagent_targets(task_id, call)
+        children={child_id:self._subagent_summary(handle) for child_id,handle in targets.items()}
         return {
-            "ok": not missing,
-            "children": {
-                child_id: self._subagent_summary(handle) for child_id, handle in targets.items()
-            },
+            "ok": not missing and not any(entry.get('unavailable') for entry in children.values()),
+            "children": children,
             "missing": missing,
         }
 
@@ -2328,11 +2633,27 @@ class AgentManager:
         targets, missing = self._subagent_targets(task_id, call)
         cancelled: list[str] = []
         already_finished: list[str] = []
+        user_controlled: list[str] = []
+        native_requested: list[str] = []
         for child_id, handle in targets.items():
             if handle.done.is_set():
                 already_finished.append(child_id)
                 continue
-            self.cancel(child_id)
+            orchestrator=getattr(self,'orchestrator',None)
+            if orchestrator:
+                with orchestrator.store.lock:
+                    metadata=orchestrator.store.get('task',child_id)
+                    relation=orchestrator.relation((metadata or {}).get('conversation_id') or '')
+                    if relation and relation['control_owner']=='user':
+                        user_controlled.append(child_id)
+                        continue
+                    if (self.store.get_task(child_id) or {}).get('engine','internal')!='internal':
+                        orchestrator.native.schedule_cancel(child_id,'Main agent requested sub-agent cancellation')
+                        native_requested.append(child_id)
+                        continue
+                    self.cancel(child_id)
+            else:
+                self.cancel(child_id)
             cancelled.append(child_id)
             self._emit(
                 task_id,
@@ -2340,10 +2661,12 @@ class AgentManager:
                 {"call_id": call.call_id, "child_id": child_id, "agent": handle.agent},
             )
         return {
-            "ok": not missing,
+            "ok": not missing and not user_controlled,
             "cancelled": cancelled,
             "already_finished": already_finished,
             "missing": missing,
+            'user_controlled':user_controlled,
+            'cancellation_requested':native_requested,
         }
 
     def _escalate_child_approval(
@@ -2353,6 +2676,12 @@ class AgentManager:
         agent: str,
         approval: dict[str, Any],
     ) -> None:
+        parent=self.store.get_task(task_id)
+        if not parent or parent['status'] not in ACTIVE_STATUSES or parent['status']=='cancelling':
+            # A child may finish or request permission after the coordinator's
+            # turn ends. Its own decision remains durable; never resurrect the
+            # terminal parent or fabricate a worker waiting for that decision.
+            return
         inner = dict(approval.get("payload") or {})
         inner.pop("history", None)
         inner.pop("remaining_calls", None)
@@ -2381,7 +2710,16 @@ class AgentManager:
             if kind is not None and approval["kind"] != kind:
                 continue
             try:
-                await self.resolve_approval(task_id, approval["id"], "approved")
+                orchestrator=getattr(self,'orchestrator',None)
+                if orchestrator:
+                    with orchestrator.store.lock:
+                        metadata=orchestrator.store.get('task',task_id)
+                        relation=orchestrator.relation((metadata or {}).get('conversation_id') or '')
+                        if relation and relation['control_owner']=='user':
+                            return
+                        await self.resolve_approval(task_id, approval["id"], "approved")
+                else:
+                    await self.resolve_approval(task_id, approval["id"], "approved")
             except (KeyError, ValueError):
                 continue
 
@@ -2529,7 +2867,7 @@ class AgentManager:
             return
         if self._has_pending_approvals(task_id):
             return
-        if any(approval['kind'] == 'plan' and approval['status'] == 'pending'
+        if any(approval['kind'] in {'plan', 'budget'} and approval['status'] == 'pending'
                for approval in self.store.approvals(task_id)):
             return
         if task_id in self._workers:self.tree_budget.start(task_id)

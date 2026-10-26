@@ -79,7 +79,8 @@ def register(registry: ToolRegistry) -> None:
                 "while you keep working, so you can spawn several and coordinate them. Collect "
                 "results with await_subagents, inspect with subagent_status, stop with "
                 "cancel_subagent; its steps appear nested under this call. Pass instructions "
-                "to give it a role or rules to follow."
+                "to give it a role or rules to follow. When called by the main agent, this also creates "
+                "a persistent inspectable child conversation and returns its session_id."
             ),
             parameters={
                 "type": "object",

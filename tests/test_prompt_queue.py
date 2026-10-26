@@ -6,6 +6,7 @@ from termx.identity import AuthenticationService
 from termx.workspace.service import WorkspaceService
 from termx.workspace.prompt_queue import PromptQueue
 from termx.workspace.store import Conflict
+from fastapi import HTTPException
 
 class Agent:
     def __init__(self,store):self.store=store;self._listeners=set();self.calls=[]
@@ -114,6 +115,39 @@ async def test_guard_after_hook_preparation_refuses_retarget_without_running(que
     workspace.run_hooks=changing_hook
     await queue.tick();assert not agent.calls
     assert queue.list(origin.principal,row['id'])[0]['status']=='blocked'
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('status',[403,404])
+async def test_revoked_resource_blocks_its_queue_without_starving_other_conversations(queued,monkeypatch,status):
+    queue,workspace,origin,credentials,row,agent=queued
+    denied=queue.enqueue(origin.principal,row['id'],sid=origin.session_id,prompt='Do not dispatch revoked work',request_id='revoked-project-queue')
+    other=workspace.create_session(origin.principal,title='Independent permitted work',project_id='other-project',cwd=row['cwd'],provider_id='fixture',model='fixture')
+    permitted=queue.enqueue(origin.principal,other['id'],sid=origin.session_id,prompt='Continue permitted work',request_id='permitted-project-queue')
+    record=workspace.record
+    def current_authority(actor,kind,identifier,**kwargs):
+        if kind=='conversation' and identifier==row['id']:
+            # AuthorizationService.require_principal raises this HTTP facade
+            # error for revoked project grants rather than PermissionError.
+            raise HTTPException(status,'Current project authority is unavailable')
+        return record(actor,kind,identifier,**kwargs)
+    monkeypatch.setattr(workspace,'record',current_authority)
+    await queue.tick()
+    blocked=workspace.store.get('prompt_queue',denied['id'])
+    assert blocked['status']=='blocked' and 'Current project authority' in blocked['reason']
+    assert workspace.store.get('prompt_queue',permitted['id'])['status']=='dispatched'
+    assert [call['prompt'] for call in agent.calls]==['Continue permitted work']
+
+@pytest.mark.anyio
+async def test_unavailable_authority_store_does_not_convert_queue_to_permission_denial(queued,monkeypatch):
+    queue,workspace,origin,credentials,row,agent=queued
+    item=queue.enqueue(origin.principal,row['id'],sid=origin.session_id,prompt='Wait for host recovery',request_id='unavailable-authority-queue')
+    def unavailable(*args,**kwargs):
+        raise HTTPException(503,'Authority store temporarily unavailable')
+    monkeypatch.setattr(queue,'_ready',unavailable)
+    with pytest.raises(HTTPException) as failure:
+        await queue.tick()
+    assert failure.value.status_code==503
+    assert workspace.store.get('prompt_queue',item['id'])['status']=='queued' and not agent.calls
 
 @pytest.mark.anyio
 async def test_queued_dispatch_preserves_new_draft_and_exact_image_snapshot(queued):
