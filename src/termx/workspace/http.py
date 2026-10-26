@@ -13,7 +13,7 @@ from termx.workspace.extensions import ExtensionService
 from termx.workspace.skill_sources import SkillSourceService
 from termx.workspace.service import WorkspaceService
 from termx.workspace.store import Conflict
-from termx.workspace.public_events import public_task_events
+from termx.workspace.public_events import public_task_events, public_task_approvals
 
 
 class Input(BaseModel):
@@ -564,6 +564,7 @@ def mount_workspace(app,state):
         remaining=[100]
         activity_remaining=[1000]
         seen=set()
+        nodes={}
         def tree(tid,depth=0):
             call(workspace.record,actor,'task',tid)
             value=state.agent_store.get_task(tid)
@@ -571,6 +572,7 @@ def mount_workspace(app,state):
             seen.add(tid)
             remaining[0]-=1
             result={key:value[key] for key in fields if key in value}
+            nodes[tid]=result
             metadata=workspace.store.get('task',tid) or {}
             result['execution_location']=metadata.get('execution_location') or value.get('cwd')
             result['runner_id']=metadata.get('runner_id')
@@ -578,6 +580,9 @@ def mount_workspace(app,state):
             result['delegated_task']=metadata.get('delegated_task')
             result['isolation']=metadata.get('isolation')
             result['worktree']=state.agent_store.task_worktree(tid) or ({'worktree_id':metadata['worktree_id'],'worktree_path':metadata.get('cwd'),'branch':metadata.get('worktree_branch'),'source':'session'} if metadata.get('worktree_id') else None)
+            # Pending source decisions are separate from optional event history.
+            # Keep their exact IDs; publish only after the final authority checks.
+            result['approvals']=state.agent_store.approvals(tid)
             if value.get('engine')=='internal' and hasattr(state.agent,'tree_budget'):
                 result['tree_budget']=state.agent.tree_budget.snapshot(tid)
             if activity:
@@ -610,7 +615,12 @@ def mount_workspace(app,state):
         if current.id!=actor.id or current.policy_version!=actor.policy_version:
             raise HTTPException(403,'Session authorization changed; reload the task')
         for tid in seen:
-            call(workspace.record,current,'task',tid)
+            metadata=call(workspace.record,current,'task',tid)
+            if metadata.get('conversation_id'):
+                call(workspace.record,current,'conversation',metadata['conversation_id'])
+            # A parent reference is not authority over a child approval. This
+            # projection also rechecks every nested source before publishing it.
+            nodes[tid]['approvals']=public_task_approvals(workspace,current,nodes[tid]['approvals'])
         return result
 
     @router.post('/tasks/{identifier}/cancel')

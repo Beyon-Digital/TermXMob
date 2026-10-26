@@ -137,6 +137,63 @@ def test_saved_parent_rest_graphql_runtime_wrappers_and_artifact_recheck_source(
     assert SECRET in json.dumps(state.agent_store.get_task(scene.parent['id'])['runtime'])
 
 
+def test_rest_task_includes_exact_pending_native_approval_without_activity(scene):
+    state,client=scene.state,scene.client
+    state.agent_store.update_task(scene.child['id'],engine='fixture-native',status='awaiting_approval')
+    payload={'engine_request_id':'synthetic-native-request','engine_method':'session/request_permission',
+        'title':'Inspect the synthetic fixture','request':{'command':'Read the synthetic fixture only'},
+        'consequence':'Sent to the engine process when resolved'}
+    approval=state.agent_store.create_approval(scene.child['id'],'tool',payload)
+    state.agent_store.append_event(scene.child['id'],'process.output',{'chunk':'PRIVATE_EVENT_NOT_REQUESTED'})
+    response=client.get('/api/workspace/tasks/'+scene.child['id']+'?activity=false')
+    assert response.status_code==200,response.text
+    body=response.json()
+    current=next(row for row in body['approvals'] if row['id']==approval['id'])
+    assert body['engine']=='fixture-native' and body['status']=='awaiting_approval'
+    assert current['task_id']==scene.child['id'] and current['kind']=='tool' and current['status']=='pending'
+    assert current['payload']==payload
+    assert 'events' not in body and 'runtime' not in body
+    assert 'PRIVATE_EVENT_NOT_REQUESTED' not in response.text
+    assert state.agent_store.get_approval(approval['id'])['status']=='pending'
+
+
+def test_rest_task_approval_wrappers_recheck_their_own_source_without_activity(scene):
+    scene.denial['child']=True
+    response=scene.client.get('/api/workspace/tasks/'+scene.parent['id']+'?activity=false')
+    assert response.status_code==200,response.text
+    body=response.json()
+    wrapper=next(row for row in body['approvals'] if row['id']==scene.wrapper['id'])
+    assert wrapper['status']=='unavailable' and wrapper['actionable'] is False
+    assert SECRET not in response.text and body['children']==[] and 'events' not in body
+    assert scene.state.agent_store.get_approval(scene.wrapper['id'])['status']=='pending'
+
+
+@pytest.mark.parametrize('revocation,expected',[('source',403),('conversation',404),('scope',403)])
+def test_rest_task_reauthorizes_source_after_reading_approval_payload(scene,monkeypatch,revocation,expected):
+    original=scene.state.agent_store.approvals
+    def read(identifier):
+        rows=original(identifier)
+        if identifier==scene.child['id']:
+            if revocation=='source':scene.denial['child']=True
+            elif revocation=='conversation':scene.state.workspace.store.delete('conversation',scene.child_session['id'])
+            else:scene.state.identity.set_scopes(scene.owner.id,[scope for scope in scene.owner.scopes if scope!='agent-view'])
+        return rows
+    monkeypatch.setattr(scene.state.agent_store,'approvals',read)
+    response=scene.client.get('/api/workspace/tasks/'+scene.child['id']+'?activity=false')
+    assert response.status_code==expected,response.text
+    assert SECRET not in response.text
+
+
+def test_rest_task_never_exposes_another_owners_source_approval(scene):
+    scene.state.identity.create_local_user('approval-stranger','strong synthetic stranger password',list(scene.owner.scopes))
+    credentials=asyncio.run(scene.state.identity.login('local-password',{
+        'username':'approval-stranger','password':'strong synthetic stranger password'},peer='approval-test'))
+    response=scene.client.get('/api/workspace/tasks/'+scene.child['id']+'?activity=false',
+        headers={'Authorization':'Bearer '+credentials.access_token})
+    assert response.status_code==404,response.text
+    assert SECRET not in response.text and 'approvals' not in response.json()
+
+
 def test_graphql_subscription_rechecks_child_and_parent_during_live_stream(scene):
     async def exercise():
         document='subscription($id:String!,$after:Int!){agent_task_events(task_id:$id,after:$after){sequence type task_id payload}}'
