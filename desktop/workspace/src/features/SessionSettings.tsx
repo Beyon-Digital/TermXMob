@@ -29,7 +29,7 @@ export type SessionSettingsProps={coordinating?:boolean;open:boolean;onOpenChang
  runnerOptions:Runner[];runnerAccounts:RunnerAccount[];
  engines:Engine[];providers:Provider[];models:string[];favorites:string[];favoriteKey:string;
  onFavorite:()=>void;onEngine:(engine:string)=>void;
- patch:(changes:Record<string,unknown>)=>Promise<void>;onError:(error:unknown)=>void;onRefresh:()=>void;
+ patch:(changes:Record<string,unknown>)=>Promise<unknown>;onError:(error:unknown)=>void;onRefresh:()=>void;
  reply:string;onTranscript:(text:string)=>void;onConversationSettings:()=>void};
 
 export default function SessionSettings({open,onOpenChange,session,running,turnsCount,ownerId,visible=true,runnerOptions,runnerAccounts,engines,onEngine,patch,onError,onRefresh,reply,onTranscript,onConversationSettings,coordinating=false}:SessionSettingsProps){

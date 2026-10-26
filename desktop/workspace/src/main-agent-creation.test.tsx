@@ -122,7 +122,7 @@ it('starts a generic new chat without a hidden project or folder from a cancelle
  fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
  fireEvent.change(within(dialog).getByRole('combobox',{name:'Project'}),{target:{value:'project-a'}});
  fireEvent.change(within(dialog).getByLabelText('Add a project folder'),{target:{value:'/synthetic/previous-folder'}});
- fireEvent.click(within(dialog).getByRole('button',{name:'Close',exact:true}));
+ fireEvent.click(within(dialog).getByRole('button',{name:/^Close$/}));
  fireEvent.click(screen.getByRole('button',{name:'New chat'}));
  dialog=await screen.findByRole('dialog',{name:'New conversation'});
  fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
@@ -147,7 +147,7 @@ it('a delayed project registration cannot retarget a newer creation dialog',asyn
  const create=within(dialog).getByRole('button',{name:'Create conversation'});
  await waitFor(()=>expect(create).toBeEnabled());fireEvent.click(create);
  await waitFor(()=>expect(mocks.gql.mock.calls.some(([query])=>String(query).includes('register_project'))).toBe(true));
- fireEvent.click(within(dialog).getByRole('button',{name:'Close',exact:true}));
+ fireEvent.click(within(dialog).getByRole('button',{name:/^Close$/}));
  fireEvent.click(screen.getByRole('button',{name:'New chat'}));
  dialog=await screen.findByRole('dialog',{name:'New conversation'});
  fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));

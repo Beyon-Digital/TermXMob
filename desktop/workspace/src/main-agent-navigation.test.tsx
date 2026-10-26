@@ -69,9 +69,9 @@ it('keeps newer settings navigation when a manually opened primary resolves late
  fireEvent.click(screen.getAllByRole('button',{name:'Main agent'}).at(-1)!);
  await waitFor(()=>expect(mocks.ensure).toHaveBeenCalledOnce());
  fireEvent.click(screen.getAllByRole('button',{name:'Settings'}).at(-1)!);
- expect(await screen.findByRole('heading',{name:'General',exact:true})).toBeVisible();
+ expect(await screen.findByRole('heading',{name:/^General$/})).toBeVisible();
  await act(async()=>pending.resolve({session:chat('main')}));
- expect(screen.getByRole('heading',{name:'General',exact:true})).toBeVisible();
+ expect(screen.getByRole('heading',{name:/^General$/})).toBeVisible();
  expect(location.pathname).toBe('/manage/general');
 });
 
