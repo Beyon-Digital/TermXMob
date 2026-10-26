@@ -10,6 +10,11 @@ const MAX_SOURCES = 8;
 type Source = {key: string; child: OrchestratorChild; task: Task};
 type Receipt = {owner: string; epoch: number; sources: Source[]; unavailable: string[]; complete: string};
 type Props = {ownerId: string; children: OrchestratorChild[]; enabled: boolean; onRefresh: () => void};
+type Approval = NonNullable<Task['approvals']>[number];
+const actionablePending = (approval: Approval) => approval.status === 'pending' && approval.actionable !== false;
+const unavailablePending = (approval: Approval) =>
+  approval.status === 'unavailable' && (!approval.actual_status || approval.actual_status === 'pending') ||
+  approval.actionable === false && (approval.status === 'pending' || approval.actual_status === 'pending');
 const sourceKey = (child: OrchestratorChild) => JSON.stringify([
   child.session_id, child.task_id, child.revision, child.updated_at, child.pending_approvals,
 ]);
@@ -50,10 +55,12 @@ export default function OrchestratorDecisions({ownerId, children, enabled, onRef
           const task = await request<Task>('/api/workspace/tasks/' + encodeURIComponent(child.task_id!) + '?activity=false', {signal: controller.signal});
           if (!fresh()) return;
           if (task.id !== child.task_id) throw Error('The host returned a different source task.');
+          if (!Array.isArray(task.approvals)) throw Error('The host did not return current source approvals.');
+          const unavailable = task.approvals.some(unavailablePending);
           update(previous => ({...previous,
             sources: [...previous.sources.filter(value => value.key !== source),
-              ...(task.approvals?.some(approval => approval.status === 'pending') ? [{key: source, child, task}] : [])],
-            unavailable: previous.unavailable.filter(value => value !== source)}));
+              ...(task.approvals?.some(actionablePending) ? [{key: source, child, task}] : [])],
+            unavailable: [...previous.unavailable.filter(value => value !== source), ...(unavailable ? [source] : [])]}));
         } catch {
           if (!fresh()) return;
           // A source read reauthorizes project access. A failed read immediately
@@ -91,7 +98,7 @@ export default function OrchestratorDecisions({ownerId, children, enabled, onRef
     {ready && !currentSources.length && !unavailable && <p role="status">These requests have been resolved. Refreshing agent status…</p>}
     {currentSources.map(({key: source, child, task}) => <article key={task.id} className="orchestrator-decision-source" aria-label={'Requests from ' + child.title}>
       <div className="orchestrator-decision-heading"><strong>{child.title || 'Delegated agent'}</strong><span>{child.control_owner === 'user' ? 'You are directing this chat' : 'Main agent is coordinating'}</span></div>
-      {(task.approvals || []).filter(approval => approval.status === 'pending').map(approval => approval.kind === 'budget'
+      {(task.approvals || []).filter(actionablePending).map(approval => approval.kind === 'budget'
         ? <BudgetApproval key={approval.id} task={task} approval={approval} onDone={() => decided(source, true)} onError={() => decided(source, false)}/>
         : <GeneralApprovalCard key={approval.id} taskId={task.id} approval={approval} onDone={() => decided(source, true)} onError={() => decided(source, false)}/>)}
     </article>)}

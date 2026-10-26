@@ -144,6 +144,44 @@ it('rejects a mismatched task response and removes a request resolved elsewhere'
   expect(posts()).toHaveLength(0);
 });
 
+it('treats a missing approval projection as unavailable rather than claiming the pending source resolved', async () => {
+  const {approvals: _missing, ...unprojected} = task;
+  api.mockResolvedValueOnce(unprojected);
+  render(<OrchestratorDecisions {...props}/>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('requests are unavailable');
+  expect(screen.queryByText(/These requests have been resolved/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Review action'})).not.toBeInTheDocument();
+  expect(posts()).toHaveLength(0);
+});
+
+it.each(['unavailable', 'pending'])('keeps projected %s pending requests unavailable without rendering an action or claiming resolution', async status => {
+  api.mockResolvedValueOnce({...task, approvals: [{id: 'private-request', status, actual_status: 'pending',
+    actionable: false, kind: 'tool', payload: {redacted: true, message: 'Source access is unavailable'}}]});
+  await act(async () => {render(<OrchestratorDecisions {...props}/>);});
+  expect(screen.getByRole('alert')).toHaveTextContent('current access');
+  expect(screen.getByRole('button', {name: 'Refresh requests'})).toBeVisible();
+  expect(screen.queryByText(/These requests have been resolved/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Review action'})).not.toBeInTheDocument();
+  expect(posts()).toHaveLength(0);
+});
+
+it('retains an accessible exact decision beside a projected unavailable pending request', async () => {
+  const mixed = {...task, approvals: [...task.approvals!, {id: 'private-request', status: 'unavailable',
+    actual_status: 'pending', actionable: false, kind: 'tool', payload: {redacted: true}}]};
+  api.mockImplementation(async (_path, init) => init?.method === 'POST' ? {} as any : mixed);
+  await act(async () => {render(<OrchestratorDecisions {...props}/>);});
+  expect(screen.getByRole('alert')).toHaveTextContent('current access');
+  expect(screen.queryByText(/These requests have been resolved/)).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', {name: 'Review action'})).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', {name: 'Review action'}));
+  expect(screen.getByText('Exact synthetic source operation')).toBeVisible();
+  await act(async () => {fireEvent.click(screen.getByRole('button', {name: 'Allow once'}));});
+  expect(posts()).toHaveLength(1);
+  expect(posts()[0][0]).toBe('/api/workspace/tasks/source%2Ftask/approvals/permission%2F1/resolve');
+  expect(JSON.parse(String(posts()[0][1]?.body))).toEqual({decision: 'approved'});
+  expect(api.mock.calls.some(([path]) => path.includes('private-request'))).toBe(false);
+});
+
 it('a failed decision refreshes the source but never retransmits the mutation', async () => {
   api.mockImplementation(async (_path, init) => {
     if (init?.method === 'POST') throw Error('Uncertain response');
