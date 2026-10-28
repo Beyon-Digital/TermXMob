@@ -12,6 +12,8 @@ wheels/
 # Node
 node_modules/
 *.tsbuildinfo
+# Local browser verification artifacts
+output/playwright/
 # The exported web bundle keeps its fonts under assets/node_modules/*/build/;
 # ignoring any of those paths ships packaged builds with no icon font.
 !desktop/web/assets/**

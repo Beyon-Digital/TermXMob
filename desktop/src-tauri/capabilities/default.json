@@ -19,6 +19,7 @@
     "allow-workspace-unlock",
     "allow-workspace-unlock-oidc",
     "allow-workspace-detach",
+    "allow-workspace-fullscreen",
     "allow-workspace-redock",
     "allow-workspace-redock-accept",
     "allow-workspace-redock-commit",

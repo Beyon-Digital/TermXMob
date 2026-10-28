@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-resume-sso"
+description = "Enables the workspace_resume_sso command without any pre-configured scope."
+commands.allow = ["workspace_resume_sso"]
+
+[[permission]]
+identifier = "deny-workspace-resume-sso"
+description = "Denies the workspace_resume_sso command without any pre-configured scope."
+commands.deny = ["workspace_resume_sso"]

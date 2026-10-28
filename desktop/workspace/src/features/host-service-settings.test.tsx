@@ -15,20 +15,30 @@ it('distinguishes running from readiness and requires exact confirmation before 
  expect(api.mock.calls.filter(([path])=>path==='/api/host/service')).toHaveLength(1);
 });
 it('sends reviewed start arguments and exposes service failures',async()=>{
- api.mockImplementation(async(path)=>{if(path.endsWith('/start'))throw new Error('Desktop sidecar already owns this profile');return status});
+ api.mockImplementation(async(path)=>{if(path.endsWith('/start'))throw new Error('Desktop sidecar already owns this profile');return {...status,running:false}});
  render(<HostServiceSettings/>);await screen.findByRole('button',{name:'Start background service'});
- fireEvent.change(screen.getByLabelText('Installation port'),{target:{value:'9797'}});fireEvent.click(screen.getByRole('button',{name:'Start background service'}));
+ fireEvent.click(screen.getByText('Installation options',{selector:'summary'}));fireEvent.change(screen.getByLabelText('Installation port'),{target:{value:'9797'}});fireEvent.click(screen.getByRole('button',{name:'Start background service'}));
  expect(screen.getByRole('dialog')).toHaveTextContent('its saved local address');fireEvent.click(screen.getByRole('button',{name:'Confirm start background service'}));
  await screen.findByText('Desktop sidecar already owns this profile');expect(api).toHaveBeenCalledWith('/api/host/service/start',expect.objectContaining({body:'{}'}));
 });
 
 
 it('keeps service installation local unless the user explicitly selects a reviewed tunnel profile',async()=>{
- render(<HostServiceSettings/>);await screen.findByRole('option',{name:'Stable profile · cloudflare · named'});
+ render(<HostServiceSettings/>);await screen.findByText('Installation options',{selector:'summary'});fireEvent.click(screen.getByText('Installation options',{selector:'summary'}));await screen.findByRole('option',{name:'Stable profile · cloudflare · named'});
  expect(screen.getByLabelText('Background service tunnel profile')).toHaveValue('');
  fireEvent.click(screen.getByRole('button',{name:'Install background service'}));expect(screen.getByRole('dialog')).toHaveTextContent('No tunnel will start automatically');fireEvent.click(screen.getByRole('button',{name:'Confirm install background service'}));
  await waitFor(()=>expect(api).toHaveBeenCalledWith('/api/host/service/install',expect.objectContaining({body:'{"port":8787,"host":"127.0.0.1"}'})));
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
  fireEvent.change(screen.getByLabelText('Background service tunnel profile'),{target:{value:'named'}});fireEvent.click(screen.getByRole('button',{name:'Install background service'}));expect(screen.getByRole('dialog')).toHaveTextContent('Stable profile · cloudflare · named · exact profile named');fireEvent.click(screen.getByRole('button',{name:'Confirm install background service'}));
  await waitFor(()=>expect(api).toHaveBeenCalledWith('/api/host/service/install',expect.objectContaining({body:'{"port":8787,"host":"127.0.0.1","tunnel_profile_id":"named"}'})));
+});
+
+
+it('keeps setup and diagnostics closed while exposing service controls',async()=>{
+ render(<HostServiceSettings/>);await screen.findByText('Running · waiting for readiness');
+ expect(screen.queryByRole('button',{name:'Start background service'})).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Stop background service'})).toBeEnabled();
+ expect(screen.getByText('Installation options',{selector:'summary'}).closest('details')).not.toHaveAttribute('open');
+ expect(screen.getByText('Service details',{selector:'summary'}).closest('details')).not.toHaveAttribute('open');
+ expect(screen.getByRole('button',{name:'Uninstall background service'}).closest('details')).not.toHaveAttribute('open');
 });

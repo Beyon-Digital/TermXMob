@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-unlock-oidc"
+description = "Enables the workspace_unlock_oidc command without any pre-configured scope."
+commands.allow = ["workspace_unlock_oidc"]
+
+[[permission]]
+identifier = "deny-workspace-unlock-oidc"
+description = "Denies the workspace_unlock_oidc command without any pre-configured scope."
+commands.deny = ["workspace_unlock_oidc"]

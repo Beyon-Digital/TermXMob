@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-redock"
+description = "Enables the workspace_redock command without any pre-configured scope."
+commands.allow = ["workspace_redock"]
+
+[[permission]]
+identifier = "deny-workspace-redock"
+description = "Denies the workspace_redock command without any pre-configured scope."
+commands.deny = ["workspace_redock"]

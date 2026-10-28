@@ -13,7 +13,7 @@ export async function nativeRequest<T>(path: string, init: RequestInit = {}): Pr
   return invoke('workspace_request', { path, method: (init.method || 'GET').toUpperCase(), data: init.body ? JSON.parse(init.body as string) : null });
 }
 export async function nativeSignOut() { await invoke('workspace_logout') }
-export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 'workbench' | 'browser' | 'computer' | 'artifacts') {
+export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 'workbench' | 'browser' | 'computer' | 'artifacts' | 'review' | 'terminal') {
   if (nativeWorkspace()) {const owner=await nativeRequest<{principal:{id:string}}>('/auth/me');const label=await invoke<string>('workspace_detach', { sessionId, panel });if(panel==='artifacts')await persistArtifactDrafts(owner.body.principal.id,snapshotArtifactDrafts(owner.body.principal.id),label);return label}
   const url = new URL(window.location.href); url.search = ''; url.searchParams.set('layout', panel);
   if (sessionId) url.searchParams.set('session', sessionId);
@@ -22,7 +22,7 @@ export async function detachWorkspace(sessionId: string | null, panel: 'chat' | 
   return 'browser-window';
 }
 
-export type NativePanel = 'chat' | 'workbench' | 'browser' | 'computer' | 'artifacts';
+export type NativePanel = 'chat' | 'workbench' | 'browser' | 'computer' | 'artifacts' | 'review' | 'terminal';
 export type NativeRedockEvent = { id: string; source: string; ownerId: string; sessionId: string | null; panel: NativePanel; payload: unknown };
 export const isDetachedWindow = () => nativeWorkspace() && getCurrentWindow().label.startsWith('workspace-');
 export async function listenNativeRedock(handler: (event: NativeRedockEvent) => void): Promise<UnlistenFn> {

@@ -7,6 +7,39 @@ vi.mock('../lib/api',()=>({request:vi.fn()}));const mocked=vi.mocked(request);af
 const source={scope:'project',folder:'inspect',digest:'disk-one',markdown:'Original instructions',name:'Inspect',bytes:21};
 function defaults(path:string){if(path.includes('/compatibility'))return {sources:[]};if(path.endsWith('/skill-sources?project_id=p'))return {sources:[source],roots:[],diagnostics:[]};if(path.includes('/versions?'))return {versions:[]};return source}
 describe('extension sources and registries',()=>{
+ it('uses host skill sources without a workspace scope picker or override noise',async()=>{
+  const hostSource={...source,scope:'user',effective_for_publish:true};
+  mocked.mockImplementation(async(path,init)=>{
+   if(init?.method==='PUT')return {...hostSource,digest:'saved'};
+   if(path==='/api/workspace/skill-sources')return {sources:[hostSource],roots:[{scope:'user',path:'/host/.agents'}],precedence:'Project overrides user',diagnostics:[]};
+   if(path.includes('/compatibility'))return {sources:[]};
+   if(path.includes('/versions?'))return {versions:[]};
+   return hostSource;
+  });
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  await waitFor(()=>expect(mocked.mock.calls.map(([path])=>path)).toEqual(expect.arrayContaining(['/api/workspace/skill-sources','/api/workspace/skill-sources/compatibility'])));
+  fireEvent.click(await screen.findByRole('button',{name:'Edit source'},{timeout:8000}));await screen.findByDisplayValue('Original instructions');
+  expect(screen.getByText('Add a skill').closest('details')).toHaveAttribute('open');
+  expect(screen.queryByRole('combobox',{name:'Skill scope'})).not.toBeInTheDocument();expect(screen.queryByText('Project overrides user')).not.toBeInTheDocument();
+  expect(screen.getByText('/host/.agents').closest('details')).not.toHaveAttribute('open');
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'Host worker instructions'}});fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+  await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(true));
+  expect(JSON.parse(String(mocked.mock.calls.find(([,init])=>init?.method==='PUT')![1]?.body))).toMatchObject({scope:'user',project_id:null,markdown:'Host worker instructions',expected_digest:'disk-one'});
+ });
+
+ it('keeps the skill editor closed until requested and preserves drafts when collapsed',async()=>{
+  mocked.mockImplementation(async()=>({sources:[],roots:[{scope:'user',path:'/host/.agents'}],diagnostics:[]}));
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  const add=await screen.findByText('Add a skill');expect(add.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(add);await waitFor(()=>expect(add.closest('details')).toHaveAttribute('open'));
+  fireEvent.change(screen.getByLabelText('Skill instructions'),{target:{value:'Keep this draft'}});fireEvent.click(add);await waitFor(()=>expect(add.closest('details')).not.toHaveAttribute('open'));fireEvent.click(add);
+  expect(screen.getByLabelText('Skill instructions')).toHaveValue('Keep this draft');
+ });
+ it('keeps source inventory read-only when the host does not advertise an editable root',async()=>{
+  mocked.mockImplementation(async(path)=>path.includes('/compatibility')?{sources:[]}:{sources:[{...source,scope:'user'}],roots:[],diagnostics:[]});
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  await screen.findByRole('heading',{name:'Inspect'});expect(screen.queryByText('Add a skill')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Edit source'})).not.toBeInTheDocument();expect(screen.queryByLabelText('Skill instructions')).not.toBeInTheDocument();
+ });
  it('searches safe inventory metadata with all terms while excluding credentials and source drafts',()=>{
   expect(matchesExtensionMetadata({name:'Inspect Code',scope:'project'},'PROJECT inspect')).toBe(true);
   expect(matchesExtensionMetadata({name:'Inspect',scope:'user'},'project inspect')).toBe(false);

@@ -1053,7 +1053,7 @@ pub async fn workspace_redock(
     let port = trusted(&app, &window)?;
     if !window.label().starts_with("workspace-")
         || !valid_session_id(&session_id)
-        || !["chat", "workbench", "browser", "computer", "artifacts"].contains(&panel.as_str())
+        || !valid_panel(&panel)
         || !valid_handoff(&payload, &session_id)
     {
         return Err("Invalid or oversized detached workspace handoff".into());
@@ -1242,6 +1242,38 @@ pub fn workspace_redock_cancel(
     }
     Ok(())
 }
+fn valid_panel(panel: &str) -> bool {
+    [
+        "chat",
+        "workbench",
+        "browser",
+        "computer",
+        "artifacts",
+        "review",
+        "terminal",
+    ]
+    .contains(&panel)
+}
+
+#[tauri::command]
+pub fn workspace_fullscreen(
+    app: AppHandle,
+    window: WebviewWindow,
+    toggle: bool,
+) -> Result<bool, String> {
+    trusted(&app, &window)?;
+    let current = window
+        .is_fullscreen()
+        .map_err(|_| "Window state unavailable")?;
+    if !toggle {
+        return Ok(current);
+    }
+    window
+        .set_fullscreen(!current)
+        .map_err(|_| "Could not change full screen")?;
+    Ok(!current)
+}
+
 // Async so the window build runs off the event-loop thread: a sync command
 // executes inside the webview's WebMessageReceived COM call, and on Windows
 // WebView2 cannot deliver the controller-creation callback into an apartment
@@ -1254,9 +1286,7 @@ pub async fn workspace_detach(
     panel: String,
 ) -> Result<String, String> {
     let port = trusted(&app, &window)?;
-    if !["chat", "workbench", "browser", "computer", "artifacts"].contains(&panel.as_str())
-        || !valid_session_id(&session_id)
-    {
+    if !valid_panel(&panel) || !valid_session_id(&session_id) {
         return Err("Invalid detached workspace request".into());
     }
     // Reuse stable placement slots for the same panel/session across launches.
@@ -1449,6 +1479,21 @@ pub fn track_placement(app: &AppHandle, window: &WebviewWindow) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn review_and_terminal_keep_their_own_window_identity() {
+        assert!(valid_panel("review"));
+        assert!(valid_panel("terminal"));
+        assert!(!valid_panel("remote-url"));
+        assert_ne!(
+            detached_label("review", Some("session-1"), 0),
+            detached_label("workbench", Some("session-1"), 0)
+        );
+        assert_ne!(
+            detached_label("terminal", Some("session-1"), 0),
+            detached_label("review", Some("session-1"), 0)
+        );
+    }
+
     #[test]
     fn handoff_state_is_bounded_and_bound_to_the_exact_conversation() {
         let id = Some("session-1".into());

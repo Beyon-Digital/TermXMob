@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-logout"
+description = "Enables the workspace_logout command without any pre-configured scope."
+commands.allow = ["workspace_logout"]
+
+[[permission]]
+identifier = "deny-workspace-logout"
+description = "Denies the workspace_logout command without any pre-configured scope."
+commands.deny = ["workspace_logout"]

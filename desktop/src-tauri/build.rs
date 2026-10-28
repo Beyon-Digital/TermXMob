@@ -68,6 +68,7 @@ fn main() {
         "workspace_unlock",
         "workspace_unlock_oidc",
         "workspace_detach",
+        "workspace_fullscreen",
         "workspace_redock",
         "workspace_redock_accept",
         "workspace_redock_commit",
