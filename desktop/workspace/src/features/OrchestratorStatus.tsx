@@ -5,6 +5,7 @@ import {json, request, type Session} from '../lib/api';
 import {taskState} from '../lib/task-presentation';
 import {useObservationActive} from '../lib/use-observation-active';
 import OrchestratorDecisions from './OrchestratorDecisions';
+import TaskBoard from './TaskBoard';
 import './orchestrator-status.css';
 
 export type CoordinationLimits = {
@@ -154,6 +155,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     {!child && primary && selected === primary.id && <OrchestratorDecisions ownerId={ownerId} children={children} enabled={observing && !isStale} onRefresh={() => {void refresh(); onRefresh?.();}}/>}
     {!child && expanded && <div id="orchestrator-detail" className="orchestrator-detail">
       <p>Your main agent coordinates delegated work here. Open a chat to inspect it; take control when you want to direct it yourself.</p>
+      <TaskBoard enabled={observing && !isStale}/>
       {!current && !failure && <p role="status">Loading delegated work…</p>}
       {current && !children.length && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
       {current?.children_truncated && <p>Showing up to 100 delegated chats, prioritizing active work. Other conversations remain available in chat history.</p>}

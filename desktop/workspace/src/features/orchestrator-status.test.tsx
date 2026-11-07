@@ -1,9 +1,10 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import OrchestratorStatus, {type OrchestratorChild, type OrchestratorSnapshot} from './OrchestratorStatus';
-import {request, type Session} from '../lib/api';
+import {gql, request, type Session} from '../lib/api';
+import {expectNoAxeViolations} from '../test-axe';
 
-vi.mock('../lib/api', () => ({request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
+vi.mock('../lib/api', () => ({gql: vi.fn(async () => ({orchestrator_board: {nodes: [], rollup: {total: 0, counts: {}, percent_complete: 0, tokens: 0, cost_usd: null}}})), request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
 const api = vi.mocked(request), open = vi.fn(), primary = vi.fn(), refreshed = vi.fn();
 const child: OrchestratorChild = {session_id: 'child-chat', task_id: 'child-task', title: 'Review access controls', status: 'awaiting_approval', engine: 'internal', origin: 'delegated', capability_limits: {time_budget: 'shared-host', tool_steps: 'shared-host', tokens: 'unmeasured', cost: 'unmeasured'}, control_owner: 'orchestrator', revision: 7, updated_at: 1000, parent_session_id: 'main'};
 const snapshot = (children = [child]): OrchestratorSnapshot => ({
@@ -175,4 +176,16 @@ it('keeps an adopted idle chat user-owned until the user explicitly grants main-
   await waitFor(() => expect(open).toHaveBeenCalledWith('main'));
   expect(api.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   expect(api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body).toBe(JSON.stringify({owner: 'orchestrator', revision: 7}));
+});
+
+it('shows the task board inside delegated work and keeps it accessible', async () => {
+  const node = {id: 'n1', title: 'Draft summary', role: 'worker', depends_on: [], blocked_by: [], task_id: 't', status: 'running', attempts: 1, max_attempts: 2, last_event_at: null, result_summary: '', error: '', provider_id: 'p', model: 'model-a', tokens: 10, cost_usd: null, created_at: Date.now() / 1000 - 90, updated_at: null};
+  vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node], rollup: {total: 1, counts: {running: 1}, percent_complete: 0, tokens: 10, cost_usd: null}}});
+  const view = render(<OrchestratorStatus {...props}/>);
+  await screen.findByText('1 need attention');
+  expect(screen.queryByRole('region', {name: 'Task board'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  expect(await screen.findByRole('listitem', {name: 'Draft summary'})).toBeVisible();
+  expect(screen.getByRole('progressbar', {name: 'Tasks complete'})).toBeInTheDocument();
+  await expectNoAxeViolations(view.container);
 });
