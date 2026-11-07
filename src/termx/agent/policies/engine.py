@@ -254,6 +254,8 @@ class PolicyEngine:
         # acts only on calls that would otherwise have asked, so its audit
         # trail lists approvals it saved, not calls that never needed one.
         task_auto = bool((((getattr(ctx, "task", None) or {}).get("runtime") or {}).get("auto") or {}).get("enabled"))
+        # Plan and Ask are read-only: Auto only takes effect once the plan is approved.
+        task_auto = task_auto and not getattr(ctx, "read_only", False)
         if task_auto and base.approval_required and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
             return _PD(
                 True,

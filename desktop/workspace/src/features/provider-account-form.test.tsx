@@ -75,7 +75,8 @@ it('saves the included models and overrides, shows Unknown for missing values, a
  expect(rows[1]).toHaveTextContent('Context window Unknown');expect(rows[1]).toHaveTextContent('Input Unknown');expect(rows[1]).toHaveTextContent('Output Unknown');
  expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeChecked();
  await expectNoAxeViolations(container);
- fireEvent.change(within(rows[1]).getByLabelText('Context window (tokens)'),{target:{value:'32000'}});
+ fireEvent.click(within(rows[1]).getByText('Override values for mystery-model'));
+ fireEvent.change(await within(rows[1]).findByLabelText('Context window (tokens)'),{target:{value:'32000'}});
  expect(rows[1]).toHaveTextContent('Context window 32,000 tokens (your value)');
  fireEvent.click(within(rows[1]).getByRole('checkbox',{name:'mystery-model'}));
  expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeDisabled();
@@ -89,6 +90,23 @@ it('saves an empty model list while every discovered model stays included, and o
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
  await waitFor(()=>expect(save).toHaveBeenCalledOnce());
  expect(save.mock.calls[0][0]).toMatchObject({model:'',api_key:null});expect(save.mock.calls[0][0]).not.toHaveProperty('model_overrides');
+});
+
+it('filters a long catalog, says how many models show, and builds override fields only for rows you open',async()=>{
+ const many=Object.fromEntries(Array.from({length:40},(_,i)=>[`vendor/model-${i}`,{context_window:8000}]));
+ const {container}=render(<ProviderAccountForm busy={false} account={{...saved,model:'',model_catalog:many}} onSave={vi.fn()}/>);
+ const list=()=>within(screen.getByRole('list',{name:'Discovered models'}));
+ expect(list().getAllByRole('listitem')).toHaveLength(40);expect(screen.getByText('Showing 40 of 40 models.')).toBeInTheDocument();
+ expect(screen.queryByLabelText('Context window (tokens)')).not.toBeInTheDocument();
+ fireEvent.change(screen.getByRole('searchbox',{name:'Filter models'}),{target:{value:'MODEL-3'}});
+ expect(list().getAllByRole('listitem')).toHaveLength(11);expect(screen.getByText('Showing 11 of 40 models.')).toBeInTheDocument();
+ fireEvent.change(screen.getByRole('searchbox',{name:'Filter models'}),{target:{value:'zzz'}});
+ expect(screen.getByText(/No models match “zzz”. Clear the filter to see all 40 models./)).toBeInTheDocument();expect(list().queryAllByRole('listitem')).toHaveLength(0);
+ fireEvent.change(screen.getByRole('searchbox',{name:'Filter models'}),{target:{value:'model-7'}});
+ fireEvent.click(screen.getByText('Override values for vendor/model-7'));expect(await screen.findAllByLabelText('Context window (tokens)')).toHaveLength(1);
+});
+it('keeps a short catalog free of filter chrome',()=>{
+ render(<ProviderAccountForm busy={false} account={saved} onSave={vi.fn()}/>);expect(screen.queryByRole('searchbox',{name:'Filter models'})).not.toBeInTheDocument();
 });
 
 it('refreshes models, and shows the catalog age and a failed refresh in alerts',async()=>{

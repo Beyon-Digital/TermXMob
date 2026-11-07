@@ -7,7 +7,7 @@ import {FormField} from '../components/ui/form-field';
 import {Select} from '../components/ui/select';
 import {usePolling} from '../lib/use-polling';
 import {
-  STATUS_LABEL, canCancel, canReassign, canRetry, cancelNode, depths, elapsedLabel, loadBoard, loadModelChoices, nodeElapsed,
+  STATUS_LABEL, boardChanges, canCancel, canReassign, canRetry, cancelNode, depths, elapsedLabel, loadBoard, loadModelChoices, nodeElapsed,
   outOfAttempts, reassignNode, retryNode, rollupCounts, rollupUsage, type Board, type BoardNode, type ModelChoice,
 } from '../lib/orchestrator-board';
 import './task-board.css';
@@ -19,6 +19,7 @@ const COPY: Record<Action, {pending: string; next: string}> = {
   reassign: {pending: 'Reassigning…', next: 'Pick a model from the list and try again, or refresh the board to see its current state.'},
   cancel: {pending: 'Cancelling…', next: 'Refresh the board to see its current state, then try again.'},
 };
+const WAITING_NOTE = {approval: 'Waiting for your approval. Open the task to approve or deny the action.', paused: 'Paused. Resume the task to continue.', recovery: 'Recovering after a restart. Open the task to confirm it can continue.'} as const;
 const message = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason)).trim().replace(/\.$/, '');
 const triggerId = (nodeId: string) => `task-menu-${nodeId}-trigger`;
 const choiceValue = (providerId: string | null, model: string | null) => providerId && model ? JSON.stringify([providerId, model]) : '';
@@ -91,10 +92,17 @@ export default function TaskBoard({enabled}: {enabled: boolean}) {
   const [pending, setPending] = useState<Record<string, Action>>({}), [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [choices, setChoices] = useState<ModelChoice[] | null>(null), [choicesError, setChoicesError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0), [restoreFocus, setRestoreFocus] = useState<string | null>(null);
-  const busy = useRef(new Set<string>());
+  const busy = useRef(new Set<string>()), latest = useRef<Board | null>(null);
 
   // Each board refresh also moves `now`, so elapsed labels stay current without a second timer.
-  const accept = (value: Board) => { setBoard(value); setNow(Date.now() / 1000); setLoadError(''); };
+  // A change the polling found (a task failed, stalled or started waiting on you) is announced as well as shown.
+  const announce = (text: string) => setAnnouncement(previous => previous === text ? `${text}\u00a0` : text);
+  const accept = (value: Board) => {
+    const changes = boardChanges(latest.current, value);
+    latest.current = value;
+    setBoard(value); setNow(Date.now() / 1000); setLoadError('');
+    if (changes.length) announce(changes.join(' '));
+  };
   // Changing the key aborts a poll that started earlier, so it cannot overwrite a newer board, and fetches again at once.
   const refresh = () => setRefreshKey(key => key + 1);
   usePolling(() => loadBoard(), {interval: 4000, backoff: false, enabled, resetKey: refreshKey, onResult: accept, onError: reason => setLoadError(message(reason))});
@@ -123,7 +131,7 @@ export default function TaskBoard({enabled}: {enabled: boolean}) {
       refresh();
       if (action === 'reassign') closeReassign(node);
       const text = done(next);
-      setAnnouncement(previous => previous === text ? `${text}\u00a0` : text);
+      announce(text);
     } catch (reason) {
       setRowErrors(all => ({...all, [node.id]: `Could not ${action} “${node.title}”. ${message(reason)}. ${COPY[action].next}`}));
     } finally {
@@ -172,6 +180,7 @@ export default function TaskBoard({enabled}: {enabled: boolean}) {
             </div>
             {action && <p className="task-note" role="status">{COPY[action].pending}</p>}
             {(waiting || node.depends_on.length > 0) && <p className="task-note">{waiting ? `Waiting for ${names(node.blocked_by)}` : `Depends on ${names(node.depends_on)}`}</p>}
+            {node.waiting && <p className="task-note">{WAITING_NOTE[node.waiting]}</p>}
             {stalled && node.last_event_at != null && <p className="task-note">No updates for {elapsedLabel(now - node.last_event_at).toLowerCase()}. Retry it, reassign it to another model, or cancel it.</p>}
             {node.error && <p className="task-note task-error">{node.error}</p>}
             {node.status === 'completed' && node.result_summary && <p className="task-note task-summary">{node.result_summary}</p>}

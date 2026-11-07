@@ -27,6 +27,7 @@ async def _start(
     *,
     auto: dict[str, Any] | None = None,
     worktree: bool = True,
+    mode: str | None = None,
 ):
     monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
     repo = tmp_path / "repo"
@@ -42,6 +43,7 @@ async def _start(
         provider_id="fake",
         execution_mode="worktree" if worktree else None,
         auto=auto,
+        **({"mode": mode} if mode else {}),
     )
     return manager, store_, adapter, task
 
@@ -90,6 +92,74 @@ def test_auto_still_asks_for_blocked_risks(tmp_path, monkeypatch):
         _task, approval = await wait_for_pending_approval(store_, task["id"], "tool")
         assert approval["status"] == "pending"
         assert not _events(store_, task["id"], "auto.decision")
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -rf ~/x",
+        "rm -rf ~/Documents",
+        "rm -rf /",
+        "rm -rf ..",
+        "cd .. && rm -rf *",
+        "rm -rf $HOME/x",
+        "rm -rf ${HOME}",
+        "git reset --hard",
+        "git clean -fdx",
+        "git branch -D main",
+        "git update-ref -d refs/heads/main",
+        "git gc --prune=now",
+        "git -C /tmp/other status",
+        "cat /etc/hosts",
+    ],
+)
+def test_auto_still_asks_for_commands_that_escape_the_worktree(store, tmp_path, command):  # noqa: F811
+    engine = _engine(store)
+    ctx = SimpleNamespace(
+        task_id="task-1",
+        cwd=str(tmp_path),
+        project_id="proj-1",
+        task={"runtime": {"auto": {"enabled": True}}},
+    )
+    decision = _shell_decision(engine, command, ctx)
+    assert decision.approval_required is True, command
+    assert decision.auto_resolved is None, command
+
+
+@pytest.mark.parametrize("command", ["rm -rf build-one", "pnpm test", "git status", "rm -rf ./dist"])
+def test_auto_keeps_approving_contained_commands(store, tmp_path, command):  # noqa: F811
+    engine = _engine(store)
+    ctx = SimpleNamespace(
+        task_id="task-1",
+        cwd=str(tmp_path),
+        project_id="proj-1",
+        task={"runtime": {"auto": {"enabled": True}}},
+    )
+    assert _shell_decision(engine, command, ctx).auto_resolved == "autonomous"
+
+
+@pytest.mark.parametrize(
+    "hidden",
+    [
+        _call("run_runbook", "c1", runbook_id="missing"),
+        _call("plan_nodes", "c1", nodes=[{"title": "x", "prompt": "y"}]),
+    ],
+)
+def test_plan_mode_with_auto_refuses_tools_hidden_from_the_read_only_schema(tmp_path, monkeypatch, hidden):
+    async def run() -> None:
+        script = [("", [hidden]), ("", [_call("exit_plan", "c2", plan_markdown="1. Edit"),])]
+        manager, store_, _adapter, task = await _start(
+            tmp_path, monkeypatch, script, auto={"enabled": True}, mode="plan"
+        )
+        await wait_for_pending_approval(store_, task["id"], "plan")
+        finished = _events(store_, task["id"], "tool.finished")
+        assert finished and finished[0]["payload"]["result"].get("refused") is True
+        assert not _events(store_, task["id"], "auto.decision")
+        assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "tool"]
         await manager.close()
         store_.close()
 

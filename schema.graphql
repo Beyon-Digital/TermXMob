@@ -772,6 +772,7 @@ type OrchestratorNode {
   status: String!
   attempts: Int!
   max_attempts: Int!
+  waiting: String
   last_event_at: Float
   result_summary: String!
   error: String!

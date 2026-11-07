@@ -20,18 +20,32 @@ function limitProblem(key:AutoCeilingKey,text:string){
 }
 
 // A limit is sent when the field loses focus or Enter is pressed, not on every keystroke, so typing 200 is one change.
+// Closing the popover (Escape, a click outside) unmounts the fields first, so any valid draft is sent as they go.
 // Once committed, the draft is dropped and the field follows the value Chat holds, which reverts if the host refuses it.
 function AutoLimits({auto,onChange}:{auto:AutoSetting;onChange:(next:AutoSetting)=>void}){
  const [drafts,setDrafts]=useState<Partial<Record<AutoCeilingKey,string>>>({});
- function commit(key:AutoCeilingKey){
-  const text=drafts[key];if(text===undefined||limitProblem(key,text))return;
-  setDrafts(old=>{const {[key]:_sent,...rest}=old;return rest});
-  if(Number(text)!==auto.ceilings[key])onChange({...auto,ceilings:{...auto.ceilings,[key]:Number(text)}});
+ // The refs mirror state so a commit and an unmount in the same event never send a value twice.
+ const pending=useRef<Partial<Record<AutoCeilingKey,string>>>({}),held=useRef({auto,onChange});held.current={auto,onChange};
+ function edit(next:Partial<Record<AutoCeilingKey,string>>){pending.current=next;setDrafts(next)}
+ function send(keys:AutoCeilingKey[]){
+  const {auto:current,onChange:emit}=held.current,ceilings={...current.ceilings};let changed=false;
+  for(const key of keys){
+   const text=pending.current[key];if(text===undefined||limitProblem(key,text))continue;
+   const {[key]:_sent,...rest}=pending.current;pending.current=rest;
+   if(Number(text)!==ceilings[key]){ceilings[key]=Number(text);changed=true}
+  }
+  setDrafts(pending.current);
+  if(changed)emit({...current,ceilings});
  }
+ useEffect(()=>()=>{
+  const {auto:current,onChange:emit}=held.current,ceilings={...current.ceilings};let changed=false;
+  for(const field of AUTO_CEILING_FIELDS){const text=pending.current[field.key];if(text!==undefined&&!limitProblem(field.key,text)&&Number(text)!==ceilings[field.key]){ceilings[field.key]=Number(text);changed=true}}
+  pending.current={};if(changed)emit({...current,ceilings});
+ },[]);
  return <div className="mode-auto-limits">
   {AUTO_CEILING_FIELDS.map(field=>{const text=drafts[field.key]??String(auto.ceilings[field.key]),problem=drafts[field.key]===undefined?'':limitProblem(field.key,text);
    return <FormField key={field.key} label={field.label} hint={field.hint} error={problem}>{control=>
-    <Input {...control} type="number" inputMode="decimal" min={field.key==='cost_usd'?0.01:1} step={field.step} value={text} onChange={event=>setDrafts(old=>({...old,[field.key]:event.target.value}))} onBlur={()=>commit(field.key)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();commit(field.key)}}}/>}</FormField>})}
+    <Input {...control} type="number" inputMode="decimal" min={field.key==='cost_usd'?0.01:1} step={field.step} value={text} onChange={event=>edit({...pending.current,[field.key]:event.target.value})} onBlur={()=>send([field.key])} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();send([field.key])}}}/>}</FormField>})}
   <p className="mode-auto-note">Auto stops and asks you when any limit is reached.</p>
  </div>;
 }
@@ -55,7 +69,7 @@ export default function SessionModePicker({session,running,onPatch,auto,onAutoCh
  return <span className="mode-picker" ref={root}>
   <Button ref={trigger} className={'composer-mode-chip'+(autoOn?' is-auto':'')} variant="ghost" size="sm" aria-label="Session mode" aria-haspopup="true" aria-expanded={open} aria-controls={open?popoverId:undefined} disabled={!session} onClick={()=>setOpen(value=>!value)}><Icon size={14}/><span>{selected.name}{autoOn&&' · Auto'}</span><ChevronDown size={12}/></Button>
   {open&&<div className="mode-popover" id={popoverId}>
-   <div className="mode-options" role="radiogroup" aria-label="Session mode">{modes.map(mode=>{const ModeIcon=mode.icon,blocked=mode.id==='plan'&&!!planReason;return <label className={'mode-option '+(selected.id===mode.id?'selected':'')} key={mode.id}><input type="radio" name="session-mode" value={mode.id} checked={selected.id===mode.id} disabled={running||blocked} aria-describedby={blocked?planReasonId:undefined} onChange={()=>{onPatch({mode:mode.id});setOpen(false);trigger.current?.focus()}}/><ModeIcon size={18}/><span><strong>{mode.name}</strong><small>{mode.description}</small></span>{selected.id===mode.id&&<Check size={16}/>}</label>})}</div>
+   <div className="mode-options" role="radiogroup" aria-label="Session mode">{modes.map(mode=>{const ModeIcon=mode.icon,blocked=mode.id==='plan'&&!!planReason;return <label className={'mode-option '+(selected.id===mode.id?'selected':'')} key={mode.id}><input type="radio" name="session-mode" value={mode.id} checked={selected.id===mode.id} disabled={running||blocked} aria-describedby={blocked?planReasonId:undefined} onChange={()=>onPatch({mode:mode.id})}/><ModeIcon size={18}/><span><strong>{mode.name}</strong><small>{mode.description}</small></span>{selected.id===mode.id&&<Check size={16}/>}</label>})}</div>
    {planReason&&<p className="control-running-note" id={planReasonId}>{planReason}</p>}
    {running&&<p className="control-running-note" role="status">Change mode after the current task finishes.</p>}
    {selected.id==='agent'&&auto&&onAutoChange&&<div className="mode-auto">

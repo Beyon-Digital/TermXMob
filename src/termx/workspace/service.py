@@ -556,6 +556,9 @@ class WorkspaceService:
         if not row.get('cwd'):
             raise ValueError('Select an authorized project folder before running a turn')
         self.validate_runner(principal,row)
+        if auto and auto.get('enabled'):
+            # Auto removes the approval step, which needs agent-control to resolve.
+            self.record(principal,'conversation',identifier,scope='agent-control')
         if auto and auto.get('enabled') and (row['engine']!='internal' or row.get('runner_id')):
             raise ValueError('Auto mode is only available for tasks run by the built-in agent on this host')
         profile=resolve_preset(self,principal,row.get('custom_agent_id'),engine=row['engine'],project_id=row.get('project_id'),runner_id=row.get('runner_id'),workflow=row.get('workflow'))

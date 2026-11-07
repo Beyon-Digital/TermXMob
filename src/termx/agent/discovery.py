@@ -12,6 +12,7 @@ touch the network.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import time
 from typing import Any, Awaitable, Callable
@@ -23,6 +24,11 @@ from termx.agent.providers import ProviderError
 
 DISCOVERY_TIMEOUT_S = 15.0
 _SHOW_CONCURRENCY = 8
+# The endpoint is untrusted: bound what one refresh can read, store and fan out to.
+MAX_BODY_BYTES = 5_000_000
+MAX_MODELS = 2000
+MAX_ID_LENGTH = 200
+MAX_SHOW_REQUESTS = 200
 _CAPABILITY_ALIASES = {
     "tools": "tools",
     "tool_use": "tools",
@@ -64,14 +70,20 @@ def merge_meta(discovered: dict[str, Any] | None, override: dict[str, Any] | Non
     return meta
 
 
-def model_listed(model: str, catalog: dict[str, dict[str, Any]]) -> bool:
-    """Whether ``model`` is in the catalog. Ollama accepts ``llama3`` for a listed ``llama3:latest``."""
+def catalog_key(model: str, catalog: dict[str, dict[str, Any]]) -> str | None:
+    """The catalog entry ``model`` names. Ollama accepts ``llama3`` for a listed ``llama3:latest``."""
     if model in catalog:
-        return True
+        return model
     if any(info.get("source") == "ollama" for info in catalog.values()):
         bare = model.removesuffix(":latest")
-        return bare in catalog or f"{bare}:latest" in catalog
-    return False
+        for key in (bare, f"{bare}:latest"):
+            if key in catalog:
+                return key
+    return None
+
+
+def model_listed(model: str, catalog: dict[str, dict[str, Any]]) -> bool:
+    return catalog_key(model, catalog) is not None
 
 
 def clean_overrides(value: Any) -> dict[str, dict[str, Any]]:
@@ -211,11 +223,12 @@ async def discover_models(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     owned = client is None
-    client = client or httpx.AsyncClient(timeout=timeout_s, follow_redirects=True)
+    client = client or httpx.AsyncClient(timeout=timeout_s, follow_redirects=False)
     try:
-        return await _discover(client, base, headers, now())
+        return _bounded(await _discover(client, base, headers, now()))
     except httpx.RequestError as exc:
-        raise ProviderError(f"Could not reach provider: {exc}", network=True) from exc
+        # Never echo str(exc): transport errors can quote the Authorization header.
+        raise ProviderError(f"Could not reach provider ({type(exc).__name__})", network=True) from exc
     finally:
         if owned:
             await client.aclose()
@@ -234,17 +247,18 @@ async def _discover(
     tags = await _probe(client, f"{root}/api/tags", headers)
     if isinstance(tags, dict) and isinstance(tags.get("models"), list):
         names = [m.get("model") or m.get("name") for m in tags["models"] if isinstance(m, dict)]
+        names = [n for n in names if isinstance(n, str) and n][:MAX_SHOW_REQUESTS]
         gate = asyncio.Semaphore(_SHOW_CONCURRENCY)
 
         async def show(name: str) -> tuple[str, Any]:
             async with gate:
                 try:
-                    response = await client.post(f"{root}/api/show", json={"model": name}, headers=headers)
-                    return name, response.json() if response.is_success else None
-                except (httpx.RequestError, ValueError):
+                    status, body = await _fetch(client, "POST", f"{root}/api/show", headers, {"model": name})
+                    return name, json.loads(body) if 200 <= status < 300 else None
+                except (httpx.RequestError, ValueError, ProviderError):
                     return name, None
 
-        shows = dict(await asyncio.gather(*(show(n) for n in names if isinstance(n, str) and n)))
+        shows = dict(await asyncio.gather(*(show(n) for n in names)))
         return parse_ollama(tags, shows, fetched_at)
 
     lmstudio = await _probe(client, f"{root}/api/v0/models", headers)
@@ -260,23 +274,45 @@ async def _discover(
 async def _probe(client: httpx.AsyncClient, url: str, headers: dict[str, str]) -> Any:
     """GET that returns None for any failure: a probe only decides which flavour this is."""
     try:
-        response = await client.get(url, headers=headers)
-        return response.json() if response.is_success else None
-    except (httpx.RequestError, ValueError):
+        status, body = await _fetch(client, "GET", url, headers)
+        return json.loads(body) if 200 <= status < 300 else None
+    except (httpx.RequestError, ValueError, ProviderError):
         return None
 
 
+async def _fetch(
+    client: httpx.AsyncClient, method: str, url: str, headers: dict[str, str], payload: Any = None
+) -> tuple[int, bytes]:
+    """One request with a hard cap on the body size and no redirects."""
+    async with client.stream(method, url, headers=headers, json=payload, follow_redirects=False) as response:
+        declared = response.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+            raise ProviderError("The provider's model list is too large")
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                raise ProviderError("The provider's model list is too large")
+            chunks.append(chunk)
+    return response.status_code, b"".join(chunks)
+
+
+def _bounded(catalog: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    usable = ((k, v) for k, v in catalog.items() if len(k) <= MAX_ID_LENGTH)
+    return dict(list(usable)[:MAX_MODELS])
+
+
 async def _get_json(client: httpx.AsyncClient, url: str, headers: dict[str, str]) -> Any:
-    response = await client.get(url, headers=headers)
-    if response.is_error:
-        status = response.status_code
+    status, body = await _fetch(client, "GET", url, headers)
+    if not 200 <= status < 300:
         reason = (
             "The provider rejected the API key" if status in {401, 403}
             else f"The provider could not list models (HTTP {status})"
         )
         raise ProviderError(reason, status_code=status)
     try:
-        return response.json()
+        return json.loads(body)
     except ValueError as exc:
         raise ProviderError("The provider returned an invalid model list") from exc
 
@@ -349,7 +385,8 @@ class ProviderCatalogue:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - a refresh never raises
-            error = str(exc) or type(exc).__name__
+            # Only our own fixed ProviderError text is stored; anything else could quote a credential.
+            error = str(exc) if isinstance(exc, ProviderError) and str(exc) else type(exc).__name__
         if self._generation.get(provider_id, 0) != generation:
             return
         self.store.set_provider_catalog(provider_id, catalog, error=error, refreshed_at=time.time())

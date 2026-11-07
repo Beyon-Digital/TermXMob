@@ -556,6 +556,9 @@ class AgentMutations:
         state = ctx.state
         body = input
         project_id = ctx.require_path('agent-run', body.cwd)
+        if body.auto is not None and body.auto.enabled:
+            # Auto removes the approval step, which needs agent-control to resolve.
+            ctx.require_path('agent-control', body.cwd)
         if body.conversation_id:
             ctx.require_resource('agent-control', 'conversation', body.conversation_id)
         conversation = (

@@ -9,7 +9,15 @@ const session={id:'conversation',mode:'ask'} as Session;
 it('shows the mode beside the composer and changes only the next-turn mode',()=>{
  const onPatch=vi.fn();render(<SessionModePicker session={session} running={false} onPatch={onPatch}/>);
  expect(screen.getByRole('button',{name:'Session mode'})).toHaveTextContent('Ask');fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
- fireEvent.click(screen.getByRole('radio',{name:/Agent/}));expect(onPatch).toHaveBeenCalledWith({mode:'agent'});expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('radio',{name:/Agent/}));expect(onPatch).toHaveBeenCalledWith({mode:'agent'});
+ // The popover stays open so the Auto switch that Agent mode adds can be reached; Escape closes it.
+ expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Session mode'})).toHaveFocus();
+});
+it('keeps the popover open when the mode changes from the keyboard',()=>{
+ const onPatch=vi.fn();render(<SessionModePicker session={session} running={false} onPatch={onPatch}/>);fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ const plan=screen.getByRole('radio',{name:/Plan/});plan.focus();fireEvent.click(plan);
+ expect(onPatch).toHaveBeenCalledWith({mode:'plan'});expect(screen.getByRole('radiogroup')).toBeInTheDocument();expect(plan).toHaveFocus();
 });
 it('permits inspection but disables mode changes during active execution',()=>{
  const onPatch=vi.fn();render(<SessionModePicker session={session} running onPatch={onPatch}/>);fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
@@ -83,6 +91,19 @@ describe('Plan and Auto',()=>{
   const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
   const steps=screen.getByRole('spinbutton',{name:'Steps'});fireEvent.change(steps,{target:{value:'10'}});fireEvent.keyDown(steps,{key:'Enter'});
   expect(onAuto).toHaveBeenCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,steps:10}});expect(steps).toHaveValue(50);
+ });
+ it.each([['Escape',()=>fireEvent.keyDown(document,{key:'Escape'})],['a click outside',()=>fireEvent.pointerDown(document.body)]])('sends a typed limit that is still a draft when the popover closes with %s',(_name,close)=>{
+  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
+  fireEvent.change(screen.getByRole('spinbutton',{name:'Tool calls'}),{target:{value:'200'}});expect(onAuto).not.toHaveBeenCalled();
+  close();expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  expect(onAuto).toHaveBeenCalledOnce();expect(onAuto).toHaveBeenCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,tool_calls:200}});
+ });
+ it('does not send an invalid draft or the same limit twice when the popover closes',()=>{
+  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
+  fireEvent.change(screen.getByRole('spinbutton',{name:'Steps'}),{target:{value:'0'}});
+  const calls=screen.getByRole('spinbutton',{name:'Tool calls'});fireEvent.change(calls,{target:{value:'30'}});fireEvent.blur(calls);
+  fireEvent.keyDown(document,{key:'Escape'});
+  expect(onAuto).toHaveBeenCalledOnce();expect(onAuto).toHaveBeenCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,tool_calls:30}});
  });
  it('does not name Auto on the chip when the conversation cannot run it',()=>{
   render(<SessionModePicker session={{...agent,worktree_id:null} as Session} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={vi.fn()}/>);

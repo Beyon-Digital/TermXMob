@@ -48,6 +48,7 @@ TASK_FIELDS = frozenset(
         "runtime",
         "metrics",
         "limits",
+        "provider_id",
         "model",
         "mode",
         "engine",

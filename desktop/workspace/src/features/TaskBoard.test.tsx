@@ -105,6 +105,36 @@ it('keeps the last board visible and says so when a later update fails', async (
   expect(screen.getByText('Draft summary')).toBeInTheDocument();
 });
 
+it('announces what polling finds: a task failing, stalling, waiting on you, and the last one finishing', async () => {
+  vi.useFakeTimers({shouldAdvanceTime: true});
+  render(<TaskBoard enabled/>);
+  await screen.findByText('Draft summary');
+  const updates = screen.getByRole('status', {name: 'Task board updates'});
+  expect(updates).toHaveTextContent('');  // the first load is not news
+  const poll = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(4100); }); };
+
+  current = board([collect, {...draft, status: 'failed', error: 'model exploded'}, review, publish]);
+  await poll();
+  expect(updates).toHaveTextContent('“Draft summary” failed.');
+
+  current = board([collect, {...draft, status: 'failed', error: 'model exploded'}, {...review, status: 'running', waiting: 'approval'}, publish]);
+  await poll();
+  expect(updates).toHaveTextContent('“Review summary” is waiting for your approval.');
+  expect(within(row('Review summary')).getByText(/Waiting for your approval\. Open the task/)).toBeInTheDocument();
+
+  current = board([collect, {...draft, status: 'failed'}, {...review, status: 'stalled'}, publish]);
+  await poll();
+  expect(updates).toHaveTextContent('“Review summary” has stalled.');
+
+  current = board([collect, {...draft, status: 'completed'}, {...review, status: 'completed'}, {...publish, status: 'completed', blocked_by: []}]);
+  await poll();
+  expect(updates).toHaveTextContent('All tasks are complete.');
+
+  const quiet = updates.textContent;
+  await poll();  // nothing changed: nothing is announced again
+  expect(updates.textContent).toBe(quiet);
+});
+
 it('does not request anything while disabled', () => {
   render(<TaskBoard enabled={false}/>);
   expect(api).not.toHaveBeenCalled();

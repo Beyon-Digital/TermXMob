@@ -57,6 +57,19 @@ def test_graphql_create_with_auto_exposes_state_and_set_task_auto_toggles(tmp_pa
         assert again["auto"]["enabled"] is False
 
 
+def test_graphql_auto_needs_agent_control_as_well_as_agent_run(tmp_path, monkeypatch):
+    state, _adapter, client = _client(tmp_path, monkeypatch, [])
+    repo = _repo(tmp_path)
+    runner = state.tokens.issue(["agent-view", "agent-run"])
+    controller = state.tokens.issue(["agent-view", "agent-run", "agent-control"])
+    variables = {"input": _input(repo, execution_mode="worktree", auto={"enabled": True})}
+    with client:
+        assert err_status(client, _CREATE, variables, {"Authorization": f"Bearer {runner}"}) == 403
+        assert not state.agent_store.list_tasks()
+        created = data(client, _CREATE, "create_agent_task", variables, {"Authorization": f"Bearer {controller}"})
+        assert created["auto"]["enabled"] is True
+
+
 def test_graphql_auto_without_worktree_is_rejected(tmp_path, monkeypatch):
     state, _adapter, client = _client(tmp_path, monkeypatch, [])
     repo = _repo(tmp_path)

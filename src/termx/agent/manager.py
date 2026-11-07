@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import monotonic, time
 from typing import Any, TypeVar
+from urllib.parse import urlsplit
 
 from termx.agent.computer import ComputerController
 from termx.agent.context import ContextEngine
@@ -26,7 +27,7 @@ from termx.agent.context.engine import (
     render_for_summary,
     summary_input_chars,
 )
-from termx.agent.discovery import ProviderCatalogue, clean_overrides, discover_models, merge_meta, model_info
+from termx.agent.discovery import ProviderCatalogue, catalog_key, clean_overrides, discover_models, merge_meta, model_info
 from termx.agent.metrics import TaskMetrics, input_tokens, usage_tokens
 from termx.agent.observation import (
     ObservationTracker,
@@ -395,10 +396,17 @@ class AgentManager:
         ):
             raise ValueError("provider capabilities must declare shell, functions, computer, image or audio")
         allowed = list(dict.fromkeys(declared)) or ["shell"]
+        api_key = api_key.strip() if api_key else api_key
+        if api_key and (not api_key.isprintable() or any(ch.isspace() for ch in api_key)):
+            raise ValueError("API key must not contain spaces or control characters")
         configured = bool(self.credentials.get(provider_id))
         if api_key:
             self.credentials.set(provider_id, api_key)
             configured = True
+        elif configured and current and _origin(current["base_url"]) != _origin(base_url):
+            # The key was issued for the old server; do not send it to a new one.
+            self.credentials.delete(provider_id)
+            configured = False
         # Config or key changed: drop the pooled client so the next adapter
         # does not reuse a stale base URL or credential.
         self._http.evict(provider_id)
@@ -461,10 +469,20 @@ class AgentManager:
                     raise ValueError(f"{role}: provider '{target['provider_id']}' is not configured")
                 if target["model"] and target["model"] not in provider["models"]:
                     raise ValueError(f"{role}: model '{target['model']}' is not available on {provider['name']}")
+        for role in ("orchestrator", "worker"):
+            # These roles run Agent-mode tasks; a fallback that cannot call tools would only chat.
+            for target in (cleaned.get(role) or {}).get("fallbacks") or []:
+                provider = dict(self.store.get_provider(target["provider_id"]))
+                model = target["model"] or _resolve_model(provider, None)
+                if not self.tools_supported(provider, model):
+                    raise ValueError(f"{role}: model '{model}' on {provider['name']} cannot call tools, so it cannot be a fallback")
         return cleaned
 
     @staticmethod
     def task_role(task: dict[str, Any]) -> str:
+        role = (task.get("runtime") or {}).get("role")
+        if role in {"planner", "orchestrator", "worker"}:
+            return role
         if task.get("parent_id"):
             return "worker"
         return "planner" if task.get("mode") == "plan" else "orchestrator"
@@ -519,9 +537,16 @@ class AgentManager:
                 target["model"] = _resolve_model(target, fallback.get("model") or None)
             except (KeyError, ValueError):
                 continue
-            if (target["id"], target["model"]) not in tried:
-                tried.add((target["id"], target["model"]))
-                yield target
+            if (target["id"], target["model"]) in tried:
+                continue
+            tried.add((target["id"], target["model"]))
+            if task.get("mode") == "agent" and not self.tools_supported(target, target["model"]):
+                # A model that cannot call tools would answer in plain text and the task would
+                # end as "completed" with no work done; the primary route is refused up front too.
+                self._emit(task["id"], "provider.fallback_skipped", {
+                    "provider_id": target["id"], "model": target["model"], "reason": "cannot call tools"})
+                continue
+            yield target
 
     def _usable_target(self, target: dict[str, Any]) -> tuple[str, str] | None:
         provider = self.store.get_provider(str(target.get("provider_id") or ""))
@@ -543,10 +568,10 @@ class AgentManager:
 
     def model_meta(self, provider: dict[str, Any], model: str) -> dict[str, Any]:
         """Discovered metadata for one model with the user's overrides on top. Unknown values are None."""
-        return merge_meta(
-            (provider.get("model_catalog") or {}).get(model),
-            (provider.get("model_overrides") or {}).get(model),
-        )
+        catalog = provider.get("model_catalog") or {}
+        overrides = provider.get("model_overrides") or {}
+        key = catalog_key(model, catalog) or model
+        return merge_meta(catalog.get(key), overrides.get(model) or overrides.get(key))
 
     def tools_supported(self, provider: dict[str, Any], model: str) -> bool:
         """False only when the provider or the user says this model cannot call tools.
@@ -594,6 +619,7 @@ class AgentManager:
         custom_agent_snapshot: dict[str, Any] | None = None,
         auto: dict[str, Any] | None = None,
         isolated: bool = False,
+        role: str | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -659,7 +685,7 @@ class AgentManager:
             images = _decode_images(attachments)
             try:
                 route = self.resolve_route(
-                    self.task_role({"parent_id": parent_id, "mode": mode}),
+                    role or self.task_role({"parent_id": parent_id, "mode": mode}),
                     {"provider_id": provider_id, "model": model},
                 )
                 provider = dict(self._provider(route.provider_id))
@@ -742,7 +768,9 @@ class AgentManager:
         # admission so an exhausted tree cannot bypass planning/plan approval.
         self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids,
                                                  **({"auto": auto_state} if auto_state else {}),
-                                                 **({"isolated": True} if isolated else {})})
+                                                 **({"isolated": True} if isolated else {}),
+                                                 **({"role": role} if role else {}),
+                                                 "route_source": route.source})
         await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
         ready = self._task(task_id)
         if ready["status"] == "planning" and ready.get("mode") in READ_ONLY_MODES:
@@ -1706,7 +1734,18 @@ class AgentManager:
 
     def _approve_plan_mode(self, task: dict[str, Any]) -> None:
         self._append_history(task, "The plan is approved. Implement it now.")
-        self.store.update_task(task["id"], mode="agent")
+        changes: dict[str, Any] = {}
+        if (task.get("runtime") or {}).get("route_source") != "explicit" and not (task.get("runtime") or {}).get("role"):
+            # The planner route chose this model; implementation follows the orchestrator route.
+            # A model the user picked is kept, and so is the current one if the new one cannot call tools.
+            try:
+                route = self.resolve_route("orchestrator", {}, default_provider_id=task["provider_id"])
+                provider = {**self._provider(route.provider_id), "model": route.model}
+            except (KeyError, ValueError):
+                route = None
+            if route is not None and self.tools_supported(provider, route.model):
+                changes = {"provider_id": route.provider_id, "model": route.model}
+        self.store.update_task(task["id"], mode="agent", **changes)
 
     @staticmethod
     def _auto_state(enabled: bool, ceilings: dict[str, Any], step: int = 0) -> dict[str, Any]:
@@ -1726,7 +1765,7 @@ class AgentManager:
     @staticmethod
     def _carry_runtime(runtime: dict[str, Any] | None) -> dict[str, Any]:
         """The Auto state, last context size and session-worktree flag, for runtime rewrites that would otherwise drop them."""
-        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used", "isolated")}
+        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used", "isolated", "role", "route_source")}
         return {key: value for key, value in carried.items() if value}
 
     @staticmethod
@@ -1908,10 +1947,11 @@ class AgentManager:
             if read_only:
                 if call.type == "computer":
                     raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
-                if entry.spec is not None and entry.spec.expose_read_only:
-                    # Read-only Ask mode never enters the approval flow: mutating
-                    # commands are refused inline so the model can adjust, and
-                    # share_file is bounded to non-sensitive project files.
+                if entry.spec is not None:
+                    # Read-only Ask/Plan mode never enters the approval flow:
+                    # mutating commands and tools hidden from the schema are
+                    # refused inline so the model can adjust, and share_file
+                    # is bounded to non-sensitive project files.
                     self._emit(task_id, "tool.started", {"call": call.public()})
                     outcome = await self._invoke_tool(entry, ctx)
                     self._emit(task_id, "tool.finished", outcome.finished_payload(call))
@@ -2367,6 +2407,10 @@ class AgentManager:
         preset=self.store.task_agent(ctx.task)
         if preset and preset.get("tools") and call.name not in preset["tools"]:
             raise PermissionError("This tool is outside the task agent preset")
+        if ctx.read_only and not entry.spec.expose_read_only:
+            # Read-only modes hide these tools from the model's schema; a call
+            # to one anyway is refused here, whatever approval or Auto says.
+            return ToolOutcome({"refused": True, "error": f"{call.name} is not available in a read-only mode. Switch to Agent mode."})
         started = monotonic()
         try:
             outcome = await self._budget_await(ctx.task_id,entry.spec.execute(call,ctx))
@@ -3378,7 +3422,7 @@ class AgentManager:
             capabilities=capabilities,
             native_computer=provider["kind"] == "openai",
             timeout_s=self._settings().provider_timeout_s if self._settings else 300,
-            max_output_tokens=(provider.get("meta") or {}).get("max_output"),
+            max_output_tokens=_output_cap(provider.get("meta")),
         )
         adapter.client = self._http.client_for(
             provider["id"],
@@ -3668,6 +3712,28 @@ def _slim_payload(payload: dict[str, Any]) -> dict[str, Any]:
         inner.pop("remaining_calls", None)
         slim["approval"] = {**approval, "payload": inner}
     return slim
+
+
+MAX_DISCOVERED_OUTPUT = 32_000
+
+
+def _output_cap(meta: dict[str, Any] | None) -> int | None:
+    """Per-request output limit. A user override is used as set; a discovered value is untrusted and bounded."""
+    meta = meta or {}
+    limit = meta.get("max_output")
+    if not limit or "max_output" in (meta.get("overridden") or []):
+        return limit
+    window = meta.get("context_window")
+    return min(limit, MAX_DISCOVERED_OUTPUT, window // 2 if window else MAX_DISCOVERED_OUTPUT)
+
+
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parts = urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    return (parts.scheme.lower(), (parts.hostname or "").lower(), port)
 
 
 def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:

@@ -34,7 +34,7 @@ class PolicyIntent:
     custom_agent_id: str | None = None
     sandbox_profile: str = "agent"
     required_capabilities: tuple[str, ...] = ()
-    risk_class: str = "safe"  # safe|consequential|sensitive|publication|privilege|external|outside_root
+    risk_class: str = "safe"  # safe|consequential|sensitive|publication|privilege|external|outside_root|destructive
     arguments_digest: str = ""
     matcher: dict[str, Any] = field(default_factory=dict)
     consent_binding: dict[str, Any] = field(default_factory=dict)

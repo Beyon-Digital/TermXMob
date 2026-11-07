@@ -5,6 +5,8 @@ import {formatCost, formatTokens} from './agentic';
 export interface BoardNode {
   id: string; title: string; role: string; depends_on: string[]; blocked_by: string[];
   task_id: string | null; status: string; attempts: number; max_attempts: number;
+  /** Set while a running node's task waits on a person: a tool approval, a pause, or recovery after a restart. */
+  waiting?: 'approval' | 'paused' | 'recovery' | null;
   last_event_at: number | null; result_summary: string; error: string;
   provider_id: string | null; model: string | null; tokens: number; cost_usd: number | null;
   created_at: number | null; updated_at: number | null;
@@ -13,7 +15,7 @@ export interface BoardRollup {total: number; counts: Record<string, number>; per
 export interface Board {nodes: BoardNode[]; rollup: BoardRollup}
 export interface ModelChoice {provider_id: string; provider: string; models: string[]}
 
-const BOARD = 'nodes{id title role depends_on blocked_by task_id status attempts max_attempts last_event_at result_summary error provider_id model tokens cost_usd created_at updated_at} rollup{total counts percent_complete tokens cost_usd}';
+const BOARD = 'nodes{id title role depends_on blocked_by task_id status attempts max_attempts waiting last_event_at result_summary error provider_id model tokens cost_usd created_at updated_at} rollup{total counts percent_complete tokens cost_usd}';
 const NODE_ACTION = (name: string, extra = '', input = '') => `mutation($id:String!${extra}){${name}(node_id:$id${input}){${BOARD}}}`;
 
 export async function loadBoard(): Promise<Board> {
@@ -88,4 +90,23 @@ export function nodeElapsed(node: BoardNode, now: number) {
   if (node.created_at == null || node.status === 'pending') return null;
   const end = isActive(node) ? now : node.updated_at;
   return end == null ? null : elapsedLabel(end - node.created_at);
+}
+
+const WAITING_TEXT: Record<string, string> = {approval: 'is waiting for your approval', paused: 'is paused', recovery: 'is recovering and needs your confirmation'};
+const MAX_LISTED = 3;
+
+/** What changed between two polls that someone using a screen reader should hear: failures, stalls, waits on the user, and the last task finishing. */
+export function boardChanges(previous: Board | null, next: Board): string[] {
+  if (!previous) return [];
+  const before = new Map(previous.nodes.map(node => [node.id, node]));
+  const notes: string[] = [];
+  for (const node of next.nodes) {
+    const old = before.get(node.id);
+    if (!old) continue;
+    if (node.status === 'failed' && old.status !== 'failed') notes.push(`“${node.title}” failed.`);
+    else if (node.status === 'stalled' && old.status !== 'stalled') notes.push(`“${node.title}” has stalled.`);
+    else if (node.waiting && node.waiting !== old.waiting && WAITING_TEXT[node.waiting]) notes.push(`“${node.title}” ${WAITING_TEXT[node.waiting]}.`);
+  }
+  if (next.rollup.total > 0 && next.rollup.percent_complete === 100 && previous.rollup.percent_complete < 100) notes.push('All tasks are complete.');
+  return notes.length > MAX_LISTED ? [...notes.slice(0, MAX_LISTED), `${notes.length - MAX_LISTED} more updates.`] : notes;
 }

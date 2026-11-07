@@ -339,6 +339,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
         state.previews.start()
         await state.runner_agents.startup_reconcile()
         state.prompt_queue.start()
+        state.workspace.orchestrator.graph.resume()
         state.push.start()
         if os.environ.get("TERMX_PROVIDER_STARTUP_REFRESH", "1") != "0":
             # Discovery only: failures keep the saved catalog and set catalog_error.

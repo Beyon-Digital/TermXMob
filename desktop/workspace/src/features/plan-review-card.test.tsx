@@ -43,30 +43,46 @@ describe('PlanReviewCard',()=>{
   render(<PlanReviewCard {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Request changes'}));
   fireEvent.change(screen.getByRole('textbox'),{target:{value:'Use the existing hook'}});fireEvent.click(screen.getByRole('button',{name:'Send feedback'}));
   expect(await screen.findByText('This plan was already decided')).toBeInTheDocument();expect(screen.getByRole('textbox')).toHaveValue('Use the existing hook');
-  expect(props.onError).toHaveBeenCalledOnce();expect(props.onDone).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'Send feedback'})).not.toBeDisabled();
+  expect(props.onError).toHaveBeenCalledOnce();expect(props.onDone).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'Send feedback'})).not.toHaveAttribute('aria-disabled');
  });
  it('sends one decision for a double click and ignores a late reply after the approval changes',async()=>{
   let finish!:()=>void;vi.mocked(resolvePlan).mockImplementationOnce(()=>new Promise<void>(resolve=>{finish=resolve}));
   const view=render(<PlanReviewCard {...props}/>);const approve=screen.getByRole('button',{name:'Approve plan'});fireEvent.click(approve);fireEvent.click(approve);
   expect(resolvePlan).toHaveBeenCalledOnce();
   view.rerender(<PlanReviewCard key="approval-2" {...props} approval={{...approval,id:'approval-2'}}/>);finish();
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Approve plan'})).not.toBeDisabled());expect(props.onDone).not.toHaveBeenCalled();
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Approve plan'})).not.toHaveAttribute('aria-disabled'));expect(props.onDone).not.toHaveBeenCalled();
  });
  it('keeps the feedback form closed to a second send once the feedback went through',async()=>{
   render(<PlanReviewCard {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Request changes'}));
   fireEvent.change(screen.getByRole('textbox'),{target:{value:'Use the hook'}});fireEvent.click(screen.getByRole('button',{name:'Send feedback'}));
   await waitFor(()=>expect(props.onDone).toHaveBeenCalledOnce());
-  expect(screen.getByRole('button',{name:'Send feedback'})).toBeDisabled();expect(screen.getByRole('button',{name:'Keep reviewing'})).toBeDisabled();expect(screen.getByRole('textbox')).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Send feedback'})).toHaveAttribute('aria-disabled','true');expect(screen.getByRole('button',{name:'Keep reviewing'})).toHaveAttribute('aria-disabled','true');expect(screen.getByRole('textbox')).toHaveAttribute('readonly');
   fireEvent.submit(screen.getByRole('textbox').closest('form')!);expect(resolvePlan).toHaveBeenCalledOnce();
  });
  it('names the pending action on the button while the host answers',async()=>{
   let finish!:()=>void;vi.mocked(resolvePlan).mockImplementationOnce(()=>new Promise<void>(resolve=>{finish=resolve}));
   render(<PlanReviewCard {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Approve plan'}));
-  expect(screen.getByRole('button',{name:'Approving…'})).toBeDisabled();finish();await waitFor(()=>expect(props.onDone).toHaveBeenCalledOnce());
+  expect(screen.getByRole('button',{name:'Approving…'})).toHaveAttribute('aria-disabled','true');finish();await waitFor(()=>expect(props.onDone).toHaveBeenCalledOnce());
+ });
+ it('keeps keyboard focus on the pressed button while the host answers',async()=>{
+  let finish!:()=>void;vi.mocked(resolvePlan).mockImplementationOnce(()=>new Promise<void>(resolve=>{finish=resolve}));
+  render(<PlanReviewCard {...props}/>);const approve=screen.getByRole('button',{name:'Approve plan'});approve.focus();fireEvent.click(approve);
+  expect(screen.getByRole('button',{name:'Approving…'})).toHaveFocus();finish();await waitFor(()=>expect(props.onDone).toHaveBeenCalledOnce());
+ });
+ it('hands focus to the composer when the decision removes the card',async()=>{
+  const view=render(<><PlanReviewCard {...props}/><textarea aria-label="Message"/></>);
+  const approve=screen.getByRole('button',{name:'Approve plan'});approve.focus();fireEvent.click(approve);
+  await waitFor(()=>expect(props.onDone).toHaveBeenCalledOnce());
+  view.rerender(<>{null}<textarea aria-label="Message"/></>);expect(screen.getByRole('textbox',{name:'Message'})).toHaveFocus();
+ });
+ it('does not take focus when the card goes away without a decision',()=>{
+  const view=render(<><PlanReviewCard {...props}/><textarea aria-label="Message"/></>);
+  screen.getByRole('button',{name:'Approve plan'}).focus();view.rerender(<>{null}<textarea aria-label="Message"/></>);
+  expect(screen.getByRole('textbox',{name:'Message'})).not.toHaveFocus();
  });
  it('is locked while the workspace is locked',()=>{
   render(<PlanReviewCard {...props}/>);act(()=>{window.dispatchEvent(new Event('termx-locked'))});
-  expect(screen.getByRole('button',{name:'Approve plan'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Approve plan'})).toHaveAttribute('aria-disabled','true');
  });
  it('has no axe violations in review, feedback and error states',async()=>{
   vi.mocked(resolvePlan).mockRejectedValueOnce(new Error('Nope'));

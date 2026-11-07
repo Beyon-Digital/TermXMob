@@ -567,6 +567,7 @@ class OrchestratorNode(DictBacked):
     status: str
     attempts: int
     max_attempts: int
+    waiting: str | None  # approval, paused or recovery while a running node's task waits on a person
     last_event_at: float | None
     result_summary: str
     error: str
