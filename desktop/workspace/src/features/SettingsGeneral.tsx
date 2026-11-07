@@ -30,7 +30,7 @@ export default function SettingsGeneral({account,hostKey,theme,onTheme,onSelect,
   <div className="settings-row"><div><h2>Account</h2><p>{account}</p></div><Button variant="outline" disabled={busy} onClick={()=>void logout()}>{busy?'Signing out…':'Sign out'}</Button></div>
   {error&&<p role="alert" className="manager-error">{error}</p>}
   <div className="settings-row"><div><h2>Host</h2><p>{host.identity===identity?host.name:'Connected host'}</p></div><Button variant="ghost" onClick={()=>onSelect('access')}>Manage access</Button></div>
-  <div className="settings-row" data-settings-autosave><div><h2>Theme</h2><p>Choose a look or follow your device.</p></div><select aria-label="Theme preference" value={theme} onChange={event=>onTheme(event.target.value as ThemePreference)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+  <div className="settings-row"><div><h2>Theme</h2><p>{{system:'Follows your device',light:'Light',dark:'Dark'}[theme]}</p></div><Button variant="ghost" onClick={()=>onSelect('appearance')}>Change appearance</Button></div>
   <div className="settings-row"><div><h2>Models &amp; engines</h2><p>Choose what powers your agents.</p></div><Button variant="ghost" onClick={()=>onSelect('models')}>Manage models</Button></div>
  </section>;
 }

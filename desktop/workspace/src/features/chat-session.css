@@ -34,7 +34,7 @@
 .chat-region.coding-session .task-activity .tool{border:0;border-radius:0;background:transparent;margin:0}
 .chat-region.coding-session .task-activity .tool-header{padding:6px 0;font-size:12px;color:var(--secondary)}
 .chat-region.coding-session .task-activity .tool-content{padding:0;border:0}
-.chat-region.coding-session .task-activity .tool-badge{background:transparent;font-size:10px;padding:0 3px}
+.chat-region.coding-session .task-activity .tool-badge{background:transparent;font-size:11px;padding:0 3px}
 .chat-region.coding-session>.composer-container{max-width:calc(var(--transcript-width) + 56px);padding:10px 28px 14px;flex:0 1 auto;overflow:visible}
 .chat-region.coding-session .composer{background:var(--surface);border:1px solid var(--border);border-radius:17px;padding:13px 12px 9px;box-shadow:0 2px 8px #00000008}
 .chat-region.coding-session .composer:focus-within{border-color:color-mix(in srgb,var(--foreground) 32%,var(--border))}
@@ -48,7 +48,7 @@
 .chat-region.coding-session .session-context{font-size:11px;min-height:19px;margin:0 3px 6px;gap:12px}
 .chat-region.coding-session .session-context>span{gap:5px}
 .chat-region.coding-session .session-context .composer-review-task{height:23px;padding:0 7px;font-size:11px;margin-left:auto}
-.chat-region.coding-session .composer-hint{font-size:10px;margin:7px 0 0;color:var(--secondary);opacity:.7}
+.chat-region.coding-session .composer-hint{font-size:11px;margin:7px 0 0;color:var(--secondary);opacity:.7}
 .chat-region.coding-session .composer-retry{font-size:12px;color:var(--warning);margin:0 0 8px}
 .chat-region.coding-session .prompt-queue{border:0;padding:0 3px;margin:0 0 7px;min-height:0;font-size:11px;max-height:min(180px,25vh)}
 .chat-region.coding-session .prompt-queue summary{padding:3px 0}
@@ -91,14 +91,14 @@
 .conversation-surface-header .button{height:28px;font-size:11px;border-radius:5px;gap:6px}
 .conversation-surface-header .button-icon{width:28px;padding:5px}
 .conversation-surface-header .conversation-changes-button{padding:0 7px}
-.conversation-changes-button small{display:flex;gap:5px;font-size:10px;font-weight:400}
+.conversation-changes-button small{display:flex;gap:5px;font-size:11px;font-weight:400}
 .conversation-changes-button .changes-additions{color:var(--accent)}
 .conversation-changes-button .changes-deletions{color:var(--destructive)}
 .conversation-file-reference{display:inline;padding:0;color:var(--foreground);font:inherit;line-height:inherit;text-align:left;border-radius:3px;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--foreground) 25%,transparent);text-underline-offset:3px;overflow-wrap:anywhere}
 .conversation-file-reference:hover{color:var(--accent);text-decoration-color:currentColor}
 .conversation-file-reference code{font-size:.92em;background:var(--surface);border-radius:3px;padding:1px 4px}
 @container(max-width:620px){.conversation-surface-header .conversation-task-state small{display:none}}
-@container(max-width:460px){.chat-region.coding-session .conversation-surface-header{gap:4px;padding-inline:8px}.conversation-surface-header .conversation-changes-button small{display:none}.conversation-surface-header .conversation-changes-button>span{max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-surface-header .button-icon{width:25px}.conversation-surface-header .conversation-task-state{font-size:10px}.conversation-surface-header .conversation-task-review{padding-inline:5px;font-size:10px}}
+@container(max-width:460px){.chat-region.coding-session .conversation-surface-header{gap:4px;padding-inline:8px}.conversation-surface-header .conversation-changes-button small{display:none}.conversation-surface-header .conversation-changes-button>span{max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-surface-header .button-icon{width:25px}.conversation-surface-header .conversation-task-state{font-size:11px}.conversation-surface-header .conversation-task-review{padding-inline:5px;font-size:11px}}
 
 /* Keep the focused conversation hierarchy with the shared stream/activity UI. */
 .chat-region.coding-session .message{padding:0;margin:0}

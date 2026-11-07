@@ -8,6 +8,7 @@ import {listSessions, SessionCache} from '../lib/workspace-data';
 import {taskState} from '../lib/task-presentation';
 import './control-plane.css';
 import {latestExecutionTask} from '../lib/conversation-messages';
+import {folderName} from '../lib/path-label';
 
 export type ControlPage = 'overview' | 'projects' | 'tasks';
 export type ExecutionView = 'chat' | 'workbench' | 'review' | 'browser' | 'computer';
@@ -22,6 +23,7 @@ type Props = {
   onPage: (page: ControlPage) => void;
   onManage: (section: string) => void;
   onNew: (projectId?: string) => void;
+  onAddProject: () => void;
   onOpen: (sessionId: string, view: ExecutionView) => void;
   onProject: (project: Project) => void;
   onRefresh: () => void;
@@ -38,7 +40,7 @@ export function controlRows(rows: Session[], query: string, project: string, fil
 }
 
 export default function ControlPlane(props: Props) {
-  const {page, ownerId, enabled, projects, engines, providers, onPage, onManage, onNew, onOpen, onProject} = props;
+  const {page, ownerId, enabled, projects, engines, providers, onPage, onManage, onNew, onAddProject, onOpen, onProject} = props;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [updated, setUpdated] = useState(0), [version, setVersion] = useState(0);
   const [query, setQuery] = useState(''), [project, setProject] = useState(''), [filter, setFilter] = useState<Filter>('all'), [limit, setLimit] = useState(40), [inspected, setInspected] = useState('');
@@ -66,7 +68,7 @@ export default function ControlPlane(props: Props) {
   const openFilter = (value: Filter, projectId = project) => { setFilter(value); setProject(projectId); setLimit(40); setInspected(''); onPage('tasks'); };
   const heading = page === 'overview' ? 'Control plane' : page === 'projects' ? 'Projects' : 'Runs';
   return <section className="control-plane" aria-label="Desktop control plane">
-    <header className="control-heading"><div><span className="control-eyebrow">TERMX WORKSPACE</span><h1>{heading}</h1><p>Coordinate projects and agents. Inspect execution. Review and deliver work.</p></div><div className="control-actions"><Button variant="outline" disabled={loading || !enabled} onClick={() => { setVersion(value => value + 1); props.onRefresh(); }}><RefreshCw size={14}/>Refresh</Button><Button onClick={() => onNew(project || undefined)}><Plus size={15}/>New task</Button></div></header>
+    <header className="control-heading"><div><span className="control-eyebrow">TERMX WORKSPACE</span><h1>{heading}</h1><p>Coordinate projects and agents. Inspect execution. Review and deliver work.</p></div><div className="control-actions"><Button variant="outline" disabled={loading || !enabled} onClick={() => { setVersion(value => value + 1); props.onRefresh(); }}><RefreshCw size={14}/>Refresh</Button><Button onClick={() => onNew(project || undefined)}><Plus size={15}/>New conversation</Button></div></header>
     <nav className="control-tabs" aria-label="Control plane views">{([['overview', 'Overview'], ['projects', 'Projects'], ['tasks', 'Runs']] as const).map(([id, label]) => <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => onPage(id)}>{label}</button>)}<span role="status">{error ? 'Updates interrupted' : loading ? 'Refreshing…' : updated ? `Updated ${new Date(updated).toLocaleTimeString()}` : 'Waiting for host'}</span></nav>
     {error && <div className="control-error" role="alert">{error}{updated ? ' — showing the last received state.' : ' — run state is unavailable.'}<Button variant="ghost" onClick={() => setVersion(value => value + 1)}>Retry</Button></div>}
     {props.catalogState === 'failed' && <p className="control-error" role="alert">Project and engine catalog could not be refreshed. Use Refresh to retry.</p>}
@@ -81,19 +83,20 @@ export default function ControlPlane(props: Props) {
         {id:'models', title:'Models & engines', text:'Accounts, installed engines and capabilities', icon:Activity},
         {id:'access', title:'Access & sessions', text:'Pair remote clients and manage workspace access', icon:Shield},
       ].map(item => <button key={item.id} onClick={() => onManage(item.id)}><item.icon size={18}/><span><strong>{item.title}</strong><small>{item.text}</small></span><ArrowUpRight size={14}/></button>)}</div></section></div>
-      <div className="control-section-heading"><h2>Project portfolio</h2><Button variant="ghost" onClick={() => onPage('projects')}>All projects</Button></div>
+      <div className="control-section-heading"><h2>Project portfolio</h2><span><Button variant="ghost" onClick={onAddProject}><Plus size={14}/>Add project</Button><Button variant="ghost" onClick={() => onPage('projects')}>All projects</Button></span></div>
     </>}
     {(page === 'overview' || page === 'projects') && <>
-      {!projects.length && <div className="control-empty"><Folder size={28}/><h2>{props.catalogState === 'loading' ? 'Loading projects…' : props.catalogState === 'failed' ? 'Projects unavailable' : 'Connect your first project'}</h2><p>Register a folder on the host to create tasks and open the development workbench.</p><Button onClick={() => onNew()}>Add a project</Button></div>}
+      {page === 'projects' && !!projects.length && <div className="control-section-heading"><h2>Registered folders</h2><Button variant="outline" onClick={onAddProject}><Plus size={14}/>Add project</Button></div>}
+      {!projects.length && <div className="control-empty"><Folder size={28}/><h2>{props.catalogState === 'loading' ? 'Loading projects…' : props.catalogState === 'failed' ? 'Projects unavailable' : 'Connect your first project'}</h2><p>Register a folder on the host to create tasks and open the development workbench.</p><Button onClick={onAddProject}>Add a project</Button></div>}
       <div className="control-projects">{(page === 'overview' ? projects.slice(0, 6) : projects).map(item => {
         const related = sessions.filter(row => row.project_id === item.id), active = related.filter(row => taskState(row.latest_status || '').active).length, attention = related.filter(row => taskState(row.latest_status || '').attention).length;
-        return <article key={item.id}><div className="control-section-heading"><Folder size={18}/><h3>{item.name}</h3></div><code title={item.path}>{item.path}</code><p>{updated ? `${active} active · ${attention} need attention · ${related.length} conversations` : 'Run counts unavailable'}</p><div className="control-actions"><Button size="sm" variant="outline" onClick={() => onProject(item)}>Open workbench</Button><Button size="sm" variant="ghost" onClick={() => openFilter('all', item.id)}>View runs</Button><Button size="sm" variant="ghost" onClick={() => onNew(item.id)}>New task</Button></div></article>;
+        return <article key={item.id}><div className="control-section-heading"><Folder size={18}/><h3>{item.name}</h3></div><code title={item.path}>{item.path}</code><p>{updated ? `${active} active · ${attention} need attention · ${related.length} conversations` : 'Run counts unavailable'}</p><div className="control-actions"><Button size="sm" variant="outline" onClick={() => onProject(item)}>Open workbench</Button><Button size="sm" variant="ghost" onClick={() => openFilter('all', item.id)}>View runs</Button><Button size="sm" variant="ghost" onClick={() => onNew(item.id)}>New conversation</Button></div></article>;
       })}</div>
     </>}
     {page === 'tasks' && <>
       <div className="control-run-tools"><Search size={17}/><Input aria-label="Search runs" placeholder="Search tasks, branches, models or runners" value={query} onChange={event => { setQuery(event.target.value); setLimit(40); }}/><Select aria-label="Filter runs by project" value={project} onChange={event => { setProject(event.target.value); setLimit(40); }}><option value="">All projects</option>{projects.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</Select><Select aria-label="Filter runs by status" value={filter} onChange={event => { setFilter(event.target.value as Filter); setLimit(40); }}><option value="all">All states</option><option value="attention">Needs attention</option><option value="running">In progress</option><option value="completed">Completed</option></Select></div>
       <p className="control-description">Latest run per conversation. Open a workspace for the complete execution history and child-agent supervision.</p>
-      <div className={'control-run-layout' + (inspectedRow ? ' with-inspector' : '')}><div className="control-table-wrap"><table className="control-run-table"><thead><tr><th scope="col">Task / project</th><th scope="col">State</th><th scope="col">Execution target</th><th scope="col">Updated</th></tr></thead><tbody>{rows.slice(0, limit).map(row => <tr key={row.id} className={row.id === inspected ? 'selected' : ''}><td><button aria-label={`Inspect ${row.title || 'Untitled task'}`} aria-pressed={row.id === inspected} onClick={() => setInspected(row.id)}>{row.title || 'Untitled task'}</button><small>{projects.find(item => item.id === row.project_id)?.name || 'Unassigned'}</small></td><td><Status value={row.latest_status}/></td><td><span>{row.engine || 'TermX'}{row.model ? ` · ${row.model}` : ''}</span><small>{row.runner_id ? `Runner ${row.runner_id}` : 'Host'} · {row.worktree_branch || row.cwd || 'No checkout'}</small></td><td><time dateTime={new Date(row.updated_at * 1000).toISOString()}>{new Date(row.updated_at * 1000).toLocaleString()}</time></td></tr>)}</tbody></table>{!rows.length && <div className="control-empty">{!updated ? loading ? 'Loading runs…' : 'Run state unavailable.' : query || project || filter !== 'all' ? 'No runs match these filters.' : 'No conversations yet. Create a task to begin.'}</div>}{rows.length > limit && <Button variant="outline" onClick={() => setLimit(value => value + 40)}>Show more runs</Button>}</div>
+      <div className={'control-run-layout' + (inspectedRow ? ' with-inspector' : '')}><div className="control-table-wrap"><table className="control-run-table"><thead><tr><th scope="col">Task / project</th><th scope="col">State</th><th scope="col">Execution target</th><th scope="col">Updated</th></tr></thead><tbody>{rows.slice(0, limit).map(row => <tr key={row.id} className={row.id === inspected ? 'selected' : ''}><td><button aria-label={`Inspect ${row.title || 'Untitled task'}`} aria-pressed={row.id === inspected} onClick={() => setInspected(row.id)}>{row.title || 'Untitled task'}</button><small>{projects.find(item => item.id === row.project_id)?.name || 'Unassigned'}</small></td><td><Status value={row.latest_status}/></td><td><span>{row.engine || 'TermX'}{row.model ? ` · ${row.model}` : ''}</span><small title={row.worktree_branch || row.cwd || undefined}>{row.runner_id ? `Runner ${row.runner_id}` : 'Host'} · {row.worktree_branch || folderName(row.cwd) || 'No checkout'}</small></td><td><time dateTime={new Date(row.updated_at * 1000).toISOString()}>{new Date(row.updated_at * 1000).toLocaleString()}</time></td></tr>)}</tbody></table>{!rows.length && <div className="control-empty">{!updated ? loading ? 'Loading runs…' : 'Run state unavailable.' : query || project || filter !== 'all' ? 'No runs match these filters.' : 'No conversations yet. Start a conversation to begin.'}</div>}{rows.length > limit && <Button variant="outline" onClick={() => setLimit(value => value + 40)}>Show more runs</Button>}</div>
         {inspectedRow && <RunInspector key={ownerId + ':' + inspectedRow.id} row={inspectedRow} enabled={enabled} onClose={() => setInspected('')} onOpen={view => onOpen(inspectedRow.id, view)}/>}
       </div>
     </>}

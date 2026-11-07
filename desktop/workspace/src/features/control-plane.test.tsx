@@ -9,7 +9,7 @@ const rows = [
   {id:'blocked', title:'Fix routing', project_id:'p1', cwd:'/projects/app', engine:'internal', model:'model-a', latest_status:'recovery_confirmation_required', updated_at:10},
   {id:'active', title:'Build preview', project_id:'p2', cwd:'/projects/web', engine:'internal', latest_status:'recovering', updated_at:20},
 ] as Session[];
-const props = () => ({page:'overview' as const, ownerId:'owner', enabled:true, projects:[{id:'p1', name:'App', path:'/projects/app'}, {id:'p2', name:'Web', path:'/projects/web'}], engines:[], providers:[], catalogState:'ready' as const, onPage:vi.fn(), onManage:vi.fn(), onNew:vi.fn(), onOpen:vi.fn(), onProject:vi.fn(), onRefresh:vi.fn()});
+const props = () => ({page:'overview' as const, ownerId:'owner', enabled:true, projects:[{id:'p1', name:'App', path:'/projects/app'}, {id:'p2', name:'Web', path:'/projects/web'}], engines:[], providers:[], catalogState:'ready' as const, onPage:vi.fn(), onManage:vi.fn(), onNew:vi.fn(), onAddProject:vi.fn(), onOpen:vi.fn(), onProject:vi.fn(), onRefresh:vi.fn()});
 beforeEach(() => {vi.clearAllMocks(); mocks.list.mockResolvedValue(rows); mocks.read.mockImplementation(async id => ({...rows.find(row => row.id === id), turns:[]}));});
 afterEach(cleanup);
 
@@ -23,8 +23,16 @@ describe('desktop control plane', () => {
     const project = screen.getByRole('heading', {name:'App'}).closest('article')!;
     fireEvent.click(within(project).getByRole('button', {name:'Open workbench'}));
     expect(callbacks.onProject).toHaveBeenCalledWith(callbacks.projects[0]);
-    fireEvent.click(within(project).getByRole('button', {name:'New task'}));
+    fireEvent.click(within(project).getByRole('button', {name:'New conversation'}));
     expect(callbacks.onNew).toHaveBeenCalledWith('p1');
+  });
+
+  it('opens the add-project flow, not the new-conversation dialog, from the empty portfolio', async () => {
+    const callbacks = {...props(), projects: []}; render(<ControlPlane {...callbacks}/>);
+    await screen.findByRole('heading', {name: 'Connect your first project'});
+    fireEvent.click(screen.getByRole('button', {name: 'Add a project'}));
+    expect(callbacks.onAddProject).toHaveBeenCalledTimes(1);
+    expect(callbacks.onNew).not.toHaveBeenCalled();
   });
 
   it('filters by project and decision state, then opens the exact checkout for delivery', async () => {
