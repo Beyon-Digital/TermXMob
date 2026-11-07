@@ -13,18 +13,44 @@ export interface EngineDescriptor {
   capabilities?: unknown;
 }
 
-/** schema.graphql `AgentProvider`. */
+/** What discovery learned about one model. Unknown values are `null` and are never shown as zero. */
+export interface ModelInfo {
+  context_window?: number | null; max_output?: number | null;
+  /** USD per million tokens. */
+  price_in?: number | null; price_out?: number | null;
+  capabilities?: string[] | null; source?: string | null; fetched_at?: number | null;
+}
+/** Values the person set by hand; they win over discovered ones. */
+export type ModelOverride = Partial<Pick<ModelInfo, 'context_window' | 'max_output' | 'price_in' | 'price_out'>>;
+export type ModelOverrides = Record<string, ModelOverride>;
+
+/** schema.graphql `AgentProvider`. The catalog fields are JSON scalars written by model discovery. */
 export interface AgentProvider {
   id: string; kind: string; name: string;
   base_url?: string | null; model?: string | null; models?: string[] | null; capabilities?: string[] | null;
   secret_configured?: boolean | null; created_at?: number | null; updated_at?: number | null;
+  model_catalog?: Record<string, ModelInfo> | null; model_overrides?: ModelOverrides | null;
+  catalog_refreshed_at?: number | null; catalog_error?: string | null;
 }
 
-/** Shape ProviderAccountForm edits; `AgentProviderInput` minus the secret. */
-export interface ProviderAccount { id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[] }
+/** What ProviderAccountForm shows: the saved provider without its secret. */
+export interface ProviderAccount {
+  id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[];
+  model_catalog: Record<string, ModelInfo>; model_overrides: ModelOverrides;
+  catalog_refreshed_at: number | null; catalog_error: string | null;
+}
+/** What ProviderAccountForm submits; matches `AgentProviderInput`. `model` lists the included models, empty meaning all. */
+export interface ProviderAccountInput {
+  id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[]; api_key: string | null;
+  model_overrides?: ModelOverrides;
+}
 
 export function providerAccount(provider: AgentProvider): ProviderAccount {
-  return { id: provider.id, name: provider.name, kind: provider.kind, base_url: provider.base_url ?? '', model: provider.model ?? '', capabilities: provider.capabilities ?? [] };
+  return {
+    id: provider.id, name: provider.name, kind: provider.kind, base_url: provider.base_url ?? '', model: provider.model ?? '', capabilities: provider.capabilities ?? [],
+    model_catalog: provider.model_catalog ?? {}, model_overrides: provider.model_overrides ?? {},
+    catalog_refreshed_at: provider.catalog_refreshed_at ?? null, catalog_error: provider.catalog_error ?? null,
+  };
 }
 
 /** schema.graphql `HostCustomAgent`. JSON scalars are narrowed to what the editor reads. */

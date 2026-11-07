@@ -1,11 +1,17 @@
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
+import {expectNoAxeViolations} from '../test-axe';
+import type {ProviderAccount} from '../lib/host-types';
 import ProviderAccountForm from './ProviderAccountForm';
 afterEach(cleanup);
+
+const saved:ProviderAccount={id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'',capabilities:['image'],
+ model_catalog:{'big-model':{context_window:200000,price_in:3,price_out:15},'mystery-model':{}},model_overrides:{},catalog_refreshed_at:null,catalog_error:null};
+
 it('guides provider selection, clears a key when its destination changes, and keeps capabilities advanced',()=>{
  render(<ProviderAccountForm busy={false} onSave={vi.fn()}/>);
  const provider=screen.getByRole('combobox',{name:/^Provider$/});
- expect(provider).toHaveAccessibleName('Provider');expect(provider).toHaveValue('openai');
+ expect(provider).toHaveValue('openai');
  expect(screen.queryByLabelText('Provider API address')).not.toBeInTheDocument();
  fireEvent.change(screen.getByLabelText('API key'),{target:{value:'synthetic-write-only'}});
  fireEvent.change(provider,{target:{value:'openrouter'}});
@@ -14,29 +20,96 @@ it('guides provider selection, clears a key when its destination changes, and ke
  expect(screen.getByText('Advanced account options').closest('details')).not.toHaveAttribute('open');
  fireEvent.change(provider,{target:{value:'custom'}});
  expect(screen.getByLabelText('Provider API address')).toHaveValue('');
- expect(screen.getByRole('button',{name:'Save account'})).toBeDisabled();
 });
-it('clears secrets immediately, prevents duplicate dispatch, and retains a stable generated account id for retry',async()=>{
+
+it('names each field and reports a problem beside the field instead of disabling Save',async()=>{
+ const save=vi.fn();render(<ProviderAccountForm busy={false} onSave={save}/>);
+ fireEvent.change(screen.getByRole('combobox',{name:'Provider'}),{target:{value:'custom'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account'}));
+ const name=screen.getByLabelText('Display name'),address=screen.getByLabelText('Provider API address');
+ expect(name).toHaveAttribute('aria-invalid','true');expect(name).toHaveAccessibleDescription('Enter a display name.');
+ expect(address).toHaveAccessibleDescription('Enter the API address your provider supplied.');
+ fireEvent.change(name,{target:{value:'Local'}});expect(name).not.toHaveAttribute('aria-invalid');
+ fireEvent.change(address,{target:{value:'localhost:11434'}});fireEvent.click(screen.getByRole('button',{name:'Save account'}));
+ expect(address).toHaveAccessibleDescription('Enter a full address that starts with https:// or http://.');
+ expect(save).not.toHaveBeenCalled();
+ expect(name).toHaveAttribute('name','name');expect(address).toHaveAttribute('name','base_url');expect(screen.getByLabelText('API key')).toHaveAttribute('name','api_key');
+});
+
+it('keeps the API key after a failed save, can show it, and retains a stable generated id for retry',async()=>{
  let reject!:(reason:Error)=>void;const save=vi.fn((input:unknown)=>{void input;return new Promise((_,failure)=>reject=failure)});
  render(<ProviderAccountForm busy={false} onSave={save}/>);
  fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'My account'}});
  fireEvent.change(screen.getByLabelText('API key'),{target:{value:'synthetic-write-only'}});
+ const key=screen.getByLabelText('API key');expect(key).toHaveAttribute('type','password');
+ fireEvent.click(screen.getByRole('button',{name:'Show key'}));expect(key).toHaveAttribute('type','text');
+ fireEvent.click(screen.getByRole('button',{name:'Hide key'}));expect(key).toHaveAttribute('type','password');
  const form=screen.getByRole('form');fireEvent.submit(form);fireEvent.submit(form);
- expect(save).toHaveBeenCalledOnce();expect(screen.getByLabelText('API key')).toHaveValue('');
+ expect(save).toHaveBeenCalledOnce();
  expect(save.mock.calls[0][0]).toMatchObject({api_key:'synthetic-write-only',base_url:'https://api.openai.com/v1',capabilities:['shell','functions']});
  const id=(save.mock.calls[0][0] as {id:string}).id;
  reject(new Error('Host temporarily unavailable'));
- expect(await screen.findByRole('alert')).toHaveTextContent('Host temporarily unavailable');
+ expect((await screen.findByText('Host temporarily unavailable')).closest('[role=alert]')).not.toBeNull();
+ expect(screen.getByLabelText('API key')).toHaveValue('synthetic-write-only');
  await waitFor(()=>expect(screen.getByRole('button',{name:'Save account'})).toBeEnabled());
- fireEvent.submit(form);expect(save).toHaveBeenCalledTimes(2);expect(save.mock.calls[1][0]).toMatchObject({id,api_key:null});
+ fireEvent.submit(form);expect(save).toHaveBeenCalledTimes(2);expect(save.mock.calls[1][0]).toMatchObject({id,api_key:'synthetic-write-only'});
 });
-it('preserves existing endpoint, capability and model declarations during key replacement',async()=>{
- const save=vi.fn().mockResolvedValue({});render(<ProviderAccountForm busy={false} account={{id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'model-one',capabilities:['image']}} onSave={save}/>);
+
+it('keeps the key when the host reports the save failed with null, and clears it once saved',async()=>{
+ const save=vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({});
+ render(<ProviderAccountForm busy={false} onSave={save}/>);
+ fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'Account'}});fireEvent.change(screen.getByLabelText('API key'),{target:{value:'synthetic-write-only'}});
+ fireEvent.submit(screen.getByRole('form'));
+ expect(await screen.findByText(/API key, are still here/)).toBeInTheDocument();expect(screen.getByLabelText('API key')).toHaveValue('synthetic-write-only');
+ fireEvent.submit(screen.getByRole('form'));
+ await waitFor(()=>expect(screen.getByLabelText('API key')).toHaveValue(''));
+});
+
+it('saves the included models and overrides, shows Unknown for missing values, and preserves declarations',async()=>{
+ const save=vi.fn().mockResolvedValue({});
+ const {container}=render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
  expect(screen.queryByLabelText('Provider')).not.toBeInTheDocument();
- fireEvent.change(screen.getByLabelText('Replace API key (leave blank to keep current key)'),{target:{value:'synthetic-replacement'}});
+ const rows=within(screen.getByRole('list',{name:'Discovered models'})).getAllByRole('listitem');
+ expect(rows).toHaveLength(2);
+ expect(rows[0]).toHaveTextContent('Context window 200,000 tokens');expect(rows[0]).toHaveTextContent('Input $3 per 1M tokens');
+ expect(rows[1]).toHaveTextContent('Context window Unknown');expect(rows[1]).toHaveTextContent('Input Unknown');expect(rows[1]).toHaveTextContent('Output Unknown');
+ expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeChecked();
+ await expectNoAxeViolations(container);
+ fireEvent.change(within(rows[1]).getByLabelText('Context window (tokens)'),{target:{value:'32000'}});
+ expect(rows[1]).toHaveTextContent('Context window 32,000 tokens (your value)');
+ fireEvent.click(within(rows[1]).getByRole('checkbox',{name:'mystery-model'}));
+ expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeDisabled();
+ fireEvent.change(screen.getByLabelText('Replace API key'),{target:{value:'synthetic-replacement'}});
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
- await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'model-one',capabilities:['image'],api_key:'synthetic-replacement'}));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',model_overrides:{'mystery-model':{context_window:32000}}}));
 });
+
+it('saves an empty model list while every discovered model stays included, and omits overrides nobody set',async()=>{
+ const save=vi.fn().mockResolvedValue({});render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ await waitFor(()=>expect(save).toHaveBeenCalledOnce());
+ expect(save.mock.calls[0][0]).toMatchObject({model:'',api_key:null});expect(save.mock.calls[0][0]).not.toHaveProperty('model_overrides');
+});
+
+it('refreshes models, and shows the catalog age and a failed refresh in alerts',async()=>{
+ const refresh=vi.fn().mockResolvedValue({});
+ const view=render(<ProviderAccountForm busy={false} account={{...saved,catalog_refreshed_at:Date.now()/1000-7200,catalog_error:'Provider returned 503'}} onRefresh={refresh} onSave={vi.fn()}/>);
+ expect(screen.getByText('Catalog refreshed 2 hours ago.')).toBeInTheDocument();
+ expect(screen.getByText(/previous catalog is shown. Provider returned 503/)).toHaveAttribute('role','alert');
+ fireEvent.click(screen.getByRole('button',{name:'Refresh models'}));
+ expect(screen.getByRole('button',{name:'Refresh models'})).toHaveAttribute('data-keeps-draft');
+ await waitFor(()=>expect(refresh).toHaveBeenCalledOnce());
+ await expectNoAxeViolations(view.container);
+});
+
+it('explains how to discover models before the first save and offers no manual model list',async()=>{
+ const {container}=render(<ProviderAccountForm busy={false} onSave={vi.fn()}/>);
+ expect(screen.getByText(/Save the account, then choose Refresh models/)).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Refresh models'})).not.toBeInTheDocument();
+ expect(screen.queryByLabelText(/Default model/)).not.toBeInTheDocument();
+ await expectNoAxeViolations(container);
+});
+
 it('starts a distinct account after a successful creation instead of overwriting it',async()=>{
  const save=vi.fn((input:{id:string})=>Promise.resolve({id:input.id}));render(<ProviderAccountForm busy={false} onSave={save}/>);
  fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'First account'}});fireEvent.submit(screen.getByRole('form'));

@@ -6,7 +6,7 @@
 .form-field [aria-invalid="true"]{border-color:var(--destructive)}
 
 .settings-section{display:grid;gap:12px;min-width:0}
-.settings-section-header h2{margin:0 0 4px;font-size:15px;font-weight:600}
+.settings-section-header :is(h2,h3){margin:0 0 4px;font-size:15px;font-weight:600}
 .settings-section-header p{margin:0;font-size:13px;line-height:1.5;color:var(--secondary)}
 .settings-rows{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
 .settings-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;min-width:0}

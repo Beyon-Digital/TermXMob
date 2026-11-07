@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useState} from 'react';
 import {ChevronDown,Star} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Select} from '../components/ui/select';
@@ -11,9 +11,11 @@ import {configuredModels} from './ChatConnectionSetup';
 
 export type SessionModelControlProps={session:Session|null;engines:Engine[];providers:Provider[];runnerAccounts:{provider_id:string;credential_ref:string;name:string;models:string[]}[];models:string[];favorites:string[];favoriteKey:string;running:boolean;onFavorite:()=>void;onEngine:(engine:string)=>void;onPatch:(changes:Record<string,unknown>)=>void;onRefresh:()=>void;onError:(error:unknown)=>void;onConfigureAgent?:()=>void;coordinating?:boolean};
 
-export default function SessionModelControls({session,engines,providers,runnerAccounts,models,favorites,favoriteKey,running,onFavorite,onPatch,onRefresh,onError,onConfigureAgent,coordinating=false}:SessionModelControlProps){
+/** Switching sessions remounts the controls, which closes the dialog without an effect. */
+export default function SessionModelControls(props:SessionModelControlProps){return <SessionModelControlsFor key={props.session?.id} {...props}/>}
+
+function SessionModelControlsFor({session,engines,providers,runnerAccounts,models,favorites,favoriteKey,running,onFavorite,onPatch,onRefresh,onError,onConfigureAgent,coordinating=false}:SessionModelControlProps){
  const [open,setOpen]=useState(false);
- useEffect(()=>setOpen(false),[session?.id]);
  const runnerAccount=runnerAccounts.find(item=>item.provider_id===session?.provider_id);
  const account=providers.find(item=>item.id===session?.provider_id);
  const engine=engines.find(item=>item.id===session?.engine);

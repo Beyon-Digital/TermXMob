@@ -29,3 +29,8 @@ it('accepts plain children for rows that hold their own labelled controls', asyn
   expect(screen.getByRole('button', {name: 'Revoke'})).toBeInTheDocument();
   await expectNoAxeViolations(container);
 });
+
+it('titles a section with an h3 when the page already owns the h2', () => {
+  render(<SettingsSection title="Account" level={3}><SettingsRow label="Name"><span>Alex</span></SettingsRow></SettingsSection>);
+  expect(screen.getByRole('heading', {name: 'Account', level: 3})).toBeInTheDocument();
+});

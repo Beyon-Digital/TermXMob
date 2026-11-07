@@ -49,7 +49,7 @@ it('keeps account-only managers global while retaining explicit project scopes a
  fireEvent.click(within(screen.getByRole('navigation',{name:'Workspace navigation'})).getByRole('button',{name:'Settings'}));
  const dialog=await screen.findByRole('dialog',{name:'Settings'});await within(dialog).findByRole('heading',{name:'General fixture'});
  expect(within(dialog).queryByRole('combobox',{name:'Settings scope'})).toBeNull();
- const category=(name:string)=>fireEvent.click(within(dialog).getByRole('navigation',{name:'Settings categories'}).querySelector(`button[aria-label="${name}"]`)||within(dialog).getByRole('button',{name}));
+ const category=(name:string)=>fireEvent.click(within(within(dialog).getByRole('navigation',{name:'Settings categories'})).getByRole('link',{name}));
  category('Memory');await within(dialog).findByRole('heading',{name:'memory fixture'});
  const scope=within(dialog).getByRole('combobox',{name:'Settings scope'});expect(scope).toHaveValue('');
  fireEvent.change(scope,{target:{value:'other'}});await waitFor(()=>expect(screen.getByTestId('manager-project')).toHaveTextContent('other'));expect(screen.getByTestId('manager-session')).toHaveTextContent('none');

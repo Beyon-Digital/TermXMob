@@ -1,6 +1,7 @@
 import {useRef,useState,type MouseEvent, type ReactNode} from 'react';
 import {Button} from '../components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
+import {SETTINGS_LEAVE} from './settings-forms';
 /** Shared safety/validation shell for every settings category, including the
  * older div-based forms. It reviews before dispatching the existing handler. */
 export default function SettingsActions({children}:{children:ReactNode}){
@@ -19,7 +20,9 @@ export default function SettingsActions({children}:{children:ReactNode}){
   // Closing an action review preserves its underlying draft. Do not treat
   // its Cancel button as leaving or discarding the settings editor.
   const cancelsReview=/^cancel(?:\s|$)/i.test(label)&&!!button.closest('[data-reviewed-action]');
-  if(/^(cancel|refresh|close editor|load current|load native|restore as draft|use current|edit |update authentication|new scheduled task|enroll)/i.test(label)&&!cancelsReview&&!window.dispatchEvent(new Event('termx-settings-leave',{cancelable:true}))){event.preventDefault();event.stopPropagation();return}
+  // A button marked data-keeps-draft acts on saved data (for example refreshing a catalog) and leaves the open edits alone.
+  const keepsDraft=button.hasAttribute('data-keeps-draft');
+  if(/^(cancel|refresh|close editor|load current|load native|restore as draft|use current|edit |update authentication|new scheduled task|enroll)/i.test(label)&&!cancelsReview&&!keepsDraft&&!window.dispatchEvent(new Event(SETTINGS_LEAVE,{cancelable:true}))){event.preventDefault();event.stopPropagation();return}
   if(/^(delete|remove|revoke|tear down|stop runner|end legacy|disable.*revoke|disable model review|prune with)/i.test(label)&&!button.closest('[data-reviewed-action]')){
    event.preventDefault();event.stopPropagation();
    const row=button.closest('article,tr,.manager-preview,.safety-rule');
