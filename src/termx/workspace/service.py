@@ -26,6 +26,11 @@ from termx.workspace.presets import resolve_preset,available_presets
 from termx.workspace.public_events import public_task_events, public_task_approvals
 
 
+def _require_plan_capable(mode, engine, runner_id):
+    if mode == 'plan' and (engine != 'internal' or runner_id):
+        raise ValueError('Plan mode is only available for local Internal conversations')
+
+
 class WorkspaceService:
     def __init__(self, state, path: Path | None = None, *, project_check=None, hook_runner=None):
         self.state = state
@@ -232,8 +237,9 @@ class WorkspaceService:
         run_limits=resolve_limits({**(profile.get('limits') or {}),**(run_limits or {})} if profile else run_limits)
         if engine != 'internal' and engine not in self.state.engines.engines():
             raise ValueError('Engine is not installed')
-        if mode not in {'ask', 'agent'}:
+        if mode not in {'ask', 'agent', 'plan'}:
             raise ValueError('Unknown conversation mode')
+        _require_plan_capable(mode, engine, runner_id)
         if workflow not in {None, 'browser'} or (workflow == 'browser' and engine != 'claude'):
             raise ValueError('Browser workflow requires a dedicated Claude conversation')
         self.validate_runner(principal,{'engine':engine,'workflow':workflow,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'provider_id':provider_id,'model':model,'project_id':project_id,'worktree_id':worktree_id})
@@ -372,6 +378,8 @@ class WorkspaceService:
         allowed = {'title','pinned','archived','draft_text','draft_context','scroll','scroll_anchor','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','reasoning_config'}
         if changes.keys() - allowed:
             raise ValueError('Unsupported session setting')
+        if changes.keys() & {'mode','runner_id'}:
+            _require_plan_capable(changes.get('mode') or self.session(principal,identifier,turns=False).get('mode'), row['engine'], changes.get('runner_id', row.get('runner_id')))
         if changes.keys() & {'custom_agent_id','runner_id','workflow'}:
             selected=changes.get('custom_agent_id',row.get('custom_agent_id'))
             profile=resolve_preset(self,principal,selected,engine=row['engine'],project_id=row.get('project_id'),runner_id=changes.get('runner_id',row.get('runner_id')),workflow=changes.get('workflow',row.get('workflow')))
@@ -437,7 +445,7 @@ class WorkspaceService:
             raise Conflict('Change engines using a reviewed linked fork')
         if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','custom_agent_revision','reasoning_config'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
             raise Conflict('Wait for the active turn before changing session settings')
-        if 'mode' in changes and changes['mode'] not in {'ask','agent'}:
+        if 'mode' in changes and changes['mode'] not in {'ask','agent','plan'}:
             raise ValueError('Unknown mode')
         with self.store.lock:
             if row['revision'] != revision:

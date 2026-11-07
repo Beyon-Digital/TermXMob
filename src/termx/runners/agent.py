@@ -101,7 +101,7 @@ class RunnerAgentService:
     async def create_task(self,principal,runner_id,credential_ref,prompt,model=None,mode='agent',limits=None,conversation_id=None,request_id=None,on_created=None,attachments=None,provider_id=None,custom_agent=None):
         if not request_id or not re.fullmatch(r'[A-Za-z0-9._-]{8,128}',request_id):raise HTTPException(400,'A stable request ID is required')
         if not prompt or len(prompt)>100000:raise HTTPException(400,'Provide a bounded prompt')
-        if mode not in {'ask','agent'}:raise HTTPException(400,'Choose Ask or Agent mode')
+        if mode not in {'ask','agent'}:raise HTTPException(400,'Runner tasks support Ask or Agent mode only')
         images=_decode_images(attachments)
         frame({'attachments':attachments,'prompt':prompt}) # bound before admission/effects
         provider_id=provider_id or credential_ref

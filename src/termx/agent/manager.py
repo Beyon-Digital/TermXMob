@@ -2358,8 +2358,8 @@ class AgentManager:
         current = self.store.get_task(task_id)
         if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
             return {'ok': False, 'error': 'The coordinator is no longer accepting sub-agents'}
-        if current.get('mode') == 'ask':
-            return {'ok': False, 'error': 'Switch to Agent mode before creating sub-agents'}
+        if current.get('mode') in READ_ONLY_MODES:
+            return {'ok': False, 'error': 'Switch to Agent mode before creating sub-agents; Ask and Plan modes are read-only'}
         task = current
         prompt = str(call.arguments.get("task") or "").strip()
         if not prompt:

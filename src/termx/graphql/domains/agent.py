@@ -33,7 +33,8 @@ from termx.graphql import types as T
 
 Ctx = Info[TermxContext, None]
 
-_APPROVAL_DECISIONS = {"approved", "denied", "cancel"}
+_APPROVAL_DECISIONS = {"approved", "denied", "cancel", "revise"}
+_MAX_APPROVAL_FEEDBACK = 10_000
 
 
 def _visible_coding_consent(ctx, rule):
@@ -507,6 +508,8 @@ class AgentMutations:
         engine = body.engine or (profile_engine if profile_engine not in (None, "inherit") else None) or (
             previous["engine"] if previous else "internal")
         if engine != "internal":
+            if body.mode == "plan":
+                raise HTTPException(status_code=400, detail="Plan mode is only available for Internal tasks; native engines use their own planning")
             try:
                 from termx.mcp.scope import authorize as authorize_mcp
                 task = await state.engines.create_task(
@@ -638,7 +641,9 @@ class AgentMutations:
         ctx = info.context
         ctx.require_resource('agent-control', 'task', task_id)
         if input.decision not in _APPROVAL_DECISIONS:
-            raise HTTPException(status_code=422, detail="decision must be approved, denied or cancel")
+            raise HTTPException(status_code=422, detail="decision must be approved, denied, revise or cancel")
+        if input.feedback is not None and len(input.feedback) > _MAX_APPROVAL_FEEDBACK:
+            raise HTTPException(status_code=422, detail=f"feedback must be at most {_MAX_APPROVAL_FEEDBACK} characters")
         if input.remember is not None and input.remember not in _APPROVAL_REMEMBER:
             raise HTTPException(status_code=422, detail=f"remember must be one of {sorted(_APPROVAL_REMEMBER)}")
         try:
@@ -656,7 +661,7 @@ class AgentMutations:
                 return resolved
             return await ctx.state.agent.resolve_approval(
                 task_id, approval_id, input.decision, remember=input.remember,
-                limits=input.limits,
+                limits=input.limits, feedback=input.feedback,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="approval not found") from exc

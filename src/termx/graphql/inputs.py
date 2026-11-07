@@ -156,6 +156,7 @@ class WorktreeActionInput:
 @strawberry.input
 class AgentApprovalInput:
     decision: str
+    feedback: str | None = None
     remember: str | None = None
     content: JSON | None = None
     limits: JSON | None = None

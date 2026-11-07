@@ -22,6 +22,7 @@ type ActivitySnapshot {
 
 input AgentApprovalInput {
   decision: String!
+  feedback: String = null
   remember: String = null
   content: JSON = null
   limits: JSON = null
@@ -94,13 +95,13 @@ type AgentTask {
   conversation_id: String
   custom_agent_id: String
   parent_id: String
-  runtime: JSON
   metrics: JSON
   created_at: Float
   updated_at: Float
+  artifacts: JSON
+  runtime: JSON
   events: JSON
   approvals: JSON
-  artifacts: JSON
 }
 
 input AgentTaskInput {
@@ -119,6 +120,16 @@ input AgentTaskInput {
   custom_agent_id: String = null
   turn_prompt: String = null
   context_refs: [JSON!] = null
+}
+
+type ArtifactNode implements Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
+  canonical_id: String!
+  title: String!
+  kind: String!
+  version: Int!
+  content: JSON
 }
 
 input CommandInput {
@@ -244,6 +255,7 @@ input CustomAgentPatchInput {
   engine_mode: String = null
   config_options: JSON = null
   tools: [String!] = null
+  tools_mode: String = null
   limits: JSON = null
   approval_mode: String = null
   sandbox_profile: String = null
@@ -571,6 +583,11 @@ type McpConnectionInfo {
   url: String
   enabled: Boolean
   owner: String
+  allowed_projects: [String!]
+  definition: JSON
+  definition_digest: String
+  credential_configured: Boolean
+  catalog: JSON
   auth: JSON
   secret_refs: [String!]
   approved_tools: [String!]
@@ -583,6 +600,7 @@ type McpConnectionInfo {
 
 input McpConnectionInput {
   data: JSON!
+  expected_digest: String = null
 }
 
 input McpToolCallInput {
@@ -599,6 +617,8 @@ type Mutation {
   revoke_device(device_id: String!): Ok!
   set_device_scopes(device_id: String!, scopes: [String!]!): DeviceInfo!
   publish_notification(input: NotifyInput!, kind: String! = "info"): HostNotification!
+  register_push_device(token: String!, host: String!): JSON!
+  unregister_push_device(token: String!): JSON!
   mark_notifications_read(ids: [String!]!): Int!
   mark_all_notifications_read: Int!
   create_session(input: CreateSessionInput = null): SessionInfo!
@@ -673,11 +693,12 @@ type Mutation {
   rescan_extensions: ExtensionsResult!
   set_extension_state(qid: String!, input: ExtensionStateInput!): JSON!
   create_mcp_connection(input: McpConnectionInput!): JSON!
-  trust_mcp_connection(conn_id: String!): JSON!
-  connect_mcp_connection(conn_id: String!): McpConnectResult!
+  set_mcp_credential(conn_id: String!, binding: String!, value: String, expected_digest: String!, kind: String! = "env"): JSON!
+  trust_mcp_connection(conn_id: String!, expected_digest: String!): JSON!
+  connect_mcp_connection(conn_id: String!, project_id: String = null): McpConnectResult!
   disconnect_mcp_connection(conn_id: String!): JSON!
-  call_mcp_tool(conn_id: String!, tool: String!, input: McpToolCallInput = null): JSON!
-  delete_mcp_connection(conn_id: String!): JSON!
+  call_mcp_tool(conn_id: String!, tool: String!, input: McpToolCallInput = null, project_id: String = null, expected_definition_digest: String = null): JSON!
+  delete_mcp_connection(conn_id: String!, expected_digest: String!): JSON!
   start_chatgpt_sign_in(account_id: String = null): JSON!
   cancel_chatgpt_sign_in(attempt_id: String!): JSON!
   refresh_chatgpt_models(account_id: String!): JSON!
@@ -689,6 +710,12 @@ type Mutation {
   run_runbook(runbook_id: String!, profile: String! = "host"): RunbookRun!
   confirm_runbook_run(run_id: String!): RunbookRun!
   cancel_runbook_run(run_id: String!): RunbookRun!
+}
+
+"""An object with a Globally Unique ID"""
+interface Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
 }
 
 input NotifyInput {
@@ -847,6 +874,16 @@ type ProjectTree {
 }
 
 type Query {
+  node(
+    """The ID of the object."""
+    id: ID!
+  ): Node
+  nodes(
+    """The IDs of the objects."""
+    ids: [ID!]!
+  ): [Node!]!
+  workspace_sessions(query: String! = "", archived: Boolean! = false, project_id: String = null, first: Int! = 50, after: String = null): WorkspaceSessionConnection!
+  workspace_turns(session_id: String!, first: Int = null, after: String = null, last: Int = null, before: String = null): WorkspaceTurnConnection!
   health: Health!
   connect_info: ConnectInfo!
   machine: MachineInfo!
@@ -879,6 +916,7 @@ type Query {
   forwards: ForwardsResult!
   displays: DisplaysResult!
   activity: ActivitySnapshot!
+  agent_task_page(cursor: String = null, status: String! = "all", search: String! = ""): JSON!
   agent_configuration: JSON!
   engine_configuration(engine_id: String!, cwd: String = null): JSON!
   engine_task_configuration(task_id: String!): JSON!
@@ -890,6 +928,7 @@ type Query {
   engine_diagnostics: JSON!
   agent_tasks(limit: Int! = 100): [AgentTask!]!
   agent_task(task_id: String!): AgentTask!
+  agent_task_tree(task_id: String!): JSON!
   agent_task_worktree(task_id: String!): TaskWorktree!
   agent_task_export(task_id: String!): JSON!
   agent_storage: AgentStorageStatus!
@@ -902,7 +941,7 @@ type Query {
   custom_agent_export(agent_id: String!): CustomAgentFile!
   extensions(kind: String = null, source: String = null, enabled: Boolean = null): ExtensionsResult!
   extension(qid: String!): ExtensionEntry!
-  mcp_connections: [McpConnectionInfo!]!
+  mcp_connections(project_id: String = null): [McpConnectionInfo!]!
   chatgpt_accounts: JSON!
   chatgpt_sign_in_status(attempt_id: String!): JSON!
   runbooks(project_id: String = null): [Runbook!]!
@@ -1107,6 +1146,13 @@ type Workspace {
   sessions: [WorkspaceSession!]!
 }
 
+type WorkspacePageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
 type WorkspaceRestoreResult {
   restored: Int!
   already_running: Int!
@@ -1119,10 +1165,58 @@ type WorkspaceSession {
   cwd: String
 }
 
+type WorkspaceSessionConnection {
+  pageInfo: WorkspacePageInfo!
+
+  """Contains the nodes in this connection"""
+  edges: [WorkspaceSessionNodeEdge!]!
+}
+
 input WorkspaceSessionInput {
   title: String! = ""
   shell: String! = ""
   cwd: String! = ""
+}
+
+type WorkspaceSessionNode implements Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
+  canonical_id: String!
+  title: String!
+  engine: String!
+  revision: Int!
+  project_id: String
+  snapshot: JSON!
+}
+
+"""An edge in a connection."""
+type WorkspaceSessionNodeEdge {
+  """A cursor for use in pagination"""
+  cursor: String!
+
+  """The item at the end of the edge"""
+  node: WorkspaceSessionNode!
+}
+
+type WorkspaceTurnConnection {
+  edges: [WorkspaceTurnEdge!]!
+  pageInfo: WorkspacePageInfo!
+}
+
+type WorkspaceTurnEdge {
+  cursor: String!
+  node: WorkspaceTurnNode!
+}
+
+type WorkspaceTurnNode implements Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
+  canonical_id: String!
+  session_id: String!
+  sequence: Int!
+  prompt: String!
+  task_id: String
+  task: JSON
 }
 
 input WorktreeActionInput {
