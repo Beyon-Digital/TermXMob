@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {gql} from '../lib/api';
 import {useModelFavorites} from '../lib/model-favorites';
-type Engine={id:string;label:string;installed:boolean};type Account={id:string;name:string;model?:string};
+type Engine={id:string;label:string;installed:boolean};type Account={id:string;name:string;model?:string|null};
 export default function ModelFavoritesManager({ownerId,engines,accounts,search}:{ownerId:string;engines:Engine[];accounts:Account[];search:string}){
  const {favorites,toggle}=useModelFavorites(ownerId),[catalogs,setCatalogs]=useState<Record<string,string[]>>({}),[pending,setPending]=useState(''),[error,setError]=useState('');const generation=useRef(0);
  useEffect(()=>{generation.current++;setCatalogs({});setPending('');setError('')},[ownerId,JSON.stringify(engines.map(engine=>[engine.id,engine.installed]))]);

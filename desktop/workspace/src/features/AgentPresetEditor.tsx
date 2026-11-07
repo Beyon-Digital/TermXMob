@@ -2,8 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import McpPresetBindings,{type McpBinding} from './McpPresetBindings';
-
-type Preset = Record<string, any>;
+import type {AgentPreset,AgentPresetInput} from '../lib/host-types';
 const budgets = [
   ['max_steps', 'Maximum steps', 256, 100000],
   ['max_seconds', 'Maximum run seconds', 14400, 604800],
@@ -11,29 +10,34 @@ const budgets = [
   ['max_parallel_subagents', 'Parallel subagents', 3, 8],
   ['max_subagents_total', 'Total subagents', 8, 32],
 ] as const;
+type BudgetKey = typeof budgets[number][0];
+type TextKey = 'name' | 'description' | 'instructions' | 'model' | 'tools' | 'toolsets' | 'deny_tools';
+interface PresetDraft extends Record<BudgetKey, string | number>, Record<TextKey, string> {
+  engine: string; approval_mode: string; sandbox_profile: string; enabled: boolean; mcp_connections: McpBinding[]; allTools: boolean;
+}
 const split = (value: string) => [...new Set(value.split(/[\n,]/).map(item => item.trim()).filter(Boolean))];
 export function AgentPresetEditor({ preset, onSave, onCancel,engines=[] }: {
   engines?:{id:string;label:string}[];
-  preset?: Preset; onSave: (input: Preset) => Promise<unknown>; onCancel?: () => void;
+  preset?: AgentPreset; onSave: (input: AgentPresetInput) => Promise<unknown>; onCancel?: () => void;
 }) {
   const [original] = useState(preset);
-  const [draft, setDraft] = useState<Preset>({ name:preset?.name || '', description:preset?.description || '',
+  const [draft, setDraft] = useState<PresetDraft>({ name:preset?.name || '', description:preset?.description || '',
     instructions:preset?.instructions || '', engine:preset?.engine || 'inherit', model:preset?.model || '',
     tools:(preset?.tools || []).join('\n'), toolsets:(preset?.toolsets || []).join('\n'),
     deny_tools:(preset?.deny_tools || []).join('\n'), approval_mode:preset?.approval_mode || 'standard',
     sandbox_profile:preset?.sandbox_profile || 'agent', enabled:preset?.enabled ?? true,
-    mcp_connections:structuredClone(preset?.mcp_connections||[]),
+    mcp_connections:structuredClone(preset?.mcp_connections||[]) as McpBinding[],
     allTools:preset ? preset.tools_mode === 'all' : false,
-    ...Object.fromEntries(budgets.map(([key,,fallback]) => [key,preset?.limits?.[key] ?? fallback])) });
+    ...(Object.fromEntries(budgets.map(([key,,fallback]) => [key,preset?.limits?.[key] ?? fallback])) as Record<BudgetKey,number>) });
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const pending = useRef(false);
-  const change = (key:string, value:unknown) => setDraft(prior=>({...prior,[key]:value}));
+  const change = <K extends keyof PresetDraft>(key:K, value:PresetDraft[K]) => setDraft(prior=>({...prior,[key]:value}));
   const valid = draft.name.trim() && budgets.every(([key,,,max])=>Number.isInteger(Number(draft[key])) && Number(draft[key])>=1 && Number(draft[key])<=max);
   async function save(event:React.FormEvent) {
     event.preventDefault(); if(pending.current || !valid)return;
     pending.current=true;setBusy(true);setError('');
     try {
-      const input:Preset={name:draft.name.trim(),description:draft.description,instructions:draft.instructions,
+      const input:AgentPresetInput={name:draft.name.trim(),description:draft.description,instructions:draft.instructions,
         engine:draft.engine.trim() || 'inherit',model:draft.model.trim(),
         mcp_connections:draft.mcp_connections,toolsets:split(draft.toolsets),deny_tools:split(draft.deny_tools),
         limits:Object.fromEntries(budgets.map(([key])=>[key,Number(draft[key])])),
@@ -49,7 +53,7 @@ export function AgentPresetEditor({ preset, onSave, onCancel,engines=[] }: {
     } catch(exception){setError(`${exception instanceof Error?exception.message:String(exception)}. Your draft is kept.`)}
     finally {pending.current=false;setBusy(false)}
   }
-  const field=(key:string,label:string,multiline=false)=><label className="manager-field"><span>{label}</span>{multiline?<textarea aria-label={label} value={draft[key]} disabled={busy} onChange={event=>change(key,event.target.value)}/>:<Input aria-label={label} value={draft[key]} required={key==='name'} disabled={busy} onChange={event=>change(key,event.target.value)}/>}</label>;
+  const field=(key:TextKey,label:string,multiline=false)=><label className="manager-field"><span>{label}</span>{multiline?<textarea aria-label={label} value={draft[key]} disabled={busy} onChange={event=>change(key,event.target.value)}/>:<Input aria-label={label} value={draft[key]} required={key==='name'} disabled={busy} onChange={event=>change(key,event.target.value)}/>}</label>;
   return <form className="manager-form" aria-label={preset?'Edit agent preset':'Create agent preset'} onSubmit={save}>
     <p className="manager-help">Presets configure future runs. Saving never retargets a running task or grants tool authority. {original && `Source revision: ${original.file_revision || 'unavailable'}.`}</p>
     {field('name','Name')}{field('description','Purpose')}{field('instructions','Instructions',true)}<label className="manager-field"><span>Default engine for future sessions</span><select aria-label="Default engine for future sessions" value={draft.engine} disabled={busy} onChange={event=>change('engine',event.target.value)}><option value="inherit">Use the session’s engine</option>{engines.map(engine=><option key={engine.id} value={engine.id}>{engine.label}</option>)}{draft.engine!=='inherit'&&!engines.some(engine=>engine.id===draft.engine)&&<option value={draft.engine}>Current configured engine · {draft.engine}</option>}</select></label><details><summary>Advanced · default model name</summary>{field('model','Default model for future sessions')}</details>

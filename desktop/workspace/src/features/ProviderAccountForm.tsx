@@ -1,8 +1,8 @@
 import {useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
+import type {ProviderAccount as Account} from '../lib/host-types';
 
-type Account={id:string;name:string;kind:string;base_url:string;model:string;capabilities:string[]};
 const choices=[['shell','Shell tools'],['functions','Function tools'],['computer','Computer tools'],['image','Image generation and editing'],['audio','Audio transcription and speech']];
 const providers=[
  {id:'openai',label:'OpenAI',url:'https://api.openai.com/v1'},

@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import { request } from '../lib/api';
+import {providerAccount,type AccessSummary,type AdapterConfiguration,type AdminPrincipal,type AuthAdapter,type AuthSession,type AgentPreset,type AgentProvider,type EngineAuthMethod,type EngineDescriptor,type HostIdentity,type ManagerData,type MemoryRow} from '../lib/host-types';
 import './managers.css';
 import ProviderAccountForm from './ProviderAccountForm';
 import { MemoryEditor } from './MemoryEditor';
@@ -23,17 +24,23 @@ import ScheduleManager from './ScheduleManager';
 import SessionPolicyManager from './SessionPolicyManager';
 import HookSettings from './HookSettings';
 
-type Row = Record<string, any>;
+type Json = Record<string, unknown>;
+/** Fields the search box matches across every listed record. */
+interface Searchable { id?: string; name?: string; label?: string; content?: string; event?: string; prompt?: string; success_criteria?: string; device_name?: string | null; display_name?: string; state?: string; status?: string; strength?: string; spec?: { kind?: string; time?: string; timezone?: string }; next_run?: number; expires?: number; revoked?: boolean; enabled?: boolean | null }
 export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void; embedded?: boolean }
 const groups = settingsCategories.map(({id,label})=>[id,label]);
 const scoped = (project: string | null) => project ? `?project_id=${encodeURIComponent(project)}` : '';
 const body = (value: unknown, method = 'POST'): RequestInit => ({ method, body: JSON.stringify(value), headers: { 'Content-Type': 'application/json' } });
 const date = (value?: number) => value ? new Date(value * 1000).toLocaleString() : '—';
-async function gql<T = Row>(query: string, variables: Row = {}): Promise<T> {
+async function gql<T = Json>(query: string, variables: Json = {}): Promise<T> {
   const result = await request<{ data?: T; errors?: { message: string }[] }>('/graphql', body({ query, variables }));
   if (result.errors?.length) throw new Error(result.errors.map(e => e.message).join('\n'));
   return result.data as T;
 }
+type Draft = Record<string, string | boolean | undefined>;
+interface AuthTestReply { authorization_url: string }
+interface RecoveryReply { recovery_code?: string }
+interface ProviderTestReply { status?: string; ok?: boolean; message?: string }
 function download(name: string, value: unknown) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click(); URL.revokeObjectURL(url);
@@ -43,21 +50,21 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Disclosure({title,children}:{title:string;children:React.ReactNode}){const [visited,setVisited]=useState(false);return <details className="manager-disclosure" onToggle={event=>{if(event.currentTarget.open)setVisited(true)}}><summary>{title}</summary>{visited&&<div className="manager-disclosure-body">{children}</div>}</details>}
 function Empty({ children }: { children: React.ReactNode }) { return <div className="manager-empty">{children}</div> }
 function Item({ title, meta, children }: { title: string; meta?: React.ReactNode; children?: React.ReactNode }) { return <article className="manager-item"><div><h3>{title}</h3>{meta && <p>{meta}</p>}</div><div className="manager-item-actions">{children}</div></article> }
-function EngineAuthentication({engine,busy,canAuthenticate,onAuthenticate}:{engine:Row;busy:boolean;canAuthenticate:boolean;onAuthenticate:(methodId:string)=>unknown}){
+function EngineAuthentication({engine,busy,canAuthenticate,onAuthenticate}:{engine:EngineDescriptor;busy:boolean;canAuthenticate:boolean;onAuthenticate:(methodId:string)=>unknown}){
   if(!engine.installed)return null;
   // Only ACP currently exposes authenticate_engine. Other adapters may report
   // authentication state, but that does not make a sign-in RPC available.
-  const advertised=engine.protocol?.name==='acp'&&Array.isArray(engine.protocol.auth_methods)?engine.protocol.auth_methods:[];
+  const advertised:unknown[]=engine.protocol?.name==='acp'&&Array.isArray(engine.protocol.auth_methods)?engine.protocol.auth_methods:[];
   const seen=new Set<string>();
-  const methods=advertised.filter((method:Row)=>{if(!method||typeof method.id!=='string'||!method.id.trim()||seen.has(method.id))return false;seen.add(method.id);return true});
+  const methods=advertised.filter((method):method is EngineAuthMethod=>{const candidate=method as Partial<EngineAuthMethod>|null;if(!candidate||typeof candidate.id!=='string'||!candidate.id.trim()||seen.has(candidate.id))return false;seen.add(candidate.id);return true});
   if(methods.length){
     if(!canAuthenticate)return <p className="manager-help">Ask the host owner to connect this engine.</p>;
-    return <div className="manager-item-actions" role="group" aria-label={`Sign-in methods for ${engine.label}`}>{methods.map((method:Row)=>{
+    return <div className="manager-item-actions" role="group" aria-label={`Sign-in methods for ${engine.label}`}>{methods.map(method=>{
       const label=[method.name,method.label].find(value=>typeof value==='string'&&value.trim())||'Connect account';
       return <Button key={method.id} variant="secondary" disabled={busy} onClick={()=>onAuthenticate(method.id)}>{label}</Button>;
     })}</div>;
   }
-  if(['authenticated','not_required'].includes(engine.auth_state))return null;
+  if(['authenticated','not_required'].includes(engine.auth_state??''))return null;
   const native=engine.protocol?.name==='codex-app-server'?'Codex CLI':engine.protocol?.name==='claude-agent-sdk'?'Claude CLI':null;
   return <p className="manager-help">{native?`Manage sign-in in the ${native} on this host, then refresh to check the account.`:'This engine has no sign-in method available in TermX. Manage its account on this host, then refresh.'}</p>;
 }
@@ -65,32 +72,33 @@ function EngineAuthentication({engine,busy,canAuthenticate,onAuthenticate}:{engi
 export function Managers({ section: incoming, projectId, sessionId, onSection, onCapabilitiesChanged, embedded=false }: ManagersProps) {
   const section = canonicalSettingsCategory(incoming);
   const beginSave=useSettingsSave();
-  const [data, setData] = useState<Row>({}), [me, setMe] = useState<Row>({}), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
+  const [data, setData] = useState<ManagerData>({}), [me, setMe] = useState<HostIdentity>({}), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [search, setSearch] = useState(''), [version, setVersion] = useState(0);
-  const [draft, setDraft] = useState<Row>({}), [preview, setPreview] = useState<Row | null>(null), [selected, setSelected] = useState<string>('');
-  const [editingProvider,setEditingProvider]=useState<Row|null>(null);
-  const [testProvider,setTestProvider]=useState<Row|null>(null);
-  const [editingMemory,setEditingMemory]=useState<Row|null>(null);
-  const [editingPreset,setEditingPreset]=useState<Row|null>(null);
+  const [draft, setDraft] = useState<Draft>({}), [preview, setPreview] = useState<unknown>(null), [selected, setSelected] = useState<string>('');
+  const [editingProvider,setEditingProvider]=useState<AgentProvider|null>(null);
+  const [testProvider,setTestProvider]=useState<AgentProvider|null>(null);
+  const [editingMemory,setEditingMemory]=useState<MemoryRow|null>(null);
+  const [editingPreset,setEditingPreset]=useState<AgentPreset|null>(null);
   useEffect(()=>{setEditingMemory(null);setEditingPreset(null)},[section,projectId]);
   useEffect(()=>{setSearch('')},[section]);
+  const recoveryCode = typeof preview === 'object' && preview !== null && 'recovery_code' in preview && typeof preview.recovery_code === 'string' ? preview.recovery_code : undefined;
   const admin = (me.principal?.scopes || []).includes('host-admin');
-  useEffect(() => { let cancelled = false; request<Row>('/auth/me').then(value => { if (!cancelled) setMe(value) }).catch(() => {}); return () => { cancelled = true } }, []);
+  useEffect(() => { let cancelled = false; request<HostIdentity>('/auth/me').then(value => { if (!cancelled) setMe(value) }).catch(() => {}); return () => { cancelled = true } }, []);
   useEffect(()=>{setData({});setDraft({});setPreview(null);setSelected('')},[section,projectId,admin]);
   useEffect(() => {
     let cancelled = false; setLoading(true); setError('');
-    async function load(): Promise<Row> {
+    async function load(): Promise<ManagerData> {
       if (section === 'models') return gql('{ engines { id label installed version auth_state auth_detail protocol error capabilities } agent_providers { id name kind model base_url secret_configured capabilities } acp_registry }');
       if (section === 'agents') return gql('{ engines { id label installed } custom_agents { id name description instructions engine model enabled tools tools_mode toolsets deny_tools limits approval_mode sandbox_profile file_revision mcp_connections } }');
       if (section === 'connections') return {};
-      if (section === 'memory') return request<Row>(`/api/workspace/memory${scoped(projectId)}`);
+      if (section === 'memory') return request<ManagerData>(`/api/workspace/memory${scoped(projectId)}`);
       if (section === 'hooks') return {};
       if (section === 'automations') return {};
-      if (section === 'extensions') return request<Row>('/api/workspace/extensions');
+      if (section === 'extensions') return request<ManagerData>('/api/workspace/extensions');
       if (section === 'access') {
-        const [access, sessions, methods] = await Promise.all([request<Row>('/auth/access'), request<Row[]>('/auth/sessions'), request<Row>('/auth/methods')]);
-        const result: Row = { access, sessions, methods };
-        if (admin) { const [principals, adapters, configuration] = await Promise.all([request<Row[]>('/auth/admin/principals'), request<Row[]>('/auth/admin/adapters'), request<Row>('/auth/admin/adapters/configuration')]); const catalog=await gql<{projects:{id:string;name:string}[]}>('{projects{id name}}');Object.assign(result, { principals, adapters, configuration,identityProjects:catalog.projects }) }
+        const [access, sessions, methods] = await Promise.all([request<AccessSummary>('/auth/access'), request<AuthSession[]>('/auth/sessions'), request<unknown>('/auth/methods')]);
+        const result: ManagerData = { access, sessions, methods };
+        if (admin) { const [principals, adapters, configuration] = await Promise.all([request<AdminPrincipal[]>('/auth/admin/principals'), request<AuthAdapter[]>('/auth/admin/adapters'), request<AdapterConfiguration>('/auth/admin/adapters/configuration')]); const catalog=await gql<{projects:{id:string;name:string}[]}>('{projects{id name}}');Object.assign(result, { principals, adapters, configuration,identityProjects:catalog.projects }) }
         return result;
       }
       return {};
@@ -99,20 +107,21 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
     return () => { cancelled = true };
   }, [section, projectId, admin, version]);
   const setIdentityError=useCallback((reason:unknown)=>setError(reason instanceof Error?reason.message:'Identity settings could not be updated.'),[]);
-  const change = (name: string, value: unknown) => setDraft(current => ({ ...current, [name]: value }));
-  const matches = (row: Row) => {
+  const text = (key: string) => { const value = draft[key]; return typeof value === 'string' ? value : '' };
+  const change = (name: string, value: string | boolean) => setDraft(current => ({ ...current, [name]: value }));
+  const matches = (row: Searchable) => {
     const terms=search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     const text=[row.id,row.name,row.label,row.content,row.event,row.prompt,row.success_criteria,row.device_name,row.display_name,row.state,row.status,row.strength,row.spec?.kind,row.spec?.time,row.spec?.timezone,row.next_run?date(row.next_run):'',row.expires?date(row.expires):'',row.revoked?'revoked':'',row.id===me.session_id?'this session':'',row.enabled===true?'enabled':row.enabled===false?'paused':''].filter(Boolean).join(' ').toLowerCase();
     return terms.every(term=>text.includes(term));
   };
   const mutate = async (fn: () => Promise<unknown>, message: string, refresh = true) => { const saved=beginSave(); setBusy(true); setError(''); setNotice(''); try { const result = await fn(); if(refresh)saved(); if(section==='models')onCapabilitiesChanged?.(); setNotice(message); if (refresh) setVersion(v => v + 1); return result } catch (exc) { setError(exc instanceof Error ? exc.message : String(exc)); return null } finally { setBusy(false) } };
   const post = (path: string, value: unknown, message: string, method = 'POST') => mutate(() => request(path, body(value, method)), message);
-  const jsonDraft = (key: string, fallback: unknown) => JSON.parse(draft[key] || JSON.stringify(fallback));
+  const jsonDraft = (key: string, fallback: unknown) => JSON.parse(text(key) || JSON.stringify(fallback));
   const confirmDelete = (path: string, message: string) => mutate(() => request(path, { method: 'DELETE' }), message);
-  const textarea = (key: string, label: string, placeholder = '') => <Field label={label}><textarea required={["memoryContent","hookArgv"].includes(key)} value={draft[key] || ''} placeholder={placeholder} onChange={e => change(key, e.target.value)} /></Field>;
-  const input = (key: string, label: string, options: { placeholder?: string; type?: string; defaultValue?: string } = {}) => <Field label={label}><Input required={["provenance","personName","hookCwd"].includes(key)} min={key==='retention'||key==='hookTimeout'?1:undefined} max={key==='retention'?3650:key==='hookTimeout'?60:undefined} value={draft[key] ?? options.defaultValue ?? ''} type={options.type || 'text'} placeholder={options.placeholder} onChange={e => change(key, e.target.value)} /></Field>;
+  const textarea = (key: string, label: string, placeholder = '') => <Field label={label}><textarea required={["memoryContent","hookArgv"].includes(key)} value={text(key)} placeholder={placeholder} onChange={e => change(key, e.target.value)} /></Field>;
+  const input = (key: string, label: string, options: { placeholder?: string; type?: string; defaultValue?: string } = {}) => <Field label={label}><Input required={["provenance","personName","hookCwd"].includes(key)} min={key==='retention'||key==='hookTimeout'?1:undefined} max={key==='retention'?3650:key==='hookTimeout'?60:undefined} value={draft[key] === undefined ? (options.defaultValue ?? '') : text(key)} type={options.type || 'text'} placeholder={options.placeholder} onChange={e => change(key, e.target.value)} /></Field>;
   const action = (label: string, fn: () => unknown, secondary = false) => <Button disabled={busy} variant={secondary ? 'secondary' : 'default'} onClick={fn}>{label}</Button>;
-  const select = (key: string, label: string, values: [string, string][], fallback: string) => <Field label={label}><select value={draft[key] || fallback} onChange={e => change(key, e.target.value)}>{values.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>;
+  const select = (key: string, label: string, values: [string, string][], fallback: string) => <Field label={label}><select value={text(key) || fallback} onChange={e => change(key, e.target.value)}>{values.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>;
 
 
   return <section className={"managers"+(embedded?" managers-embedded":"")} aria-label="Workspace managers">
@@ -122,23 +131,23 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       {error && <div role="alert" className="manager-error">{error}<button onClick={() => setVersion(v => v + 1)}>Retry</button></div>}{notice && <div role="status" className="manager-notice">{notice}</div>}
       {loading && !Object.keys(data).length && !['extensions','automations'].includes(section) ? <Empty>Loading current settings…</Empty> : <>
       {section === 'cloud' && <CloudAccounts search={search}/>}
-      {section === 'models' && <><h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider: Row) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => setTestProvider(provider), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
-      {admin && editingProvider && <ProviderAccountForm key={editingProvider.id} account={editingProvider as any} busy={busy} onCancel={()=>setEditingProvider(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account updated');if(result!==null)setEditingProvider(null);return result}}/>}
-      {admin && <details key={(data.agent_providers || []).some((provider: Row) => provider.secret_configured) ? 'has-account' : 'first-account'} open={!(data.agent_providers || []).some((provider: Row) => provider.secret_configured)}><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={input=>mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account saved')}/></details>}
-      <h2>Installed engines</h2>{(data.engines || []).filter(matches).map((engine: Row) => <Item key={engine.id} title={engine.label} meta={`${engine.installed ? 'Installed' : 'Needs installation'} · ${engineAuthLabel(engine.auth_state)}${engine.version ? ` · ${engine.version}` : ''}`}>
+      {section === 'models' && <><h2>Provider accounts</h2>{(data.agent_providers || []).filter(matches).map((provider) => <Item key={provider.id} title={provider.name || provider.id} meta={`${provider.kind} · ${provider.secret_configured ? 'Credential configured' : 'Credential required'} · ${provider.model || 'Choose model per session'}`}>{action('Test connection', () => setTestProvider(provider), true)}{admin && ['openai','openai-compatible'].includes(provider.kind) && action('Edit account',()=>setEditingProvider(provider),true)}{admin && action('Remove account', () => mutate(() => gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}', { id: provider.id }), 'Provider removed'), true)}</Item>)}
+      {admin && editingProvider && <ProviderAccountForm key={editingProvider.id} account={providerAccount(editingProvider)} busy={busy} onCancel={()=>setEditingProvider(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account updated');if(result!==null)setEditingProvider(null);return result}}/>}
+      {admin && <details key={(data.agent_providers || []).some((provider) => provider.secret_configured) ? 'has-account' : 'first-account'} open={!(data.agent_providers || []).some((provider) => provider.secret_configured)}><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={input=>mutate(()=>gql('mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}',{input}),'Provider account saved')}/></details>}
+      <h2>Installed engines</h2>{(data.engines || []).filter(matches).map((engine) => <Item key={engine.id} title={engine.label} meta={`${engine.installed ? 'Installed' : 'Needs installation'} · ${engineAuthLabel(engine.auth_state)}${engine.version ? ` · ${engine.version}` : ''}`}>
         {action('Inspect capabilities', () => setPreview(engine), true)}{action('Refresh models', () => mutate(async () => { const value = await gql('query($id:String!){engine_models(engine_id:$id)}', { id: engine.id }); setPreview(value); return value }, 'Model catalog refreshed', false), true)}
-        <EngineAuthentication engine={engine} busy={busy} canAuthenticate={(me.principal?.scopes||[]).includes('agent-run')} onAuthenticate={method=>mutate(async()=>{const result=await gql('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}',{id:engine.id,method});if(result.authenticate_engine?.ok!==true)throw new Error(result.authenticate_engine?.message||'The engine did not confirm sign-in.');return result},'Engine sign-in completed')}/>
+        <EngineAuthentication engine={engine} busy={busy} canAuthenticate={(me.principal?.scopes||[]).includes('agent-run')} onAuthenticate={method=>mutate(async()=>{const result=await gql<{authenticate_engine?:{ok?:boolean;message?:string}}>('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}',{id:engine.id,method});if(result.authenticate_engine?.ok!==true)throw new Error(result.authenticate_engine?.message||'The engine did not confirm sign-in.');return result},'Engine sign-in completed')}/>
       </Item>)}{preview && <details open><summary>Selected engine capabilities/catalog</summary><Json value={preview} /></details>}
       {admin && <details><summary>Install a compatible engine</summary><div className="manager-form">{input('registryId', 'Registry package ID')}{action('Refresh registry', () => mutate(() => gql('mutation{refresh_acp_registry}'), 'Registry refreshed'))}{action('Install engine', () => mutate(() => gql('mutation($id:String!){install_acp_runner(registry_id:$id)}', { id: draft.registryId }), 'Engine installed'))}<Json value={data.acp_registry} /></div></details>}
       {me.principal?.id&&<details><summary>Model favorites</summary><ModelFavoritesManager ownerId={me.principal.id} engines={data.engines||[]} accounts={data.agent_providers||[]} search={search}/></details>}
       <p className="manager-help">Choose an engine or model in each chat composer. Account changes do not retarget running sessions. API-key providers and subscription engines use separate billing.</p></>}
 
-      {section === 'agents' && <><h2>Presets for future sessions</h2>{(data.custom_agents || []).filter(matches).map((agent: Row) => <Item key={agent.id} title={agent.name} meta={agent.description}>{action('Inspect', () => setPreview(agent), true)}{admin && action('Edit preset',()=>setEditingPreset(agent),true)}{admin && action('Remove', () => mutate(() => gql('mutation($id:String!){delete_custom_agent(agent_id:$id){deleted}}', { id: agent.id }), 'Agent preset removed'), true)}</Item>)}{preview && <Json value={preview} />}
-      {admin && editingPreset && <AgentPresetEditor engines={(data.engines||[]).filter((row:Row)=>row.installed)} key={editingPreset.id} preset={editingPreset} onCancel={()=>setEditingPreset(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($id:String!,$input:CustomAgentPatchInput!){patch_custom_agent(agent_id:$id,input:$input){id}}',{id:editingPreset.id,input}),'Preset updated for future runs');if(result!==null)setEditingPreset(null);return result}}/>}
-      {admin && <details open><summary>Create agent preset</summary><AgentPresetEditor engines={(data.engines||[]).filter((row:Row)=>row.installed)} onSave={input=>mutate(()=>gql('mutation($input:CustomAgentInput!){create_custom_agent(input:$input){id}}',{input}),'Preset saved')}/></details>}</>}
+      {section === 'agents' && <><h2>Presets for future sessions</h2>{(data.custom_agents || []).filter(matches).map((agent) => <Item key={agent.id} title={agent.name} meta={agent.description}>{action('Inspect', () => setPreview(agent), true)}{admin && action('Edit preset',()=>setEditingPreset(agent),true)}{admin && action('Remove', () => mutate(() => gql('mutation($id:String!){delete_custom_agent(agent_id:$id){deleted}}', { id: agent.id }), 'Agent preset removed'), true)}</Item>)}{preview && <Json value={preview} />}
+      {admin && editingPreset && <AgentPresetEditor engines={(data.engines||[]).filter((row)=>row.installed)} key={editingPreset.id} preset={editingPreset} onCancel={()=>setEditingPreset(null)} onSave={async input=>{const result=await mutate(()=>gql('mutation($id:String!,$input:CustomAgentPatchInput!){patch_custom_agent(agent_id:$id,input:$input){id}}',{id:editingPreset.id,input}),'Preset updated for future runs');if(result!==null)setEditingPreset(null);return result}}/>}
+      {admin && <details open><summary>Create agent preset</summary><AgentPresetEditor engines={(data.engines||[]).filter((row)=>row.installed)} onSave={input=>mutate(()=>gql('mutation($input:CustomAgentInput!){create_custom_agent(input:$input){id}}',{input}),'Preset saved')}/></details>}</>}
 
-      {section === 'memory' && <><h2>Memory with provenance</h2>{!(data.memory || []).length && <Empty>No memory saved. Add facts and decisions that should carry into future sessions.</Empty>}{(data.memory || []).filter(matches).map((memory: Row) => <article key={memory.id} className="manager-memory"><p>{memory.content}</p><small>{memory.provenance} · {memory.project_id ? 'Project' : 'Your account'} · expires {date(memory.expires_at)}{memory.excluded ? ' · Excluded from execution' : ''}</small><div>{action('Edit memory',()=>setEditingMemory(memory),true)}{action(memory.excluded ? 'Include in context' : 'Exclude from context', () => post('/api/workspace/memory', { identifier: memory.id, revision: memory.revision, content: memory.content, provenance: memory.provenance, project_id: memory.project_id || null, retention_days: memory.retention_days, excluded: !memory.excluded }, 'Memory scope updated'), true)}{action('Delete', () => confirmDelete(`/api/workspace/memory/${memory.id}`, 'Memory deleted'), true)}</div></article>)}
-      {editingMemory && <MemoryEditor key={editingMemory.id} memory={editingMemory as any} onCancel={()=>setEditingMemory(null)} onSaved={()=>{setEditingMemory(null);setNotice('Memory updated');setVersion(v=>v+1)}}/>}
+      {section === 'memory' && <><h2>Memory with provenance</h2>{!(data.memory || []).length && <Empty>No memory saved. Add facts and decisions that should carry into future sessions.</Empty>}{(data.memory || []).filter(matches).map((memory) => <article key={memory.id} className="manager-memory"><p>{memory.content}</p><small>{memory.provenance} · {memory.project_id ? 'Project' : 'Your account'} · expires {date(memory.expires_at)}{memory.excluded ? ' · Excluded from execution' : ''}</small><div>{action('Edit memory',()=>setEditingMemory(memory),true)}{action(memory.excluded ? 'Include in context' : 'Exclude from context', () => post('/api/workspace/memory', { identifier: memory.id, revision: memory.revision, content: memory.content, provenance: memory.provenance, project_id: memory.project_id || null, retention_days: memory.retention_days, excluded: !memory.excluded }, 'Memory scope updated'), true)}{action('Delete', () => confirmDelete(`/api/workspace/memory/${memory.id}`, 'Memory deleted'), true)}</div></article>)}
+      {editingMemory && <MemoryEditor key={editingMemory.id} memory={editingMemory} onCancel={()=>setEditingMemory(null)} onSaved={()=>{setEditingMemory(null);setNotice('Memory updated');setVersion(v=>v+1)}}/>}
       <details open><summary>Add memory</summary><div className="manager-form">{textarea('memoryContent', 'Fact or decision')}{input('provenance', 'Source or reason')}{input('retention', 'Retention in days', { type: 'number', defaultValue: '30' })}{action('Save memory', () => post('/api/workspace/memory', { content: draft.memoryContent, provenance: draft.provenance, project_id: projectId, retention_days: Number(draft.retention || 30) }, 'Memory saved'))}{action('Export memory', () => mutate(async () => { const value = await request(`/api/workspace/memory/export${scoped(projectId)}`); download('termx-memory.json', value) }, 'Memory exported', false), true)}</div></details></>}
 
       {section === 'hooks' && <HookSettings search={search} version={version}/>}
@@ -150,10 +159,10 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       {section === 'connections' && <McpManager ownerKey={me.principal?.id?(me.host_id||location.origin)+':'+me.principal.id:undefined} projectId={projectId} admin={admin} search={search} version={version} onChanged={()=>setVersion(value=>value+1)}/>}
 
       {section === 'access' && <>{admin&&<Disclosure title="Host connectivity"><LanTlsSettings/><HostServiceSettings/></Disclosure>}{me.principal?.id && me.session_id && me.host_id && <Disclosure title="Pair a device"><ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/></Disclosure>}<h2>Your sessions</h2><p className="manager-help">{data.access?.role || 'Member'} · {data.access?.runtime_boundary || 'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>
-      {(data.sessions || []).filter(matches).map((session:Row) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>
+      {(data.sessions || []).filter(matches).map((session) => <Item key={session.id} title={session.device_name || 'Unnamed device'} meta={`${session.strength} · expires ${date(session.expires)}${session.revoked ? ' · Revoked' : session.id === me.session_id ? ' · This session' : ''}`}>
         {!session.revoked && action('Revoke session',()=>confirmDelete(`/auth/sessions/${session.id}`,'Session revoked'),true)}</Item>)}
-      {admin && <><h2>People and project access</h2>{(data.principals || []).filter(matches).map((principal:Row) => <Item key={principal.id} title={principal.display_name} meta={`${principal.role || 'No role'} · ${principal.enabled ? 'Enabled' : 'Disabled'}${principal.trusted_execution ? ' · Trusted host execution' : ''}`}>
-        {action('Manage access',()=>{setSelected(principal.id);setDraft({role:principal.role,trusted:!!principal.trusted_execution})},true)}{action('Revoke all devices',()=>confirmDelete(`/auth/admin/principals/${principal.id}/sessions`,'Device sessions revoked'),true)}
+      {admin && <><h2>People and project access</h2>{(data.principals || []).filter(matches).map((principal) => <Item key={principal.id} title={principal.display_name} meta={`${principal.role || 'No role'} · ${principal.enabled ? 'Enabled' : 'Disabled'}${principal.trusted_execution ? ' · Trusted host execution' : ''}`}>
+        {action('Manage access',()=>{setSelected(principal.id);setDraft({role:principal.role??undefined,trusted:!!principal.trusted_execution})},true)}{action('Revoke all devices',()=>confirmDelete(`/auth/admin/principals/${principal.id}/sessions`,'Device sessions revoked'),true)}
       </Item>)}
       {selected && <div className="manager-form">{select('role','Host role',[['admin','Administrator'],['operator','Operator'],['viewer','Viewer']],'viewer')}<label><input type="checkbox" checked={Boolean(draft.trusted)} onChange={e=>change('trusted',e.target.checked)} />Allow trusted host execution (shared OS user)</label>{action('Save role',()=>post(`/auth/admin/principals/${selected}/role`,{role:draft.role || 'viewer',trusted_execution:Boolean(draft.trusted)},'Role updated','PUT'))}
         {projectId && <>{select('projectRole','This project',[['view','Read files and chats'],['operate','Read, edit and run']],'view')}{action('Grant project access',()=>post(`/auth/admin/principals/${selected}/projects/${projectId}`,{scopes:draft.projectRole==='operate' ? ['files-read','files-write','git-read','git-write','agent-view','agent-control','agent-run','terminal-view','terminal-control'] : ['files-read','git-read','agent-view','terminal-view']},'Project access granted','PUT'))}{action('Revoke project access',()=>confirmDelete(`/auth/admin/principals/${selected}/projects/${projectId}`,'Project access revoked'),true)}</>}
@@ -163,17 +172,17 @@ export function Managers({ section: incoming, projectId, sessionId, onSection, o
       <Disclosure title="Groups and resource permissions"><IdentityGroupsManager projects={data.identityProjects||[]} onError={setIdentityError}/></Disclosure>
       <Disclosure title="Audit retention"><AuditRetentionManager onError={setIdentityError}/></Disclosure>
       <Disclosure title="Session policy"><SessionPolicyManager onError={setIdentityError}/></Disclosure>
-      <h2>Sign-in methods</h2>{(data.adapters || []).map((adapter:Row)=><Item key={adapter.id} title={adapter.label} meta={`${adapter.enabled ? 'Enabled' : 'Disabled'} · ${adapter.health} · v${adapter.version}`}>
+      <h2>Sign-in methods</h2>{(data.adapters || []).map((adapter)=><Item key={adapter.id} title={adapter.label} meta={`${adapter.enabled ? 'Enabled' : 'Disabled'} · ${adapter.health} · v${adapter.version}`}>
         {action('Check health',()=>post(`/auth/admin/adapters/${adapter.id}/health`,{},'Method health checked'),true)}{action(adapter.enabled ? 'Disable and revoke sessions' : 'Enable',()=>post(`/auth/admin/adapters/${adapter.id}`,{enabled:!adapter.enabled,session_policy:'revoke'},'Sign-in method updated','PUT'),true)}</Item>)}
       <details><summary>Configure enterprise identity</summary><div className="manager-form"><p className="manager-help">Advanced administrator setup. Keep issuer, signing trust and security consequences visible when testing a provider.</p>{textarea('authConfig','Advanced provider trust configuration',JSON.stringify(data.configuration?.configuration,null,2))}{input('testAdapter','Adapter ID to test')}{input('authEvidence','Signed assertion test evidence (masked)',{type:'password',placeholder:'{"assertion":"…"}'})}
         {action('Test login and policy',()=>mutate(()=>request('/auth/admin/adapters/configuration/test',body({configuration:jsonDraft('authConfig',data.configuration?.configuration),adapter_id:draft.testAdapter,evidence:jsonDraft('authEvidence',{})})),'Identity login and current policy verified',false),true)}
-        {action('Test SSO login',()=>mutate(async()=>{const result=await request<Row>('/auth/admin/adapters/configuration/begin',body({configuration:jsonDraft('authConfig',data.configuration?.configuration),adapter_id:draft.testAdapter}));window.location.assign(result.authorization_url);return result},'SSO test started',false),true)}
+        {action('Test SSO login',()=>mutate(async()=>{const result=await request<AuthTestReply>('/auth/admin/adapters/configuration/begin',body({configuration:jsonDraft('authConfig',data.configuration?.configuration),adapter_id:draft.testAdapter}));window.location.assign(result.authorization_url);return result},'SSO test started',false),true)}
         {select('sessionPolicy','Existing provider sessions',[['revoke','Revoke immediately'],['expire','Keep until expiry']],'revoke')}{action('Activate tested configuration',()=>post('/auth/admin/adapters/configuration',{configuration:jsonDraft('authConfig',data.configuration?.configuration),session_policy:draft.sessionPolicy || 'revoke'},'Tested identity configuration activated','PUT'))}<p className="manager-help">Every configured provider needs a current verified login and policy test. Identity bindings use stable issuer and subject, never email equality.</p></div></details>
-      <details><summary>Host recovery and migration</summary><div className="manager-form">{action('Generate one-use owner recovery code',()=>mutate(async()=>{const result=await request<Row>('/auth/admin/recovery-code',body({}));setPreview(result);return result},'Save this recovery credential privately; it is displayed once',false))}{preview?.recovery_code && <output className="manager-recovery">{preview.recovery_code}</output>}{action('End legacy device migration now',()=>post('/auth/admin/migration/end',{},'Legacy credentials no longer accepted'),true)}{action('Inspect access audit',()=>mutate(async()=>{setPreview(await request('/auth/admin/audit'));return null},'Audit loaded',false),true)}{preview && !preview.recovery_code && <Json value={preview} />}</div></details></>}
+      <details><summary>Host recovery and migration</summary><div className="manager-form">{action('Generate one-use owner recovery code',()=>mutate(async()=>{const result=await request<RecoveryReply>('/auth/admin/recovery-code',body({}));setPreview(result);return result},'Save this recovery credential privately; it is displayed once',false))}{recoveryCode && <output className="manager-recovery">{recoveryCode}</output>}{action('End legacy device migration now',()=>post('/auth/admin/migration/end',{},'Legacy credentials no longer accepted'),true)}{action('Inspect access audit',()=>mutate(async()=>{setPreview(await request('/auth/admin/audit'));return null},'Audit loaded',false),true)}{Boolean(preview) && !recoveryCode && <Json value={preview} />}</div></details></>}
       </>}
       </>}
     </main>
-    <Dialog open={!!testProvider} onOpenChange={open=>{if(!open)setTestProvider(null)}}>{testProvider&&<DialogContent className="provider-test-dialog"><DialogTitle>Test {testProvider.name||testProvider.id}?</DialogTitle><DialogDescription>This sends a short model request to your provider. Provider charges may apply.</DialogDescription><dl><dt>Destination</dt><dd>{testProvider.base_url||'Configured provider endpoint'}</dd><dt>Model</dt><dd>{testProvider.model||'No default model selected'}</dd><dt>Test message</dt><dd>Reply with only OK.</dd></dl>{!testProvider.model&&<p role="alert">Edit this account and choose a default model before sending a test.</p>}<div className="manager-item-actions"><Button variant="secondary" onClick={()=>setTestProvider(null)}>Cancel test</Button><Button disabled={busy||!testProvider.model} onClick={()=>{const provider=testProvider;setTestProvider(null);void mutate(async()=>{const result=await gql('mutation($id:String!){test_agent_provider(provider_id:$id)}',{id:provider.id});const response=result.test_agent_provider;if(response?.status!=='connected'&&response?.ok!==true)throw new Error(response?.message||'The provider did not confirm the test request.');return result},'Provider connection tested',false)}}>Send test request</Button></div></DialogContent>}</Dialog>
+    <Dialog open={!!testProvider} onOpenChange={open=>{if(!open)setTestProvider(null)}}>{testProvider&&<DialogContent className="provider-test-dialog"><DialogTitle>Test {testProvider.name||testProvider.id}?</DialogTitle><DialogDescription>This sends a short model request to your provider. Provider charges may apply.</DialogDescription><dl><dt>Destination</dt><dd>{testProvider.base_url||'Configured provider endpoint'}</dd><dt>Model</dt><dd>{testProvider.model||'No default model selected'}</dd><dt>Test message</dt><dd>Reply with only OK.</dd></dl>{!testProvider.model&&<p role="alert">Edit this account and choose a default model before sending a test.</p>}<div className="manager-item-actions"><Button variant="secondary" onClick={()=>setTestProvider(null)}>Cancel test</Button><Button disabled={busy||!testProvider.model} onClick={()=>{const provider=testProvider;setTestProvider(null);void mutate(async()=>{const result=await gql<{test_agent_provider?:ProviderTestReply}>('mutation($id:String!){test_agent_provider(provider_id:$id)}',{id:provider.id});const response=result.test_agent_provider;if(response?.status!=='connected'&&response?.ok!==true)throw new Error(response?.message||'The provider did not confirm the test request.');return result},'Provider connection tested',false)}}>Send test request</Button></div></DialogContent>}</Dialog>
   </section>;
 }
 export default Managers;
