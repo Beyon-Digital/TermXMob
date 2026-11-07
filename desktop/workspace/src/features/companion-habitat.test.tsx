@@ -1,16 +1,125 @@
-import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
-import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import CompanionHabitat from './CompanionHabitat';
 import {request} from '../lib/api';
+import {expectNoAxeViolations} from '../test-axe';
 import type {CompanionCapabilities} from '../lib/companion-native';
 import type {CompanionRuntime} from '../lib/characters';
-const callbacks=vi.hoisted(()=>({capabilities:undefined as ((value:CompanionCapabilities)=>void)|undefined}));
-vi.mock('../lib/api',()=>({request:vi.fn(),json:(method:string,data:unknown)=>({method,body:JSON.stringify(data)})}));
-vi.mock('../lib/native',()=>({nativeWorkspace:()=>false,isDetachedWindow:()=>false}));
-vi.mock('../components/CharacterSprite',()=>({default:()=> <span role="img" aria-label="Character artwork"/>}));
-vi.mock('../lib/companion-native',()=>({companionCapabilities:async()=>({desktop:true,backend:'native'}),companionHome:vi.fn(),listenCompanionOpen:async()=>()=>{},listenCompanionCapabilities:async(handler:(value:CompanionCapabilities)=>void)=>{callbacks.capabilities=handler;return ()=>{callbacks.capabilities=undefined}}}));
-let runtime:CompanionRuntime;
-beforeEach(()=>{vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()}));runtime={enabled:true,preferences:{enabled:true,size:96,activity:'calm',reduced_motion:false,hidden:[],pinned:[],assignments:{}},pets:Array.from({length:6},(_,index)=>({id:'pet-'+index,session_id:'chat-'+index,task_id:'task-'+index,name:'Agent '+index,state:'idle' as const,pack_id:'robot',pack_revision:1,roaming:index<4}))};vi.mocked(request).mockReset();vi.mocked(request).mockResolvedValue(runtime)});
-afterEach(()=>{cleanup();vi.unstubAllGlobals()});
-it('switches to an in-app habitat after native rendering fails and opens the right conversation',async()=>{const open=vi.fn();render(<CompanionHabitat onOpen={open} onSettings={()=>{}}/>);await screen.findByLabelText('Character home dock');expect(screen.queryByRole('button',{name:'Open Agent 0, idle'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Open Agent 4, idle'})).toBeInTheDocument();act(()=>callbacks.capabilities?.({desktop:false,backend:'in-app',reason:'Native surface unavailable'}));await screen.findByLabelText('Character habitat');fireEvent.click(screen.getByRole('button',{name:'Open Agent 0, idle'}));expect(open).toHaveBeenCalledWith('chat-0');expect(screen.getAllByRole('button',{name:/Open Agent/})).toHaveLength(6)});
-it('removes stale characters after losing the authenticated runtime connection',async()=>{render(<CompanionHabitat onOpen={()=>{}} onSettings={()=>{}}/>);await screen.findByLabelText('Character home dock');vi.mocked(request).mockRejectedValueOnce(new Error('Session locked'));fireEvent(window,new Event('termx-companions-changed'));await waitFor(()=>expect(screen.queryByLabelText('Character home dock')).not.toBeInTheDocument())});
+
+const callbacks = vi.hoisted(() => ({capabilities: undefined as ((value: CompanionCapabilities) => void) | undefined}));
+vi.mock('../lib/api', () => ({request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
+vi.mock('../lib/native', () => ({nativeWorkspace: () => false, isDetachedWindow: () => false}));
+vi.mock('../components/CharacterSprite', () => ({default: () => <span role="img" aria-label="Character artwork" />}));
+vi.mock('../lib/companion-native', () => ({
+  companionCapabilities: async () => ({desktop: true, backend: 'native'}),
+  companionHome: vi.fn(),
+  listenCompanionOpen: async () => () => {},
+  listenCompanionCapabilities: async (handler: (value: CompanionCapabilities) => void) => {
+    callbacks.capabilities = handler;
+    return () => {
+      callbacks.capabilities = undefined;
+    };
+  },
+}));
+
+let runtime: CompanionRuntime;
+const flush = (ms = 0) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+const setHidden = (hidden: boolean) => {
+  Object.defineProperty(document, 'hidden', {configurable: true, value: hidden});
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+};
+
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn()}));
+  runtime = {
+    enabled: true,
+    preferences: {enabled: true, size: 96, activity: 'calm', reduced_motion: false, hidden: [], pinned: [], assignments: {}},
+    pets: Array.from({length: 6}, (_, index) => ({
+      id: 'pet-' + index,
+      session_id: 'chat-' + index,
+      task_id: 'task-' + index,
+      name: 'Agent ' + index,
+      state: 'idle' as const,
+      pack_id: 'robot',
+      pack_revision: 1,
+      roaming: index < 4,
+    })),
+  };
+  vi.mocked(request).mockReset();
+  vi.mocked(request).mockResolvedValue(runtime);
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  setHidden(false);
+  vi.unstubAllGlobals();
+});
+
+it('switches to an in-app habitat after native rendering fails and opens the right conversation', async () => {
+  const open = vi.fn();
+  render(<CompanionHabitat onOpen={open} onSettings={() => {}} />);
+  await screen.findByLabelText('Character home dock');
+  expect(screen.queryByRole('button', {name: 'Open Agent 0, idle'})).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name: 'Open Agent 4, idle'})).toBeInTheDocument();
+  act(() => callbacks.capabilities?.({desktop: false, backend: 'in-app', reason: 'Native surface unavailable'}));
+  await screen.findByLabelText('Character habitat');
+  fireEvent.click(screen.getByRole('button', {name: 'Open Agent 0, idle'}));
+  expect(open).toHaveBeenCalledWith('chat-0');
+  expect(screen.getAllByRole('button', {name: /Open Agent/})).toHaveLength(6);
+});
+
+it('removes stale characters after losing the authenticated runtime connection', async () => {
+  render(<CompanionHabitat onOpen={() => {}} onSettings={() => {}} />);
+  await screen.findByLabelText('Character home dock');
+  vi.mocked(request).mockRejectedValueOnce(new Error('Session locked'));
+  fireEvent(window, new Event('termx-companions-changed'));
+  await waitFor(() => expect(screen.queryByLabelText('Character home dock')).not.toBeInTheDocument());
+});
+
+it('polls the runtime through usePolling: backs off while nothing changes, pauses while hidden, and resumes on return', async () => {
+  vi.useFakeTimers();
+  render(<CompanionHabitat onOpen={() => {}} onSettings={() => {}} />);
+  await flush();
+  expect(request).toHaveBeenCalledTimes(1);
+  await flush(2500);
+  expect(request).toHaveBeenCalledTimes(2);
+  // An unchanged reply doubles the delay, so nothing is due after another 2.5 s.
+  await flush(2500);
+  expect(request).toHaveBeenCalledTimes(2);
+  await flush(2500);
+  expect(request).toHaveBeenCalledTimes(3);
+
+  setHidden(true);
+  await flush(60_000);
+  expect(request).toHaveBeenCalledTimes(3);
+  setHidden(false);
+  await flush();
+  expect(request).toHaveBeenCalledTimes(4);
+});
+
+it('refetches at once when the host announces a character change', async () => {
+  vi.useFakeTimers();
+  render(<CompanionHabitat onOpen={() => {}} onSettings={() => {}} />);
+  await flush();
+  const before = vi.mocked(request).mock.calls.length;
+  act(() => void window.dispatchEvent(new Event('termx-companions-changed')));
+  await flush();
+  expect(vi.mocked(request).mock.calls.length).toBe(before + 1);
+});
+
+it('keeps the rendered characters when a poll returns an identical runtime', async () => {
+  vi.useFakeTimers();
+  render(<CompanionHabitat onOpen={() => {}} onSettings={() => {}} />);
+  await flush();
+  const button = screen.getByRole('button', {name: 'Open Agent 4, idle'});
+  vi.mocked(request).mockResolvedValue(structuredClone(runtime));
+  await flush(2500);
+  expect(screen.getByRole('button', {name: 'Open Agent 4, idle'})).toBe(button);
+});
+
+it('has no accessibility violations and gives every control a button type', async () => {
+  const view = render(<CompanionHabitat onOpen={() => {}} onSettings={() => {}} />);
+  await screen.findByLabelText('Character home dock');
+  await expectNoAxeViolations(view.container);
+  for (const button of view.container.querySelectorAll('button')) expect(button).toHaveAttribute('type', 'button');
+});

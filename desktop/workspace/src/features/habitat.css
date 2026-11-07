@@ -1,0 +1,191 @@
+.companion-habitat {
+  position: fixed;
+  bottom: 40px;
+  left: 260px;
+  z-index: 23;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 5px 28px #0002;
+  font-size: 11px;
+  pointer-events: auto;
+}
+
+.companion-habitat > header {
+  display: flex;
+  align-items: center;
+  padding: 7px 8px;
+  gap: 5px;
+}
+
+.companion-habitat > header > button {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--secondary);
+}
+
+.companion-habitat > header button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.companion-home-title {
+  flex: 1;
+  text-align: left;
+}
+
+.companion-home-title > span {
+  flex: 1;
+}
+
+.habitat-floor {
+  position: relative;
+  height: 135px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.habitat-floor > p {
+  color: var(--secondary);
+  text-align: center;
+  padding-top: 30px;
+  line-height: 1.6;
+}
+
+.habitat-walker {
+  position: absolute;
+  bottom: 3px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  max-width: 100px;
+}
+
+.habitat-walker:active {
+  cursor: grabbing;
+}
+
+.habitat-walker > span:last-child {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 96px;
+  font-size: 9px;
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habitat-walker:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.habitat-docked {
+  display: flex;
+  max-height: 180px;
+  overflow: auto;
+  flex-wrap: wrap;
+  padding: 6px;
+  gap: 4px;
+}
+
+.habitat-docked > button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  flex: 1;
+  min-width: 130px;
+  max-width: 100%;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.habitat-docked > button:hover {
+  background: var(--muted);
+}
+
+.habitat-docked > button > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+}
+
+.habitat-docked small {
+  display: block;
+  color: var(--secondary);
+  margin-top: 3px;
+}
+
+.habitat-empty {
+  padding: 4px 12px 12px;
+  margin: 0;
+  color: var(--secondary);
+}
+
+.companion-menu {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 7px;
+  border-radius: 8px;
+  box-shadow: 0 5px 20px #0004;
+  z-index: 2;
+}
+
+.companion-menu > strong {
+  padding: 7px;
+  font-size: 12px;
+}
+
+.companion-menu > button {
+  text-align: left;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.companion-menu > button:hover {
+  background: var(--muted);
+}
+
+.companion-habitat > .inline-error {
+  display: block;
+  padding: 8px;
+}
+
+.companion-dock {
+  width: 260px;
+}
+
+.companion-in-app:has(.habitat-walker) {
+  background: var(--surface);
+}
+
+@media (max-width: 850px) {
+  .companion-habitat {
+    left: 12px;
+    bottom: 42px;
+  }
+}
