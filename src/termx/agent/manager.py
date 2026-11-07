@@ -53,6 +53,10 @@ from termx.agent.tools import ToolContext, ToolOutcome, default_registry
 from termx.agent import worktrees
 
 T = TypeVar("T")
+
+# Modes that may only inspect the project. Plan mode explores read-only, then
+# submits a plan with `exit_plan`; approval flips it to Agent mode.
+READ_ONLY_MODES = frozenset({"ask", "plan"})
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
 
 
@@ -82,6 +86,7 @@ class AgentManager:
         # persisted event in addition to the per-task subscriber queues.
         self._listeners: set[Callable[[str, dict[str, Any]], None]] = set()
         self._steering: dict[str, list[str]] = defaultdict(list)
+        self._plan_submissions: dict[str, str] = {}
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
         self._computer = ComputerController()
         self._tools = default_registry()
@@ -447,7 +452,7 @@ class AgentManager:
             model = str(conversation["model"])
         agent_limits = dict(custom_agent.get("limits") or {}) if custom_agent else {}
         limits = {**agent_limits, **(limits or {})}
-        mode = "ask" if mode == "ask" else "agent"
+        mode = mode if mode in READ_ONLY_MODES else "agent"
         execution = (execution_mode or "direct").strip().lower()
         if execution not in {"direct", "worktree"}:
             raise ValueError("execution_mode must be 'direct' or 'worktree'")
@@ -545,7 +550,7 @@ class AgentManager:
         self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids})
         await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
         ready = self._task(task_id)
-        if ready["status"] == "planning" and ready.get("mode") == "ask":
+        if ready["status"] == "planning" and ready.get("mode") in READ_ONLY_MODES:
             self._launch(task_id, self._drive(task_id))
         return self.store.get_task(task_id, include_events=True) or ready
 
@@ -563,7 +568,7 @@ class AgentManager:
             self._metrics[task_id] = TaskMetrics()
             self._emit(task_id, "context.snapshot", {"snapshot": _snapshot_event(manifest)})
             history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
-            if task.get("mode") == "ask":
+            if task.get("mode") in READ_ONLY_MODES:
                 self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
                 return
             provider = dict(self._provider(task["provider_id"]))
@@ -591,7 +596,7 @@ class AgentManager:
     async def _resume_planning(self, task_id: str) -> None:
         await self._prepare_task(task_id)
         task = self._task(task_id)
-        if task["status"] == "planning" and task.get("mode") == "ask":
+        if task["status"] == "planning" and task.get("mode") in READ_ONLY_MODES:
             await self._drive(task_id)
 
     async def resolve_approval(
@@ -602,6 +607,7 @@ class AgentManager:
         *,
         remember: str | None = None,
         limits: dict[str, Any] | None = None,
+        feedback: str | None = None,
     ) -> dict[str, Any]:
         task = self._task(task_id)
         approval = self.store.get_approval(approval_id)
@@ -643,6 +649,8 @@ class AgentManager:
             raise ValueError("task is not awaiting approval")
         if approval["status"] != "pending":
             raise ValueError("approval is already resolved")
+        if decision == "revise" and (approval["kind"] != "plan" or task.get("mode") != "plan"):
+            raise ValueError("revise is only available for plans made in plan mode")
         if approval['kind'] == 'budget' and escalation:
             # Validate and commit the real child grant before consuming its UI
             # wrapper. A stale/invalid renewal must stay inspectable on both
@@ -724,7 +732,7 @@ class AgentManager:
         if approval["kind"] == "budget" and decision == "approved" and approval['payload'].get('tree_budget') and not escalation:
             approval = self.tree_budget.approve(task_id, approval_id, next_limits, version=current['version'] if not renew_shared else shared['version'], renew=renew_shared)
         else:
-            approval = self.store.resolve_approval(approval_id, decision)
+            approval = self.store.resolve_approval(approval_id, "revised" if decision == "revise" else decision)
         metrics = self._metrics.get(task_id)
         if metrics is not None and approval.get("resolved_at") and approval.get("created_at"):
             metrics.record_approval_wait(int((approval["resolved_at"] - approval["created_at"]) * 1000))
@@ -751,6 +759,9 @@ class AgentManager:
             self.store.update_task(task_id, status="cancelled", error="Approval denied")
             self._emit(task_id, "task.cancelled", {"message": "Approval denied"})
             return approval
+        if decision == "revise":
+            self._revise_plan(task, feedback)
+            return approval
         if approval["kind"] == "budget":
             if next_limits is None:
                 self._mark_cancelled(task_id)
@@ -762,6 +773,8 @@ class AgentManager:
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
             self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
         elif approval["kind"] == "plan":
+            if task.get("mode") == "plan":
+                self._approve_plan_mode(task)
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
             assert private_payload is not None
@@ -1133,7 +1146,8 @@ class AgentManager:
                         },
                     )
                 history = engine.slim_history(history)
-                read_only = task.get("mode") == "ask"
+                read_only = task.get("mode") in READ_ONLY_MODES
+                plan_mode = task.get("mode") == "plan"
                 turn_started = monotonic()
                 first_token: list[float] = []
                 stream_id = uuid.uuid4().hex[:12]
@@ -1179,6 +1193,8 @@ class AgentManager:
                         # Terminal-parent gate: children may not fan out further.
                         "allow_subagents": task.get("parent_id") is None,
                     }
+                    if plan_mode:
+                        kwargs["plan_mode"] = True
                     if stream_fn is not None:
                         self._emit(
                             task_id,
@@ -1253,6 +1269,10 @@ class AgentManager:
                 if turn.usage:
                     self._emit(task_id, "provider.usage", {"usage": turn.usage})
                 history.extend(turn.output_items)
+                if not turn.calls and plan_mode:
+                    # The model answered without calling exit_plan: its answer is the plan.
+                    self._request_plan_approval(task_id, turn.text or "No plan was produced.", history, step)
+                    return
                 if not turn.calls:
                     result = turn.text or "Task completed."
                     snapshot = metrics.snapshot()
@@ -1270,6 +1290,10 @@ class AgentManager:
                     turn_id=turn.response_id,
                 )
                 if paused:
+                    return
+                submitted_plan = self._plan_submissions.pop(task_id, None)
+                if submitted_plan is not None:
+                    self._request_plan_approval(task_id, submitted_plan, history, step)
                     return
                 runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at}
                 self.store.update_task(task_id, runtime=runtime)
@@ -1292,6 +1316,48 @@ class AgentManager:
                 # terminal transition — completed, failed, cancelled or a
                 # crashed worker — not just the paths that call _finish_state.
                 self.store.expire_task_policy_rules(task_id)
+
+    def submit_plan(self, task_id: str, plan_markdown: str) -> None:
+        """Called by the `exit_plan` tool; `_drive` turns it into a plan approval."""
+        self._plan_submissions[task_id] = plan_markdown
+
+    def _request_plan_approval(
+        self, task_id: str, markdown: str, history: list[dict[str, Any]], step: int
+    ) -> None:
+        text = markdown.strip() or "No plan was produced."
+        plan = {
+            "summary": text.splitlines()[0][:200],
+            "markdown": text,
+            "steps": [],
+            "tools": [],
+            "risks": [],
+        }
+        task = self._task(task_id)
+        runtime = {**(task.get("runtime") or {}), "history": history, "step": step, "started_at": None}
+        self.store.update_task(task_id, status="awaiting_approval", plan=plan, runtime=runtime)
+        self._emit(task_id, "plan.ready", {"plan": plan})
+        approval = self.store.create_approval(
+            task_id,
+            "plan",
+            {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"},
+        )
+        self._emit(task_id, "approval.requested", {"approval": approval})
+        self._emit(task_id, "task.status", {"status": "awaiting_approval"})
+
+    def _append_history(self, task: dict[str, Any], message: str) -> None:
+        runtime = dict(task.get("runtime") or {})
+        runtime["history"] = [*(runtime.get("history") or []), {"role": "user", "content": message}]
+        self.store.update_task(task["id"], runtime=runtime)
+
+    def _revise_plan(self, task: dict[str, Any], feedback: str | None) -> None:
+        note = (feedback or "").strip() or "The plan was not accepted. Revise it."
+        self._append_history(task, f"Revise the plan. Feedback from the user: {note}")
+        self._emit(task["id"], "plan.revised", {"feedback": note})
+        self._launch(task["id"], self._drive(task["id"]))
+
+    def _approve_plan_mode(self, task: dict[str, Any]) -> None:
+        self._append_history(task, "The plan is approved. Implement it now.")
+        self.store.update_task(task["id"], mode="agent")
 
     def _pause_budget(self, task_id: str, history: list[dict[str, Any]],
                       step: int, started_at: float, reason: str) -> None:
@@ -1326,7 +1392,7 @@ class AgentManager:
         turn_id: str | None = None,
     ) -> tuple[bool, list[dict[str, Any]], int]:
         task = self._task(task_id)
-        read_only = task.get("mode") == "ask"
+        read_only = task.get("mode") in READ_ONLY_MODES
         ctx = self._tool_context(task_id, task)
         groups = self._scheduler.schedule(calls, ctx)
         index = 0
@@ -1919,7 +1985,7 @@ class AgentManager:
             task_id=task_id,
             cwd=task["cwd"],
             task=task,
-            read_only=task.get("mode") == "ask",
+            read_only=task.get("mode") in READ_ONLY_MODES,
             cancel=self._cancel.setdefault(task_id, asyncio.Event()),
             emit=lambda event_type, payload: self._emit(task_id, event_type, payload),
             store=self.store,

@@ -997,8 +997,8 @@ class AgentStore:
         return [self._approval(row) for row in rows]
 
     def resolve_approval(self, approval_id: str, decision: str) -> dict[str, Any]:
-        if decision not in {"approved", "denied"}:
-            raise ValueError("decision must be approved or denied")
+        if decision not in {"approved", "denied", "revised"}:
+            raise ValueError("decision must be approved, denied or revised")
         resolved = time()
         with self._lock:
             cursor = self._db.execute(

@@ -94,6 +94,7 @@ class ToolSpec:
     decide: ToolDecider
     description_read_only: str = ""
     expose_read_only: bool = True
+    plan_only: bool = False  # offered to the model only in plan mode
 
     def provider_schema(self, *, read_only: bool = False) -> dict[str, Any]:
         description = self.description_read_only if read_only and self.description_read_only else self.description
@@ -157,7 +158,7 @@ class ToolRegistry:
     )
 
     def provider_tools(
-        self, *, read_only: bool = False, allow_subagents: bool = True
+        self, *, read_only: bool = False, allow_subagents: bool = True, plan_mode: bool = False
     ) -> list[dict[str, Any]]:
         """Function-tool schemas for the provider payload (computer excluded —
         the adapter appends its native or function-shaped computer tool)."""
@@ -165,6 +166,8 @@ class ToolRegistry:
         for name in sorted(self._specs):
             spec = self._specs[name]
             if spec.mutability == "computer":
+                continue
+            if spec.plan_only and not plan_mode:
                 continue
             if read_only and not spec.expose_read_only:
                 continue
