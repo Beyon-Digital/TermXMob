@@ -25,6 +25,7 @@ from termx.graphql.inputs import (
     AgentProviderInput,
     AgentRetentionInput,
     AgentTaskInput,
+    AutoModeInput,
     PolicyRuleInput,
     PolicyRulePatchInput,
     WorktreeActionInput,
@@ -510,6 +511,8 @@ class AgentMutations:
         if engine != "internal":
             if body.mode == "plan":
                 raise HTTPException(status_code=400, detail="Plan mode is only available for Internal tasks; native engines use their own planning")
+            if body.auto is not None and body.auto.enabled:
+                raise HTTPException(status_code=400, detail="Auto mode is only available for Internal tasks")
             try:
                 from termx.mcp.scope import authorize as authorize_mcp
                 task = await state.engines.create_task(
@@ -600,6 +603,7 @@ class AgentMutations:
                 conversation_id=body.conversation_id or None,
                 custom_agent_id=custom_agent_id,
                 custom_agent_snapshot=custom_agent,on_created=mcp_created,
+                auto={"enabled": body.auto.enabled, "ceilings": body.auto.ceilings} if body.auto else None,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
@@ -619,6 +623,19 @@ class AgentMutations:
         ctx.claim('task', task['id'], project_id)
         log_event("agent_task_create", task_id=task["id"], provider_id=body.provider_id)
         return T.AgentTask.wrap(task)
+
+    @strawberry.mutation
+    @resolver
+    def set_task_auto(self, info: Ctx, task_id: str, input: AutoModeInput) -> T.AgentTask:
+        ctx = info.context
+        ctx.require_resource('agent-control', 'task', task_id)
+        try:
+            ctx.state.agent.set_task_auto(task_id, enabled=input.enabled, ceilings=input.ceilings)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return T.AgentTask.wrap(ctx.state.agent_store.get_task(task_id))
 
     @strawberry.mutation
     @resolver

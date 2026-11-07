@@ -100,6 +100,7 @@ type AgentTask {
   updated_at: Float
   artifacts: JSON
   runtime: JSON
+  auto: JSON
   events: JSON
   approvals: JSON
 }
@@ -116,6 +117,7 @@ input AgentTaskInput {
   limits: JSON = null
   mode: String! = "agent"
   execution_mode: String = null
+  auto: AutoModeInput = null
   conversation_id: String = null
   custom_agent_id: String = null
   turn_prompt: String = null
@@ -130,6 +132,11 @@ type ArtifactNode implements Node {
   kind: String!
   version: Int!
   content: JSON
+}
+
+input AutoModeInput {
+  enabled: Boolean! = true
+  ceilings: JSON = null
 }
 
 input CommandInput {
@@ -670,6 +677,7 @@ type Mutation {
   delete_agent_provider(provider_id: String!): Ok!
   test_agent_provider(provider_id: String!): JSON!
   create_agent_task(input: AgentTaskInput!): AgentTask!
+  set_task_auto(task_id: String!, input: AutoModeInput!): AgentTask!
   delete_agent_task(task_id: String!): Ok!
   resolve_agent_approval(task_id: String!, approval_id: String!, input: AgentApprovalInput!): JSON!
   steer_agent_task(task_id: String!, message: String!): JSON!

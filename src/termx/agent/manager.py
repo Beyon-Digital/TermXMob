@@ -48,7 +48,7 @@ from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
 from termx.agent.tree_budget import TreeTimeExceeded
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
-from termx.agent.limits import DEFAULT_LIMITS, resolve_limits
+from termx.agent.limits import DEFAULT_LIMITS, auto_summary, auto_usage, resolve_auto_ceilings, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
 from termx.agent import worktrees
 
@@ -57,6 +57,11 @@ T = TypeVar("T")
 # Modes that may only inspect the project. Plan mode explores read-only, then
 # submits a plan with `exit_plan`; approval flips it to Agent mode.
 READ_ONLY_MODES = frozenset({"ask", "plan"})
+_AUTO_NEEDS_WORKTREE = "Auto mode needs an isolated worktree. Start the task with worktree execution."
+_AUTO_PAUSE_TEXT = {
+    "title": "Auto mode reached a limit. Continue?",
+    "consequence": "Starts a fresh Auto allowance for this task; Auto mode keeps approving low-risk calls",
+}
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
 
 
@@ -417,6 +422,7 @@ class AgentManager:
         conversation_id: str | None = None,
         custom_agent_id: str | None = None,
         custom_agent_snapshot: dict[str, Any] | None = None,
+        auto: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -456,6 +462,12 @@ class AgentManager:
         execution = (execution_mode or "direct").strip().lower()
         if execution not in {"direct", "worktree"}:
             raise ValueError("execution_mode must be 'direct' or 'worktree'")
+        auto_state = None
+        if auto is not None:
+            enabled = bool(auto.get("enabled", True))
+            auto_state = self._auto_state(enabled, resolve_auto_ceilings(auto.get("ceilings")))
+            if enabled:
+                self._require_auto_allowed(mode, execution == "worktree")
         root = Path(cwd).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
@@ -547,7 +559,8 @@ class AgentManager:
         upload_ids = [item["id"] for item in uploads]
         # Provider planning is execution work too. Persist its phase before
         # admission so an exhausted tree cannot bypass planning/plan approval.
-        self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids})
+        self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids,
+                                                 **({"auto": auto_state} if auto_state else {})})
         await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
         ready = self._task(task_id)
         if ready["status"] == "planning" and ready.get("mode") in READ_ONLY_MODES:
@@ -569,7 +582,7 @@ class AgentManager:
             self._emit(task_id, "context.snapshot", {"snapshot": _snapshot_event(manifest)})
             history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
             if task.get("mode") in READ_ONLY_MODES:
-                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
+                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_auto(runtime)})
                 return
             provider = dict(self._provider(task["provider_id"]))
             provider["model"] = str(task["model"])
@@ -579,7 +592,7 @@ class AgentManager:
             self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
             self.store.update_task(task_id, status="awaiting_approval", plan=plan,
                 previous_response_id=response_id,
-                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
+                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_auto(runtime)})
             self._emit(task_id, "plan.ready", {"plan": plan})
             approval = self.store.create_approval(task_id, "plan", {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"})
             self._emit(task_id, "approval.requested", {"approval": approval})
@@ -769,6 +782,9 @@ class AgentManager:
             runtime = dict(task.get("runtime") or {})
             runtime["started_at"] = None
             runtime.pop("tree_budget_resume", None)
+            if str(approval["payload"].get("reason") or "").startswith("auto_") and runtime.get("auto"):
+                # A renewed allowance counts from now, not from when Auto was enabled.
+                runtime["auto"] = {**runtime["auto"], "base_step": int(runtime.get("step") or 0), "turns": 0, "since": time()}
             self.store.update_task(task_id, limits=next_limits, runtime=runtime)
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
             self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
@@ -1077,6 +1093,10 @@ class AgentManager:
                 if reason:
                     self._pause_budget(task_id, history, step, started_at, reason)
                     return
+                breach = self._auto_breach(task, step)
+                if breach:
+                    self._pause_auto(task_id, history, step, started_at, breach)
+                    return
                 parked=(task.get('runtime') or {}).get('tree_pending_calls')
                 if parked:
                     paused,history,step=await self._run_calls(task_id,[self._call(call) for call in parked],history,step,started_at,
@@ -1269,6 +1289,7 @@ class AgentManager:
                 if turn.usage:
                     self._emit(task_id, "provider.usage", {"usage": turn.usage})
                 history.extend(turn.output_items)
+                self._auto_note_turn(task_id)
                 if not turn.calls and plan_mode:
                     # The model answered without calling exit_plan: its answer is the plan.
                     self._request_plan_approval(task_id, turn.text or "No plan was produced.", history, step)
@@ -1277,7 +1298,7 @@ class AgentManager:
                     result = turn.text or "Task completed."
                     snapshot = metrics.snapshot()
                     self._finalize_worktree(task_id)
-                    self.store.update_task(task_id, status="completed", result=result, runtime={}, metrics=snapshot)
+                    self.store.update_task(task_id, status="completed", result=result, runtime=self._carry_auto(self._task(task_id).get("runtime")), metrics=snapshot)
                     self._emit(task_id, "task.metrics", {"metrics": snapshot})
                     self._emit(task_id, "task.completed", {"result": result})
                     return
@@ -1295,7 +1316,8 @@ class AgentManager:
                 if submitted_plan is not None:
                     self._request_plan_approval(task_id, submitted_plan, history, step)
                     return
-                runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at}
+                runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at,
+                           **self._carry_auto(self._task(task_id).get("runtime"))}
                 self.store.update_task(task_id, runtime=runtime)
         except TreeTimeExceeded:
             self._pause_budget(task_id,history,step,started_at,'shared_max_seconds')
@@ -1359,6 +1381,81 @@ class AgentManager:
         self._append_history(task, "The plan is approved. Implement it now.")
         self.store.update_task(task["id"], mode="agent")
 
+    @staticmethod
+    def _auto_state(enabled: bool, ceilings: dict[str, Any], step: int = 0) -> dict[str, Any]:
+        return {"enabled": enabled, "ceilings": ceilings, "base_step": step, "turns": 0, "since": time()}
+
+    @staticmethod
+    def _require_auto_allowed(mode: str, in_worktree: bool) -> None:
+        if mode == "ask":
+            raise ValueError("Ask mode is read-only — Auto mode requires Agent mode")
+        if not in_worktree:
+            raise ValueError(_AUTO_NEEDS_WORKTREE)
+
+    def _auto_enabled(self, task_id: str) -> bool:
+        return bool((((self._task(task_id).get("runtime") or {}).get("auto")) or {}).get("enabled"))
+
+    @staticmethod
+    def _carry_auto(runtime: dict[str, Any] | None) -> dict[str, Any]:
+        """The Auto state, for runtime rewrites that would otherwise drop it."""
+        auto = (runtime or {}).get("auto")
+        return {"auto": auto} if auto else {}
+
+    @staticmethod
+    def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int, int] | None:
+        """(ceiling, limit, used) for the first Auto ceiling reached, else None.
+
+        Token and cost ceilings are stored but not checked until per-model usage
+        and pricing exist.
+        """
+        auto = (task.get("runtime") or {}).get("auto") or {}
+        if not auto.get("enabled"):
+            return None
+        ceilings = auto.get("ceilings") or {}
+        for name, value in auto_usage(auto, step).items():
+            limit = int(ceilings.get(name) or 0)
+            if limit and value >= limit:
+                return name, limit, value
+        return None
+
+    def _park_calls(self, task_id: str, calls: list[ProviderCall], index: int, approved_first: bool) -> None:
+        """Keep the calls not yet run so a budget approval resumes them."""
+        runtime = {**(self._task(task_id).get("runtime") or {}),
+                   "tree_pending_calls": [self._call_payload(call) for call in calls[index:]],
+                   "tree_approved_first": approved_first}
+        self.store.update_task(task_id, runtime=runtime)
+
+    def _pause_auto(self, task_id: str, history: list[dict[str, Any]], step: int,
+                    started_at: float, breach: tuple[str, int, int]) -> None:
+        ceiling, limit, used = breach
+        self._emit(task_id, "auto.ceiling", {"ceiling": ceiling, "limit": limit, "used": used})
+        self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}")
+
+    def _auto_note_turn(self, task_id: str) -> None:
+        runtime = self._task(task_id).get("runtime") or {}
+        auto = runtime.get("auto")
+        if auto and auto.get("enabled"):
+            self.store.update_task(task_id, runtime={**runtime, "auto": {**auto, "turns": int(auto.get("turns") or 0) + 1}})
+
+    def set_task_auto(self, task_id: str, *, enabled: bool,
+                      ceilings: dict[str, Any] | None = None) -> None:
+        """Switch Auto mode on or off mid-task; the next tool call is decided under the new setting."""
+        task = self._task(task_id)
+        if task["status"] in {"completed", "failed", "cancelled"}:
+            raise ValueError("task has finished")
+        runtime = dict(task.get("runtime") or {})
+        previous = runtime.get("auto")
+        if enabled:
+            record = self.store.task_worktree(task_id)
+            self._require_auto_allowed(task.get("mode"), bool(record and record["mode"] == "worktree" and record["status"] == "active"))
+        resolved = resolve_auto_ceilings(ceilings, (previous or {}).get("ceilings"))
+        if previous and (previous.get("enabled") or not enabled):
+            # Counters keep running when only the ceilings change or Auto goes off.
+            runtime["auto"] = {**previous, "enabled": enabled, "ceilings": resolved}
+        else:
+            runtime["auto"] = self._auto_state(enabled, resolved, int(runtime.get("step") or 0))
+        self.store.update_task(task_id, runtime=runtime)
+
     def _pause_budget(self, task_id: str, history: list[dict[str, Any]],
                       step: int, started_at: float, reason: str) -> None:
         task = self._task(task_id)
@@ -1370,11 +1467,11 @@ class AgentManager:
         suggested = {"max_steps": min(100000, max((shared['used_steps'] if shared else step) + chunk, (shared['max_steps'] if shared else task["limits"]["max_steps"])))}
         if shared:suggested['max_seconds']=shared['max_execution_seconds']
         approval = self.store.create_approval(task_id, "budget", {
-            "title": "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
+            "title": _AUTO_PAUSE_TEXT["title"] if reason.startswith("auto_") else "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
             **({'tree_budget':shared,'reuse_grant':reason=='shared_resume' and not shared['reason']} if shared else {}),
             "reason": reason, "completed_steps": step, "limits": task["limits"],
             "suggested_limits": suggested,
-            "consequence": "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
+            "consequence": _AUTO_PAUSE_TEXT["consequence"] if reason.startswith("auto_") else "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
         })
         self._emit(task_id, "task.budget.exhausted", approval["payload"])
         self._emit(task_id, "approval.requested", {"approval": approval})
@@ -1398,6 +1495,11 @@ class AgentManager:
         index = 0
         for group in groups:
             self._check_execution_authority(task_id)
+            breach = None if approved_first and index == 0 else self._auto_breach(self._task(task_id), step)
+            if breach:
+                self._park_calls(task_id, calls, index, False)
+                self._pause_auto(task_id, history, step, started_at, breach)
+                return True, history, step
             preset=self.store.task_agent(task)
             if preset and preset.get('tools'):
                 for entry in group:
@@ -1418,9 +1520,7 @@ class AgentManager:
             positions=[str(step+offset)+':'+hashlib.sha256(json.dumps(self._call_payload(entry.call),sort_keys=True).encode()).hexdigest() for offset,entry in enumerate(group)]
             shared_reason=self.tree_budget.reserve(task_id,positions)
             if shared_reason:
-                current=self._task(task_id)
-                runtime={**(current.get('runtime') or {}),'tree_pending_calls':[self._call_payload(call) for call in calls[index:]],'tree_approved_first':approved_first and index==0}
-                self.store.update_task(task_id,runtime=runtime)
+                self._park_calls(task_id, calls, index, approved_first and index == 0)
                 self._pause_budget(task_id,history,step,started_at,shared_reason)
                 return True,history,step
             if len(group) > 1:
@@ -1461,7 +1561,7 @@ class AgentManager:
                     public_payload={'title':'Browser action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':[]}
                     approval=self.store.create_approval(task_id,'tool',public_payload)
                     self._pending_approval_calls[approval['id']]={**public_payload,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
-                    runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at}
+                    runtime={**(self._task(task_id).get('runtime') or {}),'history':history,'step':step,'started_at':started_at}
                     self.store.update_task(task_id,status='awaiting_approval',runtime=runtime)
                     self._emit(task_id,'approval.requested',{'approval':approval});self._emit(task_id,'task.status',{'status':'awaiting_approval'})
                     self._persist_metrics(task_id)
@@ -1485,6 +1585,10 @@ class AgentManager:
                     index += 1
                     continue
             decision = entry.decision
+            if decision.auto_resolved == "autonomous" and entry.spec is not None and not self._auto_enabled(task_id):
+                # Auto was switched off after this batch was scheduled; the
+                # call is decided again under the current setting.
+                decision = entry.spec.decide(call, self._tool_context(task_id, self._task(task_id)))
             if decision.intent is None and call.type=='function' and call.name in {'write_file','apply_patch'}:
                 from termx.auto_review import canonical_hash
                 exact=canonical_hash({'tool':call.name,'cwd':ctx.cwd,'arguments':call.arguments})
@@ -1556,7 +1660,7 @@ class AgentManager:
                         public={'title':'Action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':remember_options,'policy_intent':decision.intent.to_public() if eligible else None,'policy_source':'Current typed tool / sandbox policy'}
                         approval=self.store.create_approval(task_id,'tool',public)
                         self._pending_approval_calls[approval['id']]={**public,'intent':decision.intent.to_record() if eligible else None,'approval_kind':decision.approval_kind,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
-                        self.store.update_task(task_id,status='awaiting_approval',runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
+                        self.store.update_task(task_id,status='awaiting_approval',runtime={**(self._task(task_id).get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
                         self._emit(task_id,'approval.requested',{'approval':approval});self._persist_metrics(task_id)
                         return True,history,step
                 if checkpoint is not None and checkpoint["side_effect_state"] == "prepared":
@@ -1599,6 +1703,19 @@ class AgentManager:
                         "reason": decision.reason,
                     },
                 )
+                auto_run = (self._task(task_id).get("runtime") or {}).get("auto") or {}
+                if decision.auto_resolved == "autonomous" and auto_run.get("enabled"):
+                    self._emit(
+                        task_id,
+                        "auto.decision",
+                        {
+                            "tool": call.name or call.type,
+                            "call_id": call.call_id,
+                            "risk": decision.intent.risk_class if decision.intent is not None else None,
+                            "rule": "task_auto",
+                            "index": step - int(auto_run.get("base_step") or 0),
+                        },
+                    )
                 if decision.auto_resolved == "deny":
                     # Refused in-band like a policy refusal: the model sees the
                     # denial and can choose a different approach; the task keeps

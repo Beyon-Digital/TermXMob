@@ -250,6 +250,21 @@ class PolicyEngine:
                 required_capabilities=intent.required_capabilities,
                 sandbox_profile=intent.sandbox_profile,
             )
+        # The task-level Auto switch (worktree tasks only, set by the manager)
+        # acts only on calls that would otherwise have asked, so its audit
+        # trail lists approvals it saved, not calls that never needed one.
+        task_auto = bool((((getattr(ctx, "task", None) or {}).get("runtime") or {}).get("auto") or {}).get("enabled"))
+        if task_auto and base.approval_required and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
+            return _PD(
+                True,
+                False,
+                "Autonomous approval",
+                "Auto-approved by Auto mode inside the task's worktree",
+                intent=intent,
+                auto_resolved="autonomous",
+                required_capabilities=intent.required_capabilities,
+                sandbox_profile=intent.sandbox_profile,
+            )
 
         # 5/6. Regex-policy defaults then ask — unchanged UX layer.
         if not base.approval_required:

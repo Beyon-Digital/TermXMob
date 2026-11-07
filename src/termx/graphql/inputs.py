@@ -129,6 +129,14 @@ class AgentImageInput:
 
 
 @strawberry.input
+class AutoModeInput:
+    """Auto mode switch. `ceilings` keys: tool_calls, steps, seconds, tokens, cost_usd."""
+
+    enabled: bool = True
+    ceilings: JSON | None = None
+
+
+@strawberry.input
 class AgentTaskInput:
     prompt: str
     cwd: str
@@ -141,6 +149,7 @@ class AgentTaskInput:
     limits: JSON | None = None
     mode: str = "agent"
     execution_mode: str | None = None
+    auto: AutoModeInput | None = None
     conversation_id: str | None = None
     custom_agent_id: str | None = None
     turn_prompt: str | None = None

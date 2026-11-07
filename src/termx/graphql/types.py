@@ -16,6 +16,7 @@ from typing import Any, Self
 import strawberry
 from strawberry.scalars import JSON
 from strawberry.types import Info
+from termx.agent.limits import auto_summary
 from termx.graphql.errors import resolver
 
 
@@ -617,6 +618,12 @@ class AgentTask(DictBacked):
         value = object.__getattribute__(self, '_d')
         info.context.require_resource('agent-view', 'task', value['id'])
         return context_task_runtime(info.context, value.get('runtime'))
+    @strawberry.field
+    @resolver
+    def auto(self, info: Info) -> JSON | None:
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return auto_summary(value.get('runtime'))
     metrics: JSON | None
     created_at: float | None
     updated_at: float | None
