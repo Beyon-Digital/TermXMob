@@ -119,6 +119,16 @@ class AgentProviderInput:
     model: str = ""
     capabilities: list[str] | None = None
     api_key: str | None = None
+    # {model_id: {context_window, max_output, price_in, price_out, capabilities}}; user values win over discovered ones.
+    model_meta: JSON | None = None
+    wire: str | None = None  # "responses" today; Chat Completions arrives with its adapter
+
+
+@strawberry.input
+class ModelRoutingInput:
+    """{role: {provider_id, model, fallbacks: [{provider_id, model}]}} for orchestrator, worker, planner, summariser."""
+
+    routing: JSON
 
 
 @strawberry.input

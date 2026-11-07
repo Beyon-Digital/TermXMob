@@ -35,8 +35,8 @@ def resolve_limits(value: dict[str, Any] | None = None,
 
 
 # Bounds on one unattended Auto-mode run. A breach stops and asks again.
-# `tokens` and `cost_usd` are stored and validated now but only enforced once
-# per-model usage and pricing exist (model routing phase).
+# `cost_usd` only counts turns whose model has a known price; an unpriced
+# model never trips it (its tokens still count toward `tokens`).
 DEFAULT_AUTO_CEILINGS = {
     "tool_calls": 100,
     "steps": 50,
@@ -70,13 +70,15 @@ def resolve_auto_ceilings(value: dict[str, Any] | None = None,
     return source
 
 
-def auto_usage(auto: dict[str, Any], step: int, now: float | None = None) -> dict[str, int]:
-    """What the current Auto allowance has used: tool calls, provider turns, seconds."""
+def auto_usage(auto: dict[str, Any], step: int, now: float | None = None) -> dict[str, int | float]:
+    """What the current Auto allowance has used: tool calls, provider turns, seconds, tokens, priced cost."""
     now = time() if now is None else now
     return {
         "tool_calls": max(0, step - int(auto.get("base_step") or 0)),
         "steps": int(auto.get("turns") or 0),
         "seconds": int(now - float(auto.get("since") or now)),
+        "tokens": int(auto.get("tokens") or 0),
+        "cost_usd": round(float(auto.get("cost_usd") or 0), 6),
     }
 
 

@@ -17,7 +17,6 @@ from fastapi import HTTPException
 from termx.agent.manager import _resolve_model,_decode_images
 from termx.agent.providers import ProviderCall
 from termx.agent.policy import is_sensitive_path,redact
-from termx.agent.store import configured_models
 from termx.auto_review import ActionEnvelope, ActionBlocked, ReviewRequired, canonical_hash
 from termx.runners.worker import PROTOCOL, MAX_FRAME, TOOLS, frame
 
@@ -41,7 +40,7 @@ class RunnerAgentService:
         return canonical_hash({'provider':provider,'credential_digest':hashlib.sha256((value or '').encode()).hexdigest()})
     def accounts(self,principal):
         self.state.authorization.require_principal(principal,'host-admin')
-        return [{'provider_id':p['id'],'credential_ref':p['id'],'name':p['name'],'models':configured_models(p['model'])} for p in self.store.list_providers() if p['kind'] in {'openai','openai-compatible'} and p.get('secret_configured') and self.state.credentials.get(p['id'])]
+        return [{'provider_id':p['id'],'credential_ref':p['id'],'name':p['name'],'models':p['models']} for p in self.store.list_providers() if p['kind'] in {'openai','openai-compatible'} and p.get('secret_configured') and self.state.credentials.get(p['id'])]
     async def preflight(self,principal,runner_id,provider_id,credential_ref,model=None):
         self.state.authorization.require_principal(principal,'host-admin')
         runner=self.runners.row(principal.id,runner_id)

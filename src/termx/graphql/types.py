@@ -526,10 +526,22 @@ class AgentProvider(DictBacked):
     base_url: str | None
     model: str | None
     models: list[str] | None
+    selected_models: list[str] | None
+    model_catalog: JSON | None
+    model_overrides: JSON | None
+    catalog_refreshed_at: float | None
+    catalog_error: str | None
+    wire: str | None
     capabilities: list[str] | None
     secret_configured: bool | None
     created_at: float | None
     updated_at: float | None
+
+
+@strawberry.type
+class TaskUsage(DictBacked):
+    tokens: int
+    cost_usd: float | None  # null when no turn had a known price
 
 
 @strawberry.type
@@ -624,6 +636,12 @@ class AgentTask(DictBacked):
         value = object.__getattribute__(self, '_d')
         info.context.require_resource('agent-view', 'task', value['id'])
         return auto_summary(value.get('runtime'))
+    @strawberry.field
+    @resolver
+    def usage(self, info: Info) -> TaskUsage:
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return TaskUsage.wrap(info.context.state.agent.task_usage(value['id']))
     metrics: JSON | None
     created_at: float | None
     updated_at: float | None

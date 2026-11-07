@@ -296,7 +296,7 @@ def test_auto_requires_a_worktree(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
-def test_token_and_cost_ceilings_are_stored_but_inert(tmp_path, monkeypatch):
+def test_token_and_cost_ceilings_ignore_turns_that_report_no_usage(tmp_path, monkeypatch):
     async def run() -> None:
         script = [("", [_shell("c1", "rm -rf build-one")]), ("All done.", [])]
         manager, store_, _adapter, task = await _start(

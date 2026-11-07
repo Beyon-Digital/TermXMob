@@ -25,6 +25,7 @@ def termx_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TERMX_ACP_HOME", str(tmp_path / "acp-registry"))
     # Catalogue tests opt in; unrelated tests never start real vendor agents.
     monkeypatch.setenv("TERMX_ENGINE_STARTUP_REFRESH", "0")
+    monkeypatch.setenv("TERMX_PROVIDER_STARTUP_REFRESH", "0")
 
 
 @pytest.fixture(autouse=True)

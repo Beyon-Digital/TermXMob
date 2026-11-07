@@ -1,0 +1,3 @@
+{"details": {"family": "llama"},
+ "model_info": {"general.architecture": "llama", "llama.context_length": 4096},
+ "capabilities": ["completion", "vision"]}

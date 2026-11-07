@@ -2,8 +2,13 @@
 
 One host coordinator owns execution leases. On coordinator startup, uncertain
 leases exhaust the time allowance rather than silently granting replay time.
-Human approval waits have no lease; provider tokens and billed cost are not
-measured. Reservations survive cancellation and renewal.
+Human approval waits have no lease. Reservations survive cancellation and renewal.
+
+Provider tokens and cost are recorded per turn for the tree total. Cost is only
+summed from turns with a known price: an unknown price stays unknown and never
+counts as zero, so ``used_cost_usd`` is None until a priced turn arrives and
+``unpriced_tokens`` shows how much usage it does not cover. Tokens and cost are
+reported here, not enforced (Auto-mode ceilings enforce them).
 """
 from __future__ import annotations
 
@@ -25,6 +30,13 @@ class TreeBudget:
                 CREATE TABLE IF NOT EXISTS agent_tree_step(task TEXT NOT NULL,position TEXT NOT NULL,PRIMARY KEY(task,position));
                 CREATE TABLE IF NOT EXISTS agent_tree_lease(task TEXT PRIMARY KEY,root TEXT NOT NULL,touched REAL NOT NULL);
             ''')
+            columns = {row['name'] for row in store._db.execute('PRAGMA table_info(agent_tree_budget)')}
+            for column, ddl in (('tokens', 'ALTER TABLE agent_tree_budget ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0'),
+                                ('unpriced_tokens', 'ALTER TABLE agent_tree_budget ADD COLUMN unpriced_tokens INTEGER NOT NULL DEFAULT 0'),
+                                ('cost_usd', 'ALTER TABLE agent_tree_budget ADD COLUMN cost_usd REAL')):
+                if column not in columns:
+                    store._db.execute(ddl)
+            store._db.commit()
             with self._transaction():
                 store._db.execute('UPDATE agent_tree_budget SET seconds=max(seconds,max_seconds) WHERE root IN (SELECT root FROM agent_tree_lease)')
                 store._db.execute('DELETE FROM agent_tree_lease')
@@ -83,7 +95,8 @@ class TreeBudget:
                   'shared_max_steps' if row['steps'] >= row['max_steps'] else None)
         return {'root_task_id': row['root'], 'max_steps': row['max_steps'], 'used_steps': row['steps'],
                 'max_execution_seconds': int(row['max_seconds']), 'used_execution_seconds': round(row['seconds'], 3),
-                'active_workers': active, 'version': row['version'], 'reason': reason}
+                'active_workers': active, 'version': row['version'], 'reason': reason,
+                'used_tokens': row['tokens'], 'used_cost_usd': row['cost_usd'], 'unpriced_tokens': row['unpriced_tokens']}
 
     def snapshot(self, task_id):
         with self.store._lock:
@@ -107,6 +120,17 @@ class TreeBudget:
             with self._transaction():
                 self._settle(root)
                 self.store._db.execute('DELETE FROM agent_tree_lease WHERE task=?', (task_id,))
+
+    def record_usage(self, task_id, tokens, cost_usd=None):
+        """Add one provider turn to the tree total. ``cost_usd=None`` means the model's price is unknown."""
+        tokens = max(0, int(tokens or 0))
+        with self.store._lock:
+            root = self.bind(task_id)
+            with self._transaction():
+                if cost_usd is None:
+                    self.store._db.execute('UPDATE agent_tree_budget SET tokens=tokens+?,unpriced_tokens=unpriced_tokens+? WHERE root=?', (tokens, tokens, root))
+                else:
+                    self.store._db.execute('UPDATE agent_tree_budget SET tokens=tokens+?,cost_usd=coalesce(cost_usd,0)+? WHERE root=?', (tokens, float(cost_usd), root))
 
     def reserve(self, task_id, positions):
         positions = list(positions)

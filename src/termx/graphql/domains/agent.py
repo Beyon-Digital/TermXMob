@@ -23,6 +23,7 @@ from termx.workspace.public_events import context_task_snapshot
 from termx.graphql.inputs import (
     AgentApprovalInput,
     AgentProviderInput,
+    ModelRoutingInput,
     AgentRetentionInput,
     AgentTaskInput,
     AutoModeInput,
@@ -115,6 +116,12 @@ class AgentQueries:
     def agent_providers(self, info: Ctx) -> list[T.AgentProvider]:
         info.context.require("agent-view")
         return T.AgentProvider.wrap_all(info.context.state.agent.list_providers())
+
+    @strawberry.field
+    @resolver
+    def model_routing(self, info: Ctx) -> JSON:
+        info.context.require("agent-view")
+        return info.context.state.agent.routing()
 
     @strawberry.field
     @resolver
@@ -437,6 +444,8 @@ class AgentMutations:
                 model=input.model,
                 capabilities=input.capabilities,
                 api_key=input.api_key,
+                model_meta=input.model_meta,
+                wire=input.wire,
             )
         except (ValueError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -459,11 +468,35 @@ class AgentMutations:
 
     @strawberry.mutation
     @resolver
-    async def test_agent_provider(self, info: Ctx, provider_id: str) -> JSON:
+    async def refresh_provider_models(self, info: Ctx, provider_id: str) -> T.AgentProvider:
+        """Ask the provider which models it serves. A failure keeps the old catalog and sets catalog_error."""
         ctx = info.context
         ctx.require_host('ai-settings')
         try:
-            return await ctx.state.agent.test_provider(provider_id)
+            return T.AgentProvider.wrap(await ctx.state.agent.refresh_provider_models(provider_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="provider not found") from exc
+
+    @strawberry.mutation
+    @resolver
+    def set_model_routing(self, info: Ctx, input: ModelRoutingInput) -> JSON:
+        ctx = info.context
+        ctx.require_host('ai-settings')
+        try:
+            routing = ctx.state.agent.validate_routing(input.routing)
+            ctx.state.store.update_agent({"routing": routing})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("agent_model_routing_set", roles=sorted(routing))
+        return routing
+
+    @strawberry.mutation
+    @resolver
+    async def test_agent_provider(self, info: Ctx, provider_id: str, billed: bool = False) -> JSON:
+        ctx = info.context
+        ctx.require_host('ai-settings')
+        try:
+            return await ctx.state.agent.test_provider(provider_id, billed=billed)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
         except (ValueError, RuntimeError) as exc:

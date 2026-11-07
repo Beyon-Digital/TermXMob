@@ -41,6 +41,12 @@ type AgentProvider {
   base_url: String
   model: String
   models: [String!]
+  selected_models: [String!]
+  model_catalog: JSON
+  model_overrides: JSON
+  catalog_refreshed_at: Float
+  catalog_error: String
+  wire: String
   capabilities: [String!]
   secret_configured: Boolean
   created_at: Float
@@ -55,6 +61,8 @@ input AgentProviderInput {
   model: String! = ""
   capabilities: [String!] = null
   api_key: String = null
+  model_meta: JSON = null
+  wire: String = null
 }
 
 input AgentRetentionInput {
@@ -101,6 +109,7 @@ type AgentTask {
   artifacts: JSON
   runtime: JSON
   auto: JSON
+  usage: TaskUsage!
   events: JSON
   approvals: JSON
 }
@@ -614,6 +623,10 @@ input McpToolCallInput {
   arguments: JSON = null
 }
 
+input ModelRoutingInput {
+  routing: JSON!
+}
+
 type Mutation {
   notify(input: NotifyInput!): Ok!
   request_permissions(input: PermissionsInput = null): JSON!
@@ -675,7 +688,9 @@ type Mutation {
   authenticate_engine(engine_id: String!, method_id: String!): JSON!
   save_agent_provider(input: AgentProviderInput!): AgentProvider!
   delete_agent_provider(provider_id: String!): Ok!
-  test_agent_provider(provider_id: String!): JSON!
+  refresh_provider_models(provider_id: String!): AgentProvider!
+  set_model_routing(input: ModelRoutingInput!): JSON!
+  test_agent_provider(provider_id: String!, billed: Boolean! = false): JSON!
   create_agent_task(input: AgentTaskInput!): AgentTask!
   set_task_auto(task_id: String!, input: AutoModeInput!): AgentTask!
   delete_agent_task(task_id: String!): Ok!
@@ -929,6 +944,7 @@ type Query {
   engine_configuration(engine_id: String!, cwd: String = null): JSON!
   engine_task_configuration(task_id: String!): JSON!
   agent_providers: [AgentProvider!]!
+  model_routing: JSON!
   engines: [EngineDescriptor!]!
   acp_registry: JSON!
   engine_probe(engine_id: String!): EngineDescriptor!
@@ -1057,6 +1073,11 @@ type TaskEventEnvelope {
   task_id: String
   payload: JSON
   created_at: Float
+}
+
+type TaskUsage {
+  tokens: Int!
+  cost_usd: Float
 }
 
 type TaskWorktree {

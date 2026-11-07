@@ -343,6 +343,16 @@ class AgentStore:
             self._db.execute('DROP TABLE policy_rules_legacy_scope')
             self._db.execute('CREATE INDEX policy_rules_fingerprint ON policy_rules(fingerprint,action_type)')
             self._db.execute('CREATE INDEX policy_rules_scope ON policy_rules(scope_type,scope_id)')
+        provider_columns = {row["name"] for row in self._db.execute("PRAGMA table_info(providers)")}
+        for col, ddl in (
+            ("model_catalog", "ALTER TABLE providers ADD COLUMN model_catalog TEXT NOT NULL DEFAULT '{}'"),
+            ("model_overrides", "ALTER TABLE providers ADD COLUMN model_overrides TEXT NOT NULL DEFAULT '{}'"),
+            ("catalog_refreshed_at", "ALTER TABLE providers ADD COLUMN catalog_refreshed_at REAL"),
+            ("catalog_error", "ALTER TABLE providers ADD COLUMN catalog_error TEXT"),
+            ("wire", "ALTER TABLE providers ADD COLUMN wire TEXT NOT NULL DEFAULT 'responses'"),
+        ):
+            if col not in provider_columns:
+                self._db.execute(ddl)
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tasks)")}
         if "mode" not in columns:
             self._db.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'")
@@ -413,6 +423,8 @@ class AgentStore:
         model: str,
         capabilities: list[str],
         secret_configured: bool | None = None,
+        model_overrides: dict[str, Any] | None = None,
+        wire: str | None = None,
     ) -> dict[str, Any]:
         now = time()
         provider_id = provider_id.strip()
@@ -452,6 +464,13 @@ class AgentStore:
                     now,
                 ),
             )
+            if model_overrides is not None:
+                self._db.execute(
+                    "UPDATE providers SET model_overrides = ? WHERE id = ?",
+                    (_json(model_overrides), provider_id),
+                )
+            if wire is not None:
+                self._db.execute("UPDATE providers SET wire = ? WHERE id = ?", (wire, provider_id))
             self._db.commit()
         provider = self.get_provider(provider_id)
         if provider is None:  # pragma: no cover - defensive
@@ -476,6 +495,37 @@ class AgentStore:
             )
             self._db.commit()
 
+    def set_provider_catalog(
+        self,
+        provider_id: str,
+        catalog: dict[str, Any] | None,
+        *,
+        error: str | None = None,
+        refreshed_at: float | None = None,
+    ) -> None:
+        """Store a discovered catalog. ``None`` keeps the previous catalog (a failed refresh) and records the error."""
+        with self._lock:
+            if catalog is None:
+                self._db.execute(
+                    "UPDATE providers SET catalog_error = ? WHERE id = ?",
+                    (error or "Model refresh failed", provider_id),
+                )
+            else:
+                self._db.execute(
+                    "UPDATE providers SET model_catalog = ?, catalog_refreshed_at = ?, catalog_error = ? WHERE id = ?",
+                    (_json(catalog), refreshed_at if refreshed_at is not None else time(), error, provider_id),
+                )
+            self._db.commit()
+
+    def clear_provider_catalog(self, provider_id: str) -> None:
+        """The endpoint changed, so the old catalog describes a different server."""
+        with self._lock:
+            self._db.execute(
+                "UPDATE providers SET model_catalog = '{}', catalog_refreshed_at = NULL, catalog_error = NULL WHERE id = ?",
+                (provider_id,),
+            )
+            self._db.commit()
+
     def delete_provider(self, provider_id: str) -> bool:
         with self._lock:
             used = self._db.execute(
@@ -489,13 +539,22 @@ class AgentStore:
 
     @staticmethod
     def _provider(row: sqlite3.Row) -> dict[str, Any]:
+        selected = configured_models(row["model"])
+        catalog = _load_json(row["model_catalog"], {})
         return {
             "id": row["id"],
             "kind": row["kind"],
             "name": row["name"],
             "base_url": row["base_url"],
             "model": row["model"],
-            "models": configured_models(row["model"]),
+            # The user's selection; empty means every discovered model.
+            "selected_models": selected,
+            "models": selected or list(catalog),
+            "model_catalog": catalog,
+            "model_overrides": _load_json(row["model_overrides"], {}),
+            "wire": row["wire"],
+            "catalog_refreshed_at": row["catalog_refreshed_at"],
+            "catalog_error": row["catalog_error"],
             "capabilities": _load_json(row["capabilities"], []),
             "secret_configured": bool(row["secret_configured"]),
             "created_at": row["created_at"],

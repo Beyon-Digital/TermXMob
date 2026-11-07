@@ -67,8 +67,7 @@ class OrchestratorService:
                 else:
                     providers = self.agents.list_providers()
                     provider = next((p for p in providers if p.get('secret_configured')), None)
-                    from termx.agent.store import configured_models
-                    models = configured_models((provider or {}).get('model', ''))
+                    models = (provider or {}).get('models') or []
                     session = ws.create_session(principal, title='Main agent', mode='agent',
                         provider_id=provider['id'] if provider else None,
                         model=models[0] if models else None)

@@ -97,6 +97,13 @@ def register(registry: ToolRegistry) -> None:
                         "type": "string",
                         "description": "Optional rules or persona for the sub-agent to follow.",
                     },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "Optional model id for this sub-agent. Defaults to the configured worker "
+                            "route, else the provider's default model; it never inherits your model."
+                        ),
+                    },
                     "mode": {
                         "type": "string",
                         "enum": ["agent", "ask"],

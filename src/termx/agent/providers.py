@@ -96,9 +96,13 @@ class OpenAIResponsesAdapter:
         native_computer: bool = True,
         timeout_s: float = 90,
         client: httpx.AsyncClient | None = None,
+        max_output_tokens: int | None = None,
     ) -> None:
         base = base_url.rstrip("/")
         self.url = base if base.endswith("/responses") else f"{base}/responses"
+        self.base_url = base[: -len("/responses")] if base.endswith("/responses") else base
+        # The model's discovered or overridden output limit; None keeps the default.
+        self.max_output_tokens = max_output_tokens
         self.model = model
         self.api_key = api_key
         self.capabilities = set(capabilities)
@@ -117,7 +121,35 @@ class OpenAIResponsesAdapter:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    async def test(self) -> str:
+    async def test(self, *, billed: bool = False) -> str:
+        """Check the connection with the free model-list request.
+
+        A rejected key and an unlisted model fail differently. The billed
+        ``/responses`` call only runs on request, or when the provider cannot
+        list models at all.
+        """
+        if not billed:
+            from termx.agent.discovery import discover_models, model_listed
+
+            try:
+                models = await discover_models(
+                    {"base_url": self.base_url}, self.api_key, client=self.client,
+                    timeout_s=min(self.timeout_s, 15.0),
+                )
+            except ProviderError as exc:
+                if exc.status_code not in {404, 405, 501}:
+                    raise  # a bad key, outage, rate limit or bad body must not spend money
+                models = None  # listing unsupported: fall back to one billed call
+            if models is not None:
+                if models and self.model and not model_listed(self.model, models):
+                    raise ProviderError(
+                        f"Connected, but model '{self.model}' is not offered by this provider",
+                        status_code=404,
+                    )
+                return f"Connected. {len(models)} model{'s' if len(models) != 1 else ''} available."
+        return await self._billed_test()
+
+    async def _billed_test(self) -> str:
         body = await self._post(
             {
                 "model": self.model,
@@ -258,7 +290,7 @@ class OpenAIResponsesAdapter:
                 "screen-capture utilities."
             ),
             "tools": tools,
-            "max_output_tokens": 2200,
+            "max_output_tokens": self.max_output_tokens or 2200,
         }
         if previous_response_id:
             payload["previous_response_id"] = previous_response_id
@@ -797,6 +829,10 @@ class ChatGPTResponsesAdapter(OpenAIResponsesAdapter):
                          native_computer=False, timeout_s=timeout_s)
         self.accounts = accounts
         self.account_id = account_id
+
+    async def test(self, *, billed: bool = False) -> str:
+        # The plan route has no free listing request, so sign-in state is the check.
+        return await self._billed_test()
 
     @staticmethod
     def _plan_payload(payload):

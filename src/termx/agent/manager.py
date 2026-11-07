@@ -8,7 +8,7 @@ import mimetypes
 import shutil
 import uuid
 from collections import defaultdict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import monotonic, time
@@ -21,7 +21,8 @@ from termx.agent.context.engine import (
     checkpoint_message_payload,
     estimate_tokens,
 )
-from termx.agent.metrics import TaskMetrics
+from termx.agent.discovery import ProviderCatalogue, clean_overrides, discover_models, merge_meta, model_info
+from termx.agent.metrics import TaskMetrics, usage_tokens
 from termx.agent.observation import (
     ObservationTracker,
     crop_region,
@@ -47,6 +48,7 @@ from termx.agent.runtime import ProviderHttpRuntime
 from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
 from termx.agent.tree_budget import TreeTimeExceeded
+from termx.config import parse_routing
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
 from termx.agent.limits import DEFAULT_LIMITS, auto_summary, auto_usage, resolve_auto_ceilings, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
@@ -63,6 +65,17 @@ _AUTO_PAUSE_TEXT = {
     "consequence": "Starts a fresh Auto allowance for this task; Auto mode keeps approving low-risk calls",
 }
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
+
+
+@dataclass(frozen=True)
+class Route:
+    """Where a task's turns go: provider, model, that model's metadata and its fallbacks."""
+
+    provider_id: str
+    model: str
+    meta: dict[str, Any]
+    fallbacks: tuple[tuple[str, str], ...] = ()
+    source: str = "default"  # explicit | role | default
 
 
 class AgentManager:
@@ -99,6 +112,7 @@ class AgentManager:
         self.execution_authority: Callable[[str], None] | None = None
         self._scheduler = CallScheduler(self._tools)
         self._http = ProviderHttpRuntime()
+        self.catalogue = ProviderCatalogue(self.store, self._fetch_catalog)
         self._metrics: dict[str, TaskMetrics] = {}
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
@@ -350,6 +364,8 @@ class AgentManager:
         model: str,
         capabilities: list[str] | None,
         api_key: str | None = None,
+        model_meta: dict[str, Any] | None = None,
+        wire: str | None = None,
     ) -> dict[str, Any]:
         current = self.store.get_provider(provider_id)
         if provider_id.startswith("chatgpt-") or (current and current["kind"] == "chatgpt"):
@@ -358,6 +374,9 @@ class AgentManager:
             raise ValueError("provider kind must be openai or openai-compatible")
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("provider URL must use HTTP or HTTPS")
+        if wire is not None and wire != "responses":
+            raise ValueError("provider wire must be 'responses' (Chat Completions arrives with its adapter)")
+        overrides = clean_overrides(model_meta) if model_meta is not None else None
         # These are account declarations, not a probe of model entitlement or
         # permission to invoke a billed operation. Preserve declarations on
         # credential rotation when the caller omits this optional field.
@@ -377,6 +396,8 @@ class AgentManager:
         # Config or key changed: drop the pooled client so the next adapter
         # does not reuse a stale base URL or credential.
         self._http.evict(provider_id)
+        # A refresh already in flight was started against the old settings.
+        self.catalogue.invalidate(provider_id)
         provider = self.store.put_provider(
             provider_id,
             kind=kind,
@@ -385,13 +406,141 @@ class AgentManager:
             model=model,
             capabilities=allowed,
             secret_configured=configured,
+            model_overrides=overrides,
+            wire=wire,
         )
+        if current and current["base_url"] != provider["base_url"]:
+            # The old catalog describes a different server.
+            self.store.clear_provider_catalog(provider_id)
+            provider = self.store.get_provider(provider_id) or provider
         return provider
 
-    async def test_provider(self, provider_id: str) -> dict[str, str]:
+    async def test_provider(self, provider_id: str, *, billed: bool = False) -> dict[str, str]:
+        """Check the connection with the free model-list request; ``billed`` runs one real model call instead."""
         provider = self._provider(provider_id)
-        message = await self._adapter(provider).test()
+        try:
+            model = _resolve_model(provider, None)
+        except ValueError:
+            model = ""  # nothing selected or discovered yet; the check reports the connection only
+        adapter = self._adapter({**provider, "model": model})
+        message = await (adapter.test(billed=True) if billed else adapter.test())
         return {"status": "connected", "message": message}
+
+    async def refresh_provider_models(self, provider_id: str) -> dict[str, Any]:
+        """Discover the provider's models. A failed refresh keeps the old catalog and sets ``catalog_error``."""
+        return await self.catalogue.refresh(provider_id)
+
+    async def _fetch_catalog(self, provider: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        if provider["kind"] == "chatgpt":
+            fetched_at = time()
+            models = await self.chatgpt.models(provider["id"])
+            return {m["slug"]: model_info("chatgpt", fetched_at) for m in models}
+        timeout = float(self._settings().provider_timeout_s) if self._settings else 15.0
+        return await discover_models(
+            provider, self.credentials.get(provider["id"]) or "", timeout_s=min(timeout, 15.0)
+        )
+
+    # Model routing -------------------------------------------------
+
+    def routing(self) -> dict[str, dict[str, Any]]:
+        return dict(self._settings().routing) if self._settings else {}
+
+    def validate_routing(self, routing: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Check a routing table against the configured providers and their models; returns it normalised."""
+        cleaned = parse_routing(routing)
+        for role, route in cleaned.items():
+            for target in [route, *route["fallbacks"]]:
+                provider = self.store.get_provider(target["provider_id"])
+                if provider is None:
+                    raise ValueError(f"{role}: provider '{target['provider_id']}' is not configured")
+                if target["model"] and target["model"] not in provider["models"]:
+                    raise ValueError(f"{role}: model '{target['model']}' is not available on {provider['name']}")
+        return cleaned
+
+    @staticmethod
+    def task_role(task: dict[str, Any]) -> str:
+        if task.get("parent_id"):
+            return "worker"
+        return "planner" if task.get("mode") == "plan" else "orchestrator"
+
+    def resolve_route(
+        self, role: str, task: dict[str, Any] | None = None, *, default_provider_id: str | None = None
+    ) -> Route:
+        """Pick provider and model for ``role``. Explicit task value > role route > provider default.
+
+        ``task`` carries the explicit ``provider_id`` and ``model`` when the caller chose them. A role
+        route that no longer matches a configured provider or model is skipped, not an error, so a stale
+        setting cannot stop tasks from starting. Raises KeyError for an unknown explicit provider and
+        ValueError for a model the provider does not offer.
+        """
+        task = task or {}
+        explicit_provider = str(task.get("provider_id") or "").strip()
+        explicit_model = str(task.get("model") or "").strip()
+        configured = self.routing().get(role) or {}
+        role_route = self._usable_target(configured) if configured else None
+        provider_id = model = None
+        source = "default"
+        if explicit_model:
+            provider_id = explicit_provider or (role_route or ("", ""))[0] or default_provider_id
+            model, source = explicit_model, "explicit"
+        elif explicit_provider:
+            provider_id, source = explicit_provider, "explicit"
+            if role_route and role_route[0] == explicit_provider and role_route[1]:
+                model, source = role_route[1], "role"
+        elif role_route:
+            provider_id, model, source = role_route[0], role_route[1], "role"
+        else:
+            provider_id = default_provider_id
+        if not provider_id:
+            raise KeyError("")  # no explicit provider, no usable role route, no default
+        provider = dict(self._provider(provider_id))
+        chosen = _resolve_model(provider, model)
+        fallbacks = tuple(
+            (item["provider_id"], item.get("model", "")) for item in configured.get("fallbacks") or []
+        )
+        return Route(provider_id, chosen, self.model_meta(provider, chosen), fallbacks, source)
+
+    @staticmethod
+    def _stream_fn(adapter: Any) -> Any:
+        return getattr(adapter, "stream_turn", None) if getattr(adapter, "supports_streaming", False) else None
+
+    def _fallback_targets(self, task: dict[str, Any], provider: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Configured fallbacks for the task's role, resolved. Stale and repeated targets are skipped."""
+        tried = {(provider["id"], provider["model"])}
+        for fallback in self.routing().get(self.task_role(task), {}).get("fallbacks") or []:
+            try:
+                target = dict(self._provider(fallback["provider_id"]))
+                target["model"] = _resolve_model(target, fallback.get("model") or None)
+            except (KeyError, ValueError):
+                continue
+            if (target["id"], target["model"]) not in tried:
+                tried.add((target["id"], target["model"]))
+                yield target
+
+    def _usable_target(self, target: dict[str, Any]) -> tuple[str, str] | None:
+        provider = self.store.get_provider(str(target.get("provider_id") or ""))
+        if provider is None:
+            return None
+        model = str(target.get("model") or "")
+        if model and model not in provider["models"]:
+            return None
+        return provider["id"], model
+
+    def task_usage(self, task_id: str) -> dict[str, Any]:
+        """Tokens and USD cost so far. Cost is None when no turn had a known price, never zero."""
+        task = self._task(task_id)
+        metrics = self._metrics[task_id].snapshot() if task_id in self._metrics else (task.get("metrics") or {})
+        return {
+            "tokens": int(metrics.get("input_tokens") or 0) + int(metrics.get("output_tokens") or 0),
+            "cost_usd": metrics.get("cost_usd"),
+        }
+
+    def model_meta(self, provider: dict[str, Any], model: str) -> dict[str, Any]:
+        """Discovered metadata for one model with the user's overrides on top. Unknown values are None."""
+        return merge_meta(
+            (provider.get("model_catalog") or {}).get(model),
+            (provider.get("model_overrides") or {}).get(model),
+        )
 
     def delete_provider(self, provider_id: str) -> bool:
         current = self.store.get_provider(provider_id)
@@ -487,14 +636,19 @@ class AgentManager:
         try:
             images = _decode_images(attachments)
             try:
-                provider = dict(self._provider(provider_id))
+                route = self.resolve_route(
+                    self.task_role({"parent_id": parent_id, "mode": mode}),
+                    {"provider_id": provider_id, "model": model},
+                )
+                provider = dict(self._provider(route.provider_id))
             except KeyError:
                 missing = provider_id or "(none selected)"
                 raise ValueError(
                     f"Model provider '{missing}' is not configured. Add a provider account under "
                     "Managers → Models & engines, then choose it in the composer's model picker."
                 ) from None
-            chosen = _resolve_model(provider, model)
+            provider_id = route.provider_id
+            chosen = route.model
             provider["model"] = chosen
             adapter = self._adapter(provider)
             bounded = self._limits(limits)
@@ -784,7 +938,8 @@ class AgentManager:
             runtime.pop("tree_budget_resume", None)
             if str(approval["payload"].get("reason") or "").startswith("auto_") and runtime.get("auto"):
                 # A renewed allowance counts from now, not from when Auto was enabled.
-                runtime["auto"] = {**runtime["auto"], "base_step": int(runtime.get("step") or 0), "turns": 0, "since": time()}
+                runtime["auto"] = {**runtime["auto"], "base_step": int(runtime.get("step") or 0), "turns": 0,
+                                   "tokens": 0, "cost_usd": 0.0, "since": time()}
             self.store.update_task(task_id, limits=next_limits, runtime=runtime)
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
             self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
@@ -1044,6 +1199,7 @@ class AgentManager:
         workers = list(self._workers.values()) + watchers
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
+        await self.catalogue.stop()
         await self._computer.release_all()
         await self.runbooks.shutdown()
         await self._http.aclose()
@@ -1195,11 +1351,7 @@ class AgentManager:
                         },
                     )
 
-                stream_fn = (
-                    getattr(adapter, "stream_turn", None)
-                    if getattr(adapter, "supports_streaming", False)
-                    else None
-                )
+                stream_fn = self._stream_fn(adapter)
 
                 async def _request() -> Any:
                     attempt_no[0] += 1
@@ -1253,19 +1405,50 @@ class AgentManager:
                         )
                     self._emit(task_id, event_type, payload)
 
-                turn = await self._budget_await(task_id, _race_cancel(
-                    retrying(
-                        _request,
-                        emit=_emit_retry,
-                        cancel=cancel,
-                        # Once a delta is visible, transparently restarting the
-                        # stream would duplicate text in replay — fail instead.
-                        may_retry=lambda: not first_token,
-                    ),
-                    cancel,
-                ))
+                try:
+                    turn = await self._budget_await(task_id, _race_cancel(
+                        retrying(
+                            _request,
+                            emit=_emit_retry,
+                            cancel=cancel,
+                            # Once a delta is visible, transparently restarting the
+                            # stream would duplicate text in replay — fail instead.
+                            may_retry=lambda: not first_token,
+                        ),
+                        cancel,
+                    ))
+                except Exception as failure:
+                    if isinstance(failure, TreeTimeExceeded) or cancel.is_set() or first_token:
+                        raise
+                    # Same-provider retries are exhausted. Try each configured
+                    # fallback once, for this turn only.
+                    for next_provider in self._fallback_targets(task, provider):
+                        reason = classify(failure)
+                        self._emit(task_id, "provider.fallback", {
+                            "from": {"provider_id": provider["id"], "model": provider["model"]},
+                            "to": {"provider_id": next_provider["id"], "model": next_provider["model"]},
+                            "reason_class": reason.kind, "status_code": reason.status_code,
+                        })
+                        provider, adapter = next_provider, self._adapter(next_provider)
+                        stream_fn = self._stream_fn(adapter)
+                        try:
+                            turn = await self._budget_await(task_id, _race_cancel(
+                                retrying(_request, emit=_emit_retry, cancel=cancel, max_attempts=1,
+                                         may_retry=lambda: not first_token),
+                                cancel,
+                            ))
+                            break
+                        except Exception as next_failure:
+                            if isinstance(next_failure, TreeTimeExceeded) or cancel.is_set() or first_token:
+                                raise
+                            failure = next_failure
+                    else:
+                        raise  # every fallback failed: the original error fails the task
                 stream_ms = int((monotonic() - turn_started) * 1000)
-                metrics.record_provider(stream_ms, turn.usage)
+                meta = self.model_meta(provider, provider["model"])
+                cost = metrics.record_provider(stream_ms, turn.usage, (meta["price_in"], meta["price_out"]))
+                tokens = usage_tokens(turn.usage)
+                self.tree_budget.record_usage(task_id, tokens, cost)
                 if stream_fn is not None:
                     first_ms = int((first_token[0] - turn_started) * 1000) if first_token else None
                     metrics.record_provider_stream(first_ms, stream_ms)
@@ -1287,9 +1470,12 @@ class AgentManager:
                 if turn.text:
                     self._emit(task_id, "assistant.message", {"text": turn.text})
                 if turn.usage:
-                    self._emit(task_id, "provider.usage", {"usage": turn.usage})
+                    self._emit(task_id, "provider.usage", {
+                        "usage": turn.usage, "model": provider["model"],
+                        "cost_usd": cost, "tokens": tokens,
+                    })
                 history.extend(turn.output_items)
-                self._auto_note_turn(task_id)
+                self._auto_note_turn(task_id, tokens, cost)
                 if not turn.calls and plan_mode:
                     # The model answered without calling exit_plan: its answer is the plan.
                     self._request_plan_approval(task_id, turn.text or "No plan was produced.", history, step)
@@ -1383,7 +1569,8 @@ class AgentManager:
 
     @staticmethod
     def _auto_state(enabled: bool, ceilings: dict[str, Any], step: int = 0) -> dict[str, Any]:
-        return {"enabled": enabled, "ceilings": ceilings, "base_step": step, "turns": 0, "since": time()}
+        return {"enabled": enabled, "ceilings": ceilings, "base_step": step, "turns": 0,
+                "tokens": 0, "cost_usd": 0.0, "since": time()}
 
     @staticmethod
     def _require_auto_allowed(mode: str, in_worktree: bool) -> None:
@@ -1402,18 +1589,18 @@ class AgentManager:
         return {"auto": auto} if auto else {}
 
     @staticmethod
-    def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int, int] | None:
+    def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int | float, int | float] | None:
         """(ceiling, limit, used) for the first Auto ceiling reached, else None.
 
-        Token and cost ceilings are stored but not checked until per-model usage
-        and pricing exist.
+        The cost ceiling only sees turns with a known price, so an unpriced
+        model never trips it; the token ceiling still counts its tokens.
         """
         auto = (task.get("runtime") or {}).get("auto") or {}
         if not auto.get("enabled"):
             return None
         ceilings = auto.get("ceilings") or {}
         for name, value in auto_usage(auto, step).items():
-            limit = int(ceilings.get(name) or 0)
+            limit = ceilings.get(name) or 0
             if limit and value >= limit:
                 return name, limit, value
         return None
@@ -1426,16 +1613,22 @@ class AgentManager:
         self.store.update_task(task_id, runtime=runtime)
 
     def _pause_auto(self, task_id: str, history: list[dict[str, Any]], step: int,
-                    started_at: float, breach: tuple[str, int, int]) -> None:
+                    started_at: float, breach: tuple[str, int | float, int | float]) -> None:
         ceiling, limit, used = breach
         self._emit(task_id, "auto.ceiling", {"ceiling": ceiling, "limit": limit, "used": used})
         self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}")
 
-    def _auto_note_turn(self, task_id: str) -> None:
+    def _auto_note_turn(self, task_id: str, tokens: int = 0, cost_usd: float | None = None) -> None:
+        """Count a provider turn against the Auto allowance. An unknown price adds tokens but no cost."""
         runtime = self._task(task_id).get("runtime") or {}
         auto = runtime.get("auto")
         if auto and auto.get("enabled"):
-            self.store.update_task(task_id, runtime={**runtime, "auto": {**auto, "turns": int(auto.get("turns") or 0) + 1}})
+            self.store.update_task(task_id, runtime={**runtime, "auto": {
+                **auto,
+                "turns": int(auto.get("turns") or 0) + 1,
+                "tokens": int(auto.get("tokens") or 0) + tokens,
+                "cost_usd": float(auto.get("cost_usd") or 0) + (cost_usd or 0.0),
+            }})
 
     def set_task_auto(self, task_id: str, *, enabled: bool,
                       ceilings: dict[str, Any] | None = None) -> None:
@@ -2487,6 +2680,25 @@ class AgentManager:
                 "error": "sub-agents cannot spawn sub-agents (max depth 1)",
             }
         agent = str(call.arguments.get("agent") or "").strip() or "Sub-agent"
+        # The child picks its own model: the call's `model`, else the worker route,
+        # else the parent provider's default. It never inherits the parent's model.
+        requested_model = str(call.arguments.get("model") or "").strip()
+        try:
+            try:
+                child_route = self.resolve_route(
+                    "worker", {"model": requested_model}, default_provider_id=task["provider_id"]
+                )
+            except ValueError:
+                if not requested_model:
+                    raise
+                # A model the worker route's provider lacks may belong to the parent's provider.
+                child_route = self.resolve_route(
+                    "worker", {"provider_id": task["provider_id"], "model": requested_model}
+                )
+        except KeyError:
+            return {"ok": False, "error": "No model provider is available for the sub-agent"}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
         instructions = str(call.arguments.get("instructions") or "").strip()
         child_prompt = prompt
         if instructions:
@@ -2578,7 +2790,7 @@ class AgentManager:
             child = await _race_cancel(self.create_task(
             prompt=child_prompt,
             cwd=child_cwd,
-            provider_id=task["provider_id"],
+            provider_id=child_route.provider_id,
             limits={
                 "max_steps": min(24, parent_limits["max_steps"]),
                 "max_seconds": min(900, parent_limits["max_seconds"]),
@@ -2586,7 +2798,7 @@ class AgentManager:
             },
             mode=child_mode,
             execution_mode=child_execution,
-            model=str(task.get("model") or "") or None,
+            model=child_route.model,
             # A child's own cancellation must never signal its siblings or
             # coordinator. The outer race observes cancellation during planning.
             cancel=asyncio.Event(),
@@ -2975,6 +3187,7 @@ class AgentManager:
                                            model=provider["model"],
                                            timeout_s=self._settings().provider_timeout_s if self._settings else 300)
         key = self.credentials.get(provider["id"]) or ""
+        provider = {**provider, "meta": self.model_meta(provider, provider["model"])}
         return self._adapter_factory(provider, key)
 
     def _default_adapter(self, provider: dict[str, Any], key: str) -> ProviderAdapter:
@@ -2985,6 +3198,7 @@ class AgentManager:
             capabilities=provider["capabilities"],
             native_computer=provider["kind"] == "openai",
             timeout_s=self._settings().provider_timeout_s if self._settings else 300,
+            max_output_tokens=(provider.get("meta") or {}).get("max_output"),
         )
         adapter.client = self._http.client_for(
             provider["id"],
@@ -3276,7 +3490,8 @@ def _slim_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:
-    models = configured_models(str(provider.get("model") or ""))
+    # The user's selection, or every discovered model when nothing is selected.
+    models = list(provider.get("models") or configured_models(str(provider.get("model") or "")))
     if not models:
         raise ValueError("provider has no model configured")
     chosen = (requested or "").strip()

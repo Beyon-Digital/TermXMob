@@ -261,6 +261,39 @@ class AgentPrefs:
     provider_timeout_s: int = 300
     engines: dict[str, dict[str, Any]] = field(default_factory=dict)
     acp_runners: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # {role: {provider_id, model, fallbacks: [{provider_id, model}]}} for the roles in ROUTING_ROLES.
+    routing: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+ROUTING_ROLES = ("orchestrator", "worker", "planner", "summariser")
+
+
+def parse_routing(raw: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw, dict):
+        raise ValueError("agent.routing must be an object")
+    if raw.keys() - set(ROUTING_ROLES):
+        raise ValueError(f"routing roles are {', '.join(ROUTING_ROLES)}")
+
+    def target(item: Any, where: str) -> dict[str, str]:
+        if not isinstance(item, dict) or item.keys() - {"provider_id", "model", "fallbacks"}:
+            raise ValueError(f"{where} must be an object with provider_id and model")
+        provider_id, model = item.get("provider_id"), item.get("model", "")
+        if not isinstance(provider_id, str) or not provider_id.strip() or "\0" in provider_id:
+            raise ValueError(f"{where}.provider_id must be a non-empty string")
+        if not isinstance(model, str) or "\0" in model:
+            raise ValueError(f"{where}.model must be a string")
+        return {"provider_id": provider_id.strip(), "model": model.strip()}
+
+    routing: dict[str, dict[str, Any]] = {}
+    for role, route in raw.items():
+        fallbacks = route.get("fallbacks", []) if isinstance(route, dict) else None
+        if not isinstance(fallbacks, list) or len(fallbacks) > 8:
+            raise ValueError(f"routing.{role}.fallbacks must be a list of at most 8 targets")
+        routing[role] = {
+            **target(route, f"routing.{role}"),
+            "fallbacks": [target(item, f"routing.{role}.fallbacks") for item in fallbacks],
+        }
+    return routing
 
 
 def _agent_limits(value: dict[str, Any] | None = None) -> dict[str, int]:
@@ -271,7 +304,7 @@ def _agent_limits(value: dict[str, Any] | None = None) -> dict[str, int]:
 def _agent_prefs(raw: dict[str, Any]) -> AgentPrefs:
     if not isinstance(raw, dict):
         raise ValueError("agent configuration must be an object")
-    if raw.keys() - {"limits", "provider_timeout_s", "engines", "acp_runners"}:
+    if raw.keys() - {"limits", "provider_timeout_s", "engines", "acp_runners", "routing"}:
         raise ValueError("unknown agent configuration field")
     timeout = raw.get("provider_timeout_s", 300)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
@@ -338,7 +371,8 @@ def _agent_prefs(raw: dict[str, Any]) -> AgentPrefs:
                 raise ValueError(f"{name}.{key} must be between 0 and {maximum} seconds")
     return AgentPrefs(limits=_agent_limits(raw.get("limits")), provider_timeout_s=timeout,
                       engines={name: dict(cfg) for name, cfg in engines.items()},
-                      acp_runners={name: dict(cfg) for name, cfg in runners.items()})
+                      acp_runners={name: dict(cfg) for name, cfg in runners.items()},
+                      routing=parse_routing(raw.get("routing", {})))
 
 
 @dataclass
