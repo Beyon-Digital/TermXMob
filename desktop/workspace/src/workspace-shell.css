@@ -56,3 +56,5 @@
 
 /* A lone conversation does not need a second row of Chat tabs. */
 .workspace-shell .dock-workspace[data-single-chat=true]>.dock-conversation>.dock-pane-header{display:none}
+
+.add-project-form{margin-top:8px}.add-project-form .button{margin-top:4px}.add-project-error{margin:0 0 12px;font-size:12px;line-height:1.5;color:var(--destructive)}

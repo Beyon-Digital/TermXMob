@@ -80,3 +80,5 @@
 @media(max-width:850px){.workbench .file-explorer{width:165px}.workbench .editor-empty small{max-width:220px;text-align:center;line-height:1.6}.workbench .bottom-panel>nav{gap:12px}.workbench .editor-tab-actions{padding:0 2px}}
 @media(max-width:560px){.workbench .file-explorer{width:145px;min-width:130px}.workbench .editor-empty>button{gap:9px;flex-direction:column}.workbench .editor-empty p{font-size:12px}.workbench .editor-tab{min-width:100px}.workbench .editor-breadcrumbs{padding:0 7px}.workbench .bottom-panel>nav{gap:8px;padding:0 8px}.workbench .bottom-panel>nav button{font-size:10px}.problem-row{align-items:flex-start;flex-direction:column;gap:3px}}
 @media(prefers-reduced-motion:reduce){.dock-workspace .dock-pane-header>svg{transition:none}}
+
+.explorer-empty-state{display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:14px;font-size:12px;line-height:1.6;color:var(--secondary)}.explorer-empty-state p{margin:0}.terminal-empty{margin:0;padding:8px 12px;font-size:12px;color:var(--secondary)}
