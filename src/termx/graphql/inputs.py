@@ -121,7 +121,7 @@ class AgentProviderInput:
     api_key: str | None = None
     # {model_id: {context_window, max_output, price_in, price_out, capabilities}}; user values win over discovered ones.
     model_meta: JSON | None = None
-    wire: str | None = None  # "responses" today; Chat Completions arrives with its adapter
+    wire: str | None = None  # "responses" (default) or "chat" (Chat Completions)
 
 
 @strawberry.input

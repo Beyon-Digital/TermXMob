@@ -42,6 +42,7 @@ from termx.agent.policy import (
     redact,
 )
 from termx.agent.providers import (
+    OpenAIChatAdapter,
     OpenAIResponsesAdapter,
     ProviderAdapter,
     ProviderCall,
@@ -379,8 +380,8 @@ class AgentManager:
             raise ValueError("provider kind must be openai or openai-compatible")
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("provider URL must use HTTP or HTTPS")
-        if wire is not None and wire != "responses":
-            raise ValueError("provider wire must be 'responses' (Chat Completions arrives with its adapter)")
+        if wire is not None and wire not in {"responses", "chat"}:
+            raise ValueError("provider wire must be 'responses' or 'chat'")
         overrides = clean_overrides(model_meta) if model_meta is not None else None
         # These are account declarations, not a probe of model entitlement or
         # permission to invoke a billed operation. Preserve declarations on
@@ -547,6 +548,21 @@ class AgentManager:
             (provider.get("model_overrides") or {}).get(model),
         )
 
+    def tools_supported(self, provider: dict[str, Any], model: str) -> bool:
+        """False only when the provider or the user says this model cannot call tools.
+
+        A provider that declares none of ``shell``, ``functions`` or ``computer`` offers no tools. A user
+        override that lists capabilities without ``tools`` turns tools off for that model.
+        Discovery alone never does: an unknown capability list stays usable.
+        """
+        declared = set(provider.get("capabilities") or [])
+        if not declared & {"shell", "functions", "computer"}:
+            return False
+        meta = self.model_meta(provider, model)
+        if "capabilities" in (meta.get("overridden") or []):
+            return "tools" in (meta.get("capabilities") or [])
+        return True
+
     def delete_provider(self, provider_id: str) -> bool:
         current = self.store.get_provider(provider_id)
         if current and current["kind"] == "chatgpt":
@@ -655,6 +671,11 @@ class AgentManager:
             provider_id = route.provider_id
             chosen = route.model
             provider["model"] = chosen
+            if mode == "agent" and not self.tools_supported(provider, chosen):
+                raise ValueError(
+                    f"Model '{chosen}' cannot call tools, so Agent and Auto modes are unavailable. "
+                    "Use Ask or Plan mode, or choose another model."
+                )
             adapter = self._adapter(provider)
             bounded = self._limits(limits)
             task = self.store.create_task(
@@ -823,6 +844,14 @@ class AgentManager:
             raise ValueError("approval is already resolved")
         if decision == "revise" and (approval["kind"] != "plan" or task.get("mode") != "plan"):
             raise ValueError("revise is only available for plans made in plan mode")
+        if decision == "approved" and approval["kind"] == "plan" and task.get("mode") == "plan":
+            provider = self._provider(task["provider_id"])
+            model = str(task.get("model") or _resolve_model(provider, None))
+            if not self.tools_supported(provider, model):
+                raise ValueError(
+                    f"Model '{model}' cannot call tools, so the plan cannot be carried out in Agent mode. "
+                    "Switch to a model that can call tools."
+                )
         if approval['kind'] == 'budget' and escalation:
             # Validate and commit the real child grant before consuming its UI
             # wrapper. A stale/invalid renewal must stay inspectable on both
@@ -3333,11 +3362,15 @@ class AgentManager:
         return self._adapter_factory(provider, key)
 
     def _default_adapter(self, provider: dict[str, Any], key: str) -> ProviderAdapter:
-        adapter = OpenAIResponsesAdapter(
+        capabilities = provider["capabilities"]
+        if not self.tools_supported(provider, provider["model"]):
+            # A model that cannot call tools gets a plain conversation: no function tools.
+            capabilities = [c for c in capabilities if c not in {"shell", "functions"}]
+        adapter = (OpenAIChatAdapter if provider.get("wire") == "chat" else OpenAIResponsesAdapter)(
             base_url=provider["base_url"],
             model=provider["model"],
             api_key=key,
-            capabilities=provider["capabilities"],
+            capabilities=capabilities,
             native_computer=provider["kind"] == "openai",
             timeout_s=self._settings().provider_timeout_s if self._settings else 300,
             max_output_tokens=(provider.get("meta") or {}).get("max_output"),

@@ -75,8 +75,10 @@ def test_save_provider_accepts_overrides_and_rejects_bad_ones(tmp_path, monkeypa
         saved = data(client, _SAVE, "save_agent_provider", {"input": {
             **base, "model_meta": {"fake-model": {"context_window": 4096}}, "wire": "responses"}}, HEADERS)
         assert saved["model_overrides"] == {"fake-model": {"context_window": 4096}}
-        for bad in ({"model_meta": {"fake-model": {"context_window": 0}}}, {"wire": "chat"}):
+        for bad in ({"model_meta": {"fake-model": {"context_window": 0}}}, {"wire": "soap"}):
             assert err_status(client, _SAVE, {"input": {**base, **bad}}, HEADERS) == 400
+        chat = data(client, _SAVE, "save_agent_provider", {"input": {**base, "wire": "chat"}}, HEADERS)
+        assert chat["wire"] == "chat"
 
 
 def test_set_model_routing_validates_and_model_routing_reads_it_back(tmp_path, monkeypatch):

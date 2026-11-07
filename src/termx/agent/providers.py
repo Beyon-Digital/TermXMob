@@ -5,9 +5,11 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
+from termx.agent.chat_wire import ChatStream, chat_tools, messages_from_items, response_from_chat
 from termx.agent.policy import redact
 
 
@@ -415,9 +417,7 @@ class OpenAIResponsesAdapter:
         if not isinstance(body, dict):
             raise ProviderError("Provider returned an invalid response")
         if body.get("error"):
-            error = body["error"]
-            message = error.get("message") if isinstance(error, dict) else str(error)
-            raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider request failed"))
+            raise ProviderError(_error_text(body["error"], "Provider request failed"))
         return body
 
     async def _post_stream(
@@ -455,63 +455,141 @@ class OpenAIResponsesAdapter:
         on_event: Any,
     ) -> dict[str, Any]:
         final: dict[str, Any] | None = None
-        async with client.stream("POST", self.url, json=payload, headers=self.request_headers()) as response:
-            if response.is_error:
-                detail = await response.aread()
-                raise ProviderError(
-                    _provider_http_error(response.status_code, detail[:1000].decode("utf-8", "replace")),
-                    status_code=response.status_code,
-                    retry_after_s=_retry_after(response.headers),
-                )
-            event_type = ""
-            async for raw_line in response.aiter_lines():
-                line = raw_line.strip()
-                if not line:
-                    event_type = ""
-                    continue
-                if line.startswith("event:"):
-                    event_type = line[6:].strip()
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    event = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(event, dict):
-                    continue
-                kind = str(event.get("type") or event_type)
-                if kind == "response.output_text.delta":
-                    delta = str(event.get("delta") or "")
-                    if delta and on_delta is not None:
-                        on_delta(delta)
-                elif kind in {
-                    "response.function_call_arguments.delta",
-                    "response.custom_tool_call_input.delta",
-                }:
-                    if on_event is not None:
-                        on_event(kind, {key: value for key, value in event.items() if key != "type"})
-                elif kind in {"response.completed", "response.incomplete", "response.failed"}:
-                    candidate = event.get("response")
-                    if isinstance(candidate, dict):
-                        final = candidate
-                elif kind == "error":
-                    error = event.get("error")
-                    message = error.get("message") if isinstance(error, dict) else str(error)
-                    raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider stream failed"))
+        async for event_type, event in _sse_events(client, self.url, payload, self.request_headers()):
+            kind = str(event.get("type") or event_type)
+            if kind == "response.output_text.delta":
+                delta = str(event.get("delta") or "")
+                if delta and on_delta is not None:
+                    on_delta(delta)
+            elif kind in {
+                "response.function_call_arguments.delta",
+                "response.custom_tool_call_input.delta",
+            }:
+                if on_event is not None:
+                    on_event(kind, {key: value for key, value in event.items() if key != "type"})
+            elif kind in {"response.completed", "response.incomplete", "response.failed"}:
+                candidate = event.get("response")
+                if isinstance(candidate, dict):
+                    final = candidate
+            elif kind == "error":
+                raise ProviderError(_error_text(event.get("error"), "Provider stream failed"))
         if final is None:
             # An HTTP 200 stream can still terminate before its terminal SSE
             # event. Let the existing bounded retry policy recover only when
             # no visible output has been emitted; it never replays tool effects.
             raise ProviderError("Provider stream ended without a completion event", network=True)
         if final.get("error"):
-            error = final["error"]
-            message = error.get("message") if isinstance(error, dict) else str(error)
-            raise ProviderError(f"{error.get('code', '')}: {message}" if isinstance(error, dict) and error.get("code") else str(message or "Provider request failed"))
+            raise ProviderError(_error_text(final["error"], "Provider request failed"))
         return final
+
+
+class OpenAIChatAdapter(OpenAIResponsesAdapter):
+    """Chat Completions for Ollama, vLLM, OpenRouter, LM Studio and other compatible servers.
+
+    Every request is built as a Responses payload first, so instructions, tool
+    selection and plan mode stay identical to the parent. ``_chat_request``
+    translates that payload to chat messages at the transport seam, and replies
+    are translated back to Responses-shaped bodies, which keeps the manager's
+    history, ``test()``, ``plan()`` and the streaming callbacks unchanged.
+    """
+
+    def __init__(self, *, base_url: str, **kwargs: Any) -> None:
+        base = base_url.rstrip("/").removesuffix("/chat/completions")
+        super().__init__(base_url=base, **kwargs)
+        self.native_computer = False  # chat has no native computer tool
+        self.url = f"{base}/chat/completions"
+
+    def _token_limit_key(self) -> str:
+        host = (urlsplit(self.base_url).hostname or "").lower()
+        return "max_completion_tokens" if host == "api.openai.com" else "max_tokens"
+
+    def _chat_request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        items = payload["input"]
+        request: dict[str, Any] = {
+            "model": payload["model"],
+            "messages": messages_from_items(
+                payload.get("instructions") or "",
+                [{"role": "user", "content": items}] if isinstance(items, str) else items,
+            ),
+            self._token_limit_key(): payload["max_output_tokens"],
+        }
+        if payload.get("tools"):
+            request["tools"] = chat_tools(payload["tools"])
+        if payload.get("stream"):
+            request["stream"] = True
+            request["stream_options"] = {"include_usage": True}
+        return request
+
+    def _turn_payload(self, **kwargs: Any) -> dict[str, Any]:
+        # Chat has no server-side response chaining: the local transcript is the history.
+        kwargs["previous_response_id"] = None
+        return super()._turn_payload(**kwargs)
+
+    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return _responses_body(await super()._post(self._chat_request(payload)))
+
+    async def _stream_with(
+        self, client: httpx.AsyncClient, payload: dict[str, Any], on_delta: Any, on_event: Any
+    ) -> dict[str, Any]:
+        stream = ChatStream()
+        async for _, event in _sse_events(client, self.url, self._chat_request(payload), self.request_headers()):
+            if event.get("error"):
+                raise ProviderError(_error_text(event["error"], "Provider stream failed"))
+            text, arguments = stream.feed(event)
+            if text and on_delta is not None:
+                on_delta(text)
+            if on_event is not None:
+                for call_id, fragment in arguments:
+                    on_event("response.function_call_arguments.delta", {"call_id": call_id, "delta": fragment})
+        if not stream.finished:
+            # Same recovery contract as the Responses stream: retryable only before visible output.
+            raise ProviderError("Provider stream ended without a completion event", network=True)
+        return _responses_body(stream.body())
+
+
+def _responses_body(chat_body: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return response_from_chat(chat_body)
+    except ValueError as exc:
+        raise ProviderError(str(exc)) from exc
+
+
+async def _sse_events(
+    client: httpx.AsyncClient, url: str, payload: dict[str, Any], headers: dict[str, str]
+) -> Any:
+    """Yield ``(event_type, data)`` for each JSON object in a POST's SSE feed, stopping at ``[DONE]``."""
+    async with client.stream("POST", url, json=payload, headers=headers) as response:
+        if response.is_error:
+            detail = await response.aread()
+            raise ProviderError(
+                _provider_http_error(response.status_code, detail[:1000].decode("utf-8", "replace")),
+                status_code=response.status_code,
+                retry_after_s=_retry_after(response.headers),
+            )
+        event_type = ""
+        async for raw_line in response.aiter_lines():
+            line = raw_line.strip()
+            if not line:
+                event_type = ""
+            elif line.startswith("event:"):
+                event_type = line[6:].strip()
+            elif line.startswith("data:"):
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict):
+                    yield event_type, event
+
+
+def _error_text(error: Any, default: str) -> str:
+    message = error.get("message") if isinstance(error, dict) else str(error)
+    if isinstance(error, dict) and error.get("code"):
+        return f"{error['code']}: {message}"
+    return str(message or default)
 
 
 def _redact_value(value: Any) -> Any:
