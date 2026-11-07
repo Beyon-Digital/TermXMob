@@ -125,6 +125,14 @@ class AgentProviderInput:
 
 
 @strawberry.input
+class ReassignNodeInput:
+    """The model a task-graph node moves to; omit the provider to stay on the main agent's provider."""
+
+    provider_id: str | None = None
+    model: str | None = None
+
+
+@strawberry.input
 class ModelRoutingInput:
     """{role: {provider_id, model, fallbacks: [{provider_id, model}]}} for orchestrator, worker, planner, summariser."""
 

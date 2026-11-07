@@ -682,6 +682,9 @@ type Mutation {
   delete_display(display_id: String!): Ok!
   rtc_offer(input: RtcOfferInput!): JSON!
   rtc_ice(session_id: String!, candidate: JSON!): Ok!
+  retry_node(node_id: String!): OrchestratorBoard!
+  reassign_node(node_id: String!, input: ReassignNodeInput!): OrchestratorBoard!
+  cancel_node(node_id: String!): OrchestratorBoard!
   refresh_acp_registry: JSON!
   install_acp_runner(registry_id: String!): JSON!
   update_agent_configuration(input: JSON!): JSON!
@@ -750,6 +753,42 @@ input NotifyInput {
 
 type Ok {
   ok: Boolean!
+}
+
+type OrchestratorBoard {
+  nodes: [OrchestratorNode!]!
+  rollup: OrchestratorRollup!
+}
+
+type OrchestratorNode {
+  id: String!
+  title: String!
+  role: String!
+  mode: String!
+  isolation: String
+  depends_on: [String!]!
+  blocked_by: [String!]!
+  task_id: String
+  status: String!
+  attempts: Int!
+  max_attempts: Int!
+  last_event_at: Float
+  result_summary: String!
+  error: String!
+  provider_id: String
+  model: String
+  tokens: Int!
+  cost_usd: Float
+  created_at: Float
+  updated_at: Float
+}
+
+type OrchestratorRollup {
+  total: Int!
+  counts: JSON!
+  percent_complete: Int!
+  tokens: Int!
+  cost_usd: Float
 }
 
 input PairInput {
@@ -945,6 +984,7 @@ type Query {
   engine_configuration(engine_id: String!, cwd: String = null): JSON!
   engine_task_configuration(task_id: String!): JSON!
   agent_providers: [AgentProvider!]!
+  orchestrator_board: OrchestratorBoard!
   model_routing: JSON!
   engines: [EngineDescriptor!]!
   acp_registry: JSON!
@@ -973,6 +1013,11 @@ type Query {
   runbook(runbook_id: String!): RunbookDetail!
   runbook_runs(runbook_id: String = null): [RunbookRun!]!
   runbook_run(run_id: String!): RunbookRun!
+}
+
+input ReassignNodeInput {
+  provider_id: String = null
+  model: String = null
 }
 
 input RtcOfferInput {

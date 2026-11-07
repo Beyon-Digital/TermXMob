@@ -942,6 +942,7 @@ class WorkspaceService:
         self._closed=True
         self.state.agent._listeners.discard(self._on_event)
         await self.orchestrator.native.close()
+        await self.orchestrator.graph.close()
         for worker in list(self._workers):
             worker.cancel()
         await asyncio.gather(*self._workers,return_exceptions=True)

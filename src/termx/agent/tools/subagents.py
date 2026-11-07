@@ -107,6 +107,25 @@ def _review_engine_spawn(call,ctx):
         return PolicyDecision(False,False,'Engine target is unavailable','Current engine and project execution authority are required')
 
 
+def _review_node(reason, run_all):
+    """Approval prompt that names the real task-graph nodes this call would start or restart."""
+    def decide(call, ctx):
+        service = getattr(ctx.manager, 'orchestrator', None)
+        if not service:
+            return PolicyDecision(False, False, 'Coordination is unavailable', 'No managed main conversation is bound')
+        try:
+            nodes = service.graph.preview(service.actor_for_task(ctx.task_id), None if run_all else str(call.arguments.get('node_id') or ''))
+        except (KeyError, ValueError, PermissionError, HTTPException):
+            return PolicyDecision(False, False, 'Task graph is unavailable', 'Current main agent and execution authority are required')
+        if not nodes:
+            return PolicyDecision(False, False, 'No node is ready', 'No pending node has all of its dependencies completed')
+        model = str(call.arguments.get('model') or call.arguments.get('provider_id') or '')
+        lines = ['- ' + node['title'] + ' (' + node['mode'] + ' mode, ' + (model or node.get('model') or 'default model') + '): '
+            + node['prompt'][:200] for node in nodes]
+        return PolicyDecision(False, True, reason, 'Each runs as its own isolated agent with the normal budgets and approvals:\n' + '\n'.join(lines))
+    return decide
+
+
 def register(registry: ToolRegistry) -> None:
     empty={'type':'object','properties':{},'additionalProperties':False}
     registry.register(ToolSpec(name='list_agent_engines',description='Main agent only: inspect configured native and ACP engines, installation/sign-in state, and honest steering/resume/approval/budget capabilities. Does not authenticate or run an engine.',
@@ -156,6 +175,38 @@ def register(registry: ToolRegistry) -> None:
         description='Main agent only: stop active work in an owned delegated child conversation. Refuses direct-user-owned children. Does not delete its conversation or result.',
         parameters={**session_parameters,'required':['session_id']},mutability='write',parallel_safe=False,
         approval='never',execute=_managed_session,decide=decide_never,expose_read_only=False))
+    node_id = {'type': 'object', 'properties': {'node_id': {'type': 'string', 'description': 'A node ID returned by plan_nodes or node_status.'}},
+        'required': ['node_id'], 'additionalProperties': False}
+    registry.register(ToolSpec(name='plan_nodes',
+        description='Main agent only: record a task graph. Each node has a key, title, prompt, optional role, mode (ask or agent) and depends_on (keys from this call or earlier node IDs). Nothing runs until start_ready. Each node later runs as its own isolated top-level task; at most 20 nodes per call.',
+        parameters={'type': 'object', 'properties': {'nodes': {'type': 'array', 'items': {'type': 'object', 'properties': {
+            'key': {'type': 'string'}, 'title': {'type': 'string'}, 'prompt': {'type': 'string'}, 'role': {'type': 'string'},
+            'mode': {'type': 'string', 'enum': ['agent', 'ask']}, 'depends_on': {'type': 'array', 'items': {'type': 'string'}}},
+            'required': ['title', 'prompt'], 'additionalProperties': False}}}, 'required': ['nodes'], 'additionalProperties': False},
+        mutability='write', parallel_safe=False, approval='never', execute=_managed_session, decide=decide_never, expose_read_only=False))
+    registry.register(ToolSpec(name='start_ready',
+        description='Main agent only: start every pending node whose dependencies have all completed (a few at a time). Completed dependency results are passed to the node as untrusted evidence. Call again after nodes finish; use node_status with wait_seconds to wait.',
+        parameters={'type': 'object', 'properties': {}, 'additionalProperties': False}, mutability='external', parallel_safe=False, approval='always',
+        execute=_managed_session, decide=_review_node('Start planned agent tasks', True),
+        expose_read_only=False))
+    registry.register(ToolSpec(name='node_status',
+        description='Main agent only: inspect task-graph nodes (status, attempts, summary, error, tokens, cost) and a rollup. Optionally name one node. wait_seconds (up to 120) waits for a running node to change state first. A stalled node has been quiet past the threshold; it is still running.',
+        parameters={'type': 'object', 'properties': {'node_id': {'type': 'string'}, 'wait_seconds': {'type': 'integer'}}, 'additionalProperties': False},
+        mutability='read', parallel_safe=True, approval='never', execute=_managed_session, decide=decide_never, expose_read_only=False))
+    registry.register(ToolSpec(name='retry_node',
+        description='Main agent only: run a failed, stalled or cancelled node again (stopping a stalled one first). A node gets at most 2 attempts per model; after that use reassign_node.',
+        parameters=node_id, mutability='external', parallel_safe=False, approval='always', execute=_managed_session,
+        decide=_review_node('Retry an agent task', False), expose_read_only=False))
+    registry.register(ToolSpec(name='reassign_node',
+        description="Main agent only: move a failed, stalled, cancelled or pending node to another configured provider/model and run it with a fresh attempt count. The model must differ from the node's current one.",
+        parameters={'type': 'object', 'properties': {'node_id': {'type': 'string'}, 'provider_id': {'type': 'string'}, 'model': {'type': 'string'}},
+            'required': ['node_id'], 'additionalProperties': False},
+        mutability='external', parallel_safe=False, approval='always', execute=_managed_session,
+        decide=_review_node('Run an agent task on another model', False),
+        expose_read_only=False))
+    registry.register(ToolSpec(name='cancel_node',
+        description='Main agent only: cancel a node and every node that depends on it. Completed nodes are kept. Does not delete anything.',
+        parameters=node_id, mutability='write', parallel_safe=False, approval='never', execute=_managed_session, decide=decide_never, expose_read_only=False))
     registry.register(
         ToolSpec(
             name="await_subagents",

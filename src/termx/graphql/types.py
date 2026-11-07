@@ -553,6 +553,52 @@ class TaskContext(DictBacked):
 
 
 @strawberry.type
+class OrchestratorNode(DictBacked):
+    """One task-graph node of the main agent. ``status`` is pending, running, stalled, completed, failed or cancelled."""
+
+    id: str
+    title: str
+    role: str
+    mode: str
+    isolation: str | None
+    depends_on: list[str]
+    blocked_by: list[str]
+    task_id: str | None
+    status: str
+    attempts: int
+    max_attempts: int
+    last_event_at: float | None
+    result_summary: str
+    error: str
+    provider_id: str | None
+    model: str | None
+    tokens: int
+    cost_usd: float | None
+    created_at: float | None
+    updated_at: float | None
+
+
+@strawberry.type
+class OrchestratorRollup(DictBacked):
+    total: int
+    counts: JSON
+    percent_complete: int
+    tokens: int
+    cost_usd: float | None  # null when no node had a known price
+
+
+@strawberry.type
+class OrchestratorBoard(DictBacked):
+    @strawberry.field
+    def nodes(self) -> list[OrchestratorNode]:
+        return OrchestratorNode.wrap_all(object.__getattribute__(self, '_d').get('nodes'))
+
+    @strawberry.field
+    def rollup(self) -> OrchestratorRollup:
+        return OrchestratorRollup.wrap(object.__getattribute__(self, '_d')['rollup'])
+
+
+@strawberry.type
 class ProviderTestResult(DictBacked):
     ok: bool | None
     detail: str | None

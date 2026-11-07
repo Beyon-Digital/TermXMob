@@ -18,7 +18,9 @@ from strawberry.types import Info
 from termx.audit import log_event
 from termx.engines.env import env_diff_report, resolve_executable
 from termx.graphql.context import TermxContext
-from termx.graphql.errors import resolver
+from termx.graphql.domains.desktop_workspace import principal as session_principal
+from termx.graphql.errors import fail, resolver
+from termx.workspace.store import Conflict
 from termx.workspace.public_events import context_task_snapshot
 from termx.graphql.inputs import (
     AgentApprovalInput,
@@ -28,6 +30,7 @@ from termx.graphql.inputs import (
     AgentTaskInput,
     AutoModeInput,
     PolicyRuleInput,
+    ReassignNodeInput,
     PolicyRulePatchInput,
     WorktreeActionInput,
 )
@@ -51,6 +54,27 @@ def _legacy_policy_editor(ctx, rule=None):
     ctx.require_host('host-admin')
     if rule and rule.get('consent_binding'):
         raise HTTPException(403,'Owner-scoped coding consent requires the versioned CAS editor')
+
+
+async def _board_call(info, scope, operation):
+    """Run one task-graph operation as the signed-in user. Every call returns the whole board."""
+    ctx = info.context
+    ctx.require(scope)
+    actor = session_principal(info)
+    graph = ctx.state.workspace.orchestrator.graph
+    try:
+        if operation is not None:
+            await operation(graph, actor)
+        return T.OrchestratorBoard.wrap(graph.board(actor))
+    except PermissionError as exc:
+        fail(403, str(exc) or "Permission denied")
+    except KeyError:
+        fail(404, "node not found")
+    except Conflict as exc:
+        fail(409, str(exc))
+    except ValueError as exc:
+        fail(400, str(exc))
+
 
 _APPROVAL_REMEMBER = {"once", "task", "conversation", "project", "custom_agent", "session", "always"}
 
@@ -116,6 +140,12 @@ class AgentQueries:
     def agent_providers(self, info: Ctx) -> list[T.AgentProvider]:
         info.context.require("agent-view")
         return T.AgentProvider.wrap_all(info.context.state.agent.list_providers())
+
+    @strawberry.field
+    @resolver
+    async def orchestrator_board(self, info: Ctx) -> T.OrchestratorBoard:
+        """The main agent's task graph: nodes with dependencies, status, usage and a rollup."""
+        return await _board_call(info, "agent-view", None)
 
     @strawberry.field
     @resolver
@@ -339,6 +369,22 @@ class AgentQueries:
 
 @strawberry.type
 class AgentMutations:
+    @strawberry.mutation
+    @resolver
+    async def retry_node(self, info: Ctx, node_id: str) -> T.OrchestratorBoard:
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.retry(actor, node_id))
+
+    @strawberry.mutation
+    @resolver
+    async def reassign_node(self, info: Ctx, node_id: str, input: ReassignNodeInput) -> T.OrchestratorBoard:
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.reassign(
+            actor, node_id, provider_id=input.provider_id, model=input.model))
+
+    @strawberry.mutation
+    @resolver
+    async def cancel_node(self, info: Ctx, node_id: str) -> T.OrchestratorBoard:
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.cancel(actor, node_id))
+
     @strawberry.mutation
     @resolver
     async def refresh_acp_registry(self, info: Ctx) -> JSON:
