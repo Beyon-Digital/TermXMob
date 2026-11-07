@@ -38,7 +38,7 @@ export default function AddProjectDialog({open, onOpenChange, onRegistered}: Pro
       <DialogDescription>Register a folder on the machine that runs TermX. Agents, the file explorer and terminals use it as their workspace.</DialogDescription>
       <form className="add-project-form" onSubmit={event => { event.preventDefault(); void submit(); }}>
         <label>Folder path<Input name="project-path" autoComplete="off" spellCheck={false} value={path} onChange={event => setPath(event.target.value)} placeholder="/Users/you/code/app" aria-invalid={!!error} aria-describedby={error ? 'add-project-error' : undefined} autoFocus/></label>
-        <label>Name <small>(optional)</small><Input name="project-name" autoComplete="off" value={name} onChange={event => setName(event.target.value)} placeholder="Defaults to the folder name"/></label>
+        <label><span>Name <small>(optional)</small></span><Input name="project-name" autoComplete="off" value={name} onChange={event => setName(event.target.value)} placeholder="Defaults to the folder name"/></label>
         {error && <p id="add-project-error" className="add-project-error" role="alert">{error}</p>}
         <Button type="submit" disabled={busy || !path.trim()}>{busy ? 'Adding…' : 'Add project'}</Button>
       </form>

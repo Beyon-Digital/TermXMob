@@ -5,7 +5,7 @@
 .control-plane p { color:var(--secondary); font-size:12px; line-height:1.65; }
 .control-heading,.control-section-heading,.control-actions { display:flex; align-items:center; gap:10px; }
 .control-heading { justify-content:space-between; margin-bottom:24px; gap:24px; }
-.control-eyebrow { font-size:10px; letter-spacing:.15em; color:var(--secondary); }
+.control-eyebrow { font-size:11px; letter-spacing:.15em; color:var(--secondary); }
 .control-tabs { display:flex; align-items:center; gap:24px; border-bottom:1px solid var(--border); margin-bottom:24px; }
 .control-tabs button { padding:12px 0; color:var(--secondary); border-bottom:2px solid transparent; font-size:12px; }
 .control-tabs button[aria-current=page] { color:var(--foreground); border-color:var(--accent); }
@@ -36,14 +36,14 @@
 .control-run-layout.with-inspector { grid-template-columns:minmax(0,1fr) 310px; }
 .control-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:9px; }
 .control-run-table { width:100%; border-collapse:collapse; text-align:left; font-size:12px; }
-.control-run-table th { padding:12px 16px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; background:var(--sidebar); color:var(--secondary); font-weight:500; }
+.control-run-table th { padding:12px 16px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; background:var(--sidebar); color:var(--secondary); font-weight:500; }
 .control-run-table td { padding:16px; border-top:1px solid var(--border); vertical-align:top; max-width:280px; overflow-wrap:anywhere; }
 .control-run-table td:first-child { min-width:160px; }
 .control-run-table td button { font-weight:550; text-align:left; line-height:1.5; }
 .control-run-table td small { display:block; margin-top:6px; color:var(--secondary); font-size:11px; }
 .control-run-table td time { color:var(--secondary); font-size:11px; }
 .control-run-table tr.selected { background:var(--accent-soft); }
-.control-state { display:inline-block; white-space:nowrap; padding:4px 7px; border-radius:5px; background:var(--muted); font-size:10px; color:var(--secondary); }
+.control-state { display:inline-block; white-space:nowrap; padding:4px 7px; border-radius:5px; background:var(--muted); font-size:11px; color:var(--secondary); }
 .control-state.attention { background:var(--warning-soft); color:var(--warning); }
 .control-state.failed { color:var(--danger); }
 .control-state.completed { color:var(--accent); }

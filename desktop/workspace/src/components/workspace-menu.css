@@ -3,6 +3,12 @@
 .workspace-command-menu>button:hover{background:var(--muted)}
 .workspace-command-menu>label{display:flex;flex-direction:column;gap:6px;margin:5px 8px 8px;font-size:11px;color:var(--secondary);font-weight:400}
 .workspace-command-menu select{height:29px;min-width:0;width:100%;border:1px solid var(--border);border-radius:4px;background:var(--background);color:var(--foreground);padding:4px 5px;font-size:12px}
-.workspace-menu-heading{font-size:10px;color:var(--secondary);padding:5px 9px}
+.workspace-menu-heading{font-size:11px;color:var(--secondary);padding:5px 9px}
 .workspace-menu-divider{height:1px;background:var(--border);margin:5px 3px}
-.workspace-menu-context{margin:6px 9px;font-size:10px;color:var(--secondary);overflow-wrap:anywhere;line-height:1.5}
+.workspace-menu-context{margin:6px 9px;font-size:11px;color:var(--secondary);overflow-wrap:anywhere;line-height:1.5}
+
+.workspace-command-menu .workspace-menu-choices{display:flex;flex-direction:column;gap:2px;margin:0 0 4px}
+.workspace-command-menu .workspace-menu-choices>button{position:relative;display:flex;align-items:center;min-height:29px;width:100%;padding:5px 9px 5px 33px;border-radius:4px;font-size:12px;text-align:left}
+.workspace-command-menu .workspace-menu-choices>button:hover{background:var(--muted)}
+.workspace-command-menu .workspace-menu-choices>button[aria-pressed=true]{color:var(--accent)}
+.workspace-command-menu .workspace-menu-choices>button[aria-pressed=true]::before{content:'\2713';position:absolute;left:12px}

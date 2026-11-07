@@ -3,6 +3,6 @@
 .orchestrator-decisions p{margin:4px 0 9px;overflow-wrap:anywhere}
 .orchestrator-decision-source{padding:9px 10px;margin:8px 0 0;background:var(--surface);border:1px solid var(--border);border-radius:8px;min-width:0}
 .orchestrator-decision-heading{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px;margin-bottom:7px;color:var(--foreground)}
-.orchestrator-decision-heading strong{overflow-wrap:anywhere}.orchestrator-decision-heading span{font-size:10px;color:var(--secondary)}
+.orchestrator-decision-heading strong{overflow-wrap:anywhere}.orchestrator-decision-heading span{font-size:11px;color:var(--secondary)}
 .orchestrator-decisions .approval{margin:6px 0 0}.orchestrator-decisions .approval h4{font-size:12px}
 @media(max-width:600px){.orchestrator-decisions{padding:9px 10px 12px;max-height:38vh}.orchestrator-decision-source{padding:8px}}

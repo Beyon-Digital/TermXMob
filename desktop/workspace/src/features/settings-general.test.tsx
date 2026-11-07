@@ -12,8 +12,6 @@ const props={account:'Alex',hostKey:'account-a:host-one',theme:'system' as const
 it('uses the connected host and exposes direct model, access and theme actions',async()=>{
  render(<SettingsGeneral {...props}/>);
  expect(await screen.findByText('Worker Mac')).toBeInTheDocument();expect(screen.getByText('Alex')).toBeInTheDocument();
- fireEvent.change(screen.getByRole('combobox',{name:'Theme preference'}),{target:{value:'light'}});
- expect(props.onTheme).toHaveBeenCalledWith('light');
  fireEvent.click(screen.getByRole('button',{name:'Manage access'}));expect(props.onSelect).toHaveBeenCalledWith('access');
  fireEvent.click(screen.getByRole('button',{name:'Manage models'}));expect(props.onSelect).toHaveBeenCalledWith('models');
  expect(gql).toHaveBeenCalledOnce();expect(gql).toHaveBeenCalledWith('{ machine { hostname } }');
@@ -60,8 +58,14 @@ it('does not show an old sign-out failure after the settings identity changes',a
 
 it('keeps immediate theme changes out of the unsaved settings guard',()=>{
  const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
- render(<SettingsSurface category="general" onSelect={vi.fn()} onClose={vi.fn()}><SettingsGeneral {...props}/></SettingsSurface>);
- fireEvent.change(screen.getByRole('combobox',{name:'Theme preference'}),{target:{value:'dark'}});
+ render(<SettingsSurface category="appearance" onSelect={vi.fn()} onClose={vi.fn()}><div className="settings-general" data-settings-autosave><button onClick={()=>props.onTheme('dark')}>Dark</button></div></SettingsSurface>);
+ fireEvent.click(screen.getByRole('button',{name:'Dark'}));
  expect(window.dispatchEvent(new Event('termx-settings-leave',{cancelable:true}))).toBe(true);
  expect(confirm).not.toHaveBeenCalled();expect(props.onTheme).toHaveBeenCalledWith('dark');
+});
+
+it('shows the current theme and sends theme changes to Appearance',()=>{
+ render(<SettingsGeneral {...props} theme="dark"/>);
+ expect(screen.getByText('Dark')).toBeInTheDocument();expect(screen.queryByRole('combobox',{name:'Theme preference'})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Change appearance'}));expect(props.onSelect).toHaveBeenCalledWith('appearance');
 });
