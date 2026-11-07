@@ -122,3 +122,6 @@
 .model-connection-notice p{font-size:12px;line-height:1.6;color:var(--secondary);margin:0 0 10px}
 .model-connection-notice p:last-child{margin:0}
 @container(max-width:520px){.chat-region.coding-session .composer-controls>.composer-queue{width:27px;padding:0;justify-content:center}.composer-queue>span{display:none}.chat-region.coding-session .composer-retry{align-items:flex-start;flex-direction:column;gap:3px}}
+
+/* Motion in the conversation is decoration; respect the system setting even where a global rule is overridden. */
+@media(prefers-reduced-motion:reduce){.chat-region.coding-session .message-actions{transition:none}.chat-region.coding-session .spin,.chat-region.coding-session .composer-send .spin,.chat-region.coding-session .run-activity .spin{animation:none}.chat-region.coding-session .conversation-scroll{scroll-behavior:auto}.mode-popover{transition:none;animation:none}}

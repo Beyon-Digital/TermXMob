@@ -151,6 +151,28 @@ it('never backs off below the base interval when maxInterval is smaller', async 
   expect(poll).toHaveBeenCalledTimes(3);
 });
 
+it('restarts with a fresh request and aborts the old one when resetKey changes', async () => {
+  const signals: AbortSignal[] = [];
+  const poll = vi.fn((s: AbortSignal) => { signals.push(s); return new Promise<number>(resolve => setTimeout(() => resolve(1), 500)); });
+  const {rerender, unmount} = renderHook(({key}) => usePolling(poll, {interval: 1000, resetKey: key}), {initialProps: {key: 'a'}});
+  await advance(0);
+  rerender({key: 'b'});
+  await advance(0);
+  expect(signals[0].aborted).toBe(true);
+  expect(poll).toHaveBeenCalledTimes(2);
+  unmount();
+  expect(signals[1].aborted).toBe(true);
+});
+
+it('waits one interval before the first request when immediate is false', async () => {
+  const poll = vi.fn(async () => 1);
+  renderHook(() => usePolling(poll, {interval: 1000, immediate: false, backoff: false}));
+  await advance(999);
+  expect(poll).not.toHaveBeenCalled();
+  await advance(1);
+  expect(poll).toHaveBeenCalledTimes(1);
+});
+
 it('does not report or back off when onResult throws', async () => {
   const onError = vi.fn();
   vi.spyOn(console, 'error').mockImplementation(() => {});

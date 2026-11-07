@@ -96,7 +96,8 @@ function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Tas
 function ResponseLoader({task}: {task: Task}) {
   const busy = taskIsActive(task.status);
   const labels: Record<string, string> = {queued: 'Waiting to start', planning: 'Planning the next steps', running: 'Preparing a response', recovering: 'Restoring this task', cancelling: 'Stopping this task', awaiting_approval: 'Waiting for your approval', paused: 'This task is paused', recovery_confirmation_required: 'Review recovery before continuing', cancelled: 'This task was stopped', failed: 'This task needs attention', completed: 'This turn finished without a text response'};
-  return <div className={'response-loader' + (busy ? ' is-loading' : '')} role="status" aria-live="polite">
+  // The conversation's single status announcer reports state changes; this label is visual only.
+  return <div className={'response-loader' + (busy ? ' is-loading' : '')}>
     <div className="response-loader-label">{busy ? <Sparkles size={15} aria-hidden="true"/> : task.status === 'failed' ? <CircleAlert size={15} aria-hidden="true"/> : <Pause size={15} aria-hidden="true"/>}<span>{labels[task.status] || 'Preparing this conversation'}</span></div>
     {busy && <div className="response-skeleton" aria-hidden="true"><span/><span/><span/></div>}
   </div>;
@@ -110,14 +111,19 @@ function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise
   const reportState=reportStatus==='unavailable'?{label:'Unavailable',tone:'failed'}:reportStatus?taskState(reportStatus):{label:'Update',tone:''};
   const ongoing = !report&&taskIsActive(task?.status);
   const cancelled=task?.status==='cancelled';
-  async function copy() {try {await navigator.clipboard.writeText(content); setCopied(true);} catch (error) {onError(error);}}
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  async function copy() {try {await navigator.clipboard.writeText(content); setCopied(true);} catch (error) {setCopied(false); onError(error);}}
   if (role === 'user') return <Message from="user"><MessageContent><p className="user-message-text">{text}</p></MessageContent></Message>;
   return <Message from="assistant"><MessageContent>
     {report&&<div className="coordination-report-source" role="note" aria-label="Delegated agent report"><Bot size={16} aria-hidden="true"/><span><strong>{report.label||'Delegated agent'}</strong><small>Direct agent report</small></span><span className={'coordination-report-status '+reportState.tone}>{reportState.label}</span>{report.source_task_id&&<Button size="sm" variant="ghost" onClick={()=>onSupervise(report.source_task_id!)}>Open source task</Button>}</div>}
     {task && !report && <RunActivity key={task.id} task={task} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible}/>}
     {content ? <ConversationResponse onOpenFile={onOpenFile} mode={ongoing ? 'streaming' : 'static'} isAnimating={ongoing}>{content}</ConversationResponse> : task ? <ResponseLoader task={task}/> : null}
     {task?.error && <div className={cancelled?'response-cancellation':'response-error'} role={cancelled?'status':'alert'}>{cancelled?<Pause size={16} aria-hidden="true"/>:<CircleAlert size={16} aria-hidden="true"/>}<div><strong>{cancelled?'Task stopped':'The task stopped with an error'}</strong><p>{task.error}</p><Button size="sm" variant="ghost" onClick={() => onSupervise(task.id)}>Review task</Button></div></div>}
-    {task && (['recovery_confirmation_required', 'paused'].includes(task.status) || (task.status === 'awaiting_approval' && !task.approvals?.some(approval => approval.status === 'pending'))) && <div className="task-attention" role="status"><span>{task.status === 'recovery_confirmation_required' ? 'Recovery needs your confirmation.' : task.status === 'paused' ? 'This task is paused.' : 'This task needs your approval.'}</span><Button variant="outline" size="sm" onClick={() => onSupervise(task.id)}>Review task</Button></div>}
+    {task && (['recovery_confirmation_required', 'paused'].includes(task.status) || (task.status === 'awaiting_approval' && !task.approvals?.some(approval => approval.status === 'pending'))) && <div className="task-attention"><span>{task.status === 'recovery_confirmation_required' ? 'Recovery needs your confirmation.' : task.status === 'paused' ? 'This task is paused.' : 'This task needs your approval.'}</span><Button variant="outline" size="sm" onClick={() => onSupervise(task.id)}>Review task</Button></div>}
     {(task?.approvals || []).filter(approval => approval.status === 'pending').map(approval => approval.kind === 'budget'
       ? <BudgetApproval key={approval.id} task={task!} approval={approval} onDone={onRefresh} onError={onError}/>
       : <GeneralApprovalCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError}/>)}

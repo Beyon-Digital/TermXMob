@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
-import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import ConversationMessage from './ConversationMessage';
 import {delegatedActivities, taskResponseText, toolActivities, type ActivityEvent} from '../lib/tool-activity';
 import {request, type Task} from '../lib/api';
@@ -11,6 +11,26 @@ const task = (changes: Partial<Task> = {}): Task => ({id: 'task-one', status: 'c
 const callbacks = () => ({onSupervise: vi.fn(), onRefresh: vi.fn(), onError: vi.fn()});
 beforeEach(() => mocked.mockReset());
 afterEach(cleanup);
+
+it('shows the copied state briefly and then returns the copy button to its idle label', async () => {
+  vi.useFakeTimers();
+  try {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText}});
+    render(<ConversationMessage role="assistant" text="Done." task={task()} {...callbacks()}/>);
+    await act(async () => { fireEvent.click(screen.getByRole('button', {name: 'Copy answer'})); });
+    expect(writeText).toHaveBeenCalledWith('Done.');
+    expect(screen.getByRole('button', {name: 'Answer copied'})).toBeVisible();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+    expect(screen.getByRole('button', {name: 'Copy answer'})).toBeVisible();
+  } finally { vi.useRealTimers(); }
+});
+
+it('keeps loading and approval prompts out of live regions so the conversation announcer is the only one', () => {
+  render(<ConversationMessage role="assistant" text="" task={task({status: 'running', events: []})} {...callbacks()}/>);
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(document.querySelector('[aria-live]')).toBeNull();
+});
 
 it('correlates ACP camel-case tool updates and recognizes the reported completion state', () => {
   const events = [event(1, 'engine.tool.started', {toolCallId: 'acp-one', title: 'Inspect files', status: 'pending', rawInput: {path: 'src'}}), event(2, 'engine.tool.progress', {toolCallId: 'acp-one', status: 'in_progress'}), event(3, 'engine.tool.progress', {toolCallId: 'acp-one', status: 'completed', content: [{type: 'content', content: {type: 'text', text: 'Three files'}}]})];
@@ -119,7 +139,8 @@ it('renders structured Markdown and a real waiting state without treating user t
   expect(screen.getByRole('region', {name: 'Code block'})).toHaveAttribute('tabindex', '0');
   expect(screen.getByText('print("ready")')).toBeVisible();
   rerender(<ConversationMessage role="assistant" text="" task={task({status: 'awaiting_approval', events: []})} {...props}/>);
-  expect(screen.getAllByRole('status').some(element => element.textContent?.includes('Waiting for your approval'))).toBe(true);
+  expect(screen.getByText('Waiting for your approval')).toBeVisible();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
   expect(screen.getByRole('button', {name: 'Review task'})).toBeVisible();
   expect(document.querySelector('.response-skeleton')).toBeNull();
   rerender(<ConversationMessage role="user" text="<b>literal</b> **text**" {...props}/>);

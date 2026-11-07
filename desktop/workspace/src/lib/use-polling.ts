@@ -9,6 +9,10 @@ export interface PollingOptions<T> {
   backoff?: boolean;
   /** Upper bound for the backed-off delay. Defaults to eight times `interval`. */
   maxInterval?: number;
+  /** Changing this value restarts the loop with a fresh request, for example when the polled resource changes. */
+  resetKey?: unknown;
+  /** Fetch as soon as the loop starts. Set false when the caller has just loaded the data itself. Defaults to true. */
+  immediate?: boolean;
   onResult?: (value: T) => void;
   onError?: (error: unknown) => void;
   /** Decides whether two consecutive results count as "no change". Defaults to a structural (JSON) comparison. */
@@ -26,7 +30,7 @@ function sameValue(previous: unknown, next: unknown) {
 }
 
 export function usePolling<T>(fetcher: (signal: AbortSignal) => Promise<T>, options: PollingOptions<T>) {
-  const {interval, enabled = true, backoff = true} = options;
+  const {interval, enabled = true, backoff = true, resetKey, immediate = true} = options;
   const maxInterval = Math.max(options.maxInterval ?? interval * 8, interval);
   const latest = useRef({fetcher, onResult: options.onResult, onError: options.onError, isEqual: options.isEqual});
   useEffect(() => {
@@ -80,12 +84,12 @@ export function usePolling<T>(fetcher: (signal: AbortSignal) => Promise<T>, opti
     };
 
     document.addEventListener('visibilitychange', onVisibility);
-    void run();
+    if (immediate) void run(); else schedule();
     return () => {
       stopped = true;
       clearTimeout(timer);
       controller?.abort();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [interval, enabled, backoff, maxInterval]);
+  }, [interval, enabled, backoff, maxInterval, resetKey, immediate]);
 }
