@@ -2,11 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Select} from '../components/ui/select';
 import type {Engine,Provider,Session} from '../lib/api';
+import {configuredModels} from '../lib/model-info';
 import './chat-connection-setup.css';
-
-export function configuredModels(provider?:Provider){
- return [...new Set((provider?.model||'').split(/[\n,]/).map(model=>model.trim()).filter(Boolean))];
-}
 
 /** Configuration readiness is local metadata, never proof of provider access. */
 export function chatConnectionProblem(session:Session|null,providers:Provider[],engines:Engine[]){

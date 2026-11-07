@@ -7,7 +7,7 @@ import {type Session,type Engine,type Provider} from '../lib/api';
 import './session-controls.css';
 import './chat-composer.css';
 import ReasoningPicker from './ReasoningPicker';
-import {configuredModels} from './ChatConnectionSetup';
+import {configuredModels} from '../lib/model-info';
 
 export type SessionModelControlProps={session:Session|null;engines:Engine[];providers:Provider[];runnerAccounts:{provider_id:string;credential_ref:string;name:string;models:string[]}[];models:string[];favorites:string[];favoriteKey:string;running:boolean;onFavorite:()=>void;onEngine:(engine:string)=>void;onPatch:(changes:Record<string,unknown>)=>void;onRefresh:()=>void;onError:(error:unknown)=>void;onConfigureAgent?:()=>void;coordinating?:boolean};
 

@@ -1,17 +1,15 @@
 import {Input} from '../components/ui/input';
+import {formatPrice,formatTokens} from '../lib/model-info';
 import type {ModelInfo, ModelOverride, ModelOverrides} from '../lib/host-types';
 
 type OverrideField = keyof ModelOverride;
-const count = new Intl.NumberFormat('en-US');
-const tokens = (value?: number | null) => value == null ? 'Unknown' : `${count.format(value)} tokens`;
-const price = (value?: number | null) => value == null ? 'Unknown' : `$${value} per 1M tokens`;
 
-/** Discovered metadata with the person's own values on top; missing values read "Unknown", never zero. */
+/** Discovered metadata with the person's own values on top; missing values read "Unknown", never zero. Same rule as `modelInfo`. */
 function Meta({info, override}: {info?: ModelInfo; override?: ModelOverride}) {
   const pick = (field: OverrideField) => override?.[field] ?? info?.[field];
   const mark = (field: OverrideField) => override?.[field] != null ? ' (your value)' : '';
   return <p className="model-row-meta">
-    Context window {tokens(pick('context_window'))}{mark('context_window')} · Max output {tokens(pick('max_output'))}{mark('max_output')} · Input {price(pick('price_in'))}{mark('price_in')} · Output {price(pick('price_out'))}{mark('price_out')}
+    Context window {formatTokens(pick('context_window'))}{mark('context_window')} · Max output {formatTokens(pick('max_output'))}{mark('max_output')} · Input {formatPrice(pick('price_in'))}{mark('price_in')} · Output {formatPrice(pick('price_out'))}{mark('price_out')}
   </p>;
 }
 

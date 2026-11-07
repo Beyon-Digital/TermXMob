@@ -47,7 +47,7 @@ it('shows a failed write as an alert with Retry while the status region stays mo
   return {data:{engines:[],agent_providers:[provider],acp_registry:[]}};
  });
  render(<SettingsSurface category="models" onSelect={vi.fn()} onClose={vi.fn()}><Managers embedded section="models" projectId={null} sessionId={null}/></SettingsSurface>);
- await screen.findByText('Local Ollama');
+ await screen.findByRole('heading',{name:'Local Ollama'});
  const region=screen.getAllByRole('status').find(node=>node.className.includes('manager-notice'))!;
  expect(region).toBeEmptyDOMElement();
  expect(screen.getByText(/All discovered models/)).toBeInTheDocument();

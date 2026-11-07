@@ -7,13 +7,14 @@ import {Input} from '../components/ui/input';
 import {providerAccount,type AgentProvider,type EngineAuthMethod,type EngineDescriptor,type HostIdentity,type ProviderAccountInput} from '../lib/host-types';
 import ProviderAccountForm from './ProviderAccountForm';
 import ModelFavoritesManager from './ModelFavoritesManager';
+import ModelRoutingForm,{type Routing} from './ModelRoutingForm';
 import {ActionButton,Item,Json,ManagerPage,rowMatcher} from './manager-ui';
 import {gql,useManagerLoad,useManagerMutation} from './use-manager';
 
-interface ModelsData { engines?: EngineDescriptor[]; agent_providers?: AgentProvider[]; acp_registry?: unknown }
+interface ModelsData { engines?: EngineDescriptor[]; agent_providers?: AgentProvider[]; acp_registry?: unknown; model_routing?: Routing }
 interface ProviderTestReply { status?: string; ok?: boolean; message?: string }
-const providerFields='id name kind model base_url secret_configured capabilities model_catalog model_overrides catalog_refreshed_at catalog_error';
-const loadModels=()=>gql<ModelsData>(`{ engines { id label installed version auth_state auth_detail protocol error capabilities } agent_providers { ${providerFields} } acp_registry }`);
+const providerFields='id name kind model models base_url secret_configured capabilities model_catalog model_overrides catalog_refreshed_at catalog_error';
+const loadModels=()=>gql<ModelsData>(`{ engines { id label installed version auth_state auth_detail protocol error capabilities } agent_providers { ${providerFields} } acp_registry model_routing }`);
 const saveProvider='mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}';
 
 function EngineAuthentication({engine,busy,canAuthenticate,onAuthenticate}:{engine:EngineDescriptor;busy:boolean;canAuthenticate:boolean;onAuthenticate:(methodId:string)=>unknown}){
@@ -67,6 +68,7 @@ export default function ModelsSection({admin,me,projectId,onCapabilitiesChanged}
       </Item>)}
       {admin&&editing&&<ProviderAccountForm key={editing.id} account={providerAccount(providers.find(row=>row.id===editing.id)||editing)} busy={busy} onCancel={()=>setEditing(null)} onRefresh={()=>refreshModels(editing)} onSave={async input=>{const result=await saveAccount('Provider account updated')(input);if(result!==null)setEditing(null);return result}}/>}
       {admin&&<details key={hasCredential?'has-account':'first-account'} open={!hasCredential}><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={saveAccount('Provider account saved')}/></details>}
+      <ModelRoutingForm providers={providers} routing={data?.model_routing||{}} disabled={!admin} onSave={routes=>mutate(()=>gql('mutation($input:ModelRoutingInput!){set_model_routing(input:$input)}',{input:{routing:routes}}),'Model routing saved')}/>
       <h3>Installed engines</h3>
       {engines.filter(matches).map(engine=><Item key={engine.id} title={engine.label} meta={`${engine.installed?'Installed':'Needs installation'} · ${engineAuthLabel(engine.auth_state)}${engine.version?` · ${engine.version}`:''}`}>
         <ActionButton busy={busy} onClick={()=>setPreview(engine)}>Inspect capabilities</ActionButton>
