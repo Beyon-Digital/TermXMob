@@ -9,6 +9,8 @@ import {request, type Task} from '../lib/api';
 import ToolActivities, {ActivityStatus} from './ToolActivities';
 import BudgetApproval from './BudgetApproval';
 import {GeneralApprovalCard} from './GeneralApprovalCard';
+import PlanReviewCard, {isRevisablePlan} from './PlanReviewCard';
+import {agentNotes} from '../lib/agentic';
 import ConversationResponse from './ConversationResponse';
 import './conversation-message.css';
 
@@ -67,12 +69,13 @@ function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Tas
   const events = details.events || [];
   const tools = useMemo(() => toolActivities(events, task.status), [details.events, task.status]);
   const agents = useMemo(() => delegatedActivities(events, details.children, task.status), [details.events, details.children, task.status]);
+  const notes = useMemo(() => agentNotes(events), [details.events]);
   const current = [...tools].reverse().find(tool => tool.phase === 'running' || tool.phase === 'pending');
   const activeAgents = agents.filter(agent => taskIsActive(agent.status)).length;
   const failed = tools.filter(tool => tool.phase === 'failed').length + agents.filter(agent => agent.status === 'failed').length;
   const needsAttention = task.status === 'awaiting_approval' || task.status === 'recovery_confirmation_required';
   const ongoing = taskIsActive(task.status);
-  if (!tools.length && !agents.length && task.events !== undefined) return null;
+  if (!tools.length && !agents.length && !notes.length && task.events !== undefined) return null;
   const summary = needsAttention ? 'Your input is needed' : activeAgents ? `${activeAgents} ${activeAgents === 1 ? 'agent is' : 'agents are'} working` : ongoing ? current?.title || 'Working on your request' : 'View activity';
   const count = [tools.length ? `${tools.length} ${tools.length === 1 ? 'tool' : 'tools'}` : '', agents.length ? `${agents.length} ${agents.length === 1 ? 'agent' : 'agents'}` : ''].filter(Boolean).join(' · ');
   return <Collapsible className={'run-activity' + (ongoing ? ' is-working' : '')} open={open} onOpenChange={setOpen}>
@@ -84,8 +87,9 @@ function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Tas
       {open && <>{loading && <p className="activity-loading" role="status"><LoaderCircle size={13} className="spin"/> Loading activity…</p>}
         {error && <p className="activity-load-error" role="alert">{error} <Button size="sm" variant="ghost" onClick={() => setRetry(value => value + 1)}>Retry activity</Button></p>}
         {details.activity_truncated && <p className="activity-loading">Showing recent activity for this run.</p>}
-        {!loading && !error && !tools.length && !agents.length && saved?.id === task.id && <p className="activity-loading">No tool or delegated-agent activity was found in this history.</p>}
+        {!loading && !error && !tools.length && !agents.length && !notes.length && saved?.id === task.id && <p className="activity-loading">No tool or delegated-agent activity was found in this history.</p>}
         {agents.length > 0 && <section className="agent-team"><h3><Bot size={14}/> Agent team</h3><ul className="delegated-agents" aria-label="Delegated agents">{agents.slice(0, 24).map(agent => <AgentRow key={agent.id} agent={agent} rootTaskId={task.id} onSupervise={onSupervise} onOpenFile={onOpenFile}/>)}</ul></section>}
+        {notes.length > 0 && <ul className="agent-notes" aria-label="Plan and Auto notes">{notes.map(note => <li key={note.key}>{note.text}</li>)}</ul>}
         <ToolActivities events={events} taskStatus={task.status}/>
         <Button className="run-inspect" variant="ghost" size="sm" onClick={() => onSupervise(task.id)}>Open task details <ChevronRight size={12}/></Button>
       </>}
@@ -126,6 +130,8 @@ function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise
     {task && (['recovery_confirmation_required', 'paused'].includes(task.status) || (task.status === 'awaiting_approval' && !task.approvals?.some(approval => approval.status === 'pending'))) && <div className="task-attention"><span>{task.status === 'recovery_confirmation_required' ? 'Recovery needs your confirmation.' : task.status === 'paused' ? 'This task is paused.' : 'This task needs your approval.'}</span><Button variant="outline" size="sm" onClick={() => onSupervise(task.id)}>Review task</Button></div>}
     {(task?.approvals || []).filter(approval => approval.status === 'pending').map(approval => approval.kind === 'budget'
       ? <BudgetApproval key={approval.id} task={task!} approval={approval} onDone={onRefresh} onError={onError}/>
+      : isRevisablePlan(approval)
+      ? <PlanReviewCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError} onOpenFile={onOpenFile}/>
       : <GeneralApprovalCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError}/>)}
     {(content || task) && <div className="response-actions message-actions" aria-label="Response actions">
       {content && <Button size="icon" variant="ghost" aria-label={copied ? 'Answer copied' : 'Copy answer'} title={copied ? 'Copied' : 'Copy answer'} onClick={() => void copy()}>{copied ? <Check size={15}/> : <Copy size={15}/>}</Button>}

@@ -55,6 +55,8 @@
 .run-activity-count{margin-left:auto;white-space:nowrap;flex:none;font-size:11px}
 .disclosure-chevron{transition:transform .15s;flex:none}[data-state=open]>.disclosure-chevron{transform:rotate(90deg)}
 .run-activity-body{border-top:1px solid var(--border);padding:8px 12px 10px;max-height:min(60dvh,640px);overflow:auto}
+.agent-notes{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:3px;font-size:12px;line-height:1.5;color:var(--secondary)}
+.agent-notes>li{overflow-wrap:anywhere;padding-left:10px;border-left:2px solid var(--border)}
 .run-inspect{font-size:11px;margin-top:4px;color:var(--secondary)}
 .activity-loading{display:flex;align-items:center;gap:8px;padding:6px 0;color:var(--secondary);font-size:12px;margin:0}.activity-load-error{font-size:12px;line-height:1.6;color:var(--destructive);margin:5px 0}
 .tool-timeline{list-style:none!important;margin:0!important;padding:0!important;line-height:1.5}

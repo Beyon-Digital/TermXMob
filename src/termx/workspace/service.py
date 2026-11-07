@@ -534,7 +534,7 @@ class WorkspaceService:
         if len(json.dumps(context,allow_nan=False).encode())>256_000:
             raise ValueError('Selected browser context exceeds the 256 KB context budget')
 
-    async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None,dispatch_guard=None,preserve_draft=False,_coordinator_task_id=None):
+    async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None,dispatch_guard=None,preserve_draft=False,_coordinator_task_id=None,auto=None):
         context=[] if context is None else context
         self.validate_context(context)
         submitted_prompt = None if preserve_draft else prompt
@@ -556,6 +556,8 @@ class WorkspaceService:
         if not row.get('cwd'):
             raise ValueError('Select an authorized project folder before running a turn')
         self.validate_runner(principal,row)
+        if auto and auto.get('enabled') and (row['engine']!='internal' or row.get('runner_id')):
+            raise ValueError('Auto mode is only available for tasks run by the built-in agent on this host')
         profile=resolve_preset(self,principal,row.get('custom_agent_id'),engine=row['engine'],project_id=row.get('project_id'),runner_id=row.get('runner_id'),workflow=row.get('workflow'))
         if profile and profile['workspace_revision']!=row.get('custom_agent_revision'):
             raise Conflict('Agent preset changed; inspect and explicitly refresh this conversation preset before sending')
@@ -565,7 +567,7 @@ class WorkspaceService:
             await self.state.runner_agents.preflight(principal,row['runner_id'],row['provider_id'],row['runner_credential_ref'],row['model'])
         limits = resolve_limits(limits,row.get('run_limits'))
         digest = hashlib.sha256(json.dumps({'session':identifier,'prompt':prompt,'limits':limits,
-                                           'attachments':attachments or [],'context':context,'custom_agent_id':row.get('custom_agent_id'),'custom_agent_revision':row.get('custom_agent_revision')},sort_keys=True).encode()).hexdigest()
+                                           'attachments':attachments or [],'context':context,'custom_agent_id':row.get('custom_agent_id'),'custom_agent_revision':row.get('custom_agent_revision'),**({'auto':auto} if auto else {})},sort_keys=True).encode()).hexdigest()
         lock = self._send_locks.setdefault(identifier, asyncio.Lock())
         async with lock:
             current=self.session(principal,identifier,turns=False)
@@ -637,7 +639,7 @@ class WorkspaceService:
                     task = await self.state.agent.create_task(prompt=prompt,cwd=row['cwd'],
                         provider_id=row.get('provider_id') or '', model=row.get('model'),mode=row['mode'],
                         limits=limits,attachments=attachments,conversation_id=identifier,custom_agent_id=row.get('custom_agent_id'),custom_agent_snapshot=profile,
-                        parent_id=_coordinator_task_id,
+                        parent_id=_coordinator_task_id,auto=auto,isolated=bool(row.get('worktree_id')),
                         on_created=lambda tid:self._coordinator_created(_coordinator_task_id,principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context) if _coordinator_task_id else self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                 else:
                     attempted_native = True

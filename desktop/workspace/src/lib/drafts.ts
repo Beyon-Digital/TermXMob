@@ -1,7 +1,7 @@
 import type {ContextItem} from './context';
 // This in-memory registry survives lazy panel replacement; it never stores credentials.
 export type DraftAttachment={name:string;mime:string;data:string};
-export type PendingSubmission={prompt:string;key:string;context:ContextItem[];attachments:DraftAttachment[];intent?:'send'|'queue'|'interrupt';interruptTask?:string};
+export type PendingSubmission={prompt:string;key:string;context:ContextItem[];attachments:DraftAttachment[];intent?:'send'|'queue'|'interrupt';interruptTask?:string;auto?:{enabled:true;ceilings:Record<string,number>}};
 export type Draft={text:string;saved:string;dirty:boolean;revision?:number;context?:ContextItem[];savedContext?:ContextItem[];attachments?:DraftAttachment[];submission?:PendingSubmission};
 // Plain registries for non-React callers (window journal, redock, lock preservation). React reads them
 // through `useSessionDraft`, which re-renders when the store below publishes a change.

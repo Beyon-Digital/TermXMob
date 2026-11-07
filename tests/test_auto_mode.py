@@ -321,3 +321,44 @@ def test_ceilings_are_validated():
     for bad in ({"tool_calls": 0}, {"seconds": "x"}, {"bogus": 1}, {"cost_usd": -1}, {"steps": True}):
         with pytest.raises(ValueError):
             resolve_auto_ceilings(bad)
+
+
+def test_isolated_session_worktree_counts_as_isolation_for_auto(tmp_path, monkeypatch):
+    """A conversation bound to an enrolled worktree passes isolated=True; Auto then needs no per-task checkout."""
+
+    async def run() -> None:
+        monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_repo(repo)
+        manager, store_ = build_manager(tmp_path, PlanAdapter([]))
+        task = await manager.create_task(
+            prompt="x", cwd=str(repo), provider_id="fake", isolated=True,
+            auto={"enabled": True, "ceilings": {"tool_calls": 7}},
+        )
+        summary = _auto(store_, task["id"])
+        assert summary["enabled"] is True and summary["ceilings"]["tool_calls"] == 7
+        assert store_.get_task(task["id"])["runtime"]["isolated"] is True
+        # Switching it off and on again mid-task keeps working because the flag survives.
+        manager.set_task_auto(task["id"], enabled=False)
+        manager.set_task_auto(task["id"], enabled=True)
+        assert _auto(store_, task["id"])["enabled"] is True
+        # Without the flag the same request is still refused.
+        with pytest.raises(ValueError, match="worktree"):
+            await manager.create_task(prompt="x", cwd=str(repo), provider_id="fake", auto={"enabled": True})
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
+def test_turn_input_accepts_auto_and_rejects_unknown_fields():
+    from pydantic import ValidationError
+
+    from termx.workspace.http import TurnInput
+
+    body = TurnInput(prompt="go", request_id="request-0001", auto={"enabled": True, "ceilings": {"steps": 5}})
+    assert body.model_dump()["auto"] == {"enabled": True, "ceilings": {"steps": 5}}
+    assert TurnInput(prompt="go", request_id="request-0001").model_dump()["auto"] is None
+    with pytest.raises(ValidationError):
+        TurnInput(prompt="go", request_id="request-0001", auto={"enabled": True, "mode": "x"})

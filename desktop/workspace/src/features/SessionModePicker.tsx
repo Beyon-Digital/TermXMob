@@ -1,31 +1,68 @@
-import {useEffect,useId,useRef,useState,type ReactNode} from 'react';
-import {Check,ChevronDown,MessageCircle,Workflow} from 'lucide-react';
+import {useEffect,useId,useRef,useState} from 'react';
+import {Check,ChevronDown,ClipboardList,MessageCircle,Workflow} from 'lucide-react';
 import {Button} from '../components/ui/button';
+import {Collapsible,CollapsibleContent,CollapsibleTrigger} from '../components/ui/collapsible';
+import {FormField} from '../components/ui/form-field';
+import {Input} from '../components/ui/input';
 import {type Session} from '../lib/api';
+import {AUTO_CEILING_FIELDS,autoBlockedReason,planBlockedReason,type AutoCeilingKey,type AutoSetting} from '../lib/agentic';
 
-// Add a mode here (for example Plan) and it appears in the popover. `footer` is the slot for
-// controls that belong to one mode, such as the Auto switch under Agent.
-const modes=[{id:'ask',name:'Ask',description:'Explore ideas, understand code, and plan your next move.',icon:MessageCircle},{id:'agent',name:'Agent',description:'Work through a task using the tools available to this agent.',icon:Workflow}] as const;
+const modes=[
+ {id:'ask',name:'Ask',description:'Explore ideas, understand code, and plan your next move.',icon:MessageCircle},
+ {id:'plan',name:'Plan',description:'Read the code, then propose a plan for you to approve before anything changes.',icon:ClipboardList},
+ {id:'agent',name:'Agent',description:'Work through a task using the tools available to this agent.',icon:Workflow},
+] as const;
 
-export default function SessionModePicker({session,running,onPatch,footer}:{session:Session|null;running:boolean;onPatch:(changes:Record<string,unknown>)=>void;footer?:ReactNode}){
+function limitProblem(key:AutoCeilingKey,text:string){
+ const value=Number(text);
+ if(text.trim()===''||!Number.isFinite(value)||value<=0)return key==='cost_usd'?'Enter an amount above zero.':'Enter a whole number above zero.';
+ return key!=='cost_usd'&&!Number.isInteger(value)?'Enter a whole number above zero.':'';
+}
+
+// A limit is sent when the field loses focus or Enter is pressed, not on every keystroke, so typing 200 is one change.
+// Once committed, the draft is dropped and the field follows the value Chat holds, which reverts if the host refuses it.
+function AutoLimits({auto,onChange}:{auto:AutoSetting;onChange:(next:AutoSetting)=>void}){
+ const [drafts,setDrafts]=useState<Partial<Record<AutoCeilingKey,string>>>({});
+ function commit(key:AutoCeilingKey){
+  const text=drafts[key];if(text===undefined||limitProblem(key,text))return;
+  setDrafts(old=>{const {[key]:_sent,...rest}=old;return rest});
+  if(Number(text)!==auto.ceilings[key])onChange({...auto,ceilings:{...auto.ceilings,[key]:Number(text)}});
+ }
+ return <div className="mode-auto-limits">
+  {AUTO_CEILING_FIELDS.map(field=>{const text=drafts[field.key]??String(auto.ceilings[field.key]),problem=drafts[field.key]===undefined?'':limitProblem(field.key,text);
+   return <FormField key={field.key} label={field.label} hint={field.hint} error={problem}>{control=>
+    <Input {...control} type="number" inputMode="decimal" min={field.key==='cost_usd'?0.01:1} step={field.step} value={text} onChange={event=>setDrafts(old=>({...old,[field.key]:event.target.value}))} onBlur={()=>commit(field.key)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();commit(field.key)}}}/>}</FormField>})}
+  <p className="mode-auto-note">Auto stops and asks you when any limit is reached.</p>
+ </div>;
+}
+
+export default function SessionModePicker({session,running,onPatch,auto,onAutoChange}:{session:Session|null;running:boolean;onPatch:(changes:Record<string,unknown>)=>void;auto?:AutoSetting;onAutoChange?:(next:AutoSetting)=>void}){
  const [open,setOpen]=useState(false);
- const root=useRef<HTMLSpanElement>(null),trigger=useRef<HTMLButtonElement>(null),popoverId=useId();
+ const root=useRef<HTMLSpanElement>(null),trigger=useRef<HTMLButtonElement>(null),popoverId=useId(),autoId=useId(),planReasonId=useId();
  // Closing when the conversation changes is the parent's job: Chat keys this component by session.
  useEffect(()=>{
   if(!open)return;
   const outside=(event:PointerEvent)=>{if(!root.current?.contains(event.target as Node))setOpen(false)};
   const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus()}};
   document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
-  root.current?.querySelector<HTMLInputElement>('input:checked:not(:disabled), input:not(:disabled)')?.focus();
+  root.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled), input[type=radio]:not(:disabled)')?.focus();
   return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)};
  },[open]);
  const selected=modes.find(mode=>mode.id===session?.mode)||modes[0],Icon=selected.icon;
+ const planReason=planBlockedReason(session),autoReason=autoBlockedReason(session);
+ // The chip tells the truth about the next turn: Chat sends no `auto` when the conversation cannot run it.
+ const autoOn=selected.id==='agent'&&!!auto?.enabled&&!autoReason;
  return <span className="mode-picker" ref={root}>
-  <Button ref={trigger} className="composer-mode-chip" variant="ghost" size="sm" aria-label="Session mode" aria-haspopup="true" aria-expanded={open} aria-controls={open?popoverId:undefined} disabled={!session} onClick={()=>setOpen(value=>!value)}><Icon size={14}/><span>{selected.name}</span><ChevronDown size={12}/></Button>
+  <Button ref={trigger} className={'composer-mode-chip'+(autoOn?' is-auto':'')} variant="ghost" size="sm" aria-label="Session mode" aria-haspopup="true" aria-expanded={open} aria-controls={open?popoverId:undefined} disabled={!session} onClick={()=>setOpen(value=>!value)}><Icon size={14}/><span>{selected.name}{autoOn&&' · Auto'}</span><ChevronDown size={12}/></Button>
   {open&&<div className="mode-popover" id={popoverId}>
-   <div className="mode-options" role="radiogroup" aria-label="Session mode">{modes.map(mode=>{const ModeIcon=mode.icon;return <label className={'mode-option '+(selected.id===mode.id?'selected':'')} key={mode.id}><input type="radio" name="session-mode" value={mode.id} checked={selected.id===mode.id} disabled={running} onChange={()=>{onPatch({mode:mode.id});setOpen(false);trigger.current?.focus()}}/><ModeIcon size={18}/><span><strong>{mode.name}</strong><small>{mode.description}</small></span>{selected.id===mode.id&&<Check size={16}/>}</label>})}</div>
+   <div className="mode-options" role="radiogroup" aria-label="Session mode">{modes.map(mode=>{const ModeIcon=mode.icon,blocked=mode.id==='plan'&&!!planReason;return <label className={'mode-option '+(selected.id===mode.id?'selected':'')} key={mode.id}><input type="radio" name="session-mode" value={mode.id} checked={selected.id===mode.id} disabled={running||blocked} aria-describedby={blocked?planReasonId:undefined} onChange={()=>{onPatch({mode:mode.id});setOpen(false);trigger.current?.focus()}}/><ModeIcon size={18}/><span><strong>{mode.name}</strong><small>{mode.description}</small></span>{selected.id===mode.id&&<Check size={16}/>}</label>})}</div>
+   {planReason&&<p className="control-running-note" id={planReasonId}>{planReason}</p>}
    {running&&<p className="control-running-note" role="status">Change mode after the current task finishes.</p>}
-   {footer}
+   {selected.id==='agent'&&auto&&onAutoChange&&<div className="mode-auto">
+    <label className="mode-auto-row"><span><strong id={autoId+'-name'}>Auto</strong><small id={autoId+'-help'}>Approves low-risk tool calls without asking. Risky actions still ask.</small></span><input type="checkbox" role="switch" checked={auto.enabled} disabled={!!autoReason&&!auto.enabled} aria-labelledby={autoId+'-name'} aria-describedby={autoId+'-help'+(autoReason?' '+autoId+'-reason':'')} onChange={event=>onAutoChange({...auto,enabled:event.target.checked})}/></label>
+    {autoReason&&<p className="control-running-note" id={autoId+'-reason'}>{autoReason}</p>}
+    {!autoReason&&<Collapsible><CollapsibleTrigger asChild><Button className="mode-auto-limits-toggle" variant="ghost" size="sm">Auto limits<ChevronDown size={12}/></Button></CollapsibleTrigger><CollapsibleContent><AutoLimits auto={auto} onChange={onAutoChange}/></CollapsibleContent></Collapsible>}
+   </div>}
   </div>}
  </span>;
 }

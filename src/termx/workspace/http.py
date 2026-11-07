@@ -65,12 +65,18 @@ class FileInput(Input):
     worktree_id:str|None=None
 
 
+class AutoInput(Input):
+    enabled: bool=True
+    ceilings: dict | None=None
+
+
 class TurnInput(Input):
     prompt: str=Field(min_length=1,max_length=64000)
     request_id: str=Field(min_length=8,max_length=128)
     limits: dict | None=None
     attachments: list[dict] | None=None
     context: list[dict] | None=None
+    auto: AutoInput | None=None
 
 
 class ForkInput(Input):

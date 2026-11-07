@@ -11,6 +11,8 @@ import ConversationMessage from './ConversationMessage';
 import PromptQueue from './PromptQueue';
 import SessionModelControls from './SessionModelControls';
 import SessionModePicker from './SessionModePicker';
+import TaskMeterLine,{useTaskMeter} from './TaskMeter';
+import {AUTO_CEILING_DEFAULTS,AUTO_OFF,autoBlockedReason,setTaskAuto,type AutoSetting} from '../lib/agentic';
 import './chat-composer.css';
 import {useModelFavorites} from '../lib/model-favorites';
 import SessionSettings from './SessionSettings';
@@ -54,6 +56,19 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  const turns=session?.turns||[];
  const messages=useMemo(()=>conversationMessages(turns),[turns]);
  const latest=latestExecutionTask(turns),running=active(latest);
+ const meter=useTaskMeter(latest,running,visible);
+ // Auto is a per-conversation preference, kept while the app is open. A live task's own state shows until the user changes it here.
+ const [armed,setArmed]=useState<Record<string,AutoSetting>>({}),autoRequest=useRef(0);
+ const liveAuto:AutoSetting|null=meter?.auto?{enabled:meter.auto.enabled,ceilings:{...AUTO_CEILING_DEFAULTS,...meter.auto.ceilings}}:null;
+ const auto:AutoSetting=(session&&armed[session.id])||(running&&liveAuto)||AUTO_OFF;
+ function changeAuto(next:AutoSetting){
+  if(!session)return;const id=session.id,previous=auto;setArmed(old=>({...old,[id]:next}));
+  if(latest&&running&&session.mode==='agent'){
+   // Only the newest request may roll the choice back, so an older refusal cannot undo a newer accepted change.
+   const request=++autoRequest.current;
+   setTaskAuto(latest.id,next).catch(error=>{if(autoRequest.current===request)setArmed(old=>({...old,[id]:previous}));onError(error)});
+  }
+ }
  const {scroller,virtual,awayFromLatest,scrollToLatest,scrollToMessage}=useTranscriptScroll({session,messages,onError,followKey:latest?.result});
  const connectionProblem=chatConnectionProblem(session,providers,engines),connectionBlocked=!!connectionProblem;
  useEffect(()=>{if(!connectionBlocked)setActionError(value=>value?.kind==='connection'?null:value)},[connectionBlocked]);
@@ -159,14 +174,16 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
   const writeIntent=captureSessionWrite(),submission=Symbol();
   scrollToLatest();
   const identifier=session.id,prompt=pendingPrompt?.prompt||draft,key=pendingPrompt?.key||crypto.randomUUID(),selected=pendingPrompt?.context||context,selectedImages=pendingPrompt?.attachments||attachments.map(image=>({...image})),operation=pendingPrompt?.intent||intent,interruptTask=pendingPrompt?.interruptTask||(operation==='interrupt'?latest?.id:undefined);
-  const pending={prompt,key,context:selected,attachments:selectedImages,intent:operation,interruptTask};
+  // A retry reuses the stored Auto setting so the same request_id never carries a different body.
+  const autoBody=pendingPrompt?pendingPrompt.auto:operation==='send'&&session.mode==='agent'&&auto.enabled&&!autoBlockedReason(session)?{enabled:true as const,ceilings:auto.ceilings}:undefined;
+  const pending={prompt,key,context:selected,attachments:selectedImages,intent:operation,interruptTask,...(autoBody?{auto:autoBody}:{})};
   setPendingPrompt(pending);
   const previous=drafts.current.get(identifier);drafts.current.set(identifier,{text:draft,saved:lastSaved.current,dirty:dirty.current,context,attachments,...previous,submission:pending});
   try{
    beginSubmission(identifier,submission);
    if(ownerId)await persistWindowDraft(ownerId,identifier,drafts.current.get(identifier)!);
    await draftWrites.get(identifier);writeIntent.assertCurrent();
-   await serializeSessionWrite(identifier,()=>request('/api/workspace/sessions/'+identifier+(operation==='send'?'/turns':'/queue'),{...json('POST',{prompt,request_id:key,attachments:selectedImages.length?selectedImages:undefined,context:selected,...(interruptTask?{interrupt_task_id:interruptTask}:{})}),signal:writeIntent.signal}),writeIntent);
+   await serializeSessionWrite(identifier,()=>request('/api/workspace/sessions/'+identifier+(operation==='send'?'/turns':'/queue'),{...json('POST',{prompt,request_id:key,attachments:selectedImages.length?selectedImages:undefined,context:selected,...(autoBody?{auto:autoBody}:{}),...(interruptTask?{interrupt_task_id:interruptTask}:{})}),signal:writeIntent.signal}),writeIntent);
    if(operation!=='send')setQueueChange(value=>value+1);
    const local=drafts.current.get(identifier);
    if(!local||(local.text===prompt&&sameContext(local.context,selected)&&JSON.stringify(local.attachments||[])===JSON.stringify(selectedImages))){
@@ -207,6 +224,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
   <div className="composer-container">
    {session&&connectionProblem&&!running&&<ChatConnectionSetup key={(ownerId||'')+':'+session.id} session={session} providers={providers} engines={engines} enabled={visible&&!sending} onConfigureAgent={onConfigureAgent} onRefresh={onRefresh} onConnect={patch}/>}
    {session?.linked_from&&<div className="session-context"><span title="This conversation is a linked fork"><GitFork size={12}/> Linked fork</span></div>}
+   {session&&meter&&<TaskMeterLine meter={meter}/>}
    {session&&<PromptQueue visible={visible} sessionId={session.id} changed={queueChange} onError={onError} onRefresh={onRefresh} onTask={setSupervised}/>}
    <PromptInputBody className="composer">
     {context.length>0&&<section className="composer-context" aria-label="Selected browser context">{context.map((item,index)=><div className="context-chip" key={stableKey(item)}><details><summary>{contextLabel(item)}</summary><p>{contextDescription(item)}</p><p>Shares this snapshot or file reference. Browser control requires a separate handoff.</p><pre role="region" tabIndex={0} aria-label="Exact selected context">{JSON.stringify(item,null,2)}</pre></details><Button size="icon" variant="ghost" aria-label={'Remove context '+contextLabel(item)} onClick={()=>editDraft(draft,context.filter((_,i)=>i!==index))}><X size={12}/></Button></div>)}</section>}
@@ -217,7 +235,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
     <PromptInputTools>
      <input type="file" hidden ref={fileInput} accept="image/png,image/jpeg,image/webp" multiple onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void upload(files)}}/>
      <Button size="icon" variant="ghost" aria-label="Attach image" title="Attach image" disabled={!session} onClick={()=>fileInput.current?.click()}><Plus size={17}/></Button>
-     <SessionModePicker key={session?.id} session={session} running={running} onPatch={patch}/>
+     <SessionModePicker key={session?.id} session={session} running={running} onPatch={patch} auto={auto} onAutoChange={changeAuto}/>
      <SessionModelControls coordinating={coordinating} session={session} engines={engines} providers={providers} runnerAccounts={runnerAccounts} models={models} favorites={favorites} favoriteKey={favoriteKey} running={running} onFavorite={favorite} onEngine={chooseEngine} onPatch={patch} onRefresh={onRefresh} onError={onError} onConfigureAgent={onConfigureAgent}/>
      <span className="flex-spacer"/>
      {running&&draft.trim()&&!pendingPrompt&&<Button className="composer-queue" size="sm" variant="ghost" aria-label="Queue follow-up" title="Queue follow-up after this task" disabled={sending||connectionBlocked} onClick={()=>void send('queue')}><ListPlus size={16}/><span>Queue</span></Button>}

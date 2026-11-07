@@ -593,6 +593,7 @@ class AgentManager:
         custom_agent_id: str | None = None,
         custom_agent_snapshot: dict[str, Any] | None = None,
         auto: dict[str, Any] | None = None,
+        isolated: bool = False,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -637,7 +638,7 @@ class AgentManager:
             enabled = bool(auto.get("enabled", True))
             auto_state = self._auto_state(enabled, resolve_auto_ceilings(auto.get("ceilings")))
             if enabled:
-                self._require_auto_allowed(mode, execution == "worktree")
+                self._require_auto_allowed(mode, execution == "worktree" or isolated)
         root = Path(cwd).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
@@ -740,7 +741,8 @@ class AgentManager:
         # Provider planning is execution work too. Persist its phase before
         # admission so an exhausted tree cannot bypass planning/plan approval.
         self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids,
-                                                 **({"auto": auto_state} if auto_state else {})})
+                                                 **({"auto": auto_state} if auto_state else {}),
+                                                 **({"isolated": True} if isolated else {})})
         await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
         ready = self._task(task_id)
         if ready["status"] == "planning" and ready.get("mode") in READ_ONLY_MODES:
@@ -1723,8 +1725,8 @@ class AgentManager:
 
     @staticmethod
     def _carry_runtime(runtime: dict[str, Any] | None) -> dict[str, Any]:
-        """The Auto state and last context size, for runtime rewrites that would otherwise drop them."""
-        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used")}
+        """The Auto state, last context size and session-worktree flag, for runtime rewrites that would otherwise drop them."""
+        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used", "isolated")}
         return {key: value for key, value in carried.items() if value}
 
     @staticmethod
@@ -1779,7 +1781,10 @@ class AgentManager:
         previous = runtime.get("auto")
         if enabled:
             record = self.store.task_worktree(task_id)
-            self._require_auto_allowed(task.get("mode"), bool(record and record["mode"] == "worktree" and record["status"] == "active"))
+            self._require_auto_allowed(
+                task.get("mode"),
+                bool(runtime.get("isolated") or (record and record["mode"] == "worktree" and record["status"] == "active")),
+            )
         resolved = resolve_auto_ceilings(ceilings, (previous or {}).get("ceilings"))
         if previous and (previous.get("enabled") or not enabled):
             # Counters keep running when only the ceilings change or Auto goes off.
