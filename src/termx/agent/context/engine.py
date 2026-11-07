@@ -9,11 +9,12 @@ tree every turn.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from termx import git_ops
 from termx.agent.context.manifest import SKIP_DIRS, _gitignore, _ignored, _secret_name, workspace_manifest
@@ -25,6 +26,17 @@ DEFAULT_CONTEXT_LIMITS = {
     "max_images_in_context": 4,
 }
 
+# Output room held back from the window when the model does not report max_output.
+DEFAULT_RESERVED_OUTPUT = 8_192
+DEFAULT_TOOL_RESULT_CAP_CHARS = 8_000
+_MIN_TOOL_RESULT_CAP_CHARS = 2_000
+# The rule behind ``estimate_tokens``, shared by every size conversion below.
+CHARS_PER_TOKEN = 4
+# Share of a summariser's budget that the older transcript slice may take; the rest is its reply.
+_SUMMARY_INPUT_SHARE = 0.6
+# Fewest recent items a small window may keep verbatim.
+_MIN_KEPT_ITEMS = 4
+_SUMMARISER_TIMEOUT_S = 30.0
 _RECENT_FILES = 12
 _SNAPSHOT_DEPTH = 2
 _SNAPSHOT_TTL_S = 30.0
@@ -34,6 +46,38 @@ _BLANK_IMAGE_URL = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
+
+
+def limits_for_model(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Context limits for one model from its metadata (``Route.meta``).
+
+    The budget is the window minus the output room (``max_output``, else a default, never more than
+    half the window); compaction triggers at 75% of it. A model with no known window keeps the 120k
+    default and reports ``context_window=None`` so the UI can say so.
+    """
+    # ``Route.meta`` is already normalised: values are positive ints or None.
+    window = (meta or {}).get("context_window")
+    if not window:
+        return {
+            "context_window": None,
+            "max_context_estimate_tokens": DEFAULT_CONTEXT_LIMITS["max_context_estimate_tokens"],
+            "tool_result_cap_chars": DEFAULT_TOOL_RESULT_CAP_CHARS,
+        }
+    reserved = min((meta or {}).get("max_output") or DEFAULT_RESERVED_OUTPUT, window // 2)
+    return {
+        "context_window": window,
+        "max_context_estimate_tokens": window - reserved,
+        # ~2% of the window in characters, bounded.
+        "tool_result_cap_chars": max(
+            _MIN_TOOL_RESULT_CAP_CHARS, min(DEFAULT_TOOL_RESULT_CAP_CHARS, window * CHARS_PER_TOKEN * 2 // 100)
+        ),
+    }
+
+
+def summary_input_chars(meta: dict[str, Any] | None) -> int:
+    """How much transcript text fits in a summariser call for the model described by ``meta``."""
+    budget = limits_for_model(meta)["max_context_estimate_tokens"]
+    return int(budget * CHARS_PER_TOKEN * _SUMMARY_INPUT_SHARE)
 
 
 def project_snapshot(root: str) -> dict[str, Any]:
@@ -192,9 +236,30 @@ class ContextEngine:
         self._limits = {**DEFAULT_CONTEXT_LIMITS, **(limits or {})}
         self._snapshot: dict[str, Any] | None = None
         self._snapshot_at = 0.0
+        # (input_tokens, history length) of the last real provider turn.
+        self._usage: tuple[int, int] | None = None
+
+    def configure(self, limits: dict[str, Any] | None) -> None:
+        """Adopt the limits of the model the next call goes to.
+
+        A different route means different tokenisation, so the last real usage no longer applies.
+        """
+        merged = {**DEFAULT_CONTEXT_LIMITS, **(limits or {})}
+        if merged != self._limits:
+            self._limits = merged
+            self._usage = None
+
+    def note_usage(self, input_tokens: int, history_len: int) -> None:
+        """Record the real prompt size the provider reported for a history of ``history_len`` items."""
+        self._usage = (input_tokens, history_len) if input_tokens > 0 else None
+
+    def context_used(self, items: list[dict[str, Any]]) -> int:
+        """Tokens the next prompt will take: the last real input size plus an estimate of what came after it."""
+        if self._usage is not None and len(items) >= self._usage[1]:
+            return self._usage[0] + estimate_tokens(items[self._usage[1]:])
+        return estimate_tokens(items)
 
     async def snapshot(self) -> dict[str, Any]:
-        import asyncio
         import time
 
         if self._snapshot is None or time.monotonic() - self._snapshot_at > _SNAPSHOT_TTL_S:
@@ -225,29 +290,89 @@ class ContextEngine:
         a bare call item without its output would not be API-valid).
         """
         limit = int(self._limits["max_context_estimate_tokens"])
-        estimated = estimate_tokens(items)
-        if estimated < int(limit * 0.75) or len(items) <= keep_recent:
+        if self.context_used(items) < int(limit * 0.75):
             return None
         head: list[dict[str, Any]] = []
         body = list(items)
         if body and isinstance(body[0], dict) and body[0].get("role") == "user":
             head, body = body[:1], body[1:]
-        split = max(0, len(body) - keep_recent)
+        split = len(body) - _kept_items(body, keep_recent, limit // 2)
         # Slide the boundary left past leading outputs so no retained item is
         # an orphan whose call was compacted away.
         while split > 0 and str(body[split].get("type") or "").endswith("call_output"):
             split -= 1
         compacted, retained = body[:split], list(body[split:])
-        if not compacted:
+        # Nothing older than the tail, or only an earlier checkpoint: nothing new to fold in.
+        if not any(checkpoint_message_payload(item) is None for item in compacted):
             return None
         unresolved = _unresolved_call_ids(compacted)
         summary = _compaction_summary(compacted, retained, unresolved, git_state)
+        self._usage = None
         return {
             "history": head + [checkpoint_message(summary, len(compacted))] + retained,
             "payload": summary,
             "history_cursor": len(items) - len(retained),
             "dropped": len(compacted),
+            "older": compacted,
+            "checkpoint_index": len(head),
+            "summariser": None,
         }
+
+    async def compact(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        git_state: dict[str, Any] | None = None,
+        keep_recent: int = 40,
+        summarise: Callable[[list[dict[str, Any]]], Awaitable[dict[str, Any]]] | None = None,
+        timeout_s: float = _SUMMARISER_TIMEOUT_S,
+    ) -> dict[str, Any] | None:
+        """``plan_compaction`` with an optional model-written summary of the older slice.
+
+        ``summarise`` gets only the slice being dropped and returns ``summary``, ``decisions`` and
+        ``pending_work``. Any error, timeout or malformed reply keeps the rule-based plan and sets
+        ``summariser`` to ``"fallback"``; the retained tail and call pairing are unchanged either way.
+        """
+        plan = self.plan_compaction(items, git_state=git_state, keep_recent=keep_recent)
+        if plan is None or summarise is None:
+            return plan
+        try:
+            reply = await asyncio.wait_for(summarise(plan["older"]), timeout_s)
+            text = reply.get("summary") if isinstance(reply, dict) else None
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("summariser returned no summary")
+        except Exception as exc:
+            plan["summariser"] = "fallback"
+            plan["summariser_error"] = (str(exc) or type(exc).__name__)[:200]
+            return plan
+        payload = plan["payload"]
+        payload["summary"] = text.strip()[:4000]
+        payload["decisions"] = list(dict.fromkeys(payload["decisions"] + _strings(reply.get("decisions"), 20)))[-20:]
+        payload["pending_work"] = (payload["pending_work"] + _strings(reply.get("pending_work"), 20))[-20:]
+        payload["summariser"] = "model"
+        plan["history"][plan["checkpoint_index"]] = checkpoint_message(payload, plan["dropped"])
+        plan["summariser"] = "model"
+        return plan
+
+    def cap_tool_results(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Bound each tool result to ``tool_result_cap_chars``, keeping its head and tail.
+
+        The marker says how many characters were cut. A capped result is already within the cap,
+        so running this again changes nothing. Inputs are not mutated.
+        """
+        cap = int(self._limits.get("tool_result_cap_chars") or DEFAULT_TOOL_RESULT_CAP_CHARS)
+        capped: list[dict[str, Any]] = []
+        for item in items:
+            output = item.get("output") if isinstance(item, dict) else None
+            if (
+                isinstance(item, dict)
+                and item.get("type") == "function_call_output"
+                and isinstance(output, str)
+                and len(output) > cap
+            ):
+                item = {**item, "output": _cap_file_read(output, cap) or _head_tail(output, cap)}
+            capped.append(item)
+        return capped
 
     def slim_history(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Bound transcript size without breaking call/output pairing.
@@ -258,6 +383,7 @@ class ContextEngine:
         newest-first budget across tool outputs, and keeps at most
         ``max_images_in_context`` image parts (newest kept).
         """
+        items = self.cap_tool_results(items)
         char_cap = int(self._limits["max_tool_output_chars_per_turn"])
         image_cap = int(self._limits["max_images_in_context"])
         max_events = int(self._limits["max_history_events"])
@@ -326,10 +452,106 @@ class ContextEngine:
         return slimmed
 
 
+SUMMARY_PROMPT = (
+    "You compress the older part of an agent's transcript so the agent can continue the task. "
+    "Reply with JSON only: {\"summary\": string (what was asked, done and learned), "
+    "\"decisions\": [string], \"pending_work\": [string]}. Keep file paths, commands and error "
+    "messages that still matter. Do not call tools."
+)
+
+
+def render_for_summary(items: list[dict[str, Any]], max_chars: int) -> str:
+    """The older transcript slice as plain lines, newest kept when it does not fit ``max_chars``."""
+    lines = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or item.get("role") or "item")
+        label = f"{kind} {item['name']}" if item.get("name") else kind
+        text = _item_text(item) or json.dumps(item.get("arguments") or item.get("input") or "", default=str)
+        lines.append(f"[{label}] {text[:600]}")
+    rendered = "\n".join(lines)
+    return rendered if len(rendered) <= max_chars else "[earlier lines omitted]\n" + rendered[-max_chars:]
+
+
+def parse_summary(text: str) -> dict[str, Any]:
+    """The JSON object in a summariser reply (code fences tolerated). Raises ValueError when there is none."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("summariser reply is not JSON")
+    parsed = json.loads(text[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("summariser reply is not an object")
+    return parsed
+
+
+def _kept_items(body: list[dict[str, Any]], keep_recent: int, token_room: int) -> int:
+    """How many of the newest items stay verbatim: at most ``keep_recent``, fewer when they would not
+    fit in ``token_room`` tokens (a small window), never fewer than a handful."""
+    floor = min(_MIN_KEPT_ITEMS, keep_recent)
+    kept, used = 0, 0
+    for item in reversed(body[-keep_recent:] if keep_recent > 0 else []):
+        used += estimate_tokens([item])
+        if used > token_room and kept >= floor:
+            break
+        kept += 1
+    return kept
+
+
+def _head_tail(text: str, cap: int) -> str:
+    def marker(cut: int) -> str:
+        return f"\n...[truncated {cut} chars, re-read with offset]...\n"
+
+    room = max(0, cap - len(marker(len(text))))
+    head = room * 2 // 3
+    tail = room - head
+    return text[:head] + marker(len(text) - room) + (text[len(text) - tail:] if tail else "")
+
+
+def _cap_file_read(output: str, cap: int) -> str | None:
+    """Cap a ``read_file`` result by shortening only its ``content``, keeping the JSON valid.
+
+    The result then says it is truncated and which line to read next. ``None`` when ``output`` is
+    not a read_file result (or cannot be shortened enough), so the generic head and tail cut applies.
+    """
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return None
+    if not (isinstance(data, dict) and isinstance(data.get("content"), str) and isinstance(data.get("start_line"), int)):
+        return None
+    content = data["content"]
+    overhead = len(json.dumps({**data, "content": "", "truncated": True, "next_offset": 10**9, "cap_note": " " * 120}))
+    keep = cap - overhead
+    while keep > 0:
+        shown = content[:keep]
+        if len(shown) < len(content) and "\n" in shown:
+            shown = shown[: shown.rfind("\n") + 1]  # whole lines, so next_offset is exact
+        lines = len(shown.splitlines())
+        result = {
+            **data,
+            "content": shown,
+            "truncated": True,
+            "next_offset": int(data["start_line"]) + lines,
+            "cap_note": f"truncated {len(content) - len(shown)} chars, re-read with offset={int(data['start_line']) + lines}",
+        }
+        encoded = json.dumps(result)
+        if len(encoded) <= cap:
+            return encoded
+        keep -= len(encoded) - cap
+    return None
+
+
+def _strings(value: Any, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item)[:400] for item in value if str(item).strip()][:limit]
+
+
 def estimate_tokens(items: list[dict[str, Any]]) -> int:
     """Rough transcript cost in tokens (chars/4 over the JSON encoding)."""
     try:
-        return len(json.dumps(items, default=str)) // 4
+        return len(json.dumps(items, default=str)) // CHARS_PER_TOKEN
     except (TypeError, ValueError):
         return 0
 
@@ -432,9 +654,26 @@ def _compaction_summary(
     pending: list[str] = []
     last_assistant = ""
     last_user = ""
+    folded = 0
+    decisions: list[str] = []
+    narratives: list[str] = []
     outputs_by_call: dict[str, str] = {}
     for item in compacted:
         if not isinstance(item, dict):
+            continue
+        prior = checkpoint_message_payload(item)
+        if prior is not None:
+            # An earlier checkpoint is folded in, not retained beside the new one.
+            earlier = prior.get("summary") or {}
+            steps.extend(str(step) for step in earlier.get("completed_steps") or [])
+            files.extend(f for f in map(str, earlier.get("important_files") or []) if f not in files)
+            errors.extend(str(err) for err in earlier.get("errors") or [])
+            decisions.extend(d for d in map(str, earlier.get("decisions") or []) if d not in decisions)
+            # A model-written narrative is worth keeping; the rule-based line is rebuilt each time.
+            narratives.append(str(earlier.get("earlier_summary") or ""))
+            if earlier.get("summariser") == "model":
+                narratives.append(str(earlier.get("summary") or ""))
+            folded += int(prior.get("compacted_items") or 0)
             continue
         kind = str(item.get("type") or "")
         if kind.endswith("call_output"):
@@ -471,15 +710,15 @@ def _compaction_summary(
         pending.append(f"last_assistant: {last_assistant}")
     if last_user:
         pending.append(f"last_user: {last_user}")
-    return {
+    summary = {
         "summary": (
-            f"Compacted {len(compacted)} earlier transcript items: "
+            f"Compacted {len(compacted) + folded} earlier transcript items: "
             f"{len(steps)} tool calls, {len(errors)} error outputs; "
             f"retained {len(retained)} recent items verbatim."
         ),
         "completed_steps": steps[-15:],
         "important_files": files[-20:],
-        "decisions": [],
+        "decisions": decisions[-20:],
         "pending_work": pending[-10:],
         "errors": errors[-8:],
         "git_state": git_state or {},
@@ -488,3 +727,7 @@ def _compaction_summary(
         "last_safe_execution_checkpoint": None,
         "created_at": time.time(),
     }
+    earlier_summary = "\n".join(text for text in narratives if text.strip())[-2000:]
+    if earlier_summary:
+        summary["earlier_summary"] = earlier_summary
+    return summary

@@ -545,6 +545,14 @@ class TaskUsage(DictBacked):
 
 
 @strawberry.type
+class TaskContext(DictBacked):
+    used: int | None  # tokens the next prompt takes; null before the first turn
+    window: int | None  # the model's context window; null when discovery had no value
+    limit: int  # the budget compaction works against (120k when the window is unknown)
+    window_known: bool
+
+
+@strawberry.type
 class ProviderTestResult(DictBacked):
     ok: bool | None
     detail: str | None
@@ -642,6 +650,12 @@ class AgentTask(DictBacked):
         value = object.__getattribute__(self, '_d')
         info.context.require_resource('agent-view', 'task', value['id'])
         return TaskUsage.wrap(info.context.state.agent.task_usage(value['id']))
+    @strawberry.field
+    @resolver
+    def context(self, info: Info) -> TaskContext:
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return TaskContext.wrap(info.context.state.agent.task_context(value['id']))
     metrics: JSON | None
     created_at: float | None
     updated_at: float | None

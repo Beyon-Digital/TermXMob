@@ -79,7 +79,8 @@ def register(registry: ToolRegistry) -> None:
                 "while you keep working, so you can spawn several and coordinate them. Collect "
                 "results with await_subagents, inspect with subagent_status, stop with "
                 "cancel_subagent; its steps appear nested under this call. Pass instructions "
-                "to give it a role or rules to follow. When called by the main agent, this also creates "
+                "to give it a role or rules to follow, and files and context to brief it. It returns its final "
+                "message and the files it changed. When called by the main agent, this also creates "
                 "a persistent inspectable child conversation and returns its session_id."
             ),
             parameters={
@@ -96,6 +97,15 @@ def register(registry: ToolRegistry) -> None:
                     "instructions": {
                         "type": "string",
                         "description": "Optional rules or persona for the sub-agent to follow.",
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional project paths the sub-agent should start from.",
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional results or decisions from earlier work that this task builds on.",
                     },
                     "model": {
                         "type": "string",

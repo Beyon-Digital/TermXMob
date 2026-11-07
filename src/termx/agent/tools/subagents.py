@@ -43,7 +43,7 @@ async def _await_subagents(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
 
 
 async def _subagent_status(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
-    result = ctx.manager._subagent_statuses(ctx.task_id, call)
+    result = await ctx.manager._subagent_report(ctx.task_id, call)
     return ToolOutcome(result, event={"name": call.name})
 
 

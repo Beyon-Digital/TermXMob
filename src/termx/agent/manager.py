@@ -16,13 +16,18 @@ from typing import Any, TypeVar
 
 from termx.agent.computer import ComputerController
 from termx.agent.context import ContextEngine
+from termx.agent.context.handoff import build_brief, changed_files
 from termx.agent.context.engine import (
+    SUMMARY_PROMPT,
     checkpoint_message,
     checkpoint_message_payload,
-    estimate_tokens,
+    limits_for_model,
+    parse_summary,
+    render_for_summary,
+    summary_input_chars,
 )
 from termx.agent.discovery import ProviderCatalogue, clean_overrides, discover_models, merge_meta, model_info
-from termx.agent.metrics import TaskMetrics, usage_tokens
+from termx.agent.metrics import TaskMetrics, input_tokens, usage_tokens
 from termx.agent.observation import (
     ObservationTracker,
     crop_region,
@@ -736,7 +741,7 @@ class AgentManager:
             self._emit(task_id, "context.snapshot", {"snapshot": _snapshot_event(manifest)})
             history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
             if task.get("mode") in READ_ONLY_MODES:
-                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_auto(runtime)})
+                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_runtime(runtime)})
                 return
             provider = dict(self._provider(task["provider_id"]))
             provider["model"] = str(task["model"])
@@ -746,7 +751,7 @@ class AgentManager:
             self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
             self.store.update_task(task_id, status="awaiting_approval", plan=plan,
                 previous_response_id=response_id,
-                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_auto(runtime)})
+                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_runtime(runtime)})
             self._emit(task_id, "plan.ready", {"plan": plan})
             approval = self.store.create_approval(task_id, "plan", {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"})
             self._emit(task_id, "approval.requested", {"approval": approval})
@@ -1217,6 +1222,154 @@ class AgentManager:
             self._cancel.setdefault(task_id, asyncio.Event()).set()
             raise asyncio.CancelledError from exc
 
+    def _context_limits(self, task: dict[str, Any], provider: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Context limits for a model, from its (discovered or overridden) metadata.
+
+        Defaults to the task's own provider and model; pass ``provider`` (with its ``model`` set) for a fallback.
+        """
+        try:
+            provider = provider or {**self._provider(task["provider_id"]), "model": str(task.get("model") or "")}
+            return limits_for_model(self.model_meta(provider, provider["model"]))
+        except KeyError:
+            return limits_for_model(None)
+
+    def task_context(self, task_id: str) -> dict[str, Any]:
+        """Context used against the model's window. ``window`` is None when the model's window is unknown."""
+        task = self._task(task_id)
+        limits = self._context_limits(task)
+        used = (task.get("runtime") or {}).get("context_used")
+        return {
+            "used": used or None,
+            "window": limits["context_window"],
+            "limit": limits["max_context_estimate_tokens"],
+            "window_known": limits["context_window"] is not None,
+        }
+
+    def _summariser(
+        self, task: dict[str, Any], metrics: TaskMetrics
+    ) -> Callable[[list[dict[str, Any]]], Awaitable[dict[str, Any]]] | None:
+        """A model-backed summariser when the ``summariser`` role is configured, else None.
+
+        Its turns count toward the task's usage, the tree budget and the Auto allowance like any other turn.
+        """
+        if not self.routing().get("summariser"):
+            return None
+
+        async def summarise(older: list[dict[str, Any]]) -> dict[str, Any]:
+            route = self.resolve_route("summariser", default_provider_id=task["provider_id"])
+            provider = dict(self._provider(route.provider_id))
+            provider["model"] = route.model
+            started = monotonic()
+            turn = await self._adapter(provider).turn(
+                prompt=SUMMARY_PROMPT,
+                cwd=task["cwd"],
+                manifest={},
+                # Sized to the summariser's own window, never the task model's.
+                input_items=[{"role": "user", "content": render_for_summary(older, summary_input_chars(route.meta))}],
+                read_only=True,
+                allow_subagents=False,
+            )
+            cost = metrics.record_provider(
+                int((monotonic() - started) * 1000), turn.usage, (route.meta["price_in"], route.meta["price_out"])
+            )
+            tokens = usage_tokens(turn.usage)
+            self.tree_budget.record_usage(task["id"], tokens, cost)
+            self._auto_note_turn(task["id"], tokens, cost)
+            if turn.calls:
+                raise ValueError("summariser asked for tools")
+            return parse_summary(turn.text)
+
+        return summarise
+
+    async def _fit_history(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        engine: ContextEngine,
+        provider: dict[str, Any],
+        history: list[dict[str, Any]],
+        step: int,
+        manifest: Any,
+        metrics: TaskMetrics,
+        cancel: asyncio.Event,
+    ) -> list[dict[str, Any]]:
+        """Fit ``history`` to the window of the model the next call goes to: adopt its limits, compact, then slim."""
+        engine.configure(self._context_limits(task, provider))
+        history = await self._compact_history(task_id, task, engine, history, step, manifest, metrics, cancel)
+        return engine.slim_history(history)
+
+    async def _compact_history(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        engine: ContextEngine,
+        history: list[dict[str, Any]],
+        step: int,
+        manifest: Any,
+        metrics: TaskMetrics,
+        cancel: asyncio.Event,
+    ) -> list[dict[str, Any]]:
+        """Compact ``history`` when it no longer fits the engine's window; persists a context checkpoint."""
+        # Compaction runs BEFORE slim_history: the compactor must see the
+        # un-trimmed transcript or older history would be dropped permanently
+        # before it could be summarized durably.
+        used = engine.context_used(history)
+        summarise = self._summariser(task, metrics)
+        compaction = await engine.compact(
+            history,
+            git_state=manifest.get("git") if isinstance(manifest, dict) else None,
+            summarise=(lambda older: _race_cancel(summarise(older), cancel)) if summarise else None,
+        )
+        if compaction is None:
+            return history
+        self._emit(
+            task_id,
+            "context.compaction.started",
+            {"estimated_tokens": used, "items": len(history)},
+        )
+        payload = dict(compaction["payload"])
+        payload["approvals"] = [
+            {"id": approval["id"], "kind": approval["kind"], "status": approval["status"]}
+            for approval in self.store.approvals(task_id)
+            if approval.get("status") == "pending"
+        ]
+        payload["artifacts"] = [
+            {"id": artifact["id"], "kind": artifact["kind"], "mime": artifact["mime"]}
+            for artifact in self.store.artifacts(task_id)
+        ][:20]
+        last_safe = self.store.latest_checkpoint(task_id, kind="execution")
+        payload["last_safe_execution_checkpoint"] = last_safe["id"] if last_safe else None
+        checkpoint = self.store.create_checkpoint(
+            task_id,
+            kind="context",
+            history_cursor=int(compaction["history_cursor"]),
+            plan_step=step,
+            payload=payload,
+        )
+        history = compaction["history"]
+        # Re-serialize the injected message with the real checkpoint id (its
+        # content stays a plain user message).
+        for item in history:
+            body = checkpoint_message_payload(item)
+            if body is not None:
+                item["content"] = checkpoint_message(
+                    body["summary"], body["compacted_items"], checkpoint["id"]
+                )["content"]
+                break
+        self._emit(task_id, "context.checkpoint", {"checkpoint_id": checkpoint["id"]})
+        self._emit(
+            task_id,
+            "context.compaction.completed",
+            {
+                "checkpoint_id": checkpoint["id"],
+                "retained": len(history),
+                "dropped": compaction["dropped"],
+                "summariser": compaction["summariser"],
+                **({"summariser_error": compaction["summariser_error"]} if compaction.get("summariser_error") else {}),
+            },
+        )
+        return history
+
     async def _drive(
         self,
         task_id: str,
@@ -1268,60 +1421,10 @@ class AgentManager:
                 provider["model"] = str(task.get("model") or _resolve_model(provider, None))
                 adapter = self._adapter(provider)
                 manifest = await engine.snapshot()
-                # Compaction runs BEFORE slim_history: the compactor must see
-                # the un-trimmed transcript or older history would be dropped
-                # permanently before it could be summarized durably.
-                compaction = engine.plan_compaction(
-                    history, git_state=manifest.get("git") if isinstance(manifest, dict) else None
-                )
-                if compaction is not None:
-                    self._emit(
-                        task_id,
-                        "context.compaction.started",
-                        {"estimated_tokens": estimate_tokens(history), "items": len(history)},
-                    )
-                    payload = dict(compaction["payload"])
-                    payload["approvals"] = [
-                        {"id": approval["id"], "kind": approval["kind"], "status": approval["status"]}
-                        for approval in self.store.approvals(task_id)
-                        if approval.get("status") == "pending"
-                    ]
-                    payload["artifacts"] = [
-                        {"id": artifact["id"], "kind": artifact["kind"], "mime": artifact["mime"]}
-                        for artifact in self.store.artifacts(task_id)
-                    ][:20]
-                    last_safe = self.store.latest_checkpoint(task_id, kind="execution")
-                    payload["last_safe_execution_checkpoint"] = (
-                        last_safe["id"] if last_safe else None
-                    )
-                    checkpoint = self.store.create_checkpoint(
-                        task_id,
-                        kind="context",
-                        history_cursor=int(compaction["history_cursor"]),
-                        plan_step=step,
-                        payload=payload,
-                    )
-                    history = compaction["history"]
-                    # Re-serialize the injected message with the real
-                    # checkpoint id (its content stays a plain user message).
-                    for item in history:
-                        body = checkpoint_message_payload(item)
-                        if body is not None:
-                            item["content"] = checkpoint_message(
-                                body["summary"], body["compacted_items"], checkpoint["id"]
-                            )["content"]
-                            break
-                    self._emit(task_id, "context.checkpoint", {"checkpoint_id": checkpoint["id"]})
-                    self._emit(
-                        task_id,
-                        "context.compaction.completed",
-                        {
-                            "checkpoint_id": checkpoint["id"],
-                            "retained": len(history),
-                            "dropped": compaction["dropped"],
-                        },
-                    )
-                history = engine.slim_history(history)
+                # The window follows the task's current model: a user switch or a
+                # reassignment shrinks it here, and the next call compacts first.
+                history = await self._fit_history(
+                    task_id, task, engine, provider, history, step, manifest, metrics, cancel)
                 read_only = task.get("mode") in READ_ONLY_MODES
                 plan_mode = task.get("mode") == "plan"
                 turn_started = monotonic()
@@ -1431,6 +1534,9 @@ class AgentManager:
                         })
                         provider, adapter = next_provider, self._adapter(next_provider)
                         stream_fn = self._stream_fn(adapter)
+                        # The fallback model has its own window: fit the history to it first.
+                        history = await self._fit_history(
+                            task_id, task, engine, provider, history, step, manifest, metrics, cancel)
                         try:
                             turn = await self._budget_await(task_id, _race_cancel(
                                 retrying(_request, emit=_emit_retry, cancel=cancel, max_attempts=1,
@@ -1474,6 +1580,7 @@ class AgentManager:
                         "usage": turn.usage, "model": provider["model"],
                         "cost_usd": cost, "tokens": tokens,
                     })
+                engine.note_usage(input_tokens(turn.usage), len(history))
                 history.extend(turn.output_items)
                 self._auto_note_turn(task_id, tokens, cost)
                 if not turn.calls and plan_mode:
@@ -1484,7 +1591,7 @@ class AgentManager:
                     result = turn.text or "Task completed."
                     snapshot = metrics.snapshot()
                     self._finalize_worktree(task_id)
-                    self.store.update_task(task_id, status="completed", result=result, runtime=self._carry_auto(self._task(task_id).get("runtime")), metrics=snapshot)
+                    self.store.update_task(task_id, status="completed", result=result, runtime=self._carry_runtime(self._task(task_id).get("runtime")), metrics=snapshot)
                     self._emit(task_id, "task.metrics", {"metrics": snapshot})
                     self._emit(task_id, "task.completed", {"result": result})
                     return
@@ -1496,6 +1603,8 @@ class AgentManager:
                     started_at,
                     turn_id=turn.response_id,
                 )
+                # Cap new tool results where they enter the transcript.
+                history = engine.cap_tool_results(history)
                 if paused:
                     return
                 submitted_plan = self._plan_submissions.pop(task_id, None)
@@ -1503,7 +1612,8 @@ class AgentManager:
                     self._request_plan_approval(task_id, submitted_plan, history, step)
                     return
                 runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at,
-                           **self._carry_auto(self._task(task_id).get("runtime"))}
+                           **self._carry_runtime(self._task(task_id).get("runtime")),
+                           "context_used": engine.context_used(history)}
                 self.store.update_task(task_id, runtime=runtime)
         except TreeTimeExceeded:
             self._pause_budget(task_id,history,step,started_at,'shared_max_seconds')
@@ -1583,10 +1693,10 @@ class AgentManager:
         return bool((((self._task(task_id).get("runtime") or {}).get("auto")) or {}).get("enabled"))
 
     @staticmethod
-    def _carry_auto(runtime: dict[str, Any] | None) -> dict[str, Any]:
-        """The Auto state, for runtime rewrites that would otherwise drop it."""
-        auto = (runtime or {}).get("auto")
-        return {"auto": auto} if auto else {}
+    def _carry_runtime(runtime: dict[str, Any] | None) -> dict[str, Any]:
+        """The Auto state and last context size, for runtime rewrites that would otherwise drop them."""
+        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used")}
+        return {key: value for key, value in carried.items() if value}
 
     @staticmethod
     def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int | float, int | float] | None:
@@ -2700,12 +2810,19 @@ class AgentManager:
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         instructions = str(call.arguments.get("instructions") or "").strip()
+        files = call.arguments.get("files")
+        context = str(call.arguments.get("context") or "").strip()
         child_prompt = prompt
-        if instructions:
-            child_prompt = (
-                f'You are the "{agent}" sub-agent. Follow these instructions:\n'
-                f"{instructions}\n\nTask: {prompt}"
+        if instructions or context or files:
+            # A bare task stays as typed; anything more becomes a structured brief.
+            child_prompt = build_brief(
+                prompt,
+                constraints=instructions,
+                files=[str(path) for path in files] if isinstance(files, list) else [],
+                context=context,
             )
+            if instructions:
+                child_prompt = f'You are the "{agent}" sub-agent.\n\n{child_prompt}'
         parent_limits = task["limits"]
         handles = self._subagent_handles(task_id)
         running = sum(1 for handle in handles.values() if not handle.done.is_set())
@@ -2966,6 +3083,30 @@ class AgentManager:
             entry["result"] = handle.result[:4000]
         return entry
 
+    async def _add_changed_files(
+        self, targets: dict[str, _SubagentHandle], children: dict[str, dict[str, Any]]
+    ) -> None:
+        """Add the files each finished worktree child changed, read in a worker thread once per child."""
+        for child_id, handle in targets.items():
+            entry = children.get(child_id)
+            if entry is None or entry.get("unavailable") or not handle.done.is_set():
+                continue
+            if handle.changed_files is None:
+                record = self.store.task_worktree(child_id)
+                if not (record and record.get("worktree_path") and record["status"] == "active"):
+                    continue
+                handle.changed_files = (
+                    await asyncio.to_thread(changed_files, record["worktree_path"], record["base_ref"])
+                )[:100]
+            entry["changed_files"] = handle.changed_files
+
+    async def _subagent_report(self, task_id: str, call: ProviderCall) -> dict[str, Any]:
+        """``_subagent_statuses`` plus each finished worktree child's changed files."""
+        result = self._subagent_statuses(task_id, call)
+        targets, _missing = self._subagent_targets(task_id, call)
+        await self._add_changed_files(targets, result["children"])
+        return result
+
     async def _await_subagents(
         self,
         task_id: str,
@@ -2999,6 +3140,7 @@ class AgentManager:
         children = {
             child_id: self._subagent_summary(handle) for child_id, handle in targets.items()
         }
+        await self._add_changed_files(targets, children)
         self._emit(
             task_id,
             "subagent.awaited",
@@ -3452,6 +3594,7 @@ class _SubagentHandle:
     deadline: float = 0.0
     status: str = "running"
     result: str = ""
+    changed_files: list[str] | None = None  # filled on the first report after the child finishes
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
 

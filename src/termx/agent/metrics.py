@@ -110,6 +110,11 @@ def usage_tokens(usage: dict[str, Any] | None) -> int:
     return _count((usage or {}).get("input_tokens")) + _count((usage or {}).get("output_tokens"))
 
 
+def input_tokens(usage: dict[str, Any] | None) -> int:
+    """Prompt tokens the provider reported for one turn, tolerant of missing or malformed values."""
+    return _count((usage or {}).get("input_tokens"))
+
+
 def _count(value: Any) -> int:
     try:
         return max(0, int(value or 0))

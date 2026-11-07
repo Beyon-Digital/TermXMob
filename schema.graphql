@@ -110,6 +110,7 @@ type AgentTask {
   runtime: JSON
   auto: JSON
   usage: TaskUsage!
+  context: TaskContext!
   events: JSON
   approvals: JSON
 }
@@ -1065,6 +1066,13 @@ type Subscription {
   activity_events: ActivityEvent!
   agent_task_events(task_id: String!, after: Int! = 0): TaskEventEnvelope!
   notification_events: HostNotification!
+}
+
+type TaskContext {
+  used: Int
+  window: Int
+  limit: Int!
+  window_known: Boolean!
 }
 
 type TaskEventEnvelope {
