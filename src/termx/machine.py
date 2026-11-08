@@ -83,6 +83,7 @@ def machine_snapshot(
     tunnel_status: dict[str, Any] | None = None,
     *,
     webrtc: bool = False,
+    voice: bool = False,
 ) -> dict[str, Any]:
     desktop = probe_desktop()
     prefs = store.get().terminal
@@ -107,6 +108,7 @@ def machine_snapshot(
             "remote_screen": desktop.remote_screen,
             "virtual_display": desktop.virtual_display,
             "webrtc": webrtc,
+            "voice": voice,
             "agent": True,
             "agent_shell": True,
             "agent_computer": desktop.remote_screen,

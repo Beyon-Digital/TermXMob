@@ -737,6 +737,7 @@ type Mutation {
   run_runbook(runbook_id: String!, profile: String! = "host"): RunbookRun!
   confirm_runbook_run(run_id: String!): RunbookRun!
   cancel_runbook_run(run_id: String!): RunbookRun!
+  save_voice_settings(input: VoiceSettingsInput!): VoiceStatus!
 }
 
 """An object with a Globally Unique ID"""
@@ -1014,6 +1015,7 @@ type Query {
   runbook(runbook_id: String!): RunbookDetail!
   runbook_runs(runbook_id: String = null): [RunbookRun!]!
   runbook_run(run_id: String!): RunbookRun!
+  voice_status: VoiceStatus!
 }
 
 input ReassignNodeInput {
@@ -1222,6 +1224,27 @@ input VirtualDisplayInput {
   height: Int! = 2532
   dpr: Float! = 2
   refresh_hz: Int! = 60
+}
+
+input VoiceSettingsInput {
+  engine: String = null
+  provider: String = null
+  model: String = null
+  transcribe_model: String = null
+  voice: String = null
+  auto_send: Boolean = null
+  auto_speak: Boolean = null
+  cloud_fallback: Boolean = null
+  keep_audio: Boolean = null
+  consent_provider: Boolean = null
+  accept_woof_license: String = null
+}
+
+type VoiceStatus {
+  available: Boolean!
+  settings: JSON!
+  engines: JSON!
+  stt: JSON!
 }
 
 type Workspace {

@@ -10,6 +10,7 @@ import ScheduleManager from './ScheduleManager';
 import ModelsSection from './ModelsSection';
 import AgentsSection from './AgentsSection';
 import MemorySection from './MemorySection';
+import VoiceSection from './VoiceSection';
 import AccessSection from './AccessSection';
 import {Empty,ManagerPage,ManagerSearch,ManagerStatus} from './manager-ui';
 import {useManagerLoad} from './use-manager';
@@ -54,6 +55,7 @@ export function Managers({section: incoming, projectId, sessionId, onCapabilitie
     {!ready?<div className="manager-main"><Empty>Loading current settings…</Empty></div>
     :section==='models'?<ModelsSection key={scope} admin={admin} me={me} projectId={projectId} onCapabilitiesChanged={onCapabilitiesChanged}/>
     :section==='agents'?<AgentsSection key={scope} admin={admin} me={me} projectId={projectId}/>
+    :section==='voice'?<VoiceSection key={scope} admin={admin} projectId={projectId}/>
     :section==='memory'?<MemorySection key={scope} me={me} projectId={projectId}/>
     :section==='access'?<AccessSection key={scope} admin={admin} me={me} projectId={projectId}/>
     :section==='extensions'?<ExtensionsSection key={scope} projectId={projectId}/>

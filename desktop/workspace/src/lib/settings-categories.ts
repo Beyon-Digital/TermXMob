@@ -4,6 +4,7 @@ export const settingsCategories = [
  {id:'preferences',label:'Preferences',group:'Preferences',description:'Your account, appearance and keyboard shortcuts.'},
  {id:'characters',label:'Characters',group:'Preferences',description:'Choose your agent’s character.'},
  {id:'models',label:'Models & engines',group:'Workers',description:'Connect providers, choose which model each role uses and manage engines.'},
+ {id:'voice',label:'Voice',group:'Workers',description:'Dictate to your agents and hear their replies.'},
  {id:'cloud',label:'Cloud accounts',group:'Workers',description:'Connect accounts used by your agents.'},
  {id:'agents',label:'Agents',group:'Workers',description:'Manage how your agents run.'},
  {id:'extensions',label:'Plugins & skills',group:'Workers',description:'Add skills and plugins to your agents.'},

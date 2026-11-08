@@ -4,7 +4,7 @@ export function csrf(){const value=document.cookie.split('; ').find(value=>value
 let refreshing:Promise<void>|undefined;
 const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('termx-session-state'):undefined;
 channel?.addEventListener('message',event=>{if(['signed-out','session-locked','session-unlocked'].includes(event.data))window.dispatchEvent(new Event('termx-'+event.data))});
-function locked(){channel?.postMessage('session-locked');window.dispatchEvent(new Event('termx-session-locked'));}
+export function locked(){channel?.postMessage('session-locked');window.dispatchEvent(new Event('termx-session-locked'));}
 function signedOut(){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));}
 export async function refreshSession(){
  if(refreshing)return refreshing;

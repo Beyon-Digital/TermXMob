@@ -30,6 +30,9 @@ async def shutdown_state(state: Any, timeout: float = 3.0) -> None:
     rtc = getattr(state, "rtc", None)
     if rtc is not None:
         await _invoke(getattr(rtc, "close_all", None), timeout=timeout)
+    voice = getattr(state, "voice", None)
+    if voice is not None:
+        await _invoke(getattr(getattr(voice, "registry", None), "close", None), timeout=timeout)
     try:
         from termx.desktop.virtual import destroy_all_virtual_displays
 

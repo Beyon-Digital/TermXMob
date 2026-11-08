@@ -230,19 +230,60 @@ class MediaProvider:
                 output.extend(chunk)
             return httpx.Response(response.status_code, content=bytes(output), headers=response.headers)
 
-    async def generate(self, owner, project, request):
-        if not request.get('acknowledge_billing'):
-            raise HTTPException(409, 'Confirm this provider/model usage before generation')
-        provider = self.state.agent_store.get_provider(request['provider_id'])
+    def account(self, provider_id, capability):
+        """The explicitly selected compatible account and its key; never a subscription or fallback."""
+        provider = self.state.agent_store.get_provider(provider_id)
         if not provider or provider['kind'] not in {'openai','openai-compatible'}:
             raise HTTPException(400, 'Select a configured compatible API account')
-        operation = request['operation']
-        capability = 'image' if operation.startswith('image') else 'audio'
         if capability not in provider.get('capabilities', []):
             raise HTTPException(409, f'The selected account does not declare {capability} support')
         key = self.state.credentials.get(provider['id'])
         if not key:
             raise HTTPException(401, 'Connect this provider account on the host')
+        return provider, key
+
+    async def speak(self, provider_id, model, text, voice):
+        """Raw 24 kHz 16-bit mono PCM for one piece of text. Nothing is stored or recorded."""
+        provider, key = self.account(provider_id, 'audio')
+        if not isinstance(model, str) or not model.strip():
+            raise HTTPException(400, 'Select an explicit supported model')
+        client = self.client or httpx.AsyncClient(timeout=120, follow_redirects=False)
+        base = provider['base_url'].rstrip('/').removesuffix('/responses')
+        try:
+            response = await self.bounded_post(client, base + '/audio/speech', headers={'Authorization': f'Bearer {key}'},
+                json={'model': model, 'input': text, 'voice': voice, 'response_format': 'pcm'})
+            return response.content
+        except httpx.RequestError as exc:
+            raise HTTPException(503, 'Provider unavailable; check the account and try again') from exc
+        finally:
+            if self.client is None:
+                await client.aclose()
+
+    async def transcribe_audio(self, provider_id, model, audio, mime):
+        """Text for one recording. The audio goes to the selected account and is not kept here."""
+        provider, key = self.account(provider_id, 'audio')
+        if not isinstance(model, str) or not model.strip():
+            raise HTTPException(400, 'Select an explicit supported model')
+        extension = {'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3'}.get(mime, 'wav')
+        client = self.client or httpx.AsyncClient(timeout=120, follow_redirects=False)
+        base = provider['base_url'].rstrip('/').removesuffix('/responses')
+        try:
+            response = await self.bounded_post(client, base + '/audio/transcriptions', headers={'Authorization': f'Bearer {key}'},
+                data={'model': model}, files={'file': ('input.' + extension, audio, mime)})
+            return str(response.json()['text'])
+        except httpx.RequestError as exc:
+            raise HTTPException(503, 'Provider unavailable; check the account and try again') from exc
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(502, 'Provider output did not match a transcription') from exc
+        finally:
+            if self.client is None:
+                await client.aclose()
+
+    async def generate(self, owner, project, request):
+        if not request.get('acknowledge_billing'):
+            raise HTTPException(409, 'Confirm this provider/model usage before generation')
+        operation = request['operation']
+        provider, key = self.account(request['provider_id'], 'image' if operation.startswith('image') else 'audio')
         model = request.get('model')
         if not isinstance(model, str) or not model.strip():
             raise HTTPException(400, 'Select an explicit supported model')

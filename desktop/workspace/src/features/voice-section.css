@@ -1,0 +1,27 @@
+/* Voice settings. A list of engines, not a grid of cards; one border style, no decoration. */
+.voice-settings{display:flex;flex-direction:column;gap:8px}
+.voice-engines-row{display:block}
+.voice-engines{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column}
+.voice-engines legend{padding:0;margin:0 0 4px;font-size:13px;font-weight:600}
+.voice-engine{padding:12px 0;border-top:1px solid var(--border)}
+.voice-engine:first-of-type{border-top:0}
+.voice-engine p{margin:4px 0 0 26px;font-size:13px;line-height:1.6;color:var(--secondary)}
+.voice-engine-choice{display:flex;flex-direction:row;align-items:center;gap:10px;margin:0;font-weight:500;cursor:pointer}
+.voice-engine-choice input{margin:0;accent-color:var(--accent)}
+.voice-engine-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0 26px}
+.voice-note{font-size:12px;color:var(--secondary)}
+.voice-engine .voice-note{margin-left:26px}
+.voice-engine-actions .voice-note{margin:0}
+.voice-preview-status{min-height:20px;margin:4px 0 0 26px;font-size:12px;color:var(--secondary)}
+.voice-preview-status:empty{min-height:0}
+.voice-progress{height:6px;margin:8px 0 0 26px;max-width:320px;border-radius:3px;background:var(--muted);overflow:hidden}
+.voice-progress>span{display:block;height:100%;background:var(--accent)}
+.voice-consent label{display:flex;flex-direction:row;align-items:flex-start;gap:10px;margin:0;font-weight:400;line-height:1.5}
+.voice-consent input{margin-top:3px;accent-color:var(--accent)}
+.voice-license-dialog{width:640px}
+.voice-license-points{margin:0 0 12px;padding-left:20px;font-size:13px;line-height:1.6}
+.voice-license-text{max-height:200px;overflow:auto;margin:0 0 12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--background);font-size:12px}
+.voice-agree{display:flex;flex-direction:row;align-items:flex-start;gap:10px;margin:12px 0;font-weight:400;font-size:13px}
+.voice-agree input{margin-top:3px;accent-color:var(--accent)}
+.voice-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+@media(prefers-reduced-motion:reduce){.voice-progress>span{transition:none}}
