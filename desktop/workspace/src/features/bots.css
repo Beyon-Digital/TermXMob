@@ -43,5 +43,52 @@
 .bot-history-error{color:var(--destructive)!important}
 .bot-link{background:none;border:0;padding:0;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
 
+.needs-you{display:grid;gap:8px;margin-bottom:16px}
+.needs-you h3{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:580}
+.needs-you-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.needs-you-list li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;flex-wrap:wrap}
+.needs-you-list li+li{border-top:1px solid var(--border)}
+.needs-you-text{display:grid;gap:3px;min-width:0;flex:1 1 260px}
+.needs-you-text strong{font-size:13px;font-weight:550}
+.needs-you-text p{margin:0;font-size:13px;line-height:1.5;color:var(--secondary);overflow-wrap:anywhere;white-space:pre-wrap}
+.needs-you-text small{font-size:12px;color:var(--secondary)}
+.needs-you-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bot-banner{display:grid;gap:6px;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.bot-banner h4{margin:0;font-size:14px;font-weight:580}
+.bot-banner p{margin:0;font-size:13px;line-height:1.6;color:var(--secondary)}
+
+
+.bot-threads,.bot-trigger-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface);width:100%}
+.bot-threads>li{display:grid;gap:6px;padding:12px 14px;justify-items:start}
+.bot-threads>li+li,.bot-trigger-list>li+li{border-top:1px solid var(--border)}
+.bot-thread-head{display:flex;width:100%;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:32px;padding:0;background:transparent;color:inherit;border:0;font:inherit;text-align:left;cursor:pointer}
+.bot-thread-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bot-thread-subject{font-size:14px;font-weight:550;overflow-wrap:anywhere}
+.bot-thread-head small,.bot-message-head small{font-size:12px;color:var(--secondary)}
+.bot-path{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.bot-path li+li::before{content:"\203a";margin-right:6px;color:var(--secondary)}
+.bot-path li{display:flex;align-items:center}
+.bot-message-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:12px;width:100%}
+.bot-message{display:grid;gap:6px;padding-left:12px;border-left:2px solid var(--border)}
+.bot-message-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bot-message-to{font-size:12px;color:var(--secondary)}
+.bot-message-body{margin:0;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+
+.bot-triggers{display:grid;gap:12px;margin-top:20px}
+.bot-triggers .schedule-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.bot-triggers h3{margin:0;font-size:15px;font-weight:580}
+.bot-triggers .schedule-heading p{margin:4px 0 0;font-size:13px;color:var(--secondary)}
+.bot-trigger-list>li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;flex-wrap:wrap}
+.bot-trigger-text{display:grid;gap:3px;min-width:0;flex:1 1 280px}
+.bot-trigger-text strong{font-size:13px;font-weight:550}
+.bot-trigger-text p{margin:0;font-size:13px;line-height:1.5;color:var(--secondary);overflow-wrap:anywhere}
+.bot-trigger-text small{font-size:12px;color:var(--secondary)}
+.bot-trigger-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bot-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.bot-secret{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:12px 0;font-size:13px}
+.bot-secret dt{color:var(--secondary)}
+.bot-secret dd{margin:0;min-width:0}
+.bot-secret code{overflow-wrap:anywhere;user-select:all}
+
 @media (max-width:700px){.bot-row{flex-direction:column;align-items:flex-start}.bot-row-meta{justify-content:flex-start}}
 @media (prefers-reduced-motion:reduce){.bot-row,.bot-tab{transition:none}}

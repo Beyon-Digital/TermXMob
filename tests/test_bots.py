@@ -455,17 +455,19 @@ def test_main_agent_manages_bots_through_command_with_receipts(tmp_path):
     asyncio.run(run())
 
 
-def test_schedule_bot_is_not_available_yet(tmp_path):
+def test_schedule_bot_asks_the_owner_and_reports_when_schedules_are_unavailable(tmp_path):
+    # Full scheduling behaviour is covered in test_bot_schedules.py; here the host has no scheduler.
     async def run():
         workspace, owner, manager, ledger, registry, _ = setup(tmp_path)
         try:
             parent = await main_turn(workspace, owner, manager)
             bot = make(workspace, owner)
-            result = await workspace.orchestrator.command(parent['id'], call('schedule_bot', 's1', bot_id=bot['id'], when='every day'))
-            assert result['ok'] is False and 'not available' in result['error']
+            args = dict(bot_id=bot['id'], task='Check', spec={'kind': 'interval', 'seconds': 3600})
+            result = await workspace.orchestrator.command(parent['id'], call('schedule_bot', 's1', **args))
+            assert result['ok'] is False and 'unavailable' in result['error']
             ctx = SimpleNamespace(task_id=parent['id'], manager=SimpleNamespace(orchestrator=workspace.orchestrator))
-            decision = default_registry().get('schedule_bot').decide(call('schedule_bot', bot_id=bot['id']), ctx)
-            assert not decision.approval_required and not decision.allowed
+            decision = default_registry().get('schedule_bot').decide(call('schedule_bot', **args), ctx)
+            assert decision.approval_required and not decision.allowed
         finally:
             await close(workspace, manager, ledger)
     asyncio.run(run())

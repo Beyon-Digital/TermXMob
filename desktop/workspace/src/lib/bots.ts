@@ -37,6 +37,8 @@ export const toolGroups: { label: string; tools: { id: string; label: string }[]
   { label: 'Reach outside', tools: [
     { id: 'git_fetch', label: 'Fetch from remotes' }, { id: 'git_pull', label: 'Pull from remotes' }, { id: 'git_push', label: 'Push to remotes' },
     { id: 'mcp_call', label: 'Call connected tools' }, { id: 'share_file', label: 'Share files in chat' }, { id: 'memory_write', label: 'Write to its memory' }] },
+  { label: 'Message others', tools: [
+    { id: 'send_message', label: 'Send messages' }, { id: 'read_inbox', label: 'Read its inbox' }, { id: 'mark_message', label: 'Mark messages read' }] },
 ];
 export const toolLabel = (id: string) => toolGroups.flatMap(group => group.tools).find(tool => tool.id === id)?.label || id;
 

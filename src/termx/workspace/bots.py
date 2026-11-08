@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import shutil
 import uuid
@@ -27,6 +28,10 @@ from termx.agent.policies.defaults import UNGRANTABLE_CAPABILITIES
 from termx.agents.files import AgentFile
 from termx.agents.registry import RevisionConflict
 from termx.discovery.safety import slugify
+from termx.workspace import bot_inbox
+from termx.workspace.bot_messages import BotMessages
+from termx.workspace.bot_schedules import BotSchedules
+from termx.workspace.bot_triggers import BotTriggers
 from termx.workspace.store import Conflict
 
 KIND = 'bot'
@@ -45,6 +50,8 @@ DEFAULT_DENY = ('net.outbound:any', 'git.publish', 'package.publish', 'external.
 MANAGED_RULE = 'Bot ceiling: '
 CAPABILITY = re.compile(r'^[a-z0-9_.*:-]{1,64}$')
 DEFAULT_LIMITS = {'max_steps': 60, 'max_seconds': 1800}
+FINISHED = {'completed': 'completed', 'failed': 'failed', 'cancelled': 'cancelled'}
+EVENT_STATUS = {'task.completed': 'completed', 'task.failed': 'failed', 'task.cancelled': 'cancelled'}
 RUN_NOW_PROMPT = 'Carry out your standing instructions now, then say briefly what you did and what needs the owner.'
 
 TEMPLATES = (
@@ -178,6 +185,9 @@ class BotService:
         self.workspace = workspace
         self.store = workspace.store
         self.agents = workspace.agents
+        self.schedules = BotSchedules(self)
+        self.messages = BotMessages(self)
+        self.triggers = BotTriggers(self)
 
     @property
     def registry(self):
@@ -220,12 +230,13 @@ class BotService:
     def list(self, principal, *, include_archived=False):
         self.workspace.require(principal, 'agent-view')
         views = []
+        rows = self.messages._all(principal.id)  # once for the whole list, not once per bot
         for row in self.store.list(KIND, principal.id):
             if row['state'] == 'archived' and not include_archived:
                 continue
             try:
                 self._owned(principal, row['id'])
-                views.append(self._view(principal, row))
+                views.append(self._view(principal, row, rows))
             except (PermissionError, KeyError, HTTPException):
                 continue
         return views
@@ -236,11 +247,11 @@ class BotService:
     def _rules(self, custom_agent_id):
         return self.agents.list_policy_rules(scope_type='custom_agent', scope_id=custom_agent_id, limit=1000)
 
-    def _pending(self, conversation_id):
-        return sum(approval['status'] == 'pending'
-                   for task in self.workspace.active(conversation_id) for approval in self.agents.approvals(task['id']))
+    def inbox(self, principal, *, bot_id=None):
+        """What the owner's bots are waiting on them for: approvals, runs needing attention, parked schedules, proposed memory."""
+        return bot_inbox.inbox(self, principal, bot_id)
 
-    def _view(self, principal, bot):
+    def _view(self, principal, bot, messages=None):
         cid, ceiling = bot['custom_agent_id'], bot['ceiling']
         archived = bot['state'] == 'archived'
         agent = None if archived else self.registry.load(_slug(cid))
@@ -264,7 +275,7 @@ class BotService:
             'tools': list(agent.tools) if agent else [], 'approval_mode': agent.approval_mode if agent else None,
             'sandbox_profile': agent.sandbox_profile if agent else None, 'limits': dict(agent.limits) if agent else {},
             'ceiling': ceiling, 'peers': list(bot.get('peers') or []), 'effective': effective, 'violations': problems,
-            'rules': rules, 'needs_you': 0 if archived else self._pending(bot['conversation_id']),
+            'rules': rules, 'needs_you': len(bot_inbox.items_for(self, principal, bot, messages)),
             'active_tasks': 0 if archived else len(self.workspace.active(bot['conversation_id'])),
             'last_task': {key: last.get(key) for key in ('id', 'status', 'updated_at')} if last else None,
             'created_by': bot.get('created_by', 'user'), 'config_changed_at': bot.get('config_changed_at'),
@@ -468,7 +479,9 @@ class BotService:
         session = self.workspace.session(principal, cid, turns=False)
         self.workspace.update_session(principal, cid, revision=session['revision'],
                                       changes={'custom_agent_id': bot['custom_agent_id'], **session_changes})
-        return self.store.update(KIND, bot['id'], {**bot, **body, 'config_changed_at': time()}, bot['revision'])
+        bot = self.store.update(KIND, bot['id'], {**bot, **body, 'config_changed_at': time()}, bot['revision'])
+        self.schedules.park(bot)  # the grants were issued for the old configuration
+        return bot
 
     @staticmethod
     def _narrows(old, new):
@@ -519,6 +532,10 @@ class BotService:
                 raise Conflict('Bot changed; reload before saving')
             if bot['state'] != state:
                 bot = self.store.update(KIND, bot_id, {**bot, 'state': state}, bot['revision'])
+                if state == 'paused':
+                    self.schedules.pause(bot)
+                else:
+                    self.schedules.resume(principal, bot)
         self.store.log(principal.id, KIND, bot_id, 'paused' if state == 'paused' else 'resumed')
         return self._view(principal, bot)
 
@@ -543,6 +560,7 @@ class BotService:
             for schedule in self.store.list('schedule', principal.id):
                 if schedule.get('goal_id') in goals:
                     self.store.update('schedule', schedule['id'], {**schedule, 'enabled': False, 'archived': True, 'state': 'archived'})
+                    self.triggers.drop_secret(schedule['id'])
             for grant in self.store.list('delegation', principal.id):
                 if grant.get('goal_id') in goals:
                     self.store.update('delegation', grant['id'], {**grant, 'revoked': True})
@@ -637,11 +655,14 @@ class BotService:
                 self.store.create(ASSIGNMENT, principal.id, {
                     'bot_id': bot['id'], 'task_id': task['id'], 'report_to': target,
                     'assigned_by': assigned_by or {'kind': 'owner', 'id': None}}, bot.get('project_id'), task['id'])
+        finished = self.agents.get_task(task['id']) or {}
+        if finished.get('status') in FINISHED:  # it ended before the assignment was recorded; report it now
+            self._report_assignment(task['id'], finished['status'], str(finished.get('result') or finished.get('error') or ''))
         return task
 
-    async def run_now(self, principal, bot_id, *, prompt=None, request_id=None):
+    async def run_now(self, principal, bot_id, *, prompt=None, request_id=None, report_to=None):
         return await self.assign_task(principal, bot_id, prompt=prompt or RUN_NOW_PROMPT,
-                                      request_id=request_id or 'bot-run:' + uuid.uuid4().hex, report_to='owner')
+                                      request_id=request_id or 'bot-run:' + uuid.uuid4().hex, report_to=report_to or 'owner')
 
     # -- orchestrator tools --------------------------------------------------------
 
@@ -654,8 +675,6 @@ class BotService:
         """The main agent's bot tools. Callers have already proven this is the owner's unscheduled main agent."""
         args, name = call.arguments, call.name
         bot_id = str(args.get('bot_id') or '')
-        if name == 'schedule_bot':
-            return {'ok': False, 'error': 'Scheduling bots is not available yet. Ask the owner to set up schedules in Settings once they are.'}
         failed = (ValueError, PermissionError, KeyError, HTTPException)
         if name in {'list_bots', 'bot_status'}:
             try:
@@ -713,4 +732,76 @@ class BotService:
                                           request_id=f'orchestrator:{task_id}:{call.call_id}',
                                           assigned_by={'kind': 'orchestrator', 'id': task_id})
             return {'ok': True, 'bot_id': bot_id, 'task_id': task['id'], 'status': task['status']}
+        if name == 'schedule_bot':
+            trigger = args.get('trigger')
+            if isinstance(trigger, dict) and trigger.get('kind') == 'webhook':
+                # The secret is shown once and this result is saved as a receipt, so only the owner sets a webhook up.
+                raise ValueError('Webhook triggers are set up by the owner in Settings, where the secret is shown to them only')
+            view = self.schedules.create(
+                principal, bot_id, request_id=f'orchestrator:{task_id}:{call.call_id}', prompt=args.get('task'), spec=args.get('spec'),
+                trigger=trigger, report_to=args.get('report_to'),
+                success_criteria=args.get('success_criteria'), max_runs=args.get('max_runs', 30), grant_days=args.get('days', 30))
+            return {'ok': True, 'schedule': view}
         raise ValueError('Unknown bot command')
+
+    # -- reporting -------------------------------------------------------------------
+
+    def _bot_of_task(self, task_id, task):
+        meta = self.store.get('task', task_id) or {}
+        bot = self.for_conversation(meta.get('conversation_id') or '') or (
+            self.for_agent(task['custom_agent_id']) if task.get('custom_agent_id') else None)
+        return bot if bot and bot['state'] != 'archived' else None
+
+    def task_finished(self, task_id, event):
+        """A task ended. Post its report to whoever assigned it and wake any bot that watches this one.
+
+        No model call. A failure here never disturbs the task that produced the event."""
+        status = EVENT_STATUS.get(event.get('type'))
+        if status is None:
+            return
+        try:
+            task = self.agents.get_task(task_id) or {}
+            bot = self._bot_of_task(task_id, task)
+            if bot is None:
+                return
+            payload = event.get('payload') or {}
+            text = str(payload.get('result') or payload.get('message') or task.get('result') or task.get('error') or '')
+            self._report_assignment(task_id, status, text)
+            self.triggers.on_bot_finished(bot, task_id, status, text)
+            self.triggers.rewake(bot)
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception('Bot task completion handling failed')
+
+    def _report_assignment(self, task_id, status, text):
+        assignment = self.store.get(ASSIGNMENT, task_id)
+        bot = self.store.get(KIND, assignment['bot_id']) if assignment else None
+        if bot:
+            self.messages.report(bot, assignment['report_to'], task_id=task_id, status=status, text=text)
+
+    def report_run(self, run):
+        """Post a scheduled run's outcome to where its schedule reports: the main agent's feed (the default), the owner or a bot.
+
+        No model call and no new turn: the main agent reads a feed entry only when asked.
+        The run's result is data written by a model; it is shown, never acted on."""
+        goal = self.store.get('goal', run.get('goal_id') or '')
+        bot = self.for_conversation(goal['conversation_id']) if goal else None
+        if not bot or not run.get('task_id'):
+            return
+        task = self.agents.get_task(run['task_id']) or {}
+        text = str(task.get('result') or task.get('error') or '').strip() or f'The run {run["status"]}'
+        target = (self.store.get('schedule', run.get('schedule_id') or '') or {}).get('report_to') or {'kind': 'orchestrator', 'id': None}
+        if target['kind'] != 'orchestrator':
+            self.messages.report(bot, target, task_id=run['task_id'], status=run['status'], text=text,
+                                 origin=self.messages.origin_for_task(run['task_id']))
+            return
+        binding = self.workspace.orchestrator.binding(run['owner'])
+        if not binding:
+            return
+        event_id = hashlib.sha256(f'bot-run:{run["id"]}:{run["status"]}'.encode()).hexdigest()
+        with self.store.lock:
+            if self.store.get('orchestrator_event', event_id):
+                return
+            self.workspace.orchestrator.append_event(
+                run['owner'], binding['conversation_id'], 'bot.run.finished', bot.get('project_id'), event_id,
+                {'session_id': bot['conversation_id'], 'task_id': run['task_id'], 'status': run['status'], 'bot_id': bot['id'],
+                 'run_id': run['id'], 'inline_report': False, 'message': f'{bot["name"]}: {text[:500]}'})

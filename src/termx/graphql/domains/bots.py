@@ -240,10 +240,11 @@ class BotMutations:
 
     @strawberry.mutation
     @resolver
-    async def bot_run_now(self, info: Ctx, bot_id: str, prompt: str | None = None) -> BotRun:
+    async def bot_run_now(self, info: Ctx, bot_id: str, prompt: str | None = None, report_to: str | None = None) -> BotRun:
+        """Runs the bot once. `report_to` is where the result goes: `owner` (default), `orchestrator` or `bot:<id>`."""
         actor, service = _authorize(info, bot_id, "agent-run")
         try:
-            task = await service.bots.run_now(actor, bot_id, prompt=prompt)
+            task = await service.bots.run_now(actor, bot_id, prompt=prompt, report_to=report_to)
         except KeyError:
             fail(404, "Resource not found")
         except PermissionError as exc:

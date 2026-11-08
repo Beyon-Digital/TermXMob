@@ -194,6 +194,7 @@ class OpenAIResponsesAdapter:
         read_only: bool = False,
         allow_subagents: bool = True,
         plan_mode: bool = False,
+        message_recipients: list[dict[str, str]] | None = None,
     ) -> ProviderTurn:
         payload = self._turn_payload(
             prompt=prompt,
@@ -205,6 +206,7 @@ class OpenAIResponsesAdapter:
             read_only=read_only,
             allow_subagents=allow_subagents,
             plan_mode=plan_mode,
+            message_recipients=message_recipients,
         )
         body = await self._post(payload)
         return self._turn_from_body(body)
@@ -225,6 +227,7 @@ class OpenAIResponsesAdapter:
         read_only: bool = False,
         allow_subagents: bool = True,
         plan_mode: bool = False,
+        message_recipients: list[dict[str, str]] | None = None,
         on_delta: Any = None,
         on_event: Any = None,
     ) -> ProviderTurn:
@@ -245,6 +248,7 @@ class OpenAIResponsesAdapter:
             read_only=read_only,
             allow_subagents=allow_subagents,
             plan_mode=plan_mode,
+            message_recipients=message_recipients,
         )
         payload["stream"] = True
         body = await self._post_stream(payload, on_delta=on_delta, on_event=on_event)
@@ -262,10 +266,12 @@ class OpenAIResponsesAdapter:
         read_only: bool,
         allow_subagents: bool = True,
         plan_mode: bool = False,
+        message_recipients: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         tools: list[dict[str, Any]] = []
         if "functions" in self.capabilities or "shell" in self.capabilities:
-            tools.extend(self._function_tools(read_only, allow_subagents=allow_subagents, plan_mode=plan_mode))
+            tools.extend(self._function_tools(
+                read_only, allow_subagents=allow_subagents, plan_mode=plan_mode, message_recipients=message_recipients))
         if allow_computer and "computer" in self.capabilities:
             tools.append({"type": "computer"} if self.native_computer else _computer_function_tool())
         payload: dict[str, Any] = {
@@ -382,13 +388,20 @@ class OpenAIResponsesAdapter:
 
     @staticmethod
     def _function_tools(
-        read_only: bool, *, allow_subagents: bool = True, plan_mode: bool = False
+        read_only: bool,
+        *,
+        allow_subagents: bool = True,
+        plan_mode: bool = False,
+        message_recipients: list[dict[str, str]] | None = None,
     ) -> list[dict[str, Any]]:
         # Lazy import: the tools package annotates against this module.
         from termx.agent.tools import default_registry
 
         return default_registry().provider_tools(
-            read_only=read_only, allow_subagents=allow_subagents, plan_mode=plan_mode
+            read_only=read_only,
+            allow_subagents=allow_subagents,
+            plan_mode=plan_mode,
+            message_recipients=message_recipients,
         )
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:

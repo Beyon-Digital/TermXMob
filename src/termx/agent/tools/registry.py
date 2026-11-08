@@ -159,14 +159,31 @@ class ToolRegistry:
          "list_bots","bot_status","pause_bot","create_bot","update_bot","resume_bot","delete_bot","assign_bot_task","schedule_bot"}
     )
 
+    # Offered only to a bot's task or the main agent's, with the recipients that task may message.
+    _MESSAGE_TOOLS = frozenset({"send_message", "read_inbox", "mark_message"})
+
     def provider_tools(
-        self, *, read_only: bool = False, allow_subagents: bool = True, plan_mode: bool = False
+        self,
+        *,
+        read_only: bool = False,
+        allow_subagents: bool = True,
+        plan_mode: bool = False,
+        message_recipients: list[dict[str, str]] | None = None,
     ) -> list[dict[str, Any]]:
         """Function-tool schemas for the provider payload (computer excluded —
-        the adapter appends its native or function-shaped computer tool)."""
+        the adapter appends its native or function-shaped computer tool).
+
+        The messaging tools appear only when ``message_recipients`` is a list, and ``send_message`` then names exactly
+        those recipients (``{"to": "bot:<id>", "name": ...}``) in its schema."""
         tools: list[dict[str, Any]] = []
         for name in sorted(self._specs):
             spec = self._specs[name]
+            if name in self._MESSAGE_TOOLS:
+                if message_recipients is None or (name == "send_message" and not message_recipients):
+                    continue
+                if name == "send_message":
+                    tools.append(_with_recipients(spec.provider_schema(read_only=read_only), message_recipients))
+                    continue
             if spec.mutability == "computer":
                 continue
             if spec.plan_only and not plan_mode:
@@ -177,3 +194,15 @@ class ToolRegistry:
                 continue
             tools.append(spec.provider_schema(read_only=read_only))
         return tools
+
+
+def _with_recipients(schema: dict[str, Any], recipients: list[dict[str, str]]) -> dict[str, Any]:
+    """A copy of the ``send_message`` schema whose ``to`` can only be one of ``recipients``."""
+    properties = {**schema["parameters"]["properties"]}
+    properties["to"] = {
+        "type": "string",
+        "enum": [item["to"] for item in recipients],
+        "description": "Who to send to: " + ", ".join(f"{item['to']} ({item['name']})" for item in recipients),
+    }
+    return {**schema, "parameters": {**schema["parameters"], "properties": properties}}
+

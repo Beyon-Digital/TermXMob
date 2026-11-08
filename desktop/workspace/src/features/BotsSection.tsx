@@ -9,14 +9,16 @@ import {Textarea} from '../components/ui/textarea';
 import {BOT_FIELDS,TEMPLATE_FIELDS,stateLabel,taskStatusLabel,toolLabel,type Bot,type BotTemplate,type ProjectChoice} from '../lib/bots';
 import type {HostIdentity} from '../lib/host-types';
 import {usePolling} from '../lib/use-polling';
+import {NEEDS_YOU_FIELDS,type NeedsYouItem} from '../lib/bot-schedules';
 import BotDetail from './BotDetail';
+import NeedsYouInbox,{type BotTab} from './NeedsYouInbox';
 import {ActionButton,Empty,ManagerPage,date,rowMatcher} from './manager-ui';
 import {gql,useManagerLoad,useManagerMutation} from './use-manager';
 import './bots.css';
 
-interface BotsData { bots: Bot[]; bot_templates: BotTemplate[]; projects: ProjectChoice[] }
-const listQuery = `query { bots { ${BOT_FIELDS} } bot_templates { ${TEMPLATE_FIELDS} } projects { id name path } }`;
-const refreshQuery = `query { bots { ${BOT_FIELDS} } }`;
+interface BotsData { bots: Bot[]; bot_templates: BotTemplate[]; projects: ProjectChoice[]; needs_you?: NeedsYouItem[] }
+const listQuery = `query { bots { ${BOT_FIELDS} } bot_templates { ${TEMPLATE_FIELDS} } projects { id name path } needs_you { ${NEEDS_YOU_FIELDS} } }`;
+const refreshQuery = `query { bots { ${BOT_FIELDS} } needs_you { ${NEEDS_YOU_FIELDS} } }`;
 
 /** The selected bot lives in `?bot=` so a reload or a shared link opens the same bot. */
 function useBotParam() {
@@ -90,29 +92,34 @@ export default function BotsSection({me,projectId}:{admin?:boolean;me:HostIdenti
   const mutation=useManagerMutation(reload);
   const {busy,error,notice,mutate}=mutation;
   const [selected,select]=useBotParam(),[creating,setCreating]=useState(false),[search,setSearch]=useState('');
-  const [fresh,setFresh]=useState<Bot[]|null>(null);
+  const [fresh,setFresh]=useState<{bots:Bot[];needs_you?:NeedsYouItem[]}|null>(null),[target,setTarget]=useState<{id:string|null;tab:BotTab}>({id:null,tab:'overview'});
   useEffect(()=>setFresh(null),[data]);
   // Counts like "needs you" change while the screen is open, so the list refreshes itself quietly.
-  usePolling(()=>gql<{bots:Bot[]}>(refreshQuery),{interval:15000,immediate:false,enabled:!!data,onResult:value=>setFresh(value.bots)});
-  const bots=fresh??data?.bots??[],templates=data?.bot_templates||[],projects=data?.projects||[];
+  usePolling(()=>gql<{bots:Bot[];needs_you?:NeedsYouItem[]}>(refreshQuery),{interval:15000,immediate:false,enabled:!!data,onResult:value=>setFresh(value)});
+  const bots=fresh?.bots??data?.bots??[],inbox=(fresh?fresh.needs_you:data?.needs_you)||[],templates=data?.bot_templates||[],projects=data?.projects||[];
   const matches=rowMatcher(search,me.session_id);
   const current=selected?bots.find(row=>row.id===selected)||null:null;
+  // A bot opens on its Overview unless the inbox asked for another tab. The request belongs to that bot, so any other way
+  // of changing the selection (browser back, a deleted bot) falls back to Overview.
+  const tab=target.id===selected?target.tab:'overview';
+  const open=(id:string|null,next:BotTab='overview')=>{setTarget({id,tab:next});select(id)};
   const create=(input:Record<string,unknown>)=>mutate(async()=>{
     const result=await gql<{create_bot:Bot}>(`mutation($input:BotInput!){create_bot(input:$input){ ${BOT_FIELDS} }}`,{input});
-    select(result.create_bot.id);
+    open(result.create_bot.id);
     return result;
   },'Bot created');
   const header=<div className="bot-toolbar"><Button onClick={()=>setCreating(true)}>New bot</Button></div>;
   return <ManagerPage section="bots" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={current?undefined:{label:'Bots',value:search,onChange:setSearch,count:bots.length}}>
     <>
-      {current?<BotDetail key={current.id} bot={current} bots={bots} mutation={mutation} projects={projects} onBack={()=>select(null)} onGone={()=>select(null)}/>
-      :selected?(loading?<Empty>Loading bot…</Empty>:<Empty>This bot no longer exists. <Button variant="ghost" onClick={()=>select(null)}>Show all bots</Button></Empty>)
+      {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onBack={()=>open(null)} onGone={()=>open(null)}/>
+      :selected?(loading?<Empty>Loading bot…</Empty>:<Empty>This bot no longer exists. <Button variant="ghost" onClick={()=>open(null)}>Show all bots</Button></Empty>)
       :<>
         {header}
+        <NeedsYouInbox items={inbox} bots={bots} mutation={mutation} onOpen={open}/>
         {data&&!bots.length&&<Empty>No bots yet. Create one from a template to give recurring work a home that runs in the background, then check what it did here.</Empty>}
         {bots.length>0&&<ul className="bot-list" aria-label="Bots">
           {bots.filter(matches).map(bot=><li key={bot.id}>
-            <button type="button" className="bot-row" onClick={()=>select(bot.id)}>
+            <button type="button" className="bot-row" onClick={()=>open(bot.id)}>
               <span className="bot-row-main"><strong>{bot.name}</strong><small>{bot.description||'No description'}</small></span>
               <span className="bot-row-meta">
                 {bot.needs_you>0&&<Badge variant="outline">{needsYou(bot.needs_you)}</Badge>}

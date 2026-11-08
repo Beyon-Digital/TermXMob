@@ -8,6 +8,7 @@ assigning work to a bot always asks the owner, and Auto never answers for them.
 from __future__ import annotations
 
 import hashlib
+import json
 
 from fastapi import HTTPException
 
@@ -85,9 +86,33 @@ def _assign_detail(call, _ctx):
             f'{call.arguments.get("report_to") or "orchestrator"}. Task: {str(call.arguments.get("task") or "")[:300]}')
 
 
-def _refuse_schedule(_call, _ctx):
-    return PolicyDecision(False, False, 'Scheduling bots is not available yet',
-                          'Ask the owner to set up schedules in Settings once they are')
+MAX_TASK = 2000      # the owner approves unattended authority for the text they are shown, so all of it must be shown
+MAX_CRITERIA = 500
+
+
+def _schedule_detail(call, _ctx):
+    args = call.arguments
+    try:
+        when = json.dumps(args.get('trigger') or args.get('spec'), sort_keys=True)[:200]
+    except (TypeError, ValueError):
+        when = 'an invalid schedule'
+    criteria = str(args.get('success_criteria') or '')
+    return (f'Runs bot {args.get("bot_id")} on {when} as you, for up to {args.get("max_runs", 30)} runs over '
+            f'{args.get("days", 30)} days, inside its ceiling, and reports to {args.get("report_to") or "orchestrator"}. '
+            f'Anything it needs approval for waits for you. '
+            f'Task: {args.get("task") or ""}' + (f' Success criteria: {criteria}' if criteria else ''))
+
+
+_ask_to_schedule = _ask('Schedule a bot', _schedule_detail)
+
+
+def _decide_schedule(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    task, criteria = call.arguments.get('task'), call.arguments.get('success_criteria')
+    if len(str(task or '')) > MAX_TASK or len(str(criteria or '')) > MAX_CRITERIA:
+        return PolicyDecision(False, False, 'The schedule text is too long to review',
+                              f'Use a shorter task (up to {MAX_TASK} characters) and success criteria (up to {MAX_CRITERIA}) '
+                              'so the owner can read all of what the bot will do unattended.')
+    return _ask_to_schedule(call, ctx)
 
 
 def register(registry: ToolRegistry) -> None:
@@ -127,6 +152,19 @@ def register(registry: ToolRegistry) -> None:
         'run one task on a bot now. report_to says where the result goes: orchestrator (default), owner, or bot:<id>. Refused while the bot is paused.',
         {'bot_id': _BOT_ID, 'task': {'type': 'string'}, 'report_to': {'type': 'string'}}, ['bot_id', 'task'],
         mutability='external', approval='always', decide=_ask('Give a bot a task', _assign_detail))
-    add('schedule_bot', 'schedule recurring runs for a bot. Not available yet.',
-        {'bot_id': _BOT_ID, 'when': {'type': 'string'}, 'task': {'type': 'string'}}, ['bot_id'],
-        mutability='external', approval='always', decide=_refuse_schedule)
+    add('schedule_bot',
+        'schedule recurring or one-time runs of a bot, or runs started by an event. spec is one of {"kind":"interval","seconds":3600} (60 seconds to a year), '
+        '{"kind":"daily","time":"09:00","timezone":"Europe/London"}, {"kind":"cron","expression":"0 9 * * 1-5","timezone":"UTC"} '
+        'or {"kind":"once","at":<unix seconds>}. Instead of spec, trigger starts a run when something happens: {"kind":"message"} (the bot gets a message), '
+        '{"kind":"bot_finished","bot_id":"<id>","on":"completed"} (another bot finishes), or {"kind":"file_change","glob":"src/**/*.py","debounce_s":30} '
+        '(project files change). Webhook triggers are set up by the owner in Settings. report_to says where each run\'s result goes: orchestrator (default), '
+        'owner, or bot:<id>. The owner approves the schedule; it stops after max_runs or days, and anything '
+        'the bot needs approval for waits for the owner.',
+        {'bot_id': _BOT_ID, 'task': {'type': 'string', 'description': 'What the bot does on each run.'},
+         'spec': {'type': 'object', 'description': 'When to run. Omit when you pass a trigger.'},
+         'trigger': {'type': 'object', 'description': 'What starts a run, instead of a time.'},
+         'report_to': {'type': 'string'},
+         'success_criteria': {'type': 'string', 'description': 'How to tell a run went well. Optional.'},
+         'max_runs': {'type': 'integer', 'description': 'Most runs before the schedule stops. Default 30.'},
+         'days': {'type': 'integer', 'description': 'Days the owner authorizes it for, 1 to 90. Default 30.'}},
+        ['bot_id', 'task'], mutability='external', approval='always', decide=_decide_schedule)

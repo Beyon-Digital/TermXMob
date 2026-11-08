@@ -4,34 +4,42 @@ import {Button} from '../components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import {FormField} from '../components/ui/form-field';
 import {Input} from '../components/ui/input';
+import {Select} from '../components/ui/select';
 import {SettingsRow,SettingsSection} from '../components/ui/settings-section';
 import {Textarea} from '../components/ui/textarea';
 import {stateLabel,taskStatusLabel,type Bot,type ProjectChoice} from '../lib/bots';
+import {reportOptions} from '../lib/bot-messages';
+import BotMessages from './BotMessages';
 import BotPermissions from './BotPermissions';
+import BotSchedules from './BotSchedules';
+import NeedsYouInbox,{type BotTab} from './NeedsYouInbox';
 import {BotActivity,BotSkills,BotTasks} from './BotWork';
-import {ActionButton,Empty,date} from './manager-ui';
+import {ActionButton,date} from './manager-ui';
 import {useDirtyForm} from './settings-forms';
 import {gql} from './use-manager';
 import {patchBot,type BotTabProps} from './bot-api';
+import type {NeedsYouItem} from '../lib/bot-schedules';
 
-function Overview({bot,mutation,projects,onGone}:BotTabProps&{onGone:()=>void}){
+function Overview({bot,bots,mutation,projects,onGone,inbox,onTab}:BotTabProps&{onGone:()=>void;inbox:NeedsYouItem[];onTab:(tab:BotTab)=>void}){
   const {busy,mutate}=mutation;
-  const [confirming,setConfirming]=useState(false);
+  const [confirming,setConfirming]=useState(false),[reportTo,setReportTo]=useState('owner');
   const paused=bot.state==='paused';
   const project=projects.find(row=>row.id===bot.project_id);
   const setState=(state:'active'|'paused')=>mutate(()=>gql('mutation($id:String!,$state:String!,$revision:Int){set_bot_state(bot_id:$id,state:$state,revision:$revision){id}}',{id:bot.id,state,revision:bot.revision}),state==='paused'?'Bot paused':'Bot resumed');
-  const run=()=>mutate(()=>gql('mutation($id:String!){bot_run_now(bot_id:$id){task_id}}',{id:bot.id}),'Run started. Its result appears under Tasks.');
+  const run=()=>mutate(()=>gql('mutation($id:String!,$report_to:String){bot_run_now(bot_id:$id,report_to:$report_to){task_id}}',{id:bot.id,report_to:reportTo}),'Run started. Its result appears under Tasks.');
+  const destinations=[{value:'owner',label:'You'},...reportOptions(bots,bot.id).filter(option=>option.value!=='owner')];
   return <>
+    <NeedsYouInbox items={inbox} bots={bots} mutation={mutation} showBot={false} onOpen={(_id,tab)=>onTab(tab)}/>
     <SettingsSection level={3} title="Status" description="Where this bot stands and what it is doing.">
-      <SettingsRow label="State" description={paused?'Paused bots do not start new runs.':'Pausing stops new runs. A run already in progress finishes.'}>
+      <SettingsRow label="State" description={paused?'Paused bots do not start new runs. Their schedules turn off and come back when you resume.':'Pausing stops new runs. A run already in progress finishes.'}>
         <Badge variant={paused?'secondary':'default'}>{stateLabel[bot.state]}</Badge>
         <ActionButton busy={busy} onClick={()=>void setState(paused?'active':'paused')}>{paused?'Resume bot':'Pause bot'}</ActionButton>
       </SettingsRow>
-      <SettingsRow label="Run now" description="Runs its standing instructions once. The result appears under Tasks.">
+      <SettingsRow label="Run now" description="Runs its standing instructions once. The result appears under Tasks and is posted where you choose.">
+        <Select aria-label="Send the result to" value={reportTo} onChange={event=>setReportTo(event.target.value)}>
+          {destinations.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
+        </Select>
         <ActionButton busy={busy} primary disabled={paused||bot.violations.length>0} onClick={()=>void run()}>Run now</ActionButton>
-      </SettingsRow>
-      <SettingsRow label="Needs you" description="Approvals this bot is waiting on.">
-        <span>{bot.needs_you?`${bot.needs_you} waiting`:'Nothing waiting'}</span>
       </SettingsRow>
       <SettingsRow label="Last run" description="Its most recent task.">
         <span>{bot.last_task?`${taskStatusLabel(bot.last_task.status)} · ${date(bot.last_task.updated_at)}`:'No runs yet'}</span>
@@ -81,10 +89,6 @@ function Prompt({bot,mutation}:BotTabProps){
   </form>;
 }
 
-function Later({title,children}:{title:string;children:string}){
-  return <section aria-label={title}><Empty>{children}</Empty></section>;
-}
-
 const tabs=[
   {id:'overview',label:'Overview'},{id:'prompt',label:'Prompt'},{id:'permissions',label:'Permissions'},
   {id:'schedules',label:'Schedules & triggers'},{id:'messages',label:'Messages'},{id:'skills',label:'Skills'},
@@ -92,8 +96,8 @@ const tabs=[
 ] as const;
 type TabId=typeof tabs[number]['id'];
 
-export default function BotDetail({bot,bots,mutation,projects,onBack,onGone}:BotTabProps&{onBack:()=>void;onGone:()=>void}){
-  const [tab,setTab]=useState<TabId>('overview');
+export default function BotDetail({bot,bots,mutation,projects,inbox,initialTab='overview',onBack,onGone}:BotTabProps&{inbox:NeedsYouItem[];initialTab?:TabId;onBack:()=>void;onGone:()=>void}){
+  const [tab,setTab]=useState<TabId>(initialTab);
   const list=useRef<HTMLDivElement>(null);
   const props={bot,bots,mutation,projects};
   function move(event:KeyboardEvent,index:number){
@@ -114,11 +118,11 @@ export default function BotDetail({bot,bots,mutation,projects,onBack,onGone}:Bot
         className="bot-tab" onClick={()=>setTab(item.id)} onKeyDown={event=>move(event,index)}>{item.label}</button>)}
     </div>
     <div role="tabpanel" id={`bot-panel-${tab}`} aria-labelledby={`bot-tab-${tab}`} className="bot-panel">
-      {tab==='overview'?<Overview {...props} onGone={onGone}/>
+      {tab==='overview'?<Overview {...props} inbox={inbox} onTab={setTab} onGone={onGone}/>
       :tab==='prompt'?<Prompt {...props}/>
       :tab==='permissions'?<BotPermissions {...props}/>
-      :tab==='schedules'?<Later title="Schedules and triggers">Schedules and triggers are not available yet. Until they are, run this bot from Overview or give it a task under Tasks.</Later>
-      :tab==='messages'?<Later title="Messages">Messages between bots are not available yet. This bot reports to you under Tasks and Activity for now.</Later>
+      :tab==='schedules'?<BotSchedules {...props}/>
+      :tab==='messages'?<BotMessages {...props}/>
       :tab==='skills'?<BotSkills {...props}/>
       :tab==='tasks'?<BotTasks {...props}/>
       :<BotActivity {...props}/>}

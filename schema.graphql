@@ -956,7 +956,7 @@ type Mutation {
   set_bot_ceiling(bot_id: String!, revision: Int!, ceiling: BotCeilingInput!): Bot!
   delete_bot(bot_id: String!): Bot!
   revoke_bot_rule(bot_id: String!, rule_id: String!): Bot!
-  bot_run_now(bot_id: String!, prompt: String = null): BotRun!
+  bot_run_now(bot_id: String!, prompt: String = null, report_to: String = null): BotRun!
   create_schedule(conversation_id: String!, input: BotScheduleInput!): BotSchedule!
   edit_schedule(conversation_id: String!, schedule_id: String!, input: BotScheduleEditInput!): BotSchedule!
   rotate_webhook_secret(conversation_id: String!, schedule_id: String!): BotSchedule!

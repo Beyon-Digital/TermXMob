@@ -28,6 +28,8 @@ function serve(bots:ReturnType<typeof bot>[],onGql?:Handler,extra?:(path:string,
   if(path==='/auth/me')return {principal:{id:'owner',display_name:'Owner',scopes:['host-admin']},session_id:'s1'};
   const supplied=extra?.(path,init);
   if(supplied!==undefined)return supplied;
+  if(path.startsWith('/api/workspace/automations'))return {schedule:[],schedule_run:[],goal:[],delegation:[]};
+  if(/^\/api\/workspace\/sessions(\?|$)/.test(path))return {sessions:[]};
   if(path==='/graphql'){
    const body:Body=JSON.parse(String(init!.body));
    const written=onGql?.(body);
@@ -130,9 +132,10 @@ it('moves between tabs with the arrow keys and lists every section',async()=>{
  fireEvent.keyDown(screen.getByRole('tab',{name:'Prompt'}),{key:'End'});
  expect(screen.getByRole('tab',{name:'Activity'})).toHaveAttribute('aria-selected','true');
  fireEvent.click(screen.getByRole('tab',{name:'Schedules & triggers'}));
- expect(screen.getByText(/Schedules and triggers are not available yet/)).toBeInTheDocument();
+ expect(await screen.findByRole('heading',{name:'Schedules'})).toBeInTheDocument();
+ expect(screen.getByText(/No scheduled tasks/)).toBeInTheDocument();
  fireEvent.click(screen.getByRole('tab',{name:'Messages'}));
- expect(screen.getByText(/Messages between bots are not available yet/)).toBeInTheDocument();
+ expect(await screen.findByText(/No messages yet/)).toBeInTheDocument();
 });
 
 it('pauses, resumes and runs a bot from Overview, and disables Run now while paused',async()=>{
@@ -141,7 +144,7 @@ it('pauses, resumes and runs a bot from Overview, and disables Run now while pau
  fireEvent.click(await screen.findByRole('button',{name:/Inbox triager/}));
  fireEvent.click(await screen.findByRole('button',{name:'Run now'}));
  await waitFor(()=>expect(sent('bot_run_now')).toBeDefined());
- expect(sent('bot_run_now')!.variables).toEqual({id:'b1'});
+ expect(sent('bot_run_now')!.variables).toEqual({id:'b1',report_to:'owner'});
  expect(await screen.findByText(/Run started/)).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Pause bot'}));
  await waitFor(()=>expect(sent('set_bot_state')).toBeDefined());
