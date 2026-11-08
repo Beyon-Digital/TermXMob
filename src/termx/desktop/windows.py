@@ -155,3 +155,13 @@ class WindowCapture:
             # Explicit absolute coordinates avoid a monitor-dependent scale.
             event = {**event, 'absolute': True, 'x': current['x'] + event['x'] * current['width'], 'y': current['y'] + event['y'] * current['height']}
         apply_event(event)
+
+
+def frontmost_app() -> str | None:
+    """Name of the application that owns the front window, or None when the host cannot say.
+
+    Only macOS names it for now. Other hosts return None and callers fall back to the whole desktop.
+    """
+    if sys.platform != 'darwin': return None
+    front = next(iter(WindowCapture().list()), None)
+    return str(front['app']) if front and front.get('app') else None

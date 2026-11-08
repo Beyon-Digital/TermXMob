@@ -6,6 +6,7 @@ from typing import Any
 
 from termx.desktop.capture import grab_jpeg, list_displays, pointer_target
 from termx.desktop.input import apply_event, clipboard_get, clipboard_set
+from termx.desktop.windows import frontmost_app
 
 MAX_ACTIONS = 12
 
@@ -36,6 +37,13 @@ async def _guarded_os(revision, operation, *args):
 class ComputerController:
     def __init__(self, display_id: str | None = None) -> None:
         self.display_id = display_id
+
+    def target_app(self) -> str | None:
+        """The application that would receive input right now, or None when the host cannot tell."""
+        try:
+            return frontmost_app()
+        except Exception:
+            return None
 
     async def screenshot(self) -> bytes:
         from termx.desktop.recording import capture_privacy_revision

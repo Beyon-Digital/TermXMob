@@ -46,6 +46,7 @@ class WorkspaceService:
         state.agent.orchestrator = self.orchestrator
         state.agent._listeners.add(self._on_event)
         state.agent.execution_authority = self.validate_task_execution
+        state.agent.is_unattended = self.is_unattended_task
 
     def require(self, principal: Principal, scope: str, project_id: str | None = None, cwd: str | None = None, *, resource_kind=None, resource_id=None):
         live = self.state.identity.current_principal(principal) if hasattr(self.state, 'identity') else principal
@@ -693,6 +694,21 @@ class WorkspaceService:
         if goal['conversation_id']!=row['id'] or goal['status']!='active':
             raise PermissionError('Delegation does not authorize this conversation')
         return grant
+
+    def is_unattended_task(self, task_id):
+        """True when the task, or the task it was delegated from, runs under a schedule's unattended grant.
+
+        An ancestry that loops or runs past 64 levels cannot be classified, so it counts as unattended.
+        """
+        seen = set()
+        while task_id:
+            if task_id in seen or len(seen) >= 64:
+                return True
+            seen.add(task_id)
+            if (self.store.get('task', task_id) or {}).get('delegation_id'):
+                return True
+            task_id = (self.agents.get_task(task_id) or {}).get('parent_id')
+        return False
 
     def validate_task_execution(self, task_id):
         """Check unattended authority at execution boundaries, including recovery."""

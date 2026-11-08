@@ -108,7 +108,10 @@ _REASON_RISK = {
     "Credential access": "sensitive",
     "Sensitive file access": "sensitive",
     "Sensitive text entry": "sensitive",
+    "Provider safety check": "sensitive",
     "Data transmission": "external",
+    "Form submission": "external",
+    "Unknown target application": "external",
     "Outside selected project": "outside_root",
 }
 # Risk classes that `autonomous` mode may never auto-approve (publication and
@@ -116,6 +119,10 @@ _REASON_RISK = {
 AUTONOMOUS_BLOCKED_RISKS = frozenset(
     {"privilege", "sensitive", "publication", "external", "outside_root", "delegation", "destructive"}
 )
+# Capabilities the host process exercises itself, never inside a sandboxed spawn.
+# A sandbox profile neither grants nor limits them, so the envelope check skips
+# them; capability denies and the remembered-rule precedence still apply.
+HOST_MEDIATED_CAPABILITIES = frozenset({"computer.control"})
 # Capabilities remembered allow rules may never imply by side effect.
 UNGRANTABLE_CAPABILITIES = frozenset(
     {

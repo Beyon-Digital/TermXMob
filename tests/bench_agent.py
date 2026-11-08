@@ -27,6 +27,9 @@ class FakeComputer:
         self.screenshot = screenshot
         self.released = 0
 
+    def target_app(self) -> str | None:
+        return "Fake app"
+
     async def execute(
         self,
         actions: list[dict[str, Any]],

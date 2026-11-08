@@ -153,3 +153,19 @@ def runbook_fingerprint(runbook_id: str) -> str:
 def tool_key(*parts: str) -> str:
     """Fingerprint for a structured (non-shell) tool action."""
     return _digest("tool", *parts)
+
+
+def computer_label(app: object) -> str:
+    """An application name as approvals and remembered rules show it.
+
+    Windows name their own owner, so the label is printable, bounded and
+    redacted. Empty when the host could not name the application.
+    """
+    text = "".join(ch if ch.isprintable() else " " for ch in str(app or ""))
+    return redact(" ".join(text.split())[:200])[:80]
+
+
+def computer_fingerprint(app: str | None) -> str:
+    """Computer control binds to the application, or to the whole desktop when none is named."""
+    label = computer_label(app)
+    return tool_key("computer", "app", label) if label else tool_key("computer", "desktop")

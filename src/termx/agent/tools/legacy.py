@@ -6,9 +6,19 @@ schema generation treat every call uniformly.
 """
 from __future__ import annotations
 
+import sys
+from dataclasses import replace
+
+from termx.agent.policies.defaults import tool_capabilities
+from termx.agent.policies.fingerprint import computer_fingerprint, computer_label
 from termx.agent.policy import PolicyDecision
 from termx.agent.providers import ProviderCall
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec, make_always
+
+# Asked every time: a remembered allow for the application never covers these,
+# and neither `autonomous` nor Auto may approve them. Input goes to other
+# applications, outside any sandbox or worktree.
+_ASK_EVERY_TIME = frozenset({"Sensitive text entry", "Provider safety check"})
 
 
 async def _share_file(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
@@ -36,7 +46,46 @@ async def _computer(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
 
 
 def _decide_computer(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
-    return ctx.manager._decide_computer(call)
+    base = ctx.manager._decide_computer(call)
+    engine = ctx.policy_engine
+    if engine is None or ctx.read_only:
+        # Ask and Plan refuse the desktop before this decision is used.
+        return base
+    unattended = ctx.manager.is_unattended
+    if unattended is not None and unattended(ctx.task_id):
+        # Nobody is there to watch or stop it, so no rule or approval mode opens the desktop.
+        return PolicyDecision(
+            False,
+            False,
+            "Unattended computer control is off",
+            "Unattended runs cannot control the desktop. Finish without it, "
+            "or tell the owner this task needs them at the computer.",
+            auto_resolved="deny",
+            required_capabilities=tool_capabilities("computer"),
+        )
+    app = computer_label(ctx.manager._computer.target_app())
+    if not app and sys.platform == "darwin" and not base.approval_required:
+        # macOS can name the front application, so a failed lookup is an unknown
+        # target, not the whole desktop: app-scoped rules cannot vouch for it.
+        base = PolicyDecision(
+            True,
+            True,
+            "Unknown target application",
+            "The application that receives this input could not be identified",
+        )
+    return engine.decide_tool(
+        # Native and function-shaped calls are one tool to rules and approvals.
+        replace(call, name="computer"),
+        ctx,
+        fingerprint=computer_fingerprint(app),
+        display=f"computer control of {app}" if app else "computer control of the desktop",
+        matcher={"app": app} if app else {"scope": "desktop"},
+        base=base,
+        capabilities=tool_capabilities("computer"),
+        risk=None if base.approval_required else "safe",
+        # A rule for the whole desktop would cover every application, so it is never offered.
+        ask_each_time=not app or base.reason in _ASK_EVERY_TIME,
+    )
 
 
 def register(registry: ToolRegistry) -> None:

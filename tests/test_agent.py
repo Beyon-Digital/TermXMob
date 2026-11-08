@@ -35,6 +35,9 @@ class FakeComputer:
         self._frames = frames or [b"jpeg"]
         self._frame_index = 0
 
+    def target_app(self) -> str | None:
+        return "Fake app"
+
     async def execute(
         self,
         actions: list[dict[str, Any]],

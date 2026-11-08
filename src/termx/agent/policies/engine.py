@@ -5,7 +5,9 @@ Evaluation order (deterministic, per the architecture handoff):
 1. hard deny / sandbox impossibility — a required capability the sandbox can
    never grant (UNGRANTABLE set) blocks outright; a grantable-but-not-granted
    capability produces a separate capability ask — a remembered *execution*
-   allow never punches through a missing sandbox capability.
+   allow never punches through a missing sandbox capability. Capabilities the
+   host exercises itself (``computer.control``) skip this envelope check, since
+   the host sends the input, not a sandboxed spawn; denies still apply.
 2. explicit remembered deny — any matching deny wins over remembered allows.
 3. narrower remembered allow (task > custom_agent > project).
 4. custom-agent ``approval_mode`` — `autonomous` auto-approves only
@@ -22,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from termx.agent.policies import fingerprint as fp
 from termx.agent.policies.defaults import (
     AUTONOMOUS_BLOCKED_RISKS,
+    HOST_MEDIATED_CAPABILITIES,
     UNGRANTABLE_CAPABILITIES,
     intent_risk,
     shell_capabilities,
@@ -100,6 +103,7 @@ class PolicyEngine:
         base: "PolicyDecision",
         capabilities: tuple[str, ...] | None = None,
         risk: str | None = None,
+        ask_each_time: bool = False,
     ) -> "PolicyDecision":
         intent = fp.tool_intent(call, ctx, fingerprint=fingerprint, display=display, matcher=matcher)
         intent = self._enrich(
@@ -108,7 +112,7 @@ class PolicyEngine:
             capabilities=capabilities or tool_capabilities(call.name or ""),
             risk=risk or intent_risk(intent, base.reason if base.approval_required else None),
         )
-        return self.evaluate(intent, base, ctx)
+        return self.evaluate(intent, base, ctx, ask_each_time=ask_each_time)
 
     def _enrich(
         self,
@@ -142,7 +146,12 @@ class PolicyEngine:
         intent: PolicyIntent,
         base: "PolicyDecision",
         ctx: "ToolContext",
+        *,
+        ask_each_time: bool = False,
     ) -> "PolicyDecision":
+        """``ask_each_time`` keeps capability and remembered denies but skips every
+        way to answer for the user: remembered allows, ``autonomous`` and Auto. Such
+        an ask offers no remember option either."""
         from termx.agent.policy import PolicyDecision as _PD
 
         project_id = intent.project_id or getattr(ctx, "project_id", "") or ""
@@ -158,7 +167,9 @@ class PolicyEngine:
         # 1. Sandbox capability check — before every other rule.
         envelope = self._envelope(intent.sandbox_profile)
         missing = [
-            cap for cap in intent.required_capabilities if not _covers(envelope, cap)
+            cap
+            for cap in intent.required_capabilities
+            if cap not in HOST_MEDIATED_CAPABILITIES and not _covers(envelope, cap)
         ]
         if missing:
             ungrantable = [c for c in missing if c in UNGRANTABLE_CAPABILITIES]
@@ -219,7 +230,7 @@ class PolicyEngine:
             )
 
         # 3. Remembered allow — narrowest scope wins for audit display.
-        allow = [r for r in matched if r["effect"] == "allow"]
+        allow = [] if ask_each_time else [r for r in matched if r["effect"] == "allow"]
         if allow:
             rule = min(allow, key=_scope_rank)
             self._store.touch_policy_rule(rule["id"])
@@ -239,7 +250,7 @@ class PolicyEngine:
         # sandbox-contained non-sensitive classes; it never conjures missing
         # capabilities (step 1 already handled those).
         mode = str((self._store.task_agent(getattr(ctx,"task",None) or {},custom_agent_id) or {}).get("approval_mode") or "standard")
-        if mode == "autonomous" and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
+        if mode == "autonomous" and not ask_each_time and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
             return _PD(
                 True,
                 False,
@@ -256,7 +267,7 @@ class PolicyEngine:
         task_auto = bool((((getattr(ctx, "task", None) or {}).get("runtime") or {}).get("auto") or {}).get("enabled"))
         # Plan and Ask are read-only: Auto only takes effect once the plan is approved.
         task_auto = task_auto and not getattr(ctx, "read_only", False)
-        if task_auto and base.approval_required and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
+        if task_auto and not ask_each_time and base.approval_required and intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS and not missing:
             return _PD(
                 True,
                 False,
@@ -287,7 +298,7 @@ class PolicyEngine:
             intent=intent,
             required_capabilities=intent.required_capabilities,
             sandbox_profile=intent.sandbox_profile,
-            remember_options=self._remember_options(intent, project_id, custom_agent_id),
+            remember_options=() if ask_each_time else self._remember_options(intent, project_id, custom_agent_id),
         )
 
     # -- remembered-rule creation --------------------------------------------

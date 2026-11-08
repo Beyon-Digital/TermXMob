@@ -104,6 +104,24 @@ and macOS use their platform backends; native Wayland input is not supported.
 Native engine capabilities differ: choosing Codex does not automatically supply
 the internal engine's browser, computer or team tools.
 
+Desktop control follows the same policy rules as the other internal tools. A
+capability deny for `computer.control`, or a remembered deny for the application
+in front, stops the call. The front application is checked again just before the
+input is sent, and an approval counts only for the application it named. On macOS
+the host names that application, and a lookup that fails is asked every time. On
+other hosts the application is unknown, so form submission is asked every time.
+Typing credential-like text and answering a provider safety check are asked every
+time and cannot be remembered. Submitting a form can be remembered per
+application. The check happens once per call, so a click on a window behind the
+front one, or a window switch inside one batch, is not caught yet. Neither
+**Autonomous within host policy** nor Auto approves these questions, because the
+desktop is outside any sandbox or worktree. Ask and Plan mode, restricted browser
+tasks and private windows still block the desktop first.
+
+Unattended runs cannot control the desktop. A scheduled run's computer call is
+refused, and the agent is told to finish without it or report that the task needs
+the owner at the computer. A remembered allow does not lift this.
+
 ## Restart behavior and live verification
 
 Schedule definitions, run reservations, task IDs and events are durable. Restart

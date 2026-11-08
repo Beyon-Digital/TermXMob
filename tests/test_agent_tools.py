@@ -260,6 +260,7 @@ def test_scheduler_groups():
         {
             "cwd": "/tmp",
             "read_only": False,
+            "policy_engine": None,
             "manager": type(
                 "Mgr",
                 (),

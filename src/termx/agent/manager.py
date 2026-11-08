@@ -117,6 +117,8 @@ class AgentManager:
         self._tools = default_registry()
         self.browser = None  # AppState attaches the managed broker after mounting.
         self.execution_authority: Callable[[str], None] | None = None
+        # Set by the workspace: True for a task running under a schedule's unattended grant.
+        self.is_unattended: Callable[[str], bool] | None = None
         self._scheduler = CallScheduler(self._tools)
         self._http = ProviderHttpRuntime()
         self.catalogue = ProviderCatalogue(self.store, self._fetch_catalog)
@@ -1862,6 +1864,7 @@ class AgentManager:
         started_at: float,
         *,
         approved_first: bool = False,
+        approved_fingerprint: str | None = None,
         turn_id: str | None = None,
     ) -> tuple[bool, list[dict[str, Any]], int]:
         task = self._task(task_id)
@@ -1970,6 +1973,18 @@ class AgentManager:
                 from termx.auto_review import canonical_hash
                 exact=canonical_hash({'tool':call.name,'cwd':ctx.cwd,'arguments':call.arguments})
                 decision=self._policy_engine.decide_tool(call,ctx,fingerprint=exact,display=call.name+' · exact typed arguments',matcher={'arguments_digest':exact},base=decision,capabilities=('fs.workspace.write',),risk='consequential')
+            first_approved = approved_first and index == 0
+            if call.type == "computer" and entry.spec is not None:
+                # Input goes to whichever application is in front now, not the one
+                # in front when the turn was scheduled or the approval was shown.
+                # Decide again, and honour an approval only for the application it named.
+                decision = entry.spec.decide(call, ctx)
+                first_approved = (
+                    first_approved
+                    and approved_fingerprint is not None
+                    and decision.intent is not None
+                    and decision.intent.fingerprint == approved_fingerprint
+                )
             authority=self.browser.records.get('agent-task-authority',task_id) if self.browser else None
             if authority and entry.spec and entry.spec.mutability!='read' and decision.approval_kind!='capability':
                 from termx.agent.action_review import proposal
@@ -2054,7 +2069,8 @@ class AgentManager:
                     raise asyncio.CancelledError
                 step+=1;index+=1
                 continue
-            if decision.auto_resolved and not (approved_first and index == 0):
+            if decision.auto_resolved and (decision.auto_resolved == "deny" or not first_approved):
+                # A deny that appeared after the approval was given still stops the call.
                 # A remembered rule or the Agent's own mode resolved this call.
                 # The audit trail is the point — every auto-resolution is an
                 # event, never a silent skip of the approval system.
@@ -2094,6 +2110,10 @@ class AgentManager:
                         },
                     )
                 if decision.auto_resolved == "deny":
+                    if call.type == "computer" and not call.name:
+                        # A native computer_call can only be answered with a screenshot,
+                        # which a refusal must not take. Stop the task instead.
+                        raise PermissionError(f"{decision.reason}: {decision.consequence}")
                     # Refused in-band like a policy refusal: the model sees the
                     # denial and can choose a different approach; the task keeps
                     # running. No execution checkpoint — nothing ran.
@@ -2113,7 +2133,7 @@ class AgentManager:
                     continue
                 # "allow"/"autonomous": fall through to normal execution with
                 # the checkpoint/recovery machinery untouched.
-            if decision.approval_required and not (approved_first and index == 0):
+            if decision.approval_required and not first_approved:
                 public_payload = {
                     "title": decision.reason,
                     "consequence": decision.consequence,
@@ -2389,6 +2409,7 @@ class AgentManager:
                 step,
                 started_at,
                 approved_first=True,
+                approved_fingerprint=str((payload.get("intent") or {}).get("fingerprint") or "") or None,
             )
             if not paused:
                 await self._drive(task_id, history=history, step=step, started_at=started_at)
