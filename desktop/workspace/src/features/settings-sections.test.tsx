@@ -138,7 +138,7 @@ it('explains that the TermX agent has no model list instead of offering a refres
  const internal=within((await screen.findByRole('heading',{name:'TermX agent'})).closest('article') as HTMLElement);
  expect(internal.queryByRole('button',{name:'Refresh models'})).toBeNull();
  expect(internal.getByText(/no model list of its own/)).toBeInTheDocument();
- expect(internal.getByText(/Use Refresh models on an account above/)).toBeInTheDocument();
+ expect(internal.getByText(/Open Edit account on a provider account and use Refresh models there\./)).toBeInTheDocument();
  const codex=within(screen.getByRole('heading',{name:'Codex'}).closest('article') as HTMLElement);
  fireEvent.click(codex.getByRole('button',{name:'Refresh models'}));
  await waitFor(()=>expect(calls().some(call=>call.body.query?.includes('engine_models')&&call.body.variables?.id==='codex')).toBe(true));

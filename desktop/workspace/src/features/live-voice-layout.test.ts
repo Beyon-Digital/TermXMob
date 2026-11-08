@@ -26,3 +26,18 @@ it('collapses a running session to one compact bar on small or short screens, wi
 it('does not rely on the old fixed-height panel that clipped the toolbar', () => {
   expect(read('./live-voice.css')).not.toContain('max-height:max(110px,22dvh)');
 });
+
+it('keeps the consent, setup and ended actions in view: the panel gets room, its text scrolls and the action row never does', () => {
+  const css = read('./live-voice.css');
+  // The composer container makes room for the panel instead of leaving it a 50 to 125 px sliver.
+  expect(css).toContain('.chat-region .composer-container:has(.live-voice-panel:not(.is-live)){max-height:min(72%,calc(100% - 96px))}');
+  const panel = css.split('\n').find(line => line.startsWith('.live-voice-panel:not(.is-live){'));
+  expect(panel).toContain('overflow:hidden');
+  expect(panel).toMatch(/max-height:min\(\d+dvh,\d+px\)/);
+  const text = css.split('\n').find(line => line.startsWith('.live-voice-panel:not(.is-live)>:not(.live-voice-actions){'));
+  expect(text).toContain('overflow-y:auto');
+  expect(text).toContain('min-height:0');
+  expect(css).toContain('.live-voice-panel:not(.is-live)>.live-voice-actions{flex:none}');
+  // The old rule scrolled the whole panel, actions included.
+  expect(css).not.toContain('.live-voice-panel:not(.is-live){max-height:min(32dvh,200px);overflow-y:auto');
+});

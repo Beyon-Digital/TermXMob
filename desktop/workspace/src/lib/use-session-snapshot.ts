@@ -2,6 +2,7 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import type {Session} from './api';
 import {latestExecutionTask} from './conversation-messages';
 import {taskIsActive} from './tool-activity';
+import {notePlanEvent} from './plan-signal';
 import {useTaskEvents} from './task-events';
 import {usePolling} from './use-polling';
 
@@ -67,7 +68,8 @@ export function useSessionSnapshot(options: SessionSnapshotOptions) {
 
   useTaskEvents(streamTask, {
     onLive: setLive,
-    onEvent: () => {
+    onEvent: event => {
+      notePlanEvent(event);
       if (eventTimer.current) return;
       eventTimer.current = setTimeout(() => { eventTimer.current = undefined; setEventTick(value => value + 1); }, EVENT_DEBOUNCE);
     },

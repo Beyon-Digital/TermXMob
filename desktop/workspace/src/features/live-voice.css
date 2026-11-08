@@ -29,8 +29,10 @@
  .live-voice-panel.is-live .live-voice-label{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
 }
 @media(max-width:480px){.live-voice-panel{padding:8px 10px}.live-voice-panel.is-live{padding:4px 6px 4px 10px}}
-/* Consent and setup are text-heavy and not live yet: on a small or short screen they scroll inside a capped panel so the
-   message box and its toolbar stay on screen and reachable. */
-@media(max-width:480px),(max-height:700px){
- .live-voice-panel:not(.is-live){max-height:min(32dvh,200px);overflow-y:auto;overscroll-behavior:contain}
-}
+/* Consent, setup and the ended notice are text-heavy and not live yet. The panel gets room before the message box does, the
+   text scrolls inside it, and the action row never scrolls out of reach: Start live voice, Cancel and Close stay tappable
+   at every width and height. */
+.chat-region .composer-container:has(.live-voice-panel:not(.is-live)){max-height:min(72%,calc(100% - 96px))}
+.live-voice-panel:not(.is-live){min-height:0;overflow:hidden;max-height:min(45dvh,300px)}
+.live-voice-panel:not(.is-live)>:not(.live-voice-actions){min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.live-voice-panel:not(.is-live)>.live-voice-actions{flex:none}

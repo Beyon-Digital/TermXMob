@@ -3,6 +3,7 @@ import {ArrowLeft, ChevronDown, ChevronRight, CircleAlert, GitBranch, RefreshCw}
 import {Button} from '../components/ui/button';
 import {json, request, type Session} from '../lib/api';
 import {loadBoard, rollupHeadline, type BoardRollup} from '../lib/orchestrator-board';
+import {subscribePlanEvents} from '../lib/plan-signal';
 import {taskState} from '../lib/task-presentation';
 import {usePolling} from '../lib/use-polling';
 import {useObservationActive} from '../lib/use-observation-active';
@@ -64,7 +65,7 @@ function ChildEngineDetails({child}: {child: OrchestratorChild}) {
 }
 
 /** How often the collapsed header re-reads the plan graph: quickly while work is live, slowly when nothing is planned or running. */
-export const COLLAPSED_BOARD_LIVE_MS = 4000, COLLAPSED_BOARD_IDLE_MS = 15000;
+export const COLLAPSED_BOARD_LIVE_MS = 4000, COLLAPSED_BOARD_IDLE_MS = 15000, PLAN_EVENT_DEBOUNCE_MS = 300;
 /** A plan with nodes that are running, waiting to run, or stalled is still changing. */
 export const boardIsLive = (board: BoardRollup | null) => !!board && ['running', 'pending', 'stalled'].some(status => (board.counts[status] || 0) > 0);
 
@@ -76,12 +77,20 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   const [stale, setStale] = useState(false), [busy, setBusy] = useState(''), [stateOwner, setStateOwner] = useState(ownerId);
   const [board, setBoard] = useState<BoardRollup | null>(null);
   useEffect(() => setBoard(null), [ownerId]);
+  // A plan change made through the main chat (plan_nodes, start_ready, retry_node, cancel_node, an approval) moves no orchestrator
+  // cursor. The chat's task event stream reports it instead; a short debounce turns a burst into one restart of the board loop.
+  const [planTick, setPlanTick] = useState(0);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = subscribePlanEvents(() => { if (!timer) timer = setTimeout(() => { timer = undefined; setPlanTick(value => value + 1); }, PLAN_EVENT_DEBOUNCE_MS); });
+    return () => { unsubscribe(); clearTimeout(timer); };
+  }, []);
   // The board is mounted only while the section is open. While it is collapsed, read the same board so the header
   // counts planned tasks too; once open, the board itself feeds the header.
   // Poll every 4 s while delegated work or a plan is live so the collapsed header tracks the plan graph, and every 15 s when idle.
-  // A new orchestrator event (the snapshot cursor moving) restarts the loop, which reads the board at once.
+  // A new orchestrator event (the snapshot cursor moving) or a plan event from the main chat restarts the loop, which reads the board at once.
   const live = (snapshot?.children || []).some(row => taskState(row.status).active) || boardIsLive(board);
-  usePolling(() => loadBoard(), {interval: live ? COLLAPSED_BOARD_LIVE_MS : COLLAPSED_BOARD_IDLE_MS, backoff: false, enabled: observing && !expanded && selected !== undefined, resetKey: ownerId + ':' + (snapshot?.cursor ?? ''), onResult: value => setBoard(value.rollup)});
+  usePolling(() => loadBoard(), {interval: live ? COLLAPSED_BOARD_LIVE_MS : COLLAPSED_BOARD_IDLE_MS, backoff: false, enabled: observing && !expanded && selected !== undefined, resetKey: ownerId + ':' + (snapshot?.cursor ?? '') + ':' + planTick, onResult: value => setBoard(value.rollup)});
   const read = useRef<AbortController | null>(null), flight = useRef<object | null>(null);
   const generation = useRef(0), identity = useRef(ownerId), alive = useRef(true);
   const observation = useRef(observing), selection = useRef(selected), primaryCallback = useRef(onPrimary);
