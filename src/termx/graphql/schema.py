@@ -10,6 +10,7 @@ import strawberry
 from strawberry.schema.config import StrawberryConfig
 
 from termx.graphql.domains.agent import AgentMutations, AgentQueries
+from termx.graphql.domains.bots import BotMutations, BotQueries
 from termx.graphql.domains.chatgpt import ChatGPTQueries, ChatGPTMutations
 from termx.graphql.domains.chat import ChatMutations, ChatQueries
 from termx.graphql.domains.core import CoreMutations, CoreQueries
@@ -33,6 +34,7 @@ class Query(
     ChatQueries,
     ChatGPTQueries,
     RunbookQueries,
+    BotQueries,
     VoiceQueries,
 ):
     pass
@@ -48,6 +50,7 @@ class Mutation(
     ChatMutations,
     ChatGPTMutations,
     RunbookMutations,
+    BotMutations,
     VoiceMutations,
 ):
     pass

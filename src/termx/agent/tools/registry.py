@@ -155,7 +155,8 @@ class ToolRegistry:
          "managed_session_status", "message_managed_session", "cancel_managed_session",
          "list_agent_projects", "spawn_project_agent","list_agent_engines","list_agent_sessions",
          "review_managed_session","adopt_managed_session","spawn_engine_agent",
-         "plan_nodes","start_ready","node_status","retry_node","reassign_node","cancel_node"}
+         "plan_nodes","start_ready","node_status","retry_node","reassign_node","cancel_node",
+         "list_bots","bot_status","pause_bot","create_bot","update_bot","resume_bot","delete_bot","assign_bot_task","schedule_bot"}
     )
 
     def provider_tools(

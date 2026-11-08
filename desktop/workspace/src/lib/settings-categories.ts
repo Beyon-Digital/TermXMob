@@ -7,6 +7,7 @@ export const settingsCategories = [
  {id:'voice',label:'Voice',group:'Workers',description:'Dictate to your agents and hear their replies.'},
  {id:'cloud',label:'Cloud accounts',group:'Workers',description:'Connect accounts used by your agents.'},
  {id:'agents',label:'Agents',group:'Workers',description:'Manage how your agents run.'},
+ {id:'bots',label:'Bots',group:'Workers',description:'Background agents that work for you inside limits you set.'},
  {id:'extensions',label:'Plugins & skills',group:'Workers',description:'Add skills and plugins to your agents.'},
  {id:'connections',label:'Tools & connections',group:'Workers',description:'Connect the tools your agents use.'},
  {id:'memory',label:'Memory',group:'Host',description:'Control what your agents remember.'},

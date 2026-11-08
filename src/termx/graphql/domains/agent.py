@@ -585,6 +585,12 @@ class AgentMutations:
             _require_custom_agent(ctx,custom_agent)
             if not custom_agent.get('enabled'):
                 raise HTTPException(409,'custom agent is disabled')
+            try:
+                state.workspace.bots.guard_agent(custom_agent_id)  # a paused bot or one past its ceiling cannot be started here either
+            except PermissionError as exc:
+                raise HTTPException(403,str(exc)) from exc
+            except ValueError as exc:  # workspace Conflict
+                raise HTTPException(409,str(exc)) from exc
         attachments = body.attachments or []
         profile_engine = ((custom_agent or {}).get("file") or {}).get("engine")
         previous = state.agent_store.engine_session_for_conversation(body.conversation_id) if body.conversation_id else None

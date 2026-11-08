@@ -149,6 +149,85 @@ input AutoModeInput {
   ceilings: JSON = null
 }
 
+type Bot {
+  id: String!
+  revision: Int!
+  name: String!
+  state: String!
+  template: String
+  description: String!
+  instructions: String!
+  project_id: String
+  conversation_id: String!
+  custom_agent_id: String!
+  model: String
+  provider_id: String
+  tools: [String!]!
+  approval_mode: String
+  sandbox_profile: String
+  limits: JSON!
+  ceiling: JSON!
+  peers: [String!]!
+  effective: JSON
+  violations: [String!]!
+  rules: JSON!
+  needs_you: Int!
+  active_tasks: Int!
+  last_task: JSON
+  created_by: String!
+  config_changed_at: Float
+  created_at: Float!
+  updated_at: Float!
+}
+
+input BotCeilingInput {
+  tools: [String!]!
+  approval_mode: String!
+  sandbox_profile: String!
+  deny_capabilities: [String!]!
+}
+
+input BotInput {
+  name: String!
+  template: String = null
+  instructions: String = null
+  description: String = null
+  project_id: String = null
+  tools: [String!] = null
+  model: String = null
+  provider_id: String = null
+  peers: [String!] = null
+  request_id: String = null
+}
+
+input BotPatchInput {
+  revision: Int!
+  name: String = null
+  description: String = null
+  instructions: String = null
+  model: String = null
+  provider_id: String = null
+  tools: [String!] = null
+  approval_mode: String = null
+  sandbox_profile: String = null
+  limits: JSON = null
+  peers: [String!] = null
+}
+
+type BotRun {
+  task_id: String!
+  status: String!
+}
+
+type BotTemplate {
+  id: String!
+  name: String!
+  description: String!
+  requires_project: Boolean!
+  tools: [String!]!
+  instructions: String!
+}
+
 input CommandInput {
   name: String!
   command: String!
@@ -737,6 +816,13 @@ type Mutation {
   run_runbook(runbook_id: String!, profile: String! = "host"): RunbookRun!
   confirm_runbook_run(run_id: String!): RunbookRun!
   cancel_runbook_run(run_id: String!): RunbookRun!
+  create_bot(input: BotInput!): Bot!
+  patch_bot(bot_id: String!, input: BotPatchInput!): Bot!
+  set_bot_state(bot_id: String!, state: String!, revision: Int = null): Bot!
+  set_bot_ceiling(bot_id: String!, revision: Int!, ceiling: BotCeilingInput!): Bot!
+  delete_bot(bot_id: String!): Bot!
+  revoke_bot_rule(bot_id: String!, rule_id: String!): Bot!
+  bot_run_now(bot_id: String!, prompt: String = null): BotRun!
   save_voice_settings(input: VoiceSettingsInput!): VoiceStatus!
 }
 
@@ -1015,6 +1101,9 @@ type Query {
   runbook(runbook_id: String!): RunbookDetail!
   runbook_runs(runbook_id: String = null): [RunbookRun!]!
   runbook_run(run_id: String!): RunbookRun!
+  bots(include_archived: Boolean! = false): [Bot!]!
+  bot(bot_id: String!): Bot!
+  bot_templates: [BotTemplate!]!
   voice_status: VoiceStatus!
 }
 

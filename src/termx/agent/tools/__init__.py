@@ -1,7 +1,7 @@
 """Typed Agent tool registry and structured tool implementations."""
 from __future__ import annotations
 
-from termx.agent.tools import filesystem, git, legacy, planning, project, runbooks, search, shell, subagents, browser,mcp,characters
+from termx.agent.tools import filesystem, git, legacy, planning, project, runbooks, search, shell, subagents, browser,mcp,characters,bots
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec
 
 _registry: ToolRegistry | None = None
@@ -23,6 +23,7 @@ def default_registry() -> ToolRegistry:
         browser.register(registry)
         mcp.register(registry)
         characters.register(registry)
+        bots.register(registry)
         _registry = registry
     return _registry
 

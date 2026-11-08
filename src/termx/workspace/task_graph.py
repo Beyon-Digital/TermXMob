@@ -128,7 +128,7 @@ class TaskGraph:
         waiting = WAITING_ON.get((task or {}).get('status'))
         blocked = [dep for dep in node['depends_on'] if by_id.get(dep, {}).get('status') != 'completed'] \
             if node['status'] == 'pending' else []
-        return {'id': node['id'], 'title': node['title'], 'role': node['role'], 'mode': node['mode'],
+        return {'id': node['id'], 'title': node['title'], 'role': node['role'], 'mode': node['mode'], 'bot_id': node.get('bot_id'),
             'isolation': node.get('isolation'), 'depends_on': node['depends_on'], 'blocked_by': blocked,
             'task_id': node.get('task_id'), 'status': node['status'], 'attempts': node['attempts'],
             'max_attempts': MAX_ATTEMPTS, 'waiting': waiting, 'last_event_at': last, 'result_summary': node.get('result_summary') or '',
@@ -202,9 +202,17 @@ class TaskGraph:
                 depends = item.get('depends_on') or []
                 if not isinstance(depends, list):
                     raise ValueError(f'Node {key} depends_on must be a list')
+                bot_id = str(item.get('bot_id') or '').strip() or None
+                custom_agent_id = None
+                if bot_id:
+                    try:
+                        custom_agent_id = self.workspace.bots.require_active(principal, bot_id)['custom_agent_id']
+                    except (KeyError, PermissionError, HTTPException):
+                        raise ValueError(f'Node {key} names a bot that is not available')
                 keys[key] = hashlib.sha256(f'{parent}:{call_id}:{key}'.encode()).hexdigest()[:32] if call_id else uuid.uuid4().hex
                 clean.append({'key': key, 'title': title, 'prompt': prompt, 'mode': mode,
                     'role': str(item.get('role') or 'worker').strip()[:80] or 'worker',
+                    'bot_id': bot_id, 'custom_agent_id': custom_agent_id,
                     'depends': [str(dep) for dep in depends]})
             if call_id and keys and all(identifier in known for identifier in keys.values()):
                 return self._views(principal.id, parent, list(keys.values()))
@@ -228,6 +236,7 @@ class TaskGraph:
                 created.append(self.store.create(KIND, principal.id, {
                     'parent_session_id': parent, 'key': item['key'], 'title': item['title'], 'role': item['role'],
                     'prompt': item['prompt'], 'mode': item['mode'], 'depends_on': item['depends_on'],
+                    'bot_id': item['bot_id'], 'custom_agent_id': item['custom_agent_id'],
                     'task_id': None, 'task_ids': [], 'status': 'pending', 'attempts': 0, 'last_event_at': None,
                     'result_summary': '', 'error': '', 'provider_id': None, 'model': None, 'isolation': None,
                     'order': len(existing) + index}, project, keys[item['key']]))
@@ -311,7 +320,17 @@ class TaskGraph:
             return self._fail(node, 'No model provider is available for this node')
         except ValueError as exc:
             return self._fail(node, str(exc))
-        mode, execution, isolation = await self._execution(principal, node['mode'], primary['cwd'])
+        cwd = primary['cwd']
+        if node.get('custom_agent_id'):
+            try:
+                self.workspace.bots.guard_agent(node['custom_agent_id'])
+                self.workspace.bots.admit(principal.id)
+            except (PermissionError, Conflict) as exc:
+                return self._fail(node, str(exc))
+            # A bot works in its own folder, not wherever the orchestrator happens to be.
+            home = (self.workspace.bots.for_agent(node['custom_agent_id']) or {}).get('conversation_id')
+            cwd = (self.store.get('conversation', home) or {}).get('cwd') or cwd
+        mode, execution, isolation = await self._execution(principal, node['mode'], cwd)
         brief = self._brief(node)
 
         linked = False
@@ -333,8 +352,9 @@ class TaskGraph:
                     pass  # the node record still carries access; only general task routes lose it
 
         try:
-            task = await self.manager.create_task(prompt=brief, cwd=primary['cwd'], provider_id=route.provider_id,
-                model=route.model, mode=mode, execution_mode=execution, on_created=link, role='worker')
+            task = await self.manager.create_task(prompt=brief, cwd=cwd, provider_id=route.provider_id,
+                model=route.model, mode=mode, execution_mode=execution, on_created=link, role='worker',
+                custom_agent_id=node.get('custom_agent_id'))
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             return self._fail(node, str(exc) or type(exc).__name__, counted=linked)
         if mode == 'agent':

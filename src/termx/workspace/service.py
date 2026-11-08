@@ -43,6 +43,8 @@ class WorkspaceService:
         self._closed = False
         from termx.workspace.orchestrator import OrchestratorService
         self.orchestrator = OrchestratorService(self)
+        from termx.workspace.bots import BotService
+        self.bots = BotService(self)
         state.agent.orchestrator = self.orchestrator
         state.agent._listeners.add(self._on_event)
         state.agent.execution_authority = self.validate_task_execution
@@ -379,6 +381,9 @@ class WorkspaceService:
         allowed = {'title','pinned','archived','draft_text','draft_context','scroll','scroll_anchor','model','provider_id','mode','engine','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','reasoning_config'}
         if changes.keys() - allowed:
             raise ValueError('Unsupported session setting')
+        bot=self.bots.for_conversation(identifier)
+        if bot and bot['state']!='archived' and (changes.get('custom_agent_id',bot['custom_agent_id'])!=bot['custom_agent_id'] or changes.get('engine','internal')!='internal' or changes.get('runner_id') or changes.get('workflow')):
+            raise Conflict("A bot's conversation stays bound to its own agent on the built-in engine; change the bot's settings instead")
         if changes.keys() & {'mode','runner_id'}:
             _require_plan_capable(changes.get('mode') or self.session(principal,identifier,turns=False).get('mode'), row['engine'], changes.get('runner_id', row.get('runner_id')))
         if changes.keys() & {'custom_agent_id','runner_id','workflow'}:
@@ -563,6 +568,7 @@ class WorkspaceService:
         if auto and auto.get('enabled') and (row['engine']!='internal' or row.get('runner_id')):
             raise ValueError('Auto mode is only available for tasks run by the built-in agent on this host')
         profile=resolve_preset(self,principal,row.get('custom_agent_id'),engine=row['engine'],project_id=row.get('project_id'),runner_id=row.get('runner_id'),workflow=row.get('workflow'))
+        self.bots.guard(row,profile)  # a bot must be active and its preset inside its ceiling, even after a hand edit
         if profile and profile['workspace_revision']!=row.get('custom_agent_revision'):
             raise Conflict('Agent preset changed; inspect and explicitly refresh this conversation preset before sending')
         from .reasoning import validate as validate_reasoning

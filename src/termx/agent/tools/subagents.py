@@ -120,9 +120,16 @@ def _review_node(reason, run_all):
         if not nodes:
             return PolicyDecision(False, False, 'No node is ready', 'No pending node has all of its dependencies completed')
         model = str(call.arguments.get('model') or call.arguments.get('provider_id') or '')
-        lines = ['- ' + node['title'] + ' (' + node['mode'] + ' mode, ' + (model or node.get('model') or 'default model') + '): '
+        bots = {node['id']: (service.workspace.store.get('bot', node['bot_id']) or {}).get('name') or node['bot_id']
+                for node in nodes if node.get('bot_id')}
+        lines = ['- ' + node['title'] + (' [runs as bot ' + str(bots[node['id']]) + ', inside its ceiling]' if node['id'] in bots else '')
+            + ' (' + node['mode'] + ' mode, ' + (model or node.get('model') or 'default model') + '): '
             + node['prompt'][:200] for node in nodes]
-        return PolicyDecision(False, True, reason, 'Each runs as its own isolated agent with the normal budgets and approvals:\n' + '\n'.join(lines))
+        base = PolicyDecision(False, True, reason, 'Each runs as its own isolated agent with the normal budgets and approvals:\n' + '\n'.join(lines))
+        if bots:  # work given to a bot is delegation: Auto never approves it
+            from termx.agent.tools.bots import ask_each_time
+            return ask_each_time(base, call, ctx)
+        return base
     return decide
 
 
@@ -181,7 +188,8 @@ def register(registry: ToolRegistry) -> None:
         description='Main agent only: record a task graph. Each node has a key, title, prompt, optional role, mode (ask or agent) and depends_on (keys from this call or earlier node IDs). Nothing runs until start_ready. Each node later runs as its own isolated top-level task; at most 20 nodes per call.',
         parameters={'type': 'object', 'properties': {'nodes': {'type': 'array', 'items': {'type': 'object', 'properties': {
             'key': {'type': 'string'}, 'title': {'type': 'string'}, 'prompt': {'type': 'string'}, 'role': {'type': 'string'},
-            'mode': {'type': 'string', 'enum': ['agent', 'ask']}, 'depends_on': {'type': 'array', 'items': {'type': 'string'}}},
+            'mode': {'type': 'string', 'enum': ['agent', 'ask']}, 'depends_on': {'type': 'array', 'items': {'type': 'string'}},
+            'bot_id': {'type': 'string', 'description': "Optional bot ID from list_bots. The node runs as that bot, inside its ceiling, in the bot's own folder."}},
             'required': ['title', 'prompt'], 'additionalProperties': False}}}, 'required': ['nodes'], 'additionalProperties': False},
         mutability='write', parallel_safe=False, approval='never', execute=_managed_session, decide=decide_never, expose_read_only=False))
     registry.register(ToolSpec(name='start_ready',
