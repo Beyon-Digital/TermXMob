@@ -1,9 +1,10 @@
 import {useEffect, useRef, useState, type ReactNode} from 'react';
-import {AudioLines, MicOff, Square} from 'lucide-react';
+import {AudioLines, Hand, MicOff, Square} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {nativeWorkspace} from '../lib/native';
 import {useSystemReducedMotion} from '../lib/use-system-reduced-motion';
 import {LiveVoiceClient, type LiveState} from '../lib/voice/live';
+import {claimMicrophone, type MicrophoneClaim} from '../lib/voice/microphone';
 import {hostOf, isLocal, saveVoiceSettings} from '../lib/voice/settings';
 import {useVoiceStatus} from '../lib/voice/use-voice-status';
 import './composer-voice.css';
@@ -50,6 +51,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   const [agreed, setAgreed] = useState(false);
   const [starting, setStarting] = useState(false);
   const client = useRef<LiveVoiceClient | null>(null);
+  const micClaim = useRef<MicrophoneClaim | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const firstRender = useRef(true);
@@ -64,6 +66,8 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   const acknowledged = !!live?.acknowledged;
 
   function stop() {
+    micClaim.current?.release();
+    micClaim.current = null;
     client.current?.end('user');
   }
   /** Ends the session without reporting it: the panel it would report to is gone or belongs to another conversation. */
@@ -71,6 +75,8 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   detach.current = () => {
     const old = client.current;
     client.current = null;
+    micClaim.current?.release();
+    micClaim.current = null;
     old?.end('user');
   };
   useEffect(() => {
@@ -82,6 +88,8 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
     setLevel(0);
     setMuted(false);
     setLines([]);
+    setNotice('');
+    setMessage('');
   }, [enabled]);
   useEffect(() => () => detach.current(), []);
   const lastSession = useRef(sessionId);
@@ -105,6 +113,9 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       setMuted(false);
       setState('connecting');
       setPhase('live');
+      // Live voice outranks dictation: a recording in progress stops here, so only one capture ever uses the microphone.
+      micClaim.current?.release();
+      micClaim.current = claimMicrophone('live', () => {});
       const next = new LiveVoiceClient({
         onState: setState,
         onLevel: setLevel,
@@ -113,6 +124,8 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
         onEnded: (_reason, detail) => {
           if (client.current !== next) return;
           client.current = null;
+          micClaim.current?.release();
+          micClaim.current = null;
           setMessage(detail);
           setPhase('ended');
         },
@@ -120,6 +133,8 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       client.current = next;
       await next.start(target);
     } catch (failure) {
+      micClaim.current?.release();
+      micClaim.current = null;
       setMessage(failure instanceof Error ? failure.message : String(failure));
       setPhase('ended');
     } finally {
@@ -262,13 +277,15 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
             }}
           >
             <MicOff size={14} />
-            Mute microphone
+            <span className="live-voice-label">Mute microphone</span>
           </Button>
           <Button type="button" size="sm" variant="secondary" disabled={!talking} onClick={() => client.current?.interrupt()}>
-            Interrupt
+            <Hand size={14} />
+            <span className="live-voice-label">Interrupt</span>
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={stop}>
-            End live voice
+            <Square size={14} />
+            <span className="live-voice-label">End live voice</span>
           </Button>
         </div>
         <p className="live-voice-hint">Ends after 10 minutes, or after 60 seconds without speech. Approvals still happen in the app.</p>
@@ -296,7 +313,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   const panel: ReactNode = (
     <div className="live-voice-host">
       {body && (
-        <section className="live-voice-panel" aria-label="Live voice" ref={panelRef}>
+        <section className={phase === 'live' ? 'live-voice-panel is-live' : 'live-voice-panel'} aria-label="Live voice" ref={panelRef}>
           {body}
         </section>
       )}

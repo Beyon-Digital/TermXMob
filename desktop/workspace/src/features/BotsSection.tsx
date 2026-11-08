@@ -10,7 +10,7 @@ import {BOT_FIELDS,TEMPLATE_FIELDS,stateLabel,taskStatusLabel,toolLabel,type Bot
 import type {HostIdentity} from '../lib/host-types';
 import {usePolling} from '../lib/use-polling';
 import {NEEDS_YOU_FIELDS,type NeedsYouItem} from '../lib/bot-schedules';
-import BotDetail from './BotDetail';
+import BotDetail,{botTabIds} from './BotDetail';
 import NeedsYouInbox,{type BotTab} from './NeedsYouInbox';
 import {ActionButton,Empty,ManagerPage,date,rowMatcher} from './manager-ui';
 import {gql,useManagerLoad,useManagerMutation} from './use-manager';
@@ -32,12 +32,25 @@ function useBotParam() {
   const select = useCallback((next: string | null) => {
     const url = new URL(location.href);
     if (next) url.searchParams.set('bot', next); else url.searchParams.delete('bot');
+    url.searchParams.delete('tab');
     history.pushState(history.state, '', url);
     setId(next);
   }, []);
   return [id, select] as const;
 }
 
+/** The open tab lives in `?tab=` next to `?bot=`, so a reload returns to it. Changing tabs replaces the entry instead of adding history. */
+const urlTab = (): BotTabId | null => {
+  const value = new URLSearchParams(location.search).get('tab');
+  return value && botTabIds.includes(value) && value !== 'overview' ? (value as BotTabId) : null;
+};
+function writeTab(tab: string) {
+  const url = new URL(location.href);
+  if (tab === 'overview') url.searchParams.delete('tab'); else url.searchParams.set('tab', tab);
+  history.replaceState(history.state, '', url);
+}
+
+type BotTabId = Parameters<NonNullable<React.ComponentProps<typeof BotDetail>['onTabChange']>>[0];
 const CUSTOM = 'custom';
 
 function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,onCreate}:{
@@ -92,7 +105,7 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
   const mutation=useManagerMutation(reload);
   const {busy,error,notice,mutate}=mutation;
   const [selected,select]=useBotParam(),[creating,setCreating]=useState(false),[search,setSearch]=useState('');
-  const [fresh,setFresh]=useState<{bots:Bot[];needs_you?:NeedsYouItem[]}|null>(null),[target,setTarget]=useState<{id:string|null;tab:BotTab}>({id:null,tab:'overview'});
+  const [fresh,setFresh]=useState<{bots:Bot[];needs_you?:NeedsYouItem[]}|null>(null),[target,setTarget]=useState<{id:string|null;tab:BotTabId}>({id:null,tab:'overview'});
   useEffect(()=>setFresh(null),[data]);
   // Counts like "needs you" change while the screen is open, so the list refreshes itself quietly.
   usePolling(()=>gql<{bots:Bot[];needs_you?:NeedsYouItem[]}>(refreshQuery),{interval:15000,immediate:false,enabled:!!data,onResult:value=>setFresh(value)});
@@ -101,8 +114,9 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
   const current=selected?bots.find(row=>row.id===selected)||null:null;
   // A bot opens on its Overview unless the inbox asked for another tab. The request belongs to that bot, so any other way
   // of changing the selection (browser back, a deleted bot) falls back to Overview.
-  const tab=target.id===selected?target.tab:'overview';
-  const open=(id:string|null,next:BotTab='overview')=>{if(id)opened.current=id;setTarget({id,tab:next});select(id)};
+  const fromAddress=useRef({id:selected,tab:urlTab()});
+  const tab:BotTabId=target.id===selected?target.tab:(fromAddress.current.id===selected&&fromAddress.current.tab)||'overview';
+  const open=(id:string|null,next:BotTab='overview')=>{if(id)opened.current=id;setTarget({id,tab:next});select(id);if(id&&next!=='overview')writeTab(next)};
   // Going back to the list returns to the bot that was open; if it is gone, to the New bot button.
   const opened=useRef<string|null>(null),newBot=useRef<HTMLButtonElement>(null);
   useEffect(()=>{
@@ -119,7 +133,7 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
   const header=<div className="bot-toolbar"><Button ref={newBot} onClick={()=>setCreating(true)}>New bot</Button></div>;
   return <ManagerPage section="bots" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={current?undefined:{label:'Bots',value:search,onChange:setSearch,count:bots.length}}>
     <>
-      {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} me={me} onSection={onSection} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onBack={()=>open(null)} onGone={()=>open(null)}/>
+      {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} me={me} onSection={onSection} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onTabChange={writeTab} onBack={()=>open(null)} onGone={()=>open(null)}/>
       :selected?(loading?<Empty>Loading bot…</Empty>:<Empty>This bot no longer exists. <Button variant="ghost" onClick={()=>open(null)}>Show all bots</Button></Empty>)
       :<>
         {header}

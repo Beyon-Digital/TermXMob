@@ -4,7 +4,7 @@ import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/
 import {FormField} from '../components/ui/form-field';
 import {Select} from '../components/ui/select';
 import {SettingsRow,SettingsSection} from '../components/ui/settings-section';
-import {BOT_FIELDS,approvalModes,approvalRank,denied,denyGroups,fallbackToolIds,sandboxProfiles,sandboxRank,toolGroups,toolLabel,type BotCeiling} from '../lib/bots';
+import {BOT_FIELDS,approvalModes,approvalRank,denied,denyGroups,fallbackToolIds,plainToolLabel,sandboxProfiles,sandboxRank,toolGroups,toolLabel,type BotCeiling} from '../lib/bots';
 import {patchBot,useHostToolNames,type BotTabProps} from './bot-api';
 import {ActionButton,Empty} from './manager-ui';
 import {useDirtyForm} from './settings-forms';
@@ -15,12 +15,14 @@ const toggle=(list:string[],id:string,on:boolean)=>on?[...new Set([...list,id])]
 
 /** Checkboxes for `allowed` tools, grouped by what they let a bot do. Tools the screen has no wording for appear under their id. */
 function ToolChoices({allowed,selected,onChange,legend}:{allowed:string[];selected:string[];onChange:(next:string[])=>void;legend:string}){
-  const groups=[...toolGroups.map(group=>({label:group.label,tools:group.tools.filter(tool=>allowed.includes(tool.id))})),
-    {label:'Other',tools:allowed.filter(id=>!known.has(id)).map(id=>({id,label:id}))}].filter(group=>group.tools.length);
+  type Choice={id:string;label:string;title?:string};
+  const groups:{label:string;tools:Choice[]}[]=[...toolGroups.map(group=>({label:group.label,tools:group.tools.filter(tool=>allowed.includes(tool.id))})),
+    // The host may have tools this screen has no wording for. They get a readable name, and the real id stays on hover.
+    {label:'Other tools',tools:allowed.filter(id=>!known.has(id)).map(id=>({id,label:plainToolLabel(id),title:id}))}].filter(group=>group.tools.length);
   return <fieldset className="bot-tools"><legend>{legend}</legend>
     {groups.map(group=><div key={group.label} role="group" aria-label={group.label} className="bot-tool-group">
       <h4>{group.label}</h4>
-      {group.tools.map(tool=><label key={tool.id} className="bot-check"><input type="checkbox" checked={selected.includes(tool.id)} onChange={event=>onChange(toggle(selected,tool.id,event.target.checked))}/><span>{tool.label}</span></label>)}
+      {group.tools.map(tool=><label key={tool.id} className="bot-check" title={tool.title}><input type="checkbox" checked={selected.includes(tool.id)} onChange={event=>onChange(toggle(selected,tool.id,event.target.checked))}/><span>{tool.label}</span></label>)}
     </div>)}
   </fieldset>;
 }

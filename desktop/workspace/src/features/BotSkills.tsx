@@ -60,7 +60,7 @@ export default function BotSkills({bot, mutation, onSection, onTab}: BotTabProps
         ? <>This bot cannot read large skills yet because “Read skills on demand” is off. <button type="button" className="bot-link" onClick={() => onTab?.('permissions')}>Turn it on under Permissions</button>.</>
         : <>This bot cannot read large skills because its ceiling does not include “Read skills on demand”. Add it to the ceiling under Permissions first.</>}
     </p>}
-    <fieldset className="bot-tools" disabled={running || busy}>
+    <fieldset className="bot-tools" disabled={running || busy} data-settings-autosave>
       <legend>Skills this bot uses</legend>
       {running && <p className="manager-help">Wait for the current run to finish before changing skills.</p>}
       {data.extensions.map(extension => <label key={extension.id} className="bot-check">

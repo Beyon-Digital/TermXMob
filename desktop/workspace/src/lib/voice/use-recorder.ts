@@ -8,26 +8,31 @@ export interface UseVoiceRecorder {
   observe?: RefObject<Element | null>;
   onRecording: (blob: Blob) => void;
   onError: (message: string) => void;
+  /** Called on every phase change, including a start that fails before React has rendered the new phase. */
+  onPhase?: (phase: RecorderPhase) => void;
 }
 
 /**
  * The recorder plus the rules every surface needs: cancel when the page is hidden, the workspace locks, the
  * surface is disabled or its pane collapses, and when the component unmounts.
  */
-export function useVoiceRecorder({enabled, observe, onRecording, onError}: UseVoiceRecorder) {
+export function useVoiceRecorder({enabled, observe, onRecording, onError, onPhase}: UseVoiceRecorder) {
   const [phase, setPhase] = useState<RecorderPhase>('idle');
   const [level, setLevel] = useState(0);
   const enabledNow = useRef(enabled);
   enabledNow.current = enabled;
   const rendered = useRef(true);
-  const callbacks = useRef({onRecording, onError});
-  callbacks.current = {onRecording, onError};
+  const callbacks = useRef({onRecording, onError, onPhase});
+  callbacks.current = {onRecording, onError, onPhase};
 
   const recorder = useMemo(
     () =>
       new VoiceRecorder({
         allowed: () => enabledNow.current && rendered.current && !document.hidden,
-        onPhase: setPhase,
+        onPhase: next => {
+          setPhase(next);
+          callbacks.current.onPhase?.(next);
+        },
         onLevel: setLevel,
         onRecording: blob => callbacks.current.onRecording(blob),
         onError: message => callbacks.current.onError(message),

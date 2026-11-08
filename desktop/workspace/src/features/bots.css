@@ -27,8 +27,13 @@
 .manager-form label.bot-template:has(>input),.manager-form label.bot-check:has(>input[type=checkbox]),.bot-template,.bot-check{flex-direction:row;align-items:flex-start;text-align:left}
 .bot-template span,.bot-check span{display:grid;gap:2px}
 .bot-template small,.bot-check small{color:var(--secondary);font-size:12px;line-height:1.5}
-.bot-tool-group{display:grid;gap:4px}
-.bot-tool-group h4{margin:6px 0 0;font-size:12px;font-weight:550;color:var(--secondary)}
+/* A global label rule gives every label a 16px vertical margin, which put the rows 80px apart. The label keeps a 44px hit area
+   through its own padding and min-height, so rows can sit flush; wide forms flow the tools into columns. */
+.bot-tools .bot-check{margin:0;padding:11px 0;min-height:44px}
+.bot-tool-group{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));column-gap:20px;row-gap:0}
+.bot-tool-group h4{grid-column:1/-1;margin:10px 0 0;font-size:12px;font-weight:550;color:var(--secondary)}
+.bot-tool-group:first-of-type h4{margin-top:0}
+.bot-tool-group .bot-check span{min-width:0;overflow-wrap:anywhere}
 .bot-dialog{max-width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto}
 .bot-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;flex-wrap:wrap}
 .bot-changes{margin:12px 0 0;padding-left:20px;font-size:13px;line-height:1.7}

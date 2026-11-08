@@ -15,6 +15,8 @@ from termx.agent.providers import ProviderCall
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec, decide_never
 
 _SCOPES = ("agent", "project")
+# Who reads a note afterwards, so the approval says where it will end up and not only what it says.
+_REACH = {"agent": "only this agent reads it", "project": "every agent working in this project reads it"}
 
 
 def _workspace(ctx: ToolContext):
@@ -35,9 +37,11 @@ def _decide_write(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
     else:
         shown = f"Note ({len(text)} characters{', showing the first 200' if len(text) > 200 else ''}): {text[:200]}"
         reason = " ".join(str(call.arguments.get("reason") or "").split())[:300]
+        reach = _REACH.get(scope)
         base = PolicyDecision(
             False, True, "Save agent memory",
-            f"Saves a note to {scope} memory. Later conversations for this agent read it as untrusted data. {shown}"
+            f"Saves a note to {scope} memory{f' ({reach})' if reach else ''}. "
+            f"It is read back later as untrusted data, never as instructions. {shown}"
             + (f" Reason given: {reason}" if reason else ""),
         )
     engine = ctx.policy_engine

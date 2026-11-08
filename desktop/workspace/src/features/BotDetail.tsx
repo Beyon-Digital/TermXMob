@@ -106,9 +106,12 @@ const tabs=[
   {id:'tasks',label:'Tasks'},{id:'activity',label:'Activity'},
 ] as const;
 type TabId=typeof tabs[number]['id'];
+export const botTabIds:readonly string[]=tabs.map(item=>item.id);
 
-export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTab='overview',onBack,onGone,onSection}:BotTabProps&{me:HostIdentity;inbox:NeedsYouItem[];initialTab?:TabId;onBack:()=>void;onGone:()=>void;onSection?:(name:string)=>void}){
+export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTab='overview',onBack,onGone,onSection,onTabChange}:BotTabProps&{me:HostIdentity;inbox:NeedsYouItem[];initialTab?:TabId;onBack:()=>void;onGone:()=>void;onSection?:(name:string)=>void;onTabChange?:(tab:TabId)=>void}){
   const [tab,setTab]=useState<TabId>(initialTab);
+  // A "saved" notice describes the tab it came from, so it goes when another tab opens. The address keeps the tab for a reload.
+  const choose=(next:TabId)=>{if(next!==tab){mutation.setNotice('');onTabChange?.(next)}setTab(next)};
   const list=useRef<HTMLDivElement>(null),heading=useRef<HTMLHeadingElement>(null);
   // Opening a bot removes the row that held focus, which would leave it on the dialog; the bot's name takes it instead.
   useEffect(()=>{const active=document.activeElement;if(!active||active===document.body||active.getAttribute('role')==='dialog')heading.current?.focus()},[bot.id]);
@@ -116,7 +119,7 @@ export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTa
   function move(event:KeyboardEvent,index:number){
     const next=event.key==='ArrowRight'?(index+1)%tabs.length:event.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
     if(next<0)return;
-    event.preventDefault();setTab(tabs[next].id);
+    event.preventDefault();choose(tabs[next].id);
     list.current?.querySelector<HTMLElement>(`#bot-tab-${tabs[next].id}`)?.focus();
   }
   return <div className="bot-detail">
@@ -128,16 +131,16 @@ export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTa
     </div>
     <div className="bot-tabs" role="tablist" aria-label="Bot sections" ref={list}>
       {tabs.map((item,index)=><button key={item.id} type="button" role="tab" id={`bot-tab-${item.id}`} aria-controls={`bot-panel-${item.id}`} aria-selected={tab===item.id} tabIndex={tab===item.id?0:-1}
-        className="bot-tab" onClick={()=>setTab(item.id)} onKeyDown={event=>move(event,index)}>{item.label}</button>)}
+        className="bot-tab" onClick={()=>choose(item.id)} onKeyDown={event=>move(event,index)}>{item.label}</button>)}
     </div>
     <div role="tabpanel" id={`bot-panel-${tab}`} aria-labelledby={`bot-tab-${tab}`} className="bot-panel">
-      {tab==='overview'?<Overview {...props} inbox={inbox} onTab={setTab} onGone={onGone}/>
+      {tab==='overview'?<Overview {...props} inbox={inbox} onTab={choose} onGone={onGone}/>
       :tab==='prompt'?<Prompt {...props}/>
       :tab==='permissions'?<BotPermissions {...props}/>
-      :tab==='schedules'?<BotSchedules {...props} onTab={setTab}/>
+      :tab==='schedules'?<BotSchedules {...props} onTab={choose}/>
       :tab==='messages'?<BotMessages {...props}/>
       :tab==='memory'?<Memory bot={bot} me={me}/>
-      :tab==='skills'?<BotSkills {...props} onSection={onSection} onTab={setTab}/>
+      :tab==='skills'?<BotSkills {...props} onSection={onSection} onTab={choose}/>
       :tab==='tasks'?<BotTasks {...props}/>
       :<BotActivity {...props}/>}
     </div>

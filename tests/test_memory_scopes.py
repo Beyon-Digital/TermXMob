@@ -480,3 +480,45 @@ def test_approval_text_states_the_full_length_the_truncation_and_the_reason(work
         write_call(content='x' * 5000, reason='because the build is slow'), tool_context(service, task, engine=False))
     assert '5000 characters' in decision.consequence and 'first 200' in decision.consequence
     assert 'because the build is slow' in decision.consequence
+
+
+# -- approval wording ---------------------------------------------------------------
+
+@pytest.mark.parametrize('scope', ['agent', 'project'])
+def test_attended_memory_write_approval_says_what_is_saved_and_where(workspace, scope):
+    service, owner, path = workspace
+    profile = agent_profile(service)
+    row = conversation(service, owner, path, profile)
+    ctx = tool_context(service, task_for(service, owner, row, profile))
+    decision = default_registry().get('memory_write').decide(
+        write_call(scope=scope, content='Releases ship on Fridays', reason='Saves asking again'), ctx)
+    assert decision.approval_required
+    text = f'{decision.reason} {decision.consequence}'
+    assert 'paired host' not in text and 'Starts work' not in text
+    assert 'Releases ship on Fridays' in decision.consequence
+    assert f'{scope} memory' in decision.consequence
+    assert 'untrusted' in decision.consequence and 'Saves asking again' in decision.consequence
+    assert ('only this agent reads it' if scope == 'agent' else 'every agent working in this project reads it') in decision.consequence
+
+
+def test_memory_write_approval_through_the_manager_has_its_own_wording_not_the_plan_text(tmp_path):
+    from test_agent import ScriptedAdapter, build_manager, wait_for_pending_approval, wait_for_status
+
+    async def run():
+        call = ProviderCall('function', 'm1', 'memory_write', {'scope': 'project', 'content': 'The API pages at 50 rows'})
+        manager, store = build_manager(tmp_path, ScriptedAdapter([[call]]))
+        task = await manager.create_task(prompt='Remember the page size', cwd=str(tmp_path), provider_id='fake')
+        plan = task['approvals'][0]
+        assert plan['kind'] == 'plan' and plan['payload']['consequence'] == 'Starts work on the paired host'
+        await manager.resolve_approval(task['id'], plan['id'], 'approved')
+        _, pending = await wait_for_pending_approval(store, task['id'], 'tool')
+        payload = pending['payload']
+        assert payload['title'] == 'Save agent memory'
+        assert 'paired host' not in payload['consequence']
+        assert 'The API pages at 50 rows' in payload['consequence'] and 'project memory' in payload['consequence']
+        assert payload['remember_options'] == []  # asked every time; nothing can answer for the owner
+        await manager.resolve_approval(task['id'], pending['id'], 'denied')
+        await manager.close()
+        store.close()
+
+    asyncio.run(run())

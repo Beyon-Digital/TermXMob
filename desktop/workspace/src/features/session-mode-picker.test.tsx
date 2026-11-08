@@ -37,6 +37,22 @@ it('opens as an anchored popover, not a modal dialog, and closes on Escape, outs
  fireEvent.click(trigger);fireEvent.click(trigger);
  expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
 });
+it('focuses the checked mode, not the first one, when the popover opens', () => {
+ render(<SessionModePicker session={{id:'conversation',mode:'agent'} as Session} running={false} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ expect(screen.getByRole('radio',{name:/Agent/})).toHaveFocus();
+});
+it('focuses the first available mode when the checked one cannot be focused',()=>{
+ render(<SessionModePicker session={{id:'conversation',mode:'plan',context:{}} as unknown as Session} running={false} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ const focused=document.activeElement as HTMLInputElement;
+ expect(focused.type).toBe('radio');expect(focused.disabled).toBe(false);
+});
+it('opens on the checked mode when the keyboard opens the popover',()=>{
+ render(<SessionModePicker session={{id:'conversation',mode:'agent'} as Session} running={false} onPatch={vi.fn()}/>);
+ const trigger=screen.getByRole('button',{name:'Session mode'});trigger.focus();fireEvent.keyDown(trigger,{key:'Enter'});fireEvent.click(trigger);
+ expect(screen.getByRole('radio',{name:/Agent/})).toHaveFocus();
+});
 it('renders the options outside the clipped composer so they can be clicked',()=>{
  render(<div className="composer" style={{overflow:'hidden'}}><SessionModePicker session={session} running={false} onPatch={vi.fn()}/></div>);
  fireEvent.click(screen.getByRole('button',{name:'Session mode'}));

@@ -1,6 +1,7 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {expectNoAxeViolations} from '../test-axe';
+import {claimMicrophone, microphoneHeldBy} from '../lib/voice/microphone';
 import {useLiveVoice} from './live-voice';
 import {StatusAnnouncer} from '../lib/status-announcer';
 import {loadVoiceStatus, saveVoiceSettings, type VoiceStatus} from '../lib/voice/settings';
@@ -268,6 +269,44 @@ it('returns to the idle toggle after the workspace was locked and unlocked', asy
   expect(screen.queryByRole('region', {name: 'Live voice'})).not.toBeInTheDocument();
   expect(screen.queryByRole('button', {name: 'End live voice'})).not.toBeInTheDocument();
   expect(await screen.findByRole('button', {name: 'Live voice'})).toBeInTheDocument();
+});
+
+it('leaves no stale status text in the announcer after the workspace locks while listening', async () => {
+  const view = await live();
+  act(() => fake.hooks.onState('listening'));
+  expect(screen.getByRole('status')).toHaveTextContent('Listening');
+  view.rerender(<Harness enabled={false} />);
+  view.rerender(<Harness enabled />);
+  expect(screen.getByRole('status')).toBeEmptyDOMElement();
+});
+
+it('stops a dictation in progress when it starts, and gives the microphone back when it ends', async () => {
+  const stopDictation = vi.fn();
+  claimMicrophone('dictation', stopDictation);
+  await live();
+  expect(stopDictation).toHaveBeenCalledTimes(1);
+  expect(microphoneHeldBy()).toBe('live');
+  expect(claimMicrophone('dictation', vi.fn())).toBeNull();
+  fireEvent.click(screen.getByRole('button', {name: 'End live voice'}));
+  expect(microphoneHeldBy()).toBeNull();
+});
+
+it('gives the microphone back when the host ends the session, when it fails to start and when it is unmounted', async () => {
+  const view = await live();
+  act(() => fake.hooks.onEnded('idle', 'The session ended.'));
+  expect(microphoneHeldBy()).toBeNull();
+  view.unmount();
+  cleanup();
+  fake.start.mockRejectedValueOnce(new Error('The microphone is blocked.'));
+  render(<Harness />);
+  fireEvent.click(await startButton());
+  await screen.findByText('The microphone is blocked.');
+  expect(microphoneHeldBy()).toBeNull();
+  cleanup();
+  await live();
+  expect(microphoneHeldBy()).toBe('live');
+  cleanup();
+  expect(microphoneHeldBy()).toBeNull();
 });
 
 it('ignores the old session ending after the conversation was switched', async () => {

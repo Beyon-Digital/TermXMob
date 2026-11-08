@@ -5,6 +5,7 @@ import {useComposerVoice} from './composer-voice';
 import {loadVoiceStatus, saveVoiceSettings, type VoiceStatus} from '../lib/voice/settings';
 import {speechEvents, type SpeechEvent} from '../lib/voice/speech-stream';
 import {transfer} from '../lib/transfers';
+import {claimMicrophone, microphoneHeldBy} from '../lib/voice/microphone';
 
 vi.mock('../lib/voice/settings', () => ({
   loadVoiceStatus: vi.fn(),
@@ -155,6 +156,42 @@ it('stops and discards a recording on Escape', async () => {
   expect(await screen.findByRole('button', {name: 'Start dictation'})).toBeEnabled();
   expect(upload).not.toHaveBeenCalled();
   expect(onTranscript).not.toHaveBeenCalled();
+});
+
+it('stops a dictation in progress when live voice takes the microphone, and says so', async () => {
+  render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  await screen.findByRole('button', {name: 'Stop dictation'});
+  let claim: ReturnType<typeof claimMicrophone> = null;
+  act(() => {
+    claim = claimMicrophone('live', () => {});
+  });
+  expect(claim).not.toBeNull();
+  expect(await screen.findByRole('button', {name: 'Start dictation'})).toBeEnabled();
+  expect(screen.getByRole('status')).toHaveTextContent(/live voice/i);
+  expect(upload).not.toHaveBeenCalled();
+  expect(onTranscript).not.toHaveBeenCalled();
+  (claim as unknown as {release: () => void}).release();
+});
+
+it('refuses to start dictation while live voice holds the microphone, then works again once it is released', async () => {
+  const live = claimMicrophone('live', () => {})!;
+  render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  expect(getUserMedia).not.toHaveBeenCalled();
+  expect(await screen.findByRole('status')).toHaveTextContent(/end live voice to dictate/i);
+  act(() => live.release());
+  fireEvent.click(screen.getByRole('button', {name: 'Start dictation'}));
+  await screen.findByRole('button', {name: 'Stop dictation'});
+  expect(getUserMedia).toHaveBeenCalledOnce();
+});
+
+it('gives the microphone back once a dictation has finished', async () => {
+  render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  fireEvent.click(await screen.findByRole('button', {name: 'Stop dictation'}));
+  await waitFor(() => expect(onTranscript).toHaveBeenCalled());
+  expect(microphoneHeldBy()).toBeNull();
 });
 
 it('does not read the reply aloud while a live voice session is open', async () => {

@@ -55,10 +55,11 @@ export default function SessionModePicker({session,running,onPatch,auto,onAutoCh
  const [open,setOpen]=useState(false);
  const root=useRef<HTMLSpanElement>(null),trigger=useRef<HTMLButtonElement>(null),popover=useRef<HTMLDivElement>(null),popoverId=useId(),autoId=useId(),planReasonId=useId();
  // The composer clips its children (overflow:hidden), so the popover is portalled and placed above the chip with fixed coordinates.
- const [place,setPlace]=useState<{bottom:number;left:number}>({bottom:0,left:0});
+ const [place,setPlace]=useState<{bottom:number;left:number;maxHeight?:number}>({bottom:0,left:0});
  useLayoutEffect(()=>{
   if(!open)return;
-  const move=()=>{const bounds=trigger.current?.getBoundingClientRect();if(!bounds)return;setPlace({bottom:Math.max(8,window.innerHeight-bounds.top+6),left:Math.max(16,Math.min(bounds.left,window.innerWidth-336))})};
+  // The list never grows past the room above the chip, so on a short screen it scrolls instead of running off the top.
+  const move=()=>{const bounds=trigger.current?.getBoundingClientRect();if(!bounds)return;const bottom=Math.max(8,window.innerHeight-bounds.top+6);setPlace({bottom,left:Math.max(16,Math.min(bounds.left,window.innerWidth-336)),maxHeight:Math.max(120,Math.min(bounds.top-14,560,window.innerHeight*.7))})};
   move();window.addEventListener('resize',move);window.addEventListener('scroll',move,true);
   return()=>{window.removeEventListener('resize',move);window.removeEventListener('scroll',move,true)};
  },[open]);
@@ -68,7 +69,8 @@ export default function SessionModePicker({session,running,onPatch,auto,onAutoCh
   const outside=(event:PointerEvent)=>{const target=event.target as Node;if(!root.current?.contains(target)&&!popover.current?.contains(target))setOpen(false)};
   const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus()}};
   document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
-  popover.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled), input[type=radio]:not(:disabled)')?.focus();
+  // Focus lands on the mode in force, so arrow keys start from it; the first enabled mode is only the fallback.
+  (popover.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled)')??popover.current?.querySelector<HTMLInputElement>('input[type=radio]:not(:disabled)'))?.focus();
   return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)};
  },[open]);
  const selected=modes.find(mode=>mode.id===session?.mode)||modes[0],Icon=selected.icon;
