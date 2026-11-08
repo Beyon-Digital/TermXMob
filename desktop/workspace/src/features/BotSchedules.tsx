@@ -35,7 +35,7 @@ function ReauthorizeBanner({bot,rows,onDone}:{bot:BotTabProps['bot'];rows:BotSch
   return <>
     {waiting.length>0&&<p className="manager-help" role="status">{count(waiting.length)} will turn back on when you resume this bot.</p>}
     {parked.length>0&&<section className="bot-banner" aria-labelledby="bot-reauthorize-title">
-      <h4 id="bot-reauthorize-title">{parked.length===1?'1 schedule is paused':`${parked.length} schedules are paused`}</h4>
+      <h4 id="bot-reauthorize-title">{parked.length===1?'1 schedule is paused until you re-authorize it':`${parked.length} schedules are paused until you re-authorize them`}</h4>
       <p>{parked[0].reason||"This bot's prompt or permissions changed after you authorized its schedules."}</p>
       <p>A bot cannot widen its own authority. Re-authorize to let {parked.length===1?'it':'them'} run again under the bot's current prompt and permissions.</p>
       {parked.some(row=>row.computer_permission)&&<p>Computer control is not carried over. Set it again on each schedule after you re-authorize.</p>}
@@ -93,7 +93,9 @@ export default function BotSchedules(props:BotTabProps&{onTab?:(tab:'permissions
   const blocked=<p className="manager-help">This bot cannot control the computer, so its schedules cannot either. To change that, allow “Control this computer” and stop blocking computer control under <button type="button" className="bot-link" onClick={()=>onTab?.('permissions')}>Permissions</button>.</p>;
   return <>
     {error&&<p role="alert" className="manager-error">{error}</p>}
-    <ReauthorizeBanner bot={bot} rows={rows} onDone={next=>{setRows(rows.map(row=>next.find(item=>item.id===row.id)||row));setVersion(value=>value+1)}}/>
+    <ReauthorizeBanner bot={bot} rows={rows} onDone={next=>{setRows(rows.map(row=>next.find(item=>item.id===row.id)||row));setVersion(value=>value+1);
+      // The bot list carries the "needs you" count shown in the header, so it is read again now rather than at the next poll.
+      props.mutation.reload()}}/>
     <ScheduleManager projectId={bot.project_id??null} sessionId={bot.conversation_id} conversationId={bot.conversation_id} version={version} computer={{allowed,suggestions,suggestionsFailed,blocked}}/>
     <BotTriggers {...props} rows={rows} onChanged={()=>setVersion(value=>value+1)}/>
   </>;

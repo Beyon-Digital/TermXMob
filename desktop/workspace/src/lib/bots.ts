@@ -50,6 +50,14 @@ export const toolGroups: { label: string; tools: { id: string; label: string }[]
 /** Used only when the host's list of tool names cannot be loaded. */
 export const fallbackToolIds = toolGroups.flatMap(group => group.tools.map(tool => tool.id));
 export const toolLabel = (id: string) => toolGroups.flatMap(group => group.tools).find(tool => tool.id === id)?.label || id;
+/** A readable name for a tool this screen has no wording for: `spawn_subagent` is "Spawn subagent", `mcp__files__list_dir` is "Files: list dir". */
+export function plainToolLabel(id: string) {
+  const words = (value: string) => value.replace(/[_.\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const sentence = (value: string) => (value ? value[0].toUpperCase() + value.slice(1) : id);
+  const parts = id.split('__').filter(Boolean);
+  if (parts[0] === 'mcp' && parts.length >= 3) return sentence(words(parts[1])) + ': ' + words(parts.slice(2).join(' '));
+  return sentence(words(id));
+}
 
 /** Capability denies the ceiling can hold, each a set of capability names. */
 export const denyGroups: { id: string; label: string; description: string; capabilities: string[] }[] = [

@@ -37,6 +37,8 @@ function serve(world:World){
    if(q.includes('reauthorize_schedules')){
     if(world.failReauthorize)return {errors:[{message:'A schedule has no runs left to authorize.'}]};
     world.schedules=world.schedules.map(value=>({...value,needs_reauthorization:false,enabled:true,reason:null}));
+    world.inbox=world.inbox.filter(value=>value.kind!=='schedule');
+    world.bots=world.bots.map(value=>({...value,needs_you:0}));
     return {data:{reauthorize_schedules:world.schedules}};
    }
    if(q.includes('acknowledge_schedule_run')){world.inbox=world.inbox.filter(value=>value.kind!=='run');return {data:{acknowledge_schedule_run:{id:'r1'}}}}
@@ -103,7 +105,7 @@ it('opens the Schedules tab from a paused-schedule item, and shows the bot its o
  open();
  fireEvent.click(await screen.findByRole('button',{name:'Review schedules'}));
  expect(await screen.findByRole('tab',{name:'Schedules & triggers'})).toHaveAttribute('aria-selected','true');
- expect(location.search).toBe('?bot=b1');
+ expect(location.search).toBe('?bot=b1&tab=schedules');
  expect(await screen.findByRole('region',{name:/Schedules? (is|are) paused|1 schedule is paused/})).toBeInTheDocument();
 });
 
@@ -146,7 +148,7 @@ it('explains why schedules paused and re-authorizes them after the owner confirm
  const {container}=open();
  fireEvent.click(await screen.findByRole('button',{name:/Repo watcher/}));
  fireEvent.click(screen.getByRole('tab',{name:'Schedules & triggers'}));
- const banner=within(await screen.findByRole('region',{name:'1 schedule is paused'}));
+ const banner=within(await screen.findByRole('region',{name:'1 schedule is paused until you re-authorize it'}));
  expect(banner.getByText(/prompt or permissions changed/)).toBeInTheDocument();
  expect(banner.getByText(/cannot widen its own authority/)).toBeInTheDocument();
  await expectNoAxeViolations(container);
@@ -163,6 +165,19 @@ it('explains why schedules paused and re-authorizes them after the owner confirm
  expect(sent('reauthorize_schedules')[0].variables).toEqual({c:'c1',days:7});
  await waitFor(()=>expect(screen.queryByRole('region',{name:/schedules? (is|are) paused/})).toBeNull());
  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('drops the header “needs you” chip as soon as the schedules are re-authorized',async()=>{
+ const world:World={bots:[bot({needs_you:1})],inbox:[parked],schedules:[schedule({needs_reauthorization:true,enabled:false,state:'needs_reauthorization',reason:'Changed.'})]};
+ serve(world);
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:/Repo watcher/}));
+ const head=document.querySelector('.bot-detail-head') as HTMLElement;
+ expect(within(head).getByText('1 needs you')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('tab',{name:'Schedules & triggers'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Re-authorize schedules'}));
+ fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Re-authorize schedules'}));
+ await waitFor(()=>expect(within(head).queryByText('1 needs you')).toBeNull());
 });
 
 it('keeps the dialog open and says what went wrong when re-authorizing fails',async()=>{

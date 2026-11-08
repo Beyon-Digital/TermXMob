@@ -390,3 +390,72 @@ it('reports a failed load and offers a retry',async()=>{
  expect(await screen.findByText('Host unreachable')).toBeInTheDocument();
  expect(screen.getByRole('button',{name:'Retry'})).toBeInTheDocument();
 });
+
+// -- tab, notice and tool labels ---------------------------------------------------------------------------------
+
+it('clears the “saved” notice when another tab opens, so it never describes a tab you have left',async()=>{
+ serve([bot()],body=>body.query?.includes('patch_bot')?{data:{patch_bot:bot({revision:4})}}:undefined);
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:/Inbox triager/}));
+ fireEvent.click(screen.getByRole('tab',{name:'Prompt'}));
+ fireEvent.change(await screen.findByLabelText(/^Instructions/),{target:{value:'Be brief.'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save prompt'}));
+ expect(await screen.findByText('Prompt saved')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('tab',{name:'Permissions'}));
+ await screen.findByRole('form',{name:'Bot permissions'});
+ expect(screen.queryByText('Prompt saved')).toBeNull();
+});
+
+it('keeps the selected tab in the address so a reload opens the same tab, and drops it when leaving the bot',async()=>{
+ serve([bot()]);
+ const first=open();
+ fireEvent.click(await screen.findByRole('button',{name:/Inbox triager/}));
+ expect(new URLSearchParams(location.search).get('tab')).toBeNull();
+ fireEvent.click(screen.getByRole('tab',{name:'Permissions'}));
+ expect(new URLSearchParams(location.search).get('bot')).toBe('b1');
+ expect(new URLSearchParams(location.search).get('tab')).toBe('permissions');
+ const entries=history.length;
+ fireEvent.click(screen.getByRole('tab',{name:'Prompt'}));
+ expect(new URLSearchParams(location.search).get('tab')).toBe('prompt');
+ expect(history.length).toBe(entries); // tab changes replace the entry, they do not pile up history
+ first.unmount();
+ open(); // a reload
+ expect(await screen.findByRole('form',{name:'Bot prompt'})).toBeInTheDocument();
+ expect(screen.getByRole('tab',{name:'Prompt'})).toHaveAttribute('aria-selected','true');
+ fireEvent.click(screen.getByRole('button',{name:'All bots'}));
+ expect(new URLSearchParams(location.search).get('tab')).toBeNull();
+});
+
+it('ignores an unknown tab in the address',async()=>{
+ history.replaceState(null,'','/?bot=b1&tab=nonsense');
+ serve([bot()]);
+ open();
+ expect(await screen.findByRole('tab',{name:'Overview'})).toHaveAttribute('aria-selected','true');
+});
+
+it('gives tools without wording a readable label under an “Other tools” heading and keeps the real id on hover',async()=>{
+ serve([bot()],body=>body.query?.includes('agent_tool_names')?{data:{agent_tool_names:['read_file','spawn_subagent','mcp__files__list_dir']}}:undefined);
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:/Inbox triager/}));
+ fireEvent.click(screen.getByRole('tab',{name:'Permissions'}));
+ const form=within(await screen.findByRole('form',{name:'Bot ceiling'}));
+ const group=await form.findByRole('group',{name:'Other tools'});
+ const labels=within(group).getAllByRole('checkbox').map(box=>(box.closest('label') as HTMLElement).textContent);
+ expect(labels).toEqual(['Spawn subagent','Files: list dir']);
+ expect((within(group).getByLabelText('Spawn subagent').closest('label') as HTMLElement).title).toBe('spawn_subagent');
+ expect(within(group).queryByLabelText('spawn_subagent')).toBeNull();
+});
+
+it('marks the skills list as self-saving, so the Settings “Unsaved changes” bar does not appear after it saves itself',async()=>{
+ serve([bot()],undefined,(path,init)=>{
+  if(path.startsWith('/api/workspace/sessions/c1')&&init?.method==='PATCH')return {id:'c1',revision:8,extension_ids:['lint']};
+  if(path.startsWith('/api/workspace/sessions/c1'))return {id:'c1',revision:7,extension_ids:[],turns:[]};
+  if(path.startsWith('/api/workspace/available-extensions'))return {extensions:[{id:'lint',version:'1.0.0',description:'Checks style'}]};
+  return undefined;
+ });
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:/Inbox triager/}));
+ fireEvent.click(screen.getByRole('tab',{name:'Skills'}));
+ const box=await screen.findByLabelText(/lint/);
+ expect(box.closest('[data-settings-autosave]')).not.toBeNull();
+});

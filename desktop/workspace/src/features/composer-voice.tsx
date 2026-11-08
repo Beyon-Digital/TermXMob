@@ -6,6 +6,7 @@ import {formatShortcut} from '../lib/shortcut-label';
 import {transfer} from '../lib/transfers';
 import {SpeechPlayer, type PlayerState} from '../lib/voice/player';
 import {PushToTalk} from '../lib/voice/push-to-talk';
+import {claimMicrophone, type MicrophoneClaim} from '../lib/voice/microphone';
 import {saveVoiceSettings, type Attribution, type VoiceSettingsChange, type VoiceStatus} from '../lib/voice/settings';
 import {useVoiceRecorder} from '../lib/voice/use-recorder';
 import {useVoiceStatus} from '../lib/voice/use-voice-status';
@@ -91,13 +92,34 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
     }
   }
 
-  const mic = useVoiceRecorder({enabled, onRecording: blob => void transcribe(blob), onError: setError});
+  const claim = useRef<MicrophoneClaim | null>(null);
+  const mic = useVoiceRecorder({
+    enabled,
+    onRecording: blob => void transcribe(blob),
+    onError: setError,
+    onPhase: phase => {
+      if (phase !== 'idle') return;
+      claim.current?.release();
+      claim.current = null;
+    },
+  });
   const recording = mic.phase === 'recording';
   const requesting = mic.phase === 'requesting';
 
   function startRecording() {
     if (mic.phase !== 'idle' || transcribing) return;
     if (!configured) return setSetupHint(true);
+    // One capture at a time: a running live voice session keeps the microphone, so dictation says why it did not start.
+    const taken = claimMicrophone('dictation', () => {
+      mic.cancel();
+      setNotice('Dictation stopped because live voice started.');
+    });
+    if (!taken) {
+      setSetupHint(false);
+      setNotice('Live voice is using the microphone. End live voice to dictate.');
+      return;
+    }
+    claim.current = taken;
     setSetupHint(false);
     setError('');
     setNotice('');

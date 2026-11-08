@@ -36,6 +36,14 @@ import './chat-session.css';
 
 // A pause in typing this long writes the draft to the window journal.
 const DRAFT_PERSIST_DELAY=300;
+const REFUSAL_LIMIT=240;
+/** The host's sentence for a refused send (a 4xx other than sign-in and lock), as plain, single-line, bounded text. Otherwise ''. */
+function refusalText(error:unknown){
+ const status=(error as {status?:unknown}|null)?.status,message=(error as {message?:unknown}|null)?.message;
+ if(typeof status!=='number'||status<400||status>=500||status===401||status===423||typeof message!=='string')return '';
+ const text=message.replace(/[\u0000-\u001f\u007f-\u009f]+/g,' ').replace(/\s+/g,' ').trim();
+ return text.length>REFUSAL_LIMIT?text.slice(0,REFUSAL_LIMIT-1).trimEnd()+'…':text;
+}
 const active=(task?:Task)=>!!task&&(taskIsActive(task.status)||['awaiting_approval','paused','recovery_confirmation_required'].includes(task.status));
 export default function Chat({session,engines,providers,onSelect,onRefresh,onError,incoming,onHistory,projects=[],ownerId,visible=true,onOpenSurface,onOpenFile,changes,onConfigureAgent,onOpenVoiceSettings,coordinating=false}:{onOpenVoiceSettings?:()=>void;coordinating?:boolean;onConfigureAgent?:()=>void;onOpenSurface?:(surface:ConversationSurface)=>void;onOpenFile?:(path:string,line?:number)=>void;changes?:ConversationChanges;visible?:boolean;ownerId?:string;projects?:Project[];onHistory?:()=>void;incoming?:IncomingContext|null;session:Session|null;engines:Engine[];providers:Provider[];onSelect:(id:string)=>void;onRefresh:()=>void;onError:(error:unknown)=>void}){
  const [context,setContext]=useState<ContextItem[]>([]);
@@ -43,6 +51,8 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  const [forkEngine,setForkEngine]=useState(''),[forkOpen,setForkOpen]=useState(false),[pendingPrompt,setPendingPrompt]=useState<import('../lib/drafts').PendingSubmission|null>(null);
  const [approvalFocus,setApprovalFocus]=useState<{sessionId:string;taskId:string;messageId:string}|null>(null);
  const [actionError,setActionError]=useState<{sessionId:string;message:string;kind?:'connection'}|null>(null);
+ // The host's own sentence when it refused a send (for example a model that cannot call tools in Agent mode).
+ const [sendRefusal,setSendRefusal]=useState<{sessionId:string;message:string}|null>(null);
  const {sending,submissionRevision,handoff,isStopping}=useSessionDraft(session?.id);
  const [queueChange,setQueueChange]=useState(0),[interruptOpen,setInterruptOpen]=useState(false),[optionsOpen,setOptionsOpen]=useState(false),[runActionsOpen,setRunActionsOpen]=useState(false);
  const fileInput=useRef<HTMLInputElement>(null),composer=useRef<HTMLTextAreaElement>(null),lastSaved=useRef(''),dirty=useRef(false),sessionId=useRef<string|null>(null),drafts=useRef(sessionDrafts);
@@ -75,6 +85,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  const connectionProblem=chatConnectionProblem(session,providers,engines),connectionBlocked=!!connectionProblem;
  useEffect(()=>{if(!connectionBlocked)setActionError(value=>value?.kind==='connection'?null:value)},[connectionBlocked]);
  useEffect(()=>{setRunActionsOpen(false);setActionError(null)},[session?.id,running]);
+ useEffect(()=>{if(!pendingPrompt)setSendRefusal(null)},[pendingPrompt]);
  useWhenChanged(submissionRevision,()=>{const value=sessionId.current?drafts.current.get(sessionId.current):undefined;setPendingPrompt(value?.submission||null);if(value){setDraft(value.text);setContext(value.context||[]);setAttachments(value.attachments||[]);lastSaved.current=value.saved;dirty.current=value.dirty}});
  // A Stop request re-renders this panel through useSessionDraft; isStopping reads the shared set.
  const stopping=!!latest&&(latest.status==='cancelling'||isStopping(latest.id));
@@ -174,6 +185,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
   if(!session||(!draft.trim()&&!pendingPrompt)||submittingDrafts.has(session.id))return;
   if(connectionBlocked){setActionError({sessionId:session.id,kind:'connection',message:connectionProblem==='engine'?'Reconnect this engine before sending. Your draft is still here.':'Connect an account and model before sending. Your draft is still here.'});return}
   const writeIntent=captureSessionWrite(),submission=Symbol();
+  setSendRefusal(null);
   scrollToLatest();
   const identifier=session.id,prompt=pendingPrompt?.prompt||draft,key=pendingPrompt?.key||crypto.randomUUID(),selected=pendingPrompt?.context||context,selectedImages=pendingPrompt?.attachments||attachments.map(image=>({...image})),operation=pendingPrompt?.intent||intent,interruptTask=pendingPrompt?.interruptTask||(operation==='interrupt'?latest?.id:undefined);
   // A retry reuses the stored Auto setting so the same request_id never carries a different body.
@@ -200,7 +212,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
    }
    const remaining=drafts.current.get(identifier);if(remaining){const {submission:_submission,...rest}=remaining;drafts.current.set(identifier,rest)}
    if(sessionId.current===identifier)setPendingPrompt(null);onRefresh();
-  }catch(error){if(writeIntent.isCurrent())onError(error)}finally{
+  }catch(error){if(writeIntent.isCurrent()){const reason=refusalText(error);if(reason&&sessionId.current===identifier)setSendRefusal({sessionId:identifier,message:reason});onError(error)}}finally{
    endSubmission(identifier,submission);
    if(writeIntent.isCurrent()){const latest=drafts.current.get(identifier);if(latest?.dirty)void saveDraft(identifier,latest.text,latest.saved)}
    writeIntent.release();
@@ -237,7 +249,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
    <PromptInputBody className="composer">
     {context.length>0&&<section className="composer-context" aria-label="Selected browser context">{context.map((item,index)=><div className="context-chip" key={stableKey(item)}><details><summary>{contextLabel(item)}</summary><p>{contextDescription(item)}</p><p>Shares this snapshot or file reference. Browser control requires a separate handoff.</p><pre role="region" tabIndex={0} aria-label="Exact selected context">{JSON.stringify(item,null,2)}</pre></details><Button size="icon" variant="ghost" aria-label={'Remove context '+contextLabel(item)} onClick={()=>editDraft(draft,context.filter((_,i)=>i!==index))}><X size={12}/></Button></div>)}</section>}
     {attachments.length>0&&<Attachments variant="inline" className="attachment-row">{attachments.map((item,index)=><Attachment className="ai-attachment" key={stableKey(item)} data={{id:String(index),type:'file',mediaType:item.mime,filename:item.name,url:'data:'+item.mime+';base64,'+item.data}} onRemove={()=>editAttachments(attachments.filter((_,i)=>i!==index))}><AttachmentPreview className="ai-attachment-preview"/><AttachmentInfo/><AttachmentRemove className="ai-attachment-remove" label={'Remove '+item.name}/></Attachment>)}</Attachments>}
-    {pendingPrompt&&!sending&&<div className="composer-retry" role="status"><span>A previous send needs retry. Retry uses the same request; your newer draft stays separate.</span><Button size="sm" variant="ghost" disabled={connectionBlocked||sending} onClick={()=>void send(pendingPrompt.intent)}>Retry send</Button></div>}
+    {pendingPrompt&&!sending&&<div className="composer-retry" role="status"><span>{sendRefusal&&sendRefusal.sessionId===session?.id?sendRefusal.message+' Your draft stays here. Retry sends the same request.':'A previous send needs retry. Retry uses the same request; your newer draft stays separate.'}</span><Button size="sm" variant="ghost" disabled={connectionBlocked||sending} onClick={()=>void send(pendingPrompt.intent)}>Retry send</Button></div>}
     {actionError?.sessionId===session?.id&&<p className="composer-action-error" role="alert">{actionError?.message}</p>}
     <PromptInputTextarea onFiles={files=>void upload(files)} onRemoveLast={attachments.length?()=>editAttachments(attachments.slice(0,-1)):undefined} ref={composer} aria-label="Message" placeholder={running?'Add a follow-up…':'Ask anything, or describe a change…'} value={draft} disabled={!session} onChange={e=>editDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send(running?'queue':'send')}}}/>
     <PromptInputTools>

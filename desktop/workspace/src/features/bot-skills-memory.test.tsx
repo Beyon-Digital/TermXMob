@@ -146,7 +146,7 @@ it('builds the ceiling editor from the host’s tool names, with wording for the
  open();
  await openTab('Permissions');
  const ceiling=within(await screen.findByRole('form',{name:'Bot ceiling'}));
- await waitFor(()=>expect(ceiling.getByLabelText('brand_new_tool')).toBeInTheDocument());
+ await waitFor(()=>expect(ceiling.getByLabelText('Brand new tool')).toBeInTheDocument());
  expect(ceiling.getByLabelText('Read skills on demand')).toBeInTheDocument();
  expect(ceiling.queryByLabelText('Run shell commands')).toBeNull();
 });

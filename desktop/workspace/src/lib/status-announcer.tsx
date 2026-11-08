@@ -36,8 +36,18 @@ export function StatusAnnouncer({sessionId, task, extra = ''}: {sessionId: strin
     previous.current = next;
     if (text) setMessage(current => current === text ? text + ' ' : text);
   }, [sessionId, task?.id, task?.status, pendingApproval]);
+  const spoken = useRef('');
   useEffect(() => {
-    if (extra) setMessage(current => current === extra ? extra + ' ' : extra);
+    if (extra) {
+      spoken.current = extra;
+      setMessage(current => current === extra ? extra + ' ' : extra);
+      return;
+    }
+    // The state that was announced is over (live voice closed or locked): drop it so no stale "Listening" is left behind.
+    // A task announcement that arrived since is not ours to clear.
+    const old = spoken.current;
+    spoken.current = '';
+    if (old) setMessage(current => current.trim() === old.trim() ? '' : current);
   }, [extra]);
   return <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{message}</div>;
 }
