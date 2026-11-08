@@ -392,11 +392,11 @@ class AgentManager:
         declared = capabilities if capabilities is not None else (
             current.get("capabilities", ["shell"]) if current else ["shell"]
         )
-        supported = {"shell", "functions", "computer", "image", "audio"}
+        supported = {"shell", "functions", "computer", "image", "audio", "realtime"}
         if not isinstance(declared, list) or len(declared) > len(supported) or any(
             not isinstance(item, str) or item not in supported for item in declared
         ):
-            raise ValueError("provider capabilities must declare shell, functions, computer, image or audio")
+            raise ValueError("provider capabilities must declare shell, functions, computer, image, audio or realtime")
         allowed = list(dict.fromkeys(declared)) or ["shell"]
         api_key = api_key.strip() if api_key else api_key
         if api_key and (not api_key.isprintable() or any(ch.isspace() for ch in api_key)):

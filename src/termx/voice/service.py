@@ -26,12 +26,20 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024
 MAX_STREAMS_PER_OWNER = 2
 ENGINES = {'browser', 'woof', 'provider'}
 VOICE_PATTERN = re.compile(r'^[A-Za-z0-9_.:-]{1,64}$')
+MODEL_PATTERN = re.compile(r'^[A-Za-z0-9_.:/-]{1,128}$')
 AUDIO_TYPES = {'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/m4a'}
 DEFAULTS: dict[str, Any] = {
     'engine': 'browser', 'provider': None, 'model': '', 'transcribe_model': '', 'voice': '',
     'auto_send': False, 'auto_speak': False, 'cloud_fallback': False, 'keep_audio': False, 'consent': {},
+    'live_provider': None, 'live_model': '', 'live_voice': '', 'live_transcribe_model': '',
 }
+LIVE_KINDS = {'openai', 'openai-compatible'}  # providers that speak the OpenAI Realtime wire protocol
 _END = re.compile(r'(?<=[.!?…])["\')\]]*\s+|\n+')
+
+
+def is_live_account(row: dict[str, Any] | None) -> bool:
+    """The one rule for a live voice account: an OpenAI-protocol provider that declares the realtime capability."""
+    return bool(row) and row['kind'] in LIVE_KINDS and 'realtime' in (row.get('capabilities') or [])
 
 
 def split_sentences(text: str) -> list[str]:
@@ -111,22 +119,40 @@ class VoiceService:
     def _save_settings(self, owner: str, changes: dict[str, Any]) -> dict[str, Any]:
         current = self.settings(owner)
         merged = dict(current)
-        for key in ('engine', 'provider', 'model', 'transcribe_model', 'voice', 'auto_send', 'auto_speak', 'cloud_fallback', 'keep_audio'):
+        for key in ('engine', 'provider', 'model', 'transcribe_model', 'voice', 'auto_send', 'auto_speak', 'cloud_fallback', 'keep_audio',
+                    'live_provider', 'live_model', 'live_voice', 'live_transcribe_model'):
             if changes.get(key) is not None:
                 merged[key] = changes[key]
         if merged['engine'] not in ENGINES:
             raise HTTPException(400, 'Choose browser, woof or provider as the voice engine')
-        for key in ('model', 'transcribe_model'):
+        for key in ('model', 'transcribe_model', 'live_model', 'live_transcribe_model'):
             merged[key] = str(merged[key]).strip()[:128]
-        if merged['voice'] and not VOICE_PATTERN.match(str(merged['voice'])):
-            raise HTTPException(400, 'Voice names use letters, numbers, dots, dashes and underscores')
+        for key in ('live_model', 'live_transcribe_model'):
+            if merged[key] and not MODEL_PATTERN.match(merged[key]):
+                raise HTTPException(400, 'Model names use letters, numbers, dots, dashes, colons, slashes and underscores')
+        merged['live_voice'] = str(merged['live_voice'] or '').strip()
+        for key in ('voice', 'live_voice'):
+            if merged[key] and not VOICE_PATTERN.match(str(merged[key])):
+                raise HTTPException(400, 'Voice names use letters, numbers, dots, dashes and underscores')
         provider = merged['provider'] or None
         if provider is not None and provider != current['provider']:
             known = self.state.agent_store.get_provider(str(provider))
             if not known or 'audio' not in (known.get('capabilities') or []):
                 raise HTTPException(400, 'Choose an API account that declares audio support')
         merged['provider'] = provider
+        live = merged['live_provider'] or None
+        if live is not None and live != current['live_provider']:
+            if not is_live_account(self.state.agent_store.get_provider(str(live))):
+                raise HTTPException(400, 'Choose an API account that declares realtime support')
+        merged['live_provider'] = live
         consent = dict(current['consent'])
+        if live != current['live_provider'] or (consent.get('live') or {}).get('id') != live:
+            consent.pop('live', None)  # an acknowledgement belongs to one account
+        if changes.get('consent_live') is True and live:
+            if (consent.get('live') or {}).get('id') != live:
+                consent['live'] = {'id': live, 'at': time()}
+        elif changes.get('consent_live') is False:
+            consent.pop('live', None)
         if provider != current['provider'] or (consent.get('provider') or {}).get('id') != provider:
             consent.pop('provider', None)
         if changes.get('consent_provider') is True and provider:
@@ -161,10 +187,21 @@ class VoiceService:
 
     def status(self, owner: str) -> dict[str, Any]:
         settings = self.settings(owner)
-        return {'available': self.available(), 'settings': settings, 'engines': self.engines(),
+        return {'available': self.available(), 'settings': settings, 'engines': self.engines(), 'live': self.live_status(settings),
                 'stt': {'configured': bool(settings['provider'] and settings['transcribe_model']
                                            and (settings['consent'].get('provider') or {}).get('id') == settings['provider']),
                         'provider': settings['provider']}}
+
+    def live_accounts(self) -> list[dict[str, Any]]:
+        return [row for row in self.state.agent_store.list_providers() if is_live_account(row) and row.get('secret_configured')]
+
+    def live_status(self, settings: dict[str, Any]) -> dict[str, Any]:
+        accounts = self.live_accounts()
+        chosen = settings['live_provider']
+        return {'available': bool(accounts), 'accounts': [{'id': row['id'], 'name': row['name'], 'base_url': row.get('base_url')}
+                                                           for row in accounts],
+                'configured': bool(chosen and settings['live_model'] and any(row['id'] == chosen for row in accounts)),
+                'acknowledged': (settings['consent'].get('live') or {}).get('id') == chosen and bool(chosen)}
 
     # -- speech -----------------------------------------------------------------------------------
 

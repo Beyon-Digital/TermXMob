@@ -12,7 +12,8 @@ import {
   type VoiceStatus,
 } from '../lib/voice/settings';
 
-vi.mock('../lib/voice/settings', () => ({
+vi.mock('../lib/voice/settings', async importOriginal => ({
+  ...(await importOriginal<typeof import('../lib/voice/settings')>()),
   loadVoiceStatus: vi.fn(),
   saveVoiceSettings: vi.fn(),
   loadWoofLicense: vi.fn(),
@@ -231,4 +232,31 @@ it('previews the browser voice without asking the host', async () => {
   await open();
   fireEvent.click(screen.getByRole('button', {name: 'Preview browser voice'}));
   await waitFor(() => expect(speak).toHaveBeenCalledWith(expect.any(String), {engine: 'browser', fallback: false}));
+});
+
+it('points to Models & engines when no account declares live voice', async () => {
+  load.mockResolvedValue({...status(), live: {available: false, configured: false, acknowledged: false, accounts: []}});
+  const view = await open();
+  expect(screen.getByRole('combobox', {name: 'Live voice account'})).toBeDisabled();
+  expect(screen.getByText(/Live voice conversation.*Models & engines/i)).toBeInTheDocument();
+  await expectNoAxeViolations(view.container);
+});
+
+it('saves the live voice account, model, voice and transcription model', async () => {
+  load.mockResolvedValue({
+    ...status(),
+    live: {available: true, configured: false, acknowledged: false, accounts: [{id: 'rt', name: 'Realtime API', base_url: 'https://api.rt.example/v1'}]},
+  });
+  await open();
+  fireEvent.change(screen.getByRole('combobox', {name: 'Live voice account'}), {target: {value: 'rt'}});
+  expect(screen.getByText(/billed by Realtime API \(api\.rt\.example\)/i)).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', {name: 'Live voice model'}), {target: {value: 'gpt-realtime'}});
+  fireEvent.change(screen.getByRole('textbox', {name: 'Live voice name'}), {target: {value: 'verse'}});
+  fireEvent.change(screen.getByRole('textbox', {name: 'Live transcription model'}), {target: {value: 'gpt-4o-mini-transcribe'}});
+  fireEvent.submit(screen.getByRole('form', {name: 'Voice settings'}));
+  await waitFor(() => expect(save).toHaveBeenCalled());
+  expect(save.mock.calls[0][0]).toMatchObject({
+    live_provider: 'rt', live_model: 'gpt-realtime', live_voice: 'verse', live_transcribe_model: 'gpt-4o-mini-transcribe',
+  });
+  expect(save.mock.calls[0][0]).not.toHaveProperty('consent_live');
 });

@@ -1325,7 +1325,12 @@ input VoiceSettingsInput {
   auto_speak: Boolean = null
   cloud_fallback: Boolean = null
   keep_audio: Boolean = null
+  live_provider: String = null
+  live_model: String = null
+  live_voice: String = null
+  live_transcribe_model: String = null
   consent_provider: Boolean = null
+  consent_live: Boolean = null
   accept_woof_license: String = null
 }
 
@@ -1334,6 +1339,7 @@ type VoiceStatus {
   settings: JSON!
   engines: JSON!
   stt: JSON!
+  live: JSON!
 }
 
 type Workspace {

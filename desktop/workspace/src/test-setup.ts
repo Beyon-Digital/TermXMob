@@ -12,5 +12,23 @@ if (typeof Blob.prototype.arrayBuffer !== 'function') {
   };
 }
 
+// jsdom has no matchMedia; tests that care about a query install their own.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 // jsdom has no OS focus; component tests start in a foreground window.
 Object.defineProperty(document, 'hasFocus', {configurable:true, value:()=>true});

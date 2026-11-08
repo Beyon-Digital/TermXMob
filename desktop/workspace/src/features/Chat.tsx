@@ -22,6 +22,7 @@ import {taskIsActive} from '../lib/tool-activity';
 import {contextLabel,contextDescription,sameContext,type ContextItem,type IncomingContext} from '../lib/context';
 import ForkContextDialog from './ForkContextDialog';
 import {useComposerVoice} from './composer-voice';
+import {useLiveVoice} from './live-voice';
 import TaskSupervisor from './TaskSupervisor';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Square,GitFork,LoaderCircle,X,SlidersHorizontal,MoreHorizontal,Plus,ArrowUp,ListPlus} from 'lucide-react';
@@ -208,6 +209,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  // Dictation fills the draft; Send after dictation sends it on the next render, once the draft holds the text.
  const [voiceSend,setVoiceSend]=useState(false);
  const voice=useComposerVoice({ownerId,sessionId:session?.id,enabled:visible&&!!session,reply:latest&&latest.status==='completed'&&latest.result?{id:latest.id,text:latest.result}:null,onOpenSettings:onOpenVoiceSettings,onTranscript:(text,sendNow)=>{editDraft(draft+(draft?'\n\n':'')+text);if(sendNow)setVoiceSend(true)}});
+ const liveVoice=useLiveVoice({sessionId:session?.id,enabled:visible&&!!session,onOpenSettings:onOpenVoiceSettings});
  useEffect(()=>{if(!voiceSend)return;setVoiceSend(false);void send(running?'queue':'send')},[voiceSend]);
  async function upload(files:FileList|File[]|null){if(!files)return;try{const next:{name:string;mime:string;data:string}[]=[];if(attachments.length+files.length>4)throw new Error('Attach at most four images per turn');for(const file of Array.from(files)){if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('This session attachment path supports PNG, JPEG and WebP. Use project file context for code.');if(file.size>2_000_000)throw new Error('Image exceeds the 2 MB session attachment limit');const data=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});next.push({name:file.name,mime:file.type,data})}editAttachments([...attachments,...next])}catch(error){onError(error)}}
  async function chooseEngine(engine:string){if(!session||engine===session.engine)return;setForkEngine(engine);setForkOpen(true)}
@@ -231,6 +233,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
    {session?.linked_from&&<div className="session-context"><span title="This conversation is a linked fork"><GitFork size={12}/> Linked fork</span></div>}
    {session&&meter&&<TaskMeterLine meter={meter}/>}
    {session&&<PromptQueue visible={visible} sessionId={session.id} changed={queueChange} onError={onError} onRefresh={onRefresh} onTask={setSupervised}/>}
+   {liveVoice.panel}
    <PromptInputBody className="composer">
     {context.length>0&&<section className="composer-context" aria-label="Selected browser context">{context.map((item,index)=><div className="context-chip" key={stableKey(item)}><details><summary>{contextLabel(item)}</summary><p>{contextDescription(item)}</p><p>Shares this snapshot or file reference. Browser control requires a separate handoff.</p><pre role="region" tabIndex={0} aria-label="Exact selected context">{JSON.stringify(item,null,2)}</pre></details><Button size="icon" variant="ghost" aria-label={'Remove context '+contextLabel(item)} onClick={()=>editDraft(draft,context.filter((_,i)=>i!==index))}><X size={12}/></Button></div>)}</section>}
     {attachments.length>0&&<Attachments variant="inline" className="attachment-row">{attachments.map((item,index)=><Attachment className="ai-attachment" key={stableKey(item)} data={{id:String(index),type:'file',mediaType:item.mime,filename:item.name,url:'data:'+item.mime+';base64,'+item.data}} onRemove={()=>editAttachments(attachments.filter((_,i)=>i!==index))}><AttachmentPreview className="ai-attachment-preview"/><AttachmentInfo/><AttachmentRemove className="ai-attachment-remove" label={'Remove '+item.name}/></Attachment>)}</Attachments>}
@@ -241,6 +244,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
      <input type="file" hidden ref={fileInput} accept="image/png,image/jpeg,image/webp" multiple onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void upload(files)}}/>
      <Button size="icon" variant="ghost" aria-label="Attach image" title="Attach image" disabled={!session} onClick={()=>fileInput.current?.click()}><Plus size={17}/></Button>
      {voice.mic}
+     {liveVoice.button}
      <SessionModePicker key={session?.id} session={session} running={running} onPatch={patch} auto={auto} onAutoChange={changeAuto}/>
      <SessionModelControls coordinating={coordinating} session={session} engines={engines} providers={providers} runnerAccounts={runnerAccounts} models={models} favorites={favorites} favoriteKey={favoriteKey} running={running} onFavorite={favorite} onEngine={chooseEngine} onPatch={patch} onRefresh={onRefresh} onError={onError} onConfigureAgent={onConfigureAgent}/>
      <span className="flex-spacer"/>

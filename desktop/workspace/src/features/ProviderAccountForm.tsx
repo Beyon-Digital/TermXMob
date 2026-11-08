@@ -9,7 +9,7 @@ import type {ModelOverride,ModelOverrides,ProviderAccount,ProviderAccountInput} 
 import ProviderModelCatalog from './ProviderModelCatalog';
 import {useDirtyForm} from './settings-forms';
 
-const choices=[['shell','Shell tools'],['functions','Function tools'],['computer','Computer tools'],['image','Image generation and editing'],['audio','Audio transcription and speech']];
+const choices=[['shell','Shell tools'],['functions','Function tools'],['computer','Computer tools'],['image','Image generation and editing'],['audio','Audio transcription and speech'],['realtime','Live voice conversation']];
 const providers=[
  {id:'openai',label:'OpenAI',url:'https://api.openai.com/v1'},
  {id:'openrouter',label:'OpenRouter',url:'https://openrouter.ai/api/v1'},

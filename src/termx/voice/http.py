@@ -1,7 +1,7 @@
 """Same-origin voice facade. Auth mirrors media: a managed session, the scope checked live on every call."""
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +12,7 @@ from termx.config import config_dir
 from termx.voice.engines import EngineError, EngineRegistry
 from termx.voice.engines.provider import ProviderEngine
 from termx.voice.engines.woof import WoofEngine
+from termx.voice.live import LiveVoice, refuse
 from termx.voice.service import MAX_AUDIO_BYTES, MAX_SPEECH_CHARS, VoiceService
 
 
@@ -45,6 +46,7 @@ def voice_owner(state, raw, scope: str = 'agent-view') -> str:
 
 def mount_voice(app, state):
     state.voice = build_voice_service(state)
+    state.voice_live = LiveVoice(state)
     router = APIRouter(prefix='/api/voice')
 
     def actor(request: Request, scope: str = 'agent-view') -> str:
@@ -124,5 +126,32 @@ def mount_voice(app, state):
             raise HTTPException(409, str(exc)) from exc
         log_event('voice_engine_remove', engine='woof')
         return {'ok': True}
+
+    @router.websocket('/live')
+    async def live(websocket: WebSocket, conversation_id: str | None = None, k: str | None = None):
+        """Same sign-in as the terminal socket. The socket is accepted first so a refusal reaches the browser as a reason and a
+        next step; a close before accept shows up there as code 1006 with nothing to act on."""
+        await websocket.accept()
+        token = extract_passcode(websocket.headers.get('x-termx-passcode'), websocket.headers.get('authorization'), k)
+        if not state.auth.check(token):
+            return await refuse(websocket, 'unauthorized')
+        try:
+            if not state.auth.allows(token, 'agent-run'):
+                return await refuse(websocket, 'forbidden')
+            state.authorization.require(token, 'agent-run')
+        except HTTPException:
+            return await refuse(websocket, 'forbidden')
+        identity = state.identity.resolve(token)
+        if identity is None:
+            return await refuse(websocket, 'unauthorized')
+        try:
+            if not conversation_id:
+                raise KeyError('conversation_id')
+            state.workspace.record(identity.principal, 'conversation', conversation_id, scope='agent-run')
+        except (KeyError, ValueError):
+            return await refuse(websocket, 'not_found')
+        except (HTTPException, PermissionError):
+            return await refuse(websocket, 'forbidden')
+        await state.voice_live.serve(websocket, identity, token, conversation_id)
 
     app.include_router(router)

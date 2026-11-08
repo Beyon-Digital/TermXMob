@@ -9,6 +9,8 @@ import {usePolling} from '../lib/use-polling';
 import {SpeechPlayer, type PlayerState} from '../lib/voice/player';
 import {
   downloadWoof,
+  hostOf,
+  isLocal,
   loadVoiceStatus,
   loadWoofLicense,
   removeWoof,
@@ -49,6 +51,10 @@ interface Draft {
   cloud_fallback: boolean;
   keep_audio: boolean;
   consent_provider: boolean;
+  live_provider: string;
+  live_model: string;
+  live_voice: string;
+  live_transcribe_model: string;
 }
 
 const toDraft = (settings: VoiceSettings): Draft => ({
@@ -62,16 +68,11 @@ const toDraft = (settings: VoiceSettings): Draft => ({
   cloud_fallback: settings.cloud_fallback,
   keep_audio: settings.keep_audio,
   consent_provider: !!settings.provider && settings.consent.provider?.id === settings.provider,
+  live_provider: settings.live_provider ?? '',
+  live_model: settings.live_model ?? '',
+  live_voice: settings.live_voice ?? '',
+  live_transcribe_model: settings.live_transcribe_model ?? '',
 });
-
-function hostOf(url?: string | null) {
-  try {
-    return url ? new URL(url) : null;
-  } catch {
-    return null;
-  }
-}
-const isLocal = (host: string) => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host);
 
 function LicenseDialog({
   mode,
@@ -225,6 +226,9 @@ function VoiceForm({
   const accounts = provider?.accounts ?? [];
   const account = accounts.find(row => row.id === draft.provider);
   const host = hostOf(account?.base_url);
+  const liveAccounts = status.live?.accounts ?? [];
+  const liveAccount = liveAccounts.find(row => row.id === draft.live_provider);
+  const liveHost = hostOf(liveAccount?.base_url);
   const set = (change: Partial<Draft>) => setDraft(prior => ({...prior, ...change}));
   const woofAccepted = !!status.settings.consent.woof && status.settings.consent.woof.sha256 === woof?.license?.sha256;
   const preview = (engine: 'browser' | 'woof' | 'provider', voice?: string) => {
@@ -244,6 +248,10 @@ function VoiceForm({
       cloud_fallback: draft.cloud_fallback,
       keep_audio: draft.keep_audio,
       ...(draft.provider ? {consent_provider: draft.consent_provider} : {}),
+      live_provider: draft.live_provider,
+      live_model: draft.live_model,
+      live_voice: draft.live_voice,
+      live_transcribe_model: draft.live_transcribe_model,
     });
     if (result !== null) markClean();
   }
@@ -530,6 +538,76 @@ function VoiceForm({
               checked={draft.cloud_fallback}
               disabled={draft.engine !== 'woof' || !draft.provider}
               onChange={event => set({cloud_fallback: event.target.checked})}
+            />
+          )}
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection
+        level={3}
+        title="Live conversation"
+        description="Talk with the agent out loud from the message box. TermX relays your voice to the account below and keeps no audio."
+      >
+        <SettingsRow
+          label="Live voice account"
+          description={liveAccounts.length ? undefined : 'No API account declares live voice yet. Tick "Live voice conversation" on an account in Models & engines. OpenAI and xAI accounts work.'}
+        >
+          {control => (
+            <Select
+              {...control}
+              name="live_provider"
+              value={draft.live_provider}
+              disabled={busy || !liveAccounts.length}
+              onChange={event => set({live_provider: event.target.value})}
+            >
+              <option value="">No account</option>
+              {liveAccounts.map(row => (
+                <option key={row.id} value={row.id}>
+                  {row.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </SettingsRow>
+        {liveAccount && (
+          <li className="settings-row">
+            <p className="voice-note">
+              {liveHost && isLocal(liveHost.hostname)
+                ? `Live voice runs on ${liveAccount.name} on this device (${liveHost.host}).`
+                : `Your voice and the replies are billed by ${liveAccount.name} (${liveHost?.host ?? 'unknown host'}). You are asked to agree the first time you start a session.`}
+            </p>
+          </li>
+        )}
+        <SettingsRow label="Live voice model" description="The realtime model name, for example gpt-realtime.">
+          {control => (
+            <Input
+              {...control}
+              name="live_model"
+              value={draft.live_model}
+              disabled={busy || !draft.live_provider}
+              onChange={event => set({live_model: event.target.value})}
+            />
+          )}
+        </SettingsRow>
+        <SettingsRow label="Live voice name" description="Optional. Leave empty for the provider's default voice.">
+          {control => (
+            <Input
+              {...control}
+              name="live_voice"
+              value={draft.live_voice}
+              disabled={busy || !draft.live_provider}
+              onChange={event => set({live_voice: event.target.value})}
+            />
+          )}
+        </SettingsRow>
+        <SettingsRow label="Live transcription model" description="Optional. Shows what you said in the live panel.">
+          {control => (
+            <Input
+              {...control}
+              name="live_transcribe_model"
+              value={draft.live_transcribe_model}
+              disabled={busy || !draft.live_provider}
+              onChange={event => set({live_transcribe_model: event.target.value})}
             />
           )}
         </SettingsRow>

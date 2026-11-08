@@ -20,6 +20,7 @@ class VoiceStatus(T.DictBacked):
     settings: JSON
     engines: JSON
     stt: JSON
+    live: JSON
 
 
 @strawberry.input
@@ -33,8 +34,13 @@ class VoiceSettingsInput:
     auto_speak: bool | None = None
     cloud_fallback: bool | None = None
     keep_audio: bool | None = None
+    live_provider: str | None = None
+    live_model: str | None = None
+    live_voice: str | None = None
+    live_transcribe_model: str | None = None
     # The host stamps consent itself. These only say what the owner just agreed to.
     consent_provider: bool | None = None
+    consent_live: bool | None = None
     accept_woof_license: str | None = None
 
 
