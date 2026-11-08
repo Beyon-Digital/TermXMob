@@ -33,6 +33,9 @@ webrtc = [
     "av>=15",
     "numpy>=2.3",
 ]
+voice = [
+    "numpy>=2.3",
+]
 development = [
     "basedpyright>=1.40.2",
     "debugpy>=1.8.22",

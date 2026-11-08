@@ -1464,6 +1464,9 @@ media = [
     { name = "python-docx" },
     { name = "python-pptx" },
 ]
+voice = [
+    { name = "numpy" },
+]
 webrtc = [
     { name = "aiortc" },
     { name = "av" },
@@ -1492,6 +1495,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "imageio-ffmpeg", marker = "extra == 'media'", specifier = ">=0.6.0" },
     { name = "mcp", specifier = "==2.2.0" },
+    { name = "numpy", marker = "extra == 'voice'", specifier = ">=2.3" },
     { name = "numpy", marker = "extra == 'webrtc'", specifier = ">=2.3" },
     { name = "openpyxl", marker = "extra == 'media'", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=12.3.0" },
@@ -1509,7 +1513,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.4" },
     { name = "websockets", specifier = ">=17.1" },
 ]
-provides-extras = ["webrtc", "development", "media"]
+provides-extras = ["webrtc", "voice", "development", "media"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]

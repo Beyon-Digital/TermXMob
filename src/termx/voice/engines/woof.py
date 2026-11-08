@@ -81,6 +81,9 @@ MANIFEST = WoofManifest(
 )
 
 
+NUMPY_MISSING = 'Woof needs numpy. Install it (in a source checkout: uv sync --inexact --extra voice), then reload.'
+
+
 def numpy_available() -> bool:
     return importlib.util.find_spec('numpy') is not None
 
@@ -167,7 +170,7 @@ class WoofEngine(VoiceEngine):
         elif self._installing:
             state, detail = 'downloading', 'Downloading and checking the model files.'
         elif not numpy_available():
-            state, detail = 'unavailable', 'Woof needs numpy. Install numpy into the TermX Python environment, then reload.'
+            state, detail = 'unavailable', NUMPY_MISSING
         elif self._error and not installed:
             state, detail = 'error', self._error
         elif installed:
@@ -231,7 +234,7 @@ class WoofEngine(VoiceEngine):
         if not self.manifest.installable:
             raise EngineError('This build has no pinned Woof release to download.')
         if not numpy_available():
-            raise EngineError('Woof needs numpy. Install numpy into the TermX Python environment first.')
+            raise EngineError(NUMPY_MISSING)
         if self.installed:
             return
         with self._install_guard:
@@ -413,7 +416,7 @@ class WoofEngine(VoiceEngine):
         if not self.installed:
             raise EngineError('Download Woof in Voice settings first.')
         if not numpy_available():
-            raise EngineError('Woof needs numpy. Install numpy into the TermX Python environment.')
+            raise EngineError(NUMPY_MISSING)
         if self._pool is None:
             self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='termx-woof')
         try:

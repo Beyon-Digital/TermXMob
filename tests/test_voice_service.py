@@ -259,8 +259,10 @@ def test_missing_numpy_is_reported_not_crashed(tmp_path, monkeypatch):
     monkeypatch.setattr(woof_module, 'numpy_available', lambda: False)
     status = engine.status()
     assert status['state'] == 'unavailable' and 'numpy' in status['detail'].lower()
-    with pytest.raises(EngineError, match='numpy'):
+    assert 'uv sync --inexact --extra voice' in status['detail']  # names the extra that provides numpy
+    with pytest.raises(EngineError, match='numpy') as raised:
         collect(engine, 'Hello.')
+    assert 'uv sync --inexact --extra voice' in str(raised.value)
 
 
 # --- sentence splitting ------------------------------------------------------------------------

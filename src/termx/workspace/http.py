@@ -293,6 +293,24 @@ def mount_workspace(app,state):
             raise HTTPException(423,'Session locked; unlock required')
         return session.principal
 
+    def require_bot_host(request,conversation_id):
+        """A bot's schedule is unattended authority. Starting one, or changing what it reads or when it runs, needs the
+        owner's host-level session, exactly as in the GraphQL schedule mutations. Other conversations are unchanged."""
+        if not conversation_id or workspace.bots.for_conversation(conversation_id) is None:
+            return
+        raw=extract_passcode(authorization=request.headers.get('authorization')) or request.cookies.get(ACCESS_COOKIE)
+        scopes=state.auth.scopes(raw)
+        if scopes is None:
+            raise HTTPException(401,'invalid passcode')
+        for scope in ('agent-control','agent-run'):
+            if scope not in scopes:
+                raise HTTPException(403,f'missing scope: {scope}')
+        state.authorization.require(raw,'agent-control')  # host-wide, as the GraphQL schedule mutations' context.require_host('agent-control') + require('agent-run')
+
+    def schedule_conversation(actor,identifier):
+        row=call(workspace.record,actor,'schedule',identifier,scope='agent-control')  # ownership first, so another user's schedule is a 404
+        return (workspace.store.get('goal',row['goal_id']) or {}).get('conversation_id')
+
     def call(fn,*args,**kwargs):
         try:
             return fn(*args,**kwargs)
@@ -520,11 +538,18 @@ def mount_workspace(app,state):
 
     @router.post('/schedules')
     def schedule(request:Request,body:ScheduleInput):
-        return call(automation.schedule,principal(request),**body.model_dump())
+        actor=principal(request)
+        goal=call(workspace.record,actor,'goal',body.goal_id,scope='agent-control')  # ownership first, so another user's goal is a 404, before the host-session check
+        require_bot_host(request,goal['conversation_id'])
+        return call(automation.schedule,actor,**body.model_dump())
 
     @router.patch('/schedules/{identifier}')
     def schedule_enable(request:Request,identifier:str,body:ScheduleEdit):
-        return call(automation.edit,principal(request),identifier,**body.model_dump())
+        actor=principal(request)
+        conversation_id=schedule_conversation(actor,identifier)
+        if body.enabled or body.prompt is not None or body.spec is not None:  # stopping and timing-neutral policy stay open
+            require_bot_host(request,conversation_id)
+        return call(automation.edit,actor,identifier,**body.model_dump())
 
     @router.post('/schedules/{identifier}/run')
     async def schedule_run(request:Request,identifier:str,body:ScheduleRevision):
@@ -568,7 +593,10 @@ def mount_workspace(app,state):
 
     @router.post('/automations')
     async def automation_create(request:Request,body:AutomationInput):
-        return await await_call(automation.create_with_browser,principal(request),**body.model_dump())
+        actor=principal(request)
+        call(workspace.record,actor,'conversation',body.conversation_id,scope='agent-run')  # ownership first, then the host-session check
+        require_bot_host(request,body.conversation_id)
+        return await await_call(automation.create_with_browser,actor,**body.model_dump())
 
     @router.get('/automations')
     def automations(request:Request,project_id:str|None=None):
