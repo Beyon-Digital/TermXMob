@@ -254,15 +254,15 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
     <PromptInputTextarea onFiles={files=>void upload(files)} onRemoveLast={attachments.length?()=>editAttachments(attachments.slice(0,-1)):undefined} ref={composer} aria-label="Message" placeholder={running?'Add a follow-up…':'Ask anything, or describe a change…'} value={draft} disabled={!session} onChange={e=>editDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send(running?'queue':'send')}}}/>
     <PromptInputTools>
      <input type="file" hidden ref={fileInput} accept="image/png,image/jpeg,image/webp" multiple onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void upload(files)}}/>
-     <Button size="icon" variant="ghost" aria-label="Attach image" title="Attach image" disabled={!session} onClick={()=>fileInput.current?.click()}><Plus size={17}/></Button>
+     <Button className="composer-attach" size="icon" variant="ghost" aria-label="Attach image" title="Attach image" disabled={!session} onClick={()=>fileInput.current?.click()}><Plus size={17}/></Button>
      {voice.mic}
      {liveVoice.button}
      <SessionModePicker key={session?.id} session={session} running={running} onPatch={patch} auto={auto} onAutoChange={changeAuto}/>
      <SessionModelControls coordinating={coordinating} session={session} engines={engines} providers={providers} runnerAccounts={runnerAccounts} models={models} favorites={favorites} favoriteKey={favoriteKey} running={running} onFavorite={favorite} onEngine={chooseEngine} onPatch={patch} onRefresh={onRefresh} onError={onError} onConfigureAgent={onConfigureAgent}/>
      <span className="flex-spacer"/>
      {running&&draft.trim()&&!pendingPrompt&&<Button className="composer-queue" size="sm" variant="ghost" aria-label="Queue follow-up" title="Queue follow-up after this task" disabled={sending||connectionBlocked} onClick={()=>void send('queue')}><ListPlus size={16}/><span>Queue</span></Button>}
-     {running&&<Button size="icon" variant="ghost" aria-label="Running task actions" title="Queue, interrupt, or steer" aria-haspopup="dialog" aria-expanded={runActionsOpen} onClick={()=>setRunActionsOpen(true)}><MoreHorizontal size={17}/></Button>}
-     <Button size="icon" variant="ghost" aria-label="Session options" title="Session options" aria-haspopup="dialog" aria-expanded={optionsOpen} disabled={!session} onClick={()=>setOptionsOpen(true)}><SlidersHorizontal size={15}/></Button>
+     {running&&<Button className="composer-running-actions" size="icon" variant="ghost" aria-label="Running task actions" title="Queue, interrupt, or steer" aria-haspopup="dialog" aria-expanded={runActionsOpen} onClick={()=>setRunActionsOpen(true)}><MoreHorizontal size={17}/></Button>}
+     <Button className="composer-session-options" size="icon" variant="ghost" aria-label="Session options" title="Session options" aria-haspopup="dialog" aria-expanded={optionsOpen} disabled={!session} onClick={()=>setOptionsOpen(true)}><SlidersHorizontal size={15}/></Button>
      <PromptInputSubmit className="composer-send" status={running?'streaming':sending?'submitted':'ready'} aria-label={running?'Stop task':'Send message'} title={stopping?'Stopping task…':running?'Stop task':pendingPrompt?'Retry pending send':'Send message'} type="button" disabled={!session||stopping||(!running&&(connectionBlocked||(!draft.trim()&&!pendingPrompt)||sending))} onStop={running?()=>void stopTask():undefined} onClick={()=>void send()}>{stopping?<LoaderCircle className="spin" size={16}/>:running?<Square size={14}/>:sending?<LoaderCircle className="spin" size={17}/>:<ArrowUp size={17}/>}</PromptInputSubmit>
     </PromptInputTools>
    </PromptInputBody>

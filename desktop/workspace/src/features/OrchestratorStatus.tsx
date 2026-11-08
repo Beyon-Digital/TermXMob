@@ -63,6 +63,11 @@ function ChildEngineDetails({child}: {child: OrchestratorChild}) {
   </details>;
 }
 
+/** How often the collapsed header re-reads the plan graph: quickly while work is live, slowly when nothing is planned or running. */
+export const COLLAPSED_BOARD_LIVE_MS = 4000, COLLAPSED_BOARD_IDLE_MS = 15000;
+/** A plan with nodes that are running, waiting to run, or stalled is still changing. */
+export const boardIsLive = (board: BoardRollup | null) => !!board && ['running', 'pending', 'stalled'].some(status => (board.counts[status] || 0) > 0);
+
 /** The primary chat owns coordination; inspecting a child never starts work. */
 export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, onPrimary, onRefresh}: Props) {
   const observing = useObservationActive(enabled);
@@ -73,7 +78,10 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   useEffect(() => setBoard(null), [ownerId]);
   // The board is mounted only while the section is open. While it is collapsed, read the same board so the header
   // counts planned tasks too; once open, the board itself feeds the header.
-  usePolling(() => loadBoard(), {interval: 15000, enabled: observing && !expanded && selected !== undefined, resetKey: ownerId, onResult: value => setBoard(value.rollup)});
+  // Poll every 4 s while delegated work or a plan is live so the collapsed header tracks the plan graph, and every 15 s when idle.
+  // A new orchestrator event (the snapshot cursor moving) restarts the loop, which reads the board at once.
+  const live = (snapshot?.children || []).some(row => taskState(row.status).active) || boardIsLive(board);
+  usePolling(() => loadBoard(), {interval: live ? COLLAPSED_BOARD_LIVE_MS : COLLAPSED_BOARD_IDLE_MS, backoff: false, enabled: observing && !expanded && selected !== undefined, resetKey: ownerId + ':' + (snapshot?.cursor ?? ''), onResult: value => setBoard(value.rollup)});
   const read = useRef<AbortController | null>(null), flight = useRef<object | null>(null);
   const generation = useRef(0), identity = useRef(ownerId), alive = useRef(true);
   const observation = useRef(observing), selection = useRef(selected), primaryCallback = useRef(onPrimary);

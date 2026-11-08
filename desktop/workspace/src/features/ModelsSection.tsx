@@ -72,7 +72,9 @@ export default function ModelsSection({admin,me,projectId,onCapabilitiesChanged}
       <h3>Installed engines</h3>
       {engines.filter(matches).map(engine=><Item key={engine.id} title={engine.label} meta={`${engine.installed?'Installed':'Needs installation'} · ${engineAuthLabel(engine.auth_state)}${engine.version?` · ${engine.version}`:''}`}>
         <ActionButton busy={busy} onClick={()=>setPreview(engine)}>Inspect capabilities</ActionButton>
-        <ActionButton busy={busy} onClick={()=>void mutate(async()=>{const value=await gql('query($id:String!){engine_models(engine_id:$id)}',{id:engine.id});setPreview(value);return value},'Model catalog refreshed',{refresh:false})}>Refresh models</ActionButton>
+        {engine.id==='internal'
+          ?<small className="manager-help engine-models-hint" id="internal-engine-models-hint">The TermX agent has no model list of its own. Its models come from your provider accounts. Use Refresh models on an account above.</small>
+          :<ActionButton busy={busy} onClick={()=>void mutate(async()=>{const value=await gql('query($id:String!){engine_models(engine_id:$id)}',{id:engine.id});setPreview(value);return value},'Model catalog refreshed',{refresh:false})}>Refresh models</ActionButton>}
         <EngineAuthentication engine={engine} busy={busy} canAuthenticate={(me.principal?.scopes||[]).includes('agent-run')} onAuthenticate={method=>mutate(async()=>{const result=await gql<{authenticate_engine?:{ok?:boolean;message?:string}}>('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}',{id:engine.id,method});if(result.authenticate_engine?.ok!==true)throw new Error(result.authenticate_engine?.message||'The engine did not confirm sign-in.');return result},'Engine sign-in completed')}/>
       </Item>)}
       {Boolean(preview)&&<details open><summary>Selected engine capabilities/catalog</summary><Json value={preview}/></details>}

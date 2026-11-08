@@ -129,6 +129,23 @@ it('refreshes models without a discard prompt and keeps the unsaved account edit
  await waitFor(()=>expect(form.getByLabelText('Display name')).toHaveValue('Renamed'));
 });
 
+it('explains that the TermX agent has no model list instead of offering a refresh that fails, and keeps it for installed engines',async()=>{
+ serve(['host-admin'],(path,body)=>{
+  if(body.query?.includes('engine_models'))return {data:{engine_models:['gpt-fixture']}};
+  return {data:{engines:[{id:'internal',label:'TermX agent',installed:true,auth_state:'ready'},{id:'codex',label:'Codex',installed:true,auth_state:'ready'}],agent_providers:[provider],acp_registry:[]}};
+ });
+ render(<Managers embedded section="models" projectId={null} sessionId={null}/>);
+ const internal=within((await screen.findByRole('heading',{name:'TermX agent'})).closest('article') as HTMLElement);
+ expect(internal.queryByRole('button',{name:'Refresh models'})).toBeNull();
+ expect(internal.getByText(/no model list of its own/)).toBeInTheDocument();
+ expect(internal.getByText(/Use Refresh models on an account above/)).toBeInTheDocument();
+ const codex=within(screen.getByRole('heading',{name:'Codex'}).closest('article') as HTMLElement);
+ fireEvent.click(codex.getByRole('button',{name:'Refresh models'}));
+ await waitFor(()=>expect(calls().some(call=>call.body.query?.includes('engine_models')&&call.body.variables?.id==='codex')).toBe(true));
+ expect(calls().some(call=>call.body.query?.includes('engine_models')&&call.body.variables?.id==='internal')).toBe(false);
+ expect(screen.queryByText(/is not available/)).toBeNull();
+});
+
 it('treats the install engine form as an action, not an unsaved settings draft',async()=>{
  serve(['host-admin'],()=>({data:{engines:[],agent_providers:[provider],acp_registry:[]}}));
  render(<SettingsSurface category="models" onSelect={vi.fn()} onClose={vi.fn()}><Managers embedded section="models" projectId={null} sessionId={null}/></SettingsSurface>);

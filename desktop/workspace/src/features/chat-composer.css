@@ -159,3 +159,29 @@
  .chat-region .composer-hint{display:none}
 }
 @media(prefers-reduced-motion:reduce){.chat-region .composer,.chat-control-dialog{transition:none;animation:none}}
+
+/* Narrow chat panes (phones, docked panels): the toolbar wraps instead of overflowing, so no control is clipped.
+   Up to 640px the row may wrap on its own. Up to 540px it is two fixed rows. Row one holds the model, the running-task
+   actions, the session options and Send, in that order, so Send is always on screen. Row two holds attach, dictation,
+   live voice and the mode. Hit areas keep their normal size (44px on touch and small screens). */
+@container(max-width:640px){
+ .chat-region.chat-region .composer-container .composer-controls{flex-wrap:wrap}
+}
+@container(max-width:540px){
+ .chat-region.chat-region .composer-container .composer-controls{row-gap:2px}
+ .chat-region.chat-region .composer-container .composer-controls::after{content:'';order:7;flex:0 0 100%;height:0}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-model-chip.session-model-chip{order:1;flex:0 1 auto;min-width:44px;max-width:calc(100% - 104px);margin-left:0}
+ .chat-region.chat-region .composer-container .composer-controls>.flex-spacer{order:2;flex:1 1 0;min-width:0}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-queue{order:3;min-width:44px;flex-shrink:0}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-running-actions{order:4}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-session-options{order:5}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-send{order:6;margin-left:0}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-attach{order:8}
+ .chat-region.chat-region .composer-container .composer-controls>.composer-mic{order:9}
+ .chat-region.chat-region .composer-container .composer-controls>.live-voice-button{order:10}
+ .chat-region.chat-region .composer-container .composer-controls>.mode-picker{order:11;flex:1 1 56px;min-width:0;max-width:176px}
+ .chat-region.chat-region .composer-container .composer-controls>.mode-picker>.composer-mode-chip{width:100%;min-width:0;justify-content:flex-start}
+ .composer-mode-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ /* A running task adds Queue and the actions menu to row one. The model then moves to row two so Send keeps its place. */
+ .chat-region.chat-region .composer-container .composer-controls:has(>.composer-queue,>.composer-running-actions)>.composer-model-chip.session-model-chip{order:12;flex:1 1 56px;max-width:176px;min-width:0}
+}
