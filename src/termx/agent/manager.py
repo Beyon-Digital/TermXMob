@@ -2580,6 +2580,41 @@ class AgentManager:
             names = [app] if app else None
         return names
 
+    def pointer_allowed(self, x: float, y: float) -> bool | None:
+        """Whether a pointer event at this global screen point lands on the front application; None when the host cannot say."""
+        from termx.desktop.windows import pointer_in_front_app
+
+        return pointer_in_front_app(x, y)
+
+    async def _check_pointer(
+        self, task_id: str, batch_id: str, apps: list[str], x: float, y: float, *, strict: bool = False
+    ) -> None:
+        """Refuse a pointer event whose target window belongs to an application other than the one in front.
+
+        The front-application check runs before each action, but a click goes to the window under the pointer,
+        which can be another application, the Dock or a status item. The lookup runs subprocesses, so it runs in a thread.
+        """
+        if not apps or not desktop_apps.verifiable():
+            return  # the front-application check already refused or reported what this host cannot do
+        allowed = await asyncio.to_thread(self.pointer_allowed, x, y)
+        if allowed:
+            return
+        if allowed is None and not strict:
+            self._emit(task_id, "computer.app_unverified", {"batch_id": batch_id, "phase": "pointer", "apps": apps})
+            return
+        why = (
+            "This host cannot tell which window is under the pointer, so a schedule's application permission cannot be enforced. "
+            if allowed is None
+            else "The pointer is over a window that does not belong to the application in front, the Dock or a status item. "
+        )
+        details = {"batch_id": batch_id, "phase": "pointer", "front": None, "apps": apps, "input_sent": False}
+        self._emit(task_id, "computer.app_blocked", details)
+        raise desktop_apps.AppBlocked(
+            why + "This action was not sent; earlier input from this batch cannot be undone. "
+            "Ask the user to bring the allowed application's window to where it is needed.",
+            details,
+        )
+
     def computer_limits(self, task_id: str) -> tuple[list[str] | None, dict[str, Any] | None]:
         """The applications this task may drive and, when it runs unattended, the permission it runs under.
 
@@ -2723,6 +2758,11 @@ class AgentManager:
                 await self._check_front_app(task_id, batch_id, apps, "during", strict=strict)
 
             options["guard"] = guard  # the front application can change inside a batch
+
+            async def pointer_guard(x: float, y: float) -> None:
+                await self._check_pointer(task_id, batch_id, apps, x, y, strict=strict)
+
+            options["pointer_guard"] = pointer_guard  # a click goes to the window under the pointer, whoever is in front
         try:
             screenshot = await self._computer.execute(call.actions, cancel=cancel, **options)
         except BaseException as exc:

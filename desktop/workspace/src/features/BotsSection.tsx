@@ -1,4 +1,4 @@
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {Badge} from '../components/ui/badge';
 import {Button} from '../components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
@@ -102,13 +102,21 @@ export default function BotsSection({me,projectId}:{admin?:boolean;me:HostIdenti
   // A bot opens on its Overview unless the inbox asked for another tab. The request belongs to that bot, so any other way
   // of changing the selection (browser back, a deleted bot) falls back to Overview.
   const tab=target.id===selected?target.tab:'overview';
-  const open=(id:string|null,next:BotTab='overview')=>{setTarget({id,tab:next});select(id)};
+  const open=(id:string|null,next:BotTab='overview')=>{if(id)opened.current=id;setTarget({id,tab:next});select(id)};
+  // Going back to the list returns to the bot that was open; if it is gone, to the New bot button.
+  const opened=useRef<string|null>(null),newBot=useRef<HTMLButtonElement>(null);
+  useEffect(()=>{
+    if(selected||!opened.current||!data)return;
+    const id=opened.current;opened.current=null;
+    const row=Array.from(document.querySelectorAll<HTMLElement>('[data-bot-row]')).find(node=>node.dataset.botRow===id);
+    (row||newBot.current)?.focus();
+  },[selected,data]);
   const create=(input:Record<string,unknown>)=>mutate(async()=>{
     const result=await gql<{create_bot:Bot}>(`mutation($input:BotInput!){create_bot(input:$input){ ${BOT_FIELDS} }}`,{input});
     open(result.create_bot.id);
     return result;
   },'Bot created');
-  const header=<div className="bot-toolbar"><Button onClick={()=>setCreating(true)}>New bot</Button></div>;
+  const header=<div className="bot-toolbar"><Button ref={newBot} onClick={()=>setCreating(true)}>New bot</Button></div>;
   return <ManagerPage section="bots" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={current?undefined:{label:'Bots',value:search,onChange:setSearch,count:bots.length}}>
     <>
       {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onBack={()=>open(null)} onGone={()=>open(null)}/>
@@ -119,7 +127,7 @@ export default function BotsSection({me,projectId}:{admin?:boolean;me:HostIdenti
         {data&&!bots.length&&<Empty>No bots yet. Create one from a template to give recurring work a home that runs in the background, then check what it did here.</Empty>}
         {bots.length>0&&<ul className="bot-list" aria-label="Bots">
           {bots.filter(matches).map(bot=><li key={bot.id}>
-            <button type="button" className="bot-row" onClick={()=>open(bot.id)}>
+            <button type="button" className="bot-row" data-bot-row={bot.id} onClick={()=>open(bot.id)}>
               <span className="bot-row-main"><strong>{bot.name}</strong><small>{bot.description||'No description'}</small></span>
               <span className="bot-row-meta">
                 {bot.needs_you>0&&<Badge variant="outline">{needsYou(bot.needs_you)}</Badge>}

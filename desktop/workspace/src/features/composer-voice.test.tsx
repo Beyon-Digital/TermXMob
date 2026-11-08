@@ -134,11 +134,29 @@ it('says how to set up dictation instead of asking for the microphone when no ac
   await expectNoAxeViolations(view.container);
 });
 
+it('keeps the microphone button focusable while the recording is transcribed', async () => {
+  let finish: (value: unknown) => void = () => {};
+  upload.mockImplementation(() => new Promise(resolve => (finish = resolve)) as never);
+  render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  const stop = await screen.findByRole('button', {name: 'Stop dictation'});
+  stop.focus();
+  fireEvent.click(stop);
+  const busy = await screen.findByRole('button', {name: 'Transcribing'});
+  expect(busy).toHaveAttribute('aria-disabled', 'true');
+  expect(busy).not.toBeDisabled();
+  expect(busy).toHaveFocus();
+  fireEvent.click(busy);
+  expect(getUserMedia).toHaveBeenCalledOnce();  // pressing it while it works starts nothing
+  await act(async () => finish({text: async () => JSON.stringify({text: 'done'})}));
+  await waitFor(() => expect(onTranscript).toHaveBeenCalledWith('done', false));
+});
+
 it('records, shows the level, transcribes once and hands the text to the composer', async () => {
   const view = render(<Harness onTranscript={onTranscript} />);
   fireEvent.click(await ready());
   const stop = await screen.findByRole('button', {name: 'Stop dictation'});
-  expect(stop).toHaveAttribute('aria-pressed', 'true');
+  expect(stop).not.toHaveAttribute('aria-pressed');
   expect(screen.getByRole('status')).toHaveTextContent(/recording/i);
   await expectNoAxeViolations(view.container);
   fireEvent.click(stop);

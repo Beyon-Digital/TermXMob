@@ -76,6 +76,8 @@ export interface AgentPresetInput {
 export interface MemoryRow {
   id: string; revision: number; content: string; provenance: string;
   project_id?: string | null; retention_days: number; excluded?: boolean; expires_at?: number;
+  /** Who the note applies to. Rows saved before scopes existed omit these and count as active notes the user wrote. */
+  scope?: 'user' | 'project' | 'agent'; agent_id?: string | null; author?: 'user' | 'agent'; state?: 'active' | 'proposed';
 }
 
 export interface HostIdentity { principal?: { id: string; display_name: string; scopes?: string[] }; session_id?: string; host_id?: string }

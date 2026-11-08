@@ -57,6 +57,27 @@ def test_a_prompt_edit_parks_schedules_and_reauthorize_brings_them_back(tmp_path
     assert query(client, owner, 'query{needs_you{id}}')['data']['needs_you'] == []
 
 
+def test_changing_what_a_schedule_runs_or_turning_it_back_on_needs_a_host_session(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    from termx.graphql.context import TermxContext
+    identity, state, client, owner = client_fixture(tmp_path)
+    bot = create(client, owner)
+    created = schedule(client, owner, bot)
+    monkeypatch.setattr(TermxContext, 'require_host', lambda self, scope: (_ for _ in ()).throw(HTTPException(403, 'Host session required')))
+    c = bot['conversation_id']
+    edit = ('mutation($c:String!,$s:String!,$i:BotScheduleEditInput!){edit_schedule(conversation_id:$c,schedule_id:$s,input:$i){revision}}')
+    for change in ({'prompt': 'Something else'}, {'spec': {'kind': 'interval', 'seconds': 7200}}, {'report_to': 'owner'},
+                   {'trigger': {'kind': 'message'}}):
+        denied(query(client, owner, edit, {'c': c, 's': created['id'], 'i': {'revision': created['revision'], **change}}), 403)
+    assert listed(client, owner, bot)[0]['prompt'] == 'Check the repo'
+    toggle = 'mutation($c:String!,$s:String!,$r:Int!,$e:Boolean!){set_schedule_enabled(conversation_id:$c,schedule_id:$s,enabled:$e,revision:$r){enabled}}'
+    harmless = query(client, owner, edit, {'c': c, 's': created['id'], 'i': {'revision': created['revision'], 'overlap': 'skip'}})
+    assert not harmless.get('errors'), harmless  # timing-neutral fields don't widen what the bot reads
+    off = query(client, owner, toggle, {'c': c, 's': created['id'], 'r': listed(client, owner, bot)[0]['revision'], 'e': False})
+    assert off['data']['set_schedule_enabled'] == {'enabled': False}  # stopping is always allowed
+    denied(query(client, owner, toggle, {'c': c, 's': created['id'], 'r': listed(client, owner, bot)[0]['revision'], 'e': True}), 403)
+
+
 def test_pause_and_resume_follow_the_bot(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)

@@ -80,7 +80,7 @@ class PromptQueue:
         if row.get('extension_ids') and extensions:
             selected=extensions.execution_context(actor,row['extension_ids'],row.get('project_id'),row['cwd'],resource_id=conversation)
             value['extensions_digest']=digest(selected)
-        value['memory_revision']=digest([(item['id'],item['revision']) for item in self.workspace.memories(actor,project_id=row.get('project_id'),include_excluded=False)])
+        value['memory_revision']=digest([(item['id'],item['revision']) for item in self.workspace.memories(actor,project_id=row.get('project_id'),include_excluded=False,agent_id=row.get('custom_agent_id'),state='active')])
         value['policy_revision']=self.policy_binding(actor,row)
         value['hook_revision']=digest([(item['id'],item['revision']) for item in self.store.list('hook',actor.id) if item.get('enabled') and item.get('project_id') in {None,row.get('project_id')}])
         return value

@@ -33,8 +33,8 @@ export interface LiveVoiceOptions {
 
 /**
  * A live spoken conversation with the agent. `button` goes in the composer toolbar and `panel` above the message
- * box. The panel's status line is the only live region; the level meter is decoration and is left out entirely
- * when the system asks for reduced motion.
+ * box. The always-mounted status region is the only live region; the level meter is decoration and is left out
+ * entirely when the system asks for reduced motion.
  */
 export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOptions) {
   const {status, setStatus} = useVoiceStatus(enabled && !nativeWorkspace());
@@ -49,6 +49,10 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   const [agreed, setAgreed] = useState(false);
   const [starting, setStarting] = useState(false);
   const client = useRef<LiveVoiceClient | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const firstRender = useRef(true);
+  const [armed, setArmed] = useState(false);
   const session = useRef(sessionId);
   session.current = sessionId;
 
@@ -116,7 +120,26 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
     }
   }
 
+  // Keyboard users keep their place: a new panel takes focus, and a panel that goes away hands it back to the toolbar button.
+  // Focus is only moved when it was on the panel, on the button, or lost; typing in the composer is never interrupted.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const panel = panelRef.current;
+    const active = document.activeElement;
+    const lost = !active || active === document.body || active === buttonRef.current || !!panel?.contains(active);
+    if (!lost) return;
+    if (phase === 'setup' || phase === 'consent' || phase === 'ended') {
+      panel?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')?.focus();
+    } else {
+      buttonRef.current?.focus();
+    }
+  }, [phase]);
+
   function press() {
+    setArmed(true);
     if (phase === 'live') return stop();
     if (!ready) return setPhase(phase === 'setup' ? 'closed' : 'setup');
     if (acknowledged) return void begin();
@@ -131,6 +154,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       size="icon"
       variant="ghost"
       className={active ? 'live-voice-button is-live' : 'live-voice-button'}
+      ref={buttonRef}
       aria-label="Live voice"
       aria-pressed={active}
       title={active ? 'Live voice is on. Press to end it.' : 'Talk with the agent out loud'}
@@ -192,7 +216,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
               <span style={{transform: `scaleX(${Math.max(0.04, muted ? 0 : level)})`}} />
             </span>
           )}
-          <p className="live-voice-status" role="status">
+          <p className="live-voice-status" aria-hidden="true">
             {statusText}
           </p>
         </div>
@@ -222,7 +246,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
             }}
           >
             <MicOff size={14} />
-            {muted ? 'Unmute microphone' : 'Mute microphone'}
+            Mute microphone
           </Button>
           <Button type="button" size="sm" variant="secondary" disabled={!talking} onClick={() => client.current?.interrupt()}>
             Interrupt
@@ -237,7 +261,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   } else if (phase === 'ended') {
     body = (
       <>
-        <p className="live-voice-status" role="status">
+        <p className="live-voice-status" aria-hidden="true">
           {message}
         </p>
         <div className="live-voice-actions">
@@ -251,10 +275,22 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       </>
     );
   }
-  const panel: ReactNode = body ? (
-    <section className="live-voice-panel" aria-label="Live voice">
-      {body}
-    </section>
-  ) : null;
+  // Once the person has pressed the button, one status region stays mounted so each message after the first is announced.
+  // It is not mounted before that, so an idle chat has no extra live region.
+  const announcement = phase === 'live' ? statusText : phase === 'ended' ? message : '';
+  const panel: ReactNode = (
+    <div className="live-voice-host">
+      {armed && (
+        <p role="status" className="live-voice-announce">
+          {announcement}
+        </p>
+      )}
+      {body && (
+        <section className="live-voice-panel" aria-label="Live voice" ref={panelRef}>
+          {body}
+        </section>
+      )}
+    </div>
+  );
   return {button, panel, active};
 }

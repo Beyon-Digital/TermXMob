@@ -139,7 +139,7 @@ def test_the_front_application_is_looked_up_off_the_event_loop(tmp_path):
 class Guarded(Desktop):
     """Asks the manager's guard before its second action, as the real controller does, and moves to Safari on a click."""
 
-    async def execute(self, actions, *, cancel=None, guard=None):
+    async def execute(self, actions, *, cancel=None, guard=None, pointer_guard=None):
         for index, action in enumerate(actions):
             if index and guard is not None:
                 await guard(action)
@@ -203,7 +203,7 @@ def test_the_controller_asks_the_guard_before_each_input_after_the_first(monkeyp
 
 
 class Slow(Desktop):
-    async def execute(self, actions, *, cancel=None, guard=None):
+    async def execute(self, actions, *, cancel=None, guard=None, pointer_guard=None):
         try:
             await asyncio.sleep(5)
         except asyncio.CancelledError:

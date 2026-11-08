@@ -153,8 +153,54 @@ it('mutes, unmutes and says so', async () => {
   fireEvent.click(mute);
   expect(fake.mute).toHaveBeenLastCalledWith(true);
   expect(screen.getByRole('status')).toHaveTextContent('Muted');
-  fireEvent.click(screen.getByRole('button', {name: 'Unmute microphone'}));
+  expect(screen.getByRole('button', {name: 'Mute microphone'})).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(screen.getByRole('button', {name: 'Mute microphone'}));
   expect(fake.mute).toHaveBeenLastCalledWith(false);
+});
+
+it('adds no live region until used, then keeps one mounted so later messages are announced', async () => {
+  render(<Harness />);
+  const button = await startButton();
+  expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.click(button);
+  await waitFor(() => expect(fake.start).toHaveBeenCalled());
+  const region = screen.getByRole('status');
+  act(() => fake.hooks.onState('listening'));
+  expect(region).toHaveTextContent('Listening');
+  act(() => fake.hooks.onEnded('idle', 'The session ended after 60 seconds without speech.'));
+  expect(screen.getByRole('status')).toBe(region);
+  expect(region).toHaveTextContent('60 seconds without speech');
+});
+
+it('moves focus into the consent panel and back to the toolbar button when it closes', async () => {
+  load.mockResolvedValue(status({acknowledged: false}));
+  render(<Harness />);
+  const toolbarButton = await startButton();
+  toolbarButton.focus();
+  fireEvent.click(toolbarButton);
+  expect(screen.getByRole('checkbox')).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', {name: 'Cancel'}));
+  expect(toolbarButton).toHaveFocus();
+});
+
+it('moves focus into the setup panel and back when it is closed', async () => {
+  load.mockResolvedValue(status({configured: false, acknowledged: false}, {live_provider: null, live_model: ''}));
+  render(<Harness onOpenSettings={() => {}} />);
+  const toolbarButton = await startButton();
+  toolbarButton.focus();
+  fireEvent.click(toolbarButton);
+  expect(screen.getByRole('button', {name: 'Open voice settings'})).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', {name: 'Close'}));
+  expect(toolbarButton).toHaveFocus();
+});
+
+it('puts focus on the way to start again when a session ends under the keyboard', async () => {
+  await live();
+  const end = screen.getByRole('button', {name: 'End live voice'});
+  end.focus();
+  fireEvent.click(end);
+  act(() => fake.hooks.onEnded('user', 'The session ended.'));
+  expect(screen.getByRole('button', {name: 'Start live voice'})).toHaveFocus();
 });
 
 it('interrupts only while the agent is talking or working', async () => {

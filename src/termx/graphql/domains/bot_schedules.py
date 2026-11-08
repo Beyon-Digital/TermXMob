@@ -221,6 +221,10 @@ class BotScheduleMutations:
     @resolver
     def edit_schedule(self, info: Ctx, conversation_id: str, schedule_id: str, input: BotScheduleEditInput) -> BotSchedule:
         actor, bots, bot = _bot_for(info, conversation_id, "agent-control")
+        if any(value is not None for value in (input.prompt, input.spec, input.trigger, input.report_to)):
+            # What the bot reads, when it runs and where its result goes were all approved with the grant.
+            info.context.require_host("agent-control")
+            info.context.require("agent-run")
         return BotSchedule.wrap(_run(
             bots.schedules.edit, actor, bot["id"], schedule_id, revision=input.revision, prompt=input.prompt,
             spec=input.spec, missed=input.missed, overlap=input.overlap, trigger=input.trigger, report_to=input.report_to))
@@ -237,6 +241,9 @@ class BotScheduleMutations:
     @resolver
     def set_schedule_enabled(self, info: Ctx, conversation_id: str, schedule_id: str, enabled: bool, revision: int) -> BotSchedule:
         actor, bots, bot = _bot_for(info, conversation_id, "agent-control")
+        if enabled:  # stopping is always allowed; starting unattended runs needs the owner's own session
+            info.context.require_host("agent-control")
+            info.context.require("agent-run")
         return BotSchedule.wrap(_run(bots.schedules.enable, actor, bot["id"], schedule_id, enabled, revision))
 
     @strawberry.mutation

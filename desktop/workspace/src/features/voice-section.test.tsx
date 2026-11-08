@@ -2,6 +2,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {expectNoAxeViolations} from '../test-axe';
 import VoiceSection from './VoiceSection';
+import {SettingsFormsContext} from './settings-forms';
 import {
   downloadWoof,
   loadVoiceStatus,
@@ -259,4 +260,53 @@ it('saves the live voice account, model, voice and transcription model', async (
     live_provider: 'rt', live_model: 'gpt-realtime', live_voice: 'verse', live_transcribe_model: 'gpt-4o-mini-transcribe',
   });
   expect(save.mock.calls[0][0]).not.toHaveProperty('consent_live');
+});
+
+it('does not mark the form changed when the license box is ticked', async () => {
+  const reports: Array<[string, unknown]> = [];
+  const registry = {report: (key: string, form: unknown) => void reports.push([key, form])};
+  render(
+    <SettingsFormsContext.Provider value={registry}>
+      <VoiceSection admin projectId={null} />
+    </SettingsFormsContext.Provider>,
+  );
+  await screen.findByRole('radio', {name: /Underdog Woof/});
+  fireEvent.click(screen.getByRole('button', {name: 'Download'}));
+  const dialog = await screen.findByRole('dialog', {name: /Download Underdog Woof/});
+  fireEvent.click(await within(dialog).findByRole('checkbox', {name: /non-commercial/i}));
+  expect(reports.filter(([, form]) => form !== null)).toEqual([]);
+});
+
+it('keeps the dialog open with the error and the ticked box when the download fails', async () => {
+  download.mockRejectedValue(new Error('The host could not reach the model release.'));
+  await open();
+  fireEvent.click(screen.getByRole('button', {name: 'Download'}));
+  const dialog = await screen.findByRole('dialog', {name: /Download Underdog Woof/});
+  fireEvent.click(await within(dialog).findByRole('checkbox', {name: /non-commercial/i}));
+  fireEvent.click(within(dialog).getByRole('button', {name: 'Download'}));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('could not reach the model release');
+  expect(screen.getByRole('dialog', {name: /Download Underdog Woof/})).toBeInTheDocument();
+  expect(within(dialog).getByRole('checkbox', {name: /non-commercial/i})).toBeChecked();
+});
+
+it('keeps the remove dialog open with the error when removing fails', async () => {
+  load.mockResolvedValue(status({settings: {engine: 'woof', consent: {woof: {sha256: 'a'.repeat(64), at: 1}}}, woof: {state: 'ready', installed: true}}));
+  remove.mockRejectedValue(new Error('The model files are in use.'));
+  await open();
+  fireEvent.click(screen.getByRole('button', {name: 'Remove'}));
+  const dialog = await screen.findByRole('dialog', {name: /Remove Underdog Woof/});
+  fireEvent.click(within(dialog).getByRole('button', {name: 'Remove'}));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('in use');
+  expect(screen.getByRole('dialog', {name: /Remove Underdog Woof/})).toBeInTheDocument();
+});
+
+it('moves focus to the Woof choice when the button that opened the dialog goes away', async () => {
+  load.mockResolvedValueOnce(status()).mockResolvedValue(status({woof: {state: 'downloading', progress: {done: 1, total: 4}}}));
+  await open();
+  fireEvent.click(screen.getByRole('button', {name: 'Download'}));
+  const dialog = await screen.findByRole('dialog', {name: /Download Underdog Woof/});
+  fireEvent.click(await within(dialog).findByRole('checkbox', {name: /non-commercial/i}));
+  fireEvent.click(within(dialog).getByRole('button', {name: 'Download'}));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('radio', {name: /Underdog Woof/})).toHaveFocus());
 });

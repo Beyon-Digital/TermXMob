@@ -230,6 +230,7 @@ class BotMessages:
             row['owner'], binding['conversation_id'], 'bot.message', bot.get('project_id'), 'bot-message:' + row['id'],
             {'session_id': bot['conversation_id'], 'task_id': task_id, 'status': row['status'], 'bot_id': bot['id'],
              'message_id': row['id'], 'inline_report': False,
+             'headline': f'{_line(bot["name"], 80)} ({row["kind"]}): {_line(row["subject"], 120)}',
              'message': f'{bot["name"]} ({row["kind"]}): {row["subject"]}\n{row["body"][:500]}'})
 
     # -- what a task may do ----------------------------------------------------------------
@@ -361,6 +362,14 @@ class BotMessages:
         if row['status'] == 'parked' and status != 'done':
             raise ValueError('A held message can only be dismissed')
         return self.view(self.store.update(KIND, row['id'], {**row, 'status': status}))
+
+    def retire(self, owner, bot_id):
+        """Dismiss every unread or held message from or to a bot that is being archived. Nothing shows them afterwards,
+        and held ones would otherwise keep counting towards the hold limit."""
+        party = {'kind': 'bot', 'id': bot_id}
+        for row in self.store.list(KIND, owner):
+            if row['status'] in {'unread', 'parked'} and party in (row['from'], row['to']):
+                self.store.update(KIND, row['id'], {**row, 'status': 'done'})
 
     def transition(self, ids, *, to, reason=None):
         """Host-side move of still-unread messages to ``read`` or ``parked``. Anything already handled is left alone."""

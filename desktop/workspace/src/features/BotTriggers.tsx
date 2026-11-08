@@ -37,8 +37,8 @@ function triggerOf(draft:Draft):Trigger{
 
 /** A secret is shown here and nowhere else: not in the list, not after this dialog closes. */
 function SecretReveal({title,url,secret,onDone}:{title:string;url:string;secret:string;onDone:()=>void}){
-  const [copied,setCopied]=useState(false);
-  const copy=async()=>{try{await navigator.clipboard.writeText(secret);setCopied(true)}catch{setCopied(false)}};
+  const [copied,setCopied]=useState<'idle'|'copied'|'failed'>('idle');
+  const copy=async()=>{try{await navigator.clipboard.writeText(secret);setCopied('copied')}catch{setCopied('failed')}};
   return <Dialog open onOpenChange={next=>{if(!next)onDone()}}>
     <DialogContent className="bot-dialog" aria-describedby="bot-secret-description">
       <DialogTitle>{title}</DialogTitle>
@@ -52,7 +52,7 @@ function SecretReveal({title,url,secret,onDone}:{title:string;url:string;secret:
         <Button variant="secondary" onClick={()=>void copy()}>Copy secret</Button>
         <Button onClick={onDone}>Done</Button>
       </div>
-      <p role="status" className="manager-help">{copied?'Secret copied':''}</p>
+      <p role="status" className="manager-help">{copied==='copied'?'Secret copied':copied==='failed'?'Could not copy. Select the secret and copy it yourself.':''}</p>
     </DialogContent>
   </Dialog>;
 }
@@ -142,6 +142,8 @@ export default function BotTriggers({bot,bots,mutation,rows,onChanged}:BotTabPro
   const {busy,mutate}=mutation;
   const [dialog,setDialog]=useState<'new'|BotSchedule|null>(null),[reveal,setReveal]=useState<{title:string;url:string;secret:string}|null>(null);
   const [rotating,setRotating]=useState<BotSchedule|null>(null),[archiving,setArchiving]=useState<BotSchedule|null>(null);
+  // An archived trigger takes its Archive button with it, so focus goes to the list's heading instead.
+  const heading=useRef<HTMLHeadingElement>(null),archived=useRef(false);
   const triggers=rows.filter(row=>row.trigger&&row.trigger.kind!=='time'&&row.state!=='archived');
   const nameOf=(id:string)=>bots.find(row=>row.id===id)?.name||'a deleted bot';
   const toggle=(row:BotSchedule)=>mutate(()=>gql(enableMutation,{c:bot.conversation_id,s:row.id,enabled:!row.enabled,r:row.revision}),row.enabled?'Trigger turned off':'Trigger turned on').then(result=>{if(result!==null)onChanged()});
@@ -153,19 +155,20 @@ export default function BotTriggers({bot,bots,mutation,rows,onChanged}:BotTabPro
   }
   async function archive(row:BotSchedule){
     const result=await mutate(()=>gql(archiveMutation,{c:bot.conversation_id,s:row.id,r:row.revision}),'Trigger archived');
+    archived.current=result!==null;
     setArchiving(null);
     if(result!==null)onChanged();
   }
   return <section className="bot-triggers" aria-labelledby="bot-triggers-title">
     <div className="schedule-heading">
-      <div><h3 id="bot-triggers-title">Triggers</h3><p>Start this bot when something happens instead of at a set time. A run that needs approval waits for you.</p></div>
+      <div><h3 id="bot-triggers-title" tabIndex={-1} ref={heading}>Triggers</h3><p>Start this bot when something happens instead of at a set time. A run that needs approval waits for you.</p></div>
       <Button disabled={busy||bot.state!=='active'} onClick={()=>setDialog('new')}>Add trigger</Button>
     </div>
     {triggers.length===0?<Empty>No triggers yet. Add one to start this bot when a message arrives, another bot finishes, files change or a webhook is called.</Empty>
     :<ul className="bot-trigger-list" aria-label="Triggers">
       {triggers.map(row=><li key={row.id}>
         <div className="bot-trigger-text">
-          <strong>{describeTrigger(row.trigger!,nameOf)}</strong>
+          <strong id={'trigger-'+row.id}>{describeTrigger(row.trigger!,nameOf)}</strong>
           <p>{row.prompt}</p>
           {row.trigger?.kind==='webhook'&&row.webhook_path&&<p><code>{urlOf(row)}</code></p>}
           <small>{row.runs_started} of {row.max_runs} runs used{row.grant_expires_at?` · Authorized until ${date(row.grant_expires_at)}`:''}</small>
@@ -173,10 +176,10 @@ export default function BotTriggers({bot,bots,mutation,rows,onChanged}:BotTabPro
         </div>
         <div className="bot-trigger-actions">
           <Badge variant={row.enabled?'default':'secondary'}>{row.enabled?'On':'Off'}</Badge>
-          <ActionButton busy={busy} onClick={()=>void toggle(row)}>{row.enabled?'Turn off':'Turn on'}</ActionButton>
-          <Button variant="ghost" disabled={busy} onClick={()=>setDialog(row)}>Edit</Button>
-          {row.trigger?.kind==='webhook'&&<Button variant="ghost" disabled={busy} onClick={()=>setRotating(row)}>Rotate secret</Button>}
-          <Button variant="ghost" disabled={busy} onClick={()=>setArchiving(row)}>Archive trigger</Button>
+          <ActionButton busy={busy} aria-describedby={'trigger-'+row.id} onClick={()=>void toggle(row)}>{row.enabled?'Turn off':'Turn on'}</ActionButton>
+          <Button variant="ghost" disabled={busy} aria-describedby={'trigger-'+row.id} onClick={()=>setDialog(row)}>Edit</Button>
+          {row.trigger?.kind==='webhook'&&<Button variant="ghost" disabled={busy} aria-describedby={'trigger-'+row.id} onClick={()=>setRotating(row)}>Rotate secret</Button>}
+          <Button variant="ghost" disabled={busy} aria-describedby={'trigger-'+row.id} onClick={()=>setArchiving(row)}>Archive trigger</Button>
         </div>
       </li>)}
     </ul>}
@@ -197,7 +200,7 @@ export default function BotTriggers({bot,bots,mutation,rows,onChanged}:BotTabPro
       </DialogContent>
     </Dialog>
     <Dialog open={!!archiving} onOpenChange={next=>{if(!next)setArchiving(null)}}>
-      <DialogContent aria-describedby="bot-archive-trigger-description">
+      <DialogContent aria-describedby="bot-archive-trigger-description" onCloseAutoFocus={event=>{if(archived.current){archived.current=false;event.preventDefault();heading.current?.focus()}}}>
         <DialogTitle>Archive trigger</DialogTitle>
         <DialogDescription id="bot-archive-trigger-description">The bot stops starting from this trigger. Runs already in progress finish. This cannot be undone; add a new trigger to bring it back.</DialogDescription>
         <div className="bot-dialog-actions">

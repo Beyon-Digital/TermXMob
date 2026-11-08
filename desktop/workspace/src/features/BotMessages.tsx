@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useRef,useState} from 'react';
 import {Badge} from '../components/ui/badge';
 import {FormField} from '../components/ui/form-field';
 import {Input} from '../components/ui/input';
@@ -29,11 +29,11 @@ function Message({message,busy,onMark,showSubject}:{message:BotMessage;busy:bool
       {message.status==='parked'&&<Badge variant="secondary">Held</Badge>}
     </div>
     {showSubject&&<strong>{message.subject}</strong>}
-    <p className="bot-message-body">{message.body}</p>
+    <p className="bot-message-body" id={'message-'+message.id}>{message.body}</p>
     {message.status==='parked'&&message.reason&&<p className="manager-help">{message.reason} It was delivered to nobody.</p>}
     <div className="manager-item-actions">
-      {message.status==='unread'&&toOwner&&<ActionButton busy={busy} onClick={()=>onMark(message,'read')}>Mark as read</ActionButton>}
-      {message.status==='parked'&&<ActionButton busy={busy} onClick={()=>onMark(message,'done')}>Dismiss message</ActionButton>}
+      {message.status==='unread'&&toOwner&&<ActionButton busy={busy} aria-describedby={'message-'+message.id} onClick={()=>onMark(message,'read')}>Mark as read</ActionButton>}
+      {message.status==='parked'&&<ActionButton busy={busy} aria-describedby={'message-'+message.id} onClick={()=>onMark(message,'done')}>Dismiss message</ActionButton>}
     </div>
   </li>;
 }
@@ -83,8 +83,8 @@ function Reports({bot,bots,rows,mutation,onChanged}:BotTabProps&{rows:TriggerSch
   return <SettingsSection level={3} title="Where reports go" description="When a run finishes, its result is posted here. Nothing asks the model again.">
     {rows.length===0?<li className="settings-row"><Empty>No schedules yet. Add one under Schedules &amp; triggers. Its reports go to the main agent unless you choose otherwise.</Empty></li>
     :rows.map(row=><SettingsRow key={row.id} label={short(row.prompt)} description={describeTrigger(row.trigger||{kind:'time'},name)}>{control=>
-      <Select {...control} value={reportValue(row.report_to||{kind:'orchestrator'})} disabled={mutation.busy}
-        onChange={event=>void mutation.mutate(()=>gql(editMutation,{c:bot.conversation_id,s:row.id,i:{revision:row.revision,report_to:event.target.value}}),'Report destination saved').then(result=>{if(result!==null)onChanged()})}>
+      <Select {...control} value={reportValue(row.report_to||{kind:'orchestrator'})} aria-disabled={mutation.busy||undefined}
+        onChange={event=>mutation.busy?undefined:void mutation.mutate(()=>gql(editMutation,{c:bot.conversation_id,s:row.id,i:{revision:row.revision,report_to:event.target.value}}),'Report destination saved').then(result=>{if(result!==null)onChanged()})}>
         {options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
       </Select>}</SettingsRow>)}
   </SettingsSection>;
@@ -98,15 +98,19 @@ export default function BotMessages(props:BotTabProps){
     onResult:value=>{setMessages(value.bot_messages??[]);setRows(value.schedules??[]);setError('');setLoaded(true)},
     onError:reason=>setError(reason instanceof Error?reason.message:String(reason))});
   const refresh=()=>setVersion(value=>value+1);
-  const mark=(message:BotMessage,status:'read'|'done')=>void mutation.mutate(()=>gql(markMutation,{message_id:message.id,status}),status==='done'?'Message dismissed':'Message marked as read').then(result=>{if(result!==null)refresh()});
+  // A message that was read or dismissed leaves the focused button behind, so focus moves to the thread list first.
+  const listing=useRef<HTMLDivElement>(null);
+  const mark=(message:BotMessage,status:'read'|'done')=>void mutation.mutate(()=>gql(markMutation,{message_id:message.id,status}),status==='done'?'Message dismissed':'Message marked as read').then(result=>{if(result!==null){listing.current?.focus();refresh()}});
   const threads=groupThreads(messages);
   return <>
     {error&&<p role="alert" className="manager-error">{error}</p>}
     <SettingsSection level={3} title="Messages" description="What this bot, the main agent and you have sent each other. Messages are written by agents or by you, so they are shown as text and never followed as orders.">
       <li className="settings-row bot-form-row">
+        <div tabIndex={-1} ref={listing} className="bot-message-region">
         {!loaded?<p className="manager-help">Loading messages…</p>
         :threads.length===0?<Empty>No messages yet. Reports, requests and replies between this bot, the main agent and you appear here.</Empty>
         :<Threads threads={threads} busy={mutation.busy} onMark={mark}/>}
+        </div>
       </li>
     </SettingsSection>
     <SettingsSection level={3} title="Send a message" description="The bot reads it the next time it runs, or right away if a message trigger is on.">

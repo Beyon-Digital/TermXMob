@@ -70,6 +70,27 @@ def test_one_sender_cannot_use_up_the_owners_whole_daily_budget(tmp_path, monkey
         asyncio.run(close(workspace, manager, ledger))
 
 
+def test_archiving_a_bot_clears_its_held_and_unread_messages_so_they_do_not_fill_the_hold_limit(tmp_path, monkeypatch):
+    workspace, owner, manager, ledger, registry, _ = setup(tmp_path)
+    try:
+        monkeypatch.setattr(bot_messages, 'PAIR_LIMIT', 1000)
+        monkeypatch.setattr(bot_messages, 'SENDER_DAILY', 1)
+        monkeypatch.setattr(bot_messages, 'MAX_PARKED', 3)
+        for index in range(3):
+            noisy = chatty(workspace, owner, f'Noisy{index}')
+            send(workspace, owner, bot_party(noisy), OWNER)                                # unread
+            held = send(workspace, owner, bot_party(noisy), OWNER)                         # over the sender's daily budget
+            assert held['status'] == 'parked'
+            workspace.bots.archive(owner, noisy['id'])
+        remaining = [m for m in workspace.store.list('bot_message', owner.id) if m['status'] in {'parked', 'unread'}]
+        assert remaining == []
+        fresh = chatty(workspace, owner, 'Fresh')
+        send(workspace, owner, bot_party(fresh), OWNER)
+        assert send(workspace, owner, bot_party(fresh), OWNER)['status'] == 'parked'  # held, not "too many are held"
+    finally:
+        asyncio.run(close(workspace, manager, ledger))
+
+
 def test_pruning_drops_the_oldest_read_messages_when_no_done_ones_remain(tmp_path, monkeypatch):
     workspace, owner, manager, ledger, registry, _ = setup(tmp_path)
     try:

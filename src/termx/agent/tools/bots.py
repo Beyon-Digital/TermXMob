@@ -17,6 +17,8 @@ from termx.agent.providers import ProviderCall
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec, decide_never
 from termx.workspace.bots import READ_TOOLS, TEMPLATES
 
+MAX_TASK = 2000      # the owner approves unattended authority for the text they are shown, so all of it must be shown
+MAX_CRITERIA = 500
 _BOT_ID = {'type': 'string', 'description': 'A bot ID returned by list_bots.'}
 
 
@@ -60,7 +62,15 @@ def _create_detail(call, _ctx):
     instructions = str(args.get('instructions') or (template['instructions'] if template else ''))
     return (f'Creates a background bot named "{str(args.get("name") or "")[:80]}". It runs as you, can use only these tools: '
             f'{", ".join(str(t) for t in _create_tools(call))}. It cannot run shell commands, use the network, publish or control the computer '
-            f'until you allow it in Settings. Instructions: {instructions[:300]}')
+            f'until you allow it in Settings. Instructions: {instructions}')
+
+
+def too_long(text, limit=MAX_TASK):
+    """A refusal when the owner could not read all of ``text`` in the approval, else ``None``."""
+    if len(str(text or '')) > limit:
+        return PolicyDecision(False, False, 'The text is too long to review',
+                              f'Use shorter text (up to {limit} characters) so the owner can read all of what the bot will do.')
+    return None
 
 
 _ask_to_create = _ask('Create a bot', _create_detail)
@@ -71,23 +81,26 @@ def _decide_create(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
     if (tools is not None and not isinstance(tools, list)) or any(t not in READ_TOOLS for t in _create_tools(call)):
         return PolicyDecision(False, False, 'A bot made by the main agent is read-only',
                               'Only read-only tools are allowed (' + ', '.join(READ_TOOLS) + '). Ask the owner to widen a bot in Settings.')
-    return _ask_to_create(call, ctx)
+    return too_long(call.arguments.get('instructions')) or _ask_to_create(call, ctx)
 
 
 def _update_detail(call, _ctx):
     changes = [key for key in ('name', 'description', 'instructions', 'tools', 'model') if key in call.arguments]
-    text = str(call.arguments.get('instructions') or '')[:300]
+    text = str(call.arguments.get('instructions') or '')
     return (f'Changes {", ".join(changes) or "nothing"} on bot {call.arguments.get("bot_id")}. It stays inside the bot\'s ceiling; '
             f'any schedules pause until you re-authorize them.' + (f' New instructions: {text}' if text else ''))
 
 
+_ask_to_update = _ask('Change a bot', _update_detail)
+
+
+def _decide_update(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    return too_long(call.arguments.get('instructions')) or _ask_to_update(call, ctx)
+
+
 def _assign_detail(call, _ctx):
     return (f'Gives bot {call.arguments.get("bot_id")} a task and runs it now as you, inside its ceiling. Report goes to '
-            f'{call.arguments.get("report_to") or "orchestrator"}. Task: {str(call.arguments.get("task") or "")[:300]}')
-
-
-MAX_TASK = 2000      # the owner approves unattended authority for the text they are shown, so all of it must be shown
-MAX_CRITERIA = 500
+            f'{call.arguments.get("report_to") or "orchestrator"}. Task: {call.arguments.get("task") or ""}')
 
 
 def _schedule_detail(call, _ctx):
@@ -103,7 +116,12 @@ def _schedule_detail(call, _ctx):
             f'Task: {args.get("task") or ""}' + (f' Success criteria: {criteria}' if criteria else ''))
 
 
+_ask_to_assign = _ask('Give a bot a task', _assign_detail)
 _ask_to_schedule = _ask('Schedule a bot', _schedule_detail)
+
+
+def _decide_assign(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
+    return too_long(call.arguments.get('task')) or _ask_to_assign(call, ctx)
 
 
 def _decide_schedule(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
@@ -144,14 +162,14 @@ def register(registry: ToolRegistry) -> None:
         {'bot_id': _BOT_ID, 'name': {'type': 'string'}, 'description': {'type': 'string'}, 'instructions': {'type': 'string'},
          'tools': {'type': 'array', 'items': {'type': 'string'}}, 'model': {'type': 'string'},
          'expected_revision': {'type': 'integer', 'description': 'The revision from bot_status, to refuse a stale edit.'}},
-        ['bot_id'], mutability='external', approval='always', decide=_ask('Change a bot', _update_detail))
+        ['bot_id'], mutability='external', approval='always', decide=_decide_update)
     add('delete_bot', 'delete a bot: it stops, its schedules and permissions are revoked, and its agent file is removed. Its conversation history is kept.',
         {'bot_id': _BOT_ID}, ['bot_id'], mutability='write', approval='always',
         decide=_ask('Delete a bot', lambda call, _c: f'Deletes bot {call.arguments.get("bot_id")} and revokes its schedules and permissions.'))
     add('assign_bot_task',
         'run one task on a bot now. report_to says where the result goes: orchestrator (default), owner, or bot:<id>. Refused while the bot is paused.',
         {'bot_id': _BOT_ID, 'task': {'type': 'string'}, 'report_to': {'type': 'string'}}, ['bot_id', 'task'],
-        mutability='external', approval='always', decide=_ask('Give a bot a task', _assign_detail))
+        mutability='external', approval='always', decide=_decide_assign)
     add('schedule_bot',
         'schedule recurring or one-time runs of a bot, or runs started by an event. spec is one of {"kind":"interval","seconds":3600} (60 seconds to a year), '
         '{"kind":"daily","time":"09:00","timezone":"Europe/London"}, {"kind":"cron","expression":"0 9 * * 1-5","timezone":"UTC"} '

@@ -44,6 +44,7 @@ class FakeComputer:
         *,
         cancel: asyncio.Event | None = None,
         guard: Any = None,
+        pointer_guard: Any = None,
     ) -> bytes:
         self.actions.append(actions)
         frame = self._frames[min(self._frame_index, len(self._frames) - 1)]

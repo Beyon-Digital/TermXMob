@@ -756,3 +756,27 @@ def test_a_turn_that_needs_the_owner_is_reported_at_once(flow, status):
     output = next(event for event in flow.upstream.sent if event['type'] == 'conversation.item.create')['item']
     payload = json.loads(output['output'])
     assert payload['status'] == status and 'app' in payload['message'].lower()
+
+
+def test_an_agent_that_never_asks_for_approval_cannot_be_started_by_voice(flow):
+    flow.state.workspace.agents.get_custom_agent = lambda identifier: {'id': identifier, 'approval_mode': 'autonomous'}
+    flow.state.workspace.session = lambda *args, **kwargs: {'custom_agent_id': 'free-agent'}
+    with flow.open() as ws:
+        ready(ws)
+        ws.send_bytes(PCM)
+        drain(ws, lambda item: isinstance(item, dict) and item.get('role') == 'assistant')
+    assert flow.sends == []
+    output = next(event for event in flow.upstream.sent if event['type'] == 'conversation.item.create')['item']
+    payload = json.loads(output['output'])
+    assert payload['status'] == 'refused' and 'type' in payload['message'].lower()
+
+
+def test_the_agents_reply_is_redacted_before_it_goes_to_the_provider(flow):
+    flow.task_result = {'status': 'completed', 'result': f'Done. The token is api_key={KEY} and password=hunter2hunter2.'}
+    with flow.open() as ws:
+        ready(ws)
+        ws.send_bytes(PCM)
+        drain(ws, lambda item: isinstance(item, dict) and item.get('role') == 'assistant')
+    output = next(event for event in flow.upstream.sent if event['type'] == 'conversation.item.create')['item']
+    assert KEY not in output['output'] and 'hunter2hunter2' not in output['output']
+    assert json.loads(output['output'])['status'] == 'completed'

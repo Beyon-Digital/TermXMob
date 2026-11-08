@@ -122,9 +122,14 @@ def _review_node(reason, run_all):
         model = str(call.arguments.get('model') or call.arguments.get('provider_id') or '')
         bots = {node['id']: (service.workspace.store.get('bot', node['bot_id']) or {}).get('name') or node['bot_id']
                 for node in nodes if node.get('bot_id')}
+        if bots:  # a bot reads its node prompt unattended, so the owner must be able to read all of it
+            from termx.agent.tools.bots import too_long
+            for node in nodes:
+                if node['id'] in bots and (refused := too_long(node['prompt'])):
+                    return refused
         lines = ['- ' + node['title'] + (' [runs as bot ' + str(bots[node['id']]) + ', inside its ceiling]' if node['id'] in bots else '')
             + ' (' + node['mode'] + ' mode, ' + (model or node.get('model') or 'default model') + '): '
-            + node['prompt'][:200] for node in nodes]
+            + (node['prompt'] if node['id'] in bots else node['prompt'][:200]) for node in nodes]
         base = PolicyDecision(False, True, reason, 'Each runs as its own isolated agent with the normal budgets and approvals:\n' + '\n'.join(lines))
         if bots:  # work given to a bot is delegation: Auto never approves it
             from termx.agent.tools.bots import ask_each_time

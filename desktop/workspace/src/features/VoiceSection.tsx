@@ -78,10 +78,12 @@ function LicenseDialog({
   mode,
   onClose,
   onConfirm,
+  onCloseAutoFocus,
 }: {
   mode: 'download' | 'accept';
   onClose: () => void;
   onConfirm: (sha256: string) => Promise<void>;
+  onCloseAutoFocus: (event: Event) => void;
 }) {
   const [texts, setTexts] = useState<WoofLicense | null>(null);
   const [error, setError] = useState('');
@@ -112,7 +114,7 @@ function LicenseDialog({
   }
   return (
     <Dialog open onOpenChange={open => !open && !busy && onClose()}>
-      <DialogContent className="voice-license-dialog">
+      <DialogContent className="voice-license-dialog" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogTitle>{mode === 'download' ? 'Download Underdog Woof' : 'Underdog Woof license'}</DialogTitle>
         <DialogDescription>
           Woof is free for non-commercial use with credit. Read the license and notice, then accept to continue.
@@ -155,15 +157,29 @@ function LicenseDialog({
   );
 }
 
-function RemoveDialog({onClose, onConfirm}: {onClose: () => void; onConfirm: () => Promise<void>}) {
+function RemoveDialog({
+  onClose,
+  onConfirm,
+  onCloseAutoFocus,
+}: {
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+  onCloseAutoFocus: (event: Event) => void;
+}) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   return (
     <Dialog open onOpenChange={open => !open && !busy && onClose()}>
-      <DialogContent className="voice-license-dialog">
+      <DialogContent className="voice-license-dialog" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogTitle>Remove Underdog Woof</DialogTitle>
         <DialogDescription>
           This deletes the downloaded model from this host. You can download it again later.
         </DialogDescription>
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="voice-dialog-actions">
           <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
@@ -174,11 +190,14 @@ function RemoveDialog({onClose, onConfirm}: {onClose: () => void; onConfirm: () 
             disabled={busy}
             onClick={async () => {
               setBusy(true);
+              setError('');
               try {
                 await onConfirm();
+                onClose();
+              } catch (failure) {
+                setError(failure instanceof Error ? failure.message : String(failure));
               } finally {
                 setBusy(false);
-                onClose();
               }
             }}
           >
@@ -212,6 +231,39 @@ function VoiceForm({
     setDraft(toDraft(status.settings));
   }
   const [dialog, setDialog] = useState<'download' | 'accept' | 'remove' | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const woofRadio = useRef<HTMLInputElement>(null);
+  const pendingFocus = useRef(false);
+  const openDialog = (kind: 'download' | 'accept' | 'remove', from: HTMLElement) => {
+    opener.current = from;
+    pendingFocus.current = false;
+    setDialog(kind);
+  };
+  // Download, Accept license and Remove disappear once they succeed, so focus goes to the engine they belong to.
+  const restoreFocus = (event: Event) => {
+    event.preventDefault();
+    (opener.current?.isConnected ? opener.current : woofRadio.current)?.focus();
+    pendingFocus.current = true;
+  };
+  // The refreshed status can remove the opener after the dialog has closed; then focus would fall to the page body.
+  useEffect(() => {
+    if (!pendingFocus.current || !opener.current || opener.current.isConnected) return;
+    pendingFocus.current = false;
+    if (document.activeElement === document.body || document.activeElement === null) woofRadio.current?.focus();
+  }, [status]);
+  // Unlike `run`, rejects with the real reason, so a dialog can stay open and show it.
+  async function attempt(action: () => Promise<unknown>, notice: string) {
+    let failure: unknown = null;
+    const result = await run(async () => {
+      try {
+        return await action();
+      } catch (caught) {
+        failure = caught;
+        throw caught;
+      }
+    }, notice);
+    if (result === null) throw failure ?? new Error('That did not finish. Try again.');
+  }
   const [previewState, setPreviewState] = useState<PlayerState>('idle');
   const [credit, setCredit] = useState<Attribution | null>(null);
   const [previewNotice, setPreviewNotice] = useState('');
@@ -260,6 +312,7 @@ function VoiceForm({
   const percent = woof?.progress?.total ? Math.round((woof.progress.done / woof.progress.total) * 100) : 0;
 
   return (
+    <>
     <form
       {...formProps}
       noValidate
@@ -397,6 +450,7 @@ function VoiceForm({
             <div className="voice-engine">
               <label className="voice-engine-choice">
                 <input
+                  ref={woofRadio}
                   type="radio"
                   name="engine"
                   value="woof"
@@ -426,7 +480,7 @@ function VoiceForm({
               )}
               <div className="voice-engine-actions">
                 {woof?.installable && !woof.installed && !downloading && admin && (
-                  <Button type="button" size="sm" disabled={busy} onClick={() => setDialog('download')}>
+                  <Button type="button" size="sm" disabled={busy} onClick={event => openDialog('download', event.currentTarget)}>
                     Download
                   </Button>
                 )}
@@ -434,7 +488,7 @@ function VoiceForm({
                   <span className="voice-note">Ask the host owner to download Woof.</span>
                 )}
                 {woof?.installed && !woofAccepted && (
-                  <Button type="button" size="sm" disabled={busy} onClick={() => setDialog('accept')}>
+                  <Button type="button" size="sm" disabled={busy} onClick={event => openDialog('accept', event.currentTarget)}>
                     Accept license
                   </Button>
                 )}
@@ -452,7 +506,7 @@ function VoiceForm({
                     </Button>
                   ))}
                 {woof?.installed && admin && !downloading && (
-                  <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setDialog('remove')}>
+                  <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={event => openDialog('remove', event.currentTarget)}>
                     Remove
                   </Button>
                 )}
@@ -637,28 +691,31 @@ function VoiceForm({
           )}
         </SettingsRow>
       </SettingsSection>
-
+    </form>
       {dialog === 'download' && (
         <LicenseDialog
           mode="download"
           onClose={() => setDialog(null)}
-          onConfirm={async sha => void (await run(() => downloadWoof(sha), 'Download started. This page shows its progress.'))}
+          onCloseAutoFocus={restoreFocus}
+          onConfirm={sha => attempt(() => downloadWoof(sha), 'Download started. This page shows its progress.')}
         />
       )}
       {dialog === 'accept' && (
         <LicenseDialog
           mode="accept"
           onClose={() => setDialog(null)}
-          onConfirm={async sha => void (await run(() => saveVoiceSettings({accept_woof_license: sha}), 'License accepted'))}
+          onCloseAutoFocus={restoreFocus}
+          onConfirm={sha => attempt(() => saveVoiceSettings({accept_woof_license: sha}), 'License accepted')}
         />
       )}
       {dialog === 'remove' && (
         <RemoveDialog
           onClose={() => setDialog(null)}
-          onConfirm={async () => void (await run(() => removeWoof(), 'Underdog Woof removed'))}
+          onCloseAutoFocus={restoreFocus}
+          onConfirm={() => attempt(() => removeWoof(), 'Underdog Woof removed')}
         />
       )}
-    </form>
+    </>
   );
 }
 

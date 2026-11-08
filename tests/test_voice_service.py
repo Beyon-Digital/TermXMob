@@ -659,3 +659,13 @@ def test_weights_are_checked_again_when_the_voice_changes_while_loaded(tmp_path)
     with pytest.raises(WoofIntegrityError):
         collect(engine, 'Hello.', voice='mira')
     assert not engine.loaded
+
+
+@pytest.mark.parametrize('field,value', [('provider', 'speech'), ('live_provider', 'speech'), ('consent_provider', True),
+                                         ('consent_live', True), ('cloud_fallback', True), ('keep_audio', True)])
+def test_a_limited_token_cannot_change_where_audio_goes_or_consent_to_it(app, monkeypatch, field, value):
+    from termx.graphql.context import TermxContext
+    monkeypatch.setattr(TermxContext, 'require_host', lambda self, scope: (_ for _ in ()).throw(HTTPException(403, 'Host session required')))
+    bad = app.gql('mutation($input:VoiceSettingsInput!){save_voice_settings(input:$input){settings}}', {'input': {field: value}})
+    assert bad['errors'][0]['extensions']['http_status'] == 403
+    assert app.save(auto_speak=True)['auto_speak'] is True  # a harmless toggle needs only agent-run

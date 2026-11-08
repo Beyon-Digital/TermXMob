@@ -183,9 +183,10 @@ export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscri
       variant="ghost"
       className={recording ? 'composer-mic is-recording' : 'composer-mic'}
       aria-label={label}
-      aria-pressed={recording}
       title={recording ? 'Stop dictation' : `Dictate. Hold ${mine} to talk, or tap it to start and stop.`}
-      disabled={!enabled || loading || transcribing}
+      // Not `disabled` while transcribing: a keyboard user who just stopped dictation would lose focus.
+      aria-disabled={transcribing || undefined}
+      disabled={!enabled || loading}
       onClick={press}
     >
       {transcribing ? <LoaderCircle className="spin" size={16} /> : recording ? <Square size={14} /> : <Mic size={17} />}

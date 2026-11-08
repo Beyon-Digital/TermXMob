@@ -15,6 +15,8 @@ from time import time
 from typing import Any
 from uuid import uuid4
 
+from fastapi import HTTPException
+
 from termx.agent.execution import run_shell
 from termx.agent.limits import resolve_limits
 from termx.agent.policy import redact
@@ -868,6 +870,19 @@ class WorkspaceService:
             raise ValueError('Memory scope must be user, project or agent')
         if state not in {None, 'active', 'proposed'}:
             raise ValueError('Memory state must be active or proposed')
+        usable = {}  # agent id -> whether this caller may use that agent, checked once per call
+
+        def may_use(identifier):
+            if identifier not in usable:
+                try:
+                    self._memory_agent(principal, identifier, project_id)
+                    usable[identifier] = True
+                except (PermissionError, ValueError, KeyError, HTTPException):
+                    usable[identifier] = False
+            return usable[identifier]
+
+        if agent_id and not may_use(agent_id):
+            agent_id = None  # nothing agent-specific is shown for an agent the caller may not use
         now = time()
         result = []
         for row in self.store.list('memory',principal.id):
@@ -882,6 +897,8 @@ class WorkspaceService:
                 continue
             if not all_agents and not self._memory_visible(view, agent_id):
                 continue
+            if view['agent_id'] and not may_use(view['agent_id']):
+                continue  # an agent's notes are only for callers who may use that agent
             result.append(view)
         return result
 

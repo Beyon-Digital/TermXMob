@@ -21,7 +21,8 @@ class WindowCapture:
         return {'supported': supported, 'backend': 'coregraphics-window' if sys.platform == 'darwin' else 'print-window' if sys.platform == 'win32' else 'x11-window',
                 'reason': '' if supported else 'Exact window capture requires X11 with wmctrl and ImageMagick; a Wayland portal adapter is required on Wayland.'}
 
-    def list(self):
+    def list(self, all_layers=False):
+        """On-screen windows, front to back. macOS lists only ordinary windows unless ``all_layers`` (Dock, menu bar, panels)."""
         if sys.platform == 'darwin':
             cg = ctypes.CDLL(ctypes.util.find_library('CoreGraphics'))
             cf = ctypes.CDLL(ctypes.util.find_library('CoreFoundation'))
@@ -42,8 +43,8 @@ class WindowCapture:
                 result = []
                 for row in rows:
                     bounds = row.get('kCGWindowBounds', {})
-                    if row.get('kCGWindowLayer') != 0 or bounds.get('Width', 0) < 20 or bounds.get('Height', 0) < 20: continue
-                    result.append({'id': str(row['kCGWindowNumber']), 'pid': int(row['kCGWindowOwnerPID']), 'app': row.get('kCGWindowOwnerName', ''), 'title': row.get('kCGWindowName', ''),
+                    if (row.get('kCGWindowLayer') != 0 and not all_layers) or bounds.get('Width', 0) < 20 or bounds.get('Height', 0) < 20: continue
+                    result.append({'id': str(row['kCGWindowNumber']), 'layer': int(row.get('kCGWindowLayer', 0)), 'pid': int(row['kCGWindowOwnerPID']), 'app': row.get('kCGWindowOwnerName', ''), 'title': row.get('kCGWindowName', ''),
                                    'x': int(bounds.get('X', 0)), 'y': int(bounds.get('Y', 0)), 'width': int(bounds['Width']), 'height': int(bounds['Height'])})
                 return result
             finally:
@@ -165,6 +166,34 @@ def frontmost_app() -> str | None:
     if sys.platform != 'darwin': return None
     front = next(iter(WindowCapture().list()), None)
     return str(front['app']) if front and front.get('app') else None
+
+
+def frontmost_pid() -> int | None:
+    """Process ID of the application that receives input, or None when the host cannot say (only macOS answers)."""
+    if sys.platform != 'darwin': return None
+    try:
+        found = subprocess.run(['/usr/bin/osascript', '-e', 'tell application "System Events" to unix id of first application process whose frontmost is true'],
+                               capture_output=True, text=True, timeout=3)
+        return int(found.stdout.strip()) if found.returncode == 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def pointer_in_front_app(x, y) -> bool | None:
+    """Whether a pointer event at global screen point (x, y) lands on the front application.
+
+    The topmost window at the point must belong to the front application's process. Windows of other applications,
+    the Dock and menu-bar items of the system are refused; the menu bar itself shows the front application's menus.
+    None when the host cannot say (only macOS answers).
+    """
+    front = frontmost_pid()
+    if front is None: return None
+    for row in WindowCapture().list(all_layers=True):
+        menu_bar = row['app'] == 'Window Server' and row['title'] == 'Menubar'
+        if row['app'] == 'Window Server' and not menu_bar: continue  # the cursor and compositor surfaces
+        if row['x'] <= x < row['x'] + row['width'] and row['y'] <= y < row['y'] + row['height']:
+            return menu_bar or row['pid'] == front
+    return False
 
 
 _ACTIVE_APP = """tell application "System Events"

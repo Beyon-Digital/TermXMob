@@ -13,6 +13,9 @@ from termx.voice.http import voice_owner
 
 Ctx = Info[TermxContext, None]
 
+# Settings that choose an account to receive audio or text, stamp consent to send it, or keep recordings.
+DESTINATION_FIELDS = frozenset({"provider", "live_provider", "consent_provider", "consent_live", "cloud_fallback", "keep_audio"})
+
 
 @strawberry.type
 class VoiceStatus(T.DictBacked):
@@ -65,5 +68,7 @@ class VoiceMutations:
         ctx = info.context
         owner = _owner(ctx, "agent-run")
         changes = {key: value for key, value in vars(input).items() if value is not strawberry.UNSET}
+        if DESTINATION_FIELDS & {key for key, value in changes.items() if value is not None}:
+            ctx.require_host("agent-control")  # where the owner's audio goes, and the consent to send it, is the owner's own decision
         ctx.state.voice.save_settings(owner, changes)
         return VoiceStatus.wrap(ctx.state.voice.status(owner))

@@ -144,6 +144,68 @@ it('picks where a one-off run reports',async()=>{
 
 // -- Needs you -------------------------------------------------------------------------------------------------
 
+it('names the item each per-row button acts on, and keeps focus on the list after an answer',async()=>{
+ const world:World={bots:[bot({needs_you:1})],messages:[],schedules:[],inbox:[needsItem(),needsItem({id:'message:m2',message_id:'m2',title:'Message: Second'})]};
+ serve(world);
+ open();
+ const inbox=within(await screen.findByRole('region',{name:'Needs you'}));
+ const dismiss=inbox.getAllByRole('button',{name:'Dismiss message'});
+ expect(dismiss[0]).toHaveAccessibleDescription('Message: Deploy is blocked');
+ expect(dismiss[1]).toHaveAccessibleDescription('Message: Second');
+ dismiss[0].focus();
+ fireEvent.click(dismiss[0]);
+ await waitFor(()=>expect(sent('mark_message')).toHaveLength(1));
+ expect(screen.getByRole('heading',{name:/Needs you/})).toHaveFocus();
+});
+
+it('says when the secret could not be copied',async()=>{
+ const writeText=vi.fn().mockRejectedValue(new Error('denied'));
+ Object.defineProperty(navigator,'clipboard',{value:{writeText},configurable:true});
+ serve({bots:[bot()],messages:[],schedules:[],inbox:[]});
+ open();
+ await openTab('Schedules & triggers');
+ fireEvent.click(await screen.findByRole('button',{name:'Add trigger'}));
+ const dialog=within(await screen.findByRole('dialog',{name:'Add trigger'}));
+ fireEvent.change(dialog.getByLabelText('Starts when'),{target:{value:'webhook'}});
+ fireEvent.change(dialog.getByLabelText(/What the bot does/),{target:{value:'Handle deploys'}});
+ fireEvent.click(dialog.getByRole('checkbox',{name:/may run on its own/}));
+ fireEvent.click(dialog.getByRole('button',{name:'Create trigger'}));
+ const reveal=within(await screen.findByRole('dialog',{name:'Webhook created'}));
+ fireEvent.click(reveal.getByRole('button',{name:'Copy secret'}));
+ expect(await reveal.findByText(/Could not copy\. Select the secret and copy it yourself\./)).toBeInTheDocument();
+});
+
+it('names the trigger each button acts on and moves focus to the heading after archiving',async()=>{
+ serve({bots:[bot()],messages:[],inbox:[],schedules:[schedule({id:'s2',prompt:'Triage the inbox',trigger:{kind:'message'},spec:{kind:'event'},next_run:null})]});
+ open();
+ await openTab('Schedules & triggers');
+ const list=within(await screen.findByRole('list',{name:'Triggers'}));
+ expect(list.getByRole('button',{name:'Edit'})).toHaveAccessibleDescription(/message/i);
+ const archive=list.getByRole('button',{name:'Archive trigger'});
+ archive.focus();
+ fireEvent.click(archive);
+ fireEvent.click(within(await screen.findByRole('dialog',{name:'Archive trigger'})).getByRole('button',{name:'Archive trigger'}));
+ await waitFor(()=>expect(sent('archive_schedule')).toHaveLength(1));
+ await waitFor(()=>expect(screen.getByRole('heading',{name:'Triggers'})).toHaveFocus());
+});
+
+it('moves focus to the thread list after a message is dismissed and leaves the report select usable while saving',async()=>{
+ const world:World={bots:[bot()],messages:[message('m2',{thread_id:'t2',status:'parked',reason:'Held.',subject:'Loop',body:'ping'})],schedules:[schedule()],inbox:[]};
+ serve(world);
+ open();
+ await openTab('Messages');
+ const threads=await screen.findByRole('list',{name:'Message threads'});
+ fireEvent.click(within(threads).getByText('Loop'));
+ const dismiss=await screen.findByRole('button',{name:'Dismiss message'});
+ expect(dismiss).toHaveAccessibleDescription('ping');
+ dismiss.focus();
+ fireEvent.click(dismiss);
+ await waitFor(()=>expect(sent('mark_message')).toHaveLength(1));
+ await waitFor(()=>expect(threads.closest('.bot-message-region')).toHaveFocus());
+ const select=screen.getByRole('combobox');
+ expect(select).not.toBeDisabled();
+});
+
 it('lists owner-directed messages in Needs you and dismisses them in place',async()=>{
  const world:World={bots:[bot({needs_you:1})],messages:[],schedules:[],inbox:[needsItem()]};
  serve(world);

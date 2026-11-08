@@ -29,7 +29,7 @@ from termx.agents.files import AgentFile
 from termx.agents.registry import RevisionConflict
 from termx.discovery.safety import slugify
 from termx.workspace import bot_inbox
-from termx.workspace.bot_messages import BotMessages
+from termx.workspace.bot_messages import BotMessages, _line
 from termx.workspace.bot_schedules import BotSchedules
 from termx.workspace.bot_triggers import BotTriggers
 from termx.workspace.store import Conflict
@@ -568,6 +568,7 @@ class BotService:
                 goal = self.store.get('goal', goal_id)
                 self.store.update('goal', goal_id, {**goal, 'status': 'cancelled'})
             self._revoke_rules(bot['custom_agent_id'])
+            self.messages.retire(bot['owner'], bot_id)
             bot = self.store.update(KIND, bot_id, {**bot, 'state': 'archived'}, bot['revision'])
         self.store.log(principal.id, KIND, bot_id, 'archived')
         return self._view(principal, bot)
@@ -804,4 +805,5 @@ class BotService:
             self.workspace.orchestrator.append_event(
                 run['owner'], binding['conversation_id'], 'bot.run.finished', bot.get('project_id'), event_id,
                 {'session_id': bot['conversation_id'], 'task_id': run['task_id'], 'status': run['status'], 'bot_id': bot['id'],
-                 'run_id': run['id'], 'inline_report': False, 'message': f'{bot["name"]}: {text[:500]}'})
+                 'run_id': run['id'], 'inline_report': False, 'headline': f'{_line(bot["name"], 80)}: run {run["status"]}',
+                 'message': f'{bot["name"]}: {text[:500]}'})

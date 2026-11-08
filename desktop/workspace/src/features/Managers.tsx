@@ -17,7 +17,7 @@ import {Empty,ManagerPage,ManagerSearch,ManagerStatus} from './manager-ui';
 import {useManagerLoad} from './use-manager';
 import './managers.css';
 
-export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void; embedded?: boolean }
+export interface ManagersProps { section: string; projectId: string | null; sessionId: string | null; onSection?: (name: string) => void; onCapabilitiesChanged?: () => void; embedded?: boolean; agentId?: string | null }
 
 function ExtensionsSection({projectId}:{projectId:string|null}){
   const {data,loading,error,reload}=useManagerLoad(()=>request<Record<string,unknown>>('/api/workspace/extensions'));
@@ -41,7 +41,7 @@ function PassivePage({section,projectId,sessionId,admin,me}:{section:'cloud'|'ho
   </ManagerPage>;
 }
 
-export function Managers({section: incoming, projectId, sessionId, onCapabilitiesChanged, embedded=false}: ManagersProps) {
+export function Managers({section: incoming, projectId, sessionId, onCapabilitiesChanged, embedded=false, agentId=null}: ManagersProps) {
   const section=canonicalSettingsCategory(incoming);
   const [me,setMe]=useState<HostIdentity>({}),[ready,setReady]=useState(false);
   useEffect(()=>{
@@ -55,10 +55,10 @@ export function Managers({section: incoming, projectId, sessionId, onCapabilitie
   return <section className={"managers"+(embedded?" managers-embedded":"")} aria-label="Workspace managers">
     {!ready?<div className="manager-main"><Empty>Loading current settings…</Empty></div>
     :section==='models'?<ModelsSection key={scope} admin={admin} me={me} projectId={projectId} onCapabilitiesChanged={onCapabilitiesChanged}/>
+    :section==='voice'?<VoiceSection key={scope} admin={admin} projectId={projectId}/>
     :section==='agents'?<AgentsSection key={scope} admin={admin} me={me} projectId={projectId}/>
     :section==='bots'?<BotsSection key={scope} admin={admin} me={me} projectId={projectId}/>
-    :section==='voice'?<VoiceSection key={scope} admin={admin} projectId={projectId}/>
-    :section==='memory'?<MemorySection key={scope} me={me} projectId={projectId}/>
+    :section==='memory'?<MemorySection key={scope+':'+(agentId??'')} me={me} projectId={projectId} agentId={agentId}/>
     :section==='access'?<AccessSection key={scope} admin={admin} me={me} projectId={projectId}/>
     :section==='extensions'?<ExtensionsSection key={scope} projectId={projectId}/>
     :['cloud','hooks','automations','connections'].includes(section)?<PassivePage key={scope} section={section as 'cloud'} projectId={projectId} sessionId={sessionId} admin={admin} me={me}/>

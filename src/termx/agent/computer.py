@@ -70,9 +70,12 @@ class ComputerController:
         *,
         cancel: asyncio.Event | None = None,
         guard: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        pointer_guard: Callable[[float, float], Awaitable[None]] | None = None,
     ) -> bytes:
         """Run the batch and return a screenshot. ``guard`` is awaited before each input action after the first
-        (the caller has just checked in front of the batch) and may raise to stop the batch."""
+        (the caller has just checked in front of the batch) and may raise to stop the batch. ``pointer_guard`` is
+        awaited with the global screen point before every pointer event that presses, moves or scrolls, and may
+        raise to stop the batch before that event is sent."""
         if len(actions) > MAX_ACTIONS:
             raise ValueError(f"computer action batch exceeds {MAX_ACTIONS} actions")
         try:
@@ -86,7 +89,7 @@ class ComputerController:
                     if guard is not None and sent_input:
                         await guard(action)
                     sent_input = True
-                await self._action(action, cancel=cancel, privacy_revision=privacy_revision)
+                await self._action(action, cancel=cancel, privacy_revision=privacy_revision, pointer_guard=pointer_guard)
             if cancel is not None and cancel.is_set():
                 raise asyncio.CancelledError
             return await self.screenshot()
@@ -98,13 +101,18 @@ class ComputerController:
         await asyncio.to_thread(apply_event, {"type": "release_all"})
 
     def _display(self) -> tuple[str | None, float, float]:
+        display_id, _x, _y, width, height = self._display_rect()
+        return display_id, width, height
+
+    def _display_rect(self) -> tuple[str | None, float, float, float, float]:
         displays = list_displays()
         selected = next(
             (item for item in displays if str(item.get("id")) == str(self.display_id)),
             next((item for item in displays if item.get("main")), displays[0] if displays else {}),
         )
         display_id = str(selected.get("id")) if selected.get("id") is not None else None
-        return display_id, float(selected.get("width") or 1), float(selected.get("height") or 1)
+        return (display_id, float(selected.get("x") or 0), float(selected.get("y") or 0),
+                float(selected.get("width") or 1), float(selected.get("height") or 1))
 
     async def _action(
         self,
@@ -112,6 +120,7 @@ class ComputerController:
         *,
         cancel: asyncio.Event | None = None,
         privacy_revision: int | None = None,
+        pointer_guard: Callable[[float, float], Awaitable[None]] | None = None,
     ) -> None:
         from termx.desktop.recording import capture_privacy_revision
         if privacy_revision is None: privacy_revision = capture_privacy_revision()
@@ -130,8 +139,14 @@ class ComputerController:
             except asyncio.TimeoutError:
                 return
             raise asyncio.CancelledError
-        display_id, width, height = self._display()
+        display_id, left, top, width, height = self._display_rect()
         target = pointer_target(display_id) if display_id else None
+
+        async def where(x: Any, y: Any) -> None:
+            """Ask the caller whether a pointer event at this display point may go ahead."""
+            if pointer_guard is not None:
+                await pointer_guard(left + float(x or 0), top + float(y or 0))
+
         if kind in {"click", "double_click", "move"}:
             event = {
                 "type": "pointer",
@@ -140,9 +155,11 @@ class ComputerController:
                 "y": float(action.get("y") or 0) / max(height, 1),
                 "button": _button(action.get("button")),
             }
+            await where(action.get("x"), action.get("y"))
             await _guarded_os(privacy_revision, apply_event, event, target)
             if kind == "double_click":
                 await asyncio.sleep(0.08)
+                await where(action.get("x"), action.get("y"))
                 await _guarded_os(privacy_revision, apply_event, event, target)
             return
         if kind == "drag":
@@ -150,6 +167,7 @@ class ComputerController:
             if not isinstance(path, list) or len(path) < 2:
                 raise ValueError("drag requires at least two points")
             first = path[0]
+            await where(first.get("x"), first.get("y"))
             await _guarded_os(privacy_revision,
                 apply_event,
                 {
@@ -164,6 +182,7 @@ class ComputerController:
             for point in path[1:]:
                 if cancel is not None and cancel.is_set():
                     raise asyncio.CancelledError
+                await where(point.get("x"), point.get("y"))
                 await _guarded_os(privacy_revision,
                     apply_event,
                     {
@@ -190,6 +209,7 @@ class ComputerController:
             )
             return
         if kind == "scroll":
+            await where(action.get("x"), action.get("y"))
             await _guarded_os(privacy_revision,
                 apply_event,
                 {
@@ -222,6 +242,8 @@ class ComputerController:
                     await _guarded_os(privacy_revision, apply_event, {"type": "text", "data": character})
             return
         if kind in {"mouse_down", "mouse_up"}:
+            if kind == "mouse_down":  # a release is never refused, so a button is not left held
+                await where(action.get("x"), action.get("y"))
             await _guarded_os(privacy_revision,
                 apply_event,
                 {

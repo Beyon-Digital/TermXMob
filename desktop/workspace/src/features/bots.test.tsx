@@ -158,6 +158,20 @@ it('shows a paused bot as paused and offers Resume bot',async()=>{
  expect(screen.getByRole('button',{name:'Resume bot'})).toBeInTheDocument();
 });
 
+it('returns focus to the bot that was open when going back to the list, or to New bot when it was deleted',async()=>{
+ const rows=[bot(),bot({id:'b2',name:'Weekly report'})];
+ serve(rows,body=>{if(!body.query?.includes('delete_bot'))return undefined;rows.splice(1,1);return {data:{delete_bot:{id:'b2'}}}});
+ open();
+ const row=await screen.findByRole('button',{name:/Weekly report/});
+ fireEvent.click(row);
+ fireEvent.click(await screen.findByRole('button',{name:'All bots'}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:/Weekly report/})).toHaveFocus());
+ fireEvent.click(screen.getByRole('button',{name:/Weekly report/}));
+ fireEvent.click(await screen.findByRole('button',{name:'Delete bot'}));
+ fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Delete bot'}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'New bot'})).toHaveFocus());
+});
+
 it('confirms before deleting with the same verb',async()=>{
  serve([bot()],body=>body.query?.includes('delete_bot')?{data:{delete_bot:{id:'b1'}}}:undefined);
  open();

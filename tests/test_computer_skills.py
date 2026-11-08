@@ -210,7 +210,7 @@ class Switching(Desktop):
         super().__init__(app)
         self.after = after
 
-    async def execute(self, actions, *, cancel=None, guard=None):
+    async def execute(self, actions, *, cancel=None, guard=None, pointer_guard=None):
         frame = await super().execute(actions, cancel=cancel)
         self.app = self.after
         return frame
