@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState, type ReactNode} from 'react';
-import {AudioLines, Hand, MicOff, Square} from 'lucide-react';
+import {AudioLines, Hand, MicOff, PhoneOff} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {nativeWorkspace} from '../lib/native';
 import {useSystemReducedMotion} from '../lib/use-system-reduced-motion';
@@ -192,7 +192,8 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       disabled={!enabled || !status}
       onClick={press}
     >
-      {active ? <Square size={14} /> : <AudioLines size={17} />}
+      {/* The same waveform while live, in the accent colour; ending is the phone-off button in the panel. */}
+      <AudioLines size={17} />
     </Button>
   );
 
@@ -284,7 +285,7 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
             <span className="live-voice-label">Interrupt</span>
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={stop}>
-            <Square size={14} />
+            <PhoneOff size={14} />
             <span className="live-voice-label">End live voice</span>
           </Button>
         </div>

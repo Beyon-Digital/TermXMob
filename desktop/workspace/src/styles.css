@@ -82,6 +82,8 @@ input::placeholder,textarea::placeholder{color:var(--secondary);opacity:1}
 .chat-region:has(.approval)>.conversation-scroll{min-height:min(30%,180px)}
 
 .approval-review-dialog :focus-visible{outline-offset:-3px}
+/* The decision buttons sit directly in the dialog; give them room so Allow and Deny are separate targets. */
+.approval-review-dialog>.button{margin:12px 8px 0 0}
 
 .status-bar :focus-visible{outline-offset:-3px}
 

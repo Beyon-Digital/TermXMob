@@ -468,6 +468,18 @@ class WorkspaceService:
         self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':sorted(changes)})
         return self.session(principal, meta['id'])
 
+    def plan_approved(self, principal, task_id):
+        """The approved plan runs in Agent mode, so the conversation's own mode follows it; the next message is not sent as a plan."""
+        meta = self.store.get('task', task_id)
+        identifier = (meta or {}).get('conversation_id')
+        if not identifier:
+            return
+        self.record(principal, 'conversation', identifier, scope='agent-control')
+        if (self.agents.get_conversation(identifier, include_turns=False) or {}).get('mode') != 'plan':
+            return
+        self.agents.update_conversation(identifier, mode='agent')
+        self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':['mode'],'reason':'plan approved'})
+
     def fork_preview(self, principal, identifier, *, engine, turn_ids, files=None, summary=''):
         source = self.session(principal, identifier)
         self.record(principal,'conversation',identifier,scope='agent-run')
@@ -993,6 +1005,20 @@ class WorkspaceService:
         self.validate_task_execution(task_id)
         self.require(principal,scope,row.get('project_id'))
         return principal, row, (self.agents.get_task(task_id) or {}).get('custom_agent_id') or None
+
+    def memory_write_problem(self, task_id, scope):
+        """Why this task could not save a note in `scope`, or None. Lets memory_write refuse before it asks the owner."""
+        if scope not in {'agent', 'project'}:
+            return 'Agents can write agent or project memory only'
+        try:
+            _principal, row, agent_id = self._task_memory_authority(task_id, 'agent-control')
+        except (PermissionError, KeyError):
+            return 'This task cannot save memory. Its permission may have been revoked.'
+        if scope == 'agent' and not agent_id:
+            return 'This conversation has no custom agent; write project memory instead'
+        if scope == 'project' and not row.get('project_id'):
+            return 'This conversation has no project; write agent memory instead'
+        return None
 
     def write_task_memory(self, task_id, *, scope, content, reason=''):
         """memory_write: an agent's note, stored as the task's owner. An unattended run's note waits for review."""

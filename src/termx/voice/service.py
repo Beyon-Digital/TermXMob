@@ -241,7 +241,11 @@ class VoiceService:
             if not isinstance(woof, WoofEngine) or consent.get('sha256') != woof.license_sha256:
                 raise HTTPException(409, 'Accept the Woof license in Voice settings first')
             woof_voice = (voice or settings['voice'] or 'juno').lower()
-            plan.append((woof, woof_voice if woof_voice in {'juno', 'mira'} else 'juno', {}))
+            known = [item['id'] for item in woof.voices()]
+            if voice is not None and woof_voice not in known:
+                # A saved voice may belong to another engine and falls back; a voice asked for by name must exist.
+                raise HTTPException(400, f"Woof has no voice named '{voice}'. Choose {' or '.join(known)}.")
+            plan.append((woof, woof_voice if woof_voice in known else 'juno', {}))
             if engine is None and settings['cloud_fallback']:
                 option = self._provider_option(settings, None)
                 if option is not None:

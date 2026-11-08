@@ -69,13 +69,13 @@
  .chat-region.coding-session .chat-empty h3{font-size:22px}
  .chat-region.coding-session .chat-empty p{font-size:13px}
  .chat-region.coding-session .task-activity>summary .activity-latest{display:none}
- .chat-region.coding-session .session-model-chip{max-width:32cqw}
+ .chat-region.coding-session .session-model-chip{max-width:32cqw;min-width:56px}
  .chat-region.coding-session .composer-hint{display:none}
 }
 @container(max-width:340px){
  .chat-region.coding-session .session-mode-chip{padding:0 3px}
  .chat-region.coding-session .session-mode-chip>svg{display:none}
- .chat-region.coding-session .session-model-chip{max-width:28cqw}
+ .chat-region.coding-session .session-model-chip{max-width:28cqw;min-width:56px}
  .chat-region.coding-session .composer-controls>.button-icon{width:26px}
  .chat-region.coding-session .task-attention{flex-wrap:wrap}
 }

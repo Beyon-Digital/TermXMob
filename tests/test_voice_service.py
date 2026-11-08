@@ -433,6 +433,15 @@ def test_woof_needs_the_accepted_license_before_it_speaks_and_credits_the_voice(
     assert not app.provider_calls
 
 
+def test_woof_refuses_a_voice_it_does_not_have_instead_of_speaking_in_another(app, tmp_path):
+    app.use_fake_woof(tmp_path / 'woof')
+    asyncio.run(app.woof.install(license_hash()))
+    app.save(engine='woof', accept_woof_license=license_hash())
+    response, _ = app.speak('Hello.', voice='nobody')
+    assert response.status_code == 400 and 'juno' in response.json()['detail'] and 'mira' in response.json()['detail']
+    assert app.speak('Hello.', voice='MIRA')[0].status_code == 200
+
+
 def test_accepting_the_wrong_license_hash_is_refused(app, tmp_path):
     app.use_fake_woof(tmp_path / 'woof')
     body = app.gql('mutation($input:VoiceSettingsInput!){save_voice_settings(input:$input){settings}}', {'input': {'accept_woof_license': 'f' * 64}})

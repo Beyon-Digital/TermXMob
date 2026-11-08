@@ -29,3 +29,8 @@
  .live-voice-panel.is-live .live-voice-label{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
 }
 @media(max-width:480px){.live-voice-panel{padding:8px 10px}.live-voice-panel.is-live{padding:4px 6px 4px 10px}}
+/* Consent and setup are text-heavy and not live yet: on a small or short screen they scroll inside a capped panel so the
+   message box and its toolbar stay on screen and reachable. */
+@media(max-width:480px),(max-height:700px){
+ .live-voice-panel:not(.is-live){max-height:min(32dvh,200px);overflow-y:auto;overscroll-behavior:contain}
+}

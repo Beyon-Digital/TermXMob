@@ -226,6 +226,13 @@ class BotService:
     def _active_count(self, owner):
         return sum(row['state'] != 'archived' for row in self.store.list(KIND, owner))
 
+    def _require_free_name(self, owner, name, except_id=None):
+        """Bot names are how people and other bots tell them apart in pickers, so two live bots cannot share one."""
+        wanted = ' '.join(name.split()).casefold()
+        for row in self.store.list(KIND, owner):
+            if row['id'] != except_id and row['state'] != 'archived' and ' '.join(str(row.get('name') or '').split()).casefold() == wanted:
+                raise Conflict(f'You already have a bot named “{name}”. Choose a different name, or rename that bot first.')
+
     def _load(self, bot):
         agent = self.registry.load(_slug(bot['custom_agent_id']))
         if agent is None:
@@ -340,6 +347,7 @@ class BotService:
                 return self._view(principal, previous)
             if self._active_count(principal.id) >= MAX_BOTS:
                 raise Conflict(f'You can have at most {MAX_BOTS} bots; delete one first')
+            self._require_free_name(principal.id, name)
             peer_ids = self._peers(principal, peers, None)
             slug = f'{slugify("bot-" + name)[:40].strip("-")}-{uuid.uuid4().hex[:6]}'
             agent = AgentFile(slug=slug, name=name, description=description, instructions=instructions, engine='inherit',
@@ -436,6 +444,7 @@ class BotService:
             session_changes = {}
             if 'name' in changes:
                 agent.name = session_changes['title'] = _text(changes['name'], 'name', 80)
+                self._require_free_name(principal.id, agent.name, bot_id)
             if 'description' in changes:
                 agent.description = _text(changes['description'], 'description', 300, required=False) or ''
             if 'instructions' in changes:

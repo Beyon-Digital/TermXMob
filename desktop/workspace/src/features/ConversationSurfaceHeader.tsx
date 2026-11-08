@@ -11,7 +11,7 @@ export default function ConversationSurfaceHeader({task,changes,onOpenSurface,on
  const state=taskState(task?.status),events=task?.events;
  const activity=useMemo(()=>toolActivities(events||[]).at(-1),[events]);
  const needsReview=!!task&&['awaiting_approval','paused','recovery_confirmation_required','failed'].includes(task.status);
- return <header className="conversation-surface-header" aria-label="Conversation tools">
+ return <header className="conversation-surface-header" role="group" aria-label="Conversation tools">
   <div className={'conversation-task-state '+(task?state.tone:'')}>
    {state.active?<LoaderCircle size={12} className="spin"/>:task?<span className={'status-dot '+task.status}/>:null}
    <span>{task?state.label:'Conversation'}</span>{state.active&&activity&&<small title={activity.title}>{activity.title}</small>}

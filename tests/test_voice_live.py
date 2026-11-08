@@ -479,6 +479,21 @@ def test_a_quiet_session_ends_after_the_idle_limit(app):
     assert messages[-1]['reason'] == 'idle'
 
 
+def test_the_session_outlives_the_five_minute_access_token(tmp_path, monkeypatch):
+    from termx import identity as identity_module
+
+    # A two second token stands in for the five minute one. The sign-in itself stays valid.
+    monkeypatch.setattr(identity_module, 'ACCESS_TTL', 2)
+    short = Fixture(tmp_path, monkeypatch)
+    short.configure()
+    short.state.voice_live.idle_seconds = 4.0
+    with short.open() as ws:
+        ready(ws)
+        messages = drain(ws, lambda item: isinstance(item, dict) and item.get('type') in {'ended', '__closed__'})
+    last = messages[-1]
+    assert last.get('type') == 'ended' and last['reason'] == 'idle', last
+
+
 def test_speech_keeps_a_session_from_going_idle(app):
     app.configure()
     app.state.voice_live.idle_seconds = 0.4

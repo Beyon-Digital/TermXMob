@@ -26,6 +26,9 @@ export interface ComposerVoiceOptions {
   onOpenSettings?: () => void;
 }
 
+const LIVE_STOPPED_DICTATION = 'Dictation stopped because live voice started.';
+const LIVE_HAS_MICROPHONE = 'Live voice is using the microphone. End live voice to dictate.';
+
 function shortcut(ownerId?: string) {
   try {
     return loadBindings(localStorage.getItem('termx-keybindings:' + (ownerId ?? ''))).voiceTalk;
@@ -105,6 +108,10 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
   });
   const recording = mic.phase === 'recording';
   const requesting = mic.phase === 'requesting';
+  // These two notices describe live voice being open. Once it ends they are stale, so they go with it.
+  useEffect(() => {
+    if (!speechSuspended) setNotice(current => current === LIVE_STOPPED_DICTATION || current === LIVE_HAS_MICROPHONE ? '' : current);
+  }, [speechSuspended]);
 
   function startRecording() {
     if (mic.phase !== 'idle' || transcribing) return;
@@ -112,11 +119,11 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
     // One capture at a time: a running live voice session keeps the microphone, so dictation says why it did not start.
     const taken = claimMicrophone('dictation', () => {
       mic.cancel();
-      setNotice('Dictation stopped because live voice started.');
+      setNotice(LIVE_STOPPED_DICTATION);
     });
     if (!taken) {
       setSetupHint(false);
-      setNotice('Live voice is using the microphone. End live voice to dictate.');
+      setNotice(LIVE_HAS_MICROPHONE);
       return;
     }
     claim.current = taken;

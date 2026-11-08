@@ -125,7 +125,7 @@ it('discards late responses after an account switch, including switching back', 
   expect(primary).not.toHaveBeenCalledWith('foreign-main');
   await act(async () => pending[2](snapshot([])));
   await waitFor(() => expect(primary).toHaveBeenCalledWith('main'));
-  expect(screen.getByText('No tasks yet')).toBeVisible();
+  expect(screen.getByText('No delegated chats yet')).toBeVisible();
 });
 
 it('surfaces a bot report in the summary and the updates list when no task was delegated', async () => {
@@ -197,4 +197,16 @@ it('shows the task board inside delegated work and keeps it accessible', async (
   expect(await screen.findByRole('listitem', {name: 'Draft summary'})).toBeVisible();
   expect(screen.getByRole('progressbar', {name: 'Tasks complete'})).toBeInTheDocument();
   await expectNoAxeViolations(view.container);
+});
+
+it('describes planned tasks in the header once the board lists them, instead of saying there are none', async () => {
+  const node = (id: string, status: string) => ({id, title: 'Task ' + id, role: 'worker', depends_on: [], blocked_by: [], task_id: 't' + id, status, attempts: 1, max_attempts: 2, last_event_at: null, result_summary: '', error: '', provider_id: 'p', model: 'm', tokens: 0, cost_usd: null, created_at: 1, updated_at: null});
+  vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node('a', 'running'), node('b', 'pending'), node('c', 'completed')], rollup: {total: 3, counts: {running: 1, pending: 1, completed: 1}, percent_complete: 33, tokens: 0, cost_usd: null}}});
+  api.mockResolvedValue(snapshot([]));
+  render(<OrchestratorStatus {...props}/>);
+  expect(await screen.findByText('No delegated chats yet')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  await screen.findByRole('listitem', {name: 'Task a'});
+  expect(screen.queryByText('No tasks yet')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name: /Delegated work/})).toHaveTextContent('1 planned task in progress');
 });

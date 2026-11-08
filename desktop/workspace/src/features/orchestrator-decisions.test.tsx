@@ -201,7 +201,7 @@ it('uses the original budget review and its exact allowance without a coordinato
   api.mockImplementation(async (_path, init) => init?.method === 'POST' ? {} as any : budget);
   render(<OrchestratorDecisions {...props} children={[{...child, task_id: 'budget-task'}]}/>);
   fireEvent.click(await screen.findByRole('button', {name: 'Review budget extension'}));
-  expect(screen.getByLabelText('Extended max_steps')).toHaveValue(4);
+  expect(screen.getByLabelText('Step limit (tool calls and turns)')).toHaveValue(4);
   fireEvent.click(screen.getByRole('button', {name: 'Approve budget extension'}));
   await waitFor(() => expect(refreshed).toHaveBeenCalledOnce());
   expect(posts()).toHaveLength(1);

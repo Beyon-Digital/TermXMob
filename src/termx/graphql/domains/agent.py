@@ -382,6 +382,12 @@ class AgentMutations:
 
     @strawberry.mutation
     @resolver
+    async def start_ready_nodes(self, info: Ctx) -> T.OrchestratorBoard:
+        """Start the waiting tasks whose dependencies have finished, as the signed-in owner."""
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.start_ready(actor))
+
+    @strawberry.mutation
+    @resolver
     async def cancel_node(self, info: Ctx, node_id: str) -> T.OrchestratorBoard:
         return await _board_call(info, "agent-control", lambda graph, actor: graph.cancel(actor, node_id))
 

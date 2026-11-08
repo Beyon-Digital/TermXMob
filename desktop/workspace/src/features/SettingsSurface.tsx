@@ -78,6 +78,9 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
   <SettingsFormsContext.Provider value={registry}><SaveContext.Provider value={beginSave}>
    <div className="settings-content" onClickCapture={event=>{action.current=scopeOf(event.target)}} onSubmitCapture={event=>{action.current=scopeOf(event.target)}} onChangeCapture={event=>{
     const target=event.target as HTMLElement;
+    // A dialog opened from a settings page renders in a portal. React still bubbles its events to this
+    // wrapper, but those edits belong to the dialog and are not unsaved changes of the page.
+    if(!event.currentTarget.contains(target))return;
     if(target.closest('[data-settings-filter],[data-settings-autosave],form[data-settings-form]'))return;
     edits.current.set(scopeOf(target),++revision.current);dirtyNow.current=true;setLegacyDirty(true);
    }}><SettingsActions key={`${category}:${scopeKey??''}:${epoch}`}>{children}</SettingsActions></div>

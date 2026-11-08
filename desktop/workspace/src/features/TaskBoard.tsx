@@ -7,14 +7,15 @@ import {FormField} from '../components/ui/form-field';
 import {Select} from '../components/ui/select';
 import {usePolling} from '../lib/use-polling';
 import {
-  STATUS_LABEL, boardChanges, canCancel, canReassign, canRetry, cancelNode, depths, elapsedLabel, loadBoard, loadModelChoices, nodeElapsed,
-  outOfAttempts, reassignNode, retryNode, rollupCounts, rollupUsage, type Board, type BoardNode, type ModelChoice,
+  STATUS_LABEL, boardChanges, canCancel, canReassign, canRetry, canStart, cancelNode, depths, elapsedLabel, loadBoard, loadModelChoices, nodeElapsed,
+  outOfAttempts, reassignNode, retryNode, rollupCounts, rollupUsage, startReadyNodes, type Board, type BoardNode, type BoardRollup, type ModelChoice,
 } from '../lib/orchestrator-board';
 import './task-board.css';
 
-type Action = 'retry' | 'reassign' | 'cancel';
+type Action = 'start' | 'retry' | 'reassign' | 'cancel';
 /** Wording for one action while it runs and when it fails; the success message names the same verb. */
 const COPY: Record<Action, {pending: string; next: string}> = {
+  start: {pending: 'Starting…', next: 'Refresh the board to see its current state, then try again. The main agent also starts ready tasks on its own.'},
   retry: {pending: 'Retrying…', next: 'Refresh the board to see its current state, then try again or reassign it to another model.'},
   reassign: {pending: 'Reassigning…', next: 'Pick a model from the list and try again, or refresh the board to see its current state.'},
   cancel: {pending: 'Cancelling…', next: 'Refresh the board to see its current state, then try again.'},
@@ -27,6 +28,7 @@ const choiceValue = (providerId: string | null, model: string | null) => provide
 function RowMenu({node, open, disabled, onToggle, onClose, onPick}: {node: BoardNode; open: boolean; disabled: boolean; onToggle: () => void; onClose: () => void; onPick: (action: Action) => void}) {
   const wrapper = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const items: {action: Action; label: string}[] = [
+    ...(canStart(node) ? [{action: 'start' as const, label: 'Start ready tasks'}] : []),
     ...(canRetry(node) ? [{action: 'retry' as const, label: 'Retry task'}] : []),
     ...(canReassign(node) ? [{action: 'reassign' as const, label: 'Reassign model'}] : []),
     ...(canCancel(node) ? [{action: 'cancel' as const, label: 'Cancel task'}] : []),
@@ -85,7 +87,7 @@ function ReassignForm({node, choices, error, busy, onSubmit, onCancel}: {node: B
 }
 
 /** The main agent's planned tasks: an indented list with live status dots and per-row controls. */
-export default function TaskBoard({enabled}: {enabled: boolean}) {
+export default function TaskBoard({enabled, onSummary}: {enabled: boolean; onSummary?: (rollup: BoardRollup) => void}) {
   const [board, setBoard] = useState<Board | null>(null), [loadError, setLoadError] = useState('');
   const [now, setNow] = useState(() => Date.now() / 1000), [announcement, setAnnouncement] = useState('');
   const [menuFor, setMenuFor] = useState<string | null>(null), [reassigning, setReassigning] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export default function TaskBoard({enabled}: {enabled: boolean}) {
     const changes = boardChanges(latest.current, value);
     latest.current = value;
     setBoard(value); setNow(Date.now() / 1000); setLoadError('');
+    onSummary?.(value.rollup);
     if (changes.length) announce(changes.join(' '));
   };
   // Changing the key aborts a poll that started earlier, so it cannot overwrite a newer board, and fetches again at once.
@@ -145,7 +148,8 @@ export default function TaskBoard({enabled}: {enabled: boolean}) {
     return dependents ? `Cancelled “${node.title}” and ${dependents} ${dependents === 1 ? 'task that depends' : 'tasks that depend'} on it.` : `Cancelled “${node.title}”.`;
   };
   const pick = (node: BoardNode, action: Action) => {
-    if (action === 'retry') void run(node, action, () => retryNode(node.id), () => `Retried “${node.title}”.`);
+    if (action === 'start') void run(node, action, () => startReadyNodes(), () => 'Started the tasks that were ready.');
+    else if (action === 'retry') void run(node, action, () => retryNode(node.id), () => `Retried “${node.title}”.`);
     else if (action === 'cancel') void run(node, action, () => cancelNode(node.id), next => cancelled(node, next));
     else void openReassign(node);
   };

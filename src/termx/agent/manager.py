@@ -1778,6 +1778,38 @@ class AgentManager:
         if not in_worktree:
             raise ValueError(_AUTO_NEEDS_WORKTREE)
 
+    _GATE_REASONS = {
+        "reviewer_unavailable": "No automatic reviewer is set up, so this needs your decision.",
+        "consequential_or_unknown": "The host cannot tell what this will change, so it needs your decision.",
+        "reviewer account or qualification changed": "The automatic reviewer changed since it was checked, so this needs your decision.",
+    }
+
+    @classmethod
+    def _gate_consequence(cls, decision: Any, call: ProviderCall, record: dict[str, Any]) -> str:
+        """What the owner reads first: the policy's own wording, or what the call will do, then why they are asked.
+
+        The gate's reason code stays in `browser_review` for the details disclosure.
+        """
+        from termx.agent.policy import redact
+
+        arguments = call.arguments if isinstance(call.arguments, dict) else {}
+        if call.name == "write_file":
+            what = f"Writes {redact(str(arguments.get('path') or 'a file'))} ({len(str(arguments.get('content') or ''))} characters)."
+        elif call.name == "apply_patch":
+            what = "Applies a patch to files in the project."
+        elif call.name == "run_shell":
+            what = "Runs this command in the project folder: " + redact(" ".join(str(arguments.get("command") or "").split()))[:300]
+            if arguments.get("purpose"):
+                what += f" Purpose given: {redact(str(arguments['purpose']))[:200]}"
+        elif decision.consequence:
+            # Tools that write their own wording, such as memory_write, keep it.
+            what = decision.consequence
+        else:
+            what = f"Runs {call.name or call.type}."
+        code = str(record.get("reason") or "")
+        why = cls._GATE_REASONS.get(code, "")
+        return f"{what} {why}".strip()
+
     def _auto_enabled(self, task_id: str) -> bool:
         return bool((((self._task(task_id).get("runtime") or {}).get("auto")) or {}).get("enabled"))
 
@@ -1819,7 +1851,7 @@ class AgentManager:
                     started_at: float, breach: tuple[str, int | float, int | float]) -> None:
         ceiling, limit, used = breach
         self._emit(task_id, "auto.ceiling", {"ceiling": ceiling, "limit": limit, "used": used})
-        self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}")
+        self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}", {"ceiling": ceiling, "limit": limit, "used": used})
 
     def _auto_note_turn(self, task_id: str, tokens: int = 0, cost_usd: float | None = None) -> None:
         """Count a provider turn against the Auto allowance. An unknown price adds tokens but no cost."""
@@ -1856,7 +1888,7 @@ class AgentManager:
         self.store.update_task(task_id, runtime=runtime)
 
     def _pause_budget(self, task_id: str, history: list[dict[str, Any]],
-                      step: int, started_at: float, reason: str) -> None:
+                      step: int, started_at: float, reason: str, auto_ceiling: dict[str, Any] | None = None) -> None:
         task = self._task(task_id)
         runtime = {**(task.get("runtime") or {}), "history": history,
                    "step": step, "started_at": started_at}
@@ -1869,6 +1901,7 @@ class AgentManager:
             "title": _AUTO_PAUSE_TEXT["title"] if reason.startswith("auto_") else "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
             **({'tree_budget':shared,'reuse_grant':reason=='shared_resume' and not shared['reason']} if shared else {}),
             "reason": reason, "completed_steps": step, "limits": task["limits"],
+            **({"auto_ceiling": auto_ceiling} if auto_ceiling else {}),
             "suggested_limits": suggested,
             "consequence": _AUTO_PAUSE_TEXT["consequence"] if reason.startswith("auto_") else "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
         })
@@ -2030,9 +2063,26 @@ class AgentManager:
                     consent=current_consent
                     base_validate=validate
                     validate=lambda:base_validate() and current_consent()
+                autonomous=None
+                if decision.intent is not None and not read_only and decision.allowed and (decision.auto_resolved=='autonomous' or (decision.auto_resolved is None and not decision.approval_required)):
+                    from termx.agent.policies.defaults import AUTONOMOUS_BLOCKED_RISKS
+                    if decision.intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS:
+                        agent_autonomous=decision.auto_resolved=='autonomous'
+                        def autonomous():
+                            # The gate would otherwise ask for every shell command and write,
+                            # because it cannot tell them apart. Auto answers for the owner only
+                            # for classes the policy never blocks, and only while it is still on.
+                            if self._auto_enabled(task_id):return True
+                            if not agent_autonomous:return False
+                            # A custom Agent's own autonomous mode: decided again under the current policy.
+                            return entry.spec.decide(call,self._tool_context(task_id,self._task(task_id))).auto_resolved=='autonomous'
                 checkpoint = None
                 try:
-                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,existing_consent=consent,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,existing_consent=consent,autonomous=autonomous,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    if permit.get('decision_source')=='task-auto':
+                        auto_run=(self._task(task_id).get('runtime') or {}).get('auto') or {}
+                        if auto_run.get('enabled'):
+                            self._emit(task_id,'auto.decision',{'tool':call.name or call.type,'call_id':call.call_id,'risk':decision.intent.risk_class if decision.intent is not None else None,'rule':'task_auto','index':step-int(auto_run.get('base_step') or 0)})
                     checkpoint = self.store.create_checkpoint(
                         task_id,
                         kind="execution",
@@ -2077,7 +2127,7 @@ class AgentManager:
                     else:
                         eligible=decision.intent is not None and envelope.intended_effect not in {'unknown','send','publish','purchase','delete','credential','privilege','export','upload'} and 'secret' not in envelope.data_labels
                         remember_options=list(self._policy_engine._remember_options(decision.intent,ctx.project_id,decision.intent.custom_agent_id)) if eligible else []
-                        public={'title':'Action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':remember_options,'policy_intent':decision.intent.to_public() if eligible else None,'policy_source':'Current typed tool / sandbox policy'}
+                        public={'title':'Action needs your approval','consequence':self._gate_consequence(decision,call,exc.record),'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':remember_options,'policy_intent':decision.intent.to_public() if eligible else None,'policy_source':'Current typed tool / sandbox policy'}
                         approval=self.store.create_approval(task_id,'tool',public)
                         self._pending_approval_calls[approval['id']]={**public,'intent':decision.intent.to_record() if eligible else None,'approval_kind':decision.approval_kind,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
                         self.store.update_task(task_id,status='awaiting_approval',runtime={**(self._task(task_id).get('runtime') or {}),'history':history,'step':step,'started_at':started_at})

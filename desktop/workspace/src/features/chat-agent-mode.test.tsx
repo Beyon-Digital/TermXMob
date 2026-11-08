@@ -48,7 +48,7 @@ it('reports a refused switch and returns to the task state',async()=>{
 });
 it('explains why Auto is off when the conversation has no worktree',()=>{
  const row=session({worktree_id:null});host(row);render(<Chat session={row} {...props}/>);openPicker();
- expect(screen.getByRole('switch',{name:'Auto'})).toBeDisabled();expect(screen.getByText(/Choose a worktree in Session options/)).toBeInTheDocument();
+ expect(screen.getByRole('switch',{name:'Auto'})).toBeDisabled();expect(screen.getByText(/Project actions, Session checkout/)).toBeInTheDocument();
 });
 it('shows context and usage for the latest task, with Unknown where the host has no value',async()=>{
  const row=session({},true);host(row);

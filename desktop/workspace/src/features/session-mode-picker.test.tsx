@@ -91,7 +91,7 @@ describe('Plan and Auto',()=>{
  it('disables Auto with the reason when the task is not in a worktree',()=>{
   render(<SessionModePicker session={{...agent,worktree_id:null} as Session} running={false} onPatch={vi.fn()} auto={AUTO_OFF} onAutoChange={vi.fn()}/>);open();
   const toggle=screen.getByRole('switch',{name:'Auto'});expect(toggle).toBeDisabled();
-  expect(toggle).toHaveAccessibleDescription(/Choose a worktree in Session options/);
+  expect(toggle).toHaveAccessibleDescription(/Project actions, Session checkout/);
  });
  it('edits the five limits, prefilled with host defaults, and reports them',async()=>{
   const onAuto=vi.fn();const {container}=render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();

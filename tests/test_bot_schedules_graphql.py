@@ -130,7 +130,7 @@ def test_the_aggregate_inbox_leaves_out_bots_the_token_cannot_see(tmp_path, monk
     from fastapi import HTTPException
     from termx.graphql.domains import bot_schedules
     identity, state, client, owner = client_fixture(tmp_path)
-    mine, hidden = create(client, owner), create(client, owner)
+    mine, hidden = create(client, owner), create(client, owner, name='Hidden triage')
     for bot in (mine, hidden):
         row = state.workspace.store.get('bot', bot['id'])
         state.workspace.store.create('memory', row['owner'], {'content': 'note ' + bot['id'], 'provenance': 'run', 'scope': 'agent',

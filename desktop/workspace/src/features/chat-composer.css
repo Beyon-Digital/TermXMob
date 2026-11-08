@@ -144,7 +144,7 @@
 }
 @media(max-width:430px){
  .chat-region .composer-container{padding-left:10px;padding-right:10px}
- .chat-region .composer-controls .composer-model-chip{max-width:44%;padding:0 6px;font-size:11px}
+ .chat-region .composer-controls .composer-model-chip{max-width:44%;min-width:56px;padding:0 6px;font-size:11px}
  .chat-region .composer-controls .composer-mode-chip{padding:0 6px;font-size:11px;gap:4px}
  .chat-region .composer-controls .composer-mode-chip>svg:first-child{display:none}
  .model-effort-label{display:none}

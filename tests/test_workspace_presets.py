@@ -239,3 +239,15 @@ def test_task_and_immutable_preset_commit_atomically(workspace):
     assert store.task_agent(task)==profile
     store.freeze_task_agent(task['id'],profile)
     with pytest.raises(ValueError,match='immutable'):store.freeze_task_agent(task['id'],{**profile,'tools':['run_shell']})
+
+
+def test_approving_a_plan_moves_the_conversation_to_agent_mode(workspace):
+    service,owner,path=workspace
+    row=service.create_session(owner,project_id='project-a',cwd=str(path),mode='plan')
+    async def run():return await service.send(owner,row['id'],prompt='Plan the change',request_id='plan-mode-1')
+    task=asyncio.run(run())
+    assert service.session(owner,row['id'])['mode']=='plan'
+    service.plan_approved(owner,task['id'])
+    assert service.session(owner,row['id'])['mode']=='agent'
+    service.plan_approved(owner,task['id'])
+    assert service.session(owner,row['id'])['mode']=='agent'

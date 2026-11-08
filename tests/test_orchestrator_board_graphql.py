@@ -60,6 +60,20 @@ def test_cancel_node_mutation_uses_the_cascade_and_returns_the_board(tmp_path, m
     assert again['data']['cancel_node']['rollup']['counts']['cancelled'] == 2  # cancelling twice changes nothing
 
 
+def test_start_ready_nodes_needs_control_and_leaves_blocked_nodes_alone(tmp_path, monkeypatch):
+    state, owner, client = _client(tmp_path, monkeypatch)
+    token = _login(state, 'owner')
+    first, second = state.workspace.orchestrator.graph.plan(owner, [_spec('a'), _spec('b', ['a'])])
+    state.identity.create_local_user('watcher', PASSWORD, ['agent-view'])
+    denied = _post(client, _login(state, 'watcher'), 'mutation{start_ready_nodes{rollup{total}}}')
+    assert denied['errors'][0]['extensions']['http_status'] == 403
+    result = _post(client, token, 'mutation{start_ready_nodes{nodes{id status}}}')
+    assert not result.get('errors'), result
+    statuses = {n['id']: n['status'] for n in result['data']['start_ready_nodes']['nodes']}
+    assert statuses[second['id']] == 'pending'  # its dependency has not finished
+    assert statuses[first['id']] != 'pending'
+
+
 def test_retry_and_reassign_report_conflicts_and_bad_input(tmp_path, monkeypatch):
     state, owner, client = _client(tmp_path, monkeypatch)
     token = _login(state, 'owner')

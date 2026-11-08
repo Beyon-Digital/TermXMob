@@ -1,12 +1,15 @@
 import {useCallback,useEffect,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {request,json} from '../lib/api';
+import {usePolling} from '../lib/use-polling';
 
 type Capture={id:string;kind:'window'|'tab'|'computer';state:'private'|'recording'|'preview'|'agent'|'watching'|'control'|'paused'|'developer';stop_allowed:boolean;expired?:boolean};
 export default function CaptureStatus({onOpen,onError,enabled=true}:{onOpen:(surface:'browser'|'computer')=>void;onError:(error:unknown)=>void;enabled?:boolean}){
- const [captures,setCaptures]=useState<Capture[]>([]),[unavailable,setUnavailable]=useState(false),[busy,setBusy]=useState(false);
+ const [captures,setCaptures]=useState<Capture[]>([]),[unavailable,setUnavailable]=useState(false),[busy,setBusy]=useState(false),[nudge,setNudge]=useState(0);
  const refresh=useCallback(async()=>{const value=await request<{captures:Capture[]}>('/api/desktop/recording/status');setCaptures(value.captures);setUnavailable(false)},[]);
- useEffect(()=>{if(!enabled){setCaptures([]);return}let live=true,pending=false;const update=async()=>{if(pending)return;pending=true;try{const value=await request<{captures:Capture[]}>('/api/desktop/recording/status');if(live){setCaptures(value.captures);setUnavailable(false)}}catch{if(live)setUnavailable(true)}finally{pending=false}};void update();const timer=setInterval(()=>void update(),2000);window.addEventListener('termx-capture-changed',update);return()=>{live=false;clearInterval(timer);window.removeEventListener('termx-capture-changed',update)}},[enabled]);
+ // usePolling stops while the tab is hidden and slows down while nothing changes. A capture change elsewhere in the app asks for a fresh read at once.
+ usePolling(()=>request<{captures:Capture[]}>('/api/desktop/recording/status'),{interval:2000,maxInterval:8000,enabled,resetKey:nudge,onResult:value=>{setCaptures(value.captures);setUnavailable(false)},onError:()=>setUnavailable(true)});
+ useEffect(()=>{if(!enabled){setCaptures([]);return}const changed=()=>setNudge(value=>value+1);window.addEventListener('termx-capture-changed',changed);return()=>window.removeEventListener('termx-capture-changed',changed)},[enabled]);
  if(!enabled||(!captures.length&&!unavailable))return null;
  const count=(state:Capture['state'])=>captures.filter(row=>row.state===state).length;
  const labels=[count('private')?`${count('private')} private · models paused`:'',captures.some(row=>row.state==='private'&&row.expired)?'Private consent ended · Stop capture to resume models':'',count('agent')?`${count('agent')} agent tab`:'',count('control')?`${count('control')} computer control`:'',count('recording')?`${count('recording')} recording`:'',count('paused')?`${count('paused')} paused capture`:'',count('developer')?`${count('developer')} developer observation`:'',captures.filter(row=>['watching','preview'].includes(row.state)).length?`${captures.filter(row=>['watching','preview'].includes(row.state)).length} watching`:''].filter(Boolean);

@@ -76,7 +76,7 @@ it('keeps the key when the host reports the save failed with null, and clears it
  render(<ProviderAccountForm busy={false} onSave={save}/>);
  fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'Account'}});fireEvent.change(screen.getByLabelText('API key'),{target:{value:'synthetic-write-only'}});
  fireEvent.submit(screen.getByRole('form'));
- expect(await screen.findByText(/API key, are still here/)).toBeInTheDocument();expect(screen.getByLabelText('API key')).toHaveValue('synthetic-write-only');
+ expect(await screen.findByText(/The host did not accept the account.*new API key.*still here/)).toBeInTheDocument();expect(screen.getByLabelText('API key')).toHaveValue('synthetic-write-only');
  fireEvent.submit(screen.getByRole('form'));
  await waitFor(()=>expect(screen.getByLabelText('API key')).toHaveValue(''));
 });
@@ -98,14 +98,14 @@ it('saves the included models and overrides, shows Unknown for missing values, a
  expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Replace API key'),{target:{value:'synthetic-replacement'}});
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
- await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',wire:'responses',model_overrides:{'mystery-model':{context_window:32000}}}));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',wire:'responses',model_meta:{'mystery-model':{context_window:32000}}}));
 });
 
 it('saves an empty model list while every discovered model stays included, and omits overrides nobody set',async()=>{
  const save=vi.fn().mockResolvedValue({});render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
  await waitFor(()=>expect(save).toHaveBeenCalledOnce());
- expect(save.mock.calls[0][0]).toMatchObject({model:'',api_key:null});expect(save.mock.calls[0][0]).not.toHaveProperty('model_overrides');
+ expect(save.mock.calls[0][0]).toMatchObject({model:'',api_key:null});expect(save.mock.calls[0][0]).not.toHaveProperty('model_meta');
 });
 
 it('filters a long catalog, says how many models show, and builds override fields only for rows you open',async()=>{
@@ -151,4 +151,29 @@ it('starts a distinct account after a successful creation instead of overwriting
  fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'Second account'}});fireEvent.submit(screen.getByRole('form'));
  await waitFor(()=>expect(save).toHaveBeenCalledTimes(2));
  expect(save.mock.calls[1][0].id).not.toBe(save.mock.calls[0][0].id);
+});
+
+it('submits only fields that AgentProviderInput declares in schema.graphql',async()=>{
+ const {readFileSync}=await import('node:fs');const {resolve}=await import('node:path');
+ const schema=readFileSync(resolve(process.cwd(),'..','..','schema.graphql'),'utf8');
+ const block=/input AgentProviderInput \{([^}]*)\}/.exec(schema)?.[1]||'';
+ const declared=block.split('\n').map(line=>line.trim().split(':')[0]).filter(Boolean);
+ expect(declared).toContain('model_meta');
+ const save=vi.fn().mockResolvedValue({});render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
+ const row=within(screen.getByRole('list',{name:'Discovered models'})).getAllByRole('listitem')[1];
+ fireEvent.click(within(row).getByText('Override values for mystery-model'));
+ fireEvent.change(await within(row).findByLabelText('Context window (tokens)'),{target:{value:'64000'}});
+ fireEvent.change(screen.getByLabelText('Replace API key'),{target:{value:'synthetic-replacement'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ await waitFor(()=>expect(save).toHaveBeenCalledOnce());
+ for(const key of Object.keys(save.mock.calls[0][0]))expect(declared).toContain(key);
+});
+
+it('says what happened when the host refuses the account, and mentions the key only when one was typed',async()=>{
+ const save=vi.fn().mockResolvedValue(null);render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ expect(await screen.findByText(/The host did not accept the account/)).not.toHaveTextContent(/API key/);
+ fireEvent.change(screen.getByLabelText('Replace API key'),{target:{value:'synthetic-replacement'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ expect(await screen.findByText(/new API key/)).toBeInTheDocument();
 });

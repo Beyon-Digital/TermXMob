@@ -18,7 +18,7 @@ describe('agent meters',()=>{
 describe('mode availability',()=>{
  it('explains what to do when Auto or Plan cannot be used',()=>{
   expect(autoBlockedReason({engine:'internal',worktree_id:'wt'})).toBe('');
-  expect(autoBlockedReason({engine:'internal',worktree_id:null})).toMatch(/Choose a worktree in Session options/);
+  expect(autoBlockedReason({engine:'internal',worktree_id:null})).toMatch(/Delivery under Branches & parallel worktrees.*Project actions, Session checkout/);
   expect(autoBlockedReason({engine:'claude',worktree_id:'wt'})).toMatch(/built-in agent/);
   expect(autoBlockedReason({engine:'internal',worktree_id:'wt',runner_id:'runner-1'})).toMatch(/local host in Session options/);
   expect(planBlockedReason({engine:'claude'})).toMatch(/plans on its own/);expect(planBlockedReason({engine:'internal'})).toBe('');

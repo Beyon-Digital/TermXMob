@@ -20,6 +20,30 @@ def _env_name(provider_id: str) -> str:
     return f"TERMX_AI_{safe}_API_KEY"
 
 
+def _run(argv: list[str], store: str, *, input: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Run an OS credential tool. Failures carry a plain message, never the command line or the key.
+
+    `from None` drops the exception context: a TimeoutExpired holds the full argv.
+    """
+    try:
+        return subprocess.run(argv, input=input, capture_output=True, text=True, timeout=10, check=False)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"The {store} did not respond. Unlock it and try again.") from None
+    except OSError:
+        raise RuntimeError(f"The {store} could not be started. Check that it is installed and try again.") from None
+
+
+def _scrub(message: str, secret: str) -> str:
+    return message.replace(secret, "[key hidden]") if secret else message
+
+
+def _security_quote(value: str) -> str:
+    """Quote one argument for `security -i`, which reads commands from stdin."""
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("A key or account name cannot contain a line break or control character.")
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 class CredentialStore:
     """Small OS-credential adapter with an injectable memory backend for tests."""
 
@@ -51,22 +75,10 @@ class CredentialStore:
         if os.name == "nt":
             return self._windows_get(provider_id)
         if sys_platform() == "darwin" and shutil.which("security"):
-            proc = subprocess.run(
-                ["security", "find-generic-password", "-s", SERVICE, "-a", provider_id, "-w"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
+            proc = _run(["security", "find-generic-password", "-s", SERVICE, "-a", provider_id, "-w"], "Keychain")
             return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else None
         if shutil.which("secret-tool"):
-            proc = subprocess.run(
-                ["secret-tool", "lookup", "service", SERVICE, "account", provider_id],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
+            proc = _run(["secret-tool", "lookup", "service", SERVICE, "account", provider_id], "Secret Service")
             return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else None
         return None
 
@@ -78,28 +90,16 @@ class CredentialStore:
             self._windows_set(provider_id, secret)
             return
         if sys_platform() == "darwin" and shutil.which("security"):
-            proc = subprocess.run(
-                [
-                    "security",
-                    "add-generic-password",
-                    "-U",
-                    "-s",
-                    SERVICE,
-                    "-a",
-                    provider_id,
-                    "-w",
-                    secret,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
+            # The key goes in on stdin: a process listing shows argv to every local user.
+            command = "add-generic-password -U -s {} -a {} -w {}\n".format(
+                _security_quote(SERVICE), _security_quote(provider_id), _security_quote(secret)
             )
+            proc = _run(["security", "-i"], "Keychain", input=command)
             if proc.returncode != 0:
-                raise RuntimeError(proc.stderr.strip() or "could not save key in Keychain")
+                raise RuntimeError(_scrub(proc.stderr.strip(), secret) or "The Keychain did not accept the key.")
             return
         if shutil.which("secret-tool"):
-            proc = subprocess.run(
+            proc = _run(
                 [
                     "secret-tool",
                     "store",
@@ -110,14 +110,11 @@ class CredentialStore:
                     "account",
                     provider_id,
                 ],
+                "Secret Service",
                 input=secret,
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
             )
             if proc.returncode != 0:
-                raise RuntimeError(proc.stderr.strip() or "could not save key in Secret Service")
+                raise RuntimeError(_scrub(proc.stderr.strip(), secret) or "The Secret Service did not accept the key.")
             return
         raise RuntimeError(
             f"Secure credential storage is unavailable. Set {_env_name(provider_id)} on the host instead."
@@ -134,20 +131,10 @@ class CredentialStore:
                 pass
             return
         if sys_platform() == "darwin" and shutil.which("security"):
-            subprocess.run(
-                ["security", "delete-generic-password", "-s", SERVICE, "-a", provider_id],
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
+            _run(["security", "delete-generic-password", "-s", SERVICE, "-a", provider_id], "Keychain")
             return
         if shutil.which("secret-tool"):
-            subprocess.run(
-                ["secret-tool", "clear", "service", SERVICE, "account", provider_id],
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
+            _run(["secret-tool", "clear", "service", SERVICE, "account", provider_id], "Secret Service")
 
     def _windows_path(self, provider_id: str) -> Path:
         digest = hashlib.sha256(provider_id.encode("utf-8")).hexdigest()

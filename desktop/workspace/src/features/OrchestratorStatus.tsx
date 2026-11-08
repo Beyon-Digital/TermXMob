@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {ArrowLeft, ChevronDown, ChevronRight, CircleAlert, GitBranch, RefreshCw} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {json, request, type Session} from '../lib/api';
+import {rollupHeadline, type BoardRollup} from '../lib/orchestrator-board';
 import {taskState} from '../lib/task-presentation';
 import {useObservationActive} from '../lib/use-observation-active';
 import OrchestratorDecisions from './OrchestratorDecisions';
@@ -67,6 +68,8 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   const [snapshot, setSnapshot] = useState<OrchestratorSnapshot | null>(null), [receivedOwner, setReceivedOwner] = useState('');
   const [expanded, setExpanded] = useState(false), [error, setError] = useState(''), [readError, setReadError] = useState('');
   const [stale, setStale] = useState(false), [busy, setBusy] = useState(''), [stateOwner, setStateOwner] = useState(ownerId);
+  const [board, setBoard] = useState<BoardRollup | null>(null);
+  useEffect(() => setBoard(null), [ownerId]);
   const read = useRef<AbortController | null>(null), flight = useRef<object | null>(null);
   const generation = useRef(0), identity = useRef(ownerId), alive = useRef(true);
   const observation = useRef(observing), selection = useRef(selected), primaryCallback = useRef(onPrimary);
@@ -148,7 +151,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     </div> : <div className="orchestrator-summary">
       <Button variant="ghost" size="sm" className="orchestrator-disclosure" aria-expanded={expanded} aria-controls="orchestrator-detail" onClick={() => setExpanded(value => !value)}>
         {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}<GitBranch size={14}/><span>Delegated work</span>
-        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : children.length ? `${children.length} finished or idle` : botReports ? `${botReports} ${botReports === 1 ? 'report' : 'reports'} from bots` : 'No tasks yet'}</small>
+        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : board?.total ? rollupHeadline(board) : children.length ? `${children.length} finished or idle` : botReports ? `${botReports} ${botReports === 1 ? 'report' : 'reports'} from bots` : board ? 'No tasks yet' : 'No delegated chats yet'}</small>
       </Button>
       {attention > 0 && !expanded && <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}><CircleAlert size={13}/>Review</Button>}
     </div>}
@@ -156,7 +159,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     {!child && primary && selected === primary.id && <OrchestratorDecisions ownerId={ownerId} children={children} enabled={observing && !isStale} onRefresh={() => {void refresh(); onRefresh?.();}}/>}
     {!child && expanded && <div id="orchestrator-detail" className="orchestrator-detail">
       <p>Your main agent coordinates delegated work here. Open a chat to inspect it; take control when you want to direct it yourself.</p>
-      <TaskBoard enabled={observing && !isStale}/>
+      <TaskBoard enabled={observing && !isStale} onSummary={setBoard}/>
       {!current && !failure && <p role="status">Loading delegated work…</p>}
       {current && !children.length && !botReports && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
       {current?.children_truncated && <p>Showing up to 100 delegated chats, prioritizing active work. Other conversations remain available in chat history.</p>}

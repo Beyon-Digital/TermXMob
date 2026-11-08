@@ -28,6 +28,11 @@ def _decide_write(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
         return PolicyDecision(False, False, "Ask mode is read-only", "Saving memory requires Agent mode")
     scope = str(call.arguments.get("scope") or "")
     text = str(call.arguments.get("content") or "")
+    workspace = _workspace(ctx)
+    problem = workspace.memory_write_problem(ctx.task_id, scope) if workspace is not None else None
+    if problem:
+        # Refused before anyone is asked to approve a note that cannot be stored.
+        return PolicyDecision(False, False, problem, problem)
     unattended = getattr(ctx.manager, "is_unattended", None)
     if unattended is not None and unattended(ctx.task_id):
         base = PolicyDecision(

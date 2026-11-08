@@ -21,6 +21,12 @@ const NODE_ACTION = (name: string, extra = '', input = '') => `mutation($id:Stri
 export async function loadBoard(): Promise<Board> {
   return (await gql<{orchestrator_board: Board}>(`{orchestrator_board{${BOARD}}}`)).orchestrator_board;
 }
+/** Starts every waiting task whose dependencies have finished, up to the host's running-task limit. */
+export async function startReadyNodes(): Promise<Board> {
+  return (await gql<{start_ready_nodes: Board}>(`mutation{start_ready_nodes{${BOARD}}}`)).start_ready_nodes;
+}
+/** Waiting with nothing left to wait for: the main agent has not started it yet. */
+export const canStart = (node: BoardNode) => node.status === 'pending' && node.blocked_by.length === 0;
 export async function retryNode(id: string): Promise<Board> {
   return (await gql<{retry_node: Board}>(NODE_ACTION('retry_node'), {id})).retry_node;
 }
@@ -46,6 +52,14 @@ const SUMMARY_ORDER = ['running', 'stalled', 'pending', 'failed', 'completed', '
 /** Counts in a fixed order, skipping statuses with none. */
 export function rollupCounts(rollup: BoardRollup) {
   return SUMMARY_ORDER.filter(status => rollup.counts[status] > 0).map(status => ({status, label: STATUS_LABEL[status], count: rollup.counts[status]}));
+}
+/** One line for the Delegated work header, so it agrees with the board it sits above. */
+export function rollupHeadline(rollup: BoardRollup) {
+  const count = (status: string) => rollup.counts[status] || 0;
+  const attention = count('failed') + count('stalled'), running = count('running');
+  if (attention) return `${attention} planned ${attention === 1 ? 'task needs' : 'tasks need'} attention`;
+  if (running) return `${running} planned ${running === 1 ? 'task' : 'tasks'} in progress`;
+  return `${count('completed')} of ${rollup.total} planned ${rollup.total === 1 ? 'task' : 'tasks'} done`;
 }
 /** The host sends a null cost when any node ran on a model with no known price. */
 export function rollupUsage(rollup: BoardRollup) {

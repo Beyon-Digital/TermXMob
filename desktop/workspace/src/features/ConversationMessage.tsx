@@ -133,7 +133,7 @@ function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise
       : isRevisablePlan(approval)
       ? <PlanReviewCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError} onOpenFile={onOpenFile}/>
       : <GeneralApprovalCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError}/>)}
-    {(content || task) && <div className="response-actions message-actions" aria-label="Response actions">
+    {(content || task) && <div className="response-actions message-actions" role="group" aria-label="Response actions">
       {content && <Button size="icon" variant="ghost" aria-label={copied ? 'Answer copied' : 'Copy answer'} title={copied ? 'Copied' : 'Copy answer'} onClick={() => void copy()}>{copied ? <Check size={15}/> : <Copy size={15}/>}</Button>}
       {task && !report && <Button variant="ghost" size="icon" onClick={() => onSupervise(task.id)} aria-label="Inspect task" title="Inspect task"><MoreHorizontal size={16}/></Button>}
     </div>}

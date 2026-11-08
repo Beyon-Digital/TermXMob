@@ -295,6 +295,26 @@ it('cancels a running task and says which verb happened', async () => {
   expect(screen.getByRole('status', {name: 'Task board updates'})).toHaveTextContent('Cancelled “Draft summary”.');
 });
 
+it('offers Start ready tasks only on a waiting task with nothing left to wait for', async () => {
+  const ready = node({id: 'ready', title: 'Failing check', status: 'pending', depends_on: ['collect'], blocked_by: []});
+  current = board([collect, ready, publish]);
+  const started = board([collect, {...ready, status: 'running'}, publish]);
+  api.mockImplementation(async (query: string) => {
+    if (query.includes('start_ready_nodes')) { current = started; return {start_ready_nodes: started}; }
+    return {orchestrator_board: current};
+  });
+  const user = userEvent.setup();
+  render(<TaskBoard enabled/>);
+  await screen.findByText('Failing check');
+  await user.click(within(row('Publish report')).getByRole('button', {name: 'Actions for Publish report'}));
+  expect(screen.queryByRole('menuitem', {name: 'Start ready tasks'})).not.toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await user.click(within(row('Failing check')).getByRole('button', {name: 'Actions for Failing check'}));
+  await user.click(screen.getByRole('menuitem', {name: 'Start ready tasks'}));
+  await waitFor(() => expect(calls('start_ready_nodes')).toHaveLength(1));
+  await waitFor(() => expect(row('Failing check')).toHaveAttribute('data-status', 'running'));
+});
+
 it('keeps focus on the row menu button after retry and cancel', async () => {
   const user = userEvent.setup();
   render(<TaskBoard enabled/>);

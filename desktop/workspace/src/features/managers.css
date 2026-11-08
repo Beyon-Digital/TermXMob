@@ -69,6 +69,9 @@
 .model-row{display:grid;gap:4px;padding:10px 12px}
 .model-row+.model-row{border-top:1px solid var(--border)}
 .model-row-include{display:flex;align-items:center;gap:10px;font-size:13px;min-width:0}
+/* Checkbox and name share one left-aligned line; the generic form label rules would otherwise stack and centre them. */
+.manager-form .model-row-include{flex-direction:row;align-items:center;justify-content:flex-start;text-align:left;min-height:32px}
+.model-row-include input[type=checkbox]{width:auto;flex:none;margin:0}
 .model-row-id{font-weight:500;overflow-wrap:anywhere}
 .model-row-meta{margin:0 0 0 30px;font-size:12px;line-height:1.5;color:var(--secondary)}
 .model-row-override{margin-left:30px;border:0;padding:0}

@@ -137,3 +137,18 @@ def test_qualification_reports_actual_response_token_usage():
             assert report['usage']=={'requests':len(CASES),'input_tokens':11*len(CASES),'cached_input_tokens':0,'output_tokens':3*len(CASES),'missing_usage_requests':0,'missing_cached_usage_requests':len(CASES)}
             assert not report['qualified'] and not report['cost']['reported']
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('effect,labels,expect',[('unknown',(),'ALLOW'),('edit',(),'ALLOW'),('send',(),'NEEDS_USER'),('delete',(),'NEEDS_USER'),('edit',('secret',),'NEEDS_USER')])
+def test_owner_auto_allows_only_what_the_caller_vouches_for(tmp_path,effect,labels,expect):
+    async def run():
+        broker=DecisionBroker(Records(tmp_path));a=envelope(intended_effect=effect,data_labels=labels)
+        if expect=='ALLOW':
+            row=await broker.authorize(a,validate=lambda:True,autonomous=lambda:True)
+            assert row['decision_source']=='task-auto'
+        else:
+            with pytest.raises(ReviewRequired):await broker.authorize(a,validate=lambda:True,autonomous=lambda:True)
+        # Auto switched off between scheduling and execution: back to asking.
+        broker=DecisionBroker(Records(tmp_path/'off'));a=envelope(intended_effect=effect,data_labels=labels,action_id='other')
+        with pytest.raises(ReviewRequired):await broker.authorize(a,validate=lambda:True,autonomous=lambda:False)
+    asyncio.run(run())

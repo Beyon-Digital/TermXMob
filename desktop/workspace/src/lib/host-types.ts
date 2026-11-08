@@ -42,7 +42,7 @@ export interface ProviderAccount {
 /** What ProviderAccountForm submits; matches `AgentProviderInput`. `model` lists the included models, empty meaning all. */
 export interface ProviderAccountInput {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[]; api_key: string | null;
-  model_overrides?: ModelOverrides; wire?: 'responses' | 'chat';
+  model_meta?: ModelOverrides; wire?: 'responses' | 'chat';
 }
 
 export function providerAccount(provider: AgentProvider): ProviderAccount {

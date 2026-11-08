@@ -52,11 +52,11 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
   pending.current=true;setSaving(true);setError('');
   if(!generatedId.current)generatedId.current=name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+crypto.randomUUID().slice(0,8);
   const input:ProviderAccountInput={id:id.trim()||generatedId.current,name:name.trim(),kind:account?.kind||'openai-compatible',base_url:url.trim(),model:included.join('\n'),capabilities,api_key:secret||null,wire};
-  if(Object.keys(overrides).length||Object.keys(account?.model_overrides||{}).length)input.model_overrides=overrides;
+  if(Object.keys(overrides).length||Object.keys(account?.model_overrides||{}).length)input.model_meta=overrides;
   try{
    const result=await onSave(input);
    // A failed save returns null. Keep what was typed, including the key, so it can be retried.
-   if(result===null){setError('The account was not saved. Your entries, including the API key, are still here.');return}
+   if(result===null){setError(secret?'The host did not accept the account, so nothing changed. What you entered, including the new API key, is still here. The reason is shown above.':'The host did not accept the account, so nothing changed. What you entered is still here. The reason is shown above.');return}
    setSecret('');setShowSecret(false);markClean();
    if(!account){generatedId.current='';setId('');setName('')}
   }

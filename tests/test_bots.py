@@ -153,6 +153,21 @@ def test_ceiling_normalization_never_accepts_all_tools():
 
 # -- editing, state and archive ----------------------------------------------------
 
+def test_two_live_bots_cannot_share_a_name_and_a_bot_may_keep_its_own(tmp_path):
+    workspace, owner, manager, ledger, registry, _ = setup(tmp_path)
+    try:
+        first = make(workspace, owner, name='Beta')
+        with pytest.raises(Conflict, match='already have a bot named'):
+            make(workspace, owner, name='  beta ')
+        other = make(workspace, owner, name='Gamma')
+        with pytest.raises(Conflict, match='already have a bot named'):
+            workspace.bots.patch(owner, other['id'], revision=other['revision'], name='BETA')
+        same = workspace.bots.patch(owner, first['id'], revision=first['revision'], name='Beta', instructions='Be brief.')
+        assert same['name'] == 'Beta'
+    finally:
+        asyncio.run(close(workspace, manager, ledger))
+
+
 def test_patch_is_revision_checked_and_cannot_exceed_the_ceiling(tmp_path):
     workspace, owner, manager, ledger, registry, _ = setup(tmp_path)
     try:

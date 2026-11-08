@@ -904,6 +904,7 @@ type Mutation {
   rtc_ice(session_id: String!, candidate: JSON!): Ok!
   retry_node(node_id: String!): OrchestratorBoard!
   reassign_node(node_id: String!, input: ReassignNodeInput!): OrchestratorBoard!
+  start_ready_nodes: OrchestratorBoard!
   cancel_node(node_id: String!): OrchestratorBoard!
   refresh_acp_registry: JSON!
   install_acp_runner(registry_id: String!): JSON!

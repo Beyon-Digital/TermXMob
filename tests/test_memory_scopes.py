@@ -329,6 +329,17 @@ def test_ask_mode_refuses_memory_writes(workspace):
     assert not decision.allowed and not decision.approval_required
 
 
+def test_a_scope_that_cannot_be_stored_is_refused_before_the_owner_is_asked(workspace):
+    service, owner, path = workspace
+    row = conversation(service, owner, path)
+    ctx = tool_context(service, task_for(service, owner, row))
+    spec = default_registry().get('memory_write')
+    for scope, said in (('agent', 'no custom agent'), ('user', 'agent or project memory only')):
+        decision = spec.decide(write_call(scope=scope), ctx)
+        assert not decision.approval_required and not decision.allowed and said in decision.consequence
+    assert spec.decide(write_call(scope='project'), ctx).approval_required
+
+
 def test_write_refuses_user_scope_credentials_and_missing_agent(workspace):
     service, owner, path = workspace
     row = conversation(service, owner, path)

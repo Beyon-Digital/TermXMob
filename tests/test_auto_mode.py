@@ -28,6 +28,7 @@ async def _start(
     auto: dict[str, Any] | None = None,
     worktree: bool = True,
     mode: str | None = None,
+    reviewed: bool = False,
 ):
     monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
     repo = tmp_path / "repo"
@@ -37,6 +38,16 @@ async def _start(
     work.mkdir()
     adapter = PlanAdapter(script)
     manager, store_ = build_manager(work, adapter)
+    extra: dict[str, Any] = {}
+    if reviewed:
+        # The workspace puts every tool call through the action-review gate.
+        from termx.browser.service import BrowserService
+
+        manager.browser = BrowserService(tmp_path / "browser", session_valid=lambda *_: True)
+        extra["on_created"] = lambda id: manager.browser.records.put(
+            "agent-task-authority", id,
+            {"id": id, "principal_id": "owner", "session_id": "sid", "project_id": "project", "policy_version": 1},
+        )
     task = await manager.create_task(
         prompt="Do the thing",
         cwd=str(repo),
@@ -44,6 +55,7 @@ async def _start(
         execution_mode="worktree" if worktree else None,
         auto=auto,
         **({"mode": mode} if mode else {}),
+        **extra,
     )
     return manager, store_, adapter, task
 
@@ -78,6 +90,64 @@ def test_auto_approves_low_risk_calls_and_audits_each(tmp_path, monkeypatch):
         assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "tool"]
         await manager.close()
         store_.close()
+
+    asyncio.run(run())
+
+
+def test_auto_approves_through_the_action_review_gate(tmp_path, monkeypatch):
+    async def run() -> None:
+        script = [
+            ("", [_call("write_file", "c1", path="notes.txt", content="hi\n"), _shell("c2", "echo hi")]),
+            ("All done.", []),
+        ]
+        manager, store_, _adapter, task = await _start(
+            tmp_path, monkeypatch, script, auto={"enabled": True}, reviewed=True
+        )
+        await _approve_plan(manager, store_, task["id"])
+        done = await wait_for_status(store_, task["id"], "completed")
+        decisions = _events(store_, task["id"], "auto.decision")
+        assert [d["payload"]["tool"] for d in decisions] == ["write_file", "run_shell"]
+        assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "tool"]
+        assert done["runtime"]["auto"]["enabled"] is True
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
+def test_auto_ceiling_still_counts_through_the_action_review_gate(tmp_path, monkeypatch):
+    async def run() -> None:
+        script = [
+            ("", [_shell("c1", "echo one")]),
+            ("", [_shell("c2", "echo two")]),
+            ("All done.", []),
+        ]
+        manager, store_, _adapter, task = await _start(
+            tmp_path, monkeypatch, script, auto={"enabled": True, "ceilings": {"tool_calls": 1}}, reviewed=True
+        )
+        await _approve_plan(manager, store_, task["id"])
+        _paused, approval = await wait_for_pending_approval(store_, task["id"], "budget")
+        assert approval["payload"]["reason"] == "auto_tool_calls"
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
+def test_auto_through_the_gate_still_asks_for_blocked_risks_and_when_switched_off(tmp_path, monkeypatch):
+    async def run() -> None:
+        for sub, auto, command in (("a", {"enabled": True}, "git push origin main"), ("b", None, "echo hi")):
+            base = tmp_path / sub
+            base.mkdir()
+            manager, store_, _adapter, task = await _start(
+                base, monkeypatch, [("", [_shell("c1", command)])], auto=auto, reviewed=True
+            )
+            await _approve_plan(manager, store_, task["id"])
+            _task, approval = await wait_for_pending_approval(store_, task["id"], "tool")
+            assert approval["status"] == "pending"
+            assert not _events(store_, task["id"], "auto.decision")
+            await manager.close()
+            store_.close()
 
     asyncio.run(run())
 
@@ -205,6 +275,7 @@ def test_call_ceiling_pauses_with_budget_approval_then_resumes(tmp_path, monkeyp
         await _approve_plan(manager, store_, task["id"])
         paused, approval = await wait_for_pending_approval(store_, task["id"], "budget")
         assert approval["payload"]["reason"] == "auto_tool_calls"
+        assert approval["payload"]["auto_ceiling"] == {"ceiling": "tool_calls", "limit": 1, "used": 1}
         ceiling = _events(store_, task["id"], "auto.ceiling")
         assert len(ceiling) == 1
         assert ceiling[0]["payload"]["ceiling"] == "tool_calls"

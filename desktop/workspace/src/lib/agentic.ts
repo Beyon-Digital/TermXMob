@@ -65,7 +65,7 @@ export function autoBlockedReason(session: {engine?: string; worktree_id?: strin
   if (!session) return 'Open a conversation to use Auto.';
   if (session.runner_id) return 'Auto runs only on this host. Choose the local host in Session options.';
   if (session.engine && session.engine !== 'internal') return 'Auto runs only with the built-in agent. Switch the engine in Session options.';
-  if (!session.worktree_id) return 'Auto needs an isolated worktree. Choose a worktree in Session options to turn it on.';
+  if (!session.worktree_id) return 'Auto needs an isolated worktree. Create one in Delivery under Branches & parallel worktrees, then choose it in Files & code, Project actions, Session checkout.';
   return '';
 }
 

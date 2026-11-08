@@ -82,6 +82,15 @@ it('keeps the status region mounted and shows Save and Discard only while someth
  expect(screen.getByRole('button',{name:'Save'})).toBeInTheDocument();expect(screen.getByRole('button',{name:'Discard'})).toBeInTheDocument();
 });
 
+it('does not count typing in a dialog opened from the page as an unsaved change of the page',()=>{
+ function WithDialog(){const [open,setOpen]=useState(false);return <section data-settings-autosave><button onClick={()=>setOpen(true)}>Build from artwork</button>
+  <Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogTitle>Build a character</DialogTitle><DialogDescription>Choose artwork.</DialogDescription><label>Artwork character name<input defaultValue=""/></label></DialogContent></Dialog></section>}
+ render(<Harness><WithDialog/></Harness>);
+ fireEvent.click(screen.getByRole('button',{name:'Build from artwork'}));
+ fireEvent.change(screen.getByRole('textbox',{name:'Artwork character name'}),{target:{value:'Mochi'}});
+ expect(screen.getByRole('status',{hidden:true})).toBeEmptyDOMElement();expect(screen.queryByRole('button',{name:'Discard',hidden:true})).toBeNull();
+});
+
 it('saves every unsaved form from the footer and then reports a clean page',async()=>{
  const saveFirst=vi.fn(async()=>{}),saveSecond=vi.fn(async()=>{});
  render(<Harness><Draft name="first" save={saveFirst}/><Draft name="second" save={saveSecond}/></Harness>);

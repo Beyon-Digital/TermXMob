@@ -434,7 +434,7 @@ class LiveSession:
         self.heard = False
         self.asks += 1
         state = self.service.state
-        identity = state.identity.resolve(self.token)
+        identity = self.current_identity()
         if identity is None or identity.principal.id != self.owner:
             self.finish('revoked')
             return {'status': 'refused', 'message': 'The session is no longer signed in.'}
@@ -500,11 +500,27 @@ class LiveSession:
                 if problem:
                     self.finish(problem)
 
+    def current_identity(self, *, allow_locked: bool = False):
+        """Who is signed in behind this live session, or None once the session may no longer act.
+
+        The browser's access token lasts five minutes and a live session lasts longer. When it has expired the
+        session carries on under a renewed token for as long as the sign-in itself is valid: sign-out,
+        revocation, a reduced policy or the session's own end still end it.
+        """
+        identity_service = self.service.state.identity
+        identity = identity_service.resolve(self.token, allow_locked=allow_locked)
+        if identity is None:
+            renewed = identity_service.renew_access(self.token)
+            if renewed:
+                self.token = renewed
+                identity = identity_service.resolve(self.token, allow_locked=allow_locked)
+        return identity
+
     def authority_problem(self) -> str | None:
         """Why this session may no longer run, rechecked every tick: sign-out, revocation, lock, lost access."""
         state = self.service.state
         try:
-            identity = state.identity.resolve(self.token, allow_locked=True)
+            identity = self.current_identity(allow_locked=True)
             if identity is None or identity.principal.id != self.owner:
                 return 'revoked'
             if identity.locked:

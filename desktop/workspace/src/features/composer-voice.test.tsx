@@ -174,6 +174,21 @@ it('stops a dictation in progress when live voice takes the microphone, and says
   (claim as unknown as {release: () => void}).release();
 });
 
+it('drops the live-voice notice once live voice has ended', async () => {
+  const view = render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  await screen.findByRole('button', {name: 'Stop dictation'});
+  let claim: ReturnType<typeof claimMicrophone> = null;
+  act(() => {
+    claim = claimMicrophone('live', () => {});
+  });
+  view.rerender(<Harness onTranscript={onTranscript} speechSuspended />);
+  expect(await screen.findByRole('status')).toHaveTextContent(/dictation stopped because live voice started/i);
+  act(() => (claim as unknown as {release: () => void}).release());
+  view.rerender(<Harness onTranscript={onTranscript} />);
+  await waitFor(() => expect(screen.getByRole('status')).toBeEmptyDOMElement());
+});
+
 it('refuses to start dictation while live voice holds the microphone, then works again once it is released', async () => {
   const live = claimMicrophone('live', () => {})!;
   render(<Harness onTranscript={onTranscript} />);
