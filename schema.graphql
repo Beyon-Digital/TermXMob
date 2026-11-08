@@ -200,6 +200,25 @@ input BotInput {
   request_id: String = null
 }
 
+type BotMessage {
+  id: String!
+  thread_id: String!
+  sender: JSON!
+  recipient: JSON!
+  kind: String!
+  subject: String!
+  body: String!
+  task_ref: String
+  source_task_id: String
+  hops: Int!
+  status: String!
+  reason: String
+  automatic: Boolean!
+  in_reply_to: String
+  created_at: Float!
+  updated_at: Float!
+}
+
 input BotPatchInput {
   revision: Int!
   name: String = null
@@ -217,6 +236,82 @@ input BotPatchInput {
 type BotRun {
   task_id: String!
   status: String!
+}
+
+type BotSchedule {
+  id: String!
+  revision: Int!
+  bot_id: String!
+  conversation_id: String!
+  goal_id: String!
+  grant_id: String!
+  prompt: String!
+  spec: JSON!
+  missed: String!
+  overlap: String!
+  enabled: Boolean!
+  state: String!
+  reason: String
+  next_run: Float
+  last_run: String
+  queued: Boolean!
+  success_criteria: String!
+  max_runs: Int!
+  runs_started: Int!
+  limits: JSON!
+  grant_expires_at: Float
+  grant_used_runs: Int!
+  needs_reauthorization: Boolean!
+  paused_by_bot: Boolean!
+  trigger: JSON!
+  report_to: JSON!
+  webhook_path: String
+  webhook_secret: String
+  created_at: Float!
+  updated_at: Float!
+}
+
+input BotScheduleEditInput {
+  revision: Int!
+  prompt: String = null
+  spec: JSON = null
+  missed: String = null
+  overlap: String = null
+  trigger: JSON = null
+  report_to: String = null
+}
+
+input BotScheduleInput {
+  request_id: String!
+  prompt: String!
+  spec: JSON = null
+  success_criteria: String = null
+  max_runs: Int! = 30
+  grant_days: Int! = 30
+  missed: String! = "skip"
+  overlap: String! = "skip"
+  limits: JSON = null
+  trigger: JSON = null
+  report_to: String = null
+}
+
+type BotScheduleRun {
+  id: String!
+  schedule_id: String
+  goal_id: String
+  bot_id: String!
+  status: String!
+  reason: String
+  task_id: String
+  task_status: String
+  trigger_kind: String
+  due: Float
+  manual: Boolean!
+  acknowledged: Boolean!
+  started_at: Float
+  finished_at: Float
+  created_at: Float!
+  updated_at: Float!
 }
 
 type BotTemplate {
@@ -369,6 +464,15 @@ input CustomAgentPatchInput {
 
 type Deleted {
   deleted: String
+}
+
+type DetectedSkillSource {
+  token: String!
+  folder: String!
+  name: String!
+  description: String!
+  source: String!
+  project_id: String
 }
 
 type DeviceInfo {
@@ -703,6 +807,33 @@ input McpToolCallInput {
   arguments: JSON = null
 }
 
+type MemoryEntry {
+  id: String!
+  revision: Int!
+  content: String!
+  provenance: String!
+  project_id: String
+  retention_days: Int!
+  excluded: Boolean!
+  expires_at: Float
+  scope: String!
+  agent_id: String
+  author: String!
+  state: String!
+}
+
+input MemoryInput {
+  content: String!
+  provenance: String!
+  project_id: String = null
+  retention_days: Int! = 30
+  excluded: Boolean! = false
+  scope: String = null
+  agent_id: String = null
+  identifier: String = null
+  revision: Int = null
+}
+
 input ModelRoutingInput {
   routing: JSON!
 }
@@ -816,6 +947,9 @@ type Mutation {
   run_runbook(runbook_id: String!, profile: String! = "host"): RunbookRun!
   confirm_runbook_run(run_id: String!): RunbookRun!
   cancel_runbook_run(run_id: String!): RunbookRun!
+  save_memory(input: MemoryInput!): MemoryEntry!
+  resolve_memory_proposal(memory_id: String!, keep: Boolean!): MemoryEntry
+  preview_skill_import(input: SkillImportInput!): SkillImportPreview!
   create_bot(input: BotInput!): Bot!
   patch_bot(bot_id: String!, input: BotPatchInput!): Bot!
   set_bot_state(bot_id: String!, state: String!, revision: Int = null): Bot!
@@ -823,7 +957,35 @@ type Mutation {
   delete_bot(bot_id: String!): Bot!
   revoke_bot_rule(bot_id: String!, rule_id: String!): Bot!
   bot_run_now(bot_id: String!, prompt: String = null): BotRun!
+  create_schedule(conversation_id: String!, input: BotScheduleInput!): BotSchedule!
+  edit_schedule(conversation_id: String!, schedule_id: String!, input: BotScheduleEditInput!): BotSchedule!
+  rotate_webhook_secret(conversation_id: String!, schedule_id: String!): BotSchedule!
+  set_schedule_enabled(conversation_id: String!, schedule_id: String!, enabled: Boolean!, revision: Int!): BotSchedule!
+  archive_schedule(conversation_id: String!, schedule_id: String!, revision: Int!): BotSchedule!
+  run_schedule_now(conversation_id: String!, schedule_id: String!, revision: Int!): BotScheduleRun!
+  revoke_schedule_grant(conversation_id: String!, grant_id: String!): Boolean!
+  reauthorize_schedules(conversation_id: String!, grant_days: Int! = 30): [BotSchedule!]!
+  acknowledge_schedule_run(conversation_id: String!, run_id: String!): BotScheduleRun!
+  send_bot_message(input: SendBotMessageInput!): BotMessage!
+  mark_message(message_id: String!, status: String!): BotMessage!
   save_voice_settings(input: VoiceSettingsInput!): VoiceStatus!
+}
+
+type NeedsYouItem {
+  id: String!
+  kind: String!
+  bot_id: String!
+  bot_name: String!
+  title: String!
+  detail: String!
+  scheduled: Boolean!
+  task_id: String
+  approval_id: String
+  run_id: String
+  schedule_id: String
+  memory_id: String
+  message_id: String
+  created_at: Float
 }
 
 """An object with a Globally Unique ID"""
@@ -1101,9 +1263,15 @@ type Query {
   runbook(runbook_id: String!): RunbookDetail!
   runbook_runs(runbook_id: String = null): [RunbookRun!]!
   runbook_run(run_id: String!): RunbookRun!
+  memories(project_id: String = null, scope: String = null, agent_id: String = null, state: String = null): [MemoryEntry!]!
+  detected_skill_sources(project_id: String = null): [DetectedSkillSource!]!
   bots(include_archived: Boolean! = false): [Bot!]!
   bot(bot_id: String!): Bot!
   bot_templates: [BotTemplate!]!
+  schedules(conversation_id: String!): [BotSchedule!]!
+  schedule_runs(conversation_id: String!, limit: Int! = 50): [BotScheduleRun!]!
+  needs_you(bot_id: String = null): [NeedsYouItem!]!
+  bot_messages(bot_id: String!, thread_id: String = null, limit: Int! = 100): [BotMessage!]!
   voice_status: VoiceStatus!
 }
 
@@ -1186,6 +1354,14 @@ type SearchResults {
   results: [SearchResult!]!
 }
 
+input SendBotMessageInput {
+  to: String!
+  body: String!
+  kind: String! = "request"
+  subject: String! = ""
+  in_reply_to: String = null
+}
+
 type SessionInfo {
   id: String!
   title: String!
@@ -1197,6 +1373,50 @@ type SessionInfo {
   cwd: String
   live_cwd: String
   shell: String
+}
+
+type SkillImportFile {
+  path: String!
+  bytes: Int!
+  kind: String!
+  note: String
+}
+
+input SkillImportInput {
+  version: String! = "1"
+  name: String = null
+  files: JSON = null
+  skipped: [String!] = null
+  token: String = null
+  project_id: String = null
+}
+
+type SkillImportPreview {
+  preview_id: String!
+  digest: String!
+  bundle_id: String!
+  version: String!
+  permissions_added: [String!]!
+  permissions_removed: [String!]!
+  file_count: Int!
+  bytes: Int!
+  progressive: Boolean!
+  expires_at: Float!
+  previous_revision: Int
+  skills: [SkillImportSkill!]!
+  skipped: [SkippedSkillFile!]!
+}
+
+type SkillImportSkill {
+  id: String!
+  name: String!
+  description: String!
+  files: [SkillImportFile!]!
+}
+
+type SkippedSkillFile {
+  path: String!
+  reason: String!
 }
 
 type Subscription {

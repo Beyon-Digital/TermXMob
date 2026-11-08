@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import errno
+import itertools
 import json
 import os
 import re
 import stat
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 from fastapi import HTTPException
@@ -19,17 +21,30 @@ from fastapi import HTTPException
 from termx.agent.policy import redact
 from termx.discovery.roots import default_roots
 from termx.discovery.safety import slugify
-from termx.frontmatter import split_frontmatter
-from termx.workspace.extensions import SECRETS
+from termx.workspace.extensions import SECRETS,SLUG,bundle_digest,credential_name,file_label
 from termx.workspace.store import Conflict
 
 MAX_SKILL_BYTES=512_000
 MAX_SKILLS=500
+MAX_FRONTMATTER_BYTES=8192
 FOLDER=re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')
 
 
 def digest(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def _frontmatter(text):
+    """The raw YAML block and body, split at the same line ``split_frontmatter`` closes it, within a byte bound."""
+    lines=text.split('\n')
+    size=0
+    for index in range(1,len(lines)):
+        if lines[index].strip()=='---':
+            body='\n'.join(lines[index+1:])
+            return '\n'.join(lines[1:index]),body[1:] if body.startswith('\n') else body
+        size+=len(lines[index].encode())+1
+        if size>MAX_FRONTMATTER_BYTES:break
+    raise ValueError('Skill metadata must have a closed, bounded YAML frontmatter block')
 
 
 def validate_markdown(text):
@@ -38,19 +53,17 @@ def validate_markdown(text):
     if SECRETS.search(text) or redact(text)!=text:
         raise ValueError('Skill contains embedded credentials; remove them before saving or exporting')
     if text.startswith('---'):
-        end=text.find('\n---',3)
-        if end<0 or end>8192:
-            raise ValueError('Skill metadata must have a closed, bounded YAML frontmatter block')
-        # Alias expansion and tags do not belong in portable skill metadata.
+        raw,body=_frontmatter(text)
+        # Alias expansion and tags do not belong in portable skill metadata. The scan and the parse see the same block.
         import yaml
         try:
-            for token in yaml.scan(text[3:end]):
+            for token in yaml.scan(raw):
                 if isinstance(token,(yaml.tokens.AliasToken,yaml.tokens.AnchorToken,yaml.tokens.TagToken)):
                     raise ValueError('Skill metadata cannot contain YAML aliases, anchors or custom tags')
-            raw_metadata=yaml.safe_load(text[3:end])
-            if raw_metadata is not None and not isinstance(raw_metadata,dict):raise ValueError('Skill frontmatter must be a mapping')
-            meta,body=split_frontmatter(text)
-            if len(json.dumps(meta).encode())>8192:
+            meta=yaml.safe_load(raw)
+            if meta is None:meta={}
+            if not isinstance(meta,dict):raise ValueError('Skill frontmatter must be a mapping')
+            if len(json.dumps(meta).encode())>MAX_FRONTMATTER_BYTES:
                 raise ValueError('Skill metadata exceeds its byte budget')
         except (yaml.YAMLError,TypeError,RecursionError):
             raise ValueError('Skill frontmatter must be portable YAML metadata') from None
@@ -99,15 +112,15 @@ def directory(base,parts,*,create=False):
         yield path,None
 
 
-def read_at(path,fd):
-    flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)
-    file=path/'SKILL.md'
+def read_at(path,fd,name='SKILL.md'):
+    flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)
+    file=path/name
     prior=None
     if fd is None:
         if file.is_symlink() or getattr(file,'is_junction',lambda:False)() or os.path.normcase(str(file.resolve()))!=os.path.normcase(str(file.absolute())):
             raise OSError(errno.ELOOP,'Skill source cannot traverse a symlink or junction',str(file))
         prior=file.stat(follow_symlinks=False)
-    handle=os.open('SKILL.md',flags,dir_fd=fd) if fd is not None else os.open(path/'SKILL.md',flags)
+    handle=os.open(name,flags,dir_fd=fd) if fd is not None else os.open(path/name,flags)
     try:
         info=os.fstat(handle)
         if prior and ((info.st_dev,info.st_ino)!=(prior.st_dev,prior.st_ino) or os.path.normcase(str(file.resolve()))!=os.path.normcase(str(file.absolute()))):
@@ -123,6 +136,138 @@ def read_at(path,fd):
         data=b''.join(chunks)
         return data.decode('utf-8')
     finally:os.close(handle)
+
+
+# -- folder import ---------------------------------------------------------------------
+
+MAX_TREE_DEPTH=4
+MAX_TREE_FILES=200
+MAX_TREE_BYTES=2_000_000
+MAX_TREE_ENTRIES=1000
+SKIPPED_FOLDERS={'node_modules','__pycache__'}
+
+def ascii_slug(value):
+    """A bundle id from any folder name: ASCII letters and digits joined by hyphens, never empty."""
+    plain=unicodedata.normalize('NFKD',str(value)).encode('ascii','ignore').decode()
+    return re.sub('[^a-z0-9]+','-',plain.lower()).strip('-')[:80] or 'imported-skill'
+
+
+def read_tree(base,parts):
+    """Read a skill folder as bounded text without following links.
+
+    Every directory is opened with O_NOFOLLOW from ``base``. Links, special files, credential files and anything over
+    the limits fail the whole read; binaries and hidden entries are listed as skipped, never read.
+    """
+    files={};skipped=[];seen=[0];total=[0]
+    def walk(relative):
+        if len(relative)>MAX_TREE_DEPTH:raise ValueError('The folder nests deeper than 4 levels')
+        with directory(base,[*parts,*relative]) as (path,fd):
+            with os.scandir(fd if fd is not None else path) as children:
+                entries=sorted((child.name,child.is_symlink(),child.is_dir(follow_symlinks=False),child.is_file(follow_symlinks=False))
+                               for child in itertools.islice(children,MAX_TREE_ENTRIES+1))
+            for name,link,folder,regular in entries:
+                seen[0]+=1
+                if seen[0]>MAX_TREE_ENTRIES:raise ValueError('The folder has more than 1,000 entries')
+                shown='/'.join([*relative,name])
+                if link:raise ValueError(shown+' is a link; links are never imported')
+                if credential_name(name):raise ValueError(shown+' looks like a credential file and cannot be imported')
+                if folder:
+                    if name.startswith('.') or name in SKIPPED_FOLDERS:skipped.append({'path':shown,'reason':'hidden folder' if name.startswith('.') else 'dependency folder'})
+                    else:walk([*relative,name])
+                elif not regular:raise ValueError(shown+' is not a regular file')
+                elif name.startswith('.'):skipped.append({'path':shown,'reason':'hidden file'})
+                else:
+                    if len(files)>=MAX_TREE_FILES:raise ValueError('The folder has more than 200 text files')
+                    try:text=read_at(path,fd,name)
+                    except UnicodeDecodeError:skipped.append({'path':shown,'reason':'binary'});continue
+                    except ValueError:raise ValueError(shown+' is not a regular text file under 512 KB') from None
+                    if '\x00' in text:skipped.append({'path':shown,'reason':'binary'});continue
+                    total[0]+=len(text.encode())
+                    if total[0]>MAX_TREE_BYTES:raise ValueError('The folder holds more than 2 MB of text')
+                    files[shown]=text
+    walk([])
+    return {'files':files,'skipped':skipped,'bytes':total[0]}
+
+
+def _relative(path):
+    if not isinstance(path,str) or not path or len(path)>300 or '\\' in path or path.startswith('/') or any(ord(c)<32 for c in path):
+        raise ValueError('Unsafe file path in the folder')
+    parts=path.split('/')
+    if len(parts)>MAX_TREE_DEPTH+1 or any(part in {'','.','..'} or len(part)>100 for part in parts):
+        raise ValueError('Unsafe file path in the folder')
+    return path
+
+
+def _credential_check(path):
+    if any(credential_name(part) for part in path.split('/')):raise ValueError(path+' looks like a credential file and cannot be imported')
+
+
+def _skip_reason(path):
+    """Why a posted path is never read, as ``read_tree`` would list it: a dependency folder or a hidden entry."""
+    parts=path.split('/')
+    if any(part in SKIPPED_FOLDERS for part in parts):return 'dependency folder'
+    return 'hidden file' if any(part.startswith('.') for part in parts) else None
+
+
+def tree_from_files(files,skipped=()):
+    """The same tree from a browser-picked folder posted as a path to text map. Nothing here touches the host disk."""
+    if not isinstance(files,dict) or not files:raise ValueError('Choose a folder that contains a SKILL.md')
+    if len(files)>MAX_TREE_FILES:raise ValueError('The folder has more than 200 text files')
+    if not isinstance(skipped,(list,tuple)) or len(skipped)>MAX_TREE_ENTRIES:raise ValueError('Too many skipped files')
+    result={};listed=[];folded=set();total=0
+    for path in sorted(files):
+        _relative(path)
+        text=files[path]
+        if not isinstance(text,str):raise ValueError(path+' is not text')
+        _credential_check(path)
+        if _skip_reason(path):listed.append({'path':path,'reason':_skip_reason(path)});continue
+        try:size=len(text.encode())
+        except UnicodeEncodeError:size=-1
+        if size<0 or '\x00' in text:listed.append({'path':path,'reason':'binary'});continue
+        if size>MAX_SKILL_BYTES:raise ValueError(path+' is not a regular text file under 512 KB')
+        total+=size
+        if total>MAX_TREE_BYTES:raise ValueError('The folder holds more than 2 MB of text')
+        if path.casefold() in folded:raise ValueError('The folder lists '+path+' twice')
+        folded.add(path.casefold());result[path]=text
+    for path in skipped:
+        _credential_check(_relative(path))
+        listed.append({'path':path,'reason':_skip_reason(path) or 'binary'})
+    for path in result:
+        parts=path.split('/')
+        if any('/'.join(parts[:index]) in result for index in range(1,len(parts))):raise ValueError(path+' sits inside a file; use a folder')
+    return {'files':result,'skipped':listed,'bytes':total}
+
+
+def import_bundle(tree,*,name,version):
+    """A termx-bundle/v1 dict for ``extensions.preview`` from a read tree: one skill at the root, or a folder of skills."""
+    files=tree['files']
+    for path,text in files.items():
+        if SECRETS.search(text) or redact(text)!=text:
+            raise ValueError(path+' appears to contain a credential; remove it before importing')
+    if 'SKILL.md' in files:groups={ascii_slug(name):''}
+    else:
+        groups={}
+        for folder in sorted({path.split('/')[0] for path in files if path.endswith('/SKILL.md') and path.count('/')==1}):
+            identifier=ascii_slug(folder)
+            if identifier in groups:raise ValueError('Two skill folders have the same name once cleaned up: '+identifier)
+            groups[identifier]=folder+'/'
+        if not groups:raise ValueError('Pick a skill folder with a SKILL.md, or a folder of skill folders')
+    bundle_files={};skills=[];claimed=set()
+    for identifier,prefix in groups.items():
+        text=files[prefix+'SKILL.md']
+        try:meta=validate_markdown(text)
+        except ValueError as exc:raise ValueError(prefix+'SKILL.md: '+str(exc)) from None
+        entries=[]
+        for path in sorted(p for p in files if p.startswith(prefix)):
+            key='skills/'+identifier+'/'+path[len(prefix):]
+            claimed.add(path);bundle_files[key]=files[path]
+            entries.append({'path':key,'bytes':len(files[path].encode()),**file_label(key)})
+        skills.append({'id':identifier,'name':meta['name'] or identifier,'description':meta['description'],'files':entries})
+    skipped=[*tree['skipped'],*({'path':path,'reason':'not part of a skill'} for path in sorted(files) if path not in claimed)]
+    description=skills[0]['description'] if len(skills)==1 else f'{len(skills)} skills'
+    bundle={'format':'termx-bundle/v1','id':ascii_slug(name),'version':version,'permissions':['files-read'],
+            'description':description[:300],'files':bundle_files}
+    return {'bundle':bundle,'skills':skills,'skipped':skipped,'bytes':sum(len(t.encode()) for t in bundle_files.values())}
 
 
 class SkillSourceService:
@@ -261,7 +406,7 @@ class SkillSourceService:
         preview=self.extensions.preview(principal,{'id':slugify(name),'version':version,'markdown':source['markdown']},'skill-markdown/v1')
         return self.store.update('extension_preview',preview['id'],{**preview,'provenance':{'kind':'native-skill-source','folder':name,'scope':scope,'project_id':project_id,'path':source['path'],'source_digest':source['digest']}})
 
-    def compatibility(self,principal,project_id=None,identifier=None):
+    def compatibility(self,principal,project_id=None,identifier=None,location=False):
         projects={};global_allowed=False
         try:self.workspace.require(principal,'host-admin');global_allowed=True
         except PermissionError:pass
@@ -298,9 +443,77 @@ class SkillSourceService:
                             if identifier==token:
                                 if project:self._root(principal,'project',project)
                                 else:self.workspace.require(principal,'host-admin')
+                                if location:return {**row,'location':(anchor,[*path.relative_to(anchor).parts,name])}
                                 return {**row,'markdown':text}
                             rows.append(row)
                         except (ValueError,OSError,UnicodeError):continue
             except (ValueError,OSError):continue
         if identifier:raise KeyError(identifier)
         return rows
+
+    @staticmethod
+    def _native_token(row):
+        return hashlib.sha256('|'.join(('native',row['scope'],row.get('project_id') or '',row['folder'])).encode()).hexdigest()
+
+    def detected(self,principal,project_id=None):
+        """Skill folders this host already has (user, project and compatibility sources), named by an opaque token.
+
+        A client or the model can only choose from these tokens; host paths are never accepted or returned.
+        """
+        rows=[{'token':self._native_token(row),'folder':row['folder'],'name':row['name'] or row['folder'],'description':row['description'],
+               'source':'project' if row['scope']=='project' else 'user','project_id':row['project_id']}
+              for row in self.list(principal,project_id)['sources']]
+        rows+=[{'token':row['id'],'folder':row['folder'],'name':row['name'] or row['folder'],'description':row['description'],
+                'source':row['source'],'project_id':row['project_id']} for row in self.compatibility(principal,project_id)]
+        return rows
+
+    def _detected_tree(self,principal,project_id,token):
+        if not isinstance(token,str) or not re.fullmatch('[0-9a-f]{64}',token):raise KeyError(token)
+        for row in self.list(principal,project_id)['sources']:
+            if self._native_token(row)==token:
+                base,parts,_=self._root(principal,row['scope'],row['project_id'])
+                return row['folder'],read_tree(base,[*parts,'skills',row['folder']])
+        found=self.compatibility(principal,project_id,token,location=True)
+        return found['folder'],read_tree(*found['location'])
+
+    def preview_import(self,principal,*,files=None,skipped=(),token=None,name=None,project_id=None,version='1'):
+        """Review a skill folder for install. Nothing is installed here; ``extensions.install`` stays a host-admin click."""
+        self.workspace.require(principal,'host-admin')
+        if (files is None)==(token is None):raise ValueError('Import either a posted folder or one detected source')
+        if not isinstance(version,str) or not SLUG.fullmatch(version):raise ValueError('Version must be letters, digits, dots, dashes or underscores, such as 1 or 1.2.0')
+        try:
+            if token is not None:
+                folder,tree=self._detected_tree(principal,project_id,token)
+                provenance={'kind':'detected-skill-import','token':token,'project_id':project_id}
+            else:
+                if not isinstance(name,str) or not name.strip() or len(name)>200:raise ValueError('Name the folder you are importing')
+                folder,tree=name,tree_from_files(files,skipped)
+                provenance={'kind':'folder-import','name':name.strip()[:200]}
+        except OSError:
+            raise ValueError('The folder contains a link or cannot be read; links are never imported') from None
+        built=import_bundle(tree,name=folder,version=version)
+        preview=self.extensions.preview(principal,built['bundle'])
+        provenance={**provenance,'version':version,'file_count':len(built['bundle']['files']),'bytes':built['bytes'],'skipped_count':len(built['skipped'])}
+        return self.store.update('extension_preview',preview['id'],{**preview,'provenance':provenance,
+            'import':{'skills':built['skills'],'skipped':built['skipped'],'bytes':built['bytes']}})
+
+    def import_digest(self,principal,provenance):
+        """Digest of a detected source as it is on disk now, to compare with the reviewed one at install."""
+        try:
+            folder,tree=self._detected_tree(principal,provenance.get('project_id'),provenance['token'])
+            built=import_bundle(tree,name=folder,version=provenance['version'])
+            return bundle_digest(self.extensions.normalize(built['bundle'],'termx-bundle/v1'))
+        except (OSError,ValueError,KeyError):
+            return None
+
+    def propose_for_task(self,task_id,token=None):
+        """``propose_skill_install``: list detected sources, or review one. The task's owner installs it with a click."""
+        principal,row=self.extensions.task_owner(task_id)
+        if token is None:
+            self.workspace.require(principal,'host-admin')
+            return {'sources':[{k:v for k,v in item.items() if k!='project_id'} for item in self.detected(principal,row.get('project_id'))]}
+        preview=self.preview_import(principal,token=token,project_id=row.get('project_id'),version='1')
+        return {'preview_id':preview['id'],'bundle_id':preview['bundle']['id'],'digest':preview['digest'],
+                'permissions_added':preview['permission_diff']['added'],'file_count':preview['provenance']['file_count'],
+                'skipped':[item['path'] for item in preview['import']['skipped']][:20],'installed':False,
+                'message':'Review is ready in Settings, Plugins and skills. Only the owner can install it.'}

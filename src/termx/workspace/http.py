@@ -100,6 +100,8 @@ class MemoryInput(Input):
     excluded: bool=False
     identifier: str | None=None
     revision: int | None=None
+    scope: str | None=Field(default=None,pattern='^(user|project|agent)$')
+    agent_id: str | None=Field(default=None,max_length=200)
 
 
 class HookInput(Input):
@@ -210,6 +212,18 @@ class SkillPublishInput(Input):
     project_id:str|None=None
 
 
+MAX_SKILL_IMPORT_BODY=4_000_000
+
+
+class SkillImportInput(Input):
+    files:dict[str,str]|None=Field(default=None,max_length=200)
+    skipped:list[str]=Field(default_factory=list,max_length=1000)
+    token:str|None=Field(default=None,max_length=64)
+    name:str|None=Field(default=None,max_length=200)
+    project_id:str|None=None
+    version:str=Field(default='1',max_length=80)
+
+
 class RegistryCredential(Input):
     credential:str=Field(min_length=1,max_length=4096)
     revision:int
@@ -251,6 +265,8 @@ def mount_workspace(app,state):
     workspace=state.workspace
     from termx.workspace.coding_policies import mount_coding_policies
     mount_coding_policies(app,state)
+    from termx.workspace.bot_hooks import mount_bot_hooks
+    mount_bot_hooks(app,state)
     workspace.principal_lookup=state.identity.principal_by_id
     if not getattr(state,'automation',None):
         state.automation=AutomationService(workspace,principal_lookup=state.identity.principal_by_id)
@@ -428,8 +444,9 @@ def mount_workspace(app,state):
         return call(workspace.commit_fork,principal(request),identifier,**body.model_dump())
 
     @router.get('/memory')
-    def memories(request:Request,project_id:str|None=None):
-        return {'memory':call(workspace.memories,principal(request),project_id=project_id)}
+    def memories(request:Request,project_id:str|None=None,scope:str|None=None,agent_id:str|None=None,state:str|None=None):
+        # Without an agent, the owner sees every agent's notes; with one, that agent's view.
+        return {'memory':call(workspace.memories,principal(request),project_id=project_id,scope=scope,agent_id=agent_id,state=state,all_agents=agent_id is None)}
 
     @router.post('/memory')
     def save_memory(request:Request,body:MemoryInput):
@@ -442,7 +459,7 @@ def mount_workspace(app,state):
 
     @router.get('/memory/export')
     def memory_export(request:Request,project_id:str|None=None):
-        return {'format':'termx-memory/v1','memory':call(workspace.memories,principal(request),project_id=project_id)}
+        return {'format':'termx-memory/v1','memory':call(workspace.memories,principal(request),project_id=project_id,all_agents=True)}
 
     @router.get('/hooks')
     def hooks(request:Request,project_id:str|None=None):
@@ -758,6 +775,28 @@ def mount_workspace(app,state):
     @router.post('/skill-sources/publish-preview')
     def publish_skill(request:Request,body:SkillPublishInput):
         return call(skills.publish_preview,principal(request),**body.model_dump())
+
+    @router.get('/skill-sources/detected')
+    def detected_skill_sources(request:Request,project_id:str|None=None):
+        return {'sources':call(skills.detected,principal(request),project_id)}
+
+    @router.post('/skill-sources/import-preview')
+    async def import_skill_preview(request:Request):
+        actor=principal(request)
+        # A picked folder holds at most 2 MB of text; refuse a larger body before it is parsed or held whole.
+        declared=request.headers.get('content-length','')
+        if declared.isdigit() and int(declared)>MAX_SKILL_IMPORT_BODY:
+            raise HTTPException(413,'This folder is too large to import; pick the skill folder itself')
+        received=bytearray()
+        async for chunk in request.stream():
+            received.extend(chunk)
+            if len(received)>MAX_SKILL_IMPORT_BODY:
+                raise HTTPException(413,'This folder is too large to import; pick the skill folder itself')
+        try:
+            body=SkillImportInput.model_validate_json(bytes(received))
+        except ValueError:
+            raise HTTPException(422,'The import request is not valid; pick the folder again') from None
+        return await asyncio.to_thread(call,skills.preview_import,actor,**body.model_dump())
 
     @router.get('/skill-sources/compatibility')
     def compatibility_sources(request:Request,project_id:str|None=None):
