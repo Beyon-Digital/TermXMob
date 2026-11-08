@@ -78,6 +78,7 @@ def _ctx(
         _decide_computer=AgentManager._decide_computer,
         _computer=Desktop(app),
         is_unattended=(lambda _task_id: True) if unattended else None,
+        computer_permission=None,
     )
     return SimpleNamespace(
         task_id="task-1",

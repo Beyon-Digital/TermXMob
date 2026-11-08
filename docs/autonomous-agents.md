@@ -118,9 +118,34 @@ front one, or a window switch inside one batch, is not caught yet. Neither
 desktop is outside any sandbox or worktree. Ask and Plan mode, restricted browser
 tasks and private windows still block the desktop first.
 
-Unattended runs cannot control the desktop. A scheduled run's computer call is
-refused, and the agent is told to finish without it or report that the task needs
-the owner at the computer. A remembered allow does not lift this.
+Unattended runs cannot control the desktop unless the schedule carries a
+`computer_permission` on its delegation: exact applications (up to 20), an expiry
+inside the grant and the seconds of computer control allowed per run. Without it
+a scheduled run's computer call is refused, and the agent is told to finish
+without it or report that the task needs the owner at the computer. A remembered
+allow does not lift this. Revoking the grant or losing `desktop-control` withdraws
+the permission at the next computer action.
+
+Computer skills ask for the `desktop-control` permission in their bundle and may
+add `computer: {apps: [...]}` (up to 20 exact application names, executables or
+bundle IDs). The permission is checked at every dispatch. While a list is active
+(from the skill, the schedule permission, or both: every list must allow the
+application) the application in front is checked before each batch, before each
+later input action inside it, and after it. It is the application that receives
+keystrokes, so launchers and system dialogs count. Hotkeys that switch
+applications are refused (off macOS, every Windows or Super key use), key names
+such as `alt+Tab` are split into their keys, and held keys are released at the
+end of each batch. A mismatch emits `computer.app_blocked`. The check after a
+batch cannot undo input that was already sent; it withholds the screenshot and
+stops the task. Lists match by exact name, so two lists must name an application
+the same way (`Notes` in both, or `com.apple.Notes` in both); otherwise they
+overlap nowhere and the task is refused. Only macOS reports the application in
+front. Elsewhere a skill's list is best effort and emits
+`computer.app_unverified`, except a list that allows nothing, which always
+refuses. A schedule's `computer_permission` is not accepted, and is refused at
+each action, on a host that cannot name the front application. Computer time for a
+run is kept on the run's task, survives a restart, and ends the batch that
+reaches it.
 
 ## Restart behavior and live verification
 

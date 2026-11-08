@@ -150,6 +150,12 @@ class ScheduledBrowserPermission(Input):
     max_seconds: int = Field(ge=10,le=3600)
 
 
+class ScheduledComputerPermission(Input):
+    apps: list[str] = Field(min_length=1,max_length=20)
+    expires_at: float = Field(gt=0)
+    max_seconds: int = Field(ge=10,le=3600)
+
+
 class AutomationInput(GoalInput):
     runbook_id: str | None = None
     command: str | None = Field(default=None,min_length=1,max_length=32000)
@@ -160,6 +166,7 @@ class AutomationInput(GoalInput):
     missed: str = 'skip'
     overlap: str = 'skip'
     browser_permission: ScheduledBrowserPermission | None = None
+    computer_permission: ScheduledComputerPermission | None = None
 
 
 class ScheduleEdit(Input):
@@ -701,7 +708,7 @@ def mount_workspace(app,state):
     @router.get('/available-extensions')
     def available_extensions(request:Request,project_id:str|None=None):
         actor=principal(request);call(workspace.require,actor,'agent-view',project_id)
-        return {'extensions':[{k:row[k] for k in ('id','version','permissions','description')} for row in workspace.store.list('extension') if row['enabled']]}
+        return {'extensions':[{**{k:row[k] for k in ('id','version','permissions','description')},**({'computer_apps':row['computer_apps']} if row.get('computer_apps') else {})} for row in workspace.store.list('extension') if row['enabled']]}
 
     @router.get('/extensions')
     def extension_list(request:Request):

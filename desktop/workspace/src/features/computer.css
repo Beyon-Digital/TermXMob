@@ -5,3 +5,12 @@
 .computer-canvas{min-height:180px;color:#f0f3ed}
 .computer-canvas>div{color:#a8b4ac}
 .computer-surface>.inline-error{padding:12px;overflow-wrap:anywhere}
+.computer-skills{display:grid;gap:10px;padding:12px;border-top:1px solid var(--border);flex-shrink:0}
+.computer-skills h2{margin:0;font-size:14px;font-weight:580}
+.computer-skills-note{margin:0;font-size:12px;line-height:1.6;color:var(--secondary);overflow-wrap:anywhere}
+.computer-skill-list,.computer-skill-apps{list-style:none;margin:0;padding:0}
+.computer-skill-list>li{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--border)}
+.computer-skill-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.computer-skill-head small{color:var(--secondary);font-size:12px}
+.computer-skill-apps{display:flex;gap:6px;flex-wrap:wrap}
+.computer-skill-apps code{padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;overflow-wrap:anywhere}

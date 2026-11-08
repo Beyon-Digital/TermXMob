@@ -20,6 +20,7 @@ from termx.agent.limits import resolve_limits
 from termx.agent.policy import redact
 from termx.agent.store import ACTIVE_STATUSES
 from termx.config import config_dir
+from termx.desktop.apps import combine
 from termx.identity import Principal
 from termx.workspace.store import Conflict, WorkspaceStore
 from termx.workspace.presets import resolve_preset,available_presets
@@ -49,6 +50,7 @@ class WorkspaceService:
         state.agent._listeners.add(self._on_event)
         state.agent.execution_authority = self.validate_task_execution
         state.agent.is_unattended = self.is_unattended_task
+        state.agent.computer_permission = self.computer_permission
 
     def require(self, principal: Principal, scope: str, project_id: str | None = None, cwd: str | None = None, *, resource_kind=None, resource_id=None):
         live = self.state.identity.current_principal(principal) if hasattr(self.state, 'identity') else principal
@@ -618,6 +620,8 @@ class WorkspaceService:
                 await self.run_hooks(principal, row.get('project_id'), 'before_turn', row['cwd'],resource_id=identifier)
                 selected_extensions = row.get('extension_ids',[])
                 extension_context = self.state.extensions.execution_context(principal,selected_extensions,row.get('project_id'),row['cwd'],resource_id=identifier) if selected_extensions else []
+                # Skills that name applications limit what the computer tool may drive in this task and its children.
+                computer_apps = combine([item.get('computer_apps') for item in extension_context])
                 if extension_context:
                     self.state.extensions.hold_dispatch(principal,extension_context,request_id)
                     # Large selections are listed by file; read_skill exists only for the built-in agent, and a preset that names its tools must include it.
@@ -651,6 +655,7 @@ class WorkspaceService:
                     task = await self.state.agent.create_task(prompt=prompt,cwd=row['cwd'],
                         provider_id=row.get('provider_id') or '', model=row.get('model'),mode=row['mode'],
                         limits=limits,attachments=attachments,conversation_id=identifier,custom_agent_id=row.get('custom_agent_id'),custom_agent_snapshot=profile,
+                        **({'computer_apps':computer_apps} if computer_apps is not None else {}),
                         parent_id=_coordinator_task_id,auto=auto,isolated=bool(row.get('worktree_id')),
                         on_created=lambda tid:self._coordinator_created(_coordinator_task_id,principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context) if _coordinator_task_id else self._dispatch_created(principal,row,request_id,tid,managed_session_id,delegation_id,turn_prompt,submitted_prompt,context))
                 else:
@@ -702,6 +707,11 @@ class WorkspaceService:
         if goal['conversation_id']!=row['id'] or goal['status']!='active':
             raise PermissionError('Delegation does not authorize this conversation')
         return grant
+
+    def computer_permission(self, task_id):
+        """The delegation's computer permission for a running scheduled task, or None (default deny)."""
+        from termx.workspace.scheduled_computer import for_task
+        return for_task(self, task_id)
 
     def is_unattended_task(self, task_id):
         """True when the task, or the task it was delegated from, runs under a schedule's unattended grant.

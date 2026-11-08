@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Awaitable, Callable
 from typing import Any
 
+from termx.desktop.apps import KEY_ALIASES
 from termx.desktop.capture import grab_jpeg, list_displays, pointer_target
 from termx.desktop.input import apply_event, clipboard_get, clipboard_set
-from termx.desktop.windows import frontmost_app
+from termx.desktop.windows import frontmost_app, frontmost_identity
 
 MAX_ACTIONS = 12
+# Actions that send nothing to the focused application.
+_NO_INPUT = {"", "screenshot", "wait", "set_display", "release_all"}
 
 
 async def _guarded_os(revision, operation, *args):
@@ -45,6 +49,13 @@ class ComputerController:
         except Exception:
             return None
 
+    def target_identity(self) -> list[str] | None:
+        """Every name the front application goes by (name, executable, bundle ID), or None when the host cannot tell."""
+        try:
+            return frontmost_identity()
+        except Exception:
+            return None
+
     async def screenshot(self) -> bytes:
         from termx.desktop.recording import capture_privacy_revision
         revision = capture_privacy_revision()
@@ -58,15 +69,23 @@ class ComputerController:
         actions: list[dict[str, Any]],
         *,
         cancel: asyncio.Event | None = None,
+        guard: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> bytes:
+        """Run the batch and return a screenshot. ``guard`` is awaited before each input action after the first
+        (the caller has just checked in front of the batch) and may raise to stop the batch."""
         if len(actions) > MAX_ACTIONS:
             raise ValueError(f"computer action batch exceeds {MAX_ACTIONS} actions")
         try:
             from termx.desktop.recording import capture_privacy_revision
             privacy_revision = capture_privacy_revision()
+            sent_input = False
             for action in actions:
                 if cancel is not None and cancel.is_set():
                     raise asyncio.CancelledError
+                if str(action.get("type") or "") not in _NO_INPUT:
+                    if guard is not None and sent_input:
+                        await guard(action)
+                    sent_input = True
                 await self._action(action, cancel=cancel, privacy_revision=privacy_revision)
             if cancel is not None and cancel.is_set():
                 raise asyncio.CancelledError
@@ -296,14 +315,7 @@ def _button(value: Any) -> int:
 
 
 _MODIFIERS = {"shift", "control", "alt", "meta"}
-_KEY_ALIASES = {
-    "cmd": "meta",
-    "command": "meta",
-    "ctrl": "control",
-    "option": "alt",
-    "return": "enter",
-    "esc": "escape",
-}
+_KEY_ALIASES = {**KEY_ALIASES, "return": "enter"}
 
 
 def _key_name(value: Any) -> str:

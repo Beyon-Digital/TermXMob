@@ -12,6 +12,7 @@ import weakref
 from time import time
 
 from termx.agent.policy import redact
+from termx.desktop.apps import normalize_apps
 from termx.desktop.windows import WindowCapture
 
 _PRIVATE = {}
@@ -255,7 +256,13 @@ class WindowRecordingService:
         draft = self.get_draft(identifier, principal_id); evidence = draft.get('test')
         if not evidence or evidence['expires_at'] <= time() or evidence['digest'] != digest({'content': draft['content'], 'steps': draft['steps']}): raise PermissionError('Test the current edited draft against a safe target before activation')
         self.get(evidence['target_capture_id'], principal_id)
-        preview = extensions.preview(principal, {'id': draft['name'], 'version': version, 'markdown': draft['content'], 'permissions': ['agent-run']}, 'skill-markdown/v1')
+        # The skill drives the desktop, so it asks for that scope and names the one application it was recorded in.
+        source = self.records.get('window-capture', draft['source_capture_id'])
+        app = str(((source or {}).get('window') or {}).get('app') or '')
+        if not app or re.fullmatch(r'Process \d+', app): raise ValueError('The recorded application could not be named on this host, so the skill cannot be limited to it')
+        try: apps = normalize_apps([app])
+        except ValueError: raise ValueError('The recorded application could not be named safely, so the skill cannot be limited to it') from None
+        preview = extensions.preview(principal, {'id': draft['name'], 'version': version, 'markdown': draft['content'], 'permissions': ['desktop-control'], 'computer': {'apps': apps}}, 'skill-markdown/v1')
         installed = extensions.install(principal, preview['id'], preview['digest'])
         draft.update(published_version=version, published_digest=installed['active_digest'])
         self.records.put('window-skill', identifier, draft)

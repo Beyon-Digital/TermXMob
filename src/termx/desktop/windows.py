@@ -165,3 +165,37 @@ def frontmost_app() -> str | None:
     if sys.platform != 'darwin': return None
     front = next(iter(WindowCapture().list()), None)
     return str(front['app']) if front and front.get('app') else None
+
+
+_ACTIVE_APP = """tell application "System Events"
+set p to first application process whose frontmost is true
+set b to ""
+try
+set b to bundle identifier of p
+end try
+if b is missing value then set b to ""
+return (name of p) & linefeed & b & linefeed & (unix id of p as text)
+end tell"""
+
+
+def frontmost_identity() -> list[str] | None:
+    """Every name the active application is known by: process name, bundle ID and executable.
+
+    This is the application that receives keystrokes, not the owner of the top window, so launchers, menu-bar
+    panels and system dialogs are named correctly. Application lists in skills and schedules may use any of these
+    names. Only macOS answers; None when the host cannot say, which a list treats as not allowed.
+    """
+    if sys.platform != 'darwin': return None
+    try:
+        found = subprocess.run(['/usr/bin/osascript', '-e', _ACTIVE_APP], capture_output=True, text=True, timeout=3)
+        if found.returncode != 0: return None
+        name, bundle, pid = (found.stdout.strip('\n').split('\n') + ['', '', ''])[:3]
+        names = [item.strip() for item in (name, bundle) if item.strip()]
+    except (OSError, subprocess.SubprocessError):
+        return None
+    try:
+        path = subprocess.run(['/bin/ps', '-p', str(int(pid)), '-o', 'comm='], capture_output=True, text=True, timeout=3).stdout.strip()
+        if path: names += [path, os.path.basename(path)]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass  # the executable is an extra name; the process name and bundle ID already identify the application
+    return list(dict.fromkeys(names)) or None

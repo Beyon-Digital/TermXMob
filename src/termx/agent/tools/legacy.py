@@ -14,6 +14,8 @@ from termx.agent.policies.fingerprint import computer_fingerprint, computer_labe
 from termx.agent.policy import PolicyDecision
 from termx.agent.providers import ProviderCall
 from termx.agent.tools.registry import ToolContext, ToolOutcome, ToolRegistry, ToolSpec, make_always
+from termx.desktop import apps as desktop_apps
+from termx.desktop.apps import AppBlocked
 
 # Asked every time: a remembered allow for the application never covers these,
 # and neither `autonomous` nor Auto may approve them. Input goes to other
@@ -41,8 +43,20 @@ async def _spawn_subagent(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
 
 
 async def _computer(call: ProviderCall, ctx: ToolContext) -> ToolOutcome:
-    artifact, items = await ctx.manager._execute_computer(ctx.task_id, call, ctx.cancel)
+    try:
+        artifact, items = await ctx.manager._execute_computer(ctx.task_id, call, ctx.cancel)
+    except AppBlocked as exc:
+        if not call.name:
+            # A native computer_call can only be answered with a screenshot, which a refusal must not take.
+            raise
+        return ToolOutcome({"refused": True, "error": str(exc)})
     return ToolOutcome(None, items, event={"artifact": artifact})
+
+
+def _deny(reason: str, consequence: str) -> PolicyDecision:
+    return PolicyDecision(
+        False, False, reason, consequence, auto_resolved="deny", required_capabilities=tool_capabilities("computer")
+    )
 
 
 def _decide_computer(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
@@ -53,16 +67,22 @@ def _decide_computer(call: ProviderCall, ctx: ToolContext) -> PolicyDecision:
         return base
     unattended = ctx.manager.is_unattended
     if unattended is not None and unattended(ctx.task_id):
-        # Nobody is there to watch or stop it, so no rule or approval mode opens the desktop.
-        return PolicyDecision(
-            False,
-            False,
-            "Unattended computer control is off",
-            "Unattended runs cannot control the desktop. Finish without it, "
-            "or tell the owner this task needs them at the computer.",
-            auto_resolved="deny",
-            required_capabilities=tool_capabilities("computer"),
-        )
+        # Nobody is there to watch or stop it, so no rule or approval mode opens the desktop. Only the
+        # schedule's own computer permission does, and only for the applications it names.
+        # The manager checks the front application against the permission around every batch.
+        lookup = ctx.manager.computer_permission
+        if lookup is None or lookup(ctx.task_id) is None:
+            return _deny(
+                "Unattended computer control is off",
+                "Unattended runs cannot control the desktop. Finish without it, "
+                "or tell the owner this task needs them at the computer.",
+            )
+        if not desktop_apps.verifiable():
+            return _deny(
+                "This host cannot enforce a schedule's application permission",
+                "Only macOS can tell which application is in front, so unattended runs cannot control the desktop here. "
+                "Finish without it, or tell the owner this task needs them at the computer.",
+            )
     app = computer_label(ctx.manager._computer.target_app())
     if not app and sys.platform == "darwin" and not base.approval_required:
         # macOS can name the front application, so a failed lookup is an unknown

@@ -20,6 +20,7 @@ from time import time
 
 from termx.agent.policy import redact
 from termx.agent.store import ACTIVE_STATUSES
+from termx.desktop.apps import normalize_apps
 from termx.workspace.store import Conflict
 
 SLUG = re.compile(r'^[a-z0-9][a-z0-9._-]{0,79}$')
@@ -75,6 +76,7 @@ class ExtensionService:
         if not {'id','version','markdown'}<=set(data):raise ValueError('Skill import needs id, version and markdown')
         return {'format':'termx-bundle/v1','id':data['id'],'version':data['version'],
                 'permissions':data.get('permissions',['files-read']),
+                **({'computer':data['computer']} if 'computer' in data else {}),
                 'files':{'skills/'+data['id']+'/SKILL.md':data['markdown']}}
 
     def normalize(self,data,format):
@@ -84,15 +86,21 @@ class ExtensionService:
         bundle=self.adapters[format](data)
         if not isinstance(bundle,dict):raise ValueError('Imported bundle must be an object')
         if len(json.dumps(bundle).encode())>2_100_000:raise ValueError('Entire bundle exceeds its byte budget')
-        if set(bundle)-{'format','id','version','permissions','files','description','dependencies'} or bundle.get('format')!='termx-bundle/v1':
+        if set(bundle)-{'format','id','version','permissions','files','description','dependencies','computer'} or bundle.get('format')!='termx-bundle/v1':
             raise ValueError('Invalid bundle format')
         if not isinstance(bundle.get('id'),str) or not isinstance(bundle.get('version'),str) or not SLUG.fullmatch(bundle['id']) or not SLUG.fullmatch(bundle['version']):
             raise ValueError('Bundle ID and version must be safe slugs')
         if not isinstance(bundle.get('permissions',[]),list) or any(not isinstance(p,str) for p in bundle.get('permissions',[])):
             raise ValueError('Permissions must be a list of supported names')
         permissions=set(bundle.get('permissions',[]))
-        if not permissions <= {'files-read','files-write','git-read','git-write','agent-run','network-manage'}:
+        if not permissions <= {'files-read','files-write','git-read','git-write','agent-run','network-manage','desktop-control'}:
             raise ValueError('Extension requests forbidden host/authentication permissions')
+        computer=bundle.get('computer')
+        if computer is not None:
+            # An application list only narrows what desktop control may reach, so it needs that permission.
+            if 'desktop-control' not in permissions or not isinstance(computer,dict) or set(computer)!={'apps'}:
+                raise ValueError('A computer application list needs the desktop-control permission and only an apps list')
+            computer={'apps':normalize_apps(computer['apps'])}
         files=bundle.get('files')
         if not isinstance(files,dict) or not files or len(files)>200:
             raise ValueError('Bundle needs one to 200 text files')
@@ -124,7 +132,7 @@ class ExtensionService:
                     or dependency['id']==bundle['id']):
                 raise ValueError('Dependencies require unique IDs, versions and canonical bundle digests')
             seen.add(dependency['id'])
-        return {**bundle,'permissions':sorted(permissions)}
+        return {**bundle,'permissions':sorted(permissions),**({'computer':computer} if computer is not None else {})}
 
     def preview(self,principal,data,format='termx-bundle/v1'):
         self.workspace.require(principal,'host-admin')
@@ -200,7 +208,8 @@ class ExtensionService:
                     'version':bundle['version'],'permissions':bundle['permissions'],'path':str(target)},identifier=identifier+':'+digest)
             body={'active_digest':digest,'version':bundle['version'],'permissions':bundle['permissions'],
                   'path':str(target),'enabled':True,'description':bundle.get('description',''),
-                  'dependencies':bundle.get('dependencies',[]),'provenance':preview.get('provenance',{'kind':'portable-import'})}
+                  'dependencies':bundle.get('dependencies',[]),'provenance':preview.get('provenance',{'kind':'portable-import'}),
+                  **({'computer_apps':bundle['computer']['apps']} if bundle.get('computer') else {})}
             if current:
                 row=self.store.update('extension',identifier,body,current['revision'])
             else:
@@ -397,7 +406,8 @@ class ExtensionService:
             pending.extend(item['id'] for item in bundle.get('dependencies',[]))
             files=[{'path':name,'content':content,**file_label(name)}
                    for name,content in bundle['files'].items() if name.startswith(SERVED_PREFIXES)]
-            contexts.append({'id':identifier,'version':extension['version'],'digest':extension['active_digest'],'instructions':files})
+            contexts.append({'id':identifier,'version':extension['version'],'digest':extension['active_digest'],'instructions':files,
+                             **({'computer_apps':bundle['computer']['apps']} if bundle.get('computer') else {})})
         return contexts
 
     def _verified_bundle(self,extension,principal,project_id,cwd,resource_id=None):

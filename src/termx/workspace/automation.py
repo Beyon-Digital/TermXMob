@@ -15,6 +15,7 @@ from termx.agent.store import ACTIVE_STATUSES
 from termx.workspace.store import Conflict
 
 
+from termx.workspace.bot_triggers import is_event
 from termx.workspace.schedule_spec import next_run
 
 
@@ -93,18 +94,21 @@ class AutomationService:
             prepared=await service.prepare(principal,kwargs['conversation_id'],browser_permission)
         return self.create(principal,**kwargs,browser_permission=browser_permission,_prepared_browser_permission=prepared)
 
-    def create(self,principal,*,request_id,conversation_id,success_criteria,max_runs,limits,prompt,spec,grant_days,missed='skip',overlap='skip',runbook_id=None,command=None,browser_permission=None,_prepared_browser_permission=None):
+    def create(self,principal,*,request_id,conversation_id,success_criteria,max_runs,limits,prompt,spec,grant_days,missed='skip',overlap='skip',runbook_id=None,command=None,browser_permission=None,computer_permission=None,_prepared_browser_permission=None,trigger=None,report_to=None,enabled=True):
         self.workspace.record(principal,'conversation',conversation_id,scope='agent-run')
         identifier=uuid.uuid5(uuid.NAMESPACE_URL,principal.id+':schedule:'+request_id).hex
         digest=hashlib.sha256(json.dumps(dict(conversation_id=conversation_id,success_criteria=success_criteria,
             max_runs=max_runs,limits=limits,prompt=prompt,spec=spec,grant_days=grant_days,missed=missed,overlap=overlap,runbook_id=runbook_id,command=command,
-            **({'browser_permission':browser_permission} if browser_permission is not None else {})),sort_keys=True).encode()).hexdigest()
+            **({'browser_permission':browser_permission} if browser_permission is not None else {}),
+            **({'computer_permission':computer_permission} if computer_permission is not None else {}),
+            **({'trigger':trigger} if trigger else {}),**({'report_to':report_to} if report_to else {})),sort_keys=True).encode()).hexdigest()
         with self.store.lock:
             previous=self.store.get('schedule',identifier)
             if previous:
                 self.workspace.record(principal,'schedule',identifier,scope='agent-control')
                 if previous.get('creation_digest')!=digest: raise Conflict('Creation request changed; use a new request ID')
                 return previous
+            self.workspace.bots.schedules.admit(conversation_id,shell=bool(command or runbook_id),browser=browser_permission is not None,computer=computer_permission is not None)  # a bot takes agent schedules only, while active and under its cap
             if command and runbook_id: raise ValueError('Choose a saved automation or a new command')
             if browser_permission is not None and _prepared_browser_permission is None:
                 raise ValueError('Review and prepare browser permissions before creating a schedule')
@@ -113,11 +117,13 @@ class AutomationService:
                 conversation=self.workspace.session(principal,conversation_id,turns=False)
                 self.workspace.require(principal,'terminal-control',conversation.get('project_id'),conversation.get('cwd'))
                 if conversation.get('runner_id'): raise ValueError('Shell cron jobs run on this host; choose a local conversation')
-            due=next_run(spec,self.clock())
-            if due>=self.clock()+grant_days*86400:
+            due=None if trigger and is_event({'trigger':trigger}) else next_run(spec,self.clock())
+            if due is not None and due>=self.clock()+grant_days*86400:
                 raise ValueError('The first run must be before the execution grant expires')
             if browser_permission is not None and (browser_permission['expires_at']>self.clock()+grant_days*86400 or due>=browser_permission['expires_at']):
                 raise ValueError('Browser permission must cover the first run and expire within the schedule grant')
+            if computer_permission is not None:
+                computer_permission=self._computer_permission(principal,conversation_id,computer_permission,grant_days,due,command or runbook_id)
             goal=grant=created_runbook=None
             try:
                 if command:
@@ -132,13 +138,28 @@ class AutomationService:
                     grant=self.store.update('delegation',grant['id'],{**grant,'runbook':runbook})
                 if _prepared_browser_permission is not None:
                     grant=self.store.update('delegation',grant['id'],{**grant,'browser_permission':_prepared_browser_permission})
+                if computer_permission is not None:
+                    grant=self.store.update('delegation',grant['id'],{**grant,'computer_permission':computer_permission})
                 return self.schedule(principal,goal_id=goal['id'],grant_id=grant['id'],prompt=prompt,spec=spec,
-                    missed=missed,overlap=overlap,enabled=True,identifier=identifier,creation_digest=digest)
+                    missed=missed,overlap=overlap,enabled=enabled,identifier=identifier,creation_digest=digest,trigger=trigger,report_to=report_to)
             except Exception:
                 if grant: self.store.delete('delegation',grant['id'])
                 if goal: self.store.delete('goal',goal['id'])
                 if created_runbook: self.workspace.agents.delete_runbook(created_runbook['id'])
                 raise
+
+    def _computer_permission(self,principal,conversation_id,selection,grant_days,first_due,command):
+        """A reviewed computer permission for a schedule grant: an agent schedule on this host, by an owner who may control the desktop."""
+        from termx.desktop.apps import verifiable
+        from termx.workspace.scheduled_computer import normalize
+        if command: raise ValueError('Computer permissions require an agent schedule')
+        if not verifiable(): raise ValueError('This host cannot tell which application is in front, so it cannot hold a computer permission for a schedule')
+        conversation=self.workspace.session(principal,conversation_id,turns=False)
+        if conversation.get('runner_id') or conversation.get('engine','internal')!='internal':
+            raise ValueError('Unattended computer permission requires a local Internal Agent conversation')
+        self.workspace.require(principal,'desktop-control',conversation.get('project_id'),conversation.get('cwd'),resource_kind='conversation',resource_id=conversation_id)
+        now=self.clock()
+        return normalize(selection,now=now,grant_until=now+grant_days*86400,first_due=first_due)
 
     def runbook(self,principal,conversation_id,identifier):
         conversation=self.workspace.session(principal,conversation_id,turns=False)
@@ -173,18 +194,20 @@ class AutomationService:
         self.store.log(principal.id,'delegation',row['id'],'granted',{'goal_id':goal_id,'expires_at':expires_at})
         return row
 
-    def schedule(self,principal,*,goal_id,grant_id,prompt,spec,missed='skip',overlap='skip',enabled=False,identifier=None,creation_digest=None):
+    def schedule(self,principal,*,goal_id,grant_id,prompt,spec,missed='skip',overlap='skip',enabled=False,identifier=None,creation_digest=None,trigger=None,report_to=None):
         goal = self.workspace.record(principal,'goal',goal_id,scope='agent-control')
         grant = self.workspace.record(principal,'delegation',grant_id,scope='agent-control')
         self.workspace.record(principal,'conversation',goal['conversation_id'],scope='agent-run')
         if grant['goal_id']!=goal_id or grant['revoked'] or grant['expires_at']<=self.clock():
             raise PermissionError('Delegated grant does not authorize this goal')
+        self.workspace.bots.schedules.admit(goal['conversation_id'],shell=bool(grant.get('runbook')),browser=grant.get('browser_permission') is not None,computer=grant.get('computer_permission') is not None)  # the direct goal/grant/schedule route follows the same bot rules as create
         if missed not in {'skip','once'} or overlap not in {'skip','queue'} or not prompt.strip() or len(prompt)>64000:
             raise ValueError('Invalid schedule prompt or missed/overlap policy')
-        due = next_run(spec,self.clock())
+        due = None if trigger and is_event({'trigger':trigger}) else next_run(spec,self.clock())
         return self.store.create('schedule',principal.id,{'goal_id':goal_id,'grant_id':grant_id,'prompt':prompt,
             'spec':spec,'missed':missed,'overlap':overlap,'enabled':enabled,'next_run':due,'last_run':None,
-            'state':'enabled' if enabled else 'disabled','creation_digest':creation_digest,'runbook_id':(grant.get('runbook') or {}).get('id')},goal.get('project_id'),identifier)
+            'state':'enabled' if enabled else 'disabled','creation_digest':creation_digest,'runbook_id':(grant.get('runbook') or {}).get('id'),
+            **({'trigger':trigger} if trigger else {}),**({'report_to':report_to} if report_to else {})},goal.get('project_id'),identifier)
 
     def preview(self,spec,count=5):
         due=self.clock(); dates=[]
@@ -202,9 +225,10 @@ class AutomationService:
             raise ValueError('Archived schedules cannot be enabled')
         if enabled and (grant['revoked'] or grant['expires_at']<=self.clock() or goal['status']!='active'):
             raise PermissionError('Renew the delegated grant before enabling')
+        if enabled: self.workspace.bots.schedules.require_current(principal,row)
         return self.store.update('schedule',identifier,{**row,'enabled':enabled,
                 'state':'enabled' if enabled else 'disabled','reason':None,'queued':False,
-                'next_run':next_run(row['spec'],self.clock()) if enabled else row['next_run']},revision)
+                'next_run':(None if is_event(row) else next_run(row['spec'],self.clock())) if enabled else row['next_run']},revision)
 
     def edit(self, principal, identifier, *, revision, prompt=None, spec=None, missed=None, overlap=None, enabled=None):
         row=self.workspace.record(principal,'schedule',identifier,scope='agent-control')
@@ -218,7 +242,12 @@ class AutomationService:
         if prompt is not None and (not prompt.strip() or len(prompt)>64000): raise ValueError('Enter a task prompt')
         if missed is not None and missed not in {'skip','once'}: raise ValueError('Invalid missed-run policy')
         if overlap is not None and overlap not in {'skip','queue'}: raise ValueError('Invalid overlap policy')
-        if spec is not None: changes.update(next_run=next_run(spec,self.clock()),queued=False)
+        if spec is not None:
+            if is_event(row): raise ValueError('This schedule runs on a trigger, not a time')
+            changes.update(next_run=next_run(spec,self.clock()),queued=False)
+            permission=(self.store.get('delegation',row.get('grant_id') or '') or {}).get('computer_permission')
+            if permission and changes['next_run'] is not None and changes['next_run']>=permission['expires_at']:
+                raise ValueError('Computer permission must cover the first run')
         return self.store.update('schedule',identifier,{**row,**changes},revision)
 
     def archive(self,principal,identifier,revision):
@@ -231,6 +260,7 @@ class AutomationService:
             self.workspace.record(principal,'goal',row['goal_id'],scope='agent-run')
             if row['revision']!=revision: raise Conflict('Schedule changed; refresh before running again')
             if row.get('archived'): raise ValueError('Archived schedules cannot run')
+            self.workspace.bots.schedules.require_current(principal,row)
             if len(self._dispatch_workers) >= 8:
                 raise Conflict('Scheduled dispatch capacity reached; wait for a preparing run to finish')
             return await self._dispatch(row,manual=True,background=True)
@@ -340,15 +370,17 @@ class AutomationService:
                 elif task['status'] in ACTIVE_STATUSES and run.get('task_status')!=task['status']:
                     self.store.update('schedule_run',run['id'],{**run,'task_status':task['status']})
                 elif task['status'] not in ACTIVE_STATUSES:
-                    self.store.update('schedule_run',run['id'],{**run,'status':task['status'],'finished_at':self.clock()})
+                    finished = self.store.update('schedule_run',run['id'],{**run,'status':task['status'],'finished_at':self.clock()})
+                    self._report(finished)
             for schedule in self.store.list('schedule'):
-                if not schedule['enabled'] or schedule['next_run']>self.clock():
+                if not schedule['enabled'] or is_event(schedule) or schedule['next_run']>self.clock():
                     continue
                 if len(self._dispatch_workers) >= 8:
                     continue
                 await self._dispatch(schedule, background=True)
+            await self.workspace.bots.triggers.process(self)  # event triggers start their runs through _dispatch too
 
-    async def _dispatch(self,schedule,manual=False,background=False):
+    async def _dispatch(self,schedule,manual=False,background=False,trigger=None):
         now=self.clock()
         principal=self.principal_lookup(schedule['owner'])
         goal=self.store.get('goal',schedule['goal_id'])
@@ -386,20 +418,21 @@ class AutomationService:
             if manual: raise Conflict('This conversation already has an active turn')
             if schedule['overlap']=='skip':
                 self.store.create('schedule_run',schedule['owner'],{'schedule_id':schedule['id'],'goal_id':goal['id'],
-                                  'status':'skipped','reason':'Previous conversation turn is active','due':schedule['next_run']},schedule.get('project_id'))
+                                  'status':'skipped','reason':'Previous conversation turn is active','due':schedule['next_run'],
+                                  'trigger_kind':trigger['kind'] if trigger else 'time'},schedule.get('project_id'))
                 self.store.update('schedule',schedule['id'],{**schedule,**self._advance(schedule,now)})
             elif not schedule.get('queued'):
                 self.store.update('schedule',schedule['id'],{**schedule,'queued':True},schedule['revision'])
             return  # queue keeps one overdue occurrence; never an unbounded backlog.
         grace=60
-        if not manual and not schedule.get('queued') and schedule['missed']=='skip' and now-schedule['next_run']>grace:
+        if not manual and not trigger and not schedule.get('queued') and schedule['missed']=='skip' and now-schedule['next_run']>grace:
             self.store.create('schedule_run',schedule['owner'],{'schedule_id':schedule['id'],'goal_id':goal['id'],
                               'status':'skipped','reason':'Missed occurrence','due':schedule['next_run']},schedule.get('project_id'))
             self.store.update('schedule',schedule['id'],{**schedule,**self._advance(schedule,now)})
             return
         try:
             run=self.store.reserve_schedule_run(schedule,now,
-                schedule['next_run'] if manual else self._advance(schedule,now)['next_run'],manual=manual)
+                schedule['next_run'] if manual or trigger else self._advance(schedule,now)['next_run'],manual=manual)
         except Conflict as exc:
             fresh=self.store.get('schedule',schedule['id'])
             self.store.update('schedule',schedule['id'],{**fresh,'enabled':False,'state':'needs_attention','reason':str(exc)})
@@ -408,23 +441,25 @@ class AutomationService:
         if run is None:
             if manual: raise Conflict('Schedule changed; refresh before running again')
             return
-        run = self.store.update('schedule_run', run['id'], {**run, 'grant_id':grant['id'], 'started_at':now})
+        run = self.store.update('schedule_run', run['id'], {**run, 'grant_id':grant['id'], 'started_at':now,
+            'trigger_kind':trigger['kind'] if trigger else ('manual' if manual else 'time'),
+            **({'trigger_ref':trigger['ref']} if trigger else {})})
         if background:
-            worker = asyncio.create_task(self._execute_dispatch(run, schedule, principal, goal, grant, conversation))
+            worker = asyncio.create_task(self._execute_dispatch(run, schedule, principal, goal, grant, conversation, trigger))
             self._dispatch_workers[run['id']] = worker
             worker.add_done_callback(lambda done, identifier=run['id']: self._dispatch_finished(identifier, done))
             # Fast local dispatches remain observable in this tick; a provider's
             # planning latency cannot monopolize reconciliation or remote control.
             await asyncio.wait({worker}, timeout=.05)
             return self.store.get('schedule_run', run['id'])
-        return await self._execute_dispatch(run, schedule, principal, goal, grant, conversation)
+        return await self._execute_dispatch(run, schedule, principal, goal, grant, conversation, trigger)
 
     def _dispatch_finished(self, identifier, worker):
         self._dispatch_workers.pop(identifier, None)
         if not worker.cancelled():
             worker.exception()
 
-    async def _execute_dispatch(self, run, schedule, principal, goal, grant, conversation):
+    async def _execute_dispatch(self, run, schedule, principal, goal, grant, conversation, trigger=None):
         now = self.clock()
         try:
             self._dispatch_guard(run)
@@ -433,6 +468,7 @@ class AutomationService:
                 command=self.workspace.state.agent.runbooks.start(snapshot,conversation['cwd'],profile='host',project_id=conversation.get('project_id'))
                 return self.store.update('schedule_run',run['id'],{**run,'status':'running','runbook_run_id':command['id'],'started_at':now,'grant_id':grant['id']})
             task=await self.workspace.send(principal,conversation['id'],prompt=schedule['prompt']+
+                ('\n\n'+trigger['text'] if trigger else '')+
                 '\n\nSuccess criteria:\n'+goal['success_criteria'],request_id='schedule:'+run['id'],limits=grant['limits'],delegation_id=grant['id'],
                 dispatch_guard=lambda row:self._dispatch_guard(run))
             fresh = self.store.get('schedule_run', run['id'])
@@ -450,6 +486,13 @@ class AutomationService:
                 await self._stop_task_tree(task_id)
             self.store.update('schedule_run',run['id'],{**fresh,'status':'needs_attention','reason':str(exc) or type(exc).__name__})
         return self.store.get('schedule_run',run['id'])
+
+    def _report(self, run):
+        """A bot's finished run is posted to the owner's activity feed. A failure here never disturbs reconciliation."""
+        try:
+            self.workspace.bots.report_run(run)
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception('Bot run report failed')
 
     def _dispatch_guard(self, run):
         fresh = self.store.get('schedule_run', run['id'])
@@ -502,6 +545,8 @@ class AutomationService:
 
     @staticmethod
     def _advance(schedule,now):
+        if is_event(schedule):
+            return {'queued':False}
         if schedule['spec']['kind']=='once':
             return {'next_run':None,'enabled':False,'state':'completed','queued':False}
         return {'next_run':next_run(schedule['spec'],now),'queued':False}

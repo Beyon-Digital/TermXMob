@@ -43,6 +43,7 @@ class FakeComputer:
         actions: list[dict[str, Any]],
         *,
         cancel: asyncio.Event | None = None,
+        guard: Any = None,
     ) -> bytes:
         self.actions.append(actions)
         frame = self._frames[min(self._frame_index, len(self._frames) - 1)]

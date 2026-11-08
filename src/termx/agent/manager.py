@@ -16,6 +16,7 @@ from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
 from termx.agent.computer import ComputerController
+from termx.desktop import apps as desktop_apps
 from termx.agent.context import ContextEngine
 from termx.agent.context.handoff import build_brief, changed_files
 from termx.agent.context.engine import (
@@ -119,6 +120,8 @@ class AgentManager:
         self.execution_authority: Callable[[str], None] | None = None
         # Set by the workspace: True for a task running under a schedule's unattended grant.
         self.is_unattended: Callable[[str], bool] | None = None
+        # Set by the workspace: the computer permission an unattended task runs under, or None when it has none.
+        self.computer_permission: Callable[[str], dict[str, Any] | None] | None = None
         self._scheduler = CallScheduler(self._tools)
         self._http = ProviderHttpRuntime()
         self.catalogue = ProviderCatalogue(self.store, self._fetch_catalog)
@@ -526,6 +529,12 @@ class AgentManager:
         )
         return Route(provider_id, chosen, self.model_meta(provider, chosen), fallbacks, source)
 
+    def _message_recipients(self, task: dict[str, Any]) -> list[dict[str, str]] | None:
+        """Who this task may message, or ``None`` when it is neither a bot's nor the attended main agent's (the tools stay hidden)."""
+        workspace = getattr(getattr(self, "orchestrator", None), "workspace", None)
+        bots = getattr(workspace, "bots", None)
+        return bots.messages.recipients_for_task(task) if bots is not None else None
+
     @staticmethod
     def _stream_fn(adapter: Any) -> Any:
         return getattr(adapter, "stream_turn", None) if getattr(adapter, "supports_streaming", False) else None
@@ -622,6 +631,7 @@ class AgentManager:
         auto: dict[str, Any] | None = None,
         isolated: bool = False,
         role: str | None = None,
+        computer_apps: list[str] | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -772,6 +782,7 @@ class AgentManager:
                                                  **({"auto": auto_state} if auto_state else {}),
                                                  **({"isolated": True} if isolated else {}),
                                                  **({"role": role} if role else {}),
+                                                 **({"computer_apps": [str(app) for app in computer_apps][:20]} if computer_apps is not None else {}),
                                                  "route_source": route.source})
         await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
         ready = self._task(task_id)
@@ -1531,6 +1542,9 @@ class AgentManager:
                     }
                     if plan_mode:
                         kwargs["plan_mode"] = True
+                    recipients = self._message_recipients(task)
+                    if recipients:  # nobody to message or hear from: the tools stay hidden
+                        kwargs["message_recipients"] = recipients
                     if stream_fn is not None:
                         self._emit(
                             task_id,
@@ -1766,9 +1780,13 @@ class AgentManager:
 
     @staticmethod
     def _carry_runtime(runtime: dict[str, Any] | None) -> dict[str, Any]:
-        """The Auto state, last context size and session-worktree flag, for runtime rewrites that would otherwise drop them."""
-        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used", "isolated", "role", "route_source")}
-        return {key: value for key, value in carried.items() if value}
+        """The Auto state, last context size, session-worktree flag, application list and computer seconds spent, for runtime rewrites that would otherwise drop them."""
+        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used", "isolated", "role", "route_source", "computer_spent")}
+        kept = {key: value for key, value in carried.items() if value}
+        # An empty application list means no application is allowed, so it must survive as much as a full one.
+        if isinstance((runtime or {}).get("computer_apps"), list):
+            kept["computer_apps"] = list(runtime["computer_apps"])
+        return kept
 
     @staticmethod
     def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int | float, int | float] | None:
@@ -2553,6 +2571,87 @@ class AgentManager:
         # forgotten project is re-registered instead of leaving a stale id.
         return str(self._files_service().register(cwd)["id"])
 
+    def front_names(self) -> list[str] | None:
+        """Every name the application in front is known by, or None when the host cannot say."""
+        identity = getattr(self._computer, "target_identity", None)
+        names = identity() if callable(identity) else None
+        if names is None:
+            app = self._computer.target_app()
+            names = [app] if app else None
+        return names
+
+    def computer_limits(self, task_id: str) -> tuple[list[str] | None, dict[str, Any] | None]:
+        """The applications this task may drive and, when it runs unattended, the permission it runs under.
+
+        Lists from the task and every task above it (skills, and the schedule's permission) must all allow an
+        application. None means no list is active. An ancestry that cannot be followed allows nothing.
+        """
+        lists: list[list[str] | None] = []
+        seen: set[str] = set()
+        current: str | None = task_id
+        while current:
+            if current in seen or len(seen) >= 64:
+                return [], None
+            seen.add(current)
+            task = self.store.get_task(current) or {}
+            apps = (task.get("runtime") or {}).get("computer_apps")
+            if isinstance(apps, list):
+                lists.append([str(app) for app in apps])
+            current = task.get("parent_id")
+        permission = None
+        if self.is_unattended is not None and self.is_unattended(task_id) and self.computer_permission is not None:
+            permission = self.computer_permission(task_id)
+            if permission is not None:
+                lists.append(list(permission["apps"]))
+        return desktop_apps.combine(lists), permission
+
+    async def _check_front_app(self, task_id: str, batch_id: str, apps: list[str], phase: str, *, strict: bool = False) -> None:
+        """Refuse when the front application is not on the list. ``phase`` is 'before', 'during' or 'after' the batch.
+
+        Once input has been sent this can only withhold the screenshot and stop the task. ``strict`` is for a
+        schedule's permission, which is not trusted on a host that cannot name the front application. The lookup
+        runs subprocesses, so it runs in a thread.
+        """
+        names = await asyncio.to_thread(self.front_names) if apps else None
+        front = names[0] if names else None
+        unverifiable = names is None and not desktop_apps.verifiable()
+        if apps and unverifiable and not strict:
+            # Only macOS names the front application. Elsewhere a skill's list is best effort, and says so.
+            self._emit(task_id, "computer.app_unverified", {"batch_id": batch_id, "phase": phase, "apps": apps})
+            return
+        if apps and names is not None and desktop_apps.matches(names, apps):
+            return
+        sent = phase != "before"
+        if not apps:
+            why = (
+                "No application is allowed here: the lists in use have none in common. "
+                "Every list must name an application the same way, for example Notes in all of them or com.apple.Notes in all of them. "
+            )
+        elif unverifiable:
+            why = "This host cannot tell which application is in front, so a schedule's application permission cannot be enforced here. "
+        else:
+            why = f"The application in front ({front or 'unknown'}) is not allowed here. Allowed: {', '.join(apps)}. "
+        effect = {
+            "before": "No input was sent. ",
+            "during": "Earlier input from this batch was already sent and cannot be undone; this action and the rest were not sent. ",
+            "after": "Input from this batch was already sent and cannot be undone; its screenshot was not shown to the model. ",
+        }[phase]
+        message = why + effect + "Ask the user to bring an allowed application to the front."
+        details = {"batch_id": batch_id, "phase": phase, "front": front, "apps": apps, "input_sent": sent}
+        self._emit(task_id, "computer.app_blocked", details)
+        raise desktop_apps.AppBlocked(message, details)
+
+    def _computer_spent(self, run_id: str) -> float:
+        """Seconds of computer control the run has used, kept on the run's own task so a restart does not reset it."""
+        return float((((self.store.get_task(run_id) or {}).get("runtime")) or {}).get("computer_spent") or 0.0)
+
+    def _charge_computer(self, run_id: str, seconds: float) -> None:
+        task = self.store.get_task(run_id)
+        if task is not None:
+            runtime = dict(task.get("runtime") or {})
+            runtime["computer_spent"] = float(runtime.get("computer_spent") or 0.0) + seconds
+            self.store.update_task(run_id, runtime=runtime)
+
     async def _execute_computer(
         self,
         task_id: str,
@@ -2561,6 +2660,53 @@ class AgentManager:
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         batch_id = uuid.uuid4().hex[:12]
         action_types = [str(action.get("type") or "") for action in call.actions]
+        apps, permission = self.computer_limits(task_id)
+        if permission is None and self.is_unattended is not None and self.is_unattended(task_id):
+            raise PermissionError("Unattended computer control is off for this run")
+        run_id = str((permission or {}).get("run_id") or task_id)
+        remaining = None
+        if permission is not None:
+            remaining = float(permission["max_seconds"]) - self._computer_spent(run_id)
+            if remaining <= 0:
+                raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control")
+        if apps is not None:
+            hotkey = desktop_apps.switching_hotkey(call.actions)
+            if hotkey:
+                details = {"batch_id": batch_id, "phase": "hotkey", "front": None, "apps": apps, "input_sent": False, "keys": hotkey}
+                self._emit(task_id, "computer.app_blocked", details)
+                raise desktop_apps.AppBlocked(
+                    f"{hotkey} switches applications, which a skill limited to {', '.join(apps) or 'no application'} cannot do. "
+                    "No input was sent. Use the application's own controls instead.",
+                    details,
+                )
+            await self._check_front_app(task_id, batch_id, apps, "before", strict=permission is not None)
+        started = monotonic()
+        try:
+            if remaining is None:
+                return await self._execute_computer_batch(task_id, call, cancel, batch_id, action_types, apps)
+            # The batch stops when the run's computer time does, not after it.
+            limit = asyncio.timeout(remaining)
+            try:
+                async with limit:
+                    return await self._execute_computer_batch(task_id, call, cancel, batch_id, action_types, apps, strict=True)
+            except TimeoutError:
+                if not limit.expired():
+                    raise
+                raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control") from None
+        finally:
+            if permission is not None:
+                self._charge_computer(run_id, monotonic() - started)
+
+    async def _execute_computer_batch(
+        self,
+        task_id: str,
+        call: ProviderCall,
+        cancel: asyncio.Event,
+        batch_id: str,
+        action_types: list[str],
+        apps: list[str] | None,
+        strict: bool = False,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         self._emit(
             task_id,
             "computer.action.started",
@@ -2571,8 +2717,14 @@ class AgentManager:
         if self._observation.control_owner != "agent":
             self._observation.control_owner = "agent"
             self._emit(task_id, "computer.control.changed", {"owner": "agent"})
+        options: dict[str, Any] = {}
+        if apps is not None:
+            async def guard(_action: dict[str, Any]) -> None:
+                await self._check_front_app(task_id, batch_id, apps, "during", strict=strict)
+
+            options["guard"] = guard  # the front application can change inside a batch
         try:
-            screenshot = await self._computer.execute(call.actions, cancel=cancel)
+            screenshot = await self._computer.execute(call.actions, cancel=cancel, **options)
         except BaseException as exc:
             self._emit(
                 task_id,
@@ -2584,6 +2736,14 @@ class AgentManager:
                 },
             )
             raise
+        if apps is not None:
+            # A key held at the end of one batch must not complete a chord in the next, which the hotkey check cannot see.
+            await self._computer.release_all()
+            try:
+                await self._check_front_app(task_id, batch_id, apps, "after", strict=strict)
+            except desktop_apps.AppBlocked:
+                self._emit(task_id, "computer.action.finished", {"batch_id": batch_id, "ok": False, "error": "application changed"})
+                raise
         self._emit(task_id, "computer.action.finished", {"batch_id": batch_id, "ok": True})
 
         region = _screenshot_region(call.actions)
