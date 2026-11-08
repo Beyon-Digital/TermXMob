@@ -24,6 +24,7 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
  const {formProps,markClean}=useDirtyForm('provider-account');
  const [id,setId]=useState(account?.id||''),[name,setName]=useState(account?.name||''),[url,setUrl]=useState(account?.base_url||providers[0].url),[secret,setSecret]=useState(''),[showSecret,setShowSecret]=useState(false),[capabilities,setCapabilities]=useState<string[]>(account?.capabilities||['shell','functions']);
  const [included,setIncluded]=useState(()=>modelList(account?.model||'')),[overrides,setOverrides]=useState<ModelOverrides>(account?.model_overrides||{});
+ const [wire,setWire]=useState<'responses'|'chat'>(account?.wire==='chat'?'chat':'responses');
  const [provider,setProvider]=useState(providerFor(account?.base_url||providers[0].url)),[saving,setSaving]=useState(false),[error,setError]=useState(''),[errors,setErrors]=useState<Errors>({});
  const pending=useRef(false),generatedId=useRef('');
  const disabled=busy||saving;
@@ -50,7 +51,7 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
   if(pending.current||!validate())return;
   pending.current=true;setSaving(true);setError('');
   if(!generatedId.current)generatedId.current=name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+crypto.randomUUID().slice(0,8);
-  const input:ProviderAccountInput={id:id.trim()||generatedId.current,name:name.trim(),kind:account?.kind||'openai-compatible',base_url:url.trim(),model:included.join('\n'),capabilities,api_key:secret||null};
+  const input:ProviderAccountInput={id:id.trim()||generatedId.current,name:name.trim(),kind:account?.kind||'openai-compatible',base_url:url.trim(),model:included.join('\n'),capabilities,api_key:secret||null,wire};
   if(Object.keys(overrides).length||Object.keys(account?.model_overrides||{}).length)input.model_overrides=overrides;
   try{
    const result=await onSave(input);
@@ -80,6 +81,7 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
   </section>
   <details><summary>Advanced account options</summary>
    <FormField label="Internal account key" hint="Generated automatically.">{control=><Input {...control} name="id" value={id} disabled={disabled||!!account} onChange={event=>setId(event.target.value)}/>}</FormField>
+   <FormField label="Request format" hint="Most providers use Responses. Choose Chat Completions for a compatible server that only offers /chat/completions.">{control=><Select {...control} name="wire" value={wire} disabled={disabled} onChange={event=>setWire(event.target.value==='chat'?'chat':'responses')}><option value="responses">Responses</option><option value="chat">Chat Completions</option></Select>}</FormField>
    <fieldset className="provider-capabilities"><legend>Declared account capabilities</legend>{choices.map(([value,label])=><label key={value}><span><input type="checkbox" name="capabilities" value={value} checked={capabilities.includes(value)} disabled={disabled} onChange={event=>{setCapabilities(prior=>event.target.checked?[...prior,value]:prior.filter(item=>item!==value));clearError('capabilities')}}/>{label}</span></label>)}
     {errors.capabilities&&<p className="form-field-error" role="alert">{errors.capabilities}</p>}</fieldset>
    <p className="manager-help">These declarations make the account available for matching operations. Verify each model and your account entitlement; declaring a capability does not prove provider support or authorize charges.</p>

@@ -95,7 +95,7 @@ def test_provider_transcription_speech_entitlement_and_no_replay(tmp_path,provid
         audio=await adapter.generate('alice','project',{**args,'request_id':'speech-123','operation':'speak','prompt':'Hello'})
         assert service.binary('alice',audio['id'])[0]==b'audio-response'
         failed={**args,'request_id':'failed-123','operation':'image-generate','prompt':'Test'}
-        with pytest.raises(HTTPException,match='Provider rejected'):await adapter.generate('alice','project',failed)
+        with pytest.raises(HTTPException,match='provider refused this request'):await adapter.generate('alice','project',failed)
         with pytest.raises(HTTPException,match='will not be replayed'):await adapter.generate('alice','project',failed)
         await client.aclose()
     asyncio.run(run())

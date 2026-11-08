@@ -11,5 +11,5 @@
 .live-voice-consent{display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin:0;font-weight:400;line-height:1.5}
 .live-voice-consent input{margin:3px 0 0;accent-color:var(--accent);flex-shrink:0}
 .live-voice-button.is-live{color:var(--accent)}
-@media(max-width:480px){.live-voice-panel{padding:8px 10px}}
+@media(max-width:480px){.live-voice-panel{padding:8px 10px;max-height:max(110px,22dvh);overflow-y:auto;overscroll-behavior:contain}}
 .live-voice-host{display:contents}

@@ -20,6 +20,9 @@ export interface SpeakOptions {
   fallback?: boolean;
 }
 
+/** A notice that ends in a full stop, so another sentence can follow it. */
+export const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
 function decode(pcm: string): Float32Array {
   const text = atob(pcm);
   const bytes = new Uint8Array(text.length - (text.length % 4));
@@ -175,10 +178,10 @@ export class SpeechPlayer {
     if (failure !== undefined) {
       voice = speechSynthesis.getVoices?.().find(item => item.localService);
       if (!voice) {
-        this.hooks.onNotice(`${failure} No on-device browser voice is installed, so nothing was read aloud.`);
+        this.hooks.onNotice(`${sentence(failure)} No on-device browser voice is installed, so nothing was read aloud.`);
         return Promise.resolve();
       }
-      this.hooks.onNotice(`${failure} Reading with your browser voice instead.`);
+      this.hooks.onNotice(`${sentence(failure)} Reading with your browser voice instead.`);
     }
     this.setState('speaking');
     const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);

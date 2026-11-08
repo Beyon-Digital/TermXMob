@@ -156,7 +156,7 @@ export default function BotPermissions(props:BotTabProps){
       </SettingsRow>)
       :<li className="settings-row"><Empty>No remembered approvals. When you choose “always allow” for this bot during a run, it appears here.</Empty></li>}
     </SettingsSection>
-    <SettingsSection level={3} title="Peers" description="Other bots this one may message once messaging is available. Leave empty to allow none.">
+    <SettingsSection level={3} title="Peers" description="Other bots this one may message. Leave empty to allow none.">
       <li className="settings-row bot-form-row"><Peers key={bot.revision} {...props}/></li>
     </SettingsSection>
   </>;

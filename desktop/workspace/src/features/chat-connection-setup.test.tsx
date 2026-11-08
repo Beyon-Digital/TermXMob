@@ -36,6 +36,17 @@ it('does not invent a model for a connected account without one',()=>{
  expect(connect).not.toHaveBeenCalled();
 });
 
+it('lists every discovered model when the account has all of them checked',()=>{
+ const connect=vi.fn();
+ render(<ChatConnectionSetup {...props} providers={[{...accounts[0],model:'',models:['alpha','beta']}]} onConnect={connect}/>);
+ const select=screen.getByRole('combobox',{name:'Chat model'});
+ expect(select).toBeEnabled();
+ expect([...select.querySelectorAll('option')].map(option=>option.textContent)).toEqual(['alpha','beta']);
+ expect(screen.queryByText(/Add a default model/)).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Use for this chat'}));
+ expect(connect).toHaveBeenCalledWith({provider_id:'one',model:'alpha',reasoning_config:{}});
+});
+
 it('keeps a configured chat unchanged and identifies a missing native engine honestly',()=>{
  const connect=vi.fn(),configure=vi.fn();
  const view=render(<ChatConnectionSetup {...props} session={{...session,provider_id:'one',model:'first-model'}} onConnect={connect}/>);

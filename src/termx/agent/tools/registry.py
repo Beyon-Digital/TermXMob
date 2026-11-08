@@ -169,15 +169,22 @@ class ToolRegistry:
         allow_subagents: bool = True,
         plan_mode: bool = False,
         message_recipients: list[dict[str, str]] | None = None,
+        allowed_tools: list[str] | tuple[str, ...] | frozenset[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Function-tool schemas for the provider payload (computer excluded —
         the adapter appends its native or function-shaped computer tool).
 
         The messaging tools appear only when ``message_recipients`` is a list, and ``send_message`` then names exactly
-        those recipients (``{"to": "bot:<id>", "name": ...}``) in its schema."""
+        those recipients (``{"to": "bot:<id>", "name": ...}``) in its schema.
+
+        ``allowed_tools`` (a bot's or custom agent's preset) hides every other tool, so the model is never told it may
+        call something the dispatcher would refuse."""
+        allowed = None if allowed_tools is None else frozenset(allowed_tools)
         tools: list[dict[str, Any]] = []
         for name in sorted(self._specs):
             spec = self._specs[name]
+            if allowed is not None and name not in allowed:
+                continue
             if name in self._MESSAGE_TOOLS:
                 if message_recipients is None or (name == "send_message" and not message_recipients):
                     continue

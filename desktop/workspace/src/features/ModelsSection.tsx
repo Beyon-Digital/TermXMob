@@ -13,7 +13,7 @@ import {gql,useManagerLoad,useManagerMutation} from './use-manager';
 
 interface ModelsData { engines?: EngineDescriptor[]; agent_providers?: AgentProvider[]; acp_registry?: unknown; model_routing?: Routing }
 interface ProviderTestReply { status?: string; ok?: boolean; message?: string }
-const providerFields='id name kind model models base_url secret_configured capabilities model_catalog model_overrides catalog_refreshed_at catalog_error';
+const providerFields='id name kind model models base_url secret_configured capabilities model_catalog model_overrides catalog_refreshed_at catalog_error wire';
 const loadModels=()=>gql<ModelsData>(`{ engines { id label installed version auth_state auth_detail protocol error capabilities } agent_providers { ${providerFields} } acp_registry model_routing }`);
 const saveProvider='mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}';
 
@@ -56,7 +56,7 @@ export default function ModelsSection({admin,me,projectId,onCapabilitiesChanged}
   const providers=data?.agent_providers||[],engines=data?.engines||[];
   const matches=rowMatcher(search,me.session_id);
   const saveAccount=(message:string)=>(input:ProviderAccountInput)=>mutate(()=>gql(saveProvider,{input:{...input}}),message);
-  const refreshModels=(provider:AgentProvider)=>mutate(()=>gql('mutation($id:String!){refresh_provider_models(provider_id:$id)}',{id:provider.id}),'Model catalog refreshed');
+  const refreshModels=(provider:AgentProvider)=>mutate(()=>gql('mutation($id:String!){refresh_provider_models(provider_id:$id){id model}}',{id:provider.id}),'Model catalog refreshed');
   const hasCredential=providers.some(provider=>provider.secret_configured);
   return <ManagerPage section="models" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={{label:"Models & engines",value:search,onChange:setSearch,count:providers.length+engines.length}}>
     <>

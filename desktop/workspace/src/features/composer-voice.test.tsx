@@ -64,6 +64,7 @@ function Harness(props: {
   reply?: Reply;
   sessionId?: string;
   enabled?: boolean;
+  speechSuspended?: boolean;
   onTranscript: (text: string, send: boolean) => void;
   onOpenSettings?: () => void;
 }) {
@@ -71,6 +72,7 @@ function Harness(props: {
     ownerId: 'owner',
     sessionId: props.sessionId ?? 'chat-a',
     enabled: props.enabled ?? true,
+    speechSuspended: props.speechSuspended,
     reply: props.reply ?? null,
     onTranscript: props.onTranscript,
     onOpenSettings: props.onOpenSettings,
@@ -123,15 +125,45 @@ async function ready() {
 }
 
 it('says how to set up dictation instead of asking for the microphone when no account is chosen', async () => {
-  load.mockResolvedValue(status({consent: {}}, false));
+  load.mockResolvedValue(status({consent: {}, provider: null}, false));
   const open = vi.fn();
   const view = render(<Harness onTranscript={onTranscript} onOpenSettings={open} />);
   fireEvent.click(await ready());
   expect(getUserMedia).not.toHaveBeenCalled();
-  expect(await screen.findByText(/audio account/i)).toBeInTheDocument();
+  // The hint is announced: it lives in the status region.
+  expect(await screen.findByRole('status')).toHaveTextContent(/needs an audio account/i);
   fireEvent.click(screen.getByRole('button', {name: 'Open voice settings'}));
   expect(open).toHaveBeenCalledOnce();
   await expectNoAxeViolations(view.container);
+});
+
+it.each([
+  [{provider: 'speech', transcribe_model: '', consent: {provider: {id: 'speech', at: 1}}}, /transcription model/i],
+  [{provider: 'speech', transcribe_model: 'whisper-1', consent: {}}, /consent to send recordings/i],
+])('names the missing consent or model instead of the account when only that is missing', async (override, message) => {
+  load.mockResolvedValue(status(override as never, false));
+  render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  expect(await screen.findByRole('status')).toHaveTextContent(message);
+});
+
+it('stops and discards a recording on Escape', async () => {
+  render(<Harness onTranscript={onTranscript} />);
+  fireEvent.click(await ready());
+  await screen.findByRole('button', {name: 'Stop dictation'});
+  fireEvent.keyDown(window, {key: 'Escape'});
+  expect(await screen.findByRole('button', {name: 'Start dictation'})).toBeEnabled();
+  expect(upload).not.toHaveBeenCalled();
+  expect(onTranscript).not.toHaveBeenCalled();
+});
+
+it('does not read the reply aloud while a live voice session is open', async () => {
+  load.mockResolvedValue(status({auto_speak: true}));
+  const view = render(<Harness reply={{id: 'task-1', text: 'Old.'}} speechSuspended onTranscript={onTranscript} />);
+  await ready();
+  view.rerender(<Harness reply={{id: 'task-2', text: 'Live reply.'}} speechSuspended onTranscript={onTranscript} />);
+  await new Promise(done => setTimeout(done, 30));
+  expect(spoken).toEqual([]);
 });
 
 it('keeps the microphone button focusable while the recording is transcribed', async () => {

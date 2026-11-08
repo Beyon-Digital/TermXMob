@@ -142,19 +142,53 @@ class BotTriggers:
 
     # -- webhook secrets -----------------------------------------------------------------------------
 
+    def _vault(self):
+        """The host's credential store (OS keychain), or None where it is unavailable and the record must hold the secret."""
+        vault = getattr(getattr(getattr(self.workspace, 'state', None), 'agent', None), 'credentials', None)
+        try:
+            return vault if vault is not None and vault.available() else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _vault_key(schedule_id):
+        return 'bot-webhook:' + schedule_id
+
     def issue_secret(self, owner, schedule_id):
-        """A new secret, returned once. Only the host keeps it, in a record no view or log includes."""
+        """A new secret, returned once. The host keeps it in its credential store (the OS keychain) and the workspace
+        record only notes that it is there, so the key never sits in the database. Without a credential store the record
+        holds it. Issuing again replaces the old one."""
         secret = secrets.token_urlsafe(32)
+        vault = self._vault()
+        body = {'secret': secret}
+        if vault is not None:
+            try:
+                vault.set(self._vault_key(schedule_id), secret)
+                body = {'vault': True}
+            except Exception:
+                body = {'secret': secret}
         with self.store.lock:
             if self.store.get(WEBHOOK_SECRET, schedule_id):
-                self.store.update(WEBHOOK_SECRET, schedule_id, {'secret': secret})
+                self.store.update(WEBHOOK_SECRET, schedule_id, body)  # replaces the whole body, so a stored old secret goes
             else:
-                self.store.create(WEBHOOK_SECRET, owner, {'secret': secret}, None, schedule_id)
+                self.store.create(WEBHOOK_SECRET, owner, body, None, schedule_id)
         self.store.log(owner, WEBHOOK_SECRET, schedule_id, 'secret_issued')
         return secret
 
+    def _secret_for(self, stored, schedule_id):
+        if stored.get('secret'):
+            return stored['secret']
+        vault = self._vault() if stored.get('vault') else None
+        return (vault.get(self._vault_key(schedule_id)) if vault is not None else None) or ''
+
     def drop_secret(self, schedule_id):
         self.store.delete(WEBHOOK_SECRET, schedule_id)
+        vault = self._vault()
+        if vault is not None:
+            try:
+                vault.delete(self._vault_key(schedule_id))
+            except Exception:
+                pass
 
     # -- finding who listens -----------------------------------------------------------------------------
 
@@ -238,9 +272,10 @@ class BotTriggers:
             raise WebhookError(401, 'Invalid signature') from None
         digest = signature or ''
         stored = self.store.get(WEBHOOK_SECRET, schedule_id)
-        if abs(now - stamp) > WEBHOOK_WINDOW or not stored or not _SIGNATURE.fullmatch(digest):
+        key = self._secret_for(stored, schedule_id) if stored else ''
+        if abs(now - stamp) > WEBHOOK_WINDOW or not key or not _SIGNATURE.fullmatch(digest):
             raise WebhookError(401, 'Invalid signature')
-        expected = hmac.new(stored['secret'].encode(), str(stamp).encode() + b'.' + body, hashlib.sha256).hexdigest()
+        expected = hmac.new(key.encode(), str(stamp).encode() + b'.' + body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest('sha256=' + expected, digest):
             raise WebhookError(401, 'Invalid signature')
         self._seen = {key: until for key, until in self._seen.items() if until > now}

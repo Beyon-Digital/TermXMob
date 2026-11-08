@@ -23,7 +23,9 @@ const provider={id:'local',name:'Local Ollama',kind:'openai-compatible',base_url
 it('asks the host for the discovery fields and refreshes the catalog from the account form',async()=>{
  let catalogError:string|null='Connection refused';
  serve(['host-admin'],(path,body)=>{
-  if(body.query?.includes('refresh_provider_models')){catalogError=null;return {data:{refresh_provider_models:{}}}}
+  if(body.query?.includes('refresh_provider_models')){
+   if(!/refresh_provider_models\([^)]*\)\s*\{[^}]+\}/.test(body.query))return {errors:[{message:"Field 'refresh_provider_models' of type 'AgentProvider!' must have a selection of subfields."}]};
+   catalogError=null;return {data:{refresh_provider_models:{id:'local',model:'llama3'}}}}
   return {data:{engines:[],agent_providers:[{...provider,catalog_error:catalogError}],acp_registry:[]}};
  });
  const {container}=render(<Managers embedded section="models" projectId={null} sessionId={null}/>);
@@ -113,7 +115,7 @@ it('renders the access page for a member without administrator sections and pass
 
 it('refreshes models without a discard prompt and keeps the unsaved account edits',async()=>{
  serve(['host-admin'],(path,body)=>{
-  if(body.query?.includes('refresh_provider_models'))return {data:{refresh_provider_models:{}}};
+  if(body.query?.includes('refresh_provider_models'))return {data:{refresh_provider_models:{id:'local',model:''}}};
   return {data:{engines:[],agent_providers:[provider],acp_registry:[]}};
  });
  render(<SettingsSurface category="models" onSelect={vi.fn()} onClose={vi.fn()}><Managers embedded section="models" projectId={null} sessionId={null}/></SettingsSurface>);

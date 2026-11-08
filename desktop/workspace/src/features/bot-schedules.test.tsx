@@ -74,12 +74,12 @@ it('lists everything waiting on the owner above the bots and answers each item i
  expect(inbox.getByText('Prefers short reports')).toBeInTheDocument();
  await expectNoAxeViolations(container);
 
- fireEvent.click(inbox.getByRole('button',{name:'Dismiss run'}));
+ fireEvent.click(inbox.getByRole('button',{name:/^Dismiss run/}));
  await waitFor(()=>expect(sent('acknowledge_schedule_run')).toHaveLength(1));
  expect(sent('acknowledge_schedule_run')[0].variables).toEqual({c:'c1',r:'r1'});
  expect(await screen.findByText('Run dismissed')).toBeInTheDocument();
 
- fireEvent.click(await screen.findByRole('button',{name:'Keep memory'}));
+ fireEvent.click(await screen.findByRole('button',{name:/^Keep memory/}));
  await waitFor(()=>expect(sent('resolve_memory_proposal')).toHaveLength(1));
  expect(sent('resolve_memory_proposal')[0].variables).toEqual({id:'m1',keep:true});
 });
@@ -87,7 +87,7 @@ it('lists everything waiting on the owner above the bots and answers each item i
 it('discards a proposed memory note when asked',async()=>{
  serve({bots:[bot()],inbox:[memory],schedules:[]});
  open();
- fireEvent.click(await screen.findByRole('button',{name:'Discard memory'}));
+ fireEvent.click(await screen.findByRole('button',{name:/^Discard memory/}));
  await waitFor(()=>expect(sent('resolve_memory_proposal')[0].variables).toEqual({id:'m1',keep:false}));
 });
 

@@ -207,6 +207,19 @@ class ArtifactService:
         raise HTTPException(400, 'This export format is unavailable for the artifact kind')
 
 
+def provider_status_error(status: int) -> HTTPException:
+    """What the person can do about a provider's refusal, from its status code alone. The provider's own body is never echoed."""
+    if status == 401:
+        return HTTPException(409, 'The provider did not accept the API key. Check the key for this account in Models & engines.')
+    if status == 403:
+        return HTTPException(409, 'The provider refused this request. Check the API key for this account in Models & engines, and that the account may use this model.')
+    if status == 429:
+        return HTTPException(409, 'The provider is limiting requests or the quota is used up. Wait a moment, or check the account plan.')
+    if status >= 500:
+        return HTTPException(502, 'The provider is not responding. Try again.')
+    return HTTPException(409, 'Provider rejected this operation; verify model capability, entitlement and quota')
+
+
 class MediaProvider:
     """OpenAI-compatible image/audio API, explicitly selected existing account.
 
@@ -222,7 +235,7 @@ class MediaProvider:
         # response. Cancellation closes the connection without retrying billing.
         async with client.stream('POST', url, **kwargs) as response:
             if response.status_code >= 300:
-                raise HTTPException(409, 'Provider rejected this operation; verify model capability, entitlement and quota')
+                raise provider_status_error(response.status_code)
             output = bytearray()
             async for chunk in response.aiter_bytes():
                 if len(output) + len(chunk) > LIMIT:
@@ -328,7 +341,7 @@ class MediaProvider:
             else:
                 raise HTTPException(400,'Unsupported media operation')
             if response.status_code >= 300:
-                raise HTTPException(409,'Provider rejected this operation; verify model capability, entitlement and quota')
+                raise provider_status_error(response.status_code)
             if len(response.content)>LIMIT:
                 raise HTTPException(413,'Provider output exceeds the media limit')
             if operation == 'transcribe':

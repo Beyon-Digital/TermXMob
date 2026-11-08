@@ -1542,6 +1542,9 @@ class AgentManager:
                     }
                     if plan_mode:
                         kwargs["plan_mode"] = True
+                    preset_tools = (self.store.task_agent(task) or {}).get("tools")
+                    if preset_tools:  # a bot or custom agent: advertise only what it may call
+                        kwargs["allowed_tools"] = sorted(preset_tools)
                     recipients = self._message_recipients(task)
                     if recipients:  # nobody to message or hear from: the tools stay hidden
                         kwargs["message_recipients"] = recipients
@@ -1901,7 +1904,14 @@ class AgentManager:
             if preset and preset.get('tools'):
                 for entry in group:
                     name=entry.call.name or ('run_shell' if entry.call.type=='shell' else entry.call.type)
-                    if name not in preset['tools']:raise PermissionError('This tool is outside the task agent preset')
+                    if name not in preset['tools'] and entry.call.type!='function':raise PermissionError('This tool is outside the task agent preset')
+                if len(group)==1 and group[0].call.type=='function' and group[0].call.name not in preset['tools']:
+                    # A model can still name a tool it was not offered. Tell it, so it can adjust, rather than failing the task.
+                    refused=group[0].call
+                    self._emit(task_id,'tool.started',{'call':refused.public()})
+                    outcome=self._outside_preset(refused)
+                    self._emit(task_id,'tool.finished',outcome.finished_payload(refused));history.extend(outcome.output_items(refused));step+=1;index+=1
+                    continue
             # A controlled browser grant must not be bypassed via arbitrary
             # shell, runbook, subagent, computer or Git process tools. Typed
             # project file/search operations remain available for code context.
@@ -2436,6 +2446,10 @@ class AgentManager:
         except Exception as exc:
             self._fail(task_id, exc)
 
+    @staticmethod
+    def _outside_preset(call: Any) -> ToolOutcome:
+        return ToolOutcome({"refused": True, "error": f"{call.name} is not one of this agent's tools. Use one of the tools you were given."})
+
     async def _invoke_tool(self, entry: Any, ctx: ToolContext) -> ToolOutcome:
         self._check_execution_authority(ctx.task_id)
         call = entry.call
@@ -2445,7 +2459,7 @@ class AgentManager:
             raise ValueError(f"unsupported provider tool: {call.name or call.type}")
         preset=self.store.task_agent(ctx.task)
         if preset and preset.get("tools") and call.name not in preset["tools"]:
-            raise PermissionError("This tool is outside the task agent preset")
+            return self._outside_preset(call)
         if ctx.read_only and not entry.spec.expose_read_only:
             # Read-only modes hide these tools from the model's schema; a call
             # to one anyway is refused here, whatever approval or Auto says.

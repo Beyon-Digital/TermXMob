@@ -2,6 +2,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {expectNoAxeViolations} from '../test-axe';
 import VoiceSection from './VoiceSection';
+import SettingsActions from './SettingsActions';
 import {SettingsFormsContext} from './settings-forms';
 import {
   downloadWoof,
@@ -160,6 +161,30 @@ it('previews each Woof voice with the credit, and removes the model after confir
   const dialog = await screen.findByRole('dialog', {name: /Remove Underdog Woof/});
   fireEvent.click(within(dialog).getByRole('button', {name: 'Remove'}));
   await waitFor(() => expect(remove).toHaveBeenCalledOnce());
+});
+
+it('asks once before removing Woof, not through the generic review as well', async () => {
+  load.mockResolvedValue(status({settings: {engine: 'woof', consent: {woof: {sha256: 'a'.repeat(64), at: 1}}}, woof: {state: 'ready', installed: true}}));
+  render(<SettingsActions><VoiceSection admin projectId={null} /></SettingsActions>);
+  await screen.findByRole('radio', {name: /Underdog Woof/});
+  fireEvent.click(screen.getByRole('button', {name: 'Remove'}));
+  const dialog = await screen.findByRole('dialog', {name: /Remove Underdog Woof/});
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  fireEvent.click(within(dialog).getByRole('button', {name: 'Remove'}));
+  await waitFor(() => expect(remove).toHaveBeenCalledOnce());
+});
+
+it('flags a damaged Woof install as an alert and keeps Remove available', async () => {
+  load.mockResolvedValue(status({settings: {engine: 'woof'}, woof: {state: 'error', installed: true, detail: 'The model file x does not match the pinned release. Remove Woof and download it again.'}}));
+  await open();
+  expect(screen.getByRole('alert')).toHaveTextContent('Remove Woof and download it again');
+  expect(screen.getByRole('button', {name: 'Remove'})).toBeEnabled();
+  expect(screen.getByText('Needs attention')).toBeInTheDocument();
+});
+
+it('shows Set up, not Ready, for the cloud engine until an audio account is chosen', async () => {
+  await open();
+  expect(screen.getByText('Set up')).toBeInTheDocument();
 });
 
 it('asks another owner to accept the license before they can use an installed model', async () => {

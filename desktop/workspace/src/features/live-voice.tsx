@@ -74,7 +74,14 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
     old?.end('user');
   };
   useEffect(() => {
-    if (!enabled) detach.current();
+    if (enabled) return;
+    // detach() clears client.current, so the old client's onEnded is ignored and cannot reset the panel itself.
+    detach.current();
+    setPhase('closed');
+    setState('idle');
+    setLevel(0);
+    setMuted(false);
+    setLines([]);
   }, [enabled]);
   useEffect(() => () => detach.current(), []);
   const lastSession = useRef(sessionId);
@@ -136,6 +143,16 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
     } else {
       buttonRef.current?.focus();
     }
+  }, [phase]);
+
+  // Escape dismisses the consent and setup panels. A running session is ended with its own button, never by a stray key.
+  useEffect(() => {
+    if (phase !== 'setup' && phase !== 'consent') return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) setPhase('closed');
+    };
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
   }, [phase]);
 
   function press() {

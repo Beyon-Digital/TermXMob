@@ -6,4 +6,4 @@
 .chat-connection-setup form label select{width:100%;min-width:0}
 .chat-connection-setup>.button{font-size:12px;padding-left:0}
 .chat-connection-error{font-size:12px;line-height:1.5;color:var(--destructive);margin:8px 0}
-@container(max-width:440px){.chat-connection-setup{padding:12px}.chat-connection-setup form{gap:8px}.chat-connection-setup form label{flex-basis:100%}.chat-connection-setup form>.button{width:100%}}
+@container(max-width:440px){.chat-connection-setup{padding:12px;max-height:max(120px,24cqh);overflow-y:auto;overscroll-behavior:contain}.chat-connection-setup form{gap:8px}.chat-connection-setup form label{flex-basis:100%}.chat-connection-setup form>.button{width:100%}}

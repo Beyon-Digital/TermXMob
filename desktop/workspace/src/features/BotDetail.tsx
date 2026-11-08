@@ -1,4 +1,4 @@
-import {useRef,useState,type KeyboardEvent} from 'react';
+import {useEffect,useRef,useState,type KeyboardEvent} from 'react';
 import {Badge} from '../components/ui/badge';
 import {Button} from '../components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
@@ -52,13 +52,13 @@ function Overview({bot,bots,mutation,projects,onGone,inbox,onTab}:BotTabProps&{o
       </SettingsRow>
       <SettingsRow label="Model" description="Chosen when it runs unless set here."><span>{bot.model||'Default model'}</span></SettingsRow>
     </SettingsSection>
-    <SettingsSection level={3} title="Delete" description="Remove this bot for good.">
+    <SettingsSection level={3} title="Delete" description="Stop this bot and remove it from your list.">
       <SettingsRow label="Delete bot" description="Stops it, revokes its schedules and permissions and removes its agent file. Its conversation history is kept.">
-        <ActionButton busy={busy} onClick={()=>setConfirming(true)}>Delete bot</ActionButton>
+        <ActionButton busy={busy} data-reviewed-action onClick={()=>setConfirming(true)}>Delete bot</ActionButton>
       </SettingsRow>
     </SettingsSection>
     <Dialog open={confirming} onOpenChange={setConfirming}>
-      <DialogContent aria-describedby="delete-bot-description">
+      <DialogContent data-reviewed-action aria-describedby="delete-bot-description">
         <DialogTitle>Delete bot</DialogTitle>
         <DialogDescription id="delete-bot-description">“{bot.name}” stops now and cannot be resumed. Its schedules and remembered approvals are revoked.</DialogDescription>
         <div className="bot-dialog-actions">
@@ -109,7 +109,9 @@ type TabId=typeof tabs[number]['id'];
 
 export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTab='overview',onBack,onGone,onSection}:BotTabProps&{me:HostIdentity;inbox:NeedsYouItem[];initialTab?:TabId;onBack:()=>void;onGone:()=>void;onSection?:(name:string)=>void}){
   const [tab,setTab]=useState<TabId>(initialTab);
-  const list=useRef<HTMLDivElement>(null);
+  const list=useRef<HTMLDivElement>(null),heading=useRef<HTMLHeadingElement>(null);
+  // Opening a bot removes the row that held focus, which would leave it on the dialog; the bot's name takes it instead.
+  useEffect(()=>{const active=document.activeElement;if(!active||active===document.body||active.getAttribute('role')==='dialog')heading.current?.focus()},[bot.id]);
   const props={bot,bots,mutation,projects};
   function move(event:KeyboardEvent,index:number){
     const next=event.key==='ArrowRight'?(index+1)%tabs.length:event.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
@@ -120,7 +122,7 @@ export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTa
   return <div className="bot-detail">
     <div className="bot-detail-head">
       <Button variant="ghost" onClick={onBack}>All bots</Button>
-      <h3>{bot.name}</h3>
+      <h3 tabIndex={-1} ref={heading}>{bot.name}</h3>
       <Badge variant={bot.state==='active'?'default':'secondary'}>{stateLabel[bot.state]}</Badge>
       {bot.needs_you>0&&<Badge variant="outline">{bot.needs_you===1?'1 needs you':`${bot.needs_you} need you`}</Badge>}
     </div>

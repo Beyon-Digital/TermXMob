@@ -1,4 +1,5 @@
-import {useEffect,useId,useRef,useState} from 'react';
+import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {Check,ChevronDown,ClipboardList,MessageCircle,Workflow} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Collapsible,CollapsibleContent,CollapsibleTrigger} from '../components/ui/collapsible';
@@ -52,14 +53,22 @@ function AutoLimits({auto,onChange}:{auto:AutoSetting;onChange:(next:AutoSetting
 
 export default function SessionModePicker({session,running,onPatch,auto,onAutoChange}:{session:Session|null;running:boolean;onPatch:(changes:Record<string,unknown>)=>void;auto?:AutoSetting;onAutoChange?:(next:AutoSetting)=>void}){
  const [open,setOpen]=useState(false);
- const root=useRef<HTMLSpanElement>(null),trigger=useRef<HTMLButtonElement>(null),popoverId=useId(),autoId=useId(),planReasonId=useId();
+ const root=useRef<HTMLSpanElement>(null),trigger=useRef<HTMLButtonElement>(null),popover=useRef<HTMLDivElement>(null),popoverId=useId(),autoId=useId(),planReasonId=useId();
+ // The composer clips its children (overflow:hidden), so the popover is portalled and placed above the chip with fixed coordinates.
+ const [place,setPlace]=useState<{bottom:number;left:number}>({bottom:0,left:0});
+ useLayoutEffect(()=>{
+  if(!open)return;
+  const move=()=>{const bounds=trigger.current?.getBoundingClientRect();if(!bounds)return;setPlace({bottom:Math.max(8,window.innerHeight-bounds.top+6),left:Math.max(16,Math.min(bounds.left,window.innerWidth-336))})};
+  move();window.addEventListener('resize',move);window.addEventListener('scroll',move,true);
+  return()=>{window.removeEventListener('resize',move);window.removeEventListener('scroll',move,true)};
+ },[open]);
  // Closing when the conversation changes is the parent's job: Chat keys this component by session.
  useEffect(()=>{
   if(!open)return;
-  const outside=(event:PointerEvent)=>{if(!root.current?.contains(event.target as Node))setOpen(false)};
+  const outside=(event:PointerEvent)=>{const target=event.target as Node;if(!root.current?.contains(target)&&!popover.current?.contains(target))setOpen(false)};
   const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus()}};
   document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
-  root.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled), input[type=radio]:not(:disabled)')?.focus();
+  popover.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled), input[type=radio]:not(:disabled)')?.focus();
   return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)};
  },[open]);
  const selected=modes.find(mode=>mode.id===session?.mode)||modes[0],Icon=selected.icon;
@@ -68,7 +77,7 @@ export default function SessionModePicker({session,running,onPatch,auto,onAutoCh
  const autoOn=selected.id==='agent'&&!!auto?.enabled&&!autoReason;
  return <span className="mode-picker" ref={root}>
   <Button ref={trigger} className={'composer-mode-chip'+(autoOn?' is-auto':'')} variant="ghost" size="sm" aria-label="Session mode" aria-haspopup="true" aria-expanded={open} aria-controls={open?popoverId:undefined} disabled={!session} onClick={()=>setOpen(value=>!value)}><Icon size={14}/><span>{selected.name}{autoOn&&' · Auto'}</span><ChevronDown size={12}/></Button>
-  {open&&<div className="mode-popover" id={popoverId}>
+  {open&&createPortal(<div className="mode-popover" id={popoverId} ref={popover} style={place}>
    <div className="mode-options" role="radiogroup" aria-label="Session mode">{modes.map(mode=>{const ModeIcon=mode.icon,blocked=mode.id==='plan'&&!!planReason;return <label className={'mode-option '+(selected.id===mode.id?'selected':'')} key={mode.id}><input type="radio" name="session-mode" value={mode.id} checked={selected.id===mode.id} disabled={running||blocked} aria-describedby={blocked?planReasonId:undefined} onChange={()=>onPatch({mode:mode.id})}/><ModeIcon size={18}/><span><strong>{mode.name}</strong><small>{mode.description}</small></span>{selected.id===mode.id&&<Check size={16}/>}</label>})}</div>
    {planReason&&<p className="control-running-note" id={planReasonId}>{planReason}</p>}
    {running&&<p className="control-running-note" role="status">Change mode after the current task finishes.</p>}
@@ -77,6 +86,6 @@ export default function SessionModePicker({session,running,onPatch,auto,onAutoCh
     {autoReason&&<p className="control-running-note" id={autoId+'-reason'}>{autoReason}</p>}
     {!autoReason&&<Collapsible><CollapsibleTrigger asChild><Button className="mode-auto-limits-toggle" variant="ghost" size="sm">Auto limits<ChevronDown size={12}/></Button></CollapsibleTrigger><CollapsibleContent><AutoLimits auto={auto} onChange={onAutoChange}/></CollapsibleContent></Collapsible>}
    </div>}
-  </div>}
+  </div>,trigger.current?.closest('.workspace-shell')||document.body)}
  </span>;
 }

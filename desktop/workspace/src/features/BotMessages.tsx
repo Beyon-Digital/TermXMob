@@ -80,9 +80,12 @@ function Compose({bot,mutation,onSent}:BotTabProps&{onSent:()=>void}){
 
 function Reports({bot,bots,rows,mutation,onChanged}:BotTabProps&{rows:TriggerSchedule[];onChanged:()=>void}){
   const options=reportOptions(bots,bot.id),name=(id:string)=>bots.find(row=>row.id===id)?.name||'a deleted bot';
+  // Two triggers can share a prompt; the position keeps each select's name unique.
+  const same=(row:TriggerSchedule)=>rows.filter(other=>short(other.prompt)===short(row.prompt));
+  const labelFor=(row:TriggerSchedule)=>{const group=same(row);return group.length>1?`${short(row.prompt)} (${group.indexOf(row)+1} of ${group.length})`:short(row.prompt)};
   return <SettingsSection level={3} title="Where reports go" description="When a run finishes, its result is posted here. Nothing asks the model again.">
     {rows.length===0?<li className="settings-row"><Empty>No schedules yet. Add one under Schedules &amp; triggers. Its reports go to the main agent unless you choose otherwise.</Empty></li>
-    :rows.map(row=><SettingsRow key={row.id} label={short(row.prompt)} description={describeTrigger(row.trigger||{kind:'time'},name)}>{control=>
+    :rows.map(row=><SettingsRow key={row.id} label={labelFor(row)} description={describeTrigger(row.trigger||{kind:'time'},name)}>{control=>
       <Select {...control} value={reportValue(row.report_to||{kind:'orchestrator'})} aria-disabled={mutation.busy||undefined}
         onChange={event=>mutation.busy?undefined:void mutation.mutate(()=>gql(editMutation,{c:bot.conversation_id,s:row.id,i:{revision:row.revision,report_to:event.target.value}}),'Report destination saved').then(result=>{if(result!==null)onChanged()})}>
         {options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}

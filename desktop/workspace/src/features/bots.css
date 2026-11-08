@@ -24,6 +24,7 @@
 .bot-templates,.bot-tools{display:grid;gap:8px;border:1px solid var(--border);border-radius:8px;padding:12px;min-width:0}
 .bot-templates legend,.bot-tools legend{padding:0 6px;font-size:13px;font-weight:500}
 .bot-template,.bot-check{display:flex;align-items:flex-start;gap:10px;min-height:36px;font-size:13px;cursor:pointer}
+.manager-form label.bot-template:has(>input),.manager-form label.bot-check:has(>input[type=checkbox]),.bot-template,.bot-check{flex-direction:row;align-items:flex-start;text-align:left}
 .bot-template span,.bot-check span{display:grid;gap:2px}
 .bot-template small,.bot-check small{color:var(--secondary);font-size:12px;line-height:1.5}
 .bot-tool-group{display:grid;gap:4px}

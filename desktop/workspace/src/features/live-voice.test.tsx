@@ -100,6 +100,17 @@ it('asks for the billing acknowledgement first and uses the same verb to confirm
   await waitFor(() => expect(fake.start).toHaveBeenCalledWith('s1'));
 });
 
+it('closes the consent panel on Escape and returns focus to the toggle', async () => {
+  load.mockResolvedValue(status({acknowledged: false}));
+  render(<Harness />);
+  fireEvent.click(await startButton());
+  expect(screen.getByRole('button', {name: 'Start live voice'})).toBeInTheDocument();
+  fireEvent.keyDown(document, {key: 'Escape'});
+  await waitFor(() => expect(screen.queryByRole('button', {name: 'Start live voice'})).not.toBeInTheDocument());
+  expect(fake.start).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByRole('button', {name: 'Live voice'})).toHaveFocus());
+});
+
 it('says what to do when no realtime account is set up', async () => {
   load.mockResolvedValue(status({configured: false, acknowledged: false}, {live_provider: null, live_model: ''}));
   const open = vi.fn();
@@ -247,6 +258,16 @@ it('ends the session when the conversation is hidden', async () => {
   fake.end.mockClear();
   view.rerender(<Harness enabled={false} />);
   await waitFor(() => expect(fake.end).toHaveBeenCalled());
+});
+
+it('returns to the idle toggle after the workspace was locked and unlocked', async () => {
+  const view = await live();
+  act(() => fake.hooks.onState('listening'));
+  view.rerender(<Harness enabled={false} />);
+  view.rerender(<Harness enabled />);
+  expect(screen.queryByRole('region', {name: 'Live voice'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'End live voice'})).not.toBeInTheDocument();
+  expect(await screen.findByRole('button', {name: 'Live voice'})).toBeInTheDocument();
 });
 
 it('ignores the old session ending after the conversation was switched', async () => {

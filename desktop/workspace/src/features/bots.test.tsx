@@ -102,6 +102,7 @@ it('lists bots with their state and how many need you, and opens one from the li
  await expectNoAxeViolations(container);
  fireEvent.click(list.getByRole('button',{name:/Weekly report/}));
  expect(await screen.findByRole('heading',{name:'Weekly report'})).toBeInTheDocument();
+ await waitFor(()=>expect(screen.getByRole('heading',{name:'Weekly report'})).toHaveFocus());
  expect(location.search).toBe('?bot=b2');
  fireEvent.click(screen.getByRole('button',{name:'All bots'}));
  expect(await screen.findByRole('list',{name:'Bots'})).toBeInTheDocument();

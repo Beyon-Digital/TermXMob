@@ -119,31 +119,33 @@ function LicenseDialog({
         <DialogDescription>
           Woof is free for non-commercial use with credit. Read the license and notice, then accept to continue.
         </DialogDescription>
-        {error && (
-          <p className="inline-error" role="alert">
-            {error}
-          </p>
-        )}
-        {!texts && !error && <p role="status">Fetching the license from the pinned release…</p>}
-        {texts && (
-          <>
-            <ul className="voice-license-points">
-              <li>Non-commercial use only. A company, a paid product or a hosted service needs a license from {texts.contact}.</li>
-              <li>Show “Voice by Underdog Woof” with a link wherever its audio plays. TermX does this for you.</li>
-              <li>Do not use Woof or its audio to train another speech model.</li>
-            </ul>
-            <pre className="voice-license-text" role="region" tabIndex={0} aria-label="License text">
-              {texts.license.text}
-            </pre>
-            <pre className="voice-license-text" role="region" tabIndex={0} aria-label="Notice text">
-              {texts.notice.text}
-            </pre>
-            <label className="voice-agree">
-              <input type="checkbox" checked={agreed} onChange={event => setAgreed(event.target.checked)} />
-              <span>I have read the license and will use Woof only for non-commercial purposes.</span>
-            </label>
-          </>
-        )}
+        <div className="voice-license-body">
+          {error && (
+            <p className="inline-error" role="alert">
+              {error}
+            </p>
+          )}
+          {!texts && !error && <p role="status">Fetching the license from the pinned release…</p>}
+          {texts && (
+            <>
+              <ul className="voice-license-points">
+                <li>Non-commercial use only. A company, a paid product or a hosted service needs a license from {texts.contact}.</li>
+                <li>Show “Voice by Underdog Woof” with a link wherever its audio plays. TermX does this for you.</li>
+                <li>Do not use Woof or its audio to train another speech model.</li>
+              </ul>
+              <pre className="voice-license-text" role="region" tabIndex={0} aria-label="License text">
+                {texts.license.text}
+              </pre>
+              <pre className="voice-license-text" role="region" tabIndex={0} aria-label="Notice text">
+                {texts.notice.text}
+              </pre>
+              <label className="voice-agree">
+                <input type="checkbox" checked={agreed} onChange={event => setAgreed(event.target.checked)} />
+                <span>I have read the license and will use Woof only for non-commercial purposes.</span>
+              </label>
+            </>
+          )}
+        </div>
         <div className="voice-dialog-actions">
           <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
@@ -170,7 +172,7 @@ function RemoveDialog({
   const [error, setError] = useState('');
   return (
     <Dialog open onOpenChange={open => !open && !busy && onClose()}>
-      <DialogContent className="voice-license-dialog" onCloseAutoFocus={onCloseAutoFocus}>
+      <DialogContent className="voice-license-dialog" data-reviewed-action onCloseAutoFocus={onCloseAutoFocus}>
         <DialogTitle>Remove Underdog Woof</DialogTitle>
         <DialogDescription>
           This deletes the downloaded model from this host. You can download it again later.
@@ -425,7 +427,7 @@ function VoiceForm({
                   onChange={() => setDraft(prior => ({...prior, engine: 'provider', voice: voiceFor('provider', prior.voice)}))}
                 />
                 <span>Cloud or server API</span>
-                <Badge variant="secondary">{provider ? STATE_LABEL[provider.state] : 'Unavailable'}</Badge>
+                <Badge variant="secondary">{provider ? (provider.state === 'ready' && !account ? 'Set up' : STATE_LABEL[provider.state]) : 'Unavailable'}</Badge>
               </label>
               <p>
                 {account
@@ -460,7 +462,7 @@ function VoiceForm({
                 <span>Underdog Woof</span>
                 <Badge variant="secondary">{woof ? STATE_LABEL[woof.state] : 'Unavailable'}</Badge>
               </label>
-              <p>
+              <p role={woof?.state === 'error' && woof.installed ? 'alert' : undefined}>
                 {woof?.state === 'ready'
                   ? 'Runs on this device. Nothing you say or read leaves it. Non-commercial use only.'
                   : (woof?.detail ?? 'Not available on this host.')}
@@ -506,7 +508,7 @@ function VoiceForm({
                     </Button>
                   ))}
                 {woof?.installed && admin && !downloading && (
-                  <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={event => openDialog('remove', event.currentTarget)}>
+                  <Button type="button" size="sm" variant="ghost" disabled={busy} data-reviewed-action onClick={event => openDialog('remove', event.currentTarget)}>
                     Remove
                   </Button>
                 )}

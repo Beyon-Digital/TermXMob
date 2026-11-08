@@ -365,6 +365,30 @@ def test_a_webhook_is_off_by_default_and_shows_its_secret_once(tmp_path):
         asyncio.run(close(workspace, manager, ledger))
 
 
+def test_a_webhook_secret_lives_in_the_credential_store_not_the_database_and_rotation_replaces_it(tmp_path):
+    workspace, owner, manager, ledger, registry, identity = setup(tmp_path)
+    try:
+        scheduler(workspace, identity)
+        bot = chatty(workspace, owner)
+        created, secret = webhook(workspace, owner, bot)
+        key = 'bot-webhook:' + created['id']
+        vault = manager.credentials
+        assert vault.get(key) == secret
+        assert secret not in json.dumps(workspace.store.list('bot_webhook'))
+        body = b'{"event":"deploy"}'
+        client = hook_client(workspace)
+        assert client.post(created['webhook_path'], content=body, headers=sign(secret, body)).status_code == 202
+        rotated = workspace.bots.schedules.rotate_secret(owner, bot['id'], created['id'])['webhook_secret']
+        assert rotated != secret and vault.get(key) == rotated
+        assert secret not in json.dumps(workspace.store.list('bot_webhook')) and rotated not in json.dumps(workspace.store.list('bot_webhook'))
+        assert client.post(created['webhook_path'], content=body, headers=sign(secret, body)).status_code == 401
+        current = workspace.bots.schedules.list(owner, bot['id'])[0]
+        workspace.bots.schedules.archive(owner, bot['id'], created['id'], current['revision'])
+        assert vault.get(key) is None
+    finally:
+        asyncio.run(close(workspace, manager, ledger))
+
+
 def test_a_signed_webhook_wakes_the_bot_and_the_payload_is_data(tmp_path):
     async def run():
         workspace, owner, manager, ledger, registry, identity = setup(tmp_path)

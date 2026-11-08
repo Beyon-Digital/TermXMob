@@ -139,6 +139,7 @@ class WoofEngine(VoiceEngine):
         self._install_guard = threading.Lock()
         self._installing = False
         self._error = ''
+        self._damaged = ''  # why the installed files failed their check, until Woof is removed and downloaded again
         self._progress = {'done': 0, 'total': 0}
         self._texts: dict[str, Any] | None = None
         self._module_name = f'_termx_woof_{manifest.revision[:12] or "unpinned"}'
@@ -173,6 +174,8 @@ class WoofEngine(VoiceEngine):
             state, detail = 'unavailable', NUMPY_MISSING
         elif self._error and not installed:
             state, detail = 'error', self._error
+        elif installed and self._damaged:
+            state, detail = 'error', f'{self._damaged} Remove Woof and download it again.'
         elif installed:
             state, detail = 'ready', 'Runs on this device. Nothing you say or read leaves it.'
         else:
@@ -292,6 +295,7 @@ class WoofEngine(VoiceEngine):
             self._unload()
             _remove_tree(self.base)
             self._error = ''
+            self._damaged = ''
             self._texts = None
 
     # -- load, synthesize, unload -----------------------------------------------------------------
@@ -349,14 +353,19 @@ class WoofEngine(VoiceEngine):
             return
         self._model = None
         module = sys.modules.get(self._module_name)
-        if module is None:
-            module = self._load_module()
-        else:
-            try:
+        try:
+            if module is None:
+                module = self._load_module()
+            else:
                 self.verify()
-            except EngineError:
-                self._unload()
-                raise
+        except WoofIntegrityError as exc:
+            self._unload()
+            self._damaged = str(exc)
+            raise
+        except EngineError:
+            self._unload()
+            raise
+        self._damaged = ''
         try:
             self._model = module.Woof(weights=str(self.dir / WEIGHTS), voice=voice)
         except Exception as exc:

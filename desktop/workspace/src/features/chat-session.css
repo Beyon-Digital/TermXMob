@@ -48,7 +48,7 @@
 .chat-region.coding-session .session-context{font-size:11px;min-height:19px;margin:0 3px 6px;gap:12px}
 .chat-region.coding-session .session-context>span{gap:5px}
 .chat-region.coding-session .session-context .composer-review-task{height:23px;padding:0 7px;font-size:11px;margin-left:auto}
-.chat-region.coding-session .composer-hint{font-size:11px;margin:7px 0 0;color:var(--secondary);opacity:.7}
+.chat-region.coding-session .composer-hint{font-size:11px;margin:7px 0 0;color:var(--secondary)}
 .chat-region.coding-session .composer-retry{font-size:12px;color:var(--warning);margin:0 0 8px}
 .chat-region.coding-session .prompt-queue{border:0;padding:0 3px;margin:0 0 7px;min-height:0;font-size:11px;max-height:min(180px,25vh)}
 .chat-region.coding-session .prompt-queue summary{padding:3px 0}

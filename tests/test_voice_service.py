@@ -187,6 +187,30 @@ def test_remove_deletes_the_model_and_unloads(tmp_path):
     assert not (tmp_path / 'voice' / 'woof').exists() or not any((tmp_path / 'voice' / 'woof').iterdir())
 
 
+def test_a_tampered_model_file_marks_woof_damaged_and_keeps_remove_available(tmp_path):
+    engine = engine_for(tmp_path)
+    asyncio.run(engine.install(license_hash()))
+    assert engine.status()['state'] == 'ready'
+    target = tmp_path / 'voice' / 'woof' / REVISION / 'underdog_woof' / '__init__.py'
+    target.write_bytes(bytes([target.read_bytes()[0] ^ 1]) + target.read_bytes()[1:])
+    with pytest.raises(WoofIntegrityError):
+        collect(engine, 'Hello.')
+    status = engine.status()
+    assert status['state'] == 'error' and status['installed']
+    assert 'does not match the pinned release' in status['detail'] and 'Remove Woof and download it again' in status['detail']
+    engine.remove()
+    assert engine.status()['state'] == 'not_installed'
+
+
+def test_provider_refusals_say_what_to_do_without_echoing_the_provider():
+    from termx.media.service import provider_status_error
+    assert 'API key' in provider_status_error(401).detail and 'API key' in provider_status_error(403).detail
+    outage = provider_status_error(503)
+    assert outage.status_code == 502 and 'not responding' in outage.detail and 'API key' not in outage.detail
+    assert 'quota' in provider_status_error(429).detail
+    assert 'verify model capability' in provider_status_error(400).detail
+
+
 # --- loading, synthesis, idle unload -----------------------------------------------------------
 
 def test_synthesis_is_lazy_threaded_and_returns_float32_chunks(tmp_path):

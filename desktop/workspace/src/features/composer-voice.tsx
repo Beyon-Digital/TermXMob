@@ -16,6 +16,8 @@ export interface ComposerVoiceOptions {
   sessionId?: string;
   /** False while the conversation is hidden or absent: recording and reading stop. */
   enabled: boolean;
+  /** True while a live voice session is open: the realtime model already speaks the reply, so none is read twice. */
+  speechSuspended?: boolean;
   /** The newest finished assistant reply; a change to a new id is read aloud when the owner turned that on. */
   reply: {id: string; text: string} | null;
   /** `sendNow` is true only when the owner chose to send after dictation. */
@@ -31,11 +33,20 @@ function shortcut(ownerId?: string) {
   }
 }
 
+/** Names the one thing dictation is still missing, so the hint matches what the person has already done. */
+function setupMessage(settings?: VoiceStatus['settings']) {
+  if (!settings) return 'Dictation is not set up yet. Choose an audio account in Settings, Voice.';
+  if (!settings.provider) return 'Dictation needs an audio account. Choose one in Settings, Voice.';
+  if (!settings.transcribe_model) return 'Dictation needs a transcription model. Enter one in Settings, Voice.';
+  if (settings.consent?.provider?.id !== settings.provider) return 'Dictation needs your consent to send recordings to this account. Allow it in Settings, Voice.';
+  return 'Dictation is not set up yet. Check Settings, Voice.';
+}
+
 /**
  * Dictation and spoken replies for the composer. `mic` goes in the toolbar, `row` under the text box. Both read
  * the same state, so the hook returns them together.
  */
-export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscript, onOpenSettings}: ComposerVoiceOptions) {
+export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended = false, reply, onTranscript, onOpenSettings}: ComposerVoiceOptions) {
   const {status, setStatus, error: statusError} = useVoiceStatus(enabled);
   const settings = status?.settings;
   const configured = !!status?.stt.configured;
@@ -127,8 +138,17 @@ export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscri
   }, [enabled, ownerId]);
 
   useEffect(() => {
-    if (!enabled) player.stop();
-  }, [enabled, player]);
+    if (!enabled || speechSuspended) player.stop();
+  }, [enabled, speechSuspended, player]);
+  // Escape ends a recording and drops it, so the microphone is never left on after the key the person pressed to get out.
+  useEffect(() => {
+    if (!recording && !requesting) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) mic.cancel();
+    };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [recording, requesting, mic]);
   useEffect(() => {
     const stopAll = () => {
       epoch.current++;
@@ -155,12 +175,12 @@ export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscri
     }
     if (id === seen.current.id) return;
     seen.current.id = id;
-    if (!id || !reply?.text || !settings?.auto_speak) return;
+    if (!id || !reply?.text || !settings?.auto_speak || speechSuspended) return;
     void player.speak(reply.text, {
       engine: settings.engine === 'browser' ? 'browser' : undefined,
       voice: settings.voice || undefined,
     });
-  }, [reply?.id, reply?.text, sessionId, settings?.auto_speak, settings?.engine, settings?.voice, player]);
+  }, [reply?.id, reply?.text, sessionId, settings?.auto_speak, settings?.engine, settings?.voice, speechSuspended, player]);
 
   async function toggle(change: VoiceSettingsChange) {
     const previous = status;
@@ -194,6 +214,7 @@ export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscri
   );
 
   const showToggles = !!settings && (configured || settings.auto_speak || settings.engine !== 'browser');
+  const hint = setupHint && !configured ? setupMessage(settings) : '';
   const statusText = recording
     ? 'Recording. Press the microphone button or release the shortcut to stop.'
     : requesting
@@ -204,7 +225,7 @@ export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscri
           ? 'Preparing the spoken reply…'
           : speech === 'speaking'
             ? 'Reading the reply aloud.'
-            : notice;
+            : notice || hint;
   const visible = showToggles || setupHint || !!error || !!statusText;
   const row: ReactNode = visible ? (
     <div className="composer-voice-row">
@@ -233,14 +254,11 @@ export function useComposerVoice({ownerId, sessionId, enabled, reply, onTranscri
           {error}
         </p>
       )}
-      {setupHint && !configured && (
+      {hint && onOpenSettings && (
         <p className="composer-voice-hint">
-          Dictation needs an audio account and a transcription model. Choose them in Settings, Voice.{' '}
-          {onOpenSettings && (
-            <Button type="button" size="sm" variant="ghost" onClick={onOpenSettings}>
-              Open voice settings
-            </Button>
-          )}
+          <Button type="button" size="sm" variant="ghost" onClick={onOpenSettings}>
+            Open voice settings
+          </Button>
         </p>
       )}
       {showToggles && settings && (

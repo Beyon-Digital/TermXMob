@@ -30,26 +30,26 @@ export interface AgentProvider {
   base_url?: string | null; model?: string | null; models?: string[] | null; capabilities?: string[] | null;
   secret_configured?: boolean | null; created_at?: number | null; updated_at?: number | null;
   model_catalog?: Record<string, ModelInfo> | null; model_overrides?: ModelOverrides | null;
-  catalog_refreshed_at?: number | null; catalog_error?: string | null;
+  catalog_refreshed_at?: number | null; catalog_error?: string | null; wire?: string | null;
 }
 
 /** What ProviderAccountForm shows: the saved provider without its secret. */
 export interface ProviderAccount {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[];
   model_catalog: Record<string, ModelInfo>; model_overrides: ModelOverrides;
-  catalog_refreshed_at: number | null; catalog_error: string | null;
+  catalog_refreshed_at: number | null; catalog_error: string | null; wire?: string | null;
 }
 /** What ProviderAccountForm submits; matches `AgentProviderInput`. `model` lists the included models, empty meaning all. */
 export interface ProviderAccountInput {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[]; api_key: string | null;
-  model_overrides?: ModelOverrides;
+  model_overrides?: ModelOverrides; wire?: 'responses' | 'chat';
 }
 
 export function providerAccount(provider: AgentProvider): ProviderAccount {
   return {
     id: provider.id, name: provider.name, kind: provider.kind, base_url: provider.base_url ?? '', model: provider.model ?? '', capabilities: provider.capabilities ?? [],
     model_catalog: provider.model_catalog ?? {}, model_overrides: provider.model_overrides ?? {},
-    catalog_refreshed_at: provider.catalog_refreshed_at ?? null, catalog_error: provider.catalog_error ?? null,
+    catalog_refreshed_at: provider.catalog_refreshed_at ?? null, catalog_error: provider.catalog_error ?? null, wire: provider.wire ?? null,
   };
 }
 

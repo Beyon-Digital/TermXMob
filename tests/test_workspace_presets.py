@@ -94,7 +94,9 @@ def test_real_agent_freezes_instructions_tool_allowlist_and_sandbox_before_run(w
         await asyncio.sleep(.05)
         assert prompts and 'Only explain the selected source.' in prompts[0] and 'Mutated library' not in prompts[0]
         ctx=manager._tool_context(task['id'],task)
-        with pytest.raises(PermissionError,match='outside'):await manager._invoke_tool(SimpleNamespace(call=ProviderCall(type='function',call_id='blocked',name='run_shell',arguments={}),spec=object()),ctx)
+        refused=await manager._invoke_tool(SimpleNamespace(call=ProviderCall(type='function',call_id='blocked',name='run_shell',arguments={}),spec=object()),ctx)
+        # A tool outside the preset is refused as a tool result the model can read; it neither runs nor fails the task.
+        assert refused.result['refused'] is True and 'not one of this agent' in refused.result['error']
         block.set();await asyncio.sleep(.1);await manager.close()
     asyncio.run(run())
 
@@ -166,8 +168,9 @@ def test_actual_stdio_worker_applies_frozen_instructions_and_refuses_extra_tools
                         result={'response_id':'turn-'+str(turns),'text':'done','calls':[] if turns>1 else [{'type':'function','call_id':'outside','name':'write_file','arguments':{'path':'untouched.txt','content':'changed'},'actions':[],'safety_checks':[]}],'usage':{},'output_items':[]}
                         process.stdin.write(frame({'type':'rpc-result','id':value['id'],'result':result}))
                     elif value['type']=='finished':finished=value['task'];break
-                assert finished and finished['status']=='failed' and 'outside' in finished['error']
-                assert turns==1
+                # The extra tool is refused as a result the model can read, so the run carries on to its next turn and finishes.
+                assert finished and finished['status']=='completed'
+                assert turns==2
                 await asyncio.wait_for(process.wait(),3);assert process.returncode==0
                 assert target.read_text()=='original'
         finally:

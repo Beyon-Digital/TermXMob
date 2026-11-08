@@ -37,6 +37,13 @@ it('opens as an anchored popover, not a modal dialog, and closes on Escape, outs
  fireEvent.click(trigger);fireEvent.click(trigger);
  expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
 });
+it('renders the options outside the clipped composer so they can be clicked',()=>{
+ render(<div className="composer" style={{overflow:'hidden'}}><SessionModePicker session={session} running={false} onPatch={vi.fn()}/></div>);
+ fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ const group=screen.getByRole('radiogroup');
+ expect(group.closest('.composer')).toBeNull();
+ expect(group.closest('.mode-popover')).not.toBeNull();
+});
 it('stays accessible with the mode list open',async()=>{
  const {container}=render(<SessionModePicker session={session} running={false} onPatch={vi.fn()}/>);
  fireEvent.click(screen.getByRole('button',{name:'Session mode'}));

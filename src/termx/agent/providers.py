@@ -195,6 +195,7 @@ class OpenAIResponsesAdapter:
         allow_subagents: bool = True,
         plan_mode: bool = False,
         message_recipients: list[dict[str, str]] | None = None,
+        allowed_tools: list[str] | None = None,
     ) -> ProviderTurn:
         payload = self._turn_payload(
             prompt=prompt,
@@ -207,6 +208,7 @@ class OpenAIResponsesAdapter:
             allow_subagents=allow_subagents,
             plan_mode=plan_mode,
             message_recipients=message_recipients,
+            allowed_tools=allowed_tools,
         )
         body = await self._post(payload)
         return self._turn_from_body(body)
@@ -228,6 +230,7 @@ class OpenAIResponsesAdapter:
         allow_subagents: bool = True,
         plan_mode: bool = False,
         message_recipients: list[dict[str, str]] | None = None,
+        allowed_tools: list[str] | None = None,
         on_delta: Any = None,
         on_event: Any = None,
     ) -> ProviderTurn:
@@ -249,6 +252,7 @@ class OpenAIResponsesAdapter:
             allow_subagents=allow_subagents,
             plan_mode=plan_mode,
             message_recipients=message_recipients,
+            allowed_tools=allowed_tools,
         )
         payload["stream"] = True
         body = await self._post_stream(payload, on_delta=on_delta, on_event=on_event)
@@ -267,11 +271,13 @@ class OpenAIResponsesAdapter:
         allow_subagents: bool = True,
         plan_mode: bool = False,
         message_recipients: list[dict[str, str]] | None = None,
+        allowed_tools: list[str] | None = None,
     ) -> dict[str, Any]:
         tools: list[dict[str, Any]] = []
         if "functions" in self.capabilities or "shell" in self.capabilities:
             tools.extend(self._function_tools(
-                read_only, allow_subagents=allow_subagents, plan_mode=plan_mode, message_recipients=message_recipients))
+                read_only, allow_subagents=allow_subagents, plan_mode=plan_mode, message_recipients=message_recipients,
+                allowed_tools=allowed_tools))
         if allow_computer and "computer" in self.capabilities:
             tools.append({"type": "computer"} if self.native_computer else _computer_function_tool())
         payload: dict[str, Any] = {
@@ -393,6 +399,7 @@ class OpenAIResponsesAdapter:
         allow_subagents: bool = True,
         plan_mode: bool = False,
         message_recipients: list[dict[str, str]] | None = None,
+        allowed_tools: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         # Lazy import: the tools package annotates against this module.
         from termx.agent.tools import default_registry
@@ -402,6 +409,7 @@ class OpenAIResponsesAdapter:
             allow_subagents=allow_subagents,
             plan_mode=plan_mode,
             message_recipients=message_recipients,
+            allowed_tools=allowed_tools,
         )
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:

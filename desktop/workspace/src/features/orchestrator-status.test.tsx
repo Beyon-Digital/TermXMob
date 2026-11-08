@@ -128,6 +128,15 @@ it('discards late responses after an account switch, including switching back', 
   expect(screen.getByText('No tasks yet')).toBeVisible();
 });
 
+it('surfaces a bot report in the summary and the updates list when no task was delegated', async () => {
+  api.mockResolvedValue({...snapshot([]), activity: [{id: 'bot-note', sequence: 2, kind: 'bot.message', session_id: 'bot-chat', task_id: 't', status: 'completed', message: 'Repo eye (report): all tests pass', created_at: 1000}]});
+  render(<OrchestratorStatus {...props}/>);
+  await screen.findByText('1 report from bots');
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  fireEvent.click(screen.getByText('Recent updates'));
+  expect(screen.getByText('Repo eye (report): all tests pass')).toBeVisible();
+});
+
 it('does not show unrelated conversation content or a nonexistent primary', async () => {
   const view = render(<OrchestratorStatus {...props} selected="unrelated"/>);
   await waitFor(() => expect(primary).toHaveBeenCalledWith('main'));

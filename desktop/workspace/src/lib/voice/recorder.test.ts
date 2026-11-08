@@ -153,7 +153,8 @@ it('says what to do when recording is unavailable or blocked', async () => {
   vi.stubGlobal('navigator', {});
   const unavailable = build();
   await unavailable.recorder.start();
-  expect(unavailable.calls.errors[0]).toMatch(/upload/i);
+  expect(unavailable.calls.errors[0]).toMatch(/unavailable/i);
+  expect(unavailable.calls.errors[0]).not.toMatch(/upload/i);
   expect(unavailable.recorder.phase).toBe('idle');
   const denied = Object.assign(new Error('x'), {name: 'NotAllowedError'});
   vi.stubGlobal('navigator', {mediaDevices: {getUserMedia: vi.fn().mockRejectedValue(denied)}});

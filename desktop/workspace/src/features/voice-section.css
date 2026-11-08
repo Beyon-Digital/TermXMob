@@ -18,9 +18,11 @@
 .voice-progress>span{display:block;height:100%;background:var(--accent)}
 .voice-consent label{display:flex;flex-direction:row;align-items:flex-start;gap:10px;margin:0;font-weight:400;line-height:1.5}
 .voice-consent input{margin-top:3px;accent-color:var(--accent)}
-.voice-license-dialog{width:640px}
+.voice-license-dialog.dialog-content{width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);display:flex;flex-direction:column;overflow:hidden}
+.voice-license-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px}
+.voice-license-dialog .voice-dialog-actions{flex:none}
 .voice-license-points{margin:0 0 12px;padding-left:20px;font-size:13px;line-height:1.6}
-.voice-license-text{max-height:200px;overflow:auto;margin:0 0 12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--background);font-size:12px}
+.voice-license-text{max-height:min(200px,28dvh);overflow:auto;margin:0 0 12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--background);font-size:12px}
 .voice-agree{display:flex;flex-direction:row;align-items:flex-start;gap:10px;margin:12px 0;font-weight:400;font-size:13px}
 .voice-agree input{margin-top:3px;accent-color:var(--accent)}
 .voice-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}

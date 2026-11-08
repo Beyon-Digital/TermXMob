@@ -14,7 +14,7 @@ const show=(items:NeedsYouItem[])=><NeedsYouInbox items={items} bots={[{id:'b1',
 
 it('moves focus to a line saying nothing needs you only after the last item was answered',async()=>{
  const view=render(show([item('a')]));
- fireEvent.click(screen.getByRole('button',{name:'Dismiss run'}));
+ fireEvent.click(screen.getByRole('button',{name:/^Dismiss run/}));
  await waitFor(()=>expect(request).toHaveBeenCalled());
  view.rerender(show([]));
  const line=await screen.findByText('Nothing needs you now.');
@@ -23,11 +23,29 @@ it('moves focus to a line saying nothing needs you only after the last item was 
 
 it('does not take focus when the list empties some other way, such as another tab clearing the last item',async()=>{
  const view=render(show([item('a'),item('b')]));
- fireEvent.click(screen.getAllByRole('button',{name:'Dismiss run'})[0]);
+ fireEvent.click(screen.getAllByRole('button',{name:/^Dismiss run/})[0]);
  await waitFor(()=>expect(request).toHaveBeenCalled());
  view.rerender(show([item('b')]));
  expect(screen.getByRole('heading',{name:/Needs you/})).toHaveFocus();  // the answered item left, so focus waits on the heading
  view.rerender(show([]));
  expect(screen.queryByText('Nothing needs you now.')).toBeNull();
  expect(document.body).toHaveFocus();
+});
+
+const paused=(id:string,bot='b1'):NeedsYouItem=>({id,kind:'schedule',bot_id:bot,bot_name:'Triage',title:'A schedule is paused until you re-authorize it',detail:'',scheduled:false});
+
+it('shows one line for several paused schedules of the same bot',()=>{
+ render(show([paused('1'),paused('2'),paused('3')]));
+ expect(screen.getByText('3 schedules are paused until you re-authorize them')).toBeInTheDocument();
+ expect(screen.getAllByRole('button',{name:'Review schedules'})).toHaveLength(1);
+});
+
+it('previews the first five items, offers the rest on request, and names each button by its item',()=>{
+ render(show(['a','b','c','d','e','f','g'].map(item)));
+ expect(screen.getAllByRole('button',{name:/^Dismiss run/})).toHaveLength(5);
+ expect(screen.getByRole('button',{name:'Dismiss run: Run a'})).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Show all 7'}));
+ expect(screen.getAllByRole('button',{name:/^Dismiss run/})).toHaveLength(7);
+ fireEvent.click(screen.getByRole('button',{name:'Show fewer'}));
+ expect(screen.getAllByRole('button',{name:/^Dismiss run/})).toHaveLength(5);
 });

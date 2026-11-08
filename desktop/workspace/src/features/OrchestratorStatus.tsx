@@ -135,6 +135,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   const active = children.filter(row => taskState(row.status).active).length;
   const attention = children.filter(row => taskState(row.status).attention).length;
   const recent = [...(current?.activity || [])].slice(-12).reverse();
+  const botReports = recent.filter(item => item.kind === 'bot.message').length;
   const ordered = [...children].sort((a, b) => Number(taskState(b.status).attention) - Number(taskState(a.status).attention) || b.updated_at - a.updated_at);
   return <section className={'orchestrator-status' + (child ? ' orchestrator-child-view' : '')} aria-label="Main agent coordination">
     {child ? <div className="orchestrator-child-banner">
@@ -147,7 +148,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     </div> : <div className="orchestrator-summary">
       <Button variant="ghost" size="sm" className="orchestrator-disclosure" aria-expanded={expanded} aria-controls="orchestrator-detail" onClick={() => setExpanded(value => !value)}>
         {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}<GitBranch size={14}/><span>Delegated work</span>
-        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : children.length ? `${children.length} finished or idle` : 'No tasks yet'}</small>
+        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : children.length ? `${children.length} finished or idle` : botReports ? `${botReports} ${botReports === 1 ? 'report' : 'reports'} from bots` : 'No tasks yet'}</small>
       </Button>
       {attention > 0 && !expanded && <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}><CircleAlert size={13}/>Review</Button>}
     </div>}
@@ -157,7 +158,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
       <p>Your main agent coordinates delegated work here. Open a chat to inspect it; take control when you want to direct it yourself.</p>
       <TaskBoard enabled={observing && !isStale}/>
       {!current && !failure && <p role="status">Loading delegated work…</p>}
-      {current && !children.length && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
+      {current && !children.length && !botReports && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
       {current?.children_truncated && <p>Showing up to 100 delegated chats, prioritizing active work. Other conversations remain available in chat history.</p>}
       {ordered.length > 0 && <ul className="orchestrator-children">{ordered.map(row => <li key={row.session_id}>
         <button className="orchestrator-child-link" onClick={() => onOpen(row.session_id)}><strong>{row.title || 'Delegated task'}</strong><span className={'orchestrator-state ' + childState(row).tone}>{childState(row).label}</span><ChevronRight size={13}/></button>

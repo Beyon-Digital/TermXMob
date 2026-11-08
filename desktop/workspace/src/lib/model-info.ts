@@ -24,6 +24,12 @@ export function configuredModels(source?: Pick<ModelSource, 'model'>): string[] 
   return [...new Set((source?.model || '').split(/[\n,]/).map(model => model.trim()).filter(Boolean))];
 }
 
+/** Models a chat can use on an account: the checked ones, or every discovered one when none is singled out ("every model checked"). */
+export function chatModels(source?: Pick<ModelSource, 'model' | 'models' | 'model_catalog'>): string[] {
+  const chosen = configuredModels(source);
+  return chosen.length ? chosen : [...new Set(source?.models?.length ? source.models : Object.keys(source?.model_catalog || {}))];
+}
+
 /** Models a route can use: what the host reports, else the selected models plus whatever discovery found. */
 export function providerModels(source: ModelSource): string[] {
   if (source.models) return [...source.models];

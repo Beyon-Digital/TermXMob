@@ -123,6 +123,7 @@ it('falls back to the browser voice and says so when the host cannot speak', asy
   await new SpeechPlayer(callbacks).speak('Hello there. Second sentence.');
   expect(seen.notices[0]).toMatch(/browser voice/i);
   expect(seen.notices[0]).toMatch(/Woof is not ready/);
+  expect(seen.notices[0]).toContain('Voice settings. Reading with your browser voice instead.');
   expect(spoken).toEqual(['Hello there.', 'Second sentence.']);
   expect(seen.states.at(-1)).toBe('idle');
 });

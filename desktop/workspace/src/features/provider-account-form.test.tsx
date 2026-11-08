@@ -22,6 +22,22 @@ it('guides provider selection, clears a key when its destination changes, and ke
  expect(screen.getByLabelText('Provider API address')).toHaveValue('');
 });
 
+it('lets a Chat Completions only provider be set up and keeps an existing choice',async()=>{
+ const save=vi.fn(async(_input:unknown)=>({}));
+ const view=render(<ProviderAccountForm busy={false} onSave={save}/>);
+ fireEvent.change(screen.getByRole('combobox',{name:'Provider'}),{target:{value:'custom'}});
+ fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'Local'}});
+ fireEvent.change(screen.getByLabelText('Provider API address'),{target:{value:'http://localhost:9000/v1'}});
+ const format=screen.getByRole('combobox',{name:'Request format'});
+ expect(format).toHaveValue('responses');
+ fireEvent.change(format,{target:{value:'chat'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account'}));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({wire:'chat'})));
+ view.unmount();
+ render(<ProviderAccountForm busy={false} account={{...saved,wire:'chat'}} onSave={save}/>);
+ expect(screen.getByRole('combobox',{name:'Request format'})).toHaveValue('chat');
+});
+
 it('names each field and reports a problem beside the field instead of disabling Save',async()=>{
  const save=vi.fn();render(<ProviderAccountForm busy={false} onSave={save}/>);
  fireEvent.change(screen.getByRole('combobox',{name:'Provider'}),{target:{value:'custom'}});
@@ -82,7 +98,7 @@ it('saves the included models and overrides, shows Unknown for missing values, a
  expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Replace API key'),{target:{value:'synthetic-replacement'}});
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
- await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',model_overrides:{'mystery-model':{context_window:32000}}}));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',wire:'responses',model_overrides:{'mystery-model':{context_window:32000}}}));
 });
 
 it('saves an empty model list while every discovered model stays included, and omits overrides nobody set',async()=>{

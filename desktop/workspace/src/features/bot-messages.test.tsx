@@ -94,7 +94,7 @@ it('marks a message to the owner read and dismisses a held one with its reason',
  await waitFor(()=>expect(sent('mark_message')).toHaveLength(1));
  expect(sent('mark_message')[0].variables).toEqual({message_id:'m1',status:'read'});
  fireEvent.click(within(threads).getByText('Loop'));
- fireEvent.click(await screen.findByRole('button',{name:'Dismiss message'}));
+ fireEvent.click(await screen.findByRole('button',{name:/^Dismiss message/}));
  await waitFor(()=>expect(sent('mark_message')).toHaveLength(2));
  expect(sent('mark_message')[1].variables).toEqual({message_id:'m2',status:'done'});
 });
@@ -149,7 +149,7 @@ it('names the item each per-row button acts on, and keeps focus on the list afte
  serve(world);
  open();
  const inbox=within(await screen.findByRole('region',{name:'Needs you'}));
- const dismiss=inbox.getAllByRole('button',{name:'Dismiss message'});
+ const dismiss=inbox.getAllByRole('button',{name:/^Dismiss message/});
  expect(dismiss[0]).toHaveAccessibleDescription('Message: Deploy is blocked');
  expect(dismiss[1]).toHaveAccessibleDescription('Message: Second');
  dismiss[0].focus();
@@ -163,7 +163,7 @@ it('moves focus to a stable empty-state line when the last item is answered and 
  serve(world);
  open();
  const inbox=within(await screen.findByRole('region',{name:'Needs you'}));
- const dismiss=inbox.getByRole('button',{name:'Dismiss message'});
+ const dismiss=inbox.getByRole('button',{name:/^Dismiss message/});
  dismiss.focus();
  fireEvent.click(dismiss);
  await waitFor(()=>expect(screen.queryByRole('region',{name:'Needs you'})).toBeNull());
@@ -219,7 +219,7 @@ it('moves focus to the thread list after a message is dismissed and leaves the r
  await openTab('Messages');
  const threads=await screen.findByRole('list',{name:'Message threads'});
  fireEvent.click(within(threads).getByText('Loop'));
- const dismiss=await screen.findByRole('button',{name:'Dismiss message'});
+ const dismiss=await screen.findByRole('button',{name:/^Dismiss message/});
  expect(dismiss).toHaveAccessibleDescription('ping');
  dismiss.focus();
  fireEvent.click(dismiss);
@@ -227,6 +227,16 @@ it('moves focus to the thread list after a message is dismissed and leaves the r
  await waitFor(()=>expect(threads.closest('.bot-message-region')).toHaveFocus());
  const select=screen.getByRole('combobox');
  expect(select).not.toBeDisabled();
+});
+
+it('gives two report selects with the same prompt different names',async()=>{
+ const world:World={bots:[bot()],messages:[],schedules:[schedule({id:'s1',prompt:'Summarise the payload'}),schedule({id:'s2',prompt:'Summarise the payload'})],inbox:[]};
+ serve(world);
+ open();
+ await openTab('Messages');
+ const names=(await screen.findAllByRole('combobox')).map(select=>select.getAttribute('id')&&document.querySelector(`label[for="${select.id}"]`)?.textContent);
+ expect(new Set(names).size).toBe(2);
+ expect(names[0]).toContain('1 of 2');
 });
 
 it('lists owner-directed messages in Needs you and dismisses them in place',async()=>{
@@ -237,7 +247,7 @@ it('lists owner-directed messages in Needs you and dismisses them in place',asyn
  expect(inbox.getByText('Message: Deploy is blocked')).toBeInTheDocument();
  expect(inbox.getByText('Staging is down.')).toBeInTheDocument();
  await expectNoAxeViolations(container);
- fireEvent.click(inbox.getByRole('button',{name:'Open messages'}));
+ fireEvent.click(inbox.getByRole('button',{name:/^Open messages/}));
  expect(await screen.findByRole('tab',{name:'Messages',selected:true})).toBeInTheDocument();
 });
 
@@ -246,7 +256,7 @@ it('dismisses a message from Needs you',async()=>{
  serve(world);
  open();
  const inbox=within(await screen.findByRole('region',{name:'Needs you'}));
- fireEvent.click(inbox.getByRole('button',{name:'Dismiss message'}));
+ fireEvent.click(inbox.getByRole('button',{name:/^Dismiss message/}));
  await waitFor(()=>expect(sent('mark_message')).toHaveLength(1));
  expect(sent('mark_message')[0].variables).toEqual({message_id:'m1',status:'done'});
  expect(await screen.findByText('Message dismissed')).toBeInTheDocument();

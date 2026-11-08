@@ -9,7 +9,7 @@ export type RecorderPhase = 'idle' | 'requesting' | 'recording';
 export const MAX_RECORDING_BYTES = 10 * 1024 * 1024;
 export const MAX_RECORDING_MS = 180_000;
 const MIME_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg'];
-const UNAVAILABLE = 'Microphone recording is unavailable here. Upload an audio file instead.';
+const UNAVAILABLE = 'Microphone recording is unavailable in this browser or page. Open the workspace over HTTPS or in another browser.';
 
 export interface RecorderOptions {
   maxBytes?: number;
@@ -75,10 +75,10 @@ function startMeter(media: MediaStream, onLevel?: (level: number) => void): () =
 function describe(error: unknown) {
   const name = error instanceof Error || error instanceof DOMException ? error.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return 'Microphone access was blocked. Allow it in your browser settings, or upload an audio file.';
+    return 'Microphone access was blocked. Allow it in your browser settings, then try again.';
   }
-  if (name === 'NotFoundError') return 'No microphone was found. Connect one, or upload an audio file.';
-  return 'The microphone could not start. Allow access, or upload an audio file.';
+  if (name === 'NotFoundError') return 'No microphone was found. Connect one, then try again.';
+  return 'The microphone could not start. Allow access, then try again.';
 }
 
 export class VoiceRecorder {
@@ -128,7 +128,7 @@ export class VoiceRecorder {
       instance.onerror = () => {
         if (ticket !== this.ticket) return;
         this.cancel();
-        this.options.onError('Recording failed. Upload an audio file, or allow the microphone and try again.');
+        this.options.onError('Recording failed. Allow the microphone and try again.');
       };
       instance.onstop = () => {
         releaseTracks(media);
