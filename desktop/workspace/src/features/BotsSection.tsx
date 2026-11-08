@@ -8,6 +8,7 @@ import {Select} from '../components/ui/select';
 import {Textarea} from '../components/ui/textarea';
 import {BOT_FIELDS,TEMPLATE_FIELDS,stateLabel,taskStatusLabel,toolLabel,type Bot,type BotTemplate,type ProjectChoice} from '../lib/bots';
 import type {HostIdentity} from '../lib/host-types';
+import {scopeProjects} from '../lib/project-labels';
 import {usePolling} from '../lib/use-polling';
 import {NEEDS_YOU_FIELDS,type NeedsYouItem} from '../lib/bot-schedules';
 import BotDetail,{botTabIds} from './BotDetail';
@@ -53,13 +54,15 @@ function writeTab(tab: string) {
 type BotTabId = Parameters<NonNullable<React.ComponentProps<typeof BotDetail>['onTabChange']>>[0];
 const CUSTOM = 'custom';
 
-function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,onCreate}:{
-  open:boolean;onClose:()=>void;templates:BotTemplate[];projects:ProjectChoice[];defaultProject:string|null;busy:boolean;
+function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,failure,onCreate}:{
+  open:boolean;onClose:()=>void;templates:BotTemplate[];projects:ProjectChoice[];defaultProject:string|null;busy:boolean;failure:string;
   onCreate:(input:Record<string,unknown>)=>Promise<unknown>;
 }){
-  const [choice,setChoice]=useState(templates[0]?.id||CUSTOM),[name,setName]=useState(''),[instructions,setInstructions]=useState(''),[project,setProject]=useState(defaultProject||''),[tried,setTried]=useState(false);
+  const [choice,setChoice]=useState(templates[0]?.id||CUSTOM),[name,setName]=useState(''),[instructions,setInstructions]=useState(''),[project,setProject]=useState(defaultProject||''),[tried,setTried]=useState(false),[shown,setShown]=useState(''),nameBox=useRef<HTMLInputElement>(null);
+  // A refusal from the host (such as a name already in use) belongs next to the name, not on the page behind the dialog.
+  useEffect(()=>{if(failure){setShown(failure);nameBox.current?.focus()}},[failure]);
   const template=templates.find(row=>row.id===choice)||null;
-  const nameError=tried&&!name.trim()?'Give the bot a name.':'';
+  const nameError=tried&&!name.trim()?'Give the bot a name.':shown;
   const projectError=tried&&template?.requires_project&&!project?'This template watches a project. Choose one.':'';
   const instructionsError=tried&&!template&&!instructions.trim()?'Say what the bot should do each time it runs.':'';
   async function submit(){
@@ -81,11 +84,11 @@ function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,onCre
               <span><strong>{row.name}</strong><small>{row.description}</small></span>
             </label>)}
         </fieldset>
-        <FormField label="Name" required error={nameError}>{control=><Input {...control} value={name} maxLength={80} onChange={event=>setName(event.target.value)}/>}</FormField>
+        <FormField label="Name" required error={nameError}>{control=><Input {...control} ref={nameBox} value={name} maxLength={80} onChange={event=>{setName(event.target.value);if(shown)setShown('')}}/>}</FormField>
         <FormField label="Project" hint={template?.requires_project?'Required for this template.':'Optional. Without one the bot works in its own scratch folder.'} error={projectError}>{control=>
           <Select {...control} value={project} onChange={event=>setProject(event.target.value)}>
             <option value="">No project (scratch folder)</option>
-            {projects.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}
+            {scopeProjects(projects,project).map(row=><option key={row.id} value={row.id}>{row.name}</option>)}
           </Select>}</FormField>
         {template?<p className="manager-help">Can use: {template.tools.map(toolLabel).join(', ')}.</p>
           :<FormField label="Instructions" required hint="You can change these later. Tools stay read-only until you allow more." error={instructionsError}>{control=><Textarea {...control} value={instructions} onChange={event=>setInstructions(event.target.value)}/>}</FormField>}
@@ -104,7 +107,7 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
   const {data,loading,error:loadError,reload}=useManagerLoad(()=>gql<BotsData>(listQuery));
   const mutation=useManagerMutation(reload);
   const {busy,error,notice,mutate}=mutation;
-  const [selected,select]=useBotParam(),[creating,setCreating]=useState(false),[search,setSearch]=useState('');
+  const [selected,select]=useBotParam(),[creating,setCreating]=useState(false),[createFailure,setCreateFailure]=useState(''),[search,setSearch]=useState('');
   const [fresh,setFresh]=useState<{bots:Bot[];needs_you?:NeedsYouItem[]}|null>(null),[target,setTarget]=useState<{id:string|null;tab:BotTabId}>({id:null,tab:'overview'});
   useEffect(()=>setFresh(null),[data]);
   // Counts like "needs you" change while the screen is open, so the list refreshes itself quietly.
@@ -125,11 +128,21 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
     const row=Array.from(document.querySelectorAll<HTMLElement>('[data-bot-row]')).find(node=>node.dataset.botRow===id);
     (row||newBot.current)?.focus();
   },[selected,data]);
-  const create=(input:Record<string,unknown>)=>mutate(async()=>{
-    const result=await gql<{create_bot:Bot}>(`mutation($input:BotInput!){create_bot(input:$input){ ${BOT_FIELDS} }}`,{input});
-    open(result.create_bot.id);
+  const create=async(input:Record<string,unknown>)=>{
+    setCreateFailure('');
+    let reason='';
+    const result=await mutate(async()=>{
+      try{
+        const made=await gql<{create_bot:Bot}>(`mutation($input:BotInput!){create_bot(input:$input){ ${BOT_FIELDS} }}`,{input});
+        open(made.create_bot.id);
+        return made;
+      }catch(failure){reason=failure instanceof Error?failure.message:String(failure);throw failure}
+    },'Bot created');
+    // The dialog is still open on a refusal and shows the reason itself; the page behind it carries no error or Retry.
+    if(result===null){setCreateFailure(reason||'The bot could not be created. Try again.');mutation.clearError()}
     return result;
-  },'Bot created');
+  };
+  const closeDialog=()=>{setCreating(false);setCreateFailure('');mutation.clearError()};
   const header=<div className="bot-toolbar"><Button ref={newBot} onClick={()=>setCreating(true)}>New bot</Button></div>;
   return <ManagerPage section="bots" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={current?undefined:{label:'Bots',value:search,onChange:setSearch,count:bots.length}}>
     <>
@@ -153,7 +166,7 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
         </ul>}
         {search&&bots.length>0&&!bots.some(matches)&&<Empty>No bot matches “{search}”. Clear the search to see all bots.</Empty>}
       </>}
-      <NewBotDialog key={String(creating)} open={creating} onClose={()=>setCreating(false)} templates={templates} projects={projects} defaultProject={projectId} busy={busy} onCreate={create}/>
+      <NewBotDialog key={String(creating)} open={creating} onClose={closeDialog} failure={createFailure} templates={templates} projects={projects} defaultProject={projectId} busy={busy} onCreate={create}/>
     </>
   </ManagerPage>;
 }

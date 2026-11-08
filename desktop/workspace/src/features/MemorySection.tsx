@@ -26,7 +26,7 @@ function MemoryItem({memory,agentId,children}:{memory:MemoryRow;agentId:string|n
   </article>;
 }
 
-function AddMemoryForm({projectId,agentId,mutation}:{projectId:string|null;agentId:string|null;mutation:Mutation}){
+function AddMemoryForm({projectId,agentId,embedded,mutation}:{projectId:string|null;agentId:string|null;embedded:boolean;mutation:Mutation}){
   const {formProps,markClean}=useDirtyForm('add-memory');
   const choices: MemoryScope[] = [...(agentId ? ['agent' as const] : []), ...(projectId ? ['project' as const] : []), 'user'];
   const [scope,setScope]=useState<MemoryScope>(choices[0]);
@@ -37,7 +37,7 @@ function AddMemoryForm({projectId,agentId,mutation}:{projectId:string|null;agent
     if(result!==null){setContent('');setProvenance('');setRetention('30');markClean()}
   }
   return <form {...formProps} className="manager-form" aria-label="Add memory" onSubmit={event=>{event.preventDefault();void submit()}}>
-    <FormField label="Applies to" hint="Fixed once saved.">{control=><Select {...control} name="scope" value={scope} onChange={event=>setScope(event.target.value as MemoryScope)}>
+    <FormField label="Applies to" hint={choices.length===1&&choices[0]==='user'&&!embedded?'Fixed once saved. To save a note for one project, choose that project under “Settings apply to” at the top of this page.':'Fixed once saved.'}>{control=><Select {...control} name="scope" value={scope} onChange={event=>setScope(event.target.value as MemoryScope)}>
       {choices.map(choice=><option key={choice} value={choice}>{appliesToLabel[choice]}</option>)}
     </Select>}</FormField>
     <FormField label="Fact or decision" required>{control=><Textarea {...control} name="content" value={content} onChange={event=>setContent(event.target.value)}/>}</FormField>
@@ -84,7 +84,7 @@ export default function MemorySection({me,projectId,agentId=null,embedded=false}
         </MemoryItem>)}
       </section>
       {editing&&<MemoryEditor key={editing.id} memory={editing} onCancel={()=>setEditing(null)} onSaved={()=>{setEditing(null);setNotice('Memory updated');reload()}}/>}
-      <details open><summary>Add memory</summary><AddMemoryForm projectId={projectId} agentId={agentId} mutation={mutation}/></details>
+      <details open><summary>Add memory</summary><AddMemoryForm projectId={projectId} agentId={agentId} embedded={embedded} mutation={mutation}/></details>
     </>;
   if(embedded)return <div className="manager-embedded-body">
     {(search||memories.length>=8)&&<ManagerSearch label="Memory" value={search} onChange={setSearch}/>}

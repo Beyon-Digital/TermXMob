@@ -468,18 +468,6 @@ class WorkspaceService:
         self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':sorted(changes)})
         return self.session(principal, meta['id'])
 
-    def plan_approved(self, principal, task_id):
-        """The approved plan runs in Agent mode, so the conversation's own mode follows it; the next message is not sent as a plan."""
-        meta = self.store.get('task', task_id)
-        identifier = (meta or {}).get('conversation_id')
-        if not identifier:
-            return
-        self.record(principal, 'conversation', identifier, scope='agent-control')
-        if (self.agents.get_conversation(identifier, include_turns=False) or {}).get('mode') != 'plan':
-            return
-        self.agents.update_conversation(identifier, mode='agent')
-        self.store.log(principal.id, 'conversation', identifier, 'updated', {'fields':['mode'],'reason':'plan approved'})
-
     def fork_preview(self, principal, identifier, *, engine, turn_ids, files=None, summary=''):
         source = self.session(principal, identifier)
         self.record(principal,'conversation',identifier,scope='agent-run')

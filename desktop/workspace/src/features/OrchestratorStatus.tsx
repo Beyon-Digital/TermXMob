@@ -2,8 +2,9 @@ import {useEffect, useRef, useState} from 'react';
 import {ArrowLeft, ChevronDown, ChevronRight, CircleAlert, GitBranch, RefreshCw} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {json, request, type Session} from '../lib/api';
-import {rollupHeadline, type BoardRollup} from '../lib/orchestrator-board';
+import {loadBoard, rollupHeadline, type BoardRollup} from '../lib/orchestrator-board';
 import {taskState} from '../lib/task-presentation';
+import {usePolling} from '../lib/use-polling';
 import {useObservationActive} from '../lib/use-observation-active';
 import OrchestratorDecisions from './OrchestratorDecisions';
 import TaskBoard from './TaskBoard';
@@ -70,6 +71,9 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   const [stale, setStale] = useState(false), [busy, setBusy] = useState(''), [stateOwner, setStateOwner] = useState(ownerId);
   const [board, setBoard] = useState<BoardRollup | null>(null);
   useEffect(() => setBoard(null), [ownerId]);
+  // The board is mounted only while the section is open. While it is collapsed, read the same board so the header
+  // counts planned tasks too; once open, the board itself feeds the header.
+  usePolling(() => loadBoard(), {interval: 15000, enabled: observing && !expanded && selected !== undefined, resetKey: ownerId, onResult: value => setBoard(value.rollup)});
   const read = useRef<AbortController | null>(null), flight = useRef<object | null>(null);
   const generation = useRef(0), identity = useRef(ownerId), alive = useRef(true);
   const observation = useRef(observing), selection = useRef(selected), primaryCallback = useRef(onPrimary);
@@ -151,7 +155,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     </div> : <div className="orchestrator-summary">
       <Button variant="ghost" size="sm" className="orchestrator-disclosure" aria-expanded={expanded} aria-controls="orchestrator-detail" onClick={() => setExpanded(value => !value)}>
         {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}<GitBranch size={14}/><span>Delegated work</span>
-        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : board?.total ? rollupHeadline(board) : children.length ? `${children.length} finished or idle` : botReports ? `${botReports} ${botReports === 1 ? 'report' : 'reports'} from bots` : board ? 'No tasks yet' : 'No delegated chats yet'}</small>
+        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : board?.total ? rollupHeadline(board) : children.length ? `${children.length} finished or idle` : botReports ? `${botReports} ${botReports === 1 ? 'report' : 'reports'} from bots` : 'No delegated chats yet'}</small>
       </Button>
       {attention > 0 && !expanded && <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}><CircleAlert size={13}/>Review</Button>}
     </div>}

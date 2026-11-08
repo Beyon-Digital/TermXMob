@@ -76,6 +76,67 @@ it('says what to do when there are no bots and creates one from a template',asyn
  expect(location.search).toBe('?bot=b1');
 });
 
+it('shows a refused name inside the dialog, keeps it open and leaves no error or Retry on the page',async()=>{
+ const taken='You already have a bot named “Morning triage”. Choose a different name, or rename that bot first.';
+ let refuse=true;
+ serve([],body=>{
+  if(body.query?.includes('create_bot')){
+   if(refuse){refuse=false;return {errors:[{message:taken}]}}
+   return {data:{create_bot:bot()}};
+  }
+  return undefined;
+ });
+ const {container}=open();
+ fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ const dialog=within(await screen.findByRole('dialog'));
+ const name=dialog.getByLabelText(/^Name/);
+ fireEvent.change(name,{target:{value:'Morning triage'}});
+ fireEvent.click(dialog.getByRole('button',{name:'Create bot'}));
+ expect(await dialog.findByText(taken)).toBeInTheDocument();
+ expect(screen.getByRole('dialog')).toBeInTheDocument();
+ await waitFor(()=>expect(name).toHaveFocus());
+ expect(name).toHaveAttribute('aria-invalid','true');
+ expect(name.getAttribute('aria-describedby')).toContain(dialog.getByText(taken).id);
+ // Nothing is left on the page behind the dialog.
+ expect(screen.queryAllByText(taken)).toHaveLength(1);
+ expect(screen.queryByRole('button',{name:'Retry',hidden:true})).toBeNull();
+ await expectNoAxeViolations(container);
+ // Editing the name clears the message; a second attempt succeeds and the dialog closes.
+ fireEvent.change(name,{target:{value:'Morning triage 2'}});
+ await waitFor(()=>expect(dialog.queryByText(taken)).toBeNull());
+ fireEvent.click(dialog.getByRole('button',{name:'Create bot'}));
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ expect(screen.queryByRole('button',{name:'Retry',hidden:true})).toBeNull();
+});
+
+it('clears a refused-name message when the dialog is cancelled',async()=>{
+ serve([],body=>body.query?.includes('create_bot')?{errors:[{message:'You already have a bot named “X”.'}]}:undefined);
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ let dialog=within(await screen.findByRole('dialog'));
+ fireEvent.change(dialog.getByLabelText(/^Name/),{target:{value:'X'}});
+ fireEvent.click(dialog.getByRole('button',{name:'Create bot'}));
+ expect(await dialog.findByText('You already have a bot named “X”.')).toBeInTheDocument();
+ fireEvent.click(dialog.getByRole('button',{name:'Cancel'}));
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ expect(screen.queryByText('You already have a bot named “X”.')).toBeNull();
+ expect(screen.queryByRole('button',{name:'Retry',hidden:true})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'New bot'}));
+ dialog=within(await screen.findByRole('dialog'));
+ expect(dialog.queryByText('You already have a bot named “X”.')).toBeNull();
+});
+
+it('does not offer host-made scratch or worktree folders as a bot project',async()=>{
+ const scratch={id:'p2',name:'6b063f0d'.padEnd(32,'0'),path:`/cfg/scratch/${'a'.repeat(64)}/${'b'.repeat(32)}`};
+ const worktree={id:'p3',name:'c'.repeat(32),path:`/cfg/worktrees/${'c'.repeat(32)}`};
+ serve([],body=>body.query?.includes('bot_templates')?{data:{bots:[],bot_templates:templates,projects:[{id:'p1',name:'Website',path:'/w'},scratch,worktree]}}:undefined);
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ const dialog=within(await screen.findByRole('dialog'));
+ const options=dialog.getAllByRole('option').map(option=>option.textContent);
+ expect(options).toEqual(['No project (scratch folder)','Website']);
+});
+
 it('asks for a project before creating a project template, and for instructions on a custom bot',async()=>{
  serve([]);
  open();

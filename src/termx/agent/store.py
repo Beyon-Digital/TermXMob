@@ -1520,6 +1520,13 @@ class AgentStore:
             self._db.commit()
         return cursor.rowcount > 0
 
+    def conversation_id_for_task(self, task_id: str) -> str | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT conversation_id FROM conversation_turns WHERE task_id=? ORDER BY sequence DESC LIMIT 1", (task_id,)
+            ).fetchone()
+        return row["conversation_id"] if row else None
+
     def workspace_latest_execution_task(self, identifier: str) -> dict | None:
         """Notification delivery is not the outcome of the user's agent run."""
         with self._lock:

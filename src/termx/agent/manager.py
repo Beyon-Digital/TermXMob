@@ -1016,13 +1016,14 @@ class AgentManager:
             if str(approval["payload"].get("reason") or "").startswith("auto_") and runtime.get("auto"):
                 # A renewed allowance counts from now, not from when Auto was enabled.
                 runtime["auto"] = {**runtime["auto"], "base_step": int(runtime.get("step") or 0), "turns": 0,
-                                   "tokens": 0, "cost_usd": 0.0, "since": time()}
+                                   "calls": 0, "tokens": 0, "cost_usd": 0.0, "since": time()}
             self.store.update_task(task_id, limits=next_limits, runtime=runtime)
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
             self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
         elif approval["kind"] == "plan":
             if task.get("mode") == "plan":
                 self._approve_plan_mode(task)
+                self._follow_conversation_to_agent(task_id)
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
             assert private_payload is not None
@@ -1751,6 +1752,21 @@ class AgentManager:
         self._emit(task["id"], "plan.revised", {"feedback": note})
         self._launch(task["id"], self._drive(task["id"]))
 
+    def _follow_conversation_to_agent(self, task_id: str) -> None:
+        """The approved plan runs in Agent mode, so the conversation's own mode follows it and the next message is not sent as a plan.
+
+        REST and GraphQL both resolve approvals here, so both get the same behaviour.
+        """
+        conversation_id = self.store.conversation_id_for_task(task_id)
+        if not conversation_id or (self.store.get_conversation(conversation_id, include_turns=False) or {}).get("mode") != "plan":
+            return
+        self.store.update_conversation(conversation_id, mode="agent")
+        orchestrator = getattr(self, "orchestrator", None)
+        metadata = orchestrator.store.get("task", task_id) if orchestrator else None
+        if metadata:
+            orchestrator.workspace.store.log(metadata["owner"], "conversation", conversation_id, "updated",
+                                             {"fields": ["mode"], "reason": "plan approved"})
+
     def _approve_plan_mode(self, task: dict[str, Any]) -> None:
         self._append_history(task, "The plan is approved. Implement it now.")
         changes: dict[str, Any] = {}
@@ -1768,7 +1784,7 @@ class AgentManager:
 
     @staticmethod
     def _auto_state(enabled: bool, ceilings: dict[str, Any], step: int = 0) -> dict[str, Any]:
-        return {"enabled": enabled, "ceilings": ceilings, "base_step": step, "turns": 0,
+        return {"enabled": enabled, "ceilings": ceilings, "base_step": step, "turns": 0, "calls": 0,
                 "tokens": 0, "cost_usd": 0.0, "since": time()}
 
     @staticmethod
@@ -1852,6 +1868,13 @@ class AgentManager:
         ceiling, limit, used = breach
         self._emit(task_id, "auto.ceiling", {"ceiling": ceiling, "limit": limit, "used": used})
         self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}", {"ceiling": ceiling, "limit": limit, "used": used})
+
+    def _auto_note_call(self, task_id: str) -> None:
+        """Count one auto-approved tool call, where its auto.decision event is emitted, in the persisted task runtime."""
+        runtime = self._task(task_id).get("runtime") or {}
+        auto = runtime.get("auto")
+        if auto and auto.get("enabled"):
+            self.store.update_task(task_id, runtime={**runtime, "auto": {**auto, "calls": int(auto.get("calls") or 0) + 1}})
 
     def _auto_note_turn(self, task_id: str, tokens: int = 0, cost_usd: float | None = None) -> None:
         """Count a provider turn against the Auto allowance. An unknown price adds tokens but no cost."""
@@ -2083,6 +2106,7 @@ class AgentManager:
                         auto_run=(self._task(task_id).get('runtime') or {}).get('auto') or {}
                         if auto_run.get('enabled'):
                             self._emit(task_id,'auto.decision',{'tool':call.name or call.type,'call_id':call.call_id,'risk':decision.intent.risk_class if decision.intent is not None else None,'rule':'task_auto','index':step-int(auto_run.get('base_step') or 0)})
+                            self._auto_note_call(task_id)
                     checkpoint = self.store.create_checkpoint(
                         task_id,
                         kind="execution",
@@ -2187,6 +2211,7 @@ class AgentManager:
                             "index": step - int(auto_run.get("base_step") or 0),
                         },
                     )
+                    self._auto_note_call(task_id)
                 if decision.auto_resolved == "deny":
                     if call.type == "computer" and not call.name:
                         # A native computer_call can only be answered with a screenshot,

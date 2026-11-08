@@ -731,11 +731,7 @@ def mount_workspace(app,state):
             return await await_call(state.runner_agents.resolve_approval,identifier,approval_id,body.decision,remember=body.remember,limits=body.limits)
         if task.get('engine','internal')!='internal':
             return await await_call(state.engines.resolve_approval,identifier,approval_id,body.decision,remember=body.remember)
-        approval=state.agent_store.get_approval(approval_id)
-        approving_plan=bool(approval and approval['kind']=='plan' and task.get('mode')=='plan' and body.decision=='approved')
-        result=await await_call(state.agent.resolve_approval,identifier,approval_id,body.decision,remember=body.remember,limits=body.limits)
-        if approving_plan:call(workspace.plan_approved,actor,identifier)
-        return result
+        return await await_call(state.agent.resolve_approval,identifier,approval_id,body.decision,remember=body.remember,limits=body.limits)
 
     @router.get('/available-extensions')
     def available_extensions(request:Request,project_id:str|None=None):

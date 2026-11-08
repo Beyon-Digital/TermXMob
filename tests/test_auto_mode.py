@@ -94,6 +94,29 @@ def test_auto_approves_low_risk_calls_and_audits_each(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_auto_counts_each_auto_approved_call_after_the_run_finishes(tmp_path, monkeypatch, reviewed):
+    async def run() -> None:
+        script = [
+            ("", [_shell("c1", "rm -rf build-one"), _shell("c2", "rm -rf build-two")]),
+            ("", [_shell("c3", "rm -rf build-three")]),
+            ("All done.", []),
+        ]
+        manager, store_, _adapter, task = await _start(
+            tmp_path, monkeypatch, script, auto={"enabled": True}, reviewed=reviewed
+        )
+        await _approve_plan(manager, store_, task["id"])
+        await wait_for_status(store_, task["id"], "completed")
+        assert len(_events(store_, task["id"], "auto.decision")) == 3
+        # The counter lives in the persisted task runtime, so a reload or restart reads the same number.
+        assert _auto(store_, task["id"])["used"]["tool_calls"] == 3
+        assert store_.get_task(task["id"])["runtime"]["auto"]["calls"] == 3
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
 def test_auto_approves_through_the_action_review_gate(tmp_path, monkeypatch):
     async def run() -> None:
         script = [

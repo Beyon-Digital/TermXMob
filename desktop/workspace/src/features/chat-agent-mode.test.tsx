@@ -7,7 +7,7 @@ import {gql,request,type Session,type Provider} from '../lib/api';
 import {AUTO_CEILING_DEFAULTS,type TaskMeter} from '../lib/agentic';
 
 vi.mock('../lib/api',()=>({gql:vi.fn(),request:vi.fn(),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
-afterEach(()=>{cleanup();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();vi.clearAllMocks()});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();vi.clearAllMocks()});
 const provider:Provider={id:'fixture-account',name:'Fixture account',model:'fixture-model',secret_configured:true,capabilities:['functions']};
 const props={engines:[],providers:[provider],onSelect:vi.fn(),onRefresh:vi.fn(),onError:vi.fn()};
 const session=(patch:Partial<Session>={},running=false):Session=>({id:'s1',title:'s1',engine:'internal',provider_id:provider.id,model:'fixture-model',mode:'agent',pinned:false,archived:false,draft_text:'',revision:1,updated_at:1,scroll:0,worktree_id:'wt',
@@ -56,4 +56,20 @@ it('shows context and usage for the latest task, with Unknown where the host has
  const {container}=render(<Chat session={row} {...props}/>);
  expect(await screen.findByText('Context 1.5K of 128K')).toBeInTheDocument();expect(screen.getByText('2K tokens · Unknown')).toBeInTheDocument();
  openPicker();await expectNoAxeViolations(container);
+});
+// jsdom has no layout, so the virtualized transcript needs measurable rows to render the plan card.
+function measureRows(){Object.defineProperty(HTMLElement.prototype,'getBoundingClientRect',{configurable:true,value(){return {width:800,height:this.classList?.contains('message-row')?140:600,top:0,left:0,right:800,bottom:600}}});Object.defineProperty(HTMLElement.prototype,'offsetHeight',{configurable:true,get(){return this.classList?.contains('message-row')?140:600}});Object.defineProperty(HTMLElement.prototype,'offsetWidth',{configurable:true,get(){return 800}});Object.defineProperty(HTMLElement.prototype,'clientHeight',{configurable:true,get(){return 600}});vi.stubGlobal('ResizeObserver',class{constructor(private callback:ResizeObserverCallback){}observe(target:Element){queueMicrotask(()=>{if(this.active)this.callback([{target,contentRect:target.getBoundingClientRect(),borderBoxSize:[{inlineSize:800,blockSize:target.getBoundingClientRect().height}]}] as unknown as ResizeObserverEntry[],this as unknown as ResizeObserver)})}active=true;unobserve(){}disconnect(){this.active=false}})}
+it('shows Agent in the mode picker once the host refreshes after Approve plan',async()=>{
+ const approval={id:'approval-1',status:'pending',kind:'plan',payload:{plan:{summary:'Add a flag',markdown:'## Plan\n\n1. Add the flag'}}};
+ const waiting:Session=session({mode:'plan',turns:[{id:'turn',prompt:'Plan it',sequence:1,task:{id:'task-1',prompt:'Plan it',status:'awaiting_approval',engine:'internal',events:[],approvals:[approval]}}] as Session['turns']});
+ measureRows();host(waiting);
+ let view!:ReturnType<typeof render>;
+ // The host switches the conversation to Agent mode as part of resolving the approval; the refresh then reads it back.
+ const refresh=vi.fn(()=>view.rerender(<Chat session={session({mode:'agent'})} {...props} onRefresh={refresh}/>));
+ view=render(<Chat session={waiting} {...props} onRefresh={refresh}/>);
+ expect(screen.getByRole('button',{name:'Session mode'})).toHaveTextContent('Plan');
+ fireEvent.click(await screen.findByRole('button',{name:'Approve plan'}));
+ await waitFor(()=>expect(refresh).toHaveBeenCalled());
+ expect(vi.mocked(gql).mock.calls.some(([query,variables])=>String(query).includes('resolve_agent_approval')&&(variables as {input:{decision:string}}).input.decision==='approved')).toBe(true);
+ expect(screen.getByRole('button',{name:'Session mode'})).toHaveTextContent('Agent');
 });

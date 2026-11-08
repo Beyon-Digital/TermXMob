@@ -204,9 +204,23 @@ it('describes planned tasks in the header once the board lists them, instead of 
   vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node('a', 'running'), node('b', 'pending'), node('c', 'completed')], rollup: {total: 3, counts: {running: 1, pending: 1, completed: 1}, percent_complete: 33, tokens: 0, cost_usd: null}}});
   api.mockResolvedValue(snapshot([]));
   render(<OrchestratorStatus {...props}/>);
-  expect(await screen.findByText('No delegated chats yet')).toBeVisible();
+  // The header agrees with the board before it is opened.
+  expect(await screen.findByText('1 planned task in progress')).toBeVisible();
+  expect(screen.queryByText('No delegated chats yet')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
   await screen.findByRole('listitem', {name: 'Task a'});
   expect(screen.queryByText('No tasks yet')).not.toBeInTheDocument();
   expect(screen.getByRole('button', {name: /Delegated work/})).toHaveTextContent('1 planned task in progress');
+});
+
+it('counts waiting planned tasks in the collapsed header, with the same words as the open board', async () => {
+  const node = (id: string) => ({id, title: 'Task ' + id, role: 'worker', depends_on: [], blocked_by: [], task_id: null, status: 'pending', attempts: 0, max_attempts: 2, last_event_at: null, result_summary: '', error: '', provider_id: null, model: null, tokens: 0, cost_usd: null, created_at: 1, updated_at: null});
+  vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node('a'), node('b'), node('c')], rollup: {total: 3, counts: {pending: 3}, percent_complete: 0, tokens: 0, cost_usd: null}}});
+  api.mockResolvedValue(snapshot([]));
+  render(<OrchestratorStatus {...props}/>);
+  const header = screen.getByRole('button', {name: /Delegated work/});
+  await waitFor(() => expect(header).toHaveTextContent('0 of 3 planned tasks done'));
+  fireEvent.click(header);
+  await screen.findByRole('listitem', {name: 'Task a'});
+  expect(header).toHaveTextContent('0 of 3 planned tasks done');
 });

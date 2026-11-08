@@ -20,6 +20,18 @@ describe('workspace managers', () => {
   const edit=within(await screen.findByRole('form',{name:'Edit provider account'}));expect(edit.getByLabelText('Image generation and editing')).toBeChecked();fireEvent.click(edit.getByLabelText('Audio transcription and speech'));fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
   await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>String(init?.body).includes('save_agent_provider'))).toBe(true));const mutation=mocked.mock.calls.find(([,init])=>String(init?.body).includes('save_agent_provider'))!;expect(JSON.parse(String(mutation[1]?.body)).variables.input).toMatchObject({id:'existing',api_key:null,capabilities:['shell','image','audio'],model:'future-default'});expect(screen.queryByText('active engine',{exact:false})).not.toBeInTheDocument();await waitFor(()=>expect(changed).toHaveBeenCalledOnce());
  });
+ it('offers a project scope once a project is chosen, and says where to choose one while none is', async () => {
+  mocked.mockImplementation(async (path) => path === '/auth/me' ? { principal:{scopes:[]} } : { memory:[] } as any);
+  const view = render(<Managers section="memory" projectId={null} sessionId={null}/>);
+  const form = within(await screen.findByRole('form',{name:'Add memory'}));
+  expect(form.getAllByRole('option').map(option=>option.textContent)).toEqual(['All your projects']);
+  expect(form.getByText(/choose that project under “Settings apply to”/)).toBeInTheDocument();
+  view.unmount();
+  render(<Managers section="memory" projectId="project" sessionId={null}/>);
+  const scoped = within(await screen.findByRole('form',{name:'Add memory'}));
+  expect(scoped.getAllByRole('option').map(option=>option.textContent)).toEqual(['This project','All your projects']);
+  expect(scoped.queryByText(/choose that project/)).toBeNull();
+ });
  it('keeps excluded memory inspectable and preserves its scope and revision on inclusion', async () => {
   mocked.mockImplementation(async (path) => path === '/auth/me' ? { principal:{scopes:[]} } : { memory:[{id:'fact',revision:3,content:'Project decision',provenance:'review',project_id:'project',retention_days:30,excluded:true}] } as any);
   render(<Managers section="memory" projectId="project" sessionId={null}/>);

@@ -55,6 +55,7 @@ export function useManagerMutation(reload: () => void, onChanged?: () => void) {
   const post = useCallback((path: string, value: unknown, message: string, method = 'POST') => mutate(() => request(path, json(method, value)), message), [mutate]);
   const remove = useCallback((path: string, message: string) => mutate(() => request(path, {method: 'DELETE'}), message), [mutate]);
   const report = useCallback((reason: unknown) => setError(messageOf(reason, 'Settings could not be updated.')), []);
-  return {busy, error, notice, mutate, post, remove, setNotice, report, reload};
+  const clearError = useCallback(() => setError(''), []);
+  return {busy, error, notice, mutate, post, remove, setNotice, report, clearError, reload};
 }
 export type Mutation = ReturnType<typeof useManagerMutation>;

@@ -74,7 +74,8 @@ def auto_usage(auto: dict[str, Any], step: int, now: float | None = None) -> dic
     """What the current Auto allowance has used: tool calls, provider turns, seconds, tokens, priced cost."""
     now = time() if now is None else now
     return {
-        "tool_calls": max(0, step - int(auto.get("base_step") or 0)),
+        # The runtime step only advances between provider turns, so the auto-approved count keeps the total current.
+        "tool_calls": max(0, step - int(auto.get("base_step") or 0), int(auto.get("calls") or 0)),
         "steps": int(auto.get("turns") or 0),
         "seconds": int(now - float(auto.get("since") or now)),
         "tokens": int(auto.get("tokens") or 0),
