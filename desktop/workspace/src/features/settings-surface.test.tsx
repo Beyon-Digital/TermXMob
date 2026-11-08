@@ -46,6 +46,33 @@ it('selects a category on a plain click and leaves modified clicks to the browse
  fireEvent.click(screen.getByRole('link',{name:'Hooks'}));expect(select).toHaveBeenCalledWith('hooks');
 });
 
+it('puts a count on the Bots entry when bots need the owner, named for assistive technology',async()=>{
+ vi.mocked(request).mockResolvedValue({data:{needs_you:[{id:'a'},{id:'b'},{id:'c'}]}} as never);
+ const {container}=render(<SettingsNavigation category="memory" onSelect={vi.fn()}/>);
+ const link=await within(nav()).findByRole('link',{name:/^Bots ?, 3 need you$/});  // the visible label plus a visually hidden ", 3 need you"; the digit badge is aria-hidden
+ expect(link).toHaveAttribute('href','/manage/bots');
+ expect(link.querySelector('.settings-nav-count')).toHaveAttribute('aria-hidden','true');
+ expect(within(nav()).getAllByRole('link')).toHaveLength(settingsCategories.length);
+ expect(vi.mocked(request).mock.calls[0][0]).toBe('/graphql');
+ await expectNoAxeViolations(container);
+});
+
+it('says "1 needs you" for one item and shows no count for none or when the query fails',async()=>{
+ vi.mocked(request).mockResolvedValueOnce({data:{needs_you:[{id:'a'}]}} as never);
+ const one=render(<SettingsNavigation category="memory" onSelect={vi.fn()}/>);
+ expect(await within(nav()).findByRole('link',{name:/^Bots ?, 1 needs you$/})).toBeInTheDocument();
+ one.unmount();
+ vi.mocked(request).mockReset().mockResolvedValue({data:{needs_you:[]}} as never);
+ const none=render(<SettingsNavigation category="memory" onSelect={vi.fn()}/>);
+ await waitFor(()=>expect(request).toHaveBeenCalled());
+ expect(within(nav()).getByRole('link',{name:'Bots'})).toBeInTheDocument();
+ none.unmount();
+ vi.mocked(request).mockReset().mockRejectedValue(new Error('no access'));
+ render(<SettingsNavigation category="memory" onSelect={vi.fn()}/>);
+ await waitFor(()=>expect(request).toHaveBeenCalled());
+ expect(within(nav()).getByRole('link',{name:'Bots'})).toBeInTheDocument();
+});
+
 it('keeps the status region mounted and shows Save and Discard only while something is unsaved',()=>{
  render(<Harness/>);
  const status=screen.getByRole('status');expect(status).toBeEmptyDOMElement();

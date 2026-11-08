@@ -41,7 +41,7 @@ function PassivePage({section,projectId,sessionId,admin,me}:{section:'cloud'|'ho
   </ManagerPage>;
 }
 
-export function Managers({section: incoming, projectId, sessionId, onCapabilitiesChanged, embedded=false, agentId=null}: ManagersProps) {
+export function Managers({section: incoming, projectId, sessionId, onSection, onCapabilitiesChanged, embedded=false, agentId=null}: ManagersProps) {
   const section=canonicalSettingsCategory(incoming);
   const [me,setMe]=useState<HostIdentity>({}),[ready,setReady]=useState(false);
   useEffect(()=>{
@@ -57,7 +57,7 @@ export function Managers({section: incoming, projectId, sessionId, onCapabilitie
     :section==='models'?<ModelsSection key={scope} admin={admin} me={me} projectId={projectId} onCapabilitiesChanged={onCapabilitiesChanged}/>
     :section==='voice'?<VoiceSection key={scope} admin={admin} projectId={projectId}/>
     :section==='agents'?<AgentsSection key={scope} admin={admin} me={me} projectId={projectId}/>
-    :section==='bots'?<BotsSection key={scope} admin={admin} me={me} projectId={projectId}/>
+    :section==='bots'?<BotsSection key={scope} admin={admin} me={me} projectId={projectId} onSection={onSection}/>
     :section==='memory'?<MemorySection key={scope+':'+(agentId??'')} me={me} projectId={projectId} agentId={agentId}/>
     :section==='access'?<AccessSection key={scope} admin={admin} me={me} projectId={projectId}/>
     :section==='extensions'?<ExtensionsSection key={scope} projectId={projectId}/>

@@ -23,8 +23,10 @@ export function announcementFor(previous: AnnouncedTask | null, next: AnnouncedT
  * The text changes whenever there is something to announce. A trailing space is added when the
  * message repeats, so an identical announcement for a later task is still new to assistive tech.
  * A loaded conversation without a task is tracked as an empty snapshot, so its first task is announced.
+ * `extra` carries a spoken state from elsewhere in the conversation (live voice). It goes through this region because a
+ * region that is mounted at the same moment as its first text is not announced, and the chat keeps only one.
  */
-export function StatusAnnouncer({sessionId, task}: {sessionId: string; task: TaskLike | undefined}) {
+export function StatusAnnouncer({sessionId, task, extra = ''}: {sessionId: string; task: TaskLike | undefined; extra?: string}) {
   const [message, setMessage] = useState('');
   const previous = useRef<AnnouncedTask | null>(null);
   const pendingApproval = !!task?.approvals?.some(approval => approval.status === 'pending');
@@ -34,5 +36,8 @@ export function StatusAnnouncer({sessionId, task}: {sessionId: string; task: Tas
     previous.current = next;
     if (text) setMessage(current => current === text ? text + ' ' : text);
   }, [sessionId, task?.id, task?.status, pendingApproval]);
+  useEffect(() => {
+    if (extra) setMessage(current => current === extra ? extra + ' ' : extra);
+  }, [extra]);
   return <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{message}</div>;
 }

@@ -19,16 +19,22 @@ export interface Bot {
 export interface BotTemplate { id: string; name: string; description: string; requires_project: boolean; tools: string[]; instructions: string }
 export interface ProjectChoice { id: string; name: string; path?: string }
 
+/** The tools a bot can use now: its own list, held to the ceiling when the host has worked that out. */
+export const botTools = (bot: Pick<Bot, 'tools' | 'effective'>) => bot.effective?.tools || bot.tools;
+
 export const BOT_FIELDS = 'id revision name state template description instructions project_id conversation_id custom_agent_id model provider_id tools approval_mode sandbox_profile limits ceiling peers effective violations rules needs_you active_tasks last_task created_by config_changed_at created_at updated_at';
 export const TEMPLATE_FIELDS = 'id name description requires_project tools instructions';
 
 export const stateLabel: Record<BotState, string> = { active: 'Active', paused: 'Paused', archived: 'Deleted' };
 
-/** Tools a bot can be given, grouped by what they let it do. The host validates every name again. */
+/**
+ * Wording for the tools a bot can be given, grouped by what they let it do. This is only labels: which tools exist comes from the
+ * host (`agent_tool_names`), and the host validates every name again. A tool without wording here is listed under its own name.
+ */
 export const toolGroups: { label: string; tools: { id: string; label: string }[] }[] = [
   { label: 'Read the project', tools: [
     { id: 'read_file', label: 'Read files' }, { id: 'list_files', label: 'List files' }, { id: 'search_project', label: 'Search the project' },
-    { id: 'git_status', label: 'See git status' }, { id: 'git_diff', label: 'See git changes' }, { id: 'memory_read', label: 'Read its memory' }] },
+    { id: 'git_status', label: 'See git status' }, { id: 'git_diff', label: 'See git changes' }, { id: 'memory_read', label: 'Read its memory' }, { id: 'read_skill', label: 'Read skills on demand' }] },
   { label: 'Change the project', tools: [
     { id: 'write_file', label: 'Write files' }, { id: 'apply_patch', label: 'Apply patches' }, { id: 'git_stage', label: 'Stage changes' },
     { id: 'git_commit', label: 'Commit changes' }, { id: 'git_branch', label: 'Manage branches' }] },
@@ -36,10 +42,13 @@ export const toolGroups: { label: string; tools: { id: string; label: string }[]
     { id: 'run_check', label: 'Run checks' }, { id: 'run_shell', label: 'Run shell commands' }, { id: 'run_runbook', label: 'Run saved runbooks' }] },
   { label: 'Reach outside', tools: [
     { id: 'git_fetch', label: 'Fetch from remotes' }, { id: 'git_pull', label: 'Pull from remotes' }, { id: 'git_push', label: 'Push to remotes' },
-    { id: 'mcp_call', label: 'Call connected tools' }, { id: 'share_file', label: 'Share files in chat' }, { id: 'memory_write', label: 'Write to its memory' }] },
+    { id: 'mcp_call', label: 'Call connected tools' }, { id: 'share_file', label: 'Share files in chat' }, { id: 'memory_write', label: 'Write to its memory' },
+    { id: 'computer', label: 'Control this computer' }] },
   { label: 'Message others', tools: [
     { id: 'send_message', label: 'Send messages' }, { id: 'read_inbox', label: 'Read its inbox' }, { id: 'mark_message', label: 'Mark messages read' }] },
 ];
+/** Used only when the host's list of tool names cannot be loaded. */
+export const fallbackToolIds = toolGroups.flatMap(group => group.tools.map(tool => tool.id));
 export const toolLabel = (id: string) => toolGroups.flatMap(group => group.tools).find(tool => tool.id === id)?.label || id;
 
 /** Capability denies the ceiling can hold, each a set of capability names. */

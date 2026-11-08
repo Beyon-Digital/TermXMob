@@ -6,7 +6,7 @@ import {Textarea} from '../components/ui/textarea';
 import {request} from '../lib/api';
 import type {HostIdentity,MemoryRow} from '../lib/host-types';
 import {MemoryEditor,appliesToLabel,appliesToText,memoryPayload,type MemoryScope} from './MemoryEditor';
-import {ActionButton,Empty,ManagerPage,date,rowMatcher} from './manager-ui';
+import {ActionButton,Empty,ManagerPage,ManagerSearch,ManagerStatus,date,rowMatcher} from './manager-ui';
 import {gql,scoped,useManagerLoad,useManagerMutation,type Mutation} from './use-manager';
 import {useDirtyForm} from './settings-forms';
 
@@ -50,8 +50,11 @@ function AddMemoryForm({projectId,agentId,mutation}:{projectId:string|null;agent
   </form>;
 }
 
-/** `agentId` limits the list to what that agent sees and makes "This agent only" available when saving. */
-export default function MemorySection({me,projectId,agentId=null}:{me:HostIdentity;projectId:string|null;agentId?:string|null}){
+/**
+ * `agentId` limits the list to what that agent sees and makes "This agent only" available when saving.
+ * `embedded` drops the page header and Refresh button for use inside another page, such as a bot's Memory tab.
+ */
+export default function MemorySection({me,projectId,agentId=null,embedded=false}:{me:HostIdentity;projectId:string|null;agentId?:string|null;embedded?:boolean}){
   const {data,loading,error:loadError,reload}=useManagerLoad(()=>request<{memory?:MemoryRow[]}>(listPath(projectId,agentId)));
   const mutation=useManagerMutation(reload);
   const {busy,error,notice,post,remove,mutate,setNotice}=mutation;
@@ -61,10 +64,10 @@ export default function MemorySection({me,projectId,agentId=null}:{me:HostIdenti
   const proposed=memories.filter(memory=>memory.state==='proposed'&&matches(memory));
   const saved=memories.filter(memory=>memory.state!=='proposed'&&matches(memory));
   const resolve=(memory:MemoryRow,keep:boolean)=>void mutate(()=>gql('mutation($id:String!,$keep:Boolean!){resolve_memory_proposal(memory_id:$id,keep:$keep){id}}',{id:memory.id,keep}),keep?'Memory kept':'Memory discarded');
-  return <ManagerPage section="memory" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={{label:"Memory",value:search,onChange:setSearch,count:memories.length}}>
-    <>
+  const Heading=embedded?'h4':'h3';
+  const body=<>
       {proposed.length>0&&<section aria-label="Proposed memory">
-        <h3>Proposed</h3>
+        <Heading>Proposed</Heading>
         <p className="manager-help">An agent suggested these during a run nobody was watching. A proposal is not used until you keep it.</p>
         {proposed.map(memory=><MemoryItem key={memory.id} memory={memory} agentId={agentId}>
           <ActionButton busy={busy} primary onClick={()=>resolve(memory,true)}>Keep memory</ActionButton>
@@ -72,7 +75,7 @@ export default function MemorySection({me,projectId,agentId=null}:{me:HostIdenti
         </MemoryItem>)}
       </section>}
       <section aria-label="Saved memory">
-        <h3>Memory with provenance</h3>
+        <Heading>Memory with provenance</Heading>
         {!saved.length&&<Empty>{proposed.length?'Nothing kept yet. Keep a proposal above or add a note below.':'No memory saved. Add facts and decisions that should carry into future sessions.'}</Empty>}
         {saved.map(memory=><MemoryItem key={memory.id} memory={memory} agentId={agentId}>
           <ActionButton busy={busy} onClick={()=>setEditing(memory)}>Edit memory</ActionButton>
@@ -82,6 +85,11 @@ export default function MemorySection({me,projectId,agentId=null}:{me:HostIdenti
       </section>
       {editing&&<MemoryEditor key={editing.id} memory={editing} onCancel={()=>setEditing(null)} onSaved={()=>{setEditing(null);setNotice('Memory updated');reload()}}/>}
       <details open><summary>Add memory</summary><AddMemoryForm projectId={projectId} agentId={agentId} mutation={mutation}/></details>
-    </>
-  </ManagerPage>;
+    </>;
+  if(embedded)return <div className="manager-embedded-body">
+    {(search||memories.length>=8)&&<ManagerSearch label="Memory" value={search} onChange={setSearch}/>}
+    <ManagerStatus error={error||loadError} notice={notice} onRetry={reload}/>
+    {loading&&!data?<Empty>Loading memory…</Empty>:body}
+  </div>;
+  return <ManagerPage section="memory" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={{label:"Memory",value:search,onChange:setSearch,count:memories.length}}>{body}</ManagerPage>;
 }

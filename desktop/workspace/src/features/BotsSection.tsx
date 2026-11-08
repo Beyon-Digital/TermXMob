@@ -87,7 +87,7 @@ function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,onCre
 
 function needsYou(count:number){return count===1?'1 needs you':`${count} need you`}
 
-export default function BotsSection({me,projectId}:{admin?:boolean;me:HostIdentity;projectId:string|null}){
+export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:HostIdentity;projectId:string|null;onSection?:(name:string)=>void}){
   const {data,loading,error:loadError,reload}=useManagerLoad(()=>gql<BotsData>(listQuery));
   const mutation=useManagerMutation(reload);
   const {busy,error,notice,mutate}=mutation;
@@ -119,7 +119,7 @@ export default function BotsSection({me,projectId}:{admin?:boolean;me:HostIdenti
   const header=<div className="bot-toolbar"><Button ref={newBot} onClick={()=>setCreating(true)}>New bot</Button></div>;
   return <ManagerPage section="bots" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={current?undefined:{label:'Bots',value:search,onChange:setSearch,count:bots.length}}>
     <>
-      {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onBack={()=>open(null)} onGone={()=>open(null)}/>
+      {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} me={me} onSection={onSection} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onBack={()=>open(null)} onGone={()=>open(null)}/>
       :selected?(loading?<Empty>Loading bot…</Empty>:<Empty>This bot no longer exists. <Button variant="ghost" onClick={()=>open(null)}>Show all bots</Button></Empty>)
       :<>
         {header}

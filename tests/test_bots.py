@@ -659,3 +659,25 @@ def test_bot_nodes_ask_every_time_and_respect_the_bot_cap(tmp_path):
         finally:
             await close(workspace, manager, ledger)
     asyncio.run(run())
+
+
+# -- progressive skill loading -------------------------------------------------
+
+def test_new_bots_can_read_skills_on_demand_without_gaining_any_write_tool(tmp_path):
+    from termx.workspace.bots import READ_TOOLS
+    workspace, owner, manager, ledger, registry, _ = setup(tmp_path)
+    try:
+        spec = default_registry().get('read_skill')
+        assert spec.mutability == 'read' and spec.approval == 'never'
+        assert 'read_skill' in READ_TOOLS and 'read_skill' in default_ceiling()['tools']
+        assert all(default_registry().get(name).mutability == 'read' for name in READ_TOOLS)
+        for template in workspace.bots.templates():
+            assert 'read_skill' in template['tools'], template['id']
+        custom = workspace.bots.create(owner, name='Custom', instructions='x')
+        assert 'read_skill' in custom['tools'] and 'read_skill' in custom['ceiling']['tools']
+        assert not {'run_shell', 'write_file', 'git_push', 'mcp_call', 'computer'} & set(custom['ceiling']['tools'])
+        # The owner can still narrow it away.
+        narrowed = workspace.bots.set_ceiling(owner, custom['id'], revision=custom['revision'], ceiling={'tools': ['read_file']})
+        assert 'read_skill' not in narrowed['tools']
+    finally:
+        asyncio.run(close(workspace, manager, ledger))

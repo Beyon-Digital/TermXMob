@@ -66,6 +66,20 @@ it('announces approval for the first task of a conversation that went straight t
   expect(screen.getByRole('status')).toHaveTextContent('Approval needed');
 });
 
+it('announces extra text from elsewhere in the conversation through the same region, including a repeat', () => {
+  const view = render(<StatusAnnouncer sessionId="s1" task={undefined}/>);
+  const region = screen.getByRole('status');
+  view.rerender(<StatusAnnouncer sessionId="s1" task={undefined} extra="Connecting…"/>);
+  expect(region).toHaveTextContent('Connecting…');
+  view.rerender(<StatusAnnouncer sessionId="s1" task={undefined} extra=""/>);
+  const before = region.textContent;
+  view.rerender(<StatusAnnouncer sessionId="s1" task={undefined} extra="Connecting…"/>);
+  expect(screen.getByRole('status')).toBe(region);
+  expect(region.textContent).not.toBe(before);
+  expect(region.textContent?.trim()).toBe('Connecting…');
+  expect(screen.getAllByRole('status')).toHaveLength(1);
+});
+
 function Harness({task}: {task: {id: string; status: string}}) {
   return <StatusAnnouncer sessionId="s1" task={task}/>;
 }

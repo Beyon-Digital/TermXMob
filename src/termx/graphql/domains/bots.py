@@ -180,6 +180,14 @@ class BotQueries:
         info.context.require("agent-view")
         return BotTemplate.wrap_all(info.context.state.workspace.bots.templates())
 
+    @strawberry.field
+    @resolver
+    def agent_tool_names(self, info: Ctx) -> list[str]:
+        """Names of the tools this host has that a bot's ceiling may list, sorted. Read-only; it grants nothing."""
+        info.context.require("agent-view")
+        from termx.workspace.bots import assignable_tool_names
+        return assignable_tool_names()
+
 
 @strawberry.type
 class BotMutations:

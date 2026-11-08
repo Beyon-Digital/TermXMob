@@ -14,11 +14,12 @@ export interface BotSchedule {
   id: string; revision: number; bot_id: string; conversation_id: string; prompt: string; enabled: boolean; state: string; reason?: string | null;
   next_run?: number | null; max_runs: number; runs_started: number; grant_expires_at?: number | null;
   needs_reauthorization: boolean; paused_by_bot: boolean;
+  computer_permission?: {apps: string[]; expires_at: number; max_seconds: number} | null;
   trigger?: Trigger; report_to?: ReportTarget; webhook_path?: string | null; webhook_secret?: string | null;
 }
 
 export const NEEDS_YOU_FIELDS = 'id kind bot_id bot_name title detail scheduled task_id approval_id run_id schedule_id memory_id message_id created_at';
-export const BOT_SCHEDULE_FIELDS = 'id revision bot_id conversation_id prompt enabled state reason next_run max_runs runs_started grant_expires_at needs_reauthorization paused_by_bot trigger report_to webhook_path';
+export const BOT_SCHEDULE_FIELDS = 'id revision bot_id conversation_id prompt enabled state reason next_run max_runs runs_started grant_expires_at needs_reauthorization paused_by_bot computer_permission trigger report_to webhook_path';
 export const TRIGGER_SCHEDULE_FIELDS = 'id revision prompt enabled state reason spec trigger report_to webhook_path max_runs runs_started grant_expires_at needs_reauthorization';
 
 /** How long a fresh authorization lasts. The host caps it at 90 days. */

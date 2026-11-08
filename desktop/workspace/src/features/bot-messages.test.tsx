@@ -158,6 +158,29 @@ it('names the item each per-row button acts on, and keeps focus on the list afte
  expect(screen.getByRole('heading',{name:/Needs you/})).toHaveFocus();
 });
 
+it('moves focus to a stable empty-state line when the last item is answered and the list goes away',async()=>{
+ const world:World={bots:[bot({needs_you:1})],messages:[],schedules:[],inbox:[needsItem()]};
+ serve(world);
+ open();
+ const inbox=within(await screen.findByRole('region',{name:'Needs you'}));
+ const dismiss=inbox.getByRole('button',{name:'Dismiss message'});
+ dismiss.focus();
+ fireEvent.click(dismiss);
+ await waitFor(()=>expect(screen.queryByRole('region',{name:'Needs you'})).toBeNull());
+ const target=await screen.findByText('Nothing needs you now.');
+ await waitFor(()=>expect(target).toHaveFocus());
+ expect(target).toHaveAttribute('tabindex','-1');
+ expect(target).not.toHaveAttribute('role');
+});
+
+it('does not take focus when nothing was answered',async()=>{
+ serve({bots:[bot()],messages:[],schedules:[],inbox:[]});
+ open();
+ await screen.findByRole('button',{name:/Alpha/});
+ expect(screen.queryByText('Nothing needs you now.')).toBeNull();
+ expect(document.body).toHaveFocus();
+});
+
 it('says when the secret could not be copied',async()=>{
  const writeText=vi.fn().mockRejectedValue(new Error('denied'));
  Object.defineProperty(navigator,'clipboard',{value:{writeText},configurable:true});

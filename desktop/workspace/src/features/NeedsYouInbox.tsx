@@ -1,4 +1,4 @@
-import {useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Badge} from '../components/ui/badge';
 import {Button} from '../components/ui/button';
 import type {Bot} from '../lib/bots';
@@ -18,9 +18,17 @@ export default function NeedsYouInbox({items,bots,mutation,onOpen,showBot=true,e
 }){
   const {busy,mutate}=mutation;
   // An answered item leaves the list, taking the focused button with it, so focus moves to the list's heading first.
+  // When the last item goes the heading goes too, so a short line takes its place and receives focus instead.
+  // Only answering the last item arms that; an empty list that arrives by polling never takes focus.
   const anchor=useRef<HTMLHeadingElement&HTMLParagraphElement>(null);
-  if(!items.length)return empty?<p className="manager-help" tabIndex={-1} ref={anchor}>{empty}</p>:null;
-  const settled=<T,>(work:Promise<T|null>)=>work.then(result=>{if(result!==null)anchor.current?.focus();return result});
+  const [answered,setAnswered]=useState(false),focusPending=useRef(false),none=!items.length;
+  useEffect(()=>{if(none&&focusPending.current){focusPending.current=false;anchor.current?.focus()}},[none]);
+  useEffect(()=>{if(!none)setAnswered(false)},[none]);
+  if(none){
+    const text=empty||(answered?'Nothing needs you now.':'');
+    return text?<p className="manager-help" tabIndex={-1} ref={anchor}>{text}</p>:null;
+  }
+  const settled=<T,>(work:Promise<T|null>)=>work.then(result=>{if(result!==null){if(items.length===1){focusPending.current=true;setAnswered(true)}anchor.current?.focus()}return result});
   const conversation=(botId:string)=>bots.find(bot=>bot.id===botId)?.conversation_id||'';
   const dismiss=(item:NeedsYouItem)=>settled(mutate(()=>gql('mutation($c:String!,$r:String!){acknowledge_schedule_run(conversation_id:$c,run_id:$r){id}}',{c:conversation(item.bot_id),r:item.run_id}),'Run dismissed'));
   const resolve=(item:NeedsYouItem,keep:boolean)=>settled(mutate(()=>gql('mutation($id:String!,$keep:Boolean!){resolve_memory_proposal(memory_id:$id,keep:$keep){id}}',{id:item.memory_id,keep}),keep?'Memory kept':'Memory discarded'));

@@ -6,6 +6,8 @@ import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/
 import {settingsCategories,settingsGroups,canonicalSettingsCategory} from '../lib/settings-categories';
 import SettingsIcon from '../components/SettingsIcon';
 import {SETTINGS_LEAVE,SettingsFormsContext,type SettingsFormsRegistry} from './settings-forms';
+import {useBotsNeedYouCount} from './bot-attention';
+import {needsYouCount} from '../lib/bot-schedules';
 import './settings-surface.css';
 
 // Managers that have not moved to `useDirtyForm` still report saves through this context. It stays
@@ -23,8 +25,10 @@ function commitsSettings(path:string,init?:RequestInit){
 }
 export function useSettingsRequest(){const beginSave=useSettingsSave();return async function request<T=unknown>(...args:Parameters<typeof baseRequest<T>>){const saved=beginSave();const result=await baseRequest<T>(...args);if(commitsSettings(String(args[0]),args[1]))saved();return result}}
 
-export function SettingsNavigation({category,onSelect}:{category:string;onSelect:(id:string)=>void}){
+export function SettingsNavigation({category,onSelect,waiting:given}:{category:string;onSelect:(id:string)=>void;waiting?:number}){
  const selected=canonicalSettingsCategory(category);
+ // Not a notification centre: one count on the Bots entry, so a bot waiting for an answer is noticed from any settings page.
+ const own=useBotsNeedYouCount(given===undefined),waiting=given??own;
  function follow(event:MouseEvent<HTMLAnchorElement>,id:string){
   if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
   event.preventDefault();onSelect(id);
@@ -32,7 +36,7 @@ export function SettingsNavigation({category,onSelect}:{category:string;onSelect
  return <nav className="settings-categories" aria-label="Settings categories">
   {settingsGroups.map(group=><div className="settings-nav-group" key={group}>
    <p className="settings-nav-heading">{group}</p>
-   <ul>{settingsCategories.filter(row=>row.group===group).map(({id,label})=><li key={id}><a href={'/manage/'+id} aria-current={id===selected?'page':undefined} onClick={event=>follow(event,id)}><SettingsIcon kind={id}/><span>{label}</span></a></li>)}</ul>
+   <ul>{settingsCategories.filter(row=>row.group===group).map(({id,label})=><li key={id}><a href={'/manage/'+id} aria-current={id===selected?'page':undefined} onClick={event=>follow(event,id)}><SettingsIcon kind={id}/><span>{label}</span>{id==='bots'&&waiting>0&&<><span className="visually-hidden">, {needsYouCount(waiting)}</span><span className="settings-nav-count" aria-hidden="true">{waiting}</span></>}</a></li>)}</ul>
   </div>)}
  </nav>
 }
@@ -40,7 +44,7 @@ export function SettingsNavigation({category,onSelect}:{category:string;onSelect
 type Scope=HTMLFormElement|'page';
 const scopeOf=(node:EventTarget|null):Scope=>node instanceof Element?(node.closest('form')??'page'):'page';
 
-export default function SettingsSurface({category,onSelect,onClose,children,context,scopeKey}:{scopeKey?:string;context?:ReactNode;category:string;onSelect:(id:string)=>void;onClose:()=>void;children:ReactNode}){
+export default function SettingsSurface({category,onSelect,onClose,children,context,scopeKey,waiting}:{waiting?:number;scopeKey?:string;context?:ReactNode;category:string;onSelect:(id:string)=>void;onClose:()=>void;children:ReactNode}){
  const [surface,setSurface]=useState<HTMLDivElement|null>(null);
  const opener=useRef(document.activeElement instanceof HTMLElement?document.activeElement:null);
  useEffect(()=>{const viewport=window.visualViewport;if(!viewport||!surface)return;let frame=0;const fit=()=>{const node=surface;if(!node)return;node.style.setProperty('--settings-viewport-height',viewport.height+'px');node.style.setProperty('--settings-viewport-top','calc('+viewport.offsetTop+'px + max(16px, env(safe-area-inset-top)))');node.style.setProperty('--settings-viewport-bottom','auto');cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{const focused=document.activeElement;if(window.matchMedia('(max-width:700px)').matches&&focused instanceof HTMLElement&&node.contains(focused)&&focused.matches('input,textarea,select,[contenteditable=true]'))focused.scrollIntoView?.({block:'nearest',inline:'nearest'})})};fit();viewport.addEventListener('resize',fit);viewport.addEventListener('scroll',fit);return()=>{cancelAnimationFrame(frame);viewport.removeEventListener('resize',fit);viewport.removeEventListener('scroll',fit)}},[surface]);
@@ -70,7 +74,7 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
  function save(){for(const form of forms.values())form.current?.requestSubmit()}
  return <Dialog open onOpenChange={open=>{if(!open&&guarded(onClose))onClose()}}><DialogContent ref={setSurface} className="settings-surface" onCloseAutoFocus={event=>{if(!opener.current?.isConnected){const target=document.querySelector<HTMLElement>('[aria-label="Show sidebar"]');if(target){event.preventDefault();target.focus()}}}} onPointerDownOutside={event=>event.preventDefault()}>
   <header className="settings-title"><div className="settings-title-copy"><DialogTitle>Settings</DialogTitle><DialogDescription>Configure your account, this host and workspace capabilities.</DialogDescription></div>{context}</header>
-  <SettingsNavigation category={category} onSelect={select}/>
+  <SettingsNavigation category={category} onSelect={select} waiting={waiting}/>
   <SettingsFormsContext.Provider value={registry}><SaveContext.Provider value={beginSave}>
    <div className="settings-content" onClickCapture={event=>{action.current=scopeOf(event.target)}} onSubmitCapture={event=>{action.current=scopeOf(event.target)}} onChangeCapture={event=>{
     const target=event.target as HTMLElement;

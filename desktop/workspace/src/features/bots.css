@@ -90,5 +90,9 @@
 .bot-secret dd{margin:0;min-width:0}
 .bot-secret code{overflow-wrap:anywhere;user-select:all}
 
+.manager-embedded-body{display:grid;gap:12px;min-width:0}
+.bot-skill-warning{max-width:none;color:var(--foreground);font-weight:500}
+.bot-check small{overflow-wrap:anywhere}
+
 @media (max-width:700px){.bot-row{flex-direction:column;align-items:flex-start}.bot-row-meta{justify-content:flex-start}}
 @media (prefers-reduced-motion:reduce){.bot-row,.bot-tab{transition:none}}

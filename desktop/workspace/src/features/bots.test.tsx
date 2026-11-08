@@ -124,7 +124,7 @@ it('opens the bot named in the address and says so when it is gone',async()=>{
 it('moves between tabs with the arrow keys and lists every section',async()=>{
  await openBot();
  const tabs=screen.getAllByRole('tab');
- expect(tabs.map(tab=>tab.textContent)).toEqual(['Overview','Prompt','Permissions','Schedules & triggers','Messages','Skills','Tasks','Activity']);
+ expect(tabs.map(tab=>tab.textContent)).toEqual(['Overview','Prompt','Permissions','Schedules & triggers','Messages','Memory','Skills','Tasks','Activity']);
  tabs[0].focus();
  fireEvent.keyDown(tabs[0],{key:'ArrowRight'});
  expect(screen.getByRole('tab',{name:'Prompt'})).toHaveAttribute('aria-selected','true');

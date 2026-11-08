@@ -53,6 +53,7 @@ class BotSchedule(T.DictBacked):
     paused_by_bot: bool
     trigger: JSON
     report_to: JSON
+    computer_permission: JSON | None
     webhook_path: str | None
     webhook_secret: str | None
     created_at: float
@@ -101,11 +102,25 @@ class NeedsYouItem(T.DictBacked):
 
 
 @strawberry.input
+class BotComputerPermissionInput:
+    """Lets the bot control only `apps` while its schedule runs. `expires_at` (a Unix time) must fall inside the authorization
+    and within 90 days; `max_seconds` (10 to 3600) is the computer time each run gets. Needs a bot whose permissions allow computer control."""
+
+    apps: list[str]
+    expires_at: float
+    max_seconds: int
+
+
+def _permission(value: "BotComputerPermissionInput | None"):
+    return None if value is None else {"apps": value.apps, "expires_at": value.expires_at, "max_seconds": value.max_seconds}
+
+
+@strawberry.input
 class BotScheduleInput:
     """`request_id` (8 to 128 characters) makes a retry safe. `spec` is an interval, daily, cron or once schedule.
     Send `trigger` instead of `spec` to start runs from an event: `{kind: "message"}`, `{kind: "bot_finished", bot_id, on}`,
     `{kind: "file_change", glob, debounce_s}` or `{kind: "webhook"}`. A webhook starts off; its secret is in this response only.
-    `report_to` is `owner`, `orchestrator` (default) or `bot:<id>`."""
+    `report_to` is `owner`, `orchestrator` (default) or `bot:<id>`. `computer_permission` is off unless set."""
 
     request_id: str
     prompt: str
@@ -118,11 +133,13 @@ class BotScheduleInput:
     limits: JSON | None = None
     trigger: JSON | None = None
     report_to: str | None = None
+    computer_permission: BotComputerPermissionInput | None = None
 
 
 @strawberry.input
 class BotScheduleEditInput:
-    """`trigger` keeps its kind; change its settings. `spec` is for timed schedules only."""
+    """`trigger` keeps its kind; change its settings. `spec` is for timed schedules only. `computer_permission` replaces the
+    schedule's computer permission and `clear_computer_permission` removes it; send either one alone, without other changes."""
 
     revision: int
     prompt: str | None = None
@@ -131,6 +148,8 @@ class BotScheduleEditInput:
     overlap: str | None = None
     trigger: JSON | None = None
     report_to: str | None = None
+    computer_permission: BotComputerPermissionInput | None = None
+    clear_computer_permission: bool = False
 
 
 def _bot_for(info: Ctx, conversation_id: str, scope: str):
@@ -215,19 +234,22 @@ class BotScheduleMutations:
         return BotSchedule.wrap(_run(
             bots.schedules.create, actor, bot["id"], request_id=input.request_id, prompt=input.prompt, spec=input.spec,
             success_criteria=input.success_criteria, max_runs=input.max_runs, grant_days=input.grant_days,
-            missed=input.missed, overlap=input.overlap, limits=input.limits, trigger=input.trigger, report_to=input.report_to))
+            missed=input.missed, overlap=input.overlap, limits=input.limits, trigger=input.trigger, report_to=input.report_to,
+            computer_permission=_permission(input.computer_permission)))
 
     @strawberry.mutation
     @resolver
     def edit_schedule(self, info: Ctx, conversation_id: str, schedule_id: str, input: BotScheduleEditInput) -> BotSchedule:
         actor, bots, bot = _bot_for(info, conversation_id, "agent-control")
-        if any(value is not None for value in (input.prompt, input.spec, input.trigger, input.report_to)):
-            # What the bot reads, when it runs and where its result goes were all approved with the grant.
+        if input.computer_permission is not None or input.clear_computer_permission or any(
+                value is not None for value in (input.prompt, input.spec, input.trigger, input.report_to)):
+            # What the bot reads, when it runs, where its result goes and which applications it may drive were all approved with the grant.
             info.context.require_host("agent-control")
             info.context.require("agent-run")
         return BotSchedule.wrap(_run(
             bots.schedules.edit, actor, bot["id"], schedule_id, revision=input.revision, prompt=input.prompt,
-            spec=input.spec, missed=input.missed, overlap=input.overlap, trigger=input.trigger, report_to=input.report_to))
+            spec=input.spec, missed=input.missed, overlap=input.overlap, trigger=input.trigger, report_to=input.report_to,
+            computer_permission=_permission(input.computer_permission), clear_computer_permission=input.clear_computer_permission))
 
     @strawberry.mutation
     @resolver

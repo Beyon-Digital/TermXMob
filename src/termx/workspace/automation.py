@@ -108,7 +108,7 @@ class AutomationService:
                 self.workspace.record(principal,'schedule',identifier,scope='agent-control')
                 if previous.get('creation_digest')!=digest: raise Conflict('Creation request changed; use a new request ID')
                 return previous
-            self.workspace.bots.schedules.admit(conversation_id,shell=bool(command or runbook_id),browser=browser_permission is not None,computer=computer_permission is not None)  # a bot takes agent schedules only, while active and under its cap
+            self.workspace.bots.schedules.admit(conversation_id,shell=bool(command or runbook_id),browser=browser_permission is not None,computer=computer_permission is not None,event=bool(trigger and is_event({'trigger':trigger})))  # a bot takes agent schedules only, while active and under its cap
             if command and runbook_id: raise ValueError('Choose a saved automation or a new command')
             if browser_permission is not None and _prepared_browser_permission is None:
                 raise ValueError('Review and prepare browser permissions before creating a schedule')
@@ -148,7 +148,28 @@ class AutomationService:
                 if created_runbook: self.workspace.agents.delete_runbook(created_runbook['id'])
                 raise
 
-    def _computer_permission(self,principal,conversation_id,selection,grant_days,first_due,command):
+    def set_computer_permission(self,principal,identifier,*,revision,selection):
+        """Replace or (with ``selection=None``) remove the computer permission on a schedule's grant, with the checks creation applies."""
+        row=self.workspace.record(principal,'schedule',identifier,scope='agent-control')
+        if row.get('archived'): raise ValueError('Archived schedules cannot be edited')
+        with self.store.lock:
+            row=self.store.get('schedule',identifier)
+            if row['revision']!=revision: raise Conflict('Schedule changed; refresh before saving')
+            grant=self.store.get('delegation',row.get('grant_id') or '')
+            if not grant or grant['revoked']: raise PermissionError('Renew the delegated grant before changing its computer permission')
+            if selection is not None and is_event(row): raise ValueError('Computer control is only for timed schedules')
+            if selection is not None and grant.get('runbook'): raise ValueError('Computer permissions require an agent schedule')
+            if selection is None:
+                grant={key:value for key,value in grant.items() if key!='computer_permission'}
+            else:
+                goal=self.store.get('goal',row['goal_id']) or {}
+                grant={**grant,'computer_permission':self._computer_permission(principal,goal['conversation_id'],selection,None,
+                    row.get('next_run'),None,grant_until=grant['expires_at'])}
+            self.store.update('delegation',grant['id'],grant)
+            self.store.log(principal.id,'delegation',grant['id'],'computer_permission_removed' if selection is None else 'computer_permission_set',{'schedule_id':identifier})
+            return self.store.update('schedule',identifier,{**row},revision)
+
+    def _computer_permission(self,principal,conversation_id,selection,grant_days,first_due,command,*,grant_until=None):
         """A reviewed computer permission for a schedule grant: an agent schedule on this host, by an owner who may control the desktop."""
         from termx.desktop.apps import verifiable
         from termx.workspace.scheduled_computer import normalize
@@ -159,7 +180,7 @@ class AutomationService:
             raise ValueError('Unattended computer permission requires a local Internal Agent conversation')
         self.workspace.require(principal,'desktop-control',conversation.get('project_id'),conversation.get('cwd'),resource_kind='conversation',resource_id=conversation_id)
         now=self.clock()
-        return normalize(selection,now=now,grant_until=now+grant_days*86400,first_due=first_due)
+        return normalize(selection,now=now,grant_until=grant_until if grant_until is not None else now+grant_days*86400,first_due=first_due)
 
     def runbook(self,principal,conversation_id,identifier):
         conversation=self.workspace.session(principal,conversation_id,turns=False)
@@ -200,7 +221,7 @@ class AutomationService:
         self.workspace.record(principal,'conversation',goal['conversation_id'],scope='agent-run')
         if grant['goal_id']!=goal_id or grant['revoked'] or grant['expires_at']<=self.clock():
             raise PermissionError('Delegated grant does not authorize this goal')
-        self.workspace.bots.schedules.admit(goal['conversation_id'],shell=bool(grant.get('runbook')),browser=grant.get('browser_permission') is not None,computer=grant.get('computer_permission') is not None)  # the direct goal/grant/schedule route follows the same bot rules as create
+        self.workspace.bots.schedules.admit(goal['conversation_id'],shell=bool(grant.get('runbook')),browser=grant.get('browser_permission') is not None,computer=grant.get('computer_permission') is not None,event=bool(trigger and is_event({'trigger':trigger})))  # the direct goal/grant/schedule route follows the same bot rules as create
         if missed not in {'skip','once'} or overlap not in {'skip','queue'} or not prompt.strip() or len(prompt)>64000:
             raise ValueError('Invalid schedule prompt or missed/overlap policy')
         due = None if trigger and is_event({'trigger':trigger}) else next_run(spec,self.clock())

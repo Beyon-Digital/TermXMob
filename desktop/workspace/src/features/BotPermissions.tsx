@@ -4,13 +4,13 @@ import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/
 import {FormField} from '../components/ui/form-field';
 import {Select} from '../components/ui/select';
 import {SettingsRow,SettingsSection} from '../components/ui/settings-section';
-import {BOT_FIELDS,approvalModes,approvalRank,denied,denyGroups,sandboxProfiles,sandboxRank,toolGroups,toolLabel,type BotCeiling} from '../lib/bots';
-import {patchBot,type BotTabProps} from './bot-api';
+import {BOT_FIELDS,approvalModes,approvalRank,denied,denyGroups,fallbackToolIds,sandboxProfiles,sandboxRank,toolGroups,toolLabel,type BotCeiling} from '../lib/bots';
+import {patchBot,useHostToolNames,type BotTabProps} from './bot-api';
 import {ActionButton,Empty} from './manager-ui';
 import {useDirtyForm} from './settings-forms';
 import {gql} from './use-manager';
 
-const known=new Set(toolGroups.flatMap(group=>group.tools.map(tool=>tool.id)));
+const known=new Set(fallbackToolIds);
 const toggle=(list:string[],id:string,on:boolean)=>on?[...new Set([...list,id])]:list.filter(item=>item!==id);
 
 /** Checkboxes for `allowed` tools, grouped by what they let a bot do. Tools the screen has no wording for appear under their id. */
@@ -74,7 +74,9 @@ function Ceiling({bot,mutation}:BotTabProps){
   const {busy,mutate}=mutation;
   const [tools,setTools]=useState(bot.ceiling.tools),[approval,setApproval]=useState(bot.ceiling.approval_mode),[sandbox,setSandbox]=useState(bot.ceiling.sandbox_profile),[deny,setDeny]=useState(bot.ceiling.deny_capabilities);
   const [pending,setPending]=useState<BotCeiling|null>(null),[tried,setTried]=useState(false);
-  const everything=[...new Set([...known,...bot.ceiling.tools])];
+  const hostTools=useHostToolNames();
+  // Everything the host has, plus anything this bot's ceiling already names, so a ceiling is never shown with a tool missing.
+  const everything=[...new Set([...hostTools,...bot.ceiling.tools])];
   const toolsError=tried&&!tools.length?'Choose at least one tool.':'';
   function review(){
     setTried(true);

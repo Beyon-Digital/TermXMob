@@ -115,6 +115,7 @@ class BotSchedules:
             'runs_started': goal.get('runs_started', 0), 'limits': goal.get('limits') or {},
             'grant_expires_at': grant.get('expires_at'), 'grant_used_runs': grant.get('used_runs', 0),
             'needs_reauthorization': reason is not None, 'paused_by_bot': schedule.get('resume_when') == 'resume',
+            'computer_permission': grant.get('computer_permission'),
             'trigger': schedule.get('trigger') or {'kind': 'time'},
             'report_to': schedule.get('report_to') or {'kind': 'orchestrator', 'id': None},
             'webhook_path': f'/hooks/bots/{bot["id"]}/{schedule["id"]}' if trigger_kind(schedule) == 'webhook' else None,
@@ -140,17 +141,49 @@ class BotSchedules:
 
     # -- rules the scheduler applies on every path, REST included ---------------------------
 
-    def admit(self, conversation_id, *, shell=False, browser=False, computer=False):
+    def admit(self, conversation_id, *, shell=False, browser=False, computer=False, event=False):
         """Called by ``AutomationService.create``: a bot takes new schedules only while active and under its cap, and
-        only as agent tasks. A saved shell command or an unattended browser grant would act outside the bot's ceiling."""
+        only as agent tasks. A saved shell command or an unattended browser grant would act outside the bot's ceiling.
+        A computer permission is accepted only when the bot's ceiling already allows computer control."""
         bot = self.bots.for_conversation(conversation_id)
         if bot is None:
             return
-        if shell or browser or computer:
-            raise ValueError("A bot's schedules run the bot itself. Shell commands, browser access and computer control are not part of its ceiling.")
+        if shell or browser:
+            raise ValueError("A bot's schedules run the bot itself. Shell commands and browser access are not part of its ceiling.")
         self._require_active(bot)
+        if computer:
+            if event:
+                raise ValueError('Computer control is only for timed schedules. A webhook, message or file change must not start a run that drives the desktop.')
+            self._require_computer(bot)
         if len(self._rows(bot)) >= MAX_SCHEDULES:
             raise Conflict(f'A bot can have at most {MAX_SCHEDULES} schedules; archive one first')
+
+    def _computer_refusal(self, bot):
+        """Default deny: the ceiling must list the computer tool and not deny computer control, the bot must use the tool,
+        and its conversation must be able to change things. Returns why not, or None."""
+        ceiling = bot.get('ceiling') or {}
+        if 'computer' not in ceiling.get('tools', ()) or 'computer.control' in ceiling.get('deny_capabilities', ()):
+            return "This bot's permissions do not allow computer control. Allow it under Permissions first."
+        if 'computer' not in self.bots._load(bot).tools:
+            return 'This bot does not use the computer tool. Add it under Permissions first.'
+        if (self.bots.agents.get_conversation(bot['conversation_id'], include_turns=False) or {}).get('mode') != 'agent':
+            return 'This bot is in read-only mode, so it cannot control the computer. Add a tool that changes things under Permissions first.'
+        return None
+
+    def _require_computer(self, bot):
+        reason = self._computer_refusal(bot)
+        if reason:
+            raise ValueError(reason)
+
+    def drop_computer_permissions(self, bot):
+        """The ceiling narrowed: a stored computer permission the bot may no longer use is removed from its schedules' grants."""
+        if self._computer_refusal(bot) is None:
+            return
+        for row in self._rows(bot):
+            grant = self.store.get('delegation', row.get('grant_id') or '')
+            if grant and 'computer_permission' in grant:
+                self.store.update('delegation', grant['id'], {key: value for key, value in grant.items() if key != 'computer_permission'})
+                self.store.log(bot['owner'], 'delegation', grant['id'], 'computer_permission_removed', {'schedule_id': row['id'], 'reason': 'ceiling'})
 
     def require_current(self, principal, schedule):
         """Called by ``AutomationService.enable`` and ``run_now``: a paused bot, or a schedule authorized for an older
@@ -166,7 +199,7 @@ class BotSchedules:
     # -- changing --------------------------------------------------------------------------
 
     def create(self, principal, bot_id, *, request_id, prompt, spec=None, success_criteria=None, max_runs=30, grant_days=30,
-               missed='skip', overlap='skip', limits=None, trigger=None, report_to=None):
+               missed='skip', overlap='skip', limits=None, trigger=None, report_to=None, computer_permission=None):
         """A timed schedule (``spec``) or an event schedule (``trigger``). A webhook schedule starts off, and its secret is in the
         result of this call only; ask for a new one with ``rotate_secret``."""
         bot = self._bot(principal, bot_id)
@@ -192,16 +225,29 @@ class BotSchedules:
                 success_criteria=(success_criteria or '').strip() or DEFAULT_CRITERIA, max_runs=max_runs,
                 limits=resolve_limits(limits, defaults=dict(agent.limits)), prompt=prompt, spec=spec, grant_days=grant_days,
                 missed=missed, overlap=overlap, trigger=trigger if trigger['kind'] != 'time' else None, report_to=report,
-                enabled=trigger['kind'] != 'webhook')
+                enabled=trigger['kind'] != 'webhook', computer_permission=computer_permission)
             secret = None if replay or trigger['kind'] != 'webhook' else self.bots.triggers.issue_secret(bot['owner'], row['id'])
         self.store.log(principal.id, 'schedule', row['id'], 'bot_schedule_created', {'bot_id': bot['id'], 'trigger': trigger['kind']})
         view = self.view(principal, bot, row)
         return {**view, 'webhook_secret': secret} if secret else view
 
     def edit(self, principal, bot_id, schedule_id, *, revision, prompt=None, spec=None, missed=None, overlap=None,
-             trigger=None, report_to=None):
+             trigger=None, report_to=None, computer_permission=None, clear_computer_permission=False):
+        """``computer_permission`` replaces the schedule's computer permission; ``clear_computer_permission`` removes it."""
         bot = self._bot(principal, bot_id)
         row = self._schedule(bot, schedule_id)
+        if computer_permission is not None and clear_computer_permission:
+            raise ValueError('Set the computer permission or clear it, not both')
+        if computer_permission is not None or clear_computer_permission:
+            if computer_permission is not None:
+                self._require_active(bot)
+                self._require_computer(bot)
+            changed = [value for value in (prompt, spec, missed, overlap, trigger, report_to) if value is not None]
+            if changed:
+                raise ValueError('Change the computer permission on its own, then edit the schedule')
+            row = self.automation.set_computer_permission(principal, schedule_id, revision=revision,
+                                                          selection=None if clear_computer_permission else computer_permission)
+            return self.view(principal, bot, row)
         extras = {}
         if trigger is not None:
             extras['trigger'] = self.bots.triggers.update(bot, row.get('trigger'), trigger)

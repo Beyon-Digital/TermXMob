@@ -226,7 +226,7 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
     })}
    </div>}
   </div>
-  {session&&<StatusAnnouncer sessionId={session.id} task={latest}/>}
+  {session&&<StatusAnnouncer sessionId={session.id} task={latest} extra={liveVoice.announcement}/>}
   {awayFromLatest&&messages.length>0&&<Button className="jump-latest" variant="secondary" size="sm" onClick={()=>{scrollToLatest();scroller.current?.focus()}}>Jump to latest</Button>}
   <div className="composer-container">
    {session&&connectionProblem&&!running&&<ChatConnectionSetup key={(ownerId||'')+':'+session.id} session={session} providers={providers} engines={engines} enabled={visible&&!sending} onConfigureAgent={onConfigureAgent} onRefresh={onRefresh} onConnect={patch}/>}

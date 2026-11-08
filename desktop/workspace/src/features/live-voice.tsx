@@ -33,8 +33,9 @@ export interface LiveVoiceOptions {
 
 /**
  * A live spoken conversation with the agent. `button` goes in the composer toolbar and `panel` above the message
- * box. The always-mounted status region is the only live region; the level meter is decoration and is left out
- * entirely when the system asks for reduced motion.
+ * box. It has no live region of its own: `announcement` goes to the chat's single status announcer, which is already
+ * mounted, so the first message ("Connecting") is read too. The level meter is decoration and is left out entirely
+ * when the system asks for reduced motion.
  */
 export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOptions) {
   const {status, setStatus} = useVoiceStatus(enabled && !nativeWorkspace());
@@ -52,7 +53,6 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   const panelRef = useRef<HTMLElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const firstRender = useRef(true);
-  const [armed, setArmed] = useState(false);
   const session = useRef(sessionId);
   session.current = sessionId;
 
@@ -139,7 +139,6 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
   }, [phase]);
 
   function press() {
-    setArmed(true);
     if (phase === 'live') return stop();
     if (!ready) return setPhase(phase === 'setup' ? 'closed' : 'setup');
     if (acknowledged) return void begin();
@@ -275,16 +274,10 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       </>
     );
   }
-  // Once the person has pressed the button, one status region stays mounted so each message after the first is announced.
-  // It is not mounted before that, so an idle chat has no extra live region.
+  // Read by the chat's status announcer. Live voice mounts no live region of its own.
   const announcement = phase === 'live' ? statusText : phase === 'ended' ? message : '';
   const panel: ReactNode = (
     <div className="live-voice-host">
-      {armed && (
-        <p role="status" className="live-voice-announce">
-          {announcement}
-        </p>
-      )}
       {body && (
         <section className="live-voice-panel" aria-label="Live voice" ref={panelRef}>
           {body}
@@ -292,5 +285,5 @@ export function useLiveVoice({sessionId, enabled, onOpenSettings}: LiveVoiceOpti
       )}
     </div>
   );
-  return {button, panel, active};
+  return {button, panel, active, announcement};
 }

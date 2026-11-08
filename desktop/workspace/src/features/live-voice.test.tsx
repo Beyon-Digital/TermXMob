@@ -2,6 +2,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {expectNoAxeViolations} from '../test-axe';
 import {useLiveVoice} from './live-voice';
+import {StatusAnnouncer} from '../lib/status-announcer';
 import {loadVoiceStatus, saveVoiceSettings, type VoiceStatus} from '../lib/voice/settings';
 import type {LiveHooks} from '../lib/voice/live';
 
@@ -54,6 +55,8 @@ function Harness({sessionId = 's1', enabled = true, onOpenSettings}: {sessionId?
   return (
     <div>
       <div role="toolbar" aria-label="Tools">{live.button}</div>
+      {/* The chat mounts exactly one status announcer and hands live voice's state to it. */}
+      <StatusAnnouncer sessionId={sessionId} task={undefined} extra={live.announcement} />
       {live.panel}
     </div>
   );
@@ -124,7 +127,8 @@ it('shows the state in one status line and has no axe violations while live', as
   act(() => fake.hooks.onTranscript('user', 'run the tests'));
   act(() => fake.hooks.onTranscript('assistant', 'Running them now.'));
   expect(screen.getByRole('list', {name: 'Live transcript'})).toHaveTextContent('run the tests');
-  expect(view.container.querySelectorAll('[aria-live]')).toHaveLength(0);
+  expect(view.container.querySelectorAll('[aria-live],[role=status]')).toHaveLength(1); // the chat's announcer
+  expect(screen.getByRole('region', {name: 'Live voice'}).querySelectorAll('[aria-live],[role=status],[role=alert]')).toHaveLength(0);
   expect(screen.getAllByRole('status')).toHaveLength(1);
   await expectNoAxeViolations(view.container);
 });
@@ -158,18 +162,21 @@ it('mutes, unmutes and says so', async () => {
   expect(fake.mute).toHaveBeenLastCalledWith(false);
 });
 
-it('adds no live region until used, then keeps one mounted so later messages are announced', async () => {
-  render(<Harness />);
+it('announces Connecting through the chat announcer that was already mounted, then each later state', async () => {
+  const view = render(<Harness />);
   const button = await startButton();
-  expect(screen.queryByRole('status')).toBeNull();
+  const region = screen.getByRole('status');
+  expect(region).toBeEmptyDOMElement();
   fireEvent.click(button);
   await waitFor(() => expect(fake.start).toHaveBeenCalled());
-  const region = screen.getByRole('status');
+  expect(screen.getByRole('status')).toBe(region);
+  expect(region).toHaveTextContent('Connecting');
   act(() => fake.hooks.onState('listening'));
   expect(region).toHaveTextContent('Listening');
   act(() => fake.hooks.onEnded('idle', 'The session ended after 60 seconds without speech.'));
   expect(screen.getByRole('status')).toBe(region);
   expect(region).toHaveTextContent('60 seconds without speech');
+  expect(view.container.querySelectorAll('[role=status]')).toHaveLength(1);
 });
 
 it('moves focus into the consent panel and back to the toolbar button when it closes', async () => {

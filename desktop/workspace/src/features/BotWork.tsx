@@ -2,47 +2,13 @@ import {useState} from 'react';
 import {Badge} from '../components/ui/badge';
 import {FormField} from '../components/ui/form-field';
 import {Textarea} from '../components/ui/textarea';
-import {json,request,type Session} from '../lib/api';
+import {request,type Session} from '../lib/api';
 import {taskStatusLabel} from '../lib/bots';
 import {usePolling} from '../lib/use-polling';
 import type {BotTabProps} from './bot-api';
 import {ActionButton,Empty,date} from './manager-ui';
 import {useDirtyForm} from './settings-forms';
-import {gql,scoped,useManagerLoad} from './use-manager';
-
-interface Extension { id: string; version?: string; description?: string }
-
-/** Skills are the host's installed extensions. The choice is stored on the bot's own conversation. */
-export function BotSkills({bot,mutation}:BotTabProps){
-  const {data,loading,error,reload}=useManagerLoad(async()=>{
-    const [session,list]=await Promise.all([
-      request<Session>(`/api/workspace/sessions/${bot.conversation_id}?turns=false`),
-      request<{extensions?:Extension[]}>('/api/workspace/available-extensions'+scoped(bot.project_id||null))]);
-    return {session,extensions:list.extensions||[]};
-  });
-  const {busy,mutate}=mutation;
-  const [override,setOverride]=useState<Session|null>(null);
-  const session=override||data?.session;
-  const chosen=session?.extension_ids||[];
-  const running=bot.active_tasks>0;
-  async function change(id:string,on:boolean){
-    if(!session)return;
-    const next=on?[...chosen,id]:chosen.filter(item=>item!==id);
-    const result=await mutate(()=>request<Session>(`/api/workspace/sessions/${session.id}`,json('PATCH',{revision:session.revision,changes:{extension_ids:next}})),'Skills saved',{refresh:false});
-    if(result)setOverride(result);else reload();
-  }
-  if(error)return <div role="alert" className="manager-error">{error}</div>;
-  if(loading&&!data)return <Empty>Loading skills…</Empty>;
-  if(!data?.extensions.length)return <Empty>No skills are installed. Add some under Plugins &amp; skills, then choose which ones this bot uses.</Empty>;
-  return <fieldset className="bot-tools" disabled={running||busy}>
-    <legend>Skills this bot uses</legend>
-    {running&&<p className="manager-help">Wait for the current run to finish before changing skills.</p>}
-    {data.extensions.map(extension=><label key={extension.id} className="bot-check">
-      <input type="checkbox" checked={chosen.includes(extension.id)} onChange={event=>void change(extension.id,event.target.checked)}/>
-      <span>{extension.id}<small>{extension.description||extension.version}</small></span>
-    </label>)}
-  </fieldset>;
-}
+import {gql,useManagerLoad} from './use-manager';
 
 const outcome=(text?:string)=>{const value=(text||'').trim();return value.length>400?value.slice(0,400)+'…':value};
 

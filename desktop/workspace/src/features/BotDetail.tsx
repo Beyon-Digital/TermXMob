@@ -13,7 +13,10 @@ import BotMessages from './BotMessages';
 import BotPermissions from './BotPermissions';
 import BotSchedules from './BotSchedules';
 import NeedsYouInbox,{type BotTab} from './NeedsYouInbox';
-import {BotActivity,BotSkills,BotTasks} from './BotWork';
+import {BotActivity,BotTasks} from './BotWork';
+import BotSkills from './BotSkills';
+import MemorySection from './MemorySection';
+import type {HostIdentity} from '../lib/host-types';
 import {ActionButton,date} from './manager-ui';
 import {useDirtyForm} from './settings-forms';
 import {gql} from './use-manager';
@@ -89,14 +92,22 @@ function Prompt({bot,mutation}:BotTabProps){
   </form>;
 }
 
+/** What this bot remembers. Notes written by the bot itself are read back as untrusted, so they inform it and never instruct it. */
+function Memory({bot,me}:{bot:BotTabProps['bot'];me:HostIdentity}){
+  return <>
+    <p className="manager-help">What {bot.name} remembers between runs. A note saved for “This agent only” is read by this bot alone. Notes it writes itself are treated as untrusted.</p>
+    <MemorySection embedded me={me} projectId={bot.project_id??null} agentId={bot.custom_agent_id}/>
+  </>;
+}
+
 const tabs=[
   {id:'overview',label:'Overview'},{id:'prompt',label:'Prompt'},{id:'permissions',label:'Permissions'},
-  {id:'schedules',label:'Schedules & triggers'},{id:'messages',label:'Messages'},{id:'skills',label:'Skills'},
+  {id:'schedules',label:'Schedules & triggers'},{id:'messages',label:'Messages'},{id:'memory',label:'Memory'},{id:'skills',label:'Skills'},
   {id:'tasks',label:'Tasks'},{id:'activity',label:'Activity'},
 ] as const;
 type TabId=typeof tabs[number]['id'];
 
-export default function BotDetail({bot,bots,mutation,projects,inbox,initialTab='overview',onBack,onGone}:BotTabProps&{inbox:NeedsYouItem[];initialTab?:TabId;onBack:()=>void;onGone:()=>void}){
+export default function BotDetail({bot,bots,mutation,projects,me,inbox,initialTab='overview',onBack,onGone,onSection}:BotTabProps&{me:HostIdentity;inbox:NeedsYouItem[];initialTab?:TabId;onBack:()=>void;onGone:()=>void;onSection?:(name:string)=>void}){
   const [tab,setTab]=useState<TabId>(initialTab);
   const list=useRef<HTMLDivElement>(null);
   const props={bot,bots,mutation,projects};
@@ -121,9 +132,10 @@ export default function BotDetail({bot,bots,mutation,projects,inbox,initialTab='
       {tab==='overview'?<Overview {...props} inbox={inbox} onTab={setTab} onGone={onGone}/>
       :tab==='prompt'?<Prompt {...props}/>
       :tab==='permissions'?<BotPermissions {...props}/>
-      :tab==='schedules'?<BotSchedules {...props}/>
+      :tab==='schedules'?<BotSchedules {...props} onTab={setTab}/>
       :tab==='messages'?<BotMessages {...props}/>
-      :tab==='skills'?<BotSkills {...props}/>
+      :tab==='memory'?<Memory bot={bot} me={me}/>
+      :tab==='skills'?<BotSkills {...props} onSection={onSection} onTab={setTab}/>
       :tab==='tasks'?<BotTasks {...props}/>
       :<BotActivity {...props}/>}
     </div>
