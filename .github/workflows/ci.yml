@@ -59,10 +59,10 @@ jobs:
   python:
     strategy:
       fail-fast: false
-      # PRs cover Linux + macOS (platform-specific backend paths); pushes to
-      # main get the full OS matrix including Windows.
+      # PRs run Linux only (macOS runners are the expensive ones and macOS is
+      # tested locally before pushing); pushes to main get the full OS matrix.
       matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

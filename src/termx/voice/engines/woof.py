@@ -81,7 +81,7 @@ MANIFEST = WoofManifest(
 )
 
 
-NUMPY_MISSING = 'Woof needs numpy. Install it (in a source checkout: uv sync --inexact --extra voice), then reload.'
+NUMPY_MISSING = 'Woof needs numpy, which ships with TermX. Repair this install (in a source checkout: uv sync), then reload.'
 
 
 def numpy_available() -> bool:
