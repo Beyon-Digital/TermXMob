@@ -17,6 +17,7 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable
 from time import monotonic
+from time import time as wall_time
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -39,6 +40,7 @@ MAX_REQUEST_CHARS = 4000
 MAX_RESULT_CHARS = 4000
 MAX_TRANSCRIPT_CHARS = 2000
 ASK_WAIT_SECONDS = 90
+RENEW_MARGIN_SECONDS = 30  # renew the browser's access token this long before it lapses
 OWNER_STATUSES = {  # turn states that only the owner can move on, so waiting for them would only hold the session open
     'awaiting_approval': 'The agent needs the owner to approve an action in the app.',
     'paused': 'The agent is paused until the owner resumes it in the app.',
@@ -509,7 +511,9 @@ class LiveSession:
         """
         identity_service = self.service.state.identity
         identity = identity_service.resolve(self.token, allow_locked=allow_locked)
-        if identity is None:
+        # Renew just before expiry as well as after it. A token that is valid here can lapse before the
+        # authorization check that follows, which would end a session whose sign-in is still good.
+        if identity is None or identity.expires_at - wall_time() < RENEW_MARGIN_SECONDS:
             renewed = identity_service.renew_access(self.token)
             if renewed:
                 self.token = renewed

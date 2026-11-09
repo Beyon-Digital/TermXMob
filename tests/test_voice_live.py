@@ -494,6 +494,43 @@ def test_the_session_outlives_the_five_minute_access_token(tmp_path, monkeypatch
     assert last.get('type') == 'ended' and last['reason'] == 'idle', last
 
 
+def _lapsing_session(tmp_path, monkeypatch):
+    """A live session whose access token expires right after the first identity lookup of a check."""
+    import jwt
+    from termx import identity as identity_module
+
+    monkeypatch.setattr(identity_module, 'ACCESS_TTL', 2)
+    app = Fixture(tmp_path, monkeypatch)
+    app.configure()
+    expires = jwt.decode(app.token, options={'verify_signature': False})['exp']
+    identity = app.state.identity.resolve(app.token)
+    session = live.LiveSession(app.state.voice_live, None, identity, app.token, app.conversation, {})
+    original = app.state.identity.resolve
+    lapsed = []
+
+    def resolve(token, **kwargs):
+        result = original(token, **kwargs)
+        if not lapsed:
+            lapsed.append(token)
+            time.sleep(max(0.0, expires + 0.1 - time.time()))  # the token lapses before the next lookup
+        return result
+
+    monkeypatch.setattr(app.state.identity, 'resolve', resolve)
+    return session
+
+
+def test_a_token_lapsing_during_the_authority_check_does_not_end_the_session(tmp_path, monkeypatch):
+    session = _lapsing_session(tmp_path, monkeypatch)
+    assert session.authority_problem() is None
+
+
+def test_without_early_renewal_a_lapse_during_the_check_would_end_the_session(tmp_path, monkeypatch):
+    # Guards the test above: with early renewal switched off the same sequence is refused.
+    monkeypatch.setattr(live, 'RENEW_MARGIN_SECONDS', -1)
+    session = _lapsing_session(tmp_path, monkeypatch)
+    assert session.authority_problem() == 'revoked'
+
+
 def test_speech_keeps_a_session_from_going_idle(app):
     app.configure()
     app.state.voice_live.idle_seconds = 0.4
