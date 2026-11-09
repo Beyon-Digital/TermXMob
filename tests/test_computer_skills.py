@@ -1,8 +1,7 @@
-"""Computer-use skills: application lists, the permission to run unattended, and what reaches the desktop.
+"""Desktop-control skills: application lists, the permission to run unattended, and what reaches the desktop.
 
-A skill that drives the desktop names the applications it may use. The list is checked in front of every
-batch and again after it. A check after the batch cannot undo input that was already sent, so the tests
-assert that the event says so and that the screenshot is withheld.
+A skill that drives the desktop names the applications it may use. The list is checked from the application a
+ref belongs to, before any agent-desktop process starts, so there is no input that was already sent.
 """
 from __future__ import annotations
 
@@ -14,18 +13,18 @@ from typing import Any
 import pytest
 
 from termx.desktop import apps as apps_module
-from termx.desktop.apps import AppBlocked, combine, matches, normalize_apps, switching_hotkey
+from termx.desktop.apps import combine, matches, matches_app, normalize_apps
 from termx.identity import Principal
 from termx.workspace.extensions import ExtensionService
 from test_computer_policy import (  # noqa: F401  (hosted and anyio_backend are fixtures)
-    CLICK, Desktop, _approve_plan, _eventually, _events, _finished, _manager, anyio_backend, hosted,
+    DesktopAdapter, _eventually, _finished, anyio_backend, approve_plan, events, hosted, notes_app,
 )
 from test_durable_workspace import bundle, session, workspace  # noqa: F401  (workspace is a fixture)
-from test_agent import wait_for_status
+from test_agent import build_manager, wait_for_status
 
-# Application lists and schedule permissions are enforced only where the host can name the front application
-# (macOS). Model that host explicitly, so these tests give the same answer on Linux and Windows runners.
-pytestmark = pytest.mark.usefixtures('host_names_the_front_application')
+# A schedule's permission needs a platform with a pinned agent-desktop build. Model that host explicitly, so these
+# tests give the same answer on Linux and Windows runners.
+pytestmark = pytest.mark.usefixtures('ready_desktop')
 
 NOTES_SKILL = {'format': 'termx-bundle/v1', 'id': 'notes-helper', 'version': '1',
                'permissions': ['desktop-control'], 'computer': {'apps': ['Notes', 'com.apple.Notes']},
@@ -58,7 +57,7 @@ def test_a_list_refuses_patterns_and_oversize_input(bad):
         normalize_apps(bad)
 
 
-def test_the_front_application_matches_by_name_executable_or_bundle_id():
+def test_an_application_matches_by_name_executable_or_bundle_id():
     assert matches(['Notes', '/System/Applications/Notes.app/Contents/MacOS/Notes', 'com.apple.Notes'], ['com.apple.Notes'])
     assert matches(['notes'], ['Notes'])
     assert not matches(['Notes Helper'], ['Notes'])
@@ -74,23 +73,13 @@ def test_lists_from_several_skills_leave_only_what_every_list_allows():
     assert combine([['Notes'], ['Mail']]) == []
 
 
-@pytest.mark.parametrize('keys', [['meta', 'tab'], ['cmd', 'tab'], ['alt', 'tab'], ['option', 'tab'], ['command', 'space'],
-                                  ['meta', 'grave'], ['meta', 'q'], ['meta', 'h'], ['alt', 'escape'], 'meta'])
-def test_hotkeys_that_change_application_are_recognized(keys):
-    assert switching_hotkey([{'type': 'keypress', 'keys': keys}]) is not None
-
-
-@pytest.mark.usefixtures('macos_shortcuts')
-def test_a_chord_split_over_actions_is_recognized():
-    assert switching_hotkey([{'type': 'key_down', 'keys': ['meta']}, {'type': 'key_down', 'keys': ['tab']}]) is not None
-    assert switching_hotkey([{'type': 'key_down', 'keys': ['meta']}, {'type': 'key_up', 'keys': ['meta']},
-                             {'type': 'keypress', 'keys': ['tab']}]) is None
-
-
-@pytest.mark.usefixtures('macos_shortcuts')
-@pytest.mark.parametrize('keys', [['enter'], ['meta', 'c'], ['meta', 'v'], ['control', 'a'], ['shift', 'tab'], ['tab'], ['meta', 'n']])
-def test_ordinary_shortcuts_are_not_blocked(keys):
-    assert switching_hotkey([{'type': 'keypress', 'keys': keys}, {'type': 'type', 'text': 'meta tab'}]) is None
+def test_list_entries_are_typed_so_an_application_cannot_satisfy_an_identifier_by_its_name():
+    assert matches_app('Notes', 'com.apple.Notes', '', ['com.apple.Notes'])
+    assert matches_app('Notes', 'com.apple.Notes', '', ['notes'])
+    assert not matches_app('com.apple.Notes', 'com.evil.x', '', ['com.apple.Notes'])  # a display name equal to a bundle id
+    assert not matches_app('Notes', 'com.apple.Notes', '', ['Com.Apple.Notes.Helper'])
+    assert matches_app('Notepad', '', 'notepad.exe', ['Notepad.exe'])
+    assert not matches_app('Notepad.exe', '', '', ['Notepad.exe'])
 
 
 # ---------------------------------------------------------------------------
@@ -205,34 +194,19 @@ async def test_a_send_hands_the_combined_list_to_the_task(workspace):
 
 
 # ---------------------------------------------------------------------------
-# The list is enforced around every batch
+# The list is enforced from the application a ref belongs to
 # ---------------------------------------------------------------------------
 
 
-class Switching(Desktop):
-    """A desktop where the batch itself moves input to another application."""
-
-    def __init__(self, app: str = 'Notes', after: str = 'Safari') -> None:
-        super().__init__(app)
-        self.after = after
-
-    async def execute(self, actions, *, cancel=None, guard=None, pointer_guard=None):
-        frame = await super().execute(actions, cancel=cancel)
-        self.app = self.after
-        return frame
-
-
-async def _run(tmp_path, actions, *, apps, desktop=None, native=False, expect='completed', setup=None):
-    manager, store_, fake = _manager(tmp_path, actions, native=native)
-    if desktop is not None:
-        manager._computer = desktop  # type: ignore[assignment]
-        fake = desktop
+async def _run(tmp_path, desk, *, apps, setup=None, expect='completed'):
+    notes_app(desk)
+    manager, store_ = build_manager(tmp_path, DesktopAdapter())
     if setup:
         setup(manager)
     task = await manager.create_task(prompt='Use the desktop', cwd=str(tmp_path), provider_id='fake', computer_apps=apps)
-    await _approve_plan(manager, store_, task['id'])
+    await approve_plan(manager, store_, task['id'])
     done = await wait_for_status(store_, task['id'], expect)
-    return manager, store_, fake, done
+    return manager, store_, done
 
 
 async def _close(manager, store_):
@@ -240,166 +214,52 @@ async def _close(manager, store_):
     store_.close()
 
 
-def test_a_task_in_a_listed_application_acts_normally(tmp_path):
+def test_a_task_in_a_listed_application_acts_normally(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=['Notes'])
-        assert desktop.actions == [CLICK]
-        assert not _events(done, 'computer.app_blocked')
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=['Notes'])
+        assert 'click' in ready_desktop.commands()
+        assert not events(done, 'desktop.app_blocked')
         assert (done['runtime'] or {})['computer_apps'] == ['Notes']
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_a_task_without_a_list_is_unchanged(tmp_path):
+def test_a_task_without_a_list_is_unchanged(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=None, desktop=Desktop('Safari'))
-        assert desktop.actions == [CLICK]
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=None)
+        assert 'click' in ready_desktop.commands()
         assert 'computer_apps' not in (done['runtime'] or {})
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_input_is_refused_when_another_application_is_in_front(tmp_path):
+def test_an_application_outside_the_list_is_refused_before_any_process(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=['Notes'], desktop=Desktop('Safari'))
-        assert desktop.actions == []
-        blocked = _events(done, 'computer.app_blocked')
-        assert len(blocked) == 1
-        payload = blocked[0]['payload']
-        assert payload['phase'] == 'before' and payload['input_sent'] is False
-        assert payload['front'] == 'Safari' and payload['apps'] == ['Notes']
-        finished = _events(done, 'tool.finished')[0]['payload']
-        assert finished['result']['refused'] is True
-        assert 'Notes' in finished['result']['error']
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=['Mail'])
+        assert {call['argv'][0] for call in ready_desktop.spawns()} == {'list-apps'}  # only the filtered listing ran
+        assert 'snapshot' not in ready_desktop.commands() and 'click' not in ready_desktop.commands()
+        listed = [event for event in events(done, 'tool.finished')][0]['payload']['result']
+        assert listed['count'] == 0  # the model never sees applications it cannot touch
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_a_native_call_in_the_wrong_application_fails_the_task(tmp_path):
+def test_a_bundle_id_in_the_list_matches_the_application(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(
-            tmp_path, CLICK, apps=['Notes'], desktop=Desktop('Safari'), native=True, expect='failed')
-        assert desktop.actions == []
-        assert _events(done, 'computer.app_blocked')
-        assert not _events(done, 'computer.screenshot')
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=['com.apple.Notes'])
+        assert 'click' in ready_desktop.commands()
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_an_application_change_during_a_batch_is_reported_and_the_screenshot_withheld(tmp_path):
+def test_skills_whose_lists_do_not_overlap_allow_no_application(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=['Notes'], desktop=Switching())
-        assert desktop.actions == [CLICK]
-        payload = _events(done, 'computer.app_blocked')[0]['payload']
-        assert payload['phase'] == 'after'
-        assert payload['input_sent'] is True
-        assert payload['front'] == 'Safari'
-        assert not _events(done, 'computer.screenshot')
-        assert not _events(done, 'computer.observation')
-        error = _events(done, 'tool.finished')[0]['payload']['result']['error']
-        assert 'already sent' in error
-        assert desktop.released >= 1
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize('keys', [['meta', 'tab'], ['alt', 'tab'], ['meta', 'space']])
-def test_hotkeys_that_change_application_are_refused_while_a_list_is_active(tmp_path, keys):
-    async def run():
-        action = [{'type': 'keypress', 'keys': keys}]
-        manager, store_, desktop, done = await _run(tmp_path, action, apps=['Notes'])
-        assert desktop.actions == []
-        payload = _events(done, 'computer.app_blocked')[0]['payload']
-        assert payload['phase'] == 'hotkey' and payload['input_sent'] is False
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-def test_the_same_hotkey_is_allowed_without_a_list(tmp_path):
-    async def run():
-        action = [{'type': 'keypress', 'keys': ['meta', 'tab']}]
-        manager, store_, desktop, done = await _run(tmp_path, action, apps=None)
-        assert desktop.actions == [action]
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-def test_a_hotkey_late_in_a_batch_stops_the_whole_batch_before_any_input(tmp_path):
-    async def run():
-        batch = [{'type': 'click', 'x': 1, 'y': 1}, {'type': 'keypress', 'keys': ['cmd', 'tab']}]
-        manager, store_, desktop, done = await _run(tmp_path, batch, apps=['Notes'])
-        assert desktop.actions == []
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-def test_skills_whose_lists_do_not_overlap_allow_no_application(tmp_path):
-    async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=[])
-        assert desktop.actions == []
-        assert _events(done, 'computer.app_blocked')
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-async def _direct(tmp_path, desktop, apps):
-    """One batch sent straight to the manager, without the approval a task would first ask for an unknown target."""
-    from termx.agent.providers import ProviderCall
-    manager, store_, _ = _manager(tmp_path, CLICK)
-    manager._computer = desktop  # type: ignore[assignment]
-    task = store_.create_task(prompt='p', cwd=str(tmp_path), provider_id='fake', model='m', limits={})
-    store_.update_task(task['id'], runtime={'computer_apps': apps})
-    events: list[tuple[str, dict]] = []
-    manager._emit = lambda _task, kind, payload: events.append((kind, payload))  # type: ignore[method-assign]
-    call = ProviderCall(type='computer', call_id='c1', name='use_computer', actions=CLICK)
-    return manager, store_, task, call, events
-
-
-def test_an_application_that_cannot_be_named_is_refused_where_the_host_can_name_them(tmp_path, monkeypatch):
-    async def run():
-        monkeypatch.setattr(apps_module, 'verifiable', lambda: True)
-        desktop = Desktop(None)
-        manager, store_, task, call, events = await _direct(tmp_path, desktop, ['Notes'])
-        with pytest.raises(AppBlocked):
-            await manager._execute_computer(task['id'], call, asyncio.Event())
-        assert desktop.actions == []
-        assert [payload['front'] for kind, payload in events if kind == 'computer.app_blocked'] == [None]
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-def test_an_unnameable_application_is_noted_not_blocked_where_the_check_is_best_effort(tmp_path, monkeypatch):
-    async def run():
-        monkeypatch.setattr(apps_module, 'verifiable', lambda: False)
-        desktop = Desktop(None)
-        manager, store_, task, call, events = await _direct(tmp_path, desktop, ['Notes'])
-        await manager._execute_computer(task['id'], call, asyncio.Event())
-        assert desktop.actions == [CLICK]
-        kinds = [kind for kind, _ in events]
-        assert 'computer.app_unverified' in kinds and 'computer.app_blocked' not in kinds
-        await _close(manager, store_)
-
-    asyncio.run(run())
-
-
-def test_a_bundle_id_in_the_list_matches_through_the_controllers_identity(tmp_path):
-    class Named(Desktop):
-        def target_identity(self):
-            return [self.app, '/Applications/Notes.app/Contents/MacOS/Notes', 'com.apple.Notes']
-
-    async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=['com.apple.Notes'], desktop=Named('Notes'))
-        assert desktop.actions == [CLICK]
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=[])
+        assert 'snapshot' not in ready_desktop.commands() and 'click' not in ready_desktop.commands()
         await _close(manager, store_)
 
     asyncio.run(run())
@@ -407,7 +267,7 @@ def test_a_bundle_id_in_the_list_matches_through_the_controllers_identity(tmp_pa
 
 def test_children_of_a_listed_task_stay_inside_the_list(tmp_path):
     async def run():
-        manager, store_, _ = _manager(tmp_path, CLICK)
+        manager, store_ = build_manager(tmp_path, DesktopAdapter())
         parent = store_.create_task(prompt='p', cwd=str(tmp_path), provider_id='fake', model='m', limits={})
         store_.update_task(parent['id'], runtime={'computer_apps': ['Notes', 'Mail']})
         child = store_.create_task(prompt='c', cwd=str(tmp_path), provider_id='fake', model='m', limits={}, parent_id=parent['id'])
@@ -436,74 +296,84 @@ def _unattended(permission):
     return setup
 
 
-def test_an_unattended_run_with_a_permission_acts_inside_its_applications(tmp_path):
+def test_an_unattended_run_with_a_permission_acts_inside_its_applications(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=None, setup=_unattended(_permission()))
-        assert desktop.actions == [CLICK]
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=None, setup=_unattended(_permission()))
+        assert 'click' in ready_desktop.commands()
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_an_unattended_run_stays_out_of_other_applications(tmp_path):
+def test_an_unattended_run_stays_out_of_other_applications(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(
-            tmp_path, CLICK, apps=None, desktop=Desktop('Safari'), setup=_unattended(_permission()))
-        assert desktop.actions == []
-        assert _events(done, 'tool.finished')[0]['payload']['result']['refused'] is True
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=None, setup=_unattended(_permission(['Mail'])))
+        assert 'snapshot' not in ready_desktop.commands() and 'click' not in ready_desktop.commands()
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_an_unattended_run_with_no_permission_is_still_denied(tmp_path):
+def test_an_unattended_run_with_no_permission_is_still_denied(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, CLICK, apps=None, setup=_unattended(None))
-        assert desktop.actions == []
-        assert 'unattended' in _events(done, 'tool.finished')[0]['payload']['result']['error'].lower()
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=None, setup=_unattended(None))
+        assert ready_desktop.spawns() == []
+        assert 'unattended' in events(done, 'tool.finished')[0]['payload']['result']['error'].lower()
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_the_permission_and_a_skill_list_must_both_allow_the_application(tmp_path):
+def test_the_permission_and_a_skill_list_must_both_allow_the_application(tmp_path, ready_desktop):
     async def run():
-        manager, store_, desktop, done = await _run(
-            tmp_path, CLICK, apps=['Mail'], setup=_unattended(_permission(['Notes'])))
-        assert desktop.actions == []
-        assert _events(done, 'computer.app_blocked')
+        manager, store_, done = await _run(tmp_path, ready_desktop, apps=['Mail'], setup=_unattended(_permission(['Notes'])))
+        assert 'snapshot' not in ready_desktop.commands() and 'click' not in ready_desktop.commands()
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_the_seconds_for_a_run_are_spent_by_the_batches_it_sends(tmp_path):
+def test_the_seconds_for_a_run_are_spent_by_the_calls_it_makes(tmp_path):
     async def run():
-        manager, store_, _ = _manager(tmp_path, CLICK)
+        manager, store_ = build_manager(tmp_path, DesktopAdapter())
         manager.is_unattended = lambda _task_id: True
         task = store_.create_task(prompt='p', cwd=str(tmp_path), provider_id='fake', model='m', limits={})
         manager.computer_permission = lambda _task_id: {**_permission(seconds=10), 'run_id': task['id']}
         store_.update_task(task['id'], runtime={'computer_spent': 10.0})
-        from termx.agent.providers import ProviderCall
-        call = ProviderCall(type='computer', call_id='c1', name='use_computer', actions=CLICK)
         with pytest.raises(PermissionError, match='seconds'):
-            await manager._execute_computer(task['id'], call, asyncio.Event())
+            async with manager.desktop_budget(task['id']):
+                pytest.fail('a spent budget must refuse the call')
         await _close(manager, store_)
 
     asyncio.run(run())
 
 
-def test_a_permission_that_lapsed_before_execution_stops_the_batch(tmp_path):
+def test_a_call_is_cut_off_when_the_runs_time_ends_and_the_time_survives(tmp_path):
     async def run():
-        manager, store_, desktop = _manager(tmp_path, CLICK)
+        manager, store_ = build_manager(tmp_path, DesktopAdapter())
+        manager.is_unattended = lambda _task_id: True
+        task = store_.create_task(prompt='p', cwd=str(tmp_path), provider_id='fake', model='m', limits={})
+        manager.computer_permission = lambda _task_id: {**_permission(seconds=10), 'run_id': task['id']}
+        store_.update_task(task['id'], runtime={'computer_spent': 9.5})
+        with pytest.raises(PermissionError, match='seconds'):
+            async with manager.desktop_budget(task['id']):
+                await asyncio.sleep(5)
+        assert manager._computer_spent(task['id']) >= 10.0  # charged in full, kept on the task row
+        await _close(manager, store_)
+
+    asyncio.run(run())
+
+
+def test_a_permission_that_lapsed_before_execution_stops_the_call(tmp_path, ready_desktop):
+    async def run():
+        manager, store_ = build_manager(tmp_path, DesktopAdapter())
         manager.is_unattended = lambda _task_id: True
         manager.computer_permission = lambda _task_id: None
         task = store_.create_task(prompt='p', cwd=str(tmp_path), provider_id='fake', model='m', limits={})
-        from termx.agent.providers import ProviderCall
-        call = ProviderCall(type='computer', call_id='c1', name='use_computer', actions=CLICK)
         with pytest.raises(PermissionError, match='[Uu]nattended'):
-            await manager._execute_computer(task['id'], call, asyncio.Event())
-        assert desktop.actions == []
+            async with manager.desktop_budget(task['id']):
+                pass
+        assert ready_desktop.spawns() == []
         await _close(manager, store_)
 
     asyncio.run(run())
@@ -644,24 +514,22 @@ async def test_a_scheduled_run_with_a_permission_controls_only_its_application(h
     task_id = state.workspace.store.list('schedule_run')[0]['task_id']
     await _eventually(lambda: _finished(state, task_id))
     assert state.agent_store.get_task(task_id)['status'] == 'completed'
-    assert hosted.desktop.actions == [CLICK]
+    assert 'click' in hosted.desk.commands()
     assert schedule['grant_id']
 
 
 @pytest.mark.anyio
-async def test_a_scheduled_run_whose_application_is_not_in_front_is_refused(hosted):
+async def test_a_scheduled_run_whose_permission_names_another_application_is_refused(hosted):
     state = hosted.state
-    hosted.desktop.app = 'Safari'
     now = time()
-    _create(hosted, spec={'kind': 'once', 'at': now + 1}, missed='once', enabled=True)
+    _create(hosted, spec={'kind': 'once', 'at': now + 1}, missed='once', enabled=True,
+            computer_permission={'apps': ['Mail'], 'expires_at': time() + 3600, 'max_seconds': 120})
     state.automation.clock = lambda: now + 2
     await state.automation.tick()
     await _eventually(lambda: bool(state.workspace.store.list('schedule_run')) and bool(state.workspace.store.list('schedule_run')[0].get('task_id')))
     task_id = state.workspace.store.list('schedule_run')[0]['task_id']
     await _eventually(lambda: _finished(state, task_id))
-    assert hosted.desktop.actions == []
-    finished = _events(state.agent_store.get_task(task_id, include_events=True), 'tool.finished')[0]['payload']
-    assert finished['result']['refused'] is True
+    assert 'click' not in hosted.desk.commands() and 'snapshot' not in hosted.desk.commands()
 
 
 # ---------------------------------------------------------------------------

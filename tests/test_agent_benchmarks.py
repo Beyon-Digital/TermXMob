@@ -13,7 +13,7 @@ from bench_agent import (
     SCENARIOS,
     run_all,
     scenario_check_command,
-    scenario_computer_loop,
+    scenario_desktop_loop,
     scenario_subagents_two,
 )
 
@@ -65,12 +65,13 @@ def test_two_subagents_complete(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
-def test_computer_loop_captures_screenshots(tmp_path: Path) -> None:
+def test_desktop_loop_reads_and_acts_without_screenshots(tmp_path: Path) -> None:
     async def run() -> None:
-        result = await scenario_computer_loop(tmp_path / "computer")
-        assert result["status"] == "completed"
-        assert result["events"].get("computer.screenshot") == 3
-        assert result["artifacts"] == 3
+        result = await scenario_desktop_loop(tmp_path / "desktop")
+        assert result["status"] == "completed", result.get("error")
+        assert result["cli_commands"].count("snapshot") == 2 and "click" in result["cli_commands"]
+        assert result["events"].get("desktop.snapshot") == 2
+        assert result["artifacts"] == 0
 
     asyncio.run(run())
 
@@ -82,5 +83,5 @@ def test_all_scenarios_registered() -> None:
         "file_inspection_structured",
         "check_command",
         "subagents_two",
-        "computer_loop",
+        "desktop_loop",
     }

@@ -111,14 +111,13 @@ def machine_snapshot(
             "voice": voice,
             "agent": True,
             "agent_shell": True,
-            "agent_computer": desktop.remote_screen,
+            "agent_desktop": _agent_desktop(),
             "agent_tools_v2": True,
             "agent_context_v2": True,
             "agent_parallel_tools": True,
             "agent_streaming": True,
             "agent_recovery": True,
             "agent_subagents": True,
-            "computer_observation_v2": True,
             "conversations": True,
             "custom_agents": True,
             "agent_worktrees": True,
@@ -139,4 +138,16 @@ def machine_snapshot(
         },
         "tunnel": tunnel_status,
         "user": os.environ.get("USER") or os.environ.get("LOGNAME") or "",
+    }
+
+
+def _agent_desktop() -> dict[str, object]:
+    """Whether agents can control other applications here. Reads the cached status; never starts a process."""
+    from termx.desktop.agent_desktop import get_client
+
+    status = get_client().status_cached()
+    return {
+        "ready": bool(status and status.ready),
+        "version": status.version if status else None,
+        "issue": status.issue if status else None,
     }

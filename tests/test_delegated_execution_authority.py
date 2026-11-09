@@ -6,7 +6,7 @@ changing authority: the manager itself must block execution and recovery.
 import asyncio
 from time import time
 import pytest
-from test_agent import FakeComputer, _execution_checkpoint
+from test_agent import _execution_checkpoint
 from termx.app import AppState, create_app
 from termx.agent.providers import ProviderCall, ProviderTurn
 from termx.agent.secrets import CredentialStore
@@ -27,7 +27,7 @@ class GatedAdapter:
 
 @pytest.fixture
 async def runtime(tmp_path):
-    adapter=GatedAdapter();state=AppState(passcode=None,credentials=CredentialStore(memory={}),adapter_factory=lambda *_:adapter);create_app(state);state.agent._computer=FakeComputer()
+    adapter=GatedAdapter();state=AppState(passcode=None,credentials=CredentialStore(memory={}),adapter_factory=lambda *_:adapter);create_app(state)
     owner=state.identity.setup_owner('authority-owner','authority-fixture-password-123');folder=tmp_path/'project';folder.mkdir();(folder/'read.txt').write_text('Controlled fixture only')
     project=state.projects.register(str(folder),name='Authority fixture');state.agent.save_provider(provider_id='fixture',kind='openai-compatible',name='No-network fixture',base_url='http://127.0.0.1:1/v1',model='fixture',capabilities=['shell'],api_key='fixture-only')
     yield state,owner,folder,project,adapter

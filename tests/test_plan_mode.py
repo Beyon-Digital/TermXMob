@@ -32,7 +32,6 @@ class PlanAdapter(FakeAdapter):
         manifest: dict[str, Any],
         previous_response_id: str | None = None,
         input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
         read_only: bool = False,
         allow_subagents: bool = True,
         plan_mode: bool = False,

@@ -276,7 +276,7 @@ def test_real_network_isolated_runner_agent_provider_review_controls(tmp_path):
         def __init__(self):self.calls=0
         async def plan(self,*args):return {'summary':'Create a runner artifact','steps':['Write file','Verify isolated execution'],'tools':['shell'],'risks':[]},'plan'
         async def turn(self,**args):
-            assert args['cwd']=='/workspace' and not args['allow_computer']
+            assert args['cwd']=='/workspace' and 'allow_computer' not in args
             self.calls+=1
             calls=[ProviderCall(type='function',call_id='write',name='write_file',arguments={'path':'agent-result.txt','content':'reviewed remote artifact'})] if self.calls==1 else [ProviderCall(type='function',call_id='check',name='run_shell',arguments={'command':'test -z "$TERMX_AI_API_API_KEY" && test ! -e /var/run/docker.sock && cat agent-result.txt'})] if self.calls==2 else []
             return ProviderTurn('turn-'+str(self.calls),'Verified' if not calls else '',calls,{})

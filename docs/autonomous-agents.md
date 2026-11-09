@@ -98,54 +98,70 @@ host restart can reopen an authorized persistent-profile tab at its captured
 starting URL within the same origin boundary. Private, explicitly closed,
 taken-over or interrupted agent-controlled tabs are not silently restored.
 
-Computer-capable model connections expose desktop screenshots and input. Agent
-mode and the host's screen/input permissions are required. Linux X11, Windows
-and macOS use their platform backends; native Wayland input is not supported.
-Native engine capabilities differ: choosing Codex does not automatically supply
-the internal engine's browser, computer or team tools.
+Agents can read and operate other applications through their accessibility
+trees (see [Desktop control](desktop-control.md)). Five tools do it:
+`desktop_apps`, `desktop_snapshot`, `desktop_find`, `desktop_get` and
+`desktop_act`. There are no screenshots, so any model that can call tools
+works; it does not need to see images. Agent mode and a set-up, hash-verified
+agent-desktop are required. Native engine capabilities differ: choosing Codex
+does not automatically supply the internal engine's browser, desktop or team
+tools. Bot presets, ceilings and the `computer` tool id keep their meaning: the
+registry expands `computer` to the five desktop tools.
 
-Desktop control follows the same policy rules as the other internal tools. A
-capability deny for `computer.control`, or a remembered deny for the application
-in front, stops the call. The front application is checked again just before the
-input is sent, and an approval counts only for the application it named. On macOS
-the host names that application, and a lookup that fails is asked every time. On
-other hosts the application is unknown, so form submission is asked every time.
-Typing credential-like text and answering a provider safety check are asked every
-time and cannot be remembered. Submitting a form can be remembered per
-application. The check happens once per call, so a click on a window behind the
-front one, or a window switch inside one batch, is not caught yet. Neither
-**Autonomous within host policy** nor Auto approves these questions, because the
-desktop is outside any sandbox or worktree. Ask and Plan mode, restricted browser
-tasks and private windows still block the desktop first.
+Desktop control follows the same policy rules as the other internal tools, and
+the decision is made before any agent-desktop process starts. The model never
+names an application: `desktop_apps` issues opaque handles, and every ref is
+resolved to its application through the host's own table of delivered snapshots.
+A ref the host did not deliver is refused. A capability deny for
+`computer.control`, or a remembered deny for the application, stops the call. A
+remembered allow binds the application's bundle ID or executable, not only its
+display name, so another program that calls itself `Notes` does not inherit it
+(allows written under the older name-only key ask once more).
+
+These are asked every time, cannot be remembered, and are never approved by
+**Autonomous within host policy** or Auto: credential-like text, any input to a
+password-like or secure control, clicks on controls named like send, submit,
+delete, pay or confirm (an English-only heuristic that is a seat belt, not a
+boundary), text with a line break entered into a single-line field, input into a
+control type the host does not recognise, applications that can run commands or
+change security settings (terminals, System Settings, password managers) and an
+application the host cannot tell apart from another of the same name. TermX's
+own interface and the application that started it cannot be controlled at all.
+The approval names the action, the control and the application with its bundle
+ID. Ask and Plan mode, restricted browser tasks, private windows and a user
+takeover still block the desktop first.
+
+The tools act in the background: they do not move the pointer, press keys or
+bring an application forward, and they never pass `--headed`. Keyboard
+shortcuts, drag, hover and coordinates do not exist. Text read from other
+applications reaches the model between `SCREEN` markers with a fresh random id,
+with control and direction characters removed, secrets redacted and size capped
+(400 controls, 24,000 characters); it is data, never instructions. Persisted
+events carry sizes and a title, never screen text or typed text.
 
 Unattended runs cannot control the desktop unless the schedule carries a
 `computer_permission` on its delegation: exact applications (up to 20), an expiry
-inside the grant and the seconds of computer control allowed per run. Without it
-a scheduled run's computer call is refused, and the agent is told to finish
-without it or report that the task needs the owner at the computer. A remembered
-allow does not lift this. Revoking the grant or losing `desktop-control` withdraws
-the permission at the next computer action.
+inside the grant and the seconds of desktop control allowed per run. Without it a
+scheduled run's desktop call is refused before any process starts. The grant
+authorises applications and seconds only: anything that would ask a person
+(credential-like text, consequential controls, command applications) is refused
+instead. A remembered allow does not lift this. Revoking the grant or losing
+`desktop-control` withdraws the permission at the next call. A schedule's
+`computer_permission` is accepted only on a platform with a pinned agent-desktop
+build.
 
-Computer skills ask for the `desktop-control` permission in their bundle and may
+Desktop skills ask for the `desktop-control` permission in their bundle and may
 add `computer: {apps: [...]}` (up to 20 exact application names, executables or
 bundle IDs). The permission is checked at every dispatch. While a list is active
 (from the skill, the schedule permission, or both: every list must allow the
-application) the application in front is checked before each batch, before each
-later input action inside it, and after it. It is the application that receives
-keystrokes, so launchers and system dialogs count. Hotkeys that switch
-applications are refused (off macOS, every Windows or Super key use), key names
-such as `alt+Tab` are split into their keys, and held keys are released at the
-end of each batch. A mismatch emits `computer.app_blocked`. The check after a
-batch cannot undo input that was already sent; it withholds the screenshot and
-stops the task. Lists match by exact name, so two lists must name an application
-the same way (`Notes` in both, or `com.apple.Notes` in both); otherwise they
-overlap nowhere and the task is refused. Only macOS reports the application in
-front. Elsewhere a skill's list is best effort and emits
-`computer.app_unverified`, except a list that allows nothing, which always
-refuses. A schedule's `computer_permission` is not accepted, and is refused at
-each action, on a host that cannot name the front application. Computer time for a
-run is kept on the run's task, survives a restart, and ends the batch that
-reaches it.
+application) it is checked against the application each ref belongs to, before
+the call. Entries are typed: a dotted entry without spaces (`com.apple.Notes`) or
+an `.exe` name matches only a bundle ID or executable, and any other entry
+matches only the display name. Lists match exactly, so two lists must name an
+application the same way (`Notes` in both, or `com.apple.Notes` in both);
+otherwise they overlap nowhere and the task is refused. A refusal emits
+`desktop.app_blocked`. Desktop time for a run is kept on the run's task, survives
+a restart, and ends the call that reaches it.
 
 ## Restart behavior and live verification
 

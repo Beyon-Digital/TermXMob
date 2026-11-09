@@ -19,8 +19,8 @@ class TaskMetrics:
             "tool_calls": {},
             "shell_ms": 0,
             "shell_calls": 0,
-            "screenshots": 0,
-            "screenshot_bytes": 0,
+            "desktop_calls": 0,
+            "desktop_bytes": 0,
             "input_tokens": 0,
             "output_tokens": 0,
             # USD from per-model prices; None until a priced turn is recorded.
@@ -88,9 +88,9 @@ class TaskMetrics:
         self._data["shell_ms"] += duration_ms
         self._data["shell_calls"] += 1
 
-    def record_screenshot(self, size_bytes: int) -> None:
-        self._data["screenshots"] += 1
-        self._data["screenshot_bytes"] += int(size_bytes)
+    def record_desktop(self, size_bytes: int) -> None:
+        self._data["desktop_calls"] += 1
+        self._data["desktop_bytes"] += int(size_bytes)
 
     def record_subagent(self) -> None:
         self._data["subagents"] += 1

@@ -57,8 +57,8 @@ and private login require a fresh explicit grant before either model can resume.
 Browser tabs and native windows require explicit capture/record consent. Plain
 typed text is excluded; named parameters store placeholders and ephemeral replay
 values never enter records. Private mode stops recording and blocks model
-observation. A privacy epoch also discards a computer frame when private mode
-entered and exited while capture was in flight.
+observation. A privacy epoch also discards a desktop snapshot when private mode
+entered and exited while it was being read.
 
 Window capture uses exact CoreGraphics window IDs on macOS, PrintWindow on
 Windows, and X11 window capture on Linux. It never substitutes a desktop crop.

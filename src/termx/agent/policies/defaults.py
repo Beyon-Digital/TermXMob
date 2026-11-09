@@ -95,7 +95,7 @@ def tool_capabilities(tool: str) -> tuple[str, ...]:
         return ("process.execute", "git.local")
     if tool == "run_runbook":
         return ("process.execute", "process.children", "fs.workspace.write")
-    if tool == "computer":
+    if tool == "computer" or tool.startswith("desktop_"):
         return ("computer.control",)
     return ("process.execute",)
 
@@ -108,10 +108,12 @@ _REASON_RISK = {
     "Credential access": "sensitive",
     "Sensitive file access": "sensitive",
     "Sensitive text entry": "sensitive",
-    "Provider safety check": "sensitive",
     "Data transmission": "external",
     "Form submission": "external",
-    "Unknown target application": "external",
+    "Consequential control": "external",
+    "Application can run commands or change security settings": "external",
+    "Application cannot be identified": "external",
+    "Unfamiliar control": "external",
     "Outside selected project": "outside_root",
 }
 # Risk classes that `autonomous` mode may never auto-approve (publication and

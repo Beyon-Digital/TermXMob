@@ -95,19 +95,16 @@ def test_unowned_capture_restart_and_invalid_events_fail_closed(tmp_path):
     with pytest.raises(PermissionError): restarted.get(row['id'], 'owner')
 
 
-def test_private_entered_then_exited_during_computer_capture_still_discards_frame(tmp_path, monkeypatch):
-    from termx.agent.computer import ComputerController
-    async def run():
-        manager, _, _ = service(tmp_path)
-        row = manager.start('owner', 'session', 1, '1')
-        def capture(_):
-            manager.configure(row['id'], 'owner', private=True)
-            manager.configure(row['id'], 'owner', private=False)
-            return b'must-not-leak-private-frame'
-        monkeypatch.setattr('termx.agent.computer.grab_jpeg', capture)
-        with pytest.raises(PermissionError): await ComputerController().screenshot()
-        manager.close()
-    asyncio.run(run())
+def test_private_entered_then_exited_during_a_desktop_read_still_moves_the_privacy_epoch(tmp_path):
+    """Desktop control compares this revision before and after every call, so a quick round trip discards the result."""
+    from termx.desktop.recording import capture_privacy_revision
+    manager, _, _ = service(tmp_path)
+    row = manager.start('owner', 'session', 1, '1')
+    before = capture_privacy_revision()
+    manager.configure(row['id'], 'owner', private=True)
+    manager.configure(row['id'], 'owner', private=False)
+    assert capture_privacy_revision() > before
+    manager.close()
 
 
 @pytest.mark.parametrize('expiry', ['session', 'time'])

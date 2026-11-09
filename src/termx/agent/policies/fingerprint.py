@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import secrets
 import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -166,6 +167,6 @@ def computer_label(app: object) -> str:
 
 
 def computer_fingerprint(app: str | None) -> str:
-    """Computer control binds to the application, or to the whole desktop when none is named."""
+    """Desktop control binds to the application the OS reported. An empty label binds to nothing a rule can name."""
     label = computer_label(app)
-    return tool_key("computer", "app", label) if label else tool_key("computer", "desktop")
+    return tool_key("computer", "app", label) if label else tool_key("computer", "unnamed", secrets.token_hex(8))

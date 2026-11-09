@@ -38,7 +38,7 @@ class ToolContext:
     cancel: asyncio.Event
     emit: Callable[[str, dict[str, Any]], dict[str, Any]]
     store: "AgentStore"
-    manager: Any  # AgentManager — legacy executors (share_file/subagent/computer)
+    manager: Any  # AgentManager — legacy executors (share_file/subagent) and desktop control
     project_files: Any = None  # termx.project_files.ProjectFiles
     project_id: str = ""
     metrics: Any = None  # termx.agent.metrics.TaskMetrics
@@ -53,7 +53,7 @@ class ToolOutcome:
     ``result`` is the already-redacted payload persisted under
     ``tool.finished.result``; ``items`` are the transcript entries appended to
     the model history in call order; ``event`` carries extra tool.finished
-    payload keys (e.g. ``artifact`` for computer calls, ``name`` for legacy
+    payload keys (e.g. ``title`` for desktop calls, ``name`` for legacy
     tools). ``cancelled`` asks the dispatcher to raise CancelledError after the
     finished event is recorded.
     """
@@ -87,7 +87,7 @@ class ToolSpec:
     name: str
     description: str
     parameters: dict[str, Any]
-    mutability: str  # "read" | "write" | "external" | "computer"
+    mutability: str  # "read" | "write" | "external"
     parallel_safe: bool
     approval: str  # "never" | "policy" | "always"
     execute: ToolExecutor
@@ -95,6 +95,7 @@ class ToolSpec:
     description_read_only: str = ""
     expose_read_only: bool = True
     plan_only: bool = False  # offered to the model only in plan mode
+    available: Callable[[], bool] | None = None  # hidden from the model while this returns False
 
     def provider_schema(self, *, read_only: bool = False) -> dict[str, Any]:
         description = self.description_read_only if read_only and self.description_read_only else self.description
@@ -107,6 +108,21 @@ class ToolSpec:
 
     def decision(self, call: "ProviderCall", ctx: ToolContext) -> PolicyDecision:
         return self.decide(call, ctx)
+
+
+# Preset, ceiling and bot tool lists keep saying "computer"; the registry expands it to the tools behind it.
+TOOL_GROUPS: dict[str, tuple[str, ...]] = {
+    "computer": ("desktop_apps", "desktop_snapshot", "desktop_find", "desktop_get", "desktop_act"),
+}
+DESKTOP_TOOLS = TOOL_GROUPS["computer"]
+
+
+def expand_tools(names: Any) -> frozenset[str]:
+    out: set[str] = set()
+    for name in names or ():
+        out.add(name)
+        out.update(TOOL_GROUPS.get(name, ()))
+    return frozenset(out)
 
 
 def decide_never(_call: "ProviderCall", _ctx: ToolContext) -> PolicyDecision:
@@ -144,8 +160,6 @@ class ToolRegistry:
         return spec.decide(call, ctx) if spec is not None else unknown_decision()
 
     def spec_for(self, call: "ProviderCall") -> ToolSpec | None:
-        if call.type == "computer":
-            return self._specs.get("computer")
         if call.type != "function":
             return None
         return self._specs.get(call.name)
@@ -170,16 +184,19 @@ class ToolRegistry:
         plan_mode: bool = False,
         message_recipients: list[dict[str, str]] | None = None,
         allowed_tools: list[str] | tuple[str, ...] | frozenset[str] | None = None,
+        desktop: bool = True,
     ) -> list[dict[str, Any]]:
-        """Function-tool schemas for the provider payload (computer excluded —
-        the adapter appends its native or function-shaped computer tool).
+        """Function-tool schemas for the provider payload.
+
+        ``desktop=False`` (a provider without function tools) hides the desktop tools. A spec whose ``available`` check
+        fails (desktop control not set up on this computer) is not offered either.
 
         The messaging tools appear only when ``message_recipients`` is a list, and ``send_message`` then names exactly
         those recipients (``{"to": "bot:<id>", "name": ...}``) in its schema.
 
         ``allowed_tools`` (a bot's or custom agent's preset) hides every other tool, so the model is never told it may
         call something the dispatcher would refuse."""
-        allowed = None if allowed_tools is None else frozenset(allowed_tools)
+        allowed = None if allowed_tools is None else expand_tools(allowed_tools)
         tools: list[dict[str, Any]] = []
         for name in sorted(self._specs):
             spec = self._specs[name]
@@ -191,7 +208,9 @@ class ToolRegistry:
                 if name == "send_message":
                     tools.append(_with_recipients(spec.provider_schema(read_only=read_only), message_recipients))
                     continue
-            if spec.mutability == "computer":
+            if spec.available is not None and not spec.available():
+                continue
+            if not desktop and name in DESKTOP_TOOLS:
                 continue
             if spec.plan_only and not plan_mode:
                 continue

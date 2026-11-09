@@ -108,29 +108,6 @@ def evaluate_shell(command: str, root: str) -> PolicyDecision:
     return PolicyDecision(True, False, "Within approved task", "Runs on the paired host")
 
 
-def evaluate_computer(actions: list[dict[str, Any]]) -> PolicyDecision:
-    typed = " ".join(
-        str(action.get("text") or "")
-        for action in actions
-        if action.get("type") in {"type", "paste_text"}
-    )
-    if _SECRET.search(typed):
-        return PolicyDecision(
-            True,
-            True,
-            "Sensitive text entry",
-            "Types information that resembles a credential or secret into another application",
-        )
-    if any(action.get("type") == "keypress" and "ENTER" in str(action.get("keys", "")).upper() for action in actions) and typed:
-        return PolicyDecision(
-            True,
-            True,
-            "Form submission",
-            "Submits text through the remote desktop",
-        )
-    return PolicyDecision(True, False, "Within approved task", "Controls the selected desktop")
-
-
 _WIN_PATH_SHAPE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|~(?:[\\/]|$))")
 _WIN_TOKEN = re.compile(r'"([^"]+)"|\'([^\']+)\'|([^\s"\';&|<>]+)')
 

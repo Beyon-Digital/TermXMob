@@ -56,7 +56,7 @@ def assert_agent_capture_allowed():
             if expires <= time() or not valid():
                 _PRIVATE.pop(identifier, None)
                 _PRIVACY_REVISION+=1
-        if _PRIVATE: raise PermissionError('Computer observation is paused while a private browser or window capture session is active')
+        if _PRIVATE: raise PermissionError('Desktop control is paused while a private browser or window capture session is active')
 
 
 def capture_privacy_revision():

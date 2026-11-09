@@ -77,8 +77,10 @@ TEMPLATES = (
 
 
 def _registry_names():
+    """Tool ids a bot can be given. The five desktop tools and the retired screenshot tool are one id, `computer`."""
     from termx.agent.tools import default_registry
-    return set(default_registry().names())
+    from termx.agent.tools.registry import DESKTOP_TOOLS, TOOL_GROUPS
+    return (set(default_registry().names()) - set(DESKTOP_TOOLS) - {'use_computer'}) | set(TOOL_GROUPS)
 
 
 def assignable_tool_names():
@@ -383,8 +385,10 @@ class BotService:
     @staticmethod
     def _read_only(tools):
         from termx.agent.tools import default_registry
+        from termx.agent.tools.registry import TOOL_GROUPS
         registry = default_registry()
-        return all(registry.get(t).mutability == 'read' for t in tools)
+        # A tool group (`computer`) includes desktop_act, which changes other applications.
+        return all(t not in TOOL_GROUPS and registry.get(t).mutability == 'read' for t in tools)
 
     def _remove_agent_file(self, slug, *, keep_backup):
         self.registry.delete(slug)

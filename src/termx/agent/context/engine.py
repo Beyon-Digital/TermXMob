@@ -406,6 +406,7 @@ class ContextEngine:
                 if len(output) > char_cap:
                     item = {**item, "output": output[:char_cap] + "\n...[truncated by context engine]"}
             slimmed.append(item)
+        _elide_old_desktop_reads(slimmed)
         # Newest outputs keep their budget; older ones collapse once the
         # cumulative allowance is spent.
         remaining = char_cap
@@ -450,6 +451,29 @@ class ContextEngine:
             content[part_index] = {"type": "input_text", "text": "[image omitted by context budget]"}
             slimmed[index] = {**item, "content": content}
         return slimmed
+
+
+def _elide_old_desktop_reads(items: list[Any]) -> None:
+    """Replace screen text from desktop reads older than the newest two per application (refs go stale anyway)."""
+    seen: dict[str, int] = {}
+    for index in range(len(items) - 1, -1, -1):
+        item = items[index]
+        if not isinstance(item, dict) or item.get("type") != "function_call_output" or not isinstance(item.get("output"), str):
+            continue
+        output = item["output"]
+        if '"screen"' not in output:
+            continue
+        try:
+            body = json.loads(output)
+        except ValueError:
+            continue
+        if not isinstance(body, dict) or "screen" not in body:
+            continue
+        key = str(body.get("app") or "")
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 2:
+            label = f"Earlier read of {key}." if key else "Earlier list of applications."
+            items[index] = {**item, "output": json.dumps({"ok": True, "elided": f"{label} Take a new one if you need it."})}
 
 
 SUMMARY_PROMPT = (

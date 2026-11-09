@@ -174,7 +174,7 @@ class AutomationService:
         from termx.desktop.apps import verifiable
         from termx.workspace.scheduled_computer import normalize
         if command: raise ValueError('Computer permissions require an agent schedule')
-        if not verifiable(): raise ValueError('This host cannot tell which application is in front, so it cannot hold a computer permission for a schedule')
+        if not verifiable(): raise ValueError('Desktop control has no verified build for this computer, so it cannot hold a computer permission for a schedule')
         conversation=self.workspace.session(principal,conversation_id,turns=False)
         if conversation.get('runner_id') or conversation.get('engine','internal')!='internal':
             raise ValueError('Unattended computer permission requires a local Internal Agent conversation')

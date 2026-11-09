@@ -254,7 +254,7 @@ class RunnerAgentService:
                 adapter=self._adapter(provider,permitted)
                 if method=='plan':result=await adapter.plan(str(args.get('prompt','')), root, args.get('manifest') or {})
                 else:
-                    result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd=root,manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),allow_computer=False,read_only=self.store.get_task(task_id)['mode']=='ask'))
+                    result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd=root,manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),read_only=self.store.get_task(task_id)['mode']=='ask'))
                 if not self._valid(job):raise PermissionError('Authority changed during provider request')
             elif method=='review':result=await self._review(job,identifier,args)
             elif method=='effect-result':
@@ -288,7 +288,7 @@ class RunnerAgentService:
         except ActionBlocked:return {'allowed':False}
         except ReviewRequired as exc:
             if exc.record['status']!='needs_user':return {'allowed':False}
-            local=self.store.create_approval(task_id,'tool',{'title':'Dedicated runner action','call':ProviderCall(**call).public(),'browser_review':exc.record,'remote_targets':state,'remember_options':[]})
+            local=self.store.create_approval(task_id,'tool',{'title':'Dedicated runner action','call':ProviderCall.from_wire(call).public(),'browser_review':exc.record,'remote_targets':state,'remember_options':[]})
             future=asyncio.get_running_loop().create_future();self.approvals[local['id']]={'task_id':task_id,'future':future,'review_id':envelope.action_id}
             self.store.update_task(task_id,status='awaiting_approval');self._emit(task_id,'approval.requested',{'approval':local})
             await asyncio.wait_for(future,300)

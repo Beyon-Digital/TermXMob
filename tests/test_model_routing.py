@@ -199,7 +199,7 @@ def test_max_output_tokens_comes_from_model_meta(tmp_path: Path) -> None:
     def payload_for(model: str) -> dict[str, Any]:
         adapter = manager._adapter({**provider, "model": model})
         return adapter._turn_payload(prompt="x", cwd=str(tmp_path), manifest={}, previous_response_id=None,
-                                     input_items=None, allow_computer=False, read_only=True)
+                                     input_items=None, read_only=True)
 
     assert payload_for("fake-model")["max_output_tokens"] == 1000
     assert payload_for("big-model")["max_output_tokens"] == 8000

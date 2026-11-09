@@ -154,12 +154,14 @@ def test_max_output_tokens_uses_the_models_limit_and_openai_key_name() -> None:
     asyncio.run(run())
 
 
-def test_computer_capability_adds_the_function_style_computer_tool() -> None:
+def test_desktop_tools_are_ordinary_function_tools_for_a_chat_model(ready_desktop) -> None:
     async def run() -> None:
         server = FakeServer([TEXT_REPLY])
-        adapter = make_adapter(server, capabilities=["shell", "computer"])
-        await adapter.turn(prompt="x", cwd="/w", manifest=MANIFEST, allow_computer=True)
-        assert "use_computer" in {tool["function"]["name"] for tool in server.bodies[0]["tools"]}
+        adapter = make_adapter(server, capabilities=["shell", "functions"])
+        await adapter.turn(prompt="x", cwd="/w", manifest=MANIFEST)
+        names = {tool["function"]["name"] for tool in server.bodies[0]["tools"]}
+        assert {"desktop_apps", "desktop_snapshot", "desktop_find", "desktop_get", "desktop_act"} <= names
+        assert "use_computer" not in names and not any(tool.get("type") == "computer" for tool in server.bodies[0]["tools"])
     asyncio.run(run())
 
 

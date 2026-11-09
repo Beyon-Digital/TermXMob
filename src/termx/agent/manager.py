@@ -7,6 +7,7 @@ import json
 import mimetypes
 import shutil
 import uuid
+from contextlib import asynccontextmanager
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field, replace
@@ -15,9 +16,10 @@ from time import monotonic, time
 from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
-from termx.agent.computer import ComputerController
+from termx.desktop import agent_desktop
 from termx.desktop import apps as desktop_apps
 from termx.agent.context import ContextEngine
+from termx.agent.desktop_data import DesktopState
 from termx.agent.context.handoff import build_brief, changed_files
 from termx.agent.context.engine import (
     SUMMARY_PROMPT,
@@ -30,16 +32,9 @@ from termx.agent.context.engine import (
 )
 from termx.agent.discovery import ProviderCatalogue, catalog_key, clean_overrides, discover_models, merge_meta, model_info
 from termx.agent.metrics import TaskMetrics, input_tokens, usage_tokens
-from termx.agent.observation import (
-    ObservationTracker,
-    crop_region,
-    jpeg_size,
-    scale_for_model,
-)
 from termx.agent.retry import classify, retrying
 from termx.agent.policy import (
     PolicyDecision,
-    evaluate_computer,
     is_sensitive_path,
     redact,
 )
@@ -60,6 +55,7 @@ from termx.config import parse_routing
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
 from termx.agent.limits import DEFAULT_LIMITS, auto_summary, auto_usage, resolve_auto_ceilings, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
+from termx.agent.tools.registry import DESKTOP_TOOLS, expand_tools
 from termx.agent import worktrees
 
 T = TypeVar("T")
@@ -114,7 +110,11 @@ class AgentManager:
         self._steering: dict[str, list[str]] = defaultdict(list)
         self._plan_submissions: dict[str, str] = {}
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
-        self._computer = ComputerController()
+        self.desktop = DesktopState()  # refs and app handles for desktop control; in memory only
+        try:  # session directories hold element names: drop the ones a crashed run left behind
+            agent_desktop.get_client().sweep()
+        except OSError:
+            pass
         self._tools = default_registry()
         self.browser = None  # AppState attaches the managed broker after mounting.
         self.execution_authority: Callable[[str], None] | None = None
@@ -129,7 +129,6 @@ class AgentManager:
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
         self._spawn_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._observation = ObservationTracker()
         from termx.agent.policies.engine import PolicyEngine
         from termx.sandbox import runner_for as default_runner_for
 
@@ -1122,10 +1121,9 @@ class AgentManager:
         if task["status"] not in ACTIVE_STATUSES:
             return task
         self.cancel(task_id)
-        await self._computer.release_all()
-        if self._observation.control_owner != "user":
-            self._observation.control_owner = "user"
-            self._emit(task_id, "computer.control.changed", {"owner": "user"})
+        agent_desktop.get_client().kill_task(task_id)
+        self.desktop.drop_task(task_id)
+        self.desktop.blocked[task_id] = "The user took over. Ask before using the desktop again."
         if not any(event["type"] == "control.takeover" for event in self.store.events(task_id)):
             self._emit(task_id, "control.takeover", {"message": "You have control"})
         self._mark_cancelled(task_id)
@@ -1278,7 +1276,7 @@ class AgentManager:
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
         await self.catalogue.stop()
-        await self._computer.release_all()
+        agent_desktop.get_client().kill_all()
         await self.runbooks.shutdown()
         await self._http.aclose()
         await asyncio.to_thread(self.store.prune)
@@ -1531,12 +1529,14 @@ class AgentManager:
 
                 async def _request() -> Any:
                     attempt_no[0] += 1
+                    if not read_only:
+                        # So the first turn after a restart already offers desktop control when it is ready.
+                        await agent_desktop.get_client().ensure_fresh()
                     kwargs: dict[str, Any] = {
                         "prompt": task["prompt"],
                         "cwd": task["cwd"],
                         "manifest": manifest,
                         "input_items": history if history else None,
-                        "allow_computer": (not read_only) and "computer" in provider["capabilities"],
                         "read_only": read_only,
                         # Terminal-parent gate: children may not fan out further.
                         "allow_subagents": task.get("parent_id") is None,
@@ -1960,8 +1960,8 @@ class AgentManager:
             if preset and preset.get('tools'):
                 for entry in group:
                     name=entry.call.name or ('run_shell' if entry.call.type=='shell' else entry.call.type)
-                    if name not in preset['tools'] and entry.call.type!='function':raise PermissionError('This tool is outside the task agent preset')
-                if len(group)==1 and group[0].call.type=='function' and group[0].call.name not in preset['tools']:
+                    if name not in expand_tools(preset['tools']) and entry.call.type!='function':raise PermissionError('This tool is outside the task agent preset')
+                if len(group)==1 and group[0].call.type=='function' and group[0].call.name not in expand_tools(preset['tools']):
                     # A model can still name a tool it was not offered. Tell it, so it can adjust, rather than failing the task.
                     refused=group[0].call
                     self._emit(task_id,'tool.started',{'call':refused.public()})
@@ -1979,7 +1979,7 @@ class AgentManager:
                 broker_tools={'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
                 for item in group:
                     if item.call.type!='function' or item.call.name not in broker_tools:
-                        raise PermissionError('Restricted browser task cannot run process/computer tools; take over all granted tabs before resuming coding execution')
+                        raise PermissionError('Restricted browser task cannot run process or desktop tools; take over all granted tabs before resuming coding execution')
             positions=[str(step+offset)+':'+hashlib.sha256(json.dumps(self._call_payload(entry.call),sort_keys=True).encode()).hexdigest() for offset,entry in enumerate(group)]
             shared_reason=self.tree_budget.reserve(task_id,positions)
             if shared_reason:
@@ -2032,8 +2032,6 @@ class AgentManager:
                 self._emit(task_id,'tool.finished',outcome.finished_payload(call));history.extend(outcome.output_items(call));step+=1;index+=1
                 continue
             if read_only:
-                if call.type == "computer":
-                    raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
                 if entry.spec is not None:
                     # Read-only Ask/Plan mode never enters the approval flow:
                     # mutating commands and tools hidden from the schema are
@@ -2058,10 +2056,9 @@ class AgentManager:
                 exact=canonical_hash({'tool':call.name,'cwd':ctx.cwd,'arguments':call.arguments})
                 decision=self._policy_engine.decide_tool(call,ctx,fingerprint=exact,display=call.name+' · exact typed arguments',matcher={'arguments_digest':exact},base=decision,capabilities=('fs.workspace.write',),risk='consequential')
             first_approved = approved_first and index == 0
-            if call.type == "computer" and entry.spec is not None:
-                # Input goes to whichever application is in front now, not the one
-                # in front when the turn was scheduled or the approval was shown.
-                # Decide again, and honour an approval only for the application it named.
+            if call.name in DESKTOP_TOOLS and entry.spec is not None:
+                # Rules, grants and the readiness of desktop control can change while an approval waits.
+                # Decide again, and honour an approval only for the application and action it named.
                 decision = entry.spec.decide(call, ctx)
                 first_approved = (
                     first_approved
@@ -2073,7 +2070,7 @@ class AgentManager:
             if authority and entry.spec and entry.spec.mutability!='read' and decision.approval_kind!='capability':
                 from termx.agent.action_review import proposal
                 from termx.auto_review import ReviewRequired,ActionBlocked
-                envelope,validate,hard_deny=proposal(self.browser,task_id,authority,call.name or call.type,call.arguments if call.type!='computer' else {'actions':call.actions},task['cwd'],call_id=task_id+':'+call.call_id,decision=decision,read_only=read_only)
+                envelope,validate,hard_deny=proposal(self.browser,task_id,authority,call.name or call.type,call.public()['arguments'] if call.name in DESKTOP_TOOLS else call.arguments,task['cwd'],call_id=task_id+':'+call.call_id,decision=decision,read_only=read_only)
                 consent=None
                 if decision.auto_resolved=='allow' and decision.matched_rule_id and decision.intent:
                     matched=self.store.get_policy_rule(decision.matched_rule_id)
@@ -2213,10 +2210,6 @@ class AgentManager:
                     )
                     self._auto_note_call(task_id)
                 if decision.auto_resolved == "deny":
-                    if call.type == "computer" and not call.name:
-                        # A native computer_call can only be answered with a screenshot,
-                        # which a refusal must not take. Stop the task instead.
-                        raise PermissionError(f"{decision.reason}: {decision.consequence}")
                     # Refused in-band like a policy refusal: the model sees the
                     # denial and can choose a different approach; the task keeps
                     # running. No execution checkpoint — nothing ran.
@@ -2533,7 +2526,7 @@ class AgentManager:
         if entry.spec is None:
             raise ValueError(f"unsupported provider tool: {call.name or call.type}")
         preset=self.store.task_agent(ctx.task)
-        if preset and preset.get("tools") and call.name not in preset["tools"]:
+        if preset and preset.get("tools") and call.name not in expand_tools(preset["tools"]):
             return self._outside_preset(call)
         if ctx.read_only and not entry.spec.expose_read_only:
             # Read-only modes hide these tools from the model's schema; a call
@@ -2660,50 +2653,6 @@ class AgentManager:
         # forgotten project is re-registered instead of leaving a stale id.
         return str(self._files_service().register(cwd)["id"])
 
-    def front_names(self) -> list[str] | None:
-        """Every name the application in front is known by, or None when the host cannot say."""
-        identity = getattr(self._computer, "target_identity", None)
-        names = identity() if callable(identity) else None
-        if names is None:
-            app = self._computer.target_app()
-            names = [app] if app else None
-        return names
-
-    def pointer_allowed(self, x: float, y: float) -> bool | None:
-        """Whether a pointer event at this global screen point lands on the front application; None when the host cannot say."""
-        from termx.desktop.windows import pointer_in_front_app
-
-        return pointer_in_front_app(x, y)
-
-    async def _check_pointer(
-        self, task_id: str, batch_id: str, apps: list[str], x: float, y: float, *, strict: bool = False
-    ) -> None:
-        """Refuse a pointer event whose target window belongs to an application other than the one in front.
-
-        The front-application check runs before each action, but a click goes to the window under the pointer,
-        which can be another application, the Dock or a status item. The lookup runs subprocesses, so it runs in a thread.
-        """
-        if not apps or not desktop_apps.verifiable():
-            return  # the front-application check already refused or reported what this host cannot do
-        allowed = await asyncio.to_thread(self.pointer_allowed, x, y)
-        if allowed:
-            return
-        if allowed is None and not strict:
-            self._emit(task_id, "computer.app_unverified", {"batch_id": batch_id, "phase": "pointer", "apps": apps})
-            return
-        why = (
-            "This host cannot tell which window is under the pointer, so a schedule's application permission cannot be enforced. "
-            if allowed is None
-            else "The pointer is over a window that does not belong to the application in front, the Dock or a status item. "
-        )
-        details = {"batch_id": batch_id, "phase": "pointer", "front": None, "apps": apps, "input_sent": False}
-        self._emit(task_id, "computer.app_blocked", details)
-        raise desktop_apps.AppBlocked(
-            why + "This action was not sent; earlier input from this batch cannot be undone. "
-            "Ask the user to bring the allowed application's window to where it is needed.",
-            details,
-        )
-
     def computer_limits(self, task_id: str) -> tuple[list[str] | None, dict[str, Any] | None]:
         """The applications this task may drive and, when it runs unattended, the permission it runs under.
 
@@ -2729,42 +2678,6 @@ class AgentManager:
                 lists.append(list(permission["apps"]))
         return desktop_apps.combine(lists), permission
 
-    async def _check_front_app(self, task_id: str, batch_id: str, apps: list[str], phase: str, *, strict: bool = False) -> None:
-        """Refuse when the front application is not on the list. ``phase`` is 'before', 'during' or 'after' the batch.
-
-        Once input has been sent this can only withhold the screenshot and stop the task. ``strict`` is for a
-        schedule's permission, which is not trusted on a host that cannot name the front application. The lookup
-        runs subprocesses, so it runs in a thread.
-        """
-        names = await asyncio.to_thread(self.front_names) if apps else None
-        front = names[0] if names else None
-        unverifiable = names is None and not desktop_apps.verifiable()
-        if apps and unverifiable and not strict:
-            # Only macOS names the front application. Elsewhere a skill's list is best effort, and says so.
-            self._emit(task_id, "computer.app_unverified", {"batch_id": batch_id, "phase": phase, "apps": apps})
-            return
-        if apps and names is not None and desktop_apps.matches(names, apps):
-            return
-        sent = phase != "before"
-        if not apps:
-            why = (
-                "No application is allowed here: the lists in use have none in common. "
-                "Every list must name an application the same way, for example Notes in all of them or com.apple.Notes in all of them. "
-            )
-        elif unverifiable:
-            why = "This host cannot tell which application is in front, so a schedule's application permission cannot be enforced here. "
-        else:
-            why = f"The application in front ({front or 'unknown'}) is not allowed here. Allowed: {', '.join(apps)}. "
-        effect = {
-            "before": "No input was sent. ",
-            "during": "Earlier input from this batch was already sent and cannot be undone; this action and the rest were not sent. ",
-            "after": "Input from this batch was already sent and cannot be undone; its screenshot was not shown to the model. ",
-        }[phase]
-        message = why + effect + "Ask the user to bring an allowed application to the front."
-        details = {"batch_id": batch_id, "phase": phase, "front": front, "apps": apps, "input_sent": sent}
-        self._emit(task_id, "computer.app_blocked", details)
-        raise desktop_apps.AppBlocked(message, details)
-
     def _computer_spent(self, run_id: str) -> float:
         """Seconds of computer control the run has used, kept on the run's own task so a restart does not reset it."""
         return float((((self.store.get_task(run_id) or {}).get("runtime")) or {}).get("computer_spent") or 0.0)
@@ -2776,245 +2689,34 @@ class AgentManager:
             runtime["computer_spent"] = float(runtime.get("computer_spent") or 0.0) + seconds
             self.store.update_task(run_id, runtime=runtime)
 
-    async def _execute_computer(
-        self,
-        task_id: str,
-        call: ProviderCall,
-        cancel: asyncio.Event,
-    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        batch_id = uuid.uuid4().hex[:12]
-        action_types = [str(action.get("type") or "") for action in call.actions]
-        apps, permission = self.computer_limits(task_id)
+    @asynccontextmanager
+    async def desktop_budget(self, task_id: str):
+        """Wall-time budget for one desktop call under a schedule's permission. No-op for attended runs.
+
+        The seconds spent are kept on the run's own task so a restart does not reset them. Raises PermissionError
+        when the run has no seconds left or the call outlasts them.
+        """
+        _apps, permission = self.computer_limits(task_id)
         if permission is None and self.is_unattended is not None and self.is_unattended(task_id):
             raise PermissionError("Unattended computer control is off for this run")
-        run_id = str((permission or {}).get("run_id") or task_id)
-        remaining = None
-        if permission is not None:
-            remaining = float(permission["max_seconds"]) - self._computer_spent(run_id)
-            if remaining <= 0:
-                raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control")
-        if apps is not None:
-            hotkey = desktop_apps.switching_hotkey(call.actions)
-            if hotkey:
-                details = {"batch_id": batch_id, "phase": "hotkey", "front": None, "apps": apps, "input_sent": False, "keys": hotkey}
-                self._emit(task_id, "computer.app_blocked", details)
-                raise desktop_apps.AppBlocked(
-                    f"{hotkey} switches applications, which a skill limited to {', '.join(apps) or 'no application'} cannot do. "
-                    "No input was sent. Use the application's own controls instead.",
-                    details,
-                )
-            await self._check_front_app(task_id, batch_id, apps, "before", strict=permission is not None)
+        if permission is None:
+            yield
+            return
+        run_id = str(permission.get("run_id") or task_id)
+        remaining = float(permission["max_seconds"]) - self._computer_spent(run_id)
+        if remaining <= 0:
+            raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control")
         started = monotonic()
+        limit = asyncio.timeout(remaining)
         try:
-            if remaining is None:
-                return await self._execute_computer_batch(task_id, call, cancel, batch_id, action_types, apps)
-            # The batch stops when the run's computer time does, not after it.
-            limit = asyncio.timeout(remaining)
-            try:
-                async with limit:
-                    return await self._execute_computer_batch(task_id, call, cancel, batch_id, action_types, apps, strict=True)
-            except TimeoutError:
-                if not limit.expired():
-                    raise
-                raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control") from None
-        finally:
-            if permission is not None:
-                self._charge_computer(run_id, monotonic() - started)
-
-    async def _execute_computer_batch(
-        self,
-        task_id: str,
-        call: ProviderCall,
-        cancel: asyncio.Event,
-        batch_id: str,
-        action_types: list[str],
-        apps: list[str] | None,
-        strict: bool = False,
-    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        self._emit(
-            task_id,
-            "computer.action.started",
-            {"batch_id": batch_id, "actions": action_types},
-        )
-        # Taking control back: a user takeover flips control_owner to "user";
-        # the next agent batch reasserts it with a visible transition.
-        if self._observation.control_owner != "agent":
-            self._observation.control_owner = "agent"
-            self._emit(task_id, "computer.control.changed", {"owner": "agent"})
-        options: dict[str, Any] = {}
-        if apps is not None:
-            async def guard(_action: dict[str, Any]) -> None:
-                await self._check_front_app(task_id, batch_id, apps, "during", strict=strict)
-
-            options["guard"] = guard  # the front application can change inside a batch
-
-            async def pointer_guard(x: float, y: float) -> None:
-                await self._check_pointer(task_id, batch_id, apps, x, y, strict=strict)
-
-            options["pointer_guard"] = pointer_guard  # a click goes to the window under the pointer, whoever is in front
-        try:
-            screenshot = await self._computer.execute(call.actions, cancel=cancel, **options)
-        except BaseException as exc:
-            self._emit(
-                task_id,
-                "computer.action.finished",
-                {
-                    "batch_id": batch_id,
-                    "ok": False,
-                    "error": "cancelled" if isinstance(exc, asyncio.CancelledError) else str(exc),
-                },
-            )
-            raise
-        if apps is not None:
-            # A key held at the end of one batch must not complete a chord in the next, which the hotkey check cannot see.
-            await self._computer.release_all()
-            try:
-                await self._check_front_app(task_id, batch_id, apps, "after", strict=strict)
-            except desktop_apps.AppBlocked:
-                self._emit(task_id, "computer.action.finished", {"batch_id": batch_id, "ok": False, "error": "application changed"})
+            async with limit:
+                yield
+        except TimeoutError:
+            if not limit.expired():
                 raise
-        self._emit(task_id, "computer.action.finished", {"batch_id": batch_id, "ok": True})
-
-        region = _screenshot_region(call.actions)
-        cropped = crop_region(screenshot, region) if region is not None else None
-        model_frame = cropped if cropped is not None else screenshot
-        display_id, logical_w, logical_h = _computer_display(self._computer)
-        size = jpeg_size(model_frame) or (0, 0)
-        dpr = (size[0] / logical_w) if size[0] and logical_w else 1.0
-        observation = self._observation.record(
-            scope=task_id,
-            frame=model_frame,
-            display_id=display_id,
-            width=size[0],
-            height=size[1],
-            dpr=round(dpr, 3),
-            backend=_capture_backend(),
-            region=region,
-            region_cropped=cropped is not None,
-        )
-        # The model-bound frame is saved as the screenshot artifact; the full
-        # display frame is preserved alongside it when a region was cropped so
-        # replay never loses context.
-        artifact = await asyncio.to_thread(
-            self.store.save_artifact, task_id, "screenshot", "image/jpeg", model_frame
-        )
-        observation.artifact_id = artifact["id"]
-        if cropped is not None:
-            full_artifact = await asyncio.to_thread(
-                self.store.save_artifact, task_id, "screenshot", "image/jpeg", screenshot
-            )
-            observation.extra["full_artifact_id"] = full_artifact["id"]
-        metrics = self._metrics.get(task_id)
-        if metrics is not None:
-            metrics.record_screenshot(len(model_frame))
-        self._emit(task_id, "computer.screenshot", {"artifact": artifact})
-        self._emit(
-            task_id,
-            "computer.observation",
-            {"batch_id": batch_id, "observation": observation.payload()},
-        )
-        image = base64.b64encode(scale_for_model(model_frame)).decode("ascii")
-        if call.name == "use_computer":
-            if not observation.changed:
-                self._emit(
-                    task_id,
-                    "computer.no_change",
-                    {
-                        "batch_id": batch_id,
-                        "observation_id": observation.id,
-                        "frame_hash": observation.frame_hash,
-                    },
-                )
-                return artifact, [
-                    {
-                        "type": "function_call_output",
-                        "call_id": call.call_id,
-                        "output": "Computer action completed.",
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": (
-                                    f"Screen unchanged (frame matches observation "
-                                    f"{observation.extra.get('previous_id') or observation.id}). "
-                                    "Continue the approved task without re-inspecting."
-                                ),
-                            }
-                        ],
-                    },
-                ]
-            return artifact, [
-                {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": "Computer action completed.",
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Inspect the screenshot and continue the approved task.",
-                        },
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:image/jpeg;base64,{image}",
-                        },
-                    ],
-                },
-            ]
-        items: list[dict[str, Any]] = [
-            {
-                "type": "computer_call_output",
-                "call_id": call.call_id,
-                "output": {"type": "computer_screenshot", "image_url": f"data:image/jpeg;base64,{image}"},
-                "acknowledged_safety_checks": call.safety_checks,
-            }
-        ]
-        if not observation.changed:
-            self._emit(
-                task_id,
-                "computer.no_change",
-                {
-                    "batch_id": batch_id,
-                    "observation_id": observation.id,
-                    "frame_hash": observation.frame_hash,
-                },
-            )
-            # The computer_call_output contract needs an image, so the dedup
-            # signal travels in an adjacent user message instead.
-            items.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": (
-                                f"Screen unchanged (frame matches observation "
-                                f"{observation.extra.get('previous_id') or observation.id})."
-                            ),
-                        }
-                    ],
-                }
-            )
-        return artifact, items
-
-    @staticmethod
-    def _decide_computer(call: ProviderCall) -> PolicyDecision:
-        if call.safety_checks:
-            detail = "; ".join(
-                str(item.get("message") or item.get("code") or "Provider flagged this action")
-                for item in call.safety_checks
-            )
-            return PolicyDecision(
-                True,
-                True,
-                "Provider safety check",
-                detail[:500],
-            )
-        return evaluate_computer(call.actions)
+            raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control") from None
+        finally:
+            self._charge_computer(run_id, monotonic() - started)
 
     # Helpers ---------------------------------------------------------
 
@@ -3724,13 +3426,12 @@ class AgentManager:
         capabilities = provider["capabilities"]
         if not self.tools_supported(provider, provider["model"]):
             # A model that cannot call tools gets a plain conversation: no function tools.
-            capabilities = [c for c in capabilities if c not in {"shell", "functions"}]
+            capabilities = [c for c in capabilities if c not in {"shell", "functions", "computer"}]
         adapter = (OpenAIChatAdapter if provider.get("wire") == "chat" else OpenAIResponsesAdapter)(
             base_url=provider["base_url"],
             model=provider["model"],
             api_key=key,
             capabilities=capabilities,
-            native_computer=provider["kind"] == "openai",
             timeout_s=self._settings().provider_timeout_s if self._settings else 300,
             max_output_tokens=_output_cap(provider.get("meta")),
         )
@@ -3757,8 +3458,6 @@ class AgentManager:
             call_id=str(value.get("call_id") or ""),
             name=str(value.get("name") or ""),
             arguments=value.get("arguments") if isinstance(value.get("arguments"), dict) else {},
-            actions=value.get("actions") if isinstance(value.get("actions"), list) else [],
-            safety_checks=value.get("safety_checks") if isinstance(value.get("safety_checks"), list) else [],
         )
 
     @staticmethod
@@ -3768,8 +3467,6 @@ class AgentManager:
             "call_id": call.call_id,
             "name": call.name,
             "arguments": call.arguments,
-            "actions": call.actions,
-            "safety_checks": call.safety_checks,
         }
 
     @staticmethod
@@ -3858,6 +3555,10 @@ class AgentManager:
         self._context_engines.pop(task_id, None)
         self._metrics.pop(task_id, None)
         self._steering.pop(task_id, None)
+        self.desktop.drop_task(task_id)
+        client = agent_desktop.get_client()
+        client.kill_task(task_id)
+        client.cleanup_task(task_id)
         # Task-scoped remembered rules die with their task — they can never
         # leak into a later task in the same project.
         self.store.expire_task_policy_rules(task_id)
@@ -3870,7 +3571,7 @@ class AgentManager:
     async def _cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
             return
-        await self._computer.release_all()
+        agent_desktop.get_client().kill_task(task_id)
         self._mark_cancelled(task_id)
 
     def _mark_cancelled(self, task_id: str) -> None:
@@ -3889,7 +3590,6 @@ class AgentManager:
         cwd: str,
         manifest: dict[str, Any],
         input_items: list[dict[str, Any]] | None,
-        allow_computer: bool,
         read_only: bool,
     ) -> ProviderTurn:
         return await _race_cancel(
@@ -3898,7 +3598,6 @@ class AgentManager:
                 cwd=cwd,
                 manifest=manifest,
                 input_items=input_items,
-                allow_computer=allow_computer,
                 read_only=read_only,
             ),
             cancel,
@@ -3926,45 +3625,6 @@ def _snapshot_event(snapshot: dict[str, Any]) -> dict[str, Any]:
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _SHARE_MAX_BYTES = 16 * 1024 * 1024
 _SUBAGENT_MAX_SECONDS = 1800
-
-
-def _screenshot_region(actions: list[dict[str, Any]]) -> dict[str, int] | None:
-    """Region requested by the last screenshot action, normalized to pixels."""
-    for action in reversed(actions):
-        if str(action.get("type") or "") != "screenshot":
-            continue
-        region = action.get("region")
-        if not isinstance(region, dict):
-            return None
-        try:
-            return {
-                "x": max(0, int(region.get("x") or 0)),
-                "y": max(0, int(region.get("y") or 0)),
-                "width": max(1, int(region.get("width") or region.get("w") or 0)),
-                "height": max(1, int(region.get("height") or region.get("h") or 0)),
-            }
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def _computer_display(computer: Any) -> tuple[str | None, float, float]:
-    display_fn = getattr(computer, "_display", None)
-    if not callable(display_fn):
-        return None, 0.0, 0.0
-    try:
-        return display_fn()
-    except Exception:
-        return None, 0.0, 0.0
-
-
-def _capture_backend() -> str:
-    try:
-        from termx.desktop.capabilities import probe_desktop
-
-        return str(probe_desktop().capture_backend or "unknown")
-    except Exception:
-        return "unknown"
 
 
 @dataclass

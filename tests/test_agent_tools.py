@@ -251,7 +251,6 @@ def test_scheduler_groups():
         _call("read_file", {"path": "b"}, call_id="2"),
         _call("run_shell", {"command": "ls", "purpose": "x"}, call_id="3"),
         _call("read_file", {"path": "c"}, call_id="4"),
-        ProviderCall(type="computer", call_id="5"),
         _call("bogus_tool", {}, call_id="6"),
     ]
     ctx = type(
@@ -261,16 +260,12 @@ def test_scheduler_groups():
             "cwd": "/tmp",
             "read_only": False,
             "policy_engine": None,
-            "manager": type(
-                "Mgr",
-                (),
-                {"_decide_computer": staticmethod(lambda call: __import__('termx.agent.policy', fromlist=['PolicyDecision']).PolicyDecision(True, False, "ok", "ok"))},
-            )(),
+            "manager": type("Mgr", (), {})(),
         },
     )()
     groups = scheduler.schedule(calls, ctx)
     shapes = [[entry.call.call_id for entry in group] for group in groups]
-    assert shapes == [["1", "2"], ["3"], ["4"], ["5"], ["6"]]
+    assert shapes == [["1", "2"], ["3"], ["4"], ["6"]]
     unknown = groups[-1][0]
     assert unknown.decision.approval_required and unknown.decision.reason == "Unknown tool"
 
@@ -891,7 +886,7 @@ def test_metrics():
     metrics.record_provider(120, {"input_tokens": 3, "output_tokens": 2})
     metrics.record_tool("read_file", 5)
     metrics.record_shell(40)
-    metrics.record_screenshot(10)
+    metrics.record_desktop(10)
     metrics.record_subagent()
     metrics.record_approval_wait(99)
     snap = metrics.snapshot()
@@ -899,7 +894,7 @@ def test_metrics():
     assert snap["input_tokens"] == 3 and snap["output_tokens"] == 2
     assert snap["tool_ms"]["read_file"] == 5 and snap["tool_calls"]["read_file"] == 1
     assert snap["shell_ms"] == 40 and snap["shell_calls"] == 1
-    assert snap["screenshots"] == 1 and snap["screenshot_bytes"] == 10
+    assert snap["desktop_calls"] == 1 and snap["desktop_bytes"] == 10 and "screenshots" not in snap
     assert snap["subagents"] == 1 and snap["approval_wait_ms"] == 99
     restored = TaskMetrics(snap)
     assert restored.snapshot()["provider_calls"] == 1

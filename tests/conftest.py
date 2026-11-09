@@ -48,24 +48,51 @@ def isolated_virtual_registry(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
-def host_names_the_front_application(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Model a host that can tell which application is in front (macOS), whatever the test runs on.
+def desktop_platform(monkeypatch: pytest.MonkeyPatch):
+    """Judge desktop actions as the named OS does (macos, linux, windows) without changing the real platform."""
+    from termx.desktop import agent_desktop
 
-    Only macOS can name the front application, so on Linux and Windows the product refuses a computer permission
-    for a schedule. Tests that exercise that permission (or an application list) inject the answer here, at the
-    seam every caller shares, and use a fake controller for the application name. A test of the refusal itself
-    patches ``verifiable`` to False after this fixture.
-    """
-    from termx.desktop import apps
+    def choose(name: str = "macos") -> None:
+        monkeypatch.setattr(agent_desktop, "host_os", lambda: name)
 
-    monkeypatch.setattr(apps, "verifiable", lambda: True)
+    choose("macos")
+    return choose
 
 
 @pytest.fixture
-def macos_shortcuts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Judge key chords as macOS does (Command is an ordinary modifier), without changing the real platform."""
-    from types import SimpleNamespace
+def fake_agent_desktop(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Factory for a ready fake agent-desktop CLI installed as the process-wide client.
 
-    from termx.desktop import apps
+    The shim is a Python script run by the interpreter that runs pytest, so the suite behaves the same on
+    macOS, Linux and Windows hosts. Every denial test can assert on ``desk.calls()``; at teardown every call the
+    shim saw must be a command and flag the client is allowed to build.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
 
-    monkeypatch.setattr(apps, "sys", SimpleNamespace(platform="darwin"))
+    from agent_desktop_fixtures import FakeDesktop
+    from termx.desktop import agent_desktop
+
+    made: list[FakeDesktop] = []
+
+    def make(platform: str = "macos") -> FakeDesktop:
+        monkeypatch.setattr(agent_desktop, "host_os", lambda: platform)
+        desk = FakeDesktop(tmp_path / f"fake-desktop-{len(made)}", platform=platform).install()
+        with ThreadPoolExecutor(1) as pool:  # a private loop, so the fixture also works under a running one
+            pool.submit(asyncio.run, desk.client.ensure_fresh(0)).result()
+        made.append(desk)
+        return desk
+
+    yield make
+    agent_desktop.set_client(None)
+    for desk in made:
+        for call in desk.calls():
+            assert call["argv"][0] in agent_desktop.ALLOWED_COMMANDS
+            head = call["argv"][: call["argv"].index("--")] if "--" in call["argv"] else call["argv"]
+            assert not {item.split("=", 1)[0] for item in head} & agent_desktop.FORBIDDEN_FLAGS
+
+
+@pytest.fixture
+def ready_desktop(fake_agent_desktop):
+    """A host where desktop control is set up, whatever the test runs on (macOS-shaped, with a complete pin)."""
+    return fake_agent_desktop()
