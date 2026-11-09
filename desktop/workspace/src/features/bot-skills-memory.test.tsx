@@ -106,7 +106,7 @@ it('lists each skill with its enabled, reviewed and reach, links to import, and 
  expect(screen.getByLabelText(/notes-helper/).closest('label')).toHaveTextContent('Permissions: control the computer');
  expect(lint.closest('label')).toHaveTextContent('No extra permissions');
  expect(screen.getByLabelText(/notes-helper/).closest('label')).toHaveTextContent('Controls only: Notes');
- expect(screen.getByLabelText(/any-app/).closest('label')).toHaveTextContent('Controls whichever application is in front');
+ expect(screen.getByLabelText(/any-app/).closest('label')).toHaveTextContent('Controls any application you have allowed');
  expect(screen.getByText(/A large skill is listed by file instead/)).toBeInTheDocument();
  const link=screen.getByRole('link',{name:'Import or install skills'});
  expect(link).toHaveAttribute('href','/manage/extensions');
@@ -201,7 +201,10 @@ it('adds a bounded computer permission to a new schedule from the skills’ apps
  fireEvent.change(form.getByLabelText('Task prompt'),{target:{value:'Tidy my notes'}});
  fireEvent.click(form.getByLabelText(/Allow unattended runs/));
  fireEvent.click(toggle);
- expect(form.getByText('This lets the bot control only these apps while the schedule runs.',{exact:false})).toBeInTheDocument();
+ const help=form.getByText('This lets the bot control only these apps while the schedule runs.',{exact:false});
+ expect(help).toHaveTextContent('It works in the background, so the app does not need to be in front.');
+ expect(help).toHaveTextContent('Scheduled runs cannot send, delete or enter passwords.');
+ expect(help).not.toHaveTextContent('comes to the front');
  expect(form.queryByText(/Choose or type at least one app/)).toBeNull();  // no nagging before the person has tried
  fireEvent.click(form.getByRole('button',{name:'Authorize and create schedule'}));
  expect(await form.findByText(/Choose or type at least one app/)).toBeInTheDocument();

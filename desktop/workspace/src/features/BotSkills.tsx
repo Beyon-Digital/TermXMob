@@ -13,7 +13,7 @@ function reach(extension: SkillExtension) {
   const permissions = extension.permissions || [];
   const parts = [permissions.length ? `Permissions: ${permissions.map(name => permissionWords[name] || name).join(', ')}` : 'No extra permissions'];
   if (extension.computer_apps?.length) parts.push(`Controls only: ${extension.computer_apps.join(', ')}`);
-  else if (permissions.includes('desktop-control')) parts.push('Controls whichever application is in front');
+  else if (permissions.includes('desktop-control')) parts.push('Controls any application you have allowed');
   return parts.join(' · ');
 }
 

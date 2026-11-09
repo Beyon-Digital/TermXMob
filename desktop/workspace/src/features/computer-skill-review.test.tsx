@@ -27,5 +27,7 @@ describe('computer skill review',()=>{
   it('warns when a skill controls the computer with no application list',async()=>{
     review({});
     expect(await screen.findByText(/Controls this computer with no application list/)).toBeVisible();
+    expect(screen.getByText(/Controls this computer with no application list/)).toHaveTextContent('any application you have allowed it to control');
+    expect(document.body.textContent).not.toMatch(/in front/);
   });
 });

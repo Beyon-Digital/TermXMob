@@ -1,6 +1,6 @@
 import {useMemo, useState} from 'react';
 import {Button} from '../components/ui/button';
-import {Check, ChevronRight, Circle, CircleAlert, FileText, Globe, LoaderCircle, Terminal, Wrench} from 'lucide-react';
+import {Check, ChevronRight, Circle, CircleAlert, FileText, Globe, LoaderCircle, Monitor, Terminal, Wrench} from 'lucide-react';
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from '../components/ui/collapsible';
 import {activityPreview, eventObject, toolActivities, type ActivityEvent, type ToolActivity, type ToolPhase} from '../lib/tool-activity';
 
@@ -11,6 +11,7 @@ export function ActivityStatus({phase}: {phase: ToolPhase}) {
 }
 
 function ToolIcon({kind}: {kind: string}) {
+  if (/^desktop_/.test(kind)) return <Monitor size={15}/>;
   if (/shell|command|check/.test(kind)) return <Terminal size={15}/>;
   if (/file|File/.test(kind)) return <FileText size={15}/>;
   if (/browser|Search/.test(kind)) return <Globe size={15}/>;
@@ -27,22 +28,36 @@ function outputText(value: unknown) {
   return activityPreview(content);
 }
 
+function DesktopDetails({activity}: {activity: ToolActivity}) {
+  const view = activity.desktop!;
+  const name = activity.title + ' details';
+  return <>
+    {view.facts.length > 0 && <ul className="desktop-facts" aria-label={name}>{view.facts.map(([label, value]) => <li key={label}><span>{label}</span><strong>{value}</strong></li>)}</ul>}
+    {view.notes.map(note => <p className="desktop-note" key={note}>{note}</p>)}
+    {!view.facts.length && !view.notes.length && <p className="tool-detail-empty">{activity.phase === 'running' ? 'Waiting for the application to answer.' : 'No details were reported.'}</p>}
+  </>;
+}
+
 export function ToolActivityRow({activity}: {activity: ToolActivity}) {
-  const input = activityPreview(activity.input), output = outputText(activity.output);
-  return <li className={'tool-timeline-item phase-' + activity.phase}>
+  const desktop = activity.desktop;
+  const input = desktop ? '' : activityPreview(activity.input), output = desktop ? '' : outputText(activity.output);
+  const quiet = !!desktop?.quiet, status = quiet ? 'Screen changed' : phases[activity.phase];
+  return <li className={'tool-timeline-item phase-' + (quiet ? 'note' : activity.phase)}>
     <span className="tool-timeline-icon" aria-hidden="true"><ToolIcon kind={activity.kind}/></span>
     <Collapsible className="tool-action">
       <CollapsibleTrigger className="tool-action-trigger">
         <span className="tool-action-title">{activity.title}</span>
-        <span className="tool-action-status"><ActivityStatus phase={activity.phase}/><span>{phases[activity.phase]}</span></span>
+        <span className="tool-action-status">{quiet ? <Circle size={12} aria-hidden="true"/> : <ActivityStatus phase={activity.phase}/>}<span>{status}</span></span>
         <ChevronRight size={13} className="disclosure-chevron" aria-hidden="true"/>
       </CollapsibleTrigger>
       <CollapsibleContent className="tool-action-content">
+        {desktop && <DesktopDetails activity={activity}/>}
         {input && <div className="tool-value"><h4>Input</h4><pre tabIndex={0} aria-label={activity.title + ' input'}>{input}</pre></div>}
         {output && <div className="tool-value"><h4>Result</h4><pre tabIndex={0} aria-label={activity.title + ' result'}>{output}</pre></div>}
-        {!input && !output && <p className="tool-detail-empty">{activity.phase === 'running' ? 'Waiting for the tool to return a result.' : 'This tool did not provide a text result.'}</p>}
-        {activity.callId && <code className="tool-call-id">{activity.callId}</code>}
-        <details className="tool-event-details"><summary>Event details</summary><pre tabIndex={0}>{activityPreview(activity.events.map(event => ({event: event.type, ...event.payload})), 16000)}</pre></details>
+        {!desktop && !input && !output && <p className="tool-detail-empty">{activity.phase === 'running' ? 'Waiting for the tool to return a result.' : 'This tool did not provide a text result.'}</p>}
+        {!desktop && activity.callId && <code className="tool-call-id">{activity.callId}</code>}
+        {/* Desktop calls keep no event dump: only the summary above is meant to be read. */}
+        {!desktop && <details className="tool-event-details"><summary>Event details</summary><pre tabIndex={0}>{activityPreview(activity.events.map(event => ({event: event.type, ...event.payload})), 16000)}</pre></details>}
       </CollapsibleContent>
     </Collapsible>
   </li>;

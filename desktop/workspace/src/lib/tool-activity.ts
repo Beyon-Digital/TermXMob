@@ -1,4 +1,5 @@
 import type {Task} from './api';
+import {desktopTitle, desktopView, isDesktopTool, type DesktopView} from './desktop-activity';
 
 export type ActivityEvent = NonNullable<Task['events']>[number];
 type ObjectValue = Record<string, unknown>;
@@ -27,10 +28,13 @@ export type ToolActivity = {
   key: string; title: string; phase: ToolPhase; kind: string; callId: string;
   state: 'input-available' | 'output-available' | 'output-error'; events: ActivityEvent[];
   input: unknown; output: unknown;
+  /** Set for desktop_* calls: a short human summary that replaces the raw input and result. */
+  desktop?: DesktopView;
 };
 
 function toolTitle(name: string, args: ObjectValue, payload: ObjectValue, item: ObjectValue) {
   if (payload.title) return string(payload.title);
+  if (isDesktopTool(name)) return desktopTitle(name, args);
   if (name === 'browser_action') {
     const action = string(args.action), target = eventObject(args.args);
     const controls: Record<string, string> = {click: 'Click page control', type: 'Enter text', scroll: 'Scroll page', navigate: 'Open page', reload: 'Reload page', zoom: 'Adjust page zoom', select: 'Select option', key: 'Press key', wait: 'Wait for page'};
@@ -75,7 +79,8 @@ export function toolActivities(events: ActivityEvent[], taskStatus?: string): To
       current.events.push(event);
       current.phase = phase;
       current.state = phase === 'failed' ? 'output-error' : phase === 'completed' ? 'output-available' : 'input-available';
-      if (name || p.title) current.title = toolTitle(name || current.kind, args, p, item);
+      // A result that repeats a desktop tool's name without its arguments must not replace the title derived from them.
+      if (p.title || (name && !(isDesktopTool(name) && !Object.keys(args).length))) current.title = toolTitle(name || current.kind, args, p, item);
       if (input !== undefined) current.input = input;
       if (output !== undefined) current.output = output;
       else if (isOutput) current.output = string(current.output) + string(p.delta || p.text || p.chunk || p.output);
@@ -85,6 +90,7 @@ export function toolActivities(events: ActivityEvent[], taskStatus?: string): To
         events: [event], input, output: output ?? (isOutput ? p.delta ?? p.text ?? p.chunk ?? p.output : undefined)});
     }
   }
+  for (const entry of groups.values()) if (isDesktopTool(entry.kind)) entry.desktop = desktopView(entry.kind, entry.input, entry.output);
   if (taskStatus && ['completed', 'failed', 'cancelled', 'interrupted'].includes(taskStatus)) {
     for (const entry of groups.values()) if (entry.phase === 'running' || entry.phase === 'pending') entry.phase = 'interrupted';
   }

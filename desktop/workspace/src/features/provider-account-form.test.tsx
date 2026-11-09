@@ -177,3 +177,30 @@ it('says what happened when the host refuses the account, and mentions the key o
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
  expect(await screen.findByText(/new API key/)).toBeInTheDocument();
 });
+
+it('no longer offers computer tools as a capability, and says any tool-calling model can control the desktop',()=>{
+ render(<ProviderAccountForm busy={false} onSave={vi.fn()}/>);
+ expect(screen.queryByRole('checkbox',{name:/Computer tools/})).toBeNull();
+ expect(screen.getByRole('checkbox',{name:'Function tools'})).toBeInTheDocument();
+ expect(screen.getByText(/Needed for tools, including desktop control\. Any model that can call tools works; it does not need to see images\./)).toBeInTheDocument();
+});
+
+it('keeps a stored computer capability when the account is saved, without showing it',async()=>{
+ const save=vi.fn(async(_input:unknown)=>({}));
+ render(<ProviderAccountForm busy={false} account={{...saved,capabilities:['functions','computer','future-thing']}} onSave={save}/>);
+ expect(screen.queryByRole('checkbox',{name:/Computer/})).toBeNull();
+ fireEvent.click(screen.getByRole('checkbox',{name:'Shell tools'}));
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ await waitFor(()=>expect(save).toHaveBeenCalledOnce());
+ const sent=(save.mock.calls[0][0] as {capabilities:string[]}).capabilities;
+ expect(sent).toEqual(expect.arrayContaining(['functions','computer','future-thing','shell']));
+});
+
+it('still asks for at least one capability when the only stored one is cleared',async()=>{
+ const save=vi.fn();
+ render(<ProviderAccountForm busy={false} account={{...saved,capabilities:['functions']}} onSave={save}/>);
+ fireEvent.click(screen.getByRole('checkbox',{name:'Function tools'}));
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ expect(await screen.findByText('Declare at least one capability.')).toBeInTheDocument();
+ expect(save).not.toHaveBeenCalled();
+});

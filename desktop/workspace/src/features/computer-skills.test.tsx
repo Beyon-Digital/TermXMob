@@ -1,11 +1,12 @@
-import {cleanup,render,screen,waitFor,within} from '@testing-library/react';
-import {afterEach,describe,expect,it,vi} from 'vitest';
+import {cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {expectNoAxeViolations} from '../test-axe';
-import {request} from '../lib/api';
+import {gql,request} from '../lib/api';
 import ComputerSkills from './ComputerSkills';
 
-vi.mock('../lib/api',()=>({request:vi.fn()}));
+vi.mock('../lib/api',()=>({request:vi.fn(),gql:vi.fn()}));
 afterEach(()=>{cleanup();vi.clearAllMocks()});
+beforeEach(()=>{vi.mocked(gql).mockResolvedValue({machine:{capabilities:{agent_desktop:{ready:true,version:'1.2.0',issue:null}}}} as never)});
 
 const skills={extensions:[
   {id:'notes-helper',version:'1',permissions:['desktop-control'],description:'Types into Notes',computer_apps:['Notes','com.apple.Notes']},
@@ -30,17 +31,43 @@ describe('computer skills',()=>{
     serve(skills);
     render(<ComputerSkills/>);
     const any=await screen.findByRole('listitem',{name:'any-app'});
-    expect(within(any).getByText('No application list. It can act in whichever application is in front.')).toBeVisible();
+    expect(within(any).getByText('No application list. It can act in any application you have allowed it to control.')).toBeVisible();
   });
 
-  it('states what the application check can and cannot do',async()=>{
+  it('states how the application list is enforced and what control by accessibility means',async()=>{
     serve(skills);
     render(<ComputerSkills/>);
     await screen.findByRole('listitem',{name:'notes-helper'});
-    const note=screen.getByText(/checked before each batch of input/i);
-    expect(note).toHaveTextContent('The check after a batch cannot undo input that was already sent');
-    expect(note).toHaveTextContent('Only macOS reports the application in front');
+    const note=screen.getByText(/can only act in the applications listed/i);
+    expect(note).toHaveTextContent('checked before each action');
+    expect(note).toHaveTextContent('It reads each application’s controls, not its pixels');
+    expect(note).toHaveTextContent('applications that draw their own interface may not respond');
     expect(note).toHaveTextContent('each must name an application the same way');
+    expect(document.body.textContent).not.toMatch(/in front|batch of input|Only macOS/);
+  });
+
+  it('says when desktop control is not set up and opens Settings, Tools & connections',async()=>{
+    serve(skills);
+    vi.mocked(gql).mockResolvedValue({machine:{capabilities:{agent_desktop:{ready:false,version:null,issue:'not_installed'}}}} as never);
+    const popped=vi.fn();window.addEventListener('popstate',popped);
+    render(<ComputerSkills/>);
+    expect(await screen.findByText('Desktop control is not set up on this computer.')).toBeVisible();
+    fireEvent.click(screen.getByRole('link',{name:'Set up desktop control'}));
+    expect(window.location.pathname).toBe('/manage/connections');expect(popped).toHaveBeenCalled();
+    window.removeEventListener('popstate',popped);window.history.pushState(null,'','/');
+  });
+
+  it('stays quiet about setup when desktop control is ready or its state cannot be read',async()=>{
+    serve(skills);
+    const view=render(<ComputerSkills/>);
+    await screen.findByRole('listitem',{name:'notes-helper'});
+    await waitFor(()=>expect(gql).toHaveBeenCalled());
+    expect(screen.queryByText('Desktop control is not set up on this computer.')).toBeNull();
+    view.unmount();
+    vi.mocked(gql).mockRejectedValue(new Error('nope'));
+    render(<ComputerSkills/>);
+    await screen.findByRole('listitem',{name:'notes-helper'});
+    expect(screen.queryByText('Desktop control is not set up on this computer.')).toBeNull();
   });
 
   it('points to the next step when no skill controls the computer',async()=>{

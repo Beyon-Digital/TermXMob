@@ -1,7 +1,7 @@
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import ComputerSurface from './ComputerSurface';
-vi.mock('../lib/api',()=>({request:vi.fn()}));
+vi.mock('../lib/api',()=>({request:vi.fn(),gql:vi.fn(async()=>({machine:{capabilities:{agent_desktop:{ready:true}}}}))}));
 class Socket{static OPEN=1;static instances:Socket[]=[];readyState=1;binaryType='';onopen?:()=>void;onmessage?:(event:{data:string})=>void;onclose?:(event:CloseEvent)=>void;send=vi.fn();close=vi.fn();constructor(){Socket.instances.push(this);setTimeout(()=>this.onopen?.(),0)}message(data:unknown){act(()=>this.onmessage?.({data:JSON.stringify(data)}))}}
 beforeEach(()=>{Socket.instances=[];vi.stubGlobal('WebSocket',Socket)});
 afterEach(()=>{cleanup();vi.clearAllMocks();vi.unstubAllGlobals();vi.restoreAllMocks()});

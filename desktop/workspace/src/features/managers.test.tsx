@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Managers from './Managers';
 import { request } from '../lib/api';
-vi.mock('../lib/api', () => ({ request: vi.fn(), json: (method: string, value?: unknown) => ({method, body: JSON.stringify(value)}) }));
+vi.mock('../lib/api', () => {
+ const request = vi.fn();
+ return { request, json: (method: string, value?: unknown) => ({method, body: JSON.stringify(value)}),
+  // Desktop control reads through gql; route it to the same mocked transport the other managers use.
+  gql: async (query: string, variables: Record<string, unknown> = {}) => ((await request('/graphql', {method:'POST', body: JSON.stringify({query, variables})})) as {data: unknown}).data };
+});
 const mocked = vi.mocked(request);
 afterEach(cleanup);
 beforeEach(() => mocked.mockReset());
@@ -155,4 +160,29 @@ it('puts account setup before engines and keeps model favorites collapsed withou
  expect(add.compareDocumentPosition(engines)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  expect(screen.getByText('Model favorites',{selector:'summary'}).closest('details')).not.toHaveAttribute('open');
  expect(screen.getByRole('button',{name:'Continue in browser'})).toBeVisible();
+});
+
+it('shows desktop control under Tools & connections for a host admin, after the tool connections', async () => {
+ const status={installed:false,source:null,path:null,version:null,pinned_version:'1.2.0',verified:false,helper_ok:null,platform:'macos',arch:'arm64',platform_supported:true,platform_reason:null,envelope_version:null,ready:false,
+  permission:{state:'unknown',guidance:'',grant_to:null},supported_surfaces:[],issues:[],install:{available:true,asset:'a.tar.gz',size_bytes:2230641,host:'github.com',note:'Checked.'},configured_path:null,setting_locked:false};
+ mocked.mockImplementation(async (path, init) => {
+  if (path === '/auth/me') return { principal:{scopes:['host-admin']} } as any;
+  const query = String(JSON.parse(String(init?.body || '{}')).query || '');
+  return { data: query.includes('desktop_control_status') ? { desktop_control_status: status } : { mcp_connections: [], projects: [] } } as any;
+ });
+ render(<Managers section="connections" projectId={null} sessionId={null}/>);
+ const tools = await screen.findByRole('heading',{name:'Tool connections'});
+ const desktop = await screen.findByRole('heading',{name:'Desktop control'});
+ expect(tools.compareDocumentPosition(desktop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ expect(await screen.findByRole('button',{name:'Install desktop control'})).toBeVisible();
+});
+it('gives people without host-admin one line about desktop control and no install controls', async () => {
+ mocked.mockImplementation(async (path, init) => {
+  if (path === '/auth/me') return { principal:{scopes:[]} } as any;
+  const query = String(JSON.parse(String(init?.body || '{}')).query || '');
+  return { data: query.includes('machine') ? { machine:{ capabilities:{ agent_desktop:{ ready:false } } } } : { mcp_connections: [], projects: [] } } as any;
+ });
+ render(<Managers section="connections" projectId={null} sessionId={null}/>);
+ expect(await screen.findByText(/Desktop control is not set up on this computer\. A host admin can set it up/)).toBeVisible();
+ expect(screen.queryByRole('button',{name:'Install desktop control'})).toBeNull();
 });

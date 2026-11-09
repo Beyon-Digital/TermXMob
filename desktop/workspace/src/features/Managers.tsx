@@ -6,6 +6,7 @@ import CloudAccounts from './CloudAccounts';
 import ExtensionManager from './ExtensionManager';
 import HookSettings from './HookSettings';
 import McpManager from './McpManager';
+import DesktopControl from './DesktopControl';
 import ScheduleManager from './ScheduleManager';
 import ModelsSection from './ModelsSection';
 import AgentsSection from './AgentsSection';
@@ -38,6 +39,7 @@ function PassivePage({section,projectId,sessionId,admin,me}:{section:'cloud'|'ho
     {section==='hooks'&&<HookSettings version={version}/>}
     {section==='automations'&&<ScheduleManager projectId={projectId} sessionId={sessionId} version={version}/>}
     {section==='connections'&&<McpManager ownerKey={me.principal?.id?(me.host_id||location.origin)+':'+me.principal.id:undefined} projectId={projectId} admin={admin} search="" version={version} onChanged={refresh}/>}
+    {section==='connections'&&<DesktopControl admin={admin}/>}
   </ManagerPage>;
 }
 

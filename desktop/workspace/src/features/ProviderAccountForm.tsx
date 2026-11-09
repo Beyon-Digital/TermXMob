@@ -9,7 +9,7 @@ import type {ModelOverride,ModelOverrides,ProviderAccount,ProviderAccountInput} 
 import ProviderModelCatalog from './ProviderModelCatalog';
 import {useDirtyForm} from './settings-forms';
 
-const choices=[['shell','Shell tools'],['functions','Function tools'],['computer','Computer tools'],['image','Image generation and editing'],['audio','Audio transcription and speech'],['realtime','Live voice conversation']];
+const choices=[['shell','Shell tools'],['functions','Function tools'],['image','Image generation and editing'],['audio','Audio transcription and speech'],['realtime','Live voice conversation']];
 const providers=[
  {id:'openai',label:'OpenAI',url:'https://api.openai.com/v1'},
  {id:'openrouter',label:'OpenRouter',url:'https://openrouter.ai/api/v1'},
@@ -44,7 +44,7 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
   if(!name.trim())found.name='Enter a display name.';
   if(!url.trim())found.base_url='Enter the API address your provider supplied.';
   else if(!validUrl(url.trim()))found.base_url='Enter a full address that starts with https:// or http://.';
-  if(!capabilities.length)found.capabilities='Declare at least one capability.';
+  if(!capabilities.some(item=>choices.some(([value])=>value===item)))found.capabilities='Declare at least one capability.';
   setErrors(found);return !Object.keys(found).length;
  }
  async function save(){
@@ -82,7 +82,8 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
   <details><summary>Advanced account options</summary>
    <FormField label="Internal account key" hint="Generated automatically.">{control=><Input {...control} name="id" value={id} disabled={disabled||!!account} onChange={event=>setId(event.target.value)}/>}</FormField>
    <FormField label="Request format" hint="Most providers use Responses. Choose Chat Completions for a compatible server that only offers /chat/completions.">{control=><Select {...control} name="wire" value={wire} disabled={disabled} onChange={event=>setWire(event.target.value==='chat'?'chat':'responses')}><option value="responses">Responses</option><option value="chat">Chat Completions</option></Select>}</FormField>
-   <fieldset className="provider-capabilities"><legend>Declared account capabilities</legend>{choices.map(([value,label])=><label key={value}><span><input type="checkbox" name="capabilities" value={value} checked={capabilities.includes(value)} disabled={disabled} onChange={event=>{setCapabilities(prior=>event.target.checked?[...prior,value]:prior.filter(item=>item!==value));clearError('capabilities')}}/>{label}</span></label>)}
+   <fieldset className="provider-capabilities"><legend>Declared account capabilities</legend>{choices.map(([value,label])=><label key={value}><span><input type="checkbox" name="capabilities" value={value} checked={capabilities.includes(value)} disabled={disabled} aria-describedby={value==='functions'?'provider-functions-hint':undefined} onChange={event=>{setCapabilities(prior=>event.target.checked?[...prior,value]:prior.filter(item=>item!==value));clearError('capabilities')}}/>{label}</span></label>)}
+    <p className="manager-help" id="provider-functions-hint"><strong>Function tools.</strong> Needed for tools, including desktop control. Any model that can call tools works; it does not need to see images.</p>
     {errors.capabilities&&<p className="form-field-error" role="alert">{errors.capabilities}</p>}</fieldset>
    <p className="manager-help">These declarations make the account available for matching operations. Verify each model and your account entitlement; declaring a capability does not prove provider support or authorize charges.</p>
   </details>
