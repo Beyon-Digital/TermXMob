@@ -262,6 +262,26 @@ it('has no accessibility violations in its states or dialogs',async()=>{
  await expectNoAxeViolations(dialog);
 });
 
+it('treats a saved path that cannot be used as a path problem: no reinstall, the path form open, a way to stop using it',async()=>{
+ const issue={code:'configured_invalid',message:'The configured program path is not usable.',action:'Fix TERMX_AGENT_DESKTOP.'};
+ // The host falls back to the managed copy but keeps the issue, so the source is not "configured".
+ serve({...ready,ready:false,configured_path:'/opt/gone/agent-desktop',issues:[issue]});render(<DesktopControl admin/>);
+ const alert=await alertText();
+ expect(alert).toHaveTextContent('The program path saved in Settings is not usable');
+ expect(alert).not.toHaveTextContent('TERMX_AGENT_DESKTOP');
+ expect(screen.queryByRole('button',{name:'Reinstall desktop control'})).toBeNull();
+ expect(screen.getByLabelText('Program path')).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Stop using this path'}));
+ await waitFor(()=>expect(named('desktop_control_set_path')[0].variables).toEqual({path:''}));
+});
+
+it('keeps the host’s own wording when the environment variable decides the unusable path',async()=>{
+ const issue={code:'configured_invalid',message:'The configured program path is not usable.',action:'Fix TERMX_AGENT_DESKTOP.'};
+ serve({...ready,ready:false,setting_locked:true,configured_path:null,issues:[issue]});render(<DesktopControl admin/>);
+ expect(await alertText()).toHaveTextContent('Fix TERMX_AGENT_DESKTOP.');
+ expect(screen.queryByRole('button',{name:'Stop using this path'})).toBeNull();
+});
+
 it('disables the path form when the environment variable decides the program',async()=>{
  serve({...ready,setting_locked:true});render(<DesktopControl admin/>);
  fireEvent.click(await screen.findByText('Use a program you built yourself',{selector:'summary'}));

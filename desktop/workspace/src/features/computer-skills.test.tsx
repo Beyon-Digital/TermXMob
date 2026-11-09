@@ -49,12 +49,12 @@ describe('computer skills',()=>{
   it('says when desktop control is not set up and opens Settings, Tools & connections',async()=>{
     serve(skills);
     vi.mocked(gql).mockResolvedValue({machine:{capabilities:{agent_desktop:{ready:false,version:null,issue:'not_installed'}}}} as never);
-    const popped=vi.fn();window.addEventListener('popstate',popped);
-    render(<ComputerSkills/>);
+    const open=vi.fn();
+    render(<ComputerSkills onSection={open}/>);
     expect(await screen.findByText('Desktop control is not set up on this computer.')).toBeVisible();
     fireEvent.click(screen.getByRole('link',{name:'Set up desktop control'}));
-    expect(window.location.pathname).toBe('/manage/connections');expect(popped).toHaveBeenCalled();
-    window.removeEventListener('popstate',popped);window.history.pushState(null,'','/');
+    expect(open).toHaveBeenCalledWith('connections');
+    expect(screen.getByRole('link',{name:'Set up desktop control'})).toHaveAttribute('href','/manage/connections');
   });
 
   it('stays quiet about setup when desktop control is ready or its state cannot be read',async()=>{

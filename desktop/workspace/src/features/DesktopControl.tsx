@@ -109,6 +109,9 @@ export default function DesktopControl({admin}: {admin: boolean}) {
     const problem = status.issues.find(issue => PROGRAM_PROBLEMS.has(issue.code));
     const needsPermission = status.installed && !problem && !status.ready && ['denied', 'unknown', 'unavailable'].includes(status.permission.state);
     const configured = status.source === 'configured';
+    // A saved path that cannot be used: the host falls back to the managed copy but keeps the issue, so reinstalling cannot clear it.
+    const savedPath = !!status.configured_path && !status.setting_locked;
+    const badPath = savedPath && problem?.code === 'configured_invalid';
     const source = configured ? 'Your own program, not checked' : status.source === 'path' ? 'Copied from your PATH by TermX' : 'Installed by TermX';
     const badge = status.ready ? 'Ready' : !status.installed ? 'Not installed' : 'Needs attention';
     const description = status.ready ? `Version ${status.version ?? status.pinned_version} · ${source}`
@@ -119,7 +122,7 @@ export default function DesktopControl({admin}: {admin: boolean}) {
         <Badge variant={status.ready ? 'default' : 'outline'}>{badge}</Badge>
       </SettingsRow>
       {error && <li className="settings-row desktop-control-block"><p role="alert">{error}</p></li>}
-      {problem && <li className="settings-row desktop-control-block"><p role="alert">{problem.message} {problem.action}</p></li>}
+      {problem && <li className="settings-row desktop-control-block"><p role="alert">{badPath ? 'The program path saved in Settings is not usable. Correct it below, or stop using it to go back to the copy TermX installs.' : `${problem.message} ${problem.action}`}</p></li>}
       {needsPermission && <li className="settings-row desktop-control-block">
         <div role="alert">
           <p>{status.permission.guidance || status.issues.find(issue => issue.code === 'permission_denied' || issue.code === 'no_accessibility_bus')?.message || 'This computer has not allowed TermX to read other applications.'}</p>
@@ -131,7 +134,7 @@ export default function DesktopControl({admin}: {admin: boolean}) {
       <li className="settings-row desktop-control-block">
         <div className="creation-actions">
           {!status.installed && status.install.available && <Button variant="outline" disabled={busy} onClick={() => { setDialogError(''); setDialog('install'); }}>Install desktop control</Button>}
-          {status.installed && (problem || (!status.ready && !needsPermission)) && status.install.available && <Button variant="outline" disabled={busy} onClick={() => { setDialogError(''); setDialog('install'); }}>Reinstall desktop control</Button>}
+          {status.installed && !badPath && !configured && (problem || (!status.ready && !needsPermission)) && status.install.available && <Button variant="outline" disabled={busy} onClick={() => { setDialogError(''); setDialog('install'); }}>Reinstall desktop control</Button>}
           {status.installed && <Button variant="ghost" disabled={busy} onClick={() => void load(true)}>Check again</Button>}
           {status.installed && !configured && <Button variant="ghost" disabled={busy} onClick={() => { setDialogError(''); setDialog('remove'); }}>Remove desktop control</Button>}
         </div>
@@ -150,7 +153,7 @@ export default function DesktopControl({admin}: {admin: boolean}) {
         </details>
       </li>}
       <li className="settings-row desktop-control-block">
-        <details className="manager-item-details" open={configured || undefined}><summary>Use a program you built yourself</summary>
+        <details className="manager-item-details" open={configured || badPath || undefined}><summary>Use a program you built yourself</summary>
           <form {...formProps} noValidate aria-label="Desktop control program path" className="manager-form" onSubmit={event => { event.preventDefault(); void savePath(path); }}>
             <FormField label="Program path" error={pathError}
               hint="The full path to an agent-desktop program. TermX cannot check it against a known checksum, so it runs with the permission you gave TermX. Leave it for the copy TermX installs.">
@@ -160,7 +163,7 @@ export default function DesktopControl({admin}: {admin: boolean}) {
             {status.setting_locked && <p className="manager-help">The TERMX_AGENT_DESKTOP environment variable is set for this host, so it decides which program is used.</p>}
             <div className="creation-actions">
               <Button type="submit" variant="outline" disabled={savingPath || !!status.setting_locked}>Use this path</Button>
-              {configured && <Button type="button" variant="ghost" disabled={savingPath || !!status.setting_locked} onClick={() => void savePath('')}>Stop using this path</Button>}
+              {!!status.configured_path && <Button type="button" variant="ghost" disabled={savingPath || !!status.setting_locked} onClick={() => void savePath('')}>Stop using this path</Button>}
             </div>
           </form>
         </details>

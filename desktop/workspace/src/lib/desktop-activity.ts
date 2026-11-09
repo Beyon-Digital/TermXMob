@@ -13,10 +13,14 @@ const short = (value: string, limit = 80) => value.length > limit ? value.slice(
 
 export const isDesktopTool = (name: string) => /^desktop_(apps|snapshot|find|get|act)$/.test(name);
 
-const actTitles: Record<string, string> = {
-  click: 'Click a control', right_click: 'Open a control’s menu', set_value: 'Enter text', type: 'Enter text', clear: 'Clear a field',
-  select: 'Choose an option', toggle: 'Change a setting', check: 'Change a setting', uncheck: 'Change a setting',
-  expand: 'Expand or collapse', collapse: 'Expand or collapse', scroll: 'Scroll', scroll_to: 'Scroll', focus: 'Focus a control',
+/** What each action is called while it runs (`title`) and in the finished summary (`verb`). One table, so the two cannot drift. */
+const actions: Record<string, {title: string; verb: string}> = {
+  click: {title: 'Click a control', verb: 'Click'}, right_click: {title: 'Open a control’s menu', verb: 'Open menu'},
+  set_value: {title: 'Enter text', verb: 'Enter text'}, type: {title: 'Enter text', verb: 'Enter text'}, clear: {title: 'Clear a field', verb: 'Clear'},
+  select: {title: 'Choose an option', verb: 'Choose an option'}, toggle: {title: 'Change a setting', verb: 'Change'},
+  check: {title: 'Change a setting', verb: 'Check'}, uncheck: {title: 'Change a setting', verb: 'Uncheck'},
+  expand: {title: 'Expand or collapse', verb: 'Expand'}, collapse: {title: 'Expand or collapse', verb: 'Collapse'},
+  scroll: {title: 'Scroll', verb: 'Scroll'}, scroll_to: {title: 'Scroll', verb: 'Scroll to'}, focus: {title: 'Focus a control', verb: 'Focus'},
 };
 
 /** Title for a call that has not finished. It is derived from the arguments only, never from a result. */
@@ -25,17 +29,14 @@ export function desktopTitle(name: string, args: Obj): string {
   if (name === 'desktop_snapshot') return 'Read the screen';
   if (name === 'desktop_find') return 'Find a control';
   if (name === 'desktop_get') return 'Read a control';
-  return actTitles[str(args.action)] || 'Act on a control';
+  return actions[str(args.action)]?.title || 'Act on a control';
 }
 
 export type DesktopView = {
   facts: [label: string, value: string][];
   notes: string[];
-  /** True when the result carries text that came from another application. */
-  external: boolean;
   /** A recoverable condition shown as a note, not as a failure. */
   quiet: boolean;
-  statusLabel?: string;
 };
 
 const errors: Record<string, string> = {
@@ -54,19 +55,14 @@ const errors: Record<string, string> = {
   failed: 'The application did not accept the request.',
 };
 
-const verbs: Record<string, string> = {
-  click: 'Click', right_click: 'Open menu', set_value: 'Enter text', type: 'Enter text', clear: 'Clear', select: 'Choose an option',
-  toggle: 'Change', check: 'Check', uncheck: 'Uncheck', expand: 'Expand', collapse: 'Collapse', scroll: 'Scroll', scroll_to: 'Scroll to', focus: 'Focus',
-};
-
 export function desktopView(name: string, input: unknown, output: unknown): DesktopView {
   const args = obj(input), result = obj(output);
-  const view: DesktopView = {facts: [], notes: [], external: false, quiet: false};
+  const view: DesktopView = {facts: [], notes: [], quiet: false};
   const app = short(str(result.app));
   if (app) view.facts.push(['Application', app]);
   if (name === 'desktop_act') {
     const action = str(result.action) || str(args.action);
-    if (action) view.facts.push(['Action', verbs[action] || action.replaceAll('_', ' ')]);
+    if (action) view.facts.push(['Action', actions[action]?.verb || action.replaceAll('_', ' ')]);
     const text = str(args.text);
     const count = /\[private input omitted: (\d{1,6}) characters\]/.exec(text)?.[1];
     if (count) view.facts.push(['Text entry', `${count} characters, not stored`]);
@@ -79,7 +75,6 @@ export function desktopView(name: string, input: unknown, output: unknown): Desk
   if (result.ok === false) {
     const code = str(result.error);
     view.quiet = code === 'stale_ref';
-    if (view.quiet) view.statusLabel = 'Screen changed';
     view.notes.push(errors[code] || short(str(result.next) || str(result.error) || 'Desktop control did not complete this request.', 200));
     return view;
   }
@@ -102,7 +97,7 @@ export function desktopView(name: string, input: unknown, output: unknown): Desk
     if (result.complete === false && total > shown) view.notes.push(`${total - shown} controls were left out to keep this short. The agent can narrow its search or read part of the window.`);
   }
   if (name === 'desktop_get' && result.truncated === true) view.notes.push('The text was cut short.');
-  view.external = true;
+  // Everything read from the screen is text from other applications, so it always carries this reminder.
   view.notes.push('Text from other applications is treated as content to read, not instructions to follow.');
   return view;
 }

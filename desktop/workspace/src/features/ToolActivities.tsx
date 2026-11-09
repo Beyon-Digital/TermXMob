@@ -38,29 +38,38 @@ function DesktopDetails({activity}: {activity: ToolActivity}) {
   </>;
 }
 
-export function ToolActivityRow({activity}: {activity: ToolActivity}) {
-  const desktop = activity.desktop;
-  const input = desktop ? '' : activityPreview(activity.input), output = desktop ? '' : outputText(activity.output);
-  const quiet = !!desktop?.quiet, status = quiet ? 'Screen changed' : phases[activity.phase];
-  return <li className={'tool-timeline-item phase-' + (quiet ? 'note' : activity.phase)}>
+function Row({activity, status, notePhase, statusIcon, children}: {activity: ToolActivity; status: string; notePhase?: boolean; statusIcon?: React.ReactNode; children: React.ReactNode}) {
+  return <li className={'tool-timeline-item phase-' + (notePhase ? 'note' : activity.phase)}>
     <span className="tool-timeline-icon" aria-hidden="true"><ToolIcon kind={activity.kind}/></span>
     <Collapsible className="tool-action">
       <CollapsibleTrigger className="tool-action-trigger">
         <span className="tool-action-title">{activity.title}</span>
-        <span className="tool-action-status">{quiet ? <Circle size={12} aria-hidden="true"/> : <ActivityStatus phase={activity.phase}/>}<span>{status}</span></span>
+        <span className="tool-action-status">{statusIcon ?? <ActivityStatus phase={activity.phase}/>}<span>{status}</span></span>
         <ChevronRight size={13} className="disclosure-chevron" aria-hidden="true"/>
       </CollapsibleTrigger>
-      <CollapsibleContent className="tool-action-content">
-        {desktop && <DesktopDetails activity={activity}/>}
-        {input && <div className="tool-value"><h4>Input</h4><pre tabIndex={0} aria-label={activity.title + ' input'}>{input}</pre></div>}
-        {output && <div className="tool-value"><h4>Result</h4><pre tabIndex={0} aria-label={activity.title + ' result'}>{output}</pre></div>}
-        {!desktop && !input && !output && <p className="tool-detail-empty">{activity.phase === 'running' ? 'Waiting for the tool to return a result.' : 'This tool did not provide a text result.'}</p>}
-        {!desktop && activity.callId && <code className="tool-call-id">{activity.callId}</code>}
-        {/* Desktop calls keep no event dump: only the summary above is meant to be read. */}
-        {!desktop && <details className="tool-event-details"><summary>Event details</summary><pre tabIndex={0}>{activityPreview(activity.events.map(event => ({event: event.type, ...event.payload})), 16000)}</pre></details>}
-      </CollapsibleContent>
+      <CollapsibleContent className="tool-action-content">{children}</CollapsibleContent>
     </Collapsible>
   </li>;
+}
+
+/** Desktop calls show only the host's short summary: no input, raw result, call id or event dump. */
+function DesktopActivityRow({activity}: {activity: ToolActivity}) {
+  const quiet = !!activity.desktop?.quiet;
+  return <Row activity={activity} status={quiet ? 'Screen changed' : phases[activity.phase]} notePhase={quiet} statusIcon={quiet ? <Circle size={12} aria-hidden="true"/> : undefined}>
+    <DesktopDetails activity={activity}/>
+  </Row>;
+}
+
+export function ToolActivityRow({activity}: {activity: ToolActivity}) {
+  if (activity.desktop) return <DesktopActivityRow activity={activity}/>;
+  const input = activityPreview(activity.input), output = outputText(activity.output);
+  return <Row activity={activity} status={phases[activity.phase]}>
+    {input && <div className="tool-value"><h4>Input</h4><pre tabIndex={0} aria-label={activity.title + ' input'}>{input}</pre></div>}
+    {output && <div className="tool-value"><h4>Result</h4><pre tabIndex={0} aria-label={activity.title + ' result'}>{output}</pre></div>}
+    {!input && !output && <p className="tool-detail-empty">{activity.phase === 'running' ? 'Waiting for the tool to return a result.' : 'This tool did not provide a text result.'}</p>}
+    {activity.callId && <code className="tool-call-id">{activity.callId}</code>}
+    <details className="tool-event-details"><summary>Event details</summary><pre tabIndex={0}>{activityPreview(activity.events.map(event => ({event: event.type, ...event.payload})), 16000)}</pre></details>
+  </Row>;
 }
 
 export default function ToolActivities({events, taskStatus, limit = 60}: {events: ActivityEvent[]; taskStatus?: string; limit?: number}) {

@@ -1,29 +1,21 @@
 import {useCallback,useEffect,useState} from 'react';
 import {Badge} from '../components/ui/badge';
 import {Button} from '../components/ui/button';
-import {gql,request} from '../lib/api';
-
-/** Opens Settings, Tools & connections without leaving the page. */
-function openDesktopSettings(event:React.MouseEvent<HTMLAnchorElement>){
-  if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
-  event.preventDefault();
-  window.history.pushState(null,'','/manage/connections');
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
+import {request} from '../lib/api';
+import {loadDesktopReady} from './desktop-control-api';
+import {SettingsLink} from './BotSkills';
 
 type Skill={id:string;version:string;description?:string;permissions:string[];computer_apps?:string[]};
 
 /** Installed skills that can control this computer, and the applications each one is limited to. */
-export default function ComputerSkills(){
+export default function ComputerSkills({onSection}:{onSection?:(name:string)=>void}){
   const [skills,setSkills]=useState<Skill[]|null>(null);
   const [error,setError]=useState('');
   // null: unknown. Only a clear "not ready" answer from the host is shown; an unreadable state is not a reason to alarm anyone.
   const [setup,setSetup]=useState<boolean|null>(null);
   useEffect(()=>{
     let live=true;
-    gql<{machine?:{capabilities?:{agent_desktop?:{ready?:boolean}}}}>('{ machine { capabilities } }')
-      .then(value=>{const state=value.machine?.capabilities?.agent_desktop;if(live&&state&&typeof state.ready==='boolean')setSetup(state.ready)})
-      .catch(()=>{});
+    loadDesktopReady().then(value=>{if(live)setSetup(value)}).catch(()=>{});
     return()=>{live=false};
   },[]);
   const load=useCallback(async()=>{
@@ -44,7 +36,7 @@ export default function ComputerSkills(){
   if(skills===null)return <section className="computer-skills" aria-label="Computer skills"><p role="status" className="computer-skills-note">Loading computer skills…</p></section>;
   return <section className="computer-skills" aria-label="Computer skills">
     <h2>Computer skills</h2>
-    {setup===false&&<p className="computer-skills-note" role="status">Desktop control is not set up on this computer. <a className="bot-link" href="/manage/connections" onClick={openDesktopSettings}>Set up desktop control</a></p>}
+    {setup===false&&<p className="computer-skills-note" role="status">Desktop control is not set up on this computer. <SettingsLink to="connections" onSection={onSection}>Set up desktop control</SettingsLink></p>}
     {skills.length===0?<p className="computer-skills-note">No computer skills are installed. Install one under Plugins &amp; skills, and review the applications it asks for.</p>:<>
       <ul className="computer-skill-list">{skills.map(skill=><li key={skill.id} aria-label={skill.id}>
         <div className="computer-skill-head"><strong>{skill.id}</strong><small>version {skill.version}</small><Badge variant="outline">Controls this computer</Badge></div>

@@ -56,7 +56,7 @@ export default function ScheduleComputerPermission({suggestions, suggestionsFail
       Let this schedule control apps on this computer
     </label>}
     {enabled && <>
-      <p className="manager-help">This lets the bot control only these apps while the schedule runs. It can only use these apps. It works in the background, so the app does not need to be in front. Scheduled runs cannot send, delete or enter passwords. The permission ends when the time below runs out.</p>
+      <p className="manager-help">This lets the bot control only these apps while the schedule runs. It works in the background, so the app does not need to be in front. Scheduled runs cannot send, delete or enter passwords. The permission ends when the time below runs out.</p>
       {suggestions.length > 0 && <div role="group" aria-label="Apps from this bot’s skills" className="schedule-computer-apps">
         {suggestions.map(app => <label key={app}>
           <input type="checkbox" checked={picked.includes(app)} disabled={disabled}

@@ -205,6 +205,7 @@ it('adds a bounded computer permission to a new schedule from the skills’ apps
  expect(help).toHaveTextContent('It works in the background, so the app does not need to be in front.');
  expect(help).toHaveTextContent('Scheduled runs cannot send, delete or enter passwords.');
  expect(help).not.toHaveTextContent('comes to the front');
+ expect(help).not.toHaveTextContent('It can only use these apps');
  expect(form.queryByText(/Choose or type at least one app/)).toBeNull();  // no nagging before the person has tried
  fireEvent.click(form.getByRole('button',{name:'Authorize and create schedule'}));
  expect(await form.findByText(/Choose or type at least one app/)).toBeInTheDocument();

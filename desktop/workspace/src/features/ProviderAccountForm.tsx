@@ -44,6 +44,7 @@ export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,b
   if(!name.trim())found.name='Enter a display name.';
   if(!url.trim())found.base_url='Enter the API address your provider supplied.';
   else if(!validUrl(url.trim()))found.base_url='Enter a full address that starts with https:// or http://.';
+  // A stored 'computer' capability from an older account has no checkbox any more. It is kept on save (the host owns removing it) and does not count here.
   if(!capabilities.some(item=>choices.some(([value])=>value===item)))found.capabilities='Declare at least one capability.';
   setErrors(found);return !Object.keys(found).length;
  }
