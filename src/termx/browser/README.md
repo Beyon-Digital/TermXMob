@@ -52,16 +52,18 @@ browser call without a grant pauses the same call for explicit handoff and resum
 it once; its pending state grants no observation or browser authority. Takeover
 and private login require a fresh explicit grant before either model can resume.
 
-## Recordings
+## Recordings and window previews
 
-Browser tabs require explicit capture/record consent, and native windows require
-explicit capture consent. Native windows are a human preview with a private mode
-and redaction rectangles; they are no longer recorded into skill drafts, because
-recorded window coordinates cannot be used by accessibility-based desktop
-control. For browser recordings, plain typed text is excluded; named parameters store placeholders and ephemeral replay
-values never enter records. Private mode stops recording and blocks model
+Browser tabs require explicit capture/record consent. For browser recordings,
+plain typed text is excluded, named parameters store placeholders, and ephemeral
+replay values never enter records. Private mode stops recording and blocks model
 observation. A privacy epoch also discards a desktop snapshot when private mode
 entered and exited while it was being read.
+
+Native windows require explicit capture consent and are a human preview with a
+private mode and redaction rectangles. They are not recorded into skill drafts,
+because recorded window coordinates cannot be used by accessibility-based desktop
+control.
 
 Window capture uses exact CoreGraphics window IDs on macOS, PrintWindow on
 Windows, and X11 window capture on Linux. It never substitutes a desktop crop.

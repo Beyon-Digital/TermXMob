@@ -533,7 +533,7 @@ async def test_a_scheduled_run_whose_permission_names_another_application_is_ref
 
 
 # ---------------------------------------------------------------------------
-# Recorded window workflows are retired; a skill is still how an application list is declared
+# The application comes from the ref, so no OS has to name the one in front
 # ---------------------------------------------------------------------------
 
 
@@ -545,6 +545,11 @@ def test_no_front_application_lookup_remains_so_no_os_is_special():
         assert not hasattr(windows, name), name
     for name in ('switching_hotkey', 'KEY_ALIASES'):
         assert not hasattr(apps_module, name), name
+
+
+# ---------------------------------------------------------------------------
+# A skill is how an application list is declared
+# ---------------------------------------------------------------------------
 
 
 def test_the_skill_adapter_carries_the_list_through_to_the_bundle(workspace):

@@ -7,9 +7,7 @@ control reads and acts on accessibility controls by role and name, so coordinate
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import io
-import json
 import secrets
 import threading
 import weakref
@@ -65,11 +63,6 @@ def capture_privacy_revision():
     with _LOCK:
         assert_agent_capture_allowed()
         return _PRIVACY_REVISION
-
-
-def digest(value):
-    """Stable content digest; browser skill drafts use it too."""
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 class WindowRecordingService:
@@ -184,7 +177,7 @@ class WindowRecordingService:
         elif kind == 'text':
             if set(event) - {'type', 'data'} or not isinstance(event.get('data'), str) or len(event['data']) > 2000: raise ValueError('Text must contain at most 2000 characters')
         elif kind == 'key':
-            if set(event) - {'type', 'key', 'action'} or event.get('key') not in {'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Enter'} or event.get('action') not in {'down', 'up'}: raise ValueError('Only navigation keys may be recorded')
+            if set(event) - {'type', 'key', 'action'} or event.get('key') not in {'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Enter'} or event.get('action') not in {'down', 'up'}: raise ValueError('Only navigation keys may be sent')
         else: raise ValueError('Unsupported window input')
         return dict(event)
 
@@ -193,6 +186,6 @@ class WindowRecordingService:
         event = self.event(event)
         await asyncio.to_thread(self.port.input, row['window'], event)
         current = self.get(identifier, principal)
-        if current['revision'] != revision: raise PermissionError('Capture scope changed; input outcome cannot be recorded')
+        if current['revision'] != revision: raise PermissionError('Capture scope changed; input outcome cannot be confirmed')
         # What a person types or clicks in their own window is sent to it and kept nowhere.
         return {'ok': True}

@@ -1,11 +1,16 @@
 """Recorded browser drafts are editable and tested before bundle activation."""
+import hashlib
 import json
 import re
 import secrets
 from time import time
 
 from termx.agent.policy import redact
-from termx.desktop.recording import digest
+
+
+def digest(value):
+    """Stable content digest binding a passed test to the exact draft that was tested."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 class BrowserSkills:

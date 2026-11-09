@@ -216,3 +216,20 @@ def _count_refs(entry: dict[str, Any]) -> int:
 def assert_spawns(desk: FakeDesktop, allowed: set[str]) -> None:
     extra = [command for command in desk.commands() if command not in {"version", "status"} | allowed]
     assert not extra, f"unexpected commands spawned: {extra}"
+
+
+def unpinned_client(home_root: Path, system: str = "linux", arch: str = "x86_64") -> ad.AgentDesktopClient:
+    """A client, installed process-wide, for a platform whose pin lists no per-file hashes.
+
+    The pins table is built here instead of read as shipped, so the result does not change when
+    shipped pins gain per-file hashes for more platforms.
+    """
+    import copy
+
+    platform = ad.HostPlatform(system, arch, True if system == "linux" else None)
+    pins = copy.deepcopy(ad.load_pins())
+    assets = pins.setdefault("assets", {})
+    assets[platform.key] = {**(assets.get(platform.key) or {}), "files": None}
+    client = ad.AgentDesktopClient(home_root=home_root / "desktop-control", pins=pins, platform=platform)
+    ad.set_client(client)
+    return client

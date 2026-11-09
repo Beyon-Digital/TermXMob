@@ -4,6 +4,7 @@ from time import time
 
 import pytest
 
+from agent_desktop_fixtures import unpinned_client
 from test_authorization import client_fixture
 from test_bot_schedules_graphql import SCHEDULE, listed, schedule
 from test_bots_graphql import create, denied, query
@@ -40,7 +41,7 @@ def allow_computer(client, owner, bot):
     assert not patched.get('errors'), patched
 
 
-def test_a_schedule_has_no_computer_permission_unless_the_owner_adds_one(tmp_path, monkeypatch):
+def test_a_schedule_has_no_computer_permission_unless_the_owner_adds_one(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     assert schedule(client, owner, bot)['id']
@@ -52,7 +53,7 @@ def test_a_schedule_has_no_computer_permission_unless_the_owner_adds_one(tmp_pat
     assert len(listed(client, owner, bot)) == 1
 
 
-def test_a_schedule_can_be_created_with_and_edited_to_a_bounded_computer_permission(tmp_path, monkeypatch):
+def test_a_schedule_can_be_created_with_and_edited_to_a_bounded_computer_permission(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     allow_computer(client, owner, bot)
@@ -99,7 +100,7 @@ def test_changing_a_computer_permission_needs_a_host_session(tmp_path, monkeypat
     assert listed(client, owner, bot)[0]['revision'] == created['revision']
 
 
-def test_an_edit_is_refused_while_the_ceiling_still_denies_computer_control(tmp_path, monkeypatch):
+def test_an_edit_is_refused_while_the_ceiling_still_denies_computer_control(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     created = schedule(client, owner, bot)
@@ -108,7 +109,7 @@ def test_an_edit_is_refused_while_the_ceiling_still_denies_computer_control(tmp_
     assert 'computer_permission' not in state.workspace.store.get('delegation', created['grant_id'])
 
 
-def test_reauthorizing_does_not_carry_a_computer_permission_forward(tmp_path, monkeypatch):
+def test_reauthorizing_does_not_carry_a_computer_permission_forward(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     allow_computer(client, owner, bot)
@@ -135,7 +136,7 @@ def test_agent_tool_names_lists_the_host_registry_without_orchestration_tools(tm
     assert anonymous.status_code in (401, 403) or anonymous.json().get('errors')
 
 
-def test_an_event_schedule_never_takes_a_computer_permission(tmp_path, monkeypatch):
+def test_an_event_schedule_never_takes_a_computer_permission(tmp_path):
     """A webhook payload or another bot's message must not be able to start a run that drives the desktop."""
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
@@ -152,7 +153,7 @@ def test_an_event_schedule_never_takes_a_computer_permission(tmp_path, monkeypat
     assert 'computer_permission' not in state.workspace.store.get('delegation', row['grant_id'])
 
 
-def test_narrowing_the_ceiling_removes_computer_permissions(tmp_path, monkeypatch):
+def test_narrowing_the_ceiling_removes_computer_permissions(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     allow_computer(client, owner, bot)
@@ -170,7 +171,7 @@ def test_narrowing_the_ceiling_removes_computer_permissions(tmp_path, monkeypatc
     assert rows(client, owner, bot)[0]['computer_permission'] is None
 
 
-def test_adding_a_changing_tool_leaves_ask_mode_and_read_only_mode_takes_no_computer_permission(tmp_path, monkeypatch):
+def test_adding_a_changing_tool_leaves_ask_mode_and_read_only_mode_takes_no_computer_permission(tmp_path):
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     agents = state.workspace.agents
@@ -184,7 +185,7 @@ def test_adding_a_changing_tool_leaves_ask_mode_and_read_only_mode_takes_no_comp
     assert 'read-only' in refused['errors'][0]['message']
 
 
-def test_rest_creation_with_a_computer_permission_needs_a_host_session(tmp_path, monkeypatch):
+def test_rest_creation_with_a_computer_permission_needs_a_host_session(tmp_path):
     """The browser's new-schedule form posts to REST. A token without host authority must not grant unattended computer control."""
     from test_bot_schedules_rest import API, demoted_owner
     identity, state, client, _owner = client_fixture(tmp_path)
@@ -214,9 +215,8 @@ def test_a_schedule_takes_a_computer_permission_on_every_os_with_a_pinned_build(
 
 @pytest.mark.parametrize('system, arch', [('linux', 'x86_64'), ('windows', 'x86_64'), ('macos', 'x86_64')])
 def test_a_schedule_is_refused_a_computer_permission_where_the_build_has_no_complete_pin(tmp_path, system, arch):
-    """The shipped pins list per-file hashes for macOS arm64 only until they are generated for the other platforms."""
-    from termx.desktop import agent_desktop as ad
-    ad.set_client(ad.AgentDesktopClient(home_root=tmp_path / 'desktop-control', platform=ad.HostPlatform(system, arch, True if system == 'linux' else None)))
+    """A platform whose pin has no per-file hashes cannot be verified, so it takes no permission."""
+    unpinned_client(tmp_path, system, arch)
     identity, state, client, owner = client_fixture(tmp_path)
     bot = create(client, owner)
     allow_computer(client, owner, bot)

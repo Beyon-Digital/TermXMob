@@ -6,6 +6,7 @@ from time import time
 
 import pytest
 
+from agent_desktop_fixtures import unpinned_client
 from termx.desktop import apps as apps_module
 from termx.desktop.apps import combine
 from test_computer_policy import DesktopAdapter, anyio_backend, hosted  # noqa: F401  (fixtures)
@@ -35,17 +36,17 @@ def test_a_list_that_allows_nothing_is_enforced_without_any_process(tmp_path, re
     asyncio.run(run())
 
 
-def _unpinned(tmp_path, system='linux', arch='x86_64'):
-    """A host whose platform has no complete pin in this build: the shipped pins hash macOS arm64 only so far."""
+def test_the_shipped_pins_are_complete_for_macos_arm64(tmp_path):
+    # The one platform the shipped pins hash per file. Everything below builds its own pins table, so it does not
+    # change when more platforms are pinned.
     from termx.desktop import agent_desktop as ad
-    client = ad.AgentDesktopClient(home_root=tmp_path / 'desktop-control', platform=ad.HostPlatform(system, arch, True if system == 'linux' else None))
-    ad.set_client(client)
-    return client
+    client = ad.AgentDesktopClient(home_root=tmp_path / 'desktop-control', platform=ad.HostPlatform('macos', 'arm64', None))
+    assert client.pin_complete() is True
 
 
 @pytest.mark.parametrize('system, arch', [('linux', 'x86_64'), ('windows', 'x86_64'), ('macos', 'x86_64')])
 def test_a_platform_without_a_complete_pin_is_not_verifiable(tmp_path, system, arch):
-    _unpinned(tmp_path, system, arch)
+    unpinned_client(tmp_path, system, arch)
     assert apps_module.verifiable() is False
 
 
@@ -67,7 +68,7 @@ def test_the_policy_denies_a_scheduled_run_where_desktop_control_is_not_set_up(t
 
 @pytest.mark.anyio
 async def test_a_schedule_cannot_carry_a_permission_on_a_platform_without_a_complete_pin(hosted, tmp_path):
-    _unpinned(tmp_path)
+    unpinned_client(tmp_path)
     with pytest.raises(ValueError, match='no verified build for this computer') as refused:
         _create(hosted)
     assert 'front' not in str(refused.value)

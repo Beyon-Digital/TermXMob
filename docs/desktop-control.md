@@ -148,17 +148,24 @@ inside the schedule's grant and covering its first run, and seconds of desktop
 time per run. Without one, unattended runs are denied before any program starts.
 Event-triggered schedules (message or webhook) never take one. Narrowing the bot's
 ceiling to deny `computer.control` removes it. The seconds used survive a restart.
-It can be set on any OS whose build of the program has complete hash pins
-(`pin_complete`); where it does not, the schedule is refused with "no verified
-build for this computer". At the moment only macOS arm64 does.
+It can be set on any platform listed in `agent_desktop_pins.json` with complete
+hash pins (`pin_complete`); where the pin is incomplete, the schedule is refused
+with "no verified build for this computer". Adding per-file hashes for a platform
+to `agent_desktop_pins.json` is what makes it eligible.
 
 ## Window captures
 
 A window capture is a human preview of one application window, with a private mode
 and redaction rectangles. Private mode pauses desktop control. Captures are no
 longer recorded into skill drafts: recorded steps were window coordinates, which
-accessibility-based control cannot use. Old recorded steps and drafts are deleted
-when the server starts.
+accessibility-based control cannot use. Window-skill drafts and recorded steps
+stored in old capture rows are deleted when the server starts.
+
+Skills that were already published from a window recording are not touched. They
+stay installed as ordinary skills with the `desktop-control` permission and their
+application list, and their text still holds the recorded coordinate steps, which
+no longer match how desktop control works. Review them in the extension manager and
+remove the ones you do not want.
 
 ## Verified against the real program, and not
 
