@@ -23,6 +23,10 @@ from test_computer_policy import (  # noqa: F401  (hosted and anyio_backend are 
 from test_durable_workspace import bundle, session, workspace  # noqa: F401  (workspace is a fixture)
 from test_agent import wait_for_status
 
+# Application lists and schedule permissions are enforced only where the host can name the front application
+# (macOS). Model that host explicitly, so these tests give the same answer on Linux and Windows runners.
+pytestmark = pytest.mark.usefixtures('host_names_the_front_application')
+
 NOTES_SKILL = {'format': 'termx-bundle/v1', 'id': 'notes-helper', 'version': '1',
                'permissions': ['desktop-control'], 'computer': {'apps': ['Notes', 'com.apple.Notes']},
                'files': {'skills/notes-helper/SKILL.md': 'Open Notes and type the text the user asked for.'}}
@@ -76,12 +80,14 @@ def test_hotkeys_that_change_application_are_recognized(keys):
     assert switching_hotkey([{'type': 'keypress', 'keys': keys}]) is not None
 
 
+@pytest.mark.usefixtures('macos_shortcuts')
 def test_a_chord_split_over_actions_is_recognized():
     assert switching_hotkey([{'type': 'key_down', 'keys': ['meta']}, {'type': 'key_down', 'keys': ['tab']}]) is not None
     assert switching_hotkey([{'type': 'key_down', 'keys': ['meta']}, {'type': 'key_up', 'keys': ['meta']},
                              {'type': 'keypress', 'keys': ['tab']}]) is None
 
 
+@pytest.mark.usefixtures('macos_shortcuts')
 @pytest.mark.parametrize('keys', [['enter'], ['meta', 'c'], ['meta', 'v'], ['control', 'a'], ['shift', 'tab'], ['tab'], ['meta', 'n']])
 def test_ordinary_shortcuts_are_not_blocked(keys):
     assert switching_hotkey([{'type': 'keypress', 'keys': keys}, {'type': 'type', 'text': 'meta tab'}]) is None

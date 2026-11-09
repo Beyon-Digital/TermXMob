@@ -45,3 +45,27 @@ def isolated_virtual_registry(monkeypatch: pytest.MonkeyPatch):
     yield
     virtual._active.clear()
     virtual._impls.clear()
+
+
+@pytest.fixture
+def host_names_the_front_application(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model a host that can tell which application is in front (macOS), whatever the test runs on.
+
+    Only macOS can name the front application, so on Linux and Windows the product refuses a computer permission
+    for a schedule. Tests that exercise that permission (or an application list) inject the answer here, at the
+    seam every caller shares, and use a fake controller for the application name. A test of the refusal itself
+    patches ``verifiable`` to False after this fixture.
+    """
+    from termx.desktop import apps
+
+    monkeypatch.setattr(apps, "verifiable", lambda: True)
+
+
+@pytest.fixture
+def macos_shortcuts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Judge key chords as macOS does (Command is an ordinary modifier), without changing the real platform."""
+    from types import SimpleNamespace
+
+    from termx.desktop import apps
+
+    monkeypatch.setattr(apps, "sys", SimpleNamespace(platform="darwin"))

@@ -10,7 +10,11 @@ import pytest
 from termx.desktop import apps as apps_module
 from termx.desktop.apps import AppBlocked, combine, matches, switching_hotkey
 from test_computer_policy import CLICK, Desktop, _events, _manager, anyio_backend, hosted  # noqa: F401  (fixtures)
-from test_computer_skills import _close, _create, _direct, _permission, _run, _unattended
+from test_computer_skills import _close, _create, _direct, _grant, _permission, _run, _unattended
+
+
+# Same host model as test_computer_skills: one that can name the front application. Tests of the refusal override it.
+pytestmark = pytest.mark.usefixtures('host_names_the_front_application')
 
 
 def _on(monkeypatch, platform):
@@ -31,6 +35,15 @@ def _permitted(manager, task_id, **kw):
 def test_super_chords_are_refused_off_macos(monkeypatch, keys):
     _on(monkeypatch, 'linux')
     assert switching_hotkey([{'type': 'keypress', 'keys': keys}]) is not None
+
+
+@pytest.mark.parametrize('keys', [['meta', 'c'], ['meta', 'v'], ['meta', 'n']])
+def test_command_shortcuts_are_refused_off_macos_and_allowed_on_it(monkeypatch, keys):
+    action = [{'type': 'keypress', 'keys': keys}]
+    _on(monkeypatch, 'linux')
+    assert switching_hotkey(action) is not None
+    _on(monkeypatch, 'darwin')
+    assert switching_hotkey(action) is None
 
 
 def test_the_controller_reads_super_as_meta_like_the_filter():
@@ -54,7 +67,8 @@ def test_the_same_application_under_two_names_in_two_lists_overlaps_nowhere():
 
 def test_keys_held_in_one_batch_are_released_before_the_next(tmp_path):
     async def run():
-        manager, store_, desktop, done = await _run(tmp_path, [{'type': 'key_down', 'keys': ['meta']}], apps=['Notes'])
+        manager, store_, desktop, done = await _run(tmp_path, [{'type': 'key_down', 'keys': ['shift']}], apps=['Notes'])
+        assert desktop.actions == [[{'type': 'key_down', 'keys': ['shift']}]]
         assert desktop.released >= 1
         await _close(manager, store_)
 
@@ -110,8 +124,14 @@ def test_the_policy_denies_a_schedule_permission_where_the_host_cannot_name_appl
 @pytest.mark.anyio
 async def test_a_schedule_cannot_carry_a_permission_the_host_cannot_enforce(hosted, monkeypatch):
     monkeypatch.setattr(apps_module, 'verifiable', lambda: False)
-    with pytest.raises(ValueError, match='front'):
+    with pytest.raises(ValueError, match='This host cannot tell which application is in front, so it cannot hold a computer permission for a schedule'):
         _create(hosted)
+
+
+@pytest.mark.anyio
+async def test_a_schedule_with_a_permission_is_accepted_where_the_host_can_name_applications(hosted):
+    # The same request as the refusal above, on a host that names the front application (the module fixture).
+    assert _grant(hosted, _create(hosted))['computer_permission']['apps'] == ['Notes']
 
 
 # ---------------------------------------------------------------------------
