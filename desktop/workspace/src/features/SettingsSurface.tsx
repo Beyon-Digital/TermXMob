@@ -72,7 +72,7 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
  useEffect(()=>{clearEdits();surface?.querySelector('.settings-content')?.scrollTo?.(0,0)},[category,scopeKey]);
  function select(id:string){if(id===category)return;if(guarded(()=>onSelect(id)))onSelect(id)}
  function save(){for(const form of forms.values())form.current?.requestSubmit()}
- return <Dialog open onOpenChange={open=>{if(!open&&guarded(onClose))onClose()}}><DialogContent ref={setSurface} className="settings-surface" onCloseAutoFocus={event=>{if(!opener.current?.isConnected){const target=document.querySelector<HTMLElement>('[aria-label="Show sidebar"]');if(target){event.preventDefault();target.focus()}}}} onPointerDownOutside={event=>event.preventDefault()}>
+ return <Dialog open onOpenChange={open=>{if(!open&&guarded(onClose))onClose()}}><DialogContent ref={setSurface} className="settings-surface" onCloseAutoFocus={event=>{if(!opener.current?.isConnected){const target=Array.from(document.querySelectorAll<HTMLElement>('.settings-launcher,.sidebar-operations[aria-label="Settings"],[aria-label="Show sidebar"]')).find(node=>node.getClientRects().length>0)??null;if(target){event.preventDefault();target.focus()}}}} onPointerDownOutside={event=>event.preventDefault()}>
   <header className="settings-title"><div className="settings-title-copy"><DialogTitle>Settings</DialogTitle><DialogDescription>Configure your account, this host and workspace capabilities.</DialogDescription></div>{context}</header>
   <SettingsNavigation category={category} onSelect={select} waiting={waiting}/>
   <SettingsFormsContext.Provider value={registry}><SaveContext.Provider value={beginSave}>

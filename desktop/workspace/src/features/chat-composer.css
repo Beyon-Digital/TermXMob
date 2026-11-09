@@ -135,8 +135,11 @@
 .conversation-settings-link>svg{flex-shrink:0}
 @media(max-width:850px){
  .chat-region .chat-toolbar{padding:5px 12px;min-height:48px}
- .chat-region .composer-container{padding:12px 14px max(10px,env(safe-area-inset-bottom));max-height:46%}
+ /* Two control rows (see the container queries below) need more than 46%; the draft scrolls sooner so the controls stay on screen. */
+ .chat-region .composer-container{padding:12px 14px max(10px,env(safe-area-inset-bottom));max-height:56%}
  .chat-region .composer{border-radius:25px;padding:14px 11px 9px}
+ /* The composer keeps its two control rows instead of shrinking under them. */
+ .chat-region .composer{flex-shrink:0}
  .chat-region .composer textarea{font-size:16px;min-height:44px}
  .chat-region .composer-hint{font-size:11px;margin-top:7px}
  .chat-control-dialog.dialog-content{top:auto;left:0;bottom:0;transform:none;max-width:100%;width:100%;max-height:88dvh;border-radius:24px 24px 0 0;padding:26px 22px max(22px,env(safe-area-inset-bottom))}
@@ -157,6 +160,9 @@
  .chat-region .composer{min-height:104px;padding-top:12px;padding-bottom:8px}
  .chat-region .composer-controls{margin-top:8px}
  .chat-region .composer-hint{display:none}
+ /* With the keyboard up, the usage line stays one line so the two control rows keep their room. */
+ .chat-region .task-meter{flex-wrap:nowrap;margin-bottom:4px}
+ .chat-region .task-meter>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 @media(prefers-reduced-motion:reduce){.chat-region .composer,.chat-control-dialog{transition:none;animation:none}}
 

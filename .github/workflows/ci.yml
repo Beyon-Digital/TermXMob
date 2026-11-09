@@ -12,7 +12,9 @@ concurrency:
 
 jobs:
   workspace:
-    runs-on: ubuntu-latest
+    # Playwright 1.58 cannot install its browser dependencies on ubuntu-26.04
+    # (what ubuntu-latest now resolves to), so pin a supported release.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

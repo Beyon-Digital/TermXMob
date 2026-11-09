@@ -68,7 +68,7 @@ def run(destination, axe_source):
                         # breadcrumb after authenticated deep-link restoration.
                         if zoom == 200:
                             page.get_by_role('button',name='Show sidebar',exact=True).click()
-                        page.get_by_role('complementary',name='Projects and conversations',exact=True).get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
+                        page.get_by_role('complementary',name='Chats and agents',exact=True).get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
                         hide_sidebar=page.get_by_role('navigation',name='Workspace navigation',exact=True).get_by_role('button',name='Hide sidebar',exact=True)
                         if zoom == 200 and hide_sidebar.is_visible():
                             hide_sidebar.click()
@@ -85,7 +85,8 @@ def run(destination, axe_source):
                             page.get_by_role('button',name='Workspace actions',exact=True).click()
                             page.get_by_role('button',name='Appearance',exact=True).click()
                             preferences=page.get_by_role('dialog',name='Settings',exact=True)
-                            preferences.get_by_role('navigation',name='Settings categories').get_by_role('button',name='Appearance',exact=True).click()
+                            # Appearance now lives under the Preferences category; settings navigation items are links.
+                            expect(preferences.get_by_role('navigation',name='Settings categories').get_by_role('link',name='Preferences',exact=True)).to_have_attribute('aria-current','page')
                             preferences.get_by_role('radio',name=theme.title(),exact=True).check()
                             preferences.get_by_role('button',name='Close',exact=True).click()
                             expect(preferences).to_be_hidden()
@@ -121,7 +122,7 @@ def run(destination, axe_source):
                         assert workbench['editor_viewport']['width']>=240,workbench['editor_viewport']
                         editor_actions=page.get_by_role('button',name='Editor actions',exact=True)
                         workbench['editor_actions_visible']=editor_actions.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('.editor-tab-bar').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom}")
-                        assert workbench['editor_actions_visible'],'Editor actions trigger is clipped by its toolbar'
+                        assert workbench['editor_actions_visible'],('Editor actions trigger is clipped by its toolbar',editor_actions.evaluate("e=>{const r=x=>{const b=x.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom].map(Math.round)};return {button:r(e),bar:r(e.closest('.editor-tab-bar')),zoom:innerWidth}}"))
                         # Advanced editor controls are revealed through the keyboard-accessible menu.
                         editor_actions.focus();page.keyboard.press('Enter')
                         editor_menu=page.get_by_role('dialog',name='Editor actions',exact=True)

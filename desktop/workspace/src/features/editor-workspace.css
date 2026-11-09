@@ -32,6 +32,8 @@
 .workbench .editor-tab>button:last-child:hover{background:var(--muted)}
 .editor-tab-actions{display:flex;align-items:center;gap:1px;padding:0 5px;flex-shrink:0}
 .editor-tab-actions>.button{height:26px;width:27px;border-radius:4px}
+/* Icon buttons grow to a 44px hit area on touch and narrow screens (workspace-shell.css), so the bar must grow with them or they spill out of it. */
+@media (pointer:coarse),(max-width:850px){.workbench .editor-tab-bar{height:auto;min-height:44px}.workbench .editor-tabs{height:auto;min-height:44px}.workbench .editor-tab{height:auto;min-height:44px}.editor-tab-actions>.button{height:44px;width:44px}}
 .workbench .editor-breadcrumbs{height:27px;min-height:27px;display:flex;align-items:center;gap:4px;padding:0 13px;color:var(--secondary);font-size:11px;overflow:hidden;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,var(--border) 40%,transparent)}
 .editor-breadcrumbs>span{display:flex;align-items:center;gap:4px;min-width:0}
 .editor-breadcrumbs>span:last-of-type{color:var(--foreground);overflow:hidden;text-overflow:ellipsis}
