@@ -229,9 +229,9 @@ def test_native_scenario_selectors_exist_in_the_shipped_workspace_source():
     # password_signin builds this one from its setup flag.
     texts |= {'Create owner account','Continue with password'}
     classes = set(re.findall(r'(?<=[\'",(])\.([a-z]+(?:-[a-z]+)+)',smoke))|set(re.findall(r'@class,"([^"]+)"',smoke))
-    assert {'Sign out','Message','Search commands'} <= labels
+    assert {'Message','Search commands'} <= labels
     texts = {text for text in texts if '+' not in text}
-    assert {'Return to main workspace','Unlock workspace','Stop host now','Lock workspace','Commands','Stop this host'} <= texts
+    assert {'Projects & operations','Sign out','Return to main workspace','Unlock workspace','Stop host now','Lock workspace','Commands','Stop this host'} <= texts
     assert {'sign-in','workspace-root','lock-screen','host-stop-effects','command-row'} <= classes
     missing = ([f'aria-label {label}' for label in labels if f'aria-label="{label}"' not in source]
                + [f'text {text}' for text in texts if text not in source]
