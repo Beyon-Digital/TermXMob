@@ -124,7 +124,8 @@ password-like or secure control, clicks on controls named like send, submit,
 delete, pay or confirm (an English-only heuristic that is a seat belt, not a
 boundary), text with a line break entered into a single-line field, input into a
 control type the host does not recognise, applications that can run commands or
-change security settings (terminals, System Settings, password managers) and an
+change security settings (terminals, System Settings, password managers), any
+web browser (it may be showing TermX's own approval screen) and an
 application the host cannot tell apart from another of the same name. TermX's
 own interface and the application that started it cannot be controlled at all.
 The approval names the action, the control and the application with its bundle

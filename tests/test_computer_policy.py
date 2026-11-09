@@ -903,3 +903,65 @@ async def test_an_ancestry_that_cannot_be_followed_counts_as_unattended(hosted, 
     monkeypatch.setattr(hosted.state.workspace.agents, "get_task", lambda task_id: {"parent_id": task_id})
 
     assert hosted.state.workspace.is_unattended_task(task["id"]) is True
+
+
+# -- review fixes through the manager -----------------------------------------------------------------------------
+
+
+def test_typed_text_is_not_written_to_the_checkpoint_or_the_stored_history(tmp_path, desk):
+    notes_app(desk, label="Body", role="textfield")
+    typed = "my private sentence about the quarterly numbers"
+
+    async def run() -> None:
+        manager, store_ = build_manager(tmp_path, DesktopAdapter({"action": "set_value", "text": typed}))
+        task = await manager.create_task(prompt="Write it", cwd=str(tmp_path), provider_id="fake")
+        await approve_plan(manager, store_, task["id"])
+        await wait_for_status(store_, task["id"], "completed")
+        rows = store_.checkpoints(task["id"])
+        assert any((row["payload"].get("call") or {}).get("name") == "desktop_act" for row in rows)
+        stored = json.dumps([row["payload"] for row in rows], default=str)
+        assert typed not in stored
+        assert "<<<SCREEN" not in stored  # screen text read from the application is not kept either
+        assert "set-value" in desk.commands() or "set_value" in desk.commands() or "type" in desk.commands()
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
+def test_the_cli_is_not_probed_for_a_task_that_cannot_use_desktop_control(tmp_path, desk):
+    async def run() -> None:
+        manager, store_ = build_manager(tmp_path, FakeAdapter())
+        provider = {"id": "p", "model": "m", "capabilities": ["functions"]}
+        task = {"id": "t1", "custom_agent_id": None}
+        assert manager._desktop_wanted("t1", task, provider, False) is True
+        assert manager._desktop_wanted("t1", task, provider, True) is False  # Ask and Plan modes
+        assert manager._desktop_wanted("t1", task, {**provider, "capabilities": ["shell"]}, False) is False
+        manager.is_unattended = lambda _t: True
+        manager.computer_permission = lambda _t: None
+        assert manager._desktop_wanted("t1", task, provider, False) is False  # unattended without a grant
+        manager.computer_permission = lambda _t: {"apps": ["Notes"], "max_seconds": 5, "run_id": "r"}
+        assert manager._desktop_wanted("t1", task, provider, False) is True
+        manager.is_unattended = None
+        manager.store.task_agent = lambda _task: {"tools": ["read_file"]}
+        assert manager._desktop_wanted("t1", task, provider, False) is False  # a preset without computer
+        manager.store.task_agent = lambda _task: {"tools": ["computer"]}
+        assert manager._desktop_wanted("t1", task, provider, False) is True
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+
+
+def test_a_task_that_cannot_use_desktop_control_never_starts_the_cli(tmp_path, desk):
+    calls_before = len(desk.calls())
+
+    async def run() -> None:
+        manager, store_ = build_manager(tmp_path, FakeAdapter())
+        task = await manager.create_task(prompt="hello", cwd=str(tmp_path), provider_id="fake", mode="ask")
+        await wait_for_status(store_, task["id"], "completed")
+        await manager.close()
+        store_.close()
+
+    asyncio.run(run())
+    assert len(desk.calls()) == calls_before

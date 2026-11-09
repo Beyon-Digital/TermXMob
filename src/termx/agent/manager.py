@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 from termx.desktop import agent_desktop
 from termx.desktop import apps as desktop_apps
 from termx.agent.context import ContextEngine
-from termx.agent.desktop_data import DesktopState
+from termx.agent.desktop_data import DesktopState, storable_call, storable_history
 from termx.agent.context.handoff import build_brief, changed_files
 from termx.agent.context.engine import (
     SUMMARY_PROMPT,
@@ -34,7 +34,6 @@ from termx.agent.discovery import ProviderCatalogue, catalog_key, clean_override
 from termx.agent.metrics import TaskMetrics, input_tokens, usage_tokens
 from termx.agent.retry import classify, retrying
 from termx.agent.policy import (
-    PolicyDecision,
     is_sensitive_path,
     redact,
 )
@@ -89,7 +88,7 @@ class AgentManager:
         self,
         store: AgentStore,
         credentials: CredentialStore,
-        desktop: Any,
+        desktop: Any,  # unused since the screenshot controller was removed; kept so existing callers still work
         *,
         adapter_factory: AdapterFactory | None = None,
         project_files: Any = None,
@@ -99,7 +98,6 @@ class AgentManager:
         self.store = store
         self._settings = settings
         self.credentials = credentials
-        self.desktop = desktop
         self._adapter_factory = adapter_factory or self._default_adapter
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._cancel: dict[str, asyncio.Event] = {}
@@ -110,7 +108,7 @@ class AgentManager:
         self._steering: dict[str, list[str]] = defaultdict(list)
         self._plan_submissions: dict[str, str] = {}
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
-        self.desktop = DesktopState()  # refs and app handles for desktop control; in memory only
+        self.desktop_state = DesktopState()  # refs and app handles for desktop control; in memory only
         try:  # session directories hold element names: drop the ones a crashed run left behind
             agent_desktop.get_client().sweep()
         except OSError:
@@ -1122,8 +1120,8 @@ class AgentManager:
             return task
         self.cancel(task_id)
         agent_desktop.get_client().kill_task(task_id)
-        self.desktop.drop_task(task_id)
-        self.desktop.blocked[task_id] = "The user took over. Ask before using the desktop again."
+        self.desktop_state.drop_task(task_id)
+        self.desktop_state.blocked[task_id] = "The user took over. Ask before using the desktop again."
         if not any(event["type"] == "control.takeover" for event in self.store.events(task_id)):
             self._emit(task_id, "control.takeover", {"message": "You have control"})
         self._mark_cancelled(task_id)
@@ -1529,7 +1527,7 @@ class AgentManager:
 
                 async def _request() -> Any:
                     attempt_no[0] += 1
-                    if not read_only:
+                    if self._desktop_wanted(task_id, task, provider, read_only):
                         # So the first turn after a restart already offers desktop control when it is ready.
                         await agent_desktop.get_client().ensure_fresh()
                     kwargs: dict[str, Any] = {
@@ -2114,9 +2112,9 @@ class AgentManager:
                         provider_turn_id=turn_id,
                         payload={
                             "task_id": task_id,
-                            "call": self._call_payload(call),
-                            "remaining_calls": [self._call_payload(item) for item in calls[index + 1:]],
-                            "history": history,
+                            "call": self._stored_call_payload(call),
+                            "remaining_calls": [self._stored_call_payload(item) for item in calls[index + 1:]],
+                            "history": storable_history(history),
                             "step": step,
                             "started_at": started_at,
                             # Identity only: never persist or reconstruct a permit.
@@ -2286,11 +2284,11 @@ class AgentManager:
                     provider_turn_id=turn_id,
                     payload={
                         "task_id": task_id,
-                        "call": self._call_payload(call),
+                        "call": self._stored_call_payload(call),
                         "remaining_calls": [
-                            self._call_payload(item) for item in calls[index + 1 :]
+                            self._stored_call_payload(item) for item in calls[index + 1 :]
                         ],
-                        "history": history,
+                        "history": storable_history(history),
                         "step": step,
                         "started_at": started_at,
                     },
@@ -2652,6 +2650,19 @@ class AgentManager:
         # register() is an idempotent upsert keyed on the resolved path, so a
         # forgotten project is re-registered instead of leaving a stale id.
         return str(self._files_service().register(cwd)["id"])
+
+    def _desktop_wanted(self, task_id: str, task: dict[str, Any], provider: dict[str, Any], read_only: bool) -> bool:
+        """Whether this turn could be offered the desktop tools at all. Nothing about the CLI is probed otherwise."""
+        if read_only or not self.tools_supported(provider, provider["model"]):
+            return False
+        if not set(provider.get("capabilities") or []) & {"functions", "computer"}:
+            return False
+        preset = (self.store.task_agent(task) or {}).get("tools")
+        if preset and not ({"computer"} | set(DESKTOP_TOOLS)) & set(preset):
+            return False
+        if self.is_unattended is not None and self.is_unattended(task_id):
+            return self.computer_permission is not None and self.computer_permission(task_id) is not None
+        return True
 
     def computer_limits(self, task_id: str) -> tuple[list[str] | None, dict[str, Any] | None]:
         """The applications this task may drive and, when it runs unattended, the permission it runs under.
@@ -3470,6 +3481,13 @@ class AgentManager:
         }
 
     @staticmethod
+    def _stored_call_payload(call: ProviderCall) -> dict[str, Any]:
+        """The call as written to a durable checkpoint: text typed into other applications is not kept."""
+        payload = AgentManager._call_payload(call)
+        payload["arguments"] = storable_call(call.name, call.arguments)
+        return payload
+
+    @staticmethod
     def _public_value(value: Any) -> Any:
         if isinstance(value, str):
             return redact(value)
@@ -3555,7 +3573,7 @@ class AgentManager:
         self._context_engines.pop(task_id, None)
         self._metrics.pop(task_id, None)
         self._steering.pop(task_id, None)
-        self.desktop.drop_task(task_id)
+        self.desktop_state.drop_task(task_id)
         client = agent_desktop.get_client()
         client.kill_task(task_id)
         client.cleanup_task(task_id)

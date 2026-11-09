@@ -47,6 +47,15 @@ def isolated_virtual_registry(monkeypatch: pytest.MonkeyPatch):
     virtual._impls.clear()
 
 
+@pytest.fixture(autouse=True)
+def no_real_process_tree(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Desktop control refuses TermX's ancestor processes. Tests never walk the real process tree (it differs per host,
+    and a fake application pid could collide with a real ancestor). Tests that need ancestors patch ``ancestor_pids``."""
+    from termx.agent import desktop_data
+
+    monkeypatch.setattr(desktop_data, "ancestor_pids", lambda: frozenset({0}))
+
+
 @pytest.fixture
 def desktop_platform(monkeypatch: pytest.MonkeyPatch):
     """Judge desktop actions as the named OS does (macos, linux, windows) without changing the real platform."""

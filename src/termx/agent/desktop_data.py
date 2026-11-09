@@ -41,13 +41,36 @@ _ACTION_NAME = re.compile(r"^[a-z][a-z0-9_]{0,29}$")
 _PASSWORDISH = re.compile(
     r"\b(pass(word|code|phrase)?|pin|secret|token|api[ _-]?key|cvv|cvc|card number|ssn|otp|2fa|private key)\b"
 )
+# English-only heuristic. A label that starts with one of these verbs asks, and so does a short label that contains one
+# of the stronger verbs as a whole word ("Yes, send it", "Approve once"). Asking is the safe direction when it over-matches.
 _CONSEQUENTIAL = re.compile(
-    r"^(send|submit|post|publish|pay|buy|purchase|place order|confirm|delete|remove|erase|transfer|sign in|log in|"
-    r"install|allow|grant|authorize|accept)\b"
+    r"^(send|submit|post|publish|pay|buy|purchase|place order|confirm|delete|remove|erase|transfer|sign in|log in|log out|"
+    r"sign out|logout|signout|install|uninstall|allow|grant|authorize|authorise|accept|approve|run|execute|yes|continue|"
+    r"reset|restart|shut down|shutdown|empty|discard|revoke|unlock|enable|overwrite|replace|format|wipe|reboot|power off)\b"
 )
+_CONSEQUENTIAL_ANYWHERE = re.compile(
+    r"\b(send|submit|approve|allow|delete|confirm|pay|purchase|install|uninstall|authorize|authorise|erase|grant|transfer|"
+    r"publish|accept|revoke|discard|remove|wipe)\b"
+)
+_ANYWHERE_MAX = 48
 # Ancestors of the backend process: the terminal or app that started TermX is also the one holding the OS grant.
 SELF_BUNDLES = frozenset({"com.jaexxxy.termx"})
-SELF_NAMES = frozenset({"termx"})
+SELF_NAMES = frozenset({"termx", "termx.exe"})
+# The TermX workspace also runs in a browser tab, which is just another browser window to the accessibility tree. A browser
+# therefore asks every time, and a window whose title names TermX is refused as TermX itself.
+SELF_TITLE_WORDS = ("termx",)
+BROWSER_NAMES = frozenset(
+    {
+        "google chrome", "chrome", "chromium", "safari", "safari technology preview", "firefox", "firefox developer edition",
+        "microsoft edge", "msedge", "edge", "brave browser", "brave", "arc", "opera", "vivaldi", "orion", "zen", "zen browser",
+        "duckduckgo", "tor browser", "librewolf", "waterfox", "chrome.exe", "firefox.exe", "msedge.exe", "brave.exe", "opera.exe",
+        "vivaldi.exe", "chromium-browser", "google-chrome", "microsoft-edge",
+    }
+)
+BROWSER_BUNDLE_PREFIXES = (
+    "com.google.chrome", "org.chromium", "com.apple.safari", "org.mozilla.", "com.microsoft.edgemac", "com.brave.browser",
+    "company.thebrowser.", "com.operasoftware.", "com.vivaldi.", "com.kagi.kagimacos", "app.zen-browser.", "com.duckduckgo.",
+)
 COMMAND_NAMES = frozenset(
     {
         "terminal", "iterm2", "iterm", "warp", "ghostty", "alacritty", "kitty", "wezterm", "windows terminal", "windowsterminal",
@@ -153,7 +176,9 @@ def node_flags(raw: dict[str, Any]) -> tuple[bool, bool]:
     states = {fold(item) for item in raw.get("states") or [] if isinstance(item, str)}
     texts = [fold(raw.get(key)) for key in ("name", "description", "help", "title")]
     sensitive = "secure" in role or "password" in role or "secure" in states or any(_PASSWORDISH.search(item) for item in texts)
-    consequential = any(_CONSEQUENTIAL.search(item) for item in texts if item)
+    consequential = any(
+        _CONSEQUENTIAL.search(item) or (len(item) <= _ANYWHERE_MAX and _CONSEQUENTIAL_ANYWHERE.search(item)) for item in texts if item
+    )
     return sensitive, consequential
 
 
@@ -308,6 +333,7 @@ class AppRecord:
     process_instance: str
     instances: int = 1
     windows: dict[str, int] = field(default_factory=dict)
+    shows_termx: bool = False  # a window of this browser was seen with a title naming TermX
 
     @property
     def names(self) -> frozenset[str]:
@@ -331,14 +357,26 @@ class AppRecord:
         return f"{self.label} ({ident})" if ident else self.label
 
     def app_class(self) -> str | None:
-        """'self' (never controllable) or 'command' (can run commands or change security settings), else None."""
+        """'self' (never controllable), 'command' (can run commands or change security settings), 'browser' (may show the
+        TermX workspace; always asks), else None."""
         ids = {self.bundle_id.casefold(), self.executable.casefold()} - {""}
         name = self.name.casefold()
-        if ids & SELF_BUNDLES or name in SELF_NAMES or self.pid in ancestor_pids():
+        exe = os.path.basename(self.executable.replace("\\", "/")).casefold()
+        if ids & SELF_BUNDLES or name in SELF_NAMES or exe in SELF_NAMES or self.pid in ancestor_pids():
+            return "self"
+        if self.shows_termx:
             return "self"
         if ids & COMMAND_BUNDLE_IDS or name in COMMAND_NAMES or self.executable.casefold() in COMMAND_NAMES:
             return "command"
+        if name in BROWSER_NAMES or exe in BROWSER_NAMES or self.bundle_id.casefold().startswith(BROWSER_BUNDLE_PREFIXES):
+            return "browser"
         return None
+
+    def note_window_titles(self, titles: list[Any]) -> bool:
+        """Remember that a window shows TermX. Only a browser can show it, so any other application is left alone."""
+        if self.app_class() == "browser" and any(any(word in fold(title) for word in SELF_TITLE_WORDS) for title in titles if title):
+            self.shows_termx = True
+        return self.shows_termx
 
 
 def parse_apps(data: Any) -> list[dict[str, Any]]:
@@ -368,6 +406,8 @@ class AppHandles:
         grouped: OrderedDict[tuple[str, str], list[dict[str, Any]]] = OrderedDict()
         for row in rows:
             presentation = row.get("presentation")
+            if not ad.valid_app_name(row.get("name")):
+                continue  # a name the CLI cannot be given back is not offered, so a model cannot pick it
             if presentation == "foreground" or (presentation is None and os_name != "macos"):
                 grouped.setdefault((str(row["name"]), str(row.get("bundle_id") or "")), []).append(row)
         table = self._by_task.setdefault(task_id, OrderedDict())
@@ -382,8 +422,10 @@ class AppHandles:
                 instances=len({item.get("pid") for item in group}),
             )
             previous = table.get(record.handle)
-            if previous is not None:
-                record.windows = previous[1].windows
+            if previous is not None:  # one object per handle, so what was learned about its windows is not lost
+                record = previous[1]
+                record.instances = len({item.get("pid") for item in group})
+                record.executable = str(row.get("executable") or "") or record.executable
             table[record.handle] = (now, record)
             table.move_to_end(record.handle)
             records.append(record)
@@ -508,3 +550,41 @@ class DesktopState:
         self.blocked.pop(task_id, None)
         for key in [k for k in self._streaks if k[0] == task_id]:
             self._streaks.pop(key, None)
+
+
+# --------------------------------------------------------------------------- storage
+
+STORED_NOTE = "Screen text from another application is not kept after the step that read it."
+
+
+def storable_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Arguments of a call as they may be persisted. Text typed into another application is dropped.
+
+    A replayed ``desktop_act`` without its text is refused in-band (text is required for set_value and type), so
+    recovery asks the model for a new snapshot instead of typing something it no longer has."""
+    if name == "desktop_act" and "text" in arguments:
+        return {key: value for key, value in arguments.items() if key != "text"}
+    return arguments
+
+
+def storable_history(items: list[Any]) -> list[Any]:
+    """History for a checkpoint: screen text and typed text of desktop calls are replaced, the rest is untouched."""
+    out: list[Any] = []
+    for item in items:
+        if isinstance(item, dict):
+            if item.get("type") == "function_call_output" and isinstance(item.get("output"), str) and '"screen"' in item["output"]:
+                try:
+                    body = json.loads(item["output"])
+                except ValueError:
+                    body = None
+                if isinstance(body, dict) and "screen" in body:
+                    item = {**item, "output": json.dumps({"ok": body.get("ok", True), "elided": STORED_NOTE})}
+            elif item.get("type") == "function_call" and item.get("name") == "desktop_act" and isinstance(item.get("arguments"), str):
+                try:
+                    args = json.loads(item["arguments"])
+                except ValueError:
+                    args = None
+                if isinstance(args, dict) and "text" in args:
+                    item = {**item, "arguments": json.dumps(storable_call("desktop_act", args))}
+        out.append(item)
+    return out

@@ -241,8 +241,17 @@ def req_list_windows(app_name: str) -> Request:
     return _make("list-windows", [f"--app={_app_name(app_name)}", "--timeout-ms=5000"], wall_s=8.0, kind="meta", session=False)
 
 
+def valid_app_name(value: Any) -> bool:
+    """Whether an application name can be passed to the CLI. An OS-reported name that fails this is not offered to the model."""
+    return isinstance(value, str) and 1 <= len(value) <= 200 and not value.startswith("-") and value.isprintable()
+
+
+def valid_window_id(value: Any) -> bool:
+    return isinstance(value, str) and _WINDOW.fullmatch(value) is not None
+
+
 def _app_name(value: Any) -> str:
-    if not isinstance(value, str) or not 1 <= len(value) <= 200 or value.startswith("-") or not value.isprintable():
+    if not valid_app_name(value):
         raise ValueError("application name is not valid")
     return value
 

@@ -91,6 +91,17 @@ application's accessibility on. A snapshot is therefore not side-effect free.
 - Applications that are TermX itself, its ancestors, or can run commands or change
   security settings are denied or asked every time (see
   [Autonomous agents](autonomous-agents.md)).
+- The TermX workspace also runs in a browser tab, which the accessibility tree
+  shows as an ordinary browser window. Every use of a browser asks, cannot be
+  remembered and is denied in scheduled runs, and a browser with a window titled
+  for TermX is treated as TermX itself. The title check is a heuristic: a tab
+  that is not frontmost, or a renamed one, is not seen, so the per-use approval
+  is what protects TermX's own approval buttons.
+- Labels that start with, or in a short label contain, words such as send, submit,
+  approve, allow, run, delete, pay, install, reset or sign out count as
+  consequential (English only).
+- Typed text and screen text are not written to execution checkpoints. Replaying
+  a typing step after a restart is refused and the model takes a new snapshot.
 - Accessibility text is untrusted. It reaches the model between `SCREEN` markers
   with a fresh random id, control and bidirectional characters stripped, secrets
   redacted, strings and totals capped and secure fields shown as `[hidden]`. This

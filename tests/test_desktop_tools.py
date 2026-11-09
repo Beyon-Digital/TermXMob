@@ -132,7 +132,7 @@ def test_a_root_drill_adds_refs_to_the_same_snapshot_and_a_cut_ref_cannot_be_use
     drill = full(run(ctx, call("desktop_snapshot", {"root": f"@{SID}:e1"})))
 
     assert first["snapshot"] == drill["snapshot"] == SID
-    state = ctx.manager.desktop
+    state = ctx.manager.desktop_state
     assert state.snapshots.lookup(ctx.task_id, f"@{SID}:e20") and state.snapshots.lookup(ctx.task_id, f"@{SID}:e2")
 
 
@@ -145,7 +145,7 @@ def test_find_accepts_both_answer_shapes_and_registers_only_ref_matches(desk):
     body = full(run(ctx, call("desktop_find", {"app_id": handle, "name": "Save", "exact": True})))
 
     assert body["ok"] and "(context) row" in body["screen"] and "@s9find99999:e3" in body["screen"]
-    assert ctx.manager.desktop.snapshots.lookup(ctx.task_id, "@s9find99999:e3") and not ctx.manager.desktop.snapshots.lookup(ctx.task_id, "@s9find99999:e1")
+    assert ctx.manager.desktop_state.snapshots.lookup(ctx.task_id, "@s9find99999:e3") and not ctx.manager.desktop_state.snapshots.lookup(ctx.task_id, "@s9find99999:e1")
 
 
 def test_get_reads_long_text_up_to_a_cap_inside_the_block(desk):
@@ -282,8 +282,8 @@ def test_a_success_resets_the_failure_count(desk):
                                                                           {"envelope": ok("click", {"disposition": {"delivery": "delivered_verified"}})}]}})
     for _ in range(3):
         run(ctx, call("desktop_act", {"ref": f"@{SID}:e1", "action": "click"}))
-    record = next(iter(ctx.manager.desktop.handles._by_task[ctx.task_id].values()))[1]
-    assert ctx.manager.desktop.streak(ctx.task_id, record.handle) == 0
+    record = next(iter(ctx.manager.desktop_state.handles._by_task[ctx.task_id].values()))[1]
+    assert ctx.manager.desktop_state.streak(ctx.task_id, record.handle) == 0
 
 
 # -- identity races --------------------------------------------------------------------------------------------------
@@ -523,3 +523,139 @@ def test_runners_never_offer_the_desktop_tools():
     from termx.runners.worker import TOOLS
 
     assert not set(tools.DESKTOP_TOOLS) & set(TOOLS) and "use_computer" not in TOOLS and "computer" not in TOOLS
+
+
+# -- review fixes: browsers, labels, unnameable apps, stored text -------------------------------------------------
+
+
+@pytest.mark.parametrize("label", [
+    "Approve", "Approve once", "Run now", "Execute", "Yes, send it", "Continue", "Uninstall", "Reset all settings", "Restart now",
+    "Shut Down", "Log out", "Sign out", "Empty Trash", "Discard changes", "Revoke access", "Unlock", "Enable", "Allow once", "Delete all",
+])
+def test_more_consequential_labels_are_flagged(label):
+    sensitive, consequential = dd.node_flags({"role": "button", "name": label})
+    assert consequential is True and sensitive is False
+
+
+@pytest.mark.parametrize("label", ["Save", "Cancel", "Open", "Search", "Preferences", "Close", "Notes", "Title of the long paragraph " + "x" * 60])
+def test_ordinary_labels_are_not_flagged(label):
+    assert dd.node_flags({"role": "button", "name": label})[1] is False
+
+
+def test_a_long_text_that_merely_mentions_a_verb_is_not_flagged():
+    text = "Please remember that we will " + "talk about it later " * 5 + "and send nothing"
+    assert dd.node_flags({"role": "statictext", "name": text})[1] is False
+
+
+def test_a_browser_window_titled_for_termx_is_refused_with_no_action(desk):
+    ctx = make_ctx()
+    chrome = app_row("Google Chrome", 6100, "com.google.Chrome")
+    root = tree(SID, node("button", "Approve once", f"@{SID}:e1", available_actions=["Click"]))
+    desk.arrange_apps((chrome, [window_row("w-9", chrome, title="TermX Workspace - Google Chrome")], root))
+    listing = full(run(ctx, call("desktop_apps")))
+    handle = re.search(r"\ba[0-9a-f]{8}\b", listing["screen"]).group(0)
+
+    windows = full(run(ctx, call("desktop_apps", {"app_id": handle})))
+    shown = snapshot(ctx, handle).result
+
+    assert windows["error"] == "denied" and shown["refused"] is True and "own interface" in shown["error"]
+    assert "snapshot" not in desk.commands()
+    record = ctx.manager.desktop_state.handles.get(ctx.task_id, handle)
+    assert record.app_class() == "self"
+
+
+def test_a_snapshot_whose_window_is_titled_for_termx_registers_no_refs(desk):
+    ctx = make_ctx()
+    chrome = app_row("Google Chrome", 6100, "com.google.Chrome")
+    root = tree(SID, node("button", "Approve once", f"@{SID}:e1"))
+    desk.arrange_apps((chrome, [window_row("w-9", chrome, title="Inbox")], root))
+    handle = re.search(r"\ba[0-9a-f]{8}\b", full(run(ctx, call("desktop_apps")))["screen"]).group(0)
+    run(ctx, call("desktop_apps", {"app_id": handle}))
+    desk.rules({"match": {"command": "snapshot"}, "respond": {"envelope": ok("snapshot", {
+        "app": "Google Chrome", "complete": True, "snapshot_id": SID, "window": {"id": "w-9", "title": "TermX Workspace"},
+        "tree": {"role": "window", "name": "x", "ref_id": f"@{SID}:e1"}})}})
+
+    body = full(snapshot(ctx, handle, window_id="w-9"))
+
+    assert body["error"] == "denied"
+    assert ctx.manager.desktop_state.snapshots.lookup(ctx.task_id, f"@{SID}:e1") is None
+
+
+def test_a_browser_is_listed_but_always_asks(desk):
+    ctx = make_ctx()
+    chrome = app_row("Safari", 6100, "com.apple.Safari")
+    desk.arrange_apps((chrome, [window_row("w-9", chrome, title="Docs")], tree(SID, node("button", "Reload", f"@{SID}:e1"))))
+    listing = full(run(ctx, call("desktop_apps")))
+    handle = re.search(r"\ba[0-9a-f]{8}\b", listing["screen"]).group(0)
+    record = ctx.manager.desktop_state.handles.get(ctx.task_id, handle)
+
+    assert "Safari" in listing["screen"] and record.app_class() == "browser"
+    plan = tools._gate(call("desktop_snapshot", {"app_id": handle}), ctx)
+    assert plan.ask is not None and plan.ask[0] == "Browser"
+
+
+def test_an_unattended_run_cannot_use_a_browser_even_with_a_grant(desk):
+    ctx = make_ctx()
+    ctx.manager.is_unattended = lambda _t: True
+    ctx.manager.computer_permission = lambda _t: {"apps": ["Safari"], "max_seconds": 60, "run_id": "r"}
+    ctx.manager.computer_limits = lambda _t: (["Safari"], ctx.manager.computer_permission(_t))
+    state = tools._state(ctx)
+    app = state.handles.update(ctx.task_id, [app_row("Safari", 6100, "com.apple.Safari")])[-1]
+
+    with pytest.raises(tools._Deny) as denied:
+        tools._gate(call("desktop_snapshot", {"app_id": app.handle}), ctx)
+
+    assert denied.value.code == "unattended_ask"
+
+
+def test_unnameable_applications_are_not_offered_and_never_raise(desk):
+    ctx = make_ctx()
+    odd = app_row("Foo Bar", 6200, "com.example.odd")
+    dash = app_row("-rf", 6201, "com.example.dash")
+    notes = app_row("Notes", 6001, "com.apple.Notes")
+    desk.arrange_apps((notes, [window_row("w-7", notes)], tree(SID, node("button", "Save", f"@{SID}:e1"))), (odd, [], None), (dash, [], None))
+
+    listing = full(run(ctx, call("desktop_apps")))
+
+    assert "Foo" not in listing["screen"] and "-rf" not in listing["screen"] and "Notes" in listing["screen"]
+
+
+def test_a_record_whose_name_cannot_be_passed_fails_in_band(desk):
+    ctx = make_ctx()
+    state = tools._state(ctx)
+    record = dd.AppRecord("a1234abcd", "Foo Bar", "com.example.odd", "", 6200, "p1")
+    state.handles._by_task.setdefault(ctx.task_id, dd.OrderedDict())[record.handle] = (state.handles._clock(), record)
+
+    for name, args in (("desktop_snapshot", {"app_id": record.handle}), ("desktop_find", {"app_id": record.handle, "role": "button"}),
+                       ("desktop_apps", {"app_id": record.handle})):
+        outcome = run(ctx, call(name, args))
+        assert outcome.items[0]["type"] == "function_call_output" or outcome.result.get("refused") is True
+
+
+def test_stored_history_drops_screen_text_and_typed_text():
+    screen = dd.screen_block("secret subject line")
+    history = [
+        {"role": "user", "content": "hi"},
+        {"type": "function_call", "call_id": "c1", "name": "desktop_act", "arguments": json.dumps({"ref": "@s1abc2:e1", "action": "type", "text": "my new password"})},
+        {"type": "function_call_output", "call_id": "c1", "output": json.dumps({"ok": True, "screen": screen})},
+        {"type": "function_call_output", "call_id": "c2", "output": json.dumps({"ok": True, "stdout": "keep me"})},
+    ]
+    stored = dd.storable_history(history)
+    dumped = json.dumps(stored)
+
+    assert "my new password" not in dumped and "secret subject line" not in dumped and "keep me" in dumped
+    assert json.loads(stored[1]["arguments"]) == {"ref": "@s1abc2:e1", "action": "type"}
+    assert history[1]["arguments"].count("my new password") == 1  # the live history is untouched
+    assert dd.storable_call("desktop_act", {"ref": "r", "action": "type", "text": "x"}) == {"ref": "r", "action": "type"}
+    assert dd.storable_call("shell", {"text": "x"}) == {"text": "x"}
+
+
+def test_a_replayed_typing_call_without_its_text_is_refused_in_band(desk):
+    ctx = make_ctx()
+    handle = open_notes(desk, ctx, [node("textfield", "Body", f"@{SID}:e1", available_actions=["SetValue"])])
+    snapshot(ctx, handle)
+
+    outcome = run(ctx, call("desktop_act", dd.storable_call("desktop_act", {"ref": f"@{SID}:e1", "action": "set_value", "text": "hello"})))
+
+    assert outcome.result["refused"] is True and "text is required" in outcome.result["error"]
+    assert "set-value" not in desk.commands()

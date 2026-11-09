@@ -24,7 +24,8 @@ from termx.desktop import agent_desktop as ad
 from termx.desktop import apps as desktop_apps
 
 RETIRED = "use_computer"
-NOT_SET_UP = "Desktop control is not set up on this computer. Tell the user to open Settings, Tools & connections, Desktop control."
+NOT_SET_UP = "Desktop control is not set up on this computer. Tell the user it needs the pinned agent-desktop build (see docs/desktop-control.md)."
+_SELF_TEXT = "TermX cannot control its own interface or the application that started it."
 _REF = {"type": "string", "pattern": r"^@s[0-9a-z]{4,40}:e[0-9]{1,6}$"}
 _APP = {"type": "string", "pattern": r"^a[0-9a-f]{8}$"}
 _WIN = {"type": "string", "pattern": r"^w-[0-9]{1,9}$"}
@@ -98,11 +99,11 @@ class Plan:
 
 def _state(ctx: ToolContext) -> dd.DesktopState:
     manager = ctx.manager
-    state = getattr(manager, "desktop", None)
+    state = getattr(manager, "desktop_state", None)
     if state is None:
         state = dd.DesktopState()
         try:
-            manager.desktop = state
+            manager.desktop_state = state
         except AttributeError:
             pass
     return state
@@ -216,7 +217,7 @@ def _gate(call: ProviderCall, ctx: ToolContext) -> Plan:
         if record.instances > 1:
             raise _Deny("Several copies running", f"{record.label} has several copies running and the host cannot pick between them yet.", "copies")
         if kind == "self":
-            raise _Deny("TermX cannot control its own interface", "TermX cannot control its own interface or the application that started it.", "self")
+            raise _Deny("TermX cannot control its own interface", _SELF_TEXT, "self")
         if name == "desktop_act" and state.streak(ctx.task_id, record.handle) >= dd.DesktopState.STALE_REFUSE:
             raise _Deny("Stopped: repeated failures", "Stopped: repeated failures. Tell the user what you were trying to do.", "stale_loop")
         if name == "desktop_get" and plan.node is not None and plan.node.sensitive:
@@ -230,6 +231,8 @@ def _gate(call: ProviderCall, ctx: ToolContext) -> Plan:
 def _risk(plan: Plan, kind: str | None, state: dd.DesktopState, ctx: ToolContext) -> tuple[str, str] | None:
     record, node, args = plan.record, plan.node, plan.args
     assert record is not None
+    if kind == "browser":
+        return "Browser", f"{record.display} can show TermX's own approval screen or private pages, so every use is confirmed"
     if plan.name == "desktop_act":
         text = f"{args.get('text', '')} {args.get('option', '')}"
         action = args["action"]
@@ -362,7 +365,7 @@ def _error_outcome(call: ProviderCall, ctx: ToolContext, error: ad.CliError, pla
         return _fail(call, "slow", "after_new_snapshot", "The application was too slow. Try again with a larger timeout_ms, or read a smaller part with root.")
     if kind == "permission":
         ad.get_client().mark_permission_denied()
-        return _fail(call, "permission", "no", "This computer has not allowed TermX to read other applications. Tell the user to open Settings, Tools & connections, Desktop control.")
+        return _fail(call, "permission", "no", "This computer has not allowed TermX to read other applications. Tell the user to grant the accessibility permission (see docs/desktop-control.md).")
     checks: list[str] = [str(c["check"]) for c in (error.details.get("checks") or []) if isinstance(c, dict) and c.get("check") in {
         "visible", "stable", "enabled", "supported_action", "editable", "receives_events"}]
     if action and error.delivery not in {None, "not_delivered"}:
@@ -372,7 +375,11 @@ def _error_outcome(call: ProviderCall, ctx: ToolContext, error: ad.CliError, pla
 
 
 async def _identity_ok(ctx: ToolContext, record: dd.AppRecord, owner: str) -> bool:
-    env = await ad.get_client().run(ad.req_list_apps(record.name), task_id=ctx.task_id, owner=owner, cancel=ctx.cancel)
+    try:
+        request = ad.req_list_apps(record.name)
+    except ValueError:  # a name the CLI cannot be given: the application cannot be confirmed
+        return False
+    env = await ad.get_client().run(request, task_id=ctx.task_id, owner=owner, cancel=ctx.cancel)
     rows = [row for row in dd.parse_apps(env.data) if row.get("name") == record.name and str(row.get("bundle_id") or "") == record.bundle_id] if env.ok else []
     if len({row.get("pid") for row in rows}) != 1:
         return False
@@ -440,19 +447,36 @@ async def _apps(call: ProviderCall, ctx: ToolContext, plan: Plan) -> ToolOutcome
     records = state.handles.update(ctx.task_id, dd.parse_apps(env.data))
     limits = getattr(ctx.manager, "computer_limits", None)
     apps = limits(ctx.task_id)[0] if limits is not None else None
-    allowed = [r for r in records if r.app_class() is None and (apps is None or desktop_apps.matches_app(r.name, r.bundle_id, r.executable, apps))]
+    allowed = [r for r in records if r.app_class() in {None, "browser"} and (apps is None or desktop_apps.matches_app(r.name, r.bundle_id, r.executable, apps))]
     if plan.record is None:
         body = dd.render_apps(allowed)
         full = {"ok": True, "count": len(allowed), "screen": dd.screen_block(body), "next": dd.SCREEN_NOTE + " Pass an app_id to desktop_snapshot."}
         return _outcome(call, full, "Look at open apps")
     record = plan.record
-    env = await client.run(ad.req_list_windows(record.name), task_id=ctx.task_id, owner=owner, cancel=ctx.cancel)
-    if not env.ok:
-        return _error_outcome(call, ctx, env.error or _UNKNOWN_ERROR, plan, False)
-    rows = [row for row in dd.parse_windows(env.data) if row.get("pid") in (None, record.pid) and ad._WINDOW.fullmatch(str(row.get("id")))]  # noqa: SLF001
-    record.windows = {str(row["id"]): record.pid for row in rows}
+    rows, error = await _list_windows(ctx, record, owner, visible_only=False)
+    if error is not None:
+        return _error_outcome(call, ctx, error, plan, False)
+    if record.app_class() == "self":
+        return _fail(call, "denied", "no", _SELF_TEXT)
     full = {"ok": True, "count": len(rows), "screen": dd.screen_block(dd.render_windows(rows)), "next": dd.SCREEN_NOTE}
     return _outcome(call, full, "Look at app windows")
+
+
+async def _list_windows(ctx: ToolContext, record: dd.AppRecord, owner: str, *, visible_only: bool) -> tuple[list[dict[str, Any]], ad.CliError | None]:
+    """The windows of one application, filtered once. A browser window titled for TermX marks the application as TermX itself."""
+    try:
+        request = ad.req_list_windows(record.name)
+    except ValueError:
+        return [], ad.CliError("APP_NOT_FOUND")
+    env = await ad.get_client().run(request, task_id=ctx.task_id, owner=owner, cancel=ctx.cancel)
+    if not env.ok:
+        return [], env.error or _UNKNOWN_ERROR
+    rows = [row for row in dd.parse_windows(env.data) if row.get("pid") in (None, record.pid) and ad.valid_window_id(row.get("id"))]
+    if visible_only:
+        rows = [row for row in rows if row.get("visible") is not False]
+    record.note_window_titles([row.get("title") for row in rows])
+    record.windows = {str(row["id"]): record.pid for row in rows}
+    return rows, None
 
 
 async def _choose_window(ctx: ToolContext, record: dd.AppRecord, requested: str | None, owner: str) -> str | None:
@@ -460,10 +484,8 @@ async def _choose_window(ctx: ToolContext, record: dd.AppRecord, requested: str 
         if requested not in record.windows:
             raise _Deny("Unknown window", "Unknown window. Call desktop_apps with this app_id first and use a window_id from it.", "unknown_window")
         return requested
-    env = await ad.get_client().run(ad.req_list_windows(record.name), task_id=ctx.task_id, owner=owner, cancel=ctx.cancel)
-    rows = [row for row in dd.parse_windows(env.data) if row.get("pid") in (None, record.pid) and row.get("visible") is not False] if env.ok else []
-    record.windows = {str(row["id"]): record.pid for row in rows}
-    return str(rows[0]["id"]) if len(rows) == 1 and ad._WINDOW.fullmatch(str(rows[0]["id"])) else None  # noqa: SLF001
+    rows, _error = await _list_windows(ctx, record, owner, visible_only=True)
+    return str(rows[0]["id"]) if len(rows) == 1 else None
 
 
 async def _snapshot(call: ProviderCall, ctx: ToolContext, plan: Plan) -> ToolOutcome:
@@ -480,6 +502,8 @@ async def _snapshot(call: ProviderCall, ctx: ToolContext, plan: Plan) -> ToolOut
             window = await _choose_window(ctx, record, args.get("window_id"), owner)
         except _Deny as denial:
             return _fail(call, "unknown_window", "no", denial.consequence)
+        if record.app_class() == "self":
+            return _fail(call, "denied", "no", _SELF_TEXT)
     try:
         if call.name == "desktop_snapshot":
             request = ad.req_snapshot(app_name=None if root else record.name, window_id=window, surface=surface, mode=args.get("mode", "controls"),
@@ -495,6 +519,9 @@ async def _snapshot(call: ProviderCall, ctx: ToolContext, plan: Plan) -> ToolOut
     if not env.ok:
         return _error_outcome(call, ctx, env.error or _UNKNOWN_ERROR, plan, False)
     data = env.data if isinstance(env.data, dict) else {}
+    shown_window = data.get("window")
+    if isinstance(shown_window, dict) and record.note_window_titles([shown_window.get("title")]):
+        return _fail(call, "denied", "no", _SELF_TEXT)
     if call.name == "desktop_snapshot" and str(data.get("app", "")).casefold() != record.name.casefold():
         return _fail(call, "failed", "no", "The CLI answered for a different application, so nothing is shown.")
     if window is not None and isinstance(data.get("window"), dict) and data["window"].get("id") != window:

@@ -15,14 +15,6 @@ MAX_APPS = 20
 _ENTRY = re.compile(r'[A-Za-z0-9][A-Za-z0-9 ._+()/\\:-]{0,199}')
 
 
-class AppBlocked(PermissionError):
-    """An application is outside the active application list. ``details`` is the public event payload."""
-
-    def __init__(self, message: str, details: dict[str, Any]) -> None:
-        super().__init__(message)
-        self.details = details
-
-
 def verifiable() -> bool:
     """True where this host's platform has a pinned, verifiable agent-desktop build, so a list can be enforced."""
     from termx.desktop.agent_desktop import get_client
