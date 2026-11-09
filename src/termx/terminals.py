@@ -74,13 +74,13 @@ class PosixTerminal:
 
     def read(self, timeout: float = 0.25) -> bytes | None:
         """Return bytes (b'' on EOF), or None when idle."""
-        import select
+        from termx.fdwait import wait_readable
 
         fd = self.master_fd
         if fd < 0:
             return b""
         try:
-            ready, _, _ = select.select([fd], [], [], timeout)
+            ready = wait_readable(fd, timeout)
         except (OSError, ValueError):
             return b""
         if not ready:

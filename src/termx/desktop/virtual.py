@@ -518,12 +518,12 @@ class HelperAdapter(VirtualAdapter):
 
 
 def _read_line(process: subprocess.Popen[str], timeout: float) -> str | None:
-    import select
+    from termx.fdwait import wait_readable
 
     if process.stdout is None:
         return None
     try:
-        ready, _, _ = select.select([process.stdout], [], [], timeout)
+        ready = wait_readable(process.stdout, timeout)
     except (OSError, ValueError):
         return None
     if not ready:
