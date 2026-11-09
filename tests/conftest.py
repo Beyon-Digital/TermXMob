@@ -26,6 +26,8 @@ def termx_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Catalogue tests opt in; unrelated tests never start real vendor agents.
     monkeypatch.setenv("TERMX_ENGINE_STARTUP_REFRESH", "0")
     monkeypatch.setenv("TERMX_PROVIDER_STARTUP_REFRESH", "0")
+    monkeypatch.setenv("TERMX_AGENT_DESKTOP_STARTUP_REFRESH", "0")
+    monkeypatch.delenv("TERMX_AGENT_DESKTOP", raising=False)
 
 
 @pytest.fixture(autouse=True)

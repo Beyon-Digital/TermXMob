@@ -33,6 +33,7 @@ log = logging.getLogger("termx.desktop.agent_desktop")
 
 PINS_PATH = Path(__file__).with_name("agent_desktop_pins.json")
 PINNED_VERSION = "1.2.0"
+SETTING_ENV = "TERMX_AGENT_DESKTOP"
 ENVELOPE_VERSION = "2.6"
 MAX_STDOUT = 8 * 1024 * 1024
 READ_CONCURRENCY = 4
@@ -535,6 +536,28 @@ class AgentDesktopClient:
         for path in (self.home_root, self.home_root / "bin", self.home_root / "home"):
             self._private_dir(path)
 
+    def ensure_layout(self) -> None:
+        """Create the private state directories (``bin``, ``home``) the installer and the runner use."""
+        self._ensure_root()
+
+    def forget(self) -> None:
+        """Drop the found candidate and the cached status so the next call discovers again (after install or remove)."""
+        self._candidate, self._status, self._issues, self._tampered = None, None, [], False
+
+    async def validate_setting(self, path: str) -> list[dict[str, str]]:
+        """Issues that stop ``path`` from being used as the configured program; empty when it passes the version and helper checks.
+
+        Runs on a throwaway client so the live candidate and cache are untouched.
+        """
+        probe = AgentDesktopClient(
+            home_root=self.home_root, pins=self.pins, platform=self.platform, launcher=self.launcher,
+            setting=path, search_path=[],
+        )
+        await probe._try_configured()
+        if probe._candidate is not None and probe._candidate.source == "configured":
+            return []
+        return list(probe._issues) or [_issue("configured_invalid")]
+
     def home_for(self, owner: str) -> Path:
         self._ensure_root()
         name = hashlib.sha256(owner.encode()).hexdigest()[:16]
@@ -1035,9 +1058,11 @@ _client: AgentDesktopClient | None = None
 def get_client() -> AgentDesktopClient:
     global _client
     if _client is None:
-        _client = AgentDesktopClient(
-            home_root=config_dir() / "desktop-control", setting=os.environ.get("TERMX_AGENT_DESKTOP") or None
-        )
+        from termx.desktop.agent_desktop_setting import load_setting
+
+        home_root = config_dir() / "desktop-control"
+        # The environment wins; otherwise the path the owner saved through the host-admin API. Never a plain config key.
+        _client = AgentDesktopClient(home_root=home_root, setting=os.environ.get(SETTING_ENV) or load_setting(home_root))
     return _client
 
 

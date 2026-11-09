@@ -16,6 +16,7 @@ from termx.graphql.domains.bots import BotMutations, BotQueries
 from termx.graphql.domains.chatgpt import ChatGPTQueries, ChatGPTMutations
 from termx.graphql.domains.chat import ChatMutations, ChatQueries
 from termx.graphql.domains.core import CoreMutations, CoreQueries
+from termx.graphql.domains.desktop_control import DesktopControlMutations, DesktopControlQueries
 from termx.graphql.domains.files import FilesMutations, FilesQueries
 from termx.graphql.domains.memory import MemoryMutations, MemoryQueries
 from termx.graphql.domains.network import NetworkMutations, NetworkQueries
@@ -30,6 +31,7 @@ from termx.graphql.subscriptions import Subscription
 @strawberry.type
 class Query(
     DesktopWorkspaceQueries,
+    DesktopControlQueries,
     CoreQueries,
     WorkspaceQueries,
     FilesQueries,
@@ -50,6 +52,7 @@ class Query(
 
 @strawberry.type
 class Mutation(
+    DesktopControlMutations,
     CoreMutations,
     WorkspaceMutations,
     FilesMutations,

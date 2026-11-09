@@ -334,6 +334,11 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             log_event("agent_registry_sync_error")
         for task_id in state.agent.pending_recoveries():
             asyncio.create_task(state.agent.recover_task(task_id))
+        if os.environ.get("TERMX_AGENT_DESKTOP_STARTUP_REFRESH", "1") != "0":
+            # Re-hash the desktop-control program and read its permission state, off the startup path.
+            from termx.desktop.agent_desktop import get_client as desktop_client
+
+            asyncio.create_task(desktop_client().ensure_fresh(0))
         state.automation.start()
         state.runners.start()
         state.previews.start()

@@ -41,7 +41,9 @@ _SECRET = re.compile(
     r"(?i)(sk-[A-Za-z0-9_-]{16,}|(?:api[_-]?key|token|password|secret)\s*[:=]\s*[^\s]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
 _SENSITIVE_PATH = re.compile(
-    r"(?:^|[\s/\\])(?:\.env(?:\.[^/\\\s]+)?|id_(?:rsa|ed25519)[^/\\\s]*|credentials\.json|[^/\\\s]+\.(?:pem|key))(?:$|\s)",
+    r"(?:^|[\s/\\])(?:\.env(?:\.[^/\\\s]+)?|id_(?:rsa|ed25519)[^/\\\s]*|credentials\.json|[^/\\\s]+\.(?:pem|key))(?:$|\s)"
+    # TermX's desktop-control state: the program that runs with the desktop permission, its saved path, its refmaps.
+    r"|(?:^|[\s/\\])desktop-control[/\\]",
     re.IGNORECASE,
 )
 

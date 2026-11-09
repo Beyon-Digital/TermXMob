@@ -476,6 +476,53 @@ type Deleted {
   deleted: String
 }
 
+type DesktopControlInstallInfo {
+  available: Boolean!
+  asset: String
+  size_bytes: Int
+  host: String!
+  note: String!
+}
+
+input DesktopControlInstallInput {
+  version: String!
+  consent: Boolean!
+}
+
+type DesktopControlIssue {
+  code: String!
+  message: String!
+  action: String!
+}
+
+type DesktopControlPermission {
+  state: String!
+  guidance: String!
+  grant_to: String
+}
+
+type DesktopControlStatus {
+  installed: Boolean!
+  source: String
+  path: String
+  version: String
+  pinned_version: String!
+  verified: Boolean!
+  helper_ok: Boolean
+  platform: String!
+  arch: String!
+  platform_supported: Boolean!
+  platform_reason: String
+  envelope_version: String
+  ready: Boolean!
+  permission: DesktopControlPermission!
+  supported_surfaces: [String!]!
+  issues: [DesktopControlIssue!]!
+  install: DesktopControlInstallInfo!
+  configured_path: String
+  setting_locked: Boolean!
+}
+
 type DetectedSkillSource {
   token: String!
   folder: String!
@@ -849,6 +896,9 @@ input ModelRoutingInput {
 }
 
 type Mutation {
+  desktop_control_install(input: DesktopControlInstallInput!): DesktopControlStatus!
+  desktop_control_remove: DesktopControlStatus!
+  desktop_control_set_path(path: String = null): DesktopControlStatus!
   notify(input: NotifyInput!): Ok!
   request_permissions(input: PermissionsInput = null): JSON!
   set_launch_at_login(enabled: Boolean!): LaunchAtLogin!
@@ -1208,6 +1258,7 @@ type Query {
   ): [Node!]!
   workspace_sessions(query: String! = "", archived: Boolean! = false, project_id: String = null, first: Int! = 50, after: String = null): WorkspaceSessionConnection!
   workspace_turns(session_id: String!, first: Int = null, after: String = null, last: Int = null, before: String = null): WorkspaceTurnConnection!
+  desktop_control_status(refresh: Boolean! = false): DesktopControlStatus!
   health: Health!
   connect_info: ConnectInfo!
   machine: MachineInfo!
