@@ -43,7 +43,8 @@ _SECRET = re.compile(
 _SENSITIVE_PATH = re.compile(
     r"(?:^|[\s/\\])(?:\.env(?:\.[^/\\\s]+)?|id_(?:rsa|ed25519)[^/\\\s]*|credentials\.json|[^/\\\s]+\.(?:pem|key))(?:$|\s)"
     # TermX's desktop-control state: the program that runs with the desktop permission, its saved path, its refmaps.
-    r"|(?:^|[\s/\\])desktop-control[/\\]",
+    # Keep the directory name in step with ``agent_desktop.DIR_NAME``. This is an accident guard, not a boundary.
+    r"|(?:^|[\s/\\])desktop-control(?:[/\\]|$|[\s\"';&|])",
     re.IGNORECASE,
 )
 

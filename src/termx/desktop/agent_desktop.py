@@ -34,6 +34,8 @@ log = logging.getLogger("termx.desktop.agent_desktop")
 PINS_PATH = Path(__file__).with_name("agent_desktop_pins.json")
 PINNED_VERSION = "1.2.0"
 SETTING_ENV = "TERMX_AGENT_DESKTOP"
+# The state directory under the TermX config directory. agent/policy.py names it in its sensitive-path pattern.
+DIR_NAME = "desktop-control"
 ENVELOPE_VERSION = "2.6"
 MAX_STDOUT = 8 * 1024 * 1024
 READ_CONCURRENCY = 4
@@ -532,13 +534,10 @@ class AgentDesktopClient:
             pass
         return path
 
-    def _ensure_root(self) -> None:
-        for path in (self.home_root, self.home_root / "bin", self.home_root / "home"):
-            self._private_dir(path)
-
     def ensure_layout(self) -> None:
         """Create the private state directories (``bin``, ``home``) the installer and the runner use."""
-        self._ensure_root()
+        for path in (self.home_root, self.home_root / "bin", self.home_root / "home"):
+            self._private_dir(path)
 
     def forget(self) -> None:
         """Drop the found candidate and the cached status so the next call discovers again (after install or remove)."""
@@ -559,7 +558,7 @@ class AgentDesktopClient:
         return list(probe._issues) or [_issue("configured_invalid")]
 
     def home_for(self, owner: str) -> Path:
-        self._ensure_root()
+        self.ensure_layout()
         name = hashlib.sha256(owner.encode()).hexdigest()[:16]
         home = self._private_dir(self.home_root / "home" / name)
         self._check_home(home)
@@ -642,14 +641,19 @@ class AgentDesktopClient:
         """Find and fully validate a candidate. Hash first, execute second."""
         self._candidate, self._issues, self._tampered = None, [], False
         supported, reason = self._supported()
+        configured_issues: list[dict[str, str]] = []
         if self.setting:
             await self._try_configured()
+            if self._candidate is None:
+                configured_issues = list(self._issues)
         if self._candidate is None and supported:
             await self._try_managed()
             if self._candidate is None:
                 await self._try_path()
         if self._candidate is not None:
-            self._issues = []  # a fallen-through candidate's issue is moot once another one works
+            # A fallen-through candidate's issue is moot once another one works, except the owner's own explicit
+            # program: if it is unusable and a different copy runs instead, the status must not look all clear.
+            self._issues = configured_issues
         else:
             if len(self._issues) > 1:
                 self._issues = [item for item in self._issues if item["code"] != "not_installed"]
@@ -696,7 +700,7 @@ class AgentDesktopClient:
             self._note("helper_missing")
             return
         # Adopt by copy: the PATH file is never executed, the private copy is.
-        self._ensure_root()
+        self.ensure_layout()
         target_dir = self._private_dir(self.bin_dir)
         for item in (source, helper):
             if item is None:
@@ -1060,7 +1064,7 @@ def get_client() -> AgentDesktopClient:
     if _client is None:
         from termx.desktop.agent_desktop_setting import load_setting
 
-        home_root = config_dir() / "desktop-control"
+        home_root = config_dir() / DIR_NAME
         # The environment wins; otherwise the path the owner saved through the host-admin API. Never a plain config key.
         _client = AgentDesktopClient(home_root=home_root, setting=os.environ.get(SETTING_ENV) or load_setting(home_root))
     return _client

@@ -10,7 +10,6 @@ script that creates the pins verifies it once; this module relies on the checksu
 """
 from __future__ import annotations
 
-import hmac
 import http.client
 import os
 import re
@@ -55,9 +54,8 @@ class InstallError(Exception):
     """An install step failed. ``code`` is stable; the message is ours and never quotes the network or the archive."""
 
     def __init__(self, code: str) -> None:
-        super().__init__(_MESSAGES.get(code, code))
+        super().__init__(_MESSAGES[code])
         self.code = code
-        self.message = _MESSAGES.get(code, code)
 
 
 @dataclass(frozen=True)
@@ -164,7 +162,7 @@ class Installer:
         if total != plan.size:
             path.unlink(missing_ok=True)
             raise InstallError("size_mismatch")
-        if not hmac.compare_digest(digest.hexdigest(), plan.sha256):
+        if digest.hexdigest() != plan.sha256:
             path.unlink(missing_ok=True)
             raise InstallError("hash_mismatch")
         return path
@@ -185,7 +183,7 @@ class Installer:
                     data = source.read(MAX_MEMBER_BYTES + 1)
                     if len(data) > MAX_MEMBER_BYTES:
                         raise InstallError("bad_archive")
-                    if not hmac.compare_digest(sha256(data).hexdigest(), expected[name]):
+                    if sha256(data).hexdigest() != expected[name]:
                         raise InstallError("hash_mismatch")
                     seen.add(name)
                     descriptor = os.open(stage / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o700)
@@ -225,7 +223,10 @@ class Installer:
                 if old is not None and not target.exists():
                     os.replace(old, target)
                     old = None
-                raise InstallError("install_failed") from None
+                raise
+        except OSError:
+            # Our own message only: the OS error text holds local paths.
+            raise InstallError("install_failed") from None
         finally:
             if download is not None:
                 download.unlink(missing_ok=True)
@@ -239,19 +240,23 @@ class Installer:
         """Delete only this version's managed directory (a link is unlinked, never followed). Returns whether it existed."""
         target = self.client.bin_dir
         removed = False
-        if target.is_symlink():
-            target.unlink()
-            removed = True
-        elif os.path.isjunction(target):
-            os.rmdir(target)
-            removed = True
-        elif target.is_dir():
-            if target.resolve().parent != target.parent.resolve():
-                raise InstallError("install_failed")
-            shutil.rmtree(target)
-            removed = True
-        self.client.kill_all()
-        self.client.forget()
+        self.client.kill_all()  # nothing may be running from the files while they are deleted
+        try:
+            if target.is_symlink():
+                target.unlink()
+                removed = True
+            elif os.path.isjunction(target):
+                os.rmdir(target)
+                removed = True
+            elif target.is_dir():
+                if target.resolve().parent != target.parent.resolve():
+                    raise InstallError("install_failed")
+                shutil.rmtree(target)
+                removed = True
+        except OSError:
+            raise InstallError("install_failed") from None
+        finally:
+            self.client.forget()
         return removed
 
 

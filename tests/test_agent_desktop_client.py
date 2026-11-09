@@ -267,6 +267,17 @@ def test_configured_path_skips_the_hash_but_not_version_or_modes(tmp_path):
     assert run(desk.build_client(setting="relative/agent-desktop").status(refresh=True)).issue == "configured_invalid"
 
 
+def test_a_broken_explicit_path_stays_visible_when_the_pinned_copy_is_used_instead(tmp_path):
+    """The owner chose a program; if it is unusable and another copy runs, the status says so rather than showing all clear."""
+    desk = FakeDesktop(tmp_path)
+    missing = str(tmp_path / "gone" / desk.platform.binary_name)
+    client = desk.build_client(setting=missing)
+    status = run(client.status(refresh=True))
+    assert status.installed and status.source == "managed"
+    assert [item["code"] for item in status.issues] == ["configured_invalid"]
+    assert status.ready is False
+
+
 # -- runner ----------------------------------------------------------------------------------------------------
 
 

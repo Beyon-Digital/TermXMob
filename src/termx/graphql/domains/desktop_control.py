@@ -15,7 +15,7 @@ from strawberry.types import Info
 from termx.audit import log_event
 from termx.desktop import agent_desktop as ad
 from termx.desktop import agent_desktop_install as installer
-from termx.desktop.agent_desktop_setting import env_locked, save_setting
+from termx.desktop.agent_desktop_setting import env_locked, save_setting, valid_path
 from termx.graphql import types as T
 from termx.graphql.context import TermxContext
 from termx.graphql.errors import fail, resolver
@@ -133,7 +133,7 @@ class DesktopControlMutations:
         try:
             await asyncio.to_thread(installer.make_installer(client).install)
         except installer.InstallError as exc:
-            fail(_INSTALL_STATUS.get(exc.code, 502), {"message": exc.message, "issue": exc.code})
+            fail(_INSTALL_STATUS.get(exc.code, 502), {"message": str(exc), "issue": exc.code})
         log_event("desktop_control.install", version=client.version, source="managed")
         return _view(client, await client.status(refresh=True))
 
@@ -146,7 +146,7 @@ class DesktopControlMutations:
         try:
             removed = await asyncio.to_thread(installer.make_installer(client).remove)
         except installer.InstallError as exc:
-            fail(500, {"message": exc.message, "issue": exc.code})
+            fail(500, {"message": str(exc), "issue": exc.code})
         log_event("desktop_control.remove", version=client.version, removed=removed)
         return _view(client, await client.status(refresh=True))
 
@@ -162,7 +162,7 @@ class DesktopControlMutations:
         client = ad.get_client()
         value = (path or "").strip() or None
         if value is not None:
-            if len(value) > 1024 or "\x00" in value or not value.isprintable():
+            if valid_path(value) is None:
                 fail(400, {"message": "The path is not usable.", "issue": "configured_invalid"})
             issues = await client.validate_setting(value)
             if issues:

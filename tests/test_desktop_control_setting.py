@@ -165,6 +165,31 @@ def test_startup_refresh_is_off_by_default_in_tests(fake_agent_desktop):
     assert desk.client.status_cached() is None
 
 
+@posix_only
+def test_the_saved_file_is_never_world_readable_even_for_a_moment(tmp_path, monkeypatch):
+    """It is created 0600 with a loose umask; nothing narrows it afterwards."""
+    from termx import private_files
+
+    def must_not_be_needed(*args, **kwargs):
+        raise AssertionError("the file must be created private, not narrowed later")
+
+    monkeypatch.setattr(setting, "protect_private_path", must_not_be_needed, raising=False)
+    monkeypatch.setattr(private_files, "protect_private_path", must_not_be_needed)
+    previous = os.umask(0)
+    try:
+        setting.save_setting(tmp_path / "desktop-control", "/opt/ad/agent-desktop")
+    finally:
+        os.umask(previous)
+    assert (tmp_path / "desktop-control" / "setting.json").stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "desktop-control").stat().st_mode & 0o077 == 0
+
+
+def test_valid_path_is_one_rule_for_the_api_and_the_file():
+    assert setting.valid_path("/opt/ad/agent-desktop") == "/opt/ad/agent-desktop"
+    for bad in ("relative", "", "x" * 5000, "/a\x00b", "/a\nb", 5, None):
+        assert setting.valid_path(bad) is None
+
+
 def test_json_shape_of_the_saved_file(tmp_path):
     setting.save_setting(tmp_path, "/opt/ad/agent-desktop")
     assert json.loads((tmp_path / "setting.json").read_text()) == {"path": "/opt/ad/agent-desktop"}
@@ -174,6 +199,9 @@ def test_json_shape_of_the_saved_file(tmp_path):
     "/Users/me/.config/termx/desktop-control/setting.json",
     "cat ~/.config/termx/desktop-control/bin/1.2.0/agent-desktop",
     "C:\\Users\\me\\AppData\\termx\\desktop-control\\home",
+    "/Users/me/.config/termx/desktop-control",
+    "cd desktop-control; cat setting.json",
+    "ls ~/.config/termx/desktop-control && echo",
 ])
 def test_the_desktop_control_directory_is_a_sensitive_path(path):
     from termx.agent.policy import is_sensitive_path

@@ -293,6 +293,59 @@ def test_remove_never_follows_a_symlink_out_of_the_managed_directory(tmp_path, s
     assert (outside / "precious").exists() and not managed_dir(client).exists()
 
 
+@posix_only
+@pytest.mark.skipif(os.name != "nt" and hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores directory modes")
+def test_remove_that_cannot_delete_stops_children_and_fails_with_our_own_message(tmp_path, server):
+    client, installer, _, _ = setup(tmp_path, server)
+    installer.install()
+    killed = []
+    client.kill_all = lambda: killed.append(True)  # type: ignore[method-assign]
+    bin_root = managed_dir(client).parent
+    bin_root.chmod(0o500)
+    try:
+        with pytest.raises(install.InstallError) as caught:
+            installer.remove()
+    finally:
+        bin_root.chmod(0o700)
+    assert caught.value.code == "install_failed" and str(tmp_path) not in str(caught.value)
+    assert killed == [True]
+
+
+def test_remove_stops_children_before_it_deletes(tmp_path, server):
+    client, installer, _, _ = setup(tmp_path, server)
+    installer.install()
+    order = []
+    client.kill_all = lambda: order.append("kill" if managed_dir(client).exists() else "late")  # type: ignore[method-assign]
+    installer.remove()
+    assert order == ["kill"]
+
+
+def test_a_directory_that_cannot_be_created_is_an_install_failure_not_a_raw_error(tmp_path, server, monkeypatch):
+    client, installer, _, _ = setup(tmp_path, server)
+
+    def refuse(*args, **kwargs):
+        raise PermissionError(13, "denied", str(tmp_path / "secret-location"))
+
+    monkeypatch.setattr(install.tempfile, "mkdtemp", refuse)
+    with pytest.raises(install.InstallError) as caught:
+        installer.install()
+    assert caught.value.code == "install_failed" and "secret-location" not in str(caught.value)
+    assert install.Installer._busy.acquire(blocking=False)  # the lock was released
+    install.Installer._busy.release()
+
+
+def test_a_layout_that_cannot_be_created_is_an_install_failure_not_a_raw_error(tmp_path, server, monkeypatch):
+    client, installer, _, _ = setup(tmp_path, server)
+
+    def refuse():
+        raise PermissionError(13, "denied", str(tmp_path / "secret-location"))
+
+    monkeypatch.setattr(client, "ensure_layout", refuse)
+    with pytest.raises(install.InstallError) as caught:
+        installer.install()
+    assert caught.value.code == "install_failed"
+
+
 def test_make_installer_uses_the_pinned_github_release_with_https_only():
     client = ad.AgentDesktopClient(home_root="/unused", platform=MAC_ARM64)
     plan = install.make_installer(client).plan()
