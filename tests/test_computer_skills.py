@@ -533,65 +533,18 @@ async def test_a_scheduled_run_whose_permission_names_another_application_is_ref
 
 
 # ---------------------------------------------------------------------------
-# Recorded window workflows publish as computer skills
+# Recorded window workflows are retired; a skill is still how an application list is declared
 # ---------------------------------------------------------------------------
 
 
-class Window:
-    def __init__(self, app):
-        self.app = app
-
-    def list(self):
-        return [{'id': '1', 'pid': 1, 'app': self.app, 'title': 'Test', 'width': 80, 'height': 60},
-                {'id': '2', 'pid': 2, 'app': 'Other', 'title': 'Test', 'width': 80, 'height': 60}]
-
-    def capture(self, row):
-        from PIL import Image
-        import io
-        output = io.BytesIO()
-        Image.new('RGB', (80, 60), 'white').save(output, 'JPEG')
-        return output.getvalue()
-
-    def input(self, row, event):
-        pass
-
-
-async def _published(app, tmp_path):
-    from termx.browser.storage import Records
-    from termx.desktop.recording import WindowRecordingService
-    seen = {}
-
-    class Extensions:
-        def preview(self, principal, data, format='termx-bundle/v1'):
-            seen['data'], seen['format'] = data, format
-            return {'id': 'preview', 'digest': 'digest'}
-
-        def install(self, principal, preview, digest):
-            return {'active_digest': digest}
-
-    manager = WindowRecordingService(Records(tmp_path), port=Window(app), session_valid=lambda *_: True)
-    capture = manager.start('owner', 's', 1, '1')
-    manager.configure(capture['id'], 'owner', recording=True)
-    await manager.input(capture['id'], 'owner', {'type': 'key', 'key': 'Tab', 'action': 'down'})
-    draft = manager.draft(capture['id'], 'owner', 'tab-through')
-    await manager.test(draft['id'], 'owner', manager.start('owner', 's', 1, '2')['id'], {}, True)
-    manager.publish(draft['id'], 'owner', object(), Extensions(), '1.0.0')
-    return seen
-
-
-@pytest.mark.anyio
-async def test_a_published_recording_asks_for_desktop_control_and_names_its_application(tmp_path):
-    seen = await _published('Notes', tmp_path)
-    assert seen['data']['permissions'] == ['desktop-control']
-    assert seen['data']['computer'] == {'apps': ['Notes']}
-    assert seen['format'] == 'skill-markdown/v1'
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize('app', ['', 'Process 4242'])
-async def test_a_recording_of_an_application_the_host_cannot_name_is_not_published(app, tmp_path):
-    with pytest.raises(ValueError, match='name'):
-        await _published(app, tmp_path)
+def test_no_front_application_lookup_remains_so_no_os_is_special():
+    """A list is enforced from the application a ref belongs to. Nothing asks which window is in front, so a schedule's
+    computer permission does not depend on the OS being able to answer that."""
+    from termx.desktop import windows
+    for name in ('frontmost_app', 'frontmost_pid', 'frontmost_identity', 'pointer_in_front_app'):
+        assert not hasattr(windows, name), name
+    for name in ('switching_hotkey', 'KEY_ALIASES'):
+        assert not hasattr(apps_module, name), name
 
 
 def test_the_skill_adapter_carries_the_list_through_to_the_bundle(workspace):

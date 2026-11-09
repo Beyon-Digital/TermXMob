@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from termx.auth import extract_passcode
 from termx.desktop.capture import CaptureError
@@ -23,12 +23,8 @@ class Route(APIRoute):
 
 class Body(BaseModel): model_config = ConfigDict(extra='forbid')
 class Start(Body): window_id: str; expires_in: int = 600
-class Configure(Body): private: bool | None = None; recording: bool | None = None; redactions: list[dict] | None = None
-class Input(Body): event: dict; parameter: str | None = None
-class Draft(Body): name: str
-class Edit(Body): content: str = Field(max_length=100_000)
-class Test(Body): target_capture_id: str; parameters: dict[str, str] = Field(default_factory=dict); safe_target: bool = False
-class Publish(Body): version: str
+class Configure(Body): private: bool | None = None; redactions: list[dict] | None = None
+class Input(Body): event: dict
 
 
 def mount_window_recording(app, state):
@@ -63,7 +59,7 @@ def mount_window_recording(app, state):
                 except (KeyError, PermissionError):
                     current = service.records.get('window-capture', candidate['id'])
                     if not current or not current['private']: continue
-                rows.append({'id': current['id'], 'kind': 'window', 'state': 'private' if current['private'] else 'recording' if current['recording'] else 'preview',
+                rows.append({'id': current['id'], 'kind': 'window', 'state': 'private' if current['private'] else 'preview',
                     'expired': bool(current['stopped']),
                     'stop_allowed': state.authorization.can(token, 'desktop-control', resource_kind='window-capture', resource_id=current['id'])})
             for tab in state.browser.records.list('tab'):
@@ -116,7 +112,7 @@ def mount_window_recording(app, state):
     @router.post('/captures/{identifier}/input')
     async def input(identifier: str, request: Request, body: Input):
         _, session = actor(request, 'desktop-control', identifier)
-        return await service.input(identifier, session.principal.id, body.event, parameter=body.parameter)
+        return await service.input(identifier, session.principal.id, body.event)
 
     @router.get('/captures/{identifier}/preview')
     async def preview(identifier: str, request: Request):
@@ -124,25 +120,5 @@ def mount_window_recording(app, state):
         import base64
         data = await service.frame(identifier, session.principal.id, human=True)
         return JSONResponse({'image': 'data:image/jpeg;base64,' + base64.b64encode(data).decode()}, headers={'Cache-Control': 'no-store'})
-
-    @router.post('/captures/{identifier}/draft')
-    async def draft(identifier: str, request: Request, body: Draft):
-        _, session = actor(request, 'desktop-control', identifier)
-        return service.draft(identifier, session.principal.id, body.name)
-
-    @router.patch('/drafts/{identifier}')
-    async def edit(identifier: str, request: Request, body: Edit):
-        _, session = actor(request, 'desktop-control')
-        return service.edit(identifier, session.principal.id, body.content)
-
-    @router.post('/drafts/{identifier}/test')
-    async def test(identifier: str, request: Request, body: Test):
-        _, session = actor(request, 'desktop-control', body.target_capture_id)
-        return await service.test(identifier, session.principal.id, **body.model_dump())
-
-    @router.post('/drafts/{identifier}/publish')
-    async def publish(identifier: str, request: Request, body: Publish):
-        _, session = actor(request, 'host-admin')
-        return service.publish(identifier, session.principal.id, session.principal, state.extensions, body.version)
 
     app.include_router(router)

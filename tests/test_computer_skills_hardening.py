@@ -35,9 +35,28 @@ def test_a_list_that_allows_nothing_is_enforced_without_any_process(tmp_path, re
     asyncio.run(run())
 
 
-def test_the_policy_denies_a_schedule_permission_without_a_verified_build(tmp_path, ready_desktop, monkeypatch):
+def _unpinned(tmp_path, system='linux', arch='x86_64'):
+    """A host whose platform has no complete pin in this build: the shipped pins hash macOS arm64 only so far."""
+    from termx.desktop import agent_desktop as ad
+    client = ad.AgentDesktopClient(home_root=tmp_path / 'desktop-control', platform=ad.HostPlatform(system, arch, True if system == 'linux' else None))
+    ad.set_client(client)
+    return client
+
+
+@pytest.mark.parametrize('system, arch', [('linux', 'x86_64'), ('windows', 'x86_64'), ('macos', 'x86_64')])
+def test_a_platform_without_a_complete_pin_is_not_verifiable(tmp_path, system, arch):
+    _unpinned(tmp_path, system, arch)
+    assert apps_module.verifiable() is False
+
+
+@pytest.mark.parametrize('system', ['macos', 'linux', 'windows'])
+def test_a_platform_with_a_complete_pin_is_verifiable_whatever_the_os(fake_agent_desktop, system):
+    fake_agent_desktop(system)
+    assert apps_module.verifiable() is True
+
+
+def test_the_policy_denies_a_scheduled_run_where_desktop_control_is_not_set_up(tmp_path, ready_desktop):
     async def run():
-        monkeypatch.setattr(apps_module, 'verifiable', lambda: False)
         ready_desktop.client._status.ready = False  # nothing is offered or run where desktop control is not set up
         manager, store_, done = await _run(tmp_path, ready_desktop, apps=None, setup=_unattended(_permission()))
         assert ready_desktop.spawns() == []
@@ -47,15 +66,18 @@ def test_the_policy_denies_a_schedule_permission_without_a_verified_build(tmp_pa
 
 
 @pytest.mark.anyio
-async def test_a_schedule_cannot_carry_a_permission_without_a_verified_build(hosted, monkeypatch):
-    monkeypatch.setattr(apps_module, 'verifiable', lambda: False)
-    with pytest.raises(ValueError, match='no verified build for this computer'):
+async def test_a_schedule_cannot_carry_a_permission_on_a_platform_without_a_complete_pin(hosted, tmp_path):
+    _unpinned(tmp_path)
+    with pytest.raises(ValueError, match='no verified build for this computer') as refused:
         _create(hosted)
+    assert 'front' not in str(refused.value)
 
 
 @pytest.mark.anyio
-async def test_a_schedule_with_a_permission_is_accepted_where_a_verified_build_exists(hosted):
-    # The same request as the refusal above, on a host with a complete pin (the module fixture).
+@pytest.mark.parametrize('system', ['macos', 'linux', 'windows'])
+async def test_a_schedule_with_a_permission_is_accepted_on_every_os_with_a_complete_pin(hosted, fake_agent_desktop, system):
+    # The request refused above, where a build has been pinned. The OS does not matter: no one asks what is in front.
+    fake_agent_desktop(system)
     assert _grant(hosted, _create(hosted))['computer_permission']['apps'] == ['Notes']
 
 

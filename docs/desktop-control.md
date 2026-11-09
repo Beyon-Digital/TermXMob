@@ -130,6 +130,36 @@ Describe goals and control names ("press the Save button in the Notes toolbar"),
 not coordinates or key chords. A skill with an application list can only act in
 those applications; scheduled runs can never send, delete or enter passwords.
 
+A skill declares its applications with `computer: {apps: [...]}` and the
+`desktop-control` permission. Each entry is a display name, or a bundle ID or
+executable name; an identifier is compared only with the application's own
+identifier and a display name only with its name, so an application cannot pass
+by naming itself after another. When several skills apply, only applications
+every list names are allowed, and an empty overlap allows nothing.
+
+The list is checked before any program starts, from the application the control
+reference was read from. Nothing asks which window is in front, and the
+application does not need to be in front. This holds on every OS.
+
+## Schedules
+
+A schedule can carry a computer permission: up to 20 applications, an expiry
+inside the schedule's grant and covering its first run, and seconds of desktop
+time per run. Without one, unattended runs are denied before any program starts.
+Event-triggered schedules (message or webhook) never take one. Narrowing the bot's
+ceiling to deny `computer.control` removes it. The seconds used survive a restart.
+It can be set on any OS whose build of the program has complete hash pins
+(`pin_complete`); where it does not, the schedule is refused with "no verified
+build for this computer". At the moment only macOS arm64 does.
+
+## Window captures
+
+A window capture is a human preview of one application window, with a private mode
+and redaction rectangles. Private mode pauses desktop control. Captures are no
+longer recorded into skill drafts: recorded steps were window coordinates, which
+accessibility-based control cannot use. Old recorded steps and drafts are deleted
+when the server starts.
+
 ## Verified against the real program, and not
 
 Tests run against a fake program (`tests/fixtures/agent_desktop/`) that behaves

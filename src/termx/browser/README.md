@@ -54,8 +54,11 @@ and private login require a fresh explicit grant before either model can resume.
 
 ## Recordings
 
-Browser tabs and native windows require explicit capture/record consent. Plain
-typed text is excluded; named parameters store placeholders and ephemeral replay
+Browser tabs require explicit capture/record consent, and native windows require
+explicit capture consent. Native windows are a human preview with a private mode
+and redaction rectangles; they are no longer recorded into skill drafts, because
+recorded window coordinates cannot be used by accessibility-based desktop
+control. For browser recordings, plain typed text is excluded; named parameters store placeholders and ephemeral replay
 values never enter records. Private mode stops recording and blocks model
 observation. A privacy epoch also discards a desktop snapshot when private mode
 entered and exited while it was being read.
@@ -66,8 +69,8 @@ Wayland needs an explicit portal adapter and is reported unavailable. Native
 input checks that the selected owner/window is foreground. Host screen capture
 and accessibility permissions remain necessary.
 
-Draft editors preserve executable JSON steps. A separate human-selected safe
-tab/window, explicit replay consent and current session authority are required
+Browser draft editors preserve executable JSON steps. A separate human-selected safe
+tab, explicit replay consent and current session authority are required
 for a real dry-run. Activation checks the exact draft/steps digest and recent test
 evidence before installing the immutable extension version. These tests prove the
 recorded steps executed, not arbitrary natural-language instruction semantics.
