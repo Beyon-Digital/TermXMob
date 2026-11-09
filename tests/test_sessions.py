@@ -187,3 +187,22 @@ def test_pty_echo_when_created_without_event_loop() -> None:
         mgr.kill(session.id)
 
     asyncio.run(inner())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shell lookup")
+def test_default_shell_without_shell_env_is_one_this_host_has(monkeypatch) -> None:
+    from termx.sessions import default_shell
+
+    monkeypatch.delenv("SHELL", raising=False)
+    shell = default_shell()
+    assert os.path.isfile(shell) and os.access(shell, os.X_OK)
+
+    present = {"/bin/bash", "/bin/sh"}
+    monkeypatch.setattr(os.path, "isfile", lambda path: path in present)
+    monkeypatch.setattr(os, "access", lambda path, mode: path in present)
+    assert default_shell() == "/bin/bash"
+    present.discard("/bin/bash")
+    assert default_shell() == "/bin/sh"
+
+    monkeypatch.setenv("SHELL", "/opt/custom/fish")
+    assert default_shell() == "/opt/custom/fish"
