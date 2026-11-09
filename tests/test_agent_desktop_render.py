@@ -88,7 +88,7 @@ def test_find_matches_both_shapes_and_context_entries():
 def test_app_handles_are_stable_distinct_and_filtered():
     handles = dd.AppHandles()
     rows = [app_row("Docker", 10, "com.docker.docker"), app_row("Docker", 11, "com.docker.docker"),
-            {"name": "Helper", "pid": 12, "process_instance": "x"}, app_row("Notes", 20, "com.apple.Notes")]
+            app_row("Helper", 12, presentation="background"), app_row("Notes", 20, "com.apple.Notes")]
     records = handles.update("t", rows)
     assert [r.name for r in records] == ["Docker", "Notes"] and records[0].instances == 2
     again = handles.update("t", rows)
