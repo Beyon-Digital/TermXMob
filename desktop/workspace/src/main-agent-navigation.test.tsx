@@ -69,10 +69,21 @@ it('keeps newer settings navigation when a manually opened primary resolves late
  fireEvent.click(screen.getAllByRole('button',{name:'Main agent'}).at(-1)!);
  await waitFor(()=>expect(mocks.ensure).toHaveBeenCalledOnce());
  fireEvent.click(screen.getAllByRole('button',{name:'Settings'}).at(-1)!);
- expect(await screen.findByRole('heading',{name:/^General$/})).toBeVisible();
+ expect(await screen.findByRole('heading',{name:/^Preferences$/})).toBeVisible();
  await act(async()=>pending.resolve({session:chat('main')}));
- expect(screen.getByRole('heading',{name:/^General$/})).toBeVisible();
- expect(location.pathname).toBe('/manage/general');
+ expect(screen.getByRole('heading',{name:/^Preferences$/})).toBeVisible();
+ expect(location.pathname).toBe('/manage/preferences');
+});
+
+it('opens the main conversation when settings opened by a deep link are closed',async()=>{
+ history.replaceState(null,'','/manage/preferences');
+ render(<App/>);
+ expect(await screen.findByRole('heading',{name:/^Preferences$/})).toBeVisible();
+ expect(mocks.ensure).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Close settings'}));
+ await waitFor(()=>expect(screen.getByTestId('selected-chat')).toHaveTextContent('main'));
+ expect(mocks.ensure).toHaveBeenCalledOnce();
+ expect(location.pathname).toBe('/session/main');
 });
 
 it('resolves the main conversation when browser history returns to the root',async()=>{

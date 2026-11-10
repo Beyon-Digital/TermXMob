@@ -12,8 +12,10 @@ Heuristics only feed the *intent*; the sandbox is the boundary that enforces.
 from __future__ import annotations
 
 import re
+import shlex
+from pathlib import Path
 
-from termx.agent.policy import is_mutating_shell
+from termx.agent.policy import _outside_paths, is_mutating_shell
 from termx.agent.policies.models import PolicyIntent
 
 # Programs that obviously need outbound network regardless of arguments.
@@ -93,7 +95,7 @@ def tool_capabilities(tool: str) -> tuple[str, ...]:
         return ("process.execute", "git.local")
     if tool == "run_runbook":
         return ("process.execute", "process.children", "fs.workspace.write")
-    if tool == "computer":
+    if tool == "computer" or tool.startswith("desktop_"):
         return ("computer.control",)
     return ("process.execute",)
 
@@ -107,13 +109,22 @@ _REASON_RISK = {
     "Sensitive file access": "sensitive",
     "Sensitive text entry": "sensitive",
     "Data transmission": "external",
+    "Form submission": "external",
+    "Consequential control": "external",
+    "Application can run commands or change security settings": "external",
+    "Application cannot be identified": "external",
+    "Unfamiliar control": "external",
     "Outside selected project": "outside_root",
 }
 # Risk classes that `autonomous` mode may never auto-approve (publication and
 # external submits stay explicit; privilege/credential/sensitive too).
 AUTONOMOUS_BLOCKED_RISKS = frozenset(
-    {"privilege", "sensitive", "publication", "external", "outside_root", "delegation"}
+    {"privilege", "sensitive", "publication", "external", "outside_root", "delegation", "destructive"}
 )
+# Capabilities the host process exercises itself, never inside a sandboxed spawn.
+# A sandbox profile neither grants nor limits them, so the envelope check skips
+# them; capability denies and the remembered-rule precedence still apply.
+HOST_MEDIATED_CAPABILITIES = frozenset({"computer.control", "memory.write", "skills.preview", "bot.message"})
 # Capabilities remembered allow rules may never imply by side effect.
 UNGRANTABLE_CAPABILITIES = frozenset(
     {
@@ -127,6 +138,41 @@ UNGRANTABLE_CAPABILITIES = frozenset(
 )
 
 
+# A task worktree shares its `.git` directory with the base checkout, so
+# commands that rewrite refs, prune objects or change repository config can
+# damage the user's main checkout. `reset --hard` and `clean -f` discard work.
+_SHARED_GIT = re.compile(
+    r"(?i)(?:^|[\s;&|(])git\s+(?:-[^\s]+\s+)*(?:"
+    r"branch\s+(?:[^;&|\n]*\s)?-[a-z]*[dmcf][a-z]*|tag\s+(?:[^;&|\n]*\s)?-[a-z]*[df][a-z]*|"
+    r"update-ref|symbolic-ref|gc|prune|reflog|worktree|remote|config|filter-branch|replace|"
+    r"reset\s+[^;&|\n]*--hard|clean\s+[^;&|\n]*-[a-z]*f[a-z]*)\b"
+)
+_GIT_REDIRECT = re.compile(r"(?i)\bgit\s+(?:-[^\s]+\s+)*(?:-C|--git-dir|--work-tree)\b")
+_TRAVERSAL = re.compile(r"(?:^|[\s;&|=])\.\.(?:[/\\]|\s|$|[;&|])")
+_HOME_OR_VAR = re.compile(r"(?:^|[\s;&|=\"'])(?:~|\$\{?[A-Za-z_]+\}?)")
+
+
+def shell_hazard(command: str, cwd: str) -> str | None:
+    """Risk class for a shell command that reaches beyond the task worktree.
+
+    Heuristic like the rest of this module: it only decides whether Auto may
+    approve on the user's behalf; it never grants anything.
+    """
+    if _TRAVERSAL.search(command) or _HOME_OR_VAR.search(command):
+        return "outside_root"
+    try:
+        shlex.split(command, posix=True)
+    except ValueError:
+        return "outside_root"
+    if _GIT_REDIRECT.search(command):
+        return "outside_root"
+    if _outside_paths(command, Path(cwd or ".").resolve()):
+        return "outside_root"
+    if _SHARED_GIT.search(command):
+        return "destructive"
+    return None
+
+
 def risk_class_for_reason(reason: str) -> str:
     return _REASON_RISK.get(reason, "consequential" if reason else "safe")
 
@@ -136,6 +182,10 @@ def intent_risk(intent: PolicyIntent, base_reason: str | None = None, *, approva
         risk = _REASON_RISK.get(base_reason)
         if risk:
             return risk
+    if intent.tool == "run_shell":
+        hazard = shell_hazard(intent.display, intent.cwd)
+        if hazard:
+            return hazard
     if intent.risk_class != "safe":
         return intent.risk_class
     if _PUBLISH.search(intent.display) or intent.tool == "git_push":

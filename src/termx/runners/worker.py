@@ -169,7 +169,7 @@ class BrokerAdapter:
         return result[0],result[1]
     async def turn(self,**arguments):
         value=await self.channel.rpc('turn',arguments)
-        value['calls']=[ProviderCall(**c) for c in value['calls']]
+        value['calls']=[ProviderCall.from_wire(c) for c in value['calls']]
         return ProviderTurn(**value)
 
 class ReviewedManager(AgentManager):

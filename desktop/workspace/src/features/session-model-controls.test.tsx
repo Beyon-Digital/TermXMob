@@ -17,6 +17,12 @@ it('disables active model and account changes while keeping their selections ins
 it('preserves the selected model when the discovery list is empty',()=>{
  render(<SessionModelControls {...base} models={[]} onPatch={vi.fn()}/>);fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));expect(screen.getByRole('combobox',{name:'Session model'})).toHaveValue('model-a');
 });
+it('closes the dialog when the conversation changes, without an effect to reset it',()=>{
+ const view=render(<SessionModelControls {...base} onPatch={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));expect(screen.getByRole('combobox',{name:'Session model'})).toBeInTheDocument();
+ view.rerender(<SessionModelControls {...base} session={{...session,id:'other'} as unknown as Session} onPatch={vi.fn()}/>);
+ expect(screen.queryByRole('combobox',{name:'Session model'})).not.toBeInTheDocument();
+});
 it('binds a runner account to its advertised credential reference rather than its provider ID',()=>{
  const patch=vi.fn();render(<SessionModelControls {...base} session={{...session,runner_id:'runner-1'}} runnerAccounts={[{provider_id:'runner-provider',credential_ref:'runner-credential-7',name:'Runner account',models:['runner-model']}]} onPatch={patch}/>);
  fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));fireEvent.change(screen.getByRole('combobox',{name:'Session provider'}),{target:{value:'runner-provider'}});

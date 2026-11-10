@@ -2,23 +2,29 @@ import {conversationMessages,latestExecutionTask} from '../lib/conversation-mess
 import ChatWelcome from './ChatWelcome';
 import ChatConnectionSetup,{chatConnectionProblem} from './ChatConnectionSetup';
 import {Attachments,Attachment,AttachmentPreview,AttachmentInfo,AttachmentRemove} from '../components/ai-elements/attachments';
-import {conversationAnchor,anchorCorrection,type ConversationAnchor} from '../lib/conversation-position';
+import {useTranscriptScroll} from '../lib/use-transcript-scroll';
+import {useSessionDraft,useWhenChanged} from '../lib/use-session-draft';
+import {StatusAnnouncer} from '../lib/status-announcer';
+import {stableKey} from '../lib/stable-key';
 import {persistWindowDraft} from '../lib/window-journal';
 import ConversationMessage from './ConversationMessage';
 import PromptQueue from './PromptQueue';
 import SessionModelControls from './SessionModelControls';
 import SessionModePicker from './SessionModePicker';
+import TaskMeterLine,{useTaskMeter} from './TaskMeter';
+import {AUTO_CEILING_DEFAULTS,AUTO_OFF,autoBlockedReason,setTaskAuto,type AutoSetting} from '../lib/agentic';
 import './chat-composer.css';
 import {useModelFavorites} from '../lib/model-favorites';
 import SessionSettings from './SessionSettings';
-import {sessionDrafts,consumedTransfers,draftWrites,submittingDrafts,draftSubmissionOwners} from '../lib/drafts';
+import {sessionDrafts,consumedTransfers,draftWrites,submittingDrafts,beginSubmission,endSubmission,setTaskStopping} from '../lib/drafts';
 import {captureSessionWrite,serializeSessionWrite,type SessionWriteIntent} from '../lib/session-writes';
 import {taskIsActive} from '../lib/tool-activity';
 import {contextLabel,contextDescription,sameContext,type ContextItem,type IncomingContext} from '../lib/context';
 import ForkContextDialog from './ForkContextDialog';
+import {useComposerVoice} from './composer-voice';
+import {useLiveVoice} from './live-voice';
 import TaskSupervisor from './TaskSupervisor';
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {useVirtualizer} from '@tanstack/react-virtual';
 import {Square,GitFork,LoaderCircle,X,SlidersHorizontal,MoreHorizontal,Plus,ArrowUp,ListPlus} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Select} from '../components/ui/select';
@@ -28,44 +34,67 @@ import {PromptInputBody,PromptInputTextarea,PromptInputSubmit,PromptInputTools} 
 import {gql,json,request,type Session,type Engine,type Provider,type Task,type Project} from '../lib/api';
 import './chat-session.css';
 
-// Shared by retained/replaced chat panels so one Stop action stays in flight.
-const stoppingTasks=new Set<string>();
+// A pause in typing this long writes the draft to the window journal.
+const DRAFT_PERSIST_DELAY=300;
+const REFUSAL_LIMIT=240;
+/** The host's sentence for a refused send (a 4xx other than sign-in and lock), as plain, single-line, bounded text. Otherwise ''. */
+function refusalText(error:unknown){
+ const status=(error as {status?:unknown}|null)?.status,message=(error as {message?:unknown}|null)?.message;
+ if(typeof status!=='number'||status<400||status>=500||status===401||status===423||typeof message!=='string')return '';
+ const text=message.replace(/[\u0000-\u001f\u007f-\u009f]+/g,' ').replace(/\s+/g,' ').trim();
+ return text.length>REFUSAL_LIMIT?text.slice(0,REFUSAL_LIMIT-1).trimEnd()+'…':text;
+}
 const active=(task?:Task)=>!!task&&(taskIsActive(task.status)||['awaiting_approval','paused','recovery_confirmation_required'].includes(task.status));
-export default function Chat({session,engines,providers,onSelect,onRefresh,onError,incoming,onHistory,projects=[],ownerId,visible=true,onOpenSurface,onOpenFile,changes,onConfigureAgent,coordinating=false}:{coordinating?:boolean;onConfigureAgent?:()=>void;onOpenSurface?:(surface:ConversationSurface)=>void;onOpenFile?:(path:string,line?:number)=>void;changes?:ConversationChanges;visible?:boolean;ownerId?:string;projects?:Project[];onHistory?:()=>void;incoming?:IncomingContext|null;session:Session|null;engines:Engine[];providers:Provider[];onSelect:(id:string)=>void;onRefresh:()=>void;onError:(error:unknown)=>void}){
+export default function Chat({session,engines,providers,onSelect,onRefresh,onError,incoming,onHistory,projects=[],ownerId,visible=true,onOpenSurface,onOpenFile,changes,onConfigureAgent,onOpenVoiceSettings,coordinating=false}:{onOpenVoiceSettings?:()=>void;coordinating?:boolean;onConfigureAgent?:()=>void;onOpenSurface?:(surface:ConversationSurface)=>void;onOpenFile?:(path:string,line?:number)=>void;changes?:ConversationChanges;visible?:boolean;ownerId?:string;projects?:Project[];onHistory?:()=>void;incoming?:IncomingContext|null;session:Session|null;engines:Engine[];providers:Provider[];onSelect:(id:string)=>void;onRefresh:()=>void;onError:(error:unknown)=>void}){
  const [context,setContext]=useState<ContextItem[]>([]);
- const [draft,setDraft]=useState(''),[submissionChange,setSubmissionChange]=useState(0),[modelCatalogue,setModelCatalogue]=useState<{selection:string;models:string[]}>({selection:'',models:[]}),[attachments,setAttachments]=useState<{name:string;mime:string;data:string}[]>([]),[supervised,setSupervised]=useState(''),[renameOpen,setRenameOpen]=useState(false),[name,setName]=useState(''),[group,setGroup]=useState('');
+ const [draft,setDraft]=useState(''),[modelCatalogue,setModelCatalogue]=useState<{selection:string;models:string[]}>({selection:'',models:[]}),[attachments,setAttachments]=useState<{name:string;mime:string;data:string}[]>([]),[supervised,setSupervised]=useState(''),[renameOpen,setRenameOpen]=useState(false),[name,setName]=useState(''),[group,setGroup]=useState('');
  const [forkEngine,setForkEngine]=useState(''),[forkOpen,setForkOpen]=useState(false),[pendingPrompt,setPendingPrompt]=useState<import('../lib/drafts').PendingSubmission|null>(null);
  const [approvalFocus,setApprovalFocus]=useState<{sessionId:string;taskId:string;messageId:string}|null>(null);
- const [,refreshCancellation]=useState(0),[actionError,setActionError]=useState<{sessionId:string;message:string;kind?:'connection'}|null>(null);
- const sending=!!session&&submittingDrafts.has(session.id);
- const [queueChange,setQueueChange]=useState(0),[awayFromLatest,setAwayFromLatest]=useState(false),[interruptOpen,setInterruptOpen]=useState(false),[optionsOpen,setOptionsOpen]=useState(false),[runActionsOpen,setRunActionsOpen]=useState(false);
- const scroller=useRef<HTMLDivElement>(null),fileInput=useRef<HTMLInputElement>(null),composer=useRef<HTMLTextAreaElement>(null),lastSaved=useRef(''),dirty=useRef(false),sessionId=useRef<string|null>(null),drafts=useRef(sessionDrafts);
+ const [actionError,setActionError]=useState<{sessionId:string;message:string;kind?:'connection'}|null>(null);
+ // The host's own sentence when it refused a send (for example a model that cannot call tools in Agent mode).
+ const [sendRefusal,setSendRefusal]=useState<{sessionId:string;message:string}|null>(null);
+ const {sending,submissionRevision,handoff,isStopping}=useSessionDraft(session?.id);
+ const [queueChange,setQueueChange]=useState(0),[interruptOpen,setInterruptOpen]=useState(false),[optionsOpen,setOptionsOpen]=useState(false),[runActionsOpen,setRunActionsOpen]=useState(false);
+ const fileInput=useRef<HTMLInputElement>(null),composer=useRef<HTMLTextAreaElement>(null),lastSaved=useRef(''),dirty=useRef(false),sessionId=useRef<string|null>(null),drafts=useRef(sessionDrafts);
  const {favorites,toggle:toggleFavorite}=useModelFavorites(ownerId);
  const modelSelection=JSON.stringify([session?.engine,session?.provider_id,session?.runner_id]);
  const models=modelCatalogue.selection===modelSelection?modelCatalogue.models:[];
- useEffect(()=>{const element=composer.current;if(!element)return;element.style.height='auto';element.style.height=Math.max(48,element.scrollHeight)+'px'},[draft,session?.id,visible]);
+ // Resizing reads layout, so a burst of edits shares one animation frame instead of forcing a reflow per keystroke.
+ useEffect(()=>{const frame=requestAnimationFrame(()=>{const element=composer.current;if(!element)return;element.style.height='auto';element.style.height=Math.max(48,element.scrollHeight)+'px'});return()=>cancelAnimationFrame(frame)},[draft,session?.id,visible]);
  const favoriteKey=JSON.stringify([session?.engine,session?.provider_id,session?.model]);
  function favorite(){if(session?.model)try{toggleFavorite(favoriteKey)}catch(error){onError(error)}}
  const [runnerOptions,setRunnerOptions]=useState<{id:string;project:string;status:string;configuration:{image:string;name?:string;kind?:string;root?:string}}[]>([]),[runnerAccounts,setRunnerAccounts]=useState<{provider_id:string;credential_ref:string;name:string;models:string[]}[]>([]);
  useEffect(()=>{if(!session||session.engine!=='internal'||!visible)return;let cancelled=false;Promise.all([request<{id:string;project:string;status:string;configuration:{image:string;name?:string;kind?:string;root?:string}}[]>('/api/runners'),request<{accounts:{provider_id:string;credential_ref:string;name:string;models:string[]}[]}>('/api/runner-agents/capabilities')]).then(([runners,accounts])=>{if(!Array.isArray(runners))throw new Error('Unexpected runner catalog response');if(!cancelled){setRunnerOptions(runners);setRunnerAccounts(accounts.accounts||[])}}).catch(()=>{if(!cancelled){setRunnerOptions([]);setRunnerAccounts([]);if(optionsOpen)onError(new Error('Runner options could not be loaded. Check access and reopen Session options to retry.'))}});return()=>{cancelled=true}},[session?.id,session?.engine,optionsOpen,visible]);
- const offsets=useRef(new Map<string,number>()),anchors=useRef(new Map<string,ConversationAnchor|null>());
  const turns=session?.turns||[];
- useEffect(()=>{if(!session?.id)return;const id=session.id,element=scroller.current;if(!element)return;let timer:ReturnType<typeof setTimeout>|undefined,frame=0,restoring=true,attempts=0;const anchor=anchors.current.get(id)??session.scroll_anchor;const offset=offsets.current.get(id)??session.scroll;const restore=()=>{if(!restoring)return;if(attempts++===0){const index=anchor?messages.findIndex(message=>message.id===anchor.id):-1;if(index>=0)virtual.scrollToIndex(index,{align:'start'});else if(offsets.current.has(id)||offset>0)virtual.scrollToOffset(offset);else if(messages.length)virtual.scrollToIndex(messages.length-1,{align:'end'})}else if(anchor){const correction=anchorCorrection(element,anchor);if(correction!==null&&Math.abs(correction)>1)virtual.scrollToOffset(element.scrollTop+correction)}if(attempts<24)frame=requestAnimationFrame(restore);else{restoring=false;setAwayFromLatest(element.scrollHeight-element.scrollTop-element.clientHeight>350)}};frame=requestAnimationFrame(restore);const cancelRestore=()=>{restoring=false;cancelAnimationFrame(frame)};const save=()=>{setAwayFromLatest(element.scrollHeight-element.scrollTop-element.clientHeight>350);if(restoring)return;const offset=element.scrollTop,anchor=conversationAnchor(element);offsets.current.set(id,offset);anchors.current.set(id,anchor);clearTimeout(timer);const intent=captureSessionWrite();timer=setTimeout(async()=>{try{await serializeSessionWrite(id,async()=>{const current=await request<Session>('/api/workspace/sessions/'+id+'?turns=false',{signal:intent.signal});intent.assertCurrent();await request('/api/workspace/sessions/'+id,{...json('PATCH',{revision:current.revision,changes:{scroll:offset,scroll_anchor:anchor}}),signal:intent.signal})},intent)}catch(error){if(intent.isCurrent())onError(error)}finally{intent.release()}},700)};element.addEventListener('scroll',save,{passive:true});for(const event of ['wheel','pointerdown','touchstart','keydown'])element.addEventListener(event,cancelRestore,{passive:true});return()=>{cancelAnimationFrame(frame);clearTimeout(timer);offsets.current.set(id,element.scrollTop);anchors.current.set(id,conversationAnchor(element));element.removeEventListener('scroll',save);for(const event of ['wheel','pointerdown','touchstart','keydown'])element.removeEventListener(event,cancelRestore)}},[session?.id]);
  const messages=useMemo(()=>conversationMessages(turns),[turns]);
- const virtual=useVirtualizer({count:messages.length,getScrollElement:()=>scroller.current,estimateSize:()=>140,overscan:8,initialRect:{width:800,height:600},getItemKey:index=>messages[index].id});
  const latest=latestExecutionTask(turns),running=active(latest);
+ const meter=useTaskMeter(latest,running,visible);
+ // Auto is a per-conversation preference, kept while the app is open. A live task's own state shows until the user changes it here.
+ const [armed,setArmed]=useState<Record<string,AutoSetting>>({}),autoRequest=useRef(0);
+ const liveAuto:AutoSetting|null=meter?.auto?{enabled:meter.auto.enabled,ceilings:{...AUTO_CEILING_DEFAULTS,...meter.auto.ceilings}}:null;
+ const auto:AutoSetting=(session&&armed[session.id])||(running&&liveAuto)||AUTO_OFF;
+ function changeAuto(next:AutoSetting){
+  if(!session)return;const id=session.id,previous=auto;setArmed(old=>({...old,[id]:next}));
+  if(latest&&running&&session.mode==='agent'){
+   // Only the newest request may roll the choice back, so an older refusal cannot undo a newer accepted change.
+   const request=++autoRequest.current;
+   setTaskAuto(latest.id,next).catch(error=>{if(autoRequest.current===request)setArmed(old=>({...old,[id]:previous}));onError(error)});
+  }
+ }
+ const {scroller,virtual,awayFromLatest,scrollToLatest,scrollToMessage}=useTranscriptScroll({session,messages,onError,followKey:latest?.result});
  const connectionProblem=chatConnectionProblem(session,providers,engines),connectionBlocked=!!connectionProblem;
  useEffect(()=>{if(!connectionBlocked)setActionError(value=>value?.kind==='connection'?null:value)},[connectionBlocked]);
  useEffect(()=>{setRunActionsOpen(false);setActionError(null)},[session?.id,running]);
- useEffect(()=>{const update=()=>{setSubmissionChange(value=>value+1);const value=sessionId.current?drafts.current.get(sessionId.current):undefined;setPendingPrompt(value?.submission||null);if(value){setDraft(value.text);setContext(value.context||[]);setAttachments(value.attachments||[]);lastSaved.current=value.saved;dirty.current=value.dirty}};window.addEventListener('termx-draft-submission',update);return()=>window.removeEventListener('termx-draft-submission',update)},[]);
- useEffect(()=>{const update=()=>refreshCancellation(value=>value+1);window.addEventListener('termx-task-cancellation',update);return()=>window.removeEventListener('termx-task-cancellation',update)},[]);
- const stopping=!!latest&&(latest.status==='cancelling'||stoppingTasks.has(latest.id));
+ useEffect(()=>{if(!pendingPrompt)setSendRefusal(null)},[pendingPrompt]);
+ useWhenChanged(submissionRevision,()=>{const value=sessionId.current?drafts.current.get(sessionId.current):undefined;setPendingPrompt(value?.submission||null);if(value){setDraft(value.text);setContext(value.context||[]);setAttachments(value.attachments||[]);lastSaved.current=value.saved;dirty.current=value.dirty}});
+ // A Stop request re-renders this panel through useSessionDraft; isStopping reads the shared set.
+ const stopping=!!latest&&(latest.status==='cancelling'||isStopping(latest.id));
  async function stopTask(){
-  if(!session||!latest||stoppingTasks.has(latest.id)||latest.status==='cancelling')return;
-  const id=latest.id,origin=session.id;stoppingTasks.add(id);window.dispatchEvent(new Event('termx-task-cancellation'));setActionError(null);
+  if(!session||!latest||isStopping(latest.id)||latest.status==='cancelling')return;
+  const id=latest.id,origin=session.id;setTaskStopping(id,true);setActionError(null);
   try{await request('/api/workspace/tasks/'+encodeURIComponent(id)+'/cancel',json('POST',{}));onRefresh()}
   catch(error){if(sessionId.current===origin)setActionError({sessionId:origin,message:error instanceof Error?error.message:'The task could not be stopped. Check its status before trying again.'});onError(error)}
-  finally{stoppingTasks.delete(id);window.dispatchEvent(new Event('termx-task-cancellation'))}
+  finally{setTaskStopping(id,false)}
  }
  // The approval can be outside the mounted virtual rows. Wait for its actual
  // review button after scrolling; focus never submits an approval decision.
@@ -87,15 +116,25 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  function reviewCurrentTask(){
   if(!latest||!session)return;
   const index=messages.findIndex(message=>message.task?.id===latest.id);
-  if(latest.approvals?.some(approval=>approval.status==='pending')&&index>=0){setApprovalFocus({sessionId:session.id,taskId:latest.id,messageId:messages[index].id});virtual.scrollToIndex(index,{align:'end'});setAwayFromLatest(false)}
+  if(latest.approvals?.some(approval=>approval.status==='pending')&&index>=0){setApprovalFocus({sessionId:session.id,taskId:latest.id,messageId:messages[index].id});scrollToMessage(index)}
   else setSupervised(latest.id);
  }
 
  // Remote metadata is not a local edit. Compare cached text/context with its
  // own saved baseline so a clean main window can accept a detached draft.
  useEffect(()=>{if(session?.id!==sessionId.current){const previous=sessionId.current;if(previous){const old=drafts.current.get(previous);if(old?.dirty)void saveDraft(previous,old.text,old.saved)}sessionId.current=session?.id||null;const cached=session?.id?drafts.current.get(session.id):undefined;setDraft(cached?cached.text:session?.draft_text||'');setContext(cached?cached.context||[]:session?.draft_context||[]);lastSaved.current=cached?.saved??session?.draft_text??'';dirty.current=!!cached&&(cached.dirty||cached.text!==cached.saved||!sameContext(cached.context,cached.savedContext));if(cached&&dirty.current)drafts.current.set(session!.id,{...cached,dirty:true});setAttachments(cached?.attachments||[]);setPendingPrompt(cached?.submission||null)}else if(!dirty.current){const cached=session?.id?drafts.current.get(session.id):undefined;if(cached&&(session?.draft_text!==cached.saved||!sameContext(session?.draft_context,cached.savedContext))){setDraft(cached.text);setContext(cached.context||[]);lastSaved.current=cached.saved;dirty.current=cached.dirty||cached.text!==cached.saved||!sameContext(cached.context,cached.savedContext);if(dirty.current)drafts.current.set(session!.id,{...cached,dirty:true})}else{setDraft(session?.draft_text||'');setContext(session?.draft_context||[]);lastSaved.current=session?.draft_text||''}}},[session?.id,session?.draft_text,JSON.stringify(session?.draft_context)]);
- useEffect(()=>{const receive=(event:Event)=>{const value=(event as CustomEvent<{sessionId:string;draft:import('../lib/drafts').Draft|null}>).detail;if(value.sessionId!==sessionId.current||!value.draft)return;setDraft(value.draft.text);setContext(value.draft.context||[]);setAttachments(value.draft.attachments||[]);setPendingPrompt(value.draft.submission||null);lastSaved.current=value.draft.saved;dirty.current=value.draft.dirty};window.addEventListener('termx-draft-handoff',receive);return()=>window.removeEventListener('termx-draft-handoff',receive)},[]);
- useEffect(()=>{if(ownerId&&session?.id){const value=drafts.current.get(session.id);if(value)void persistWindowDraft(ownerId,session.id,value).catch(onError)}},[ownerId,session?.id,draft,JSON.stringify(context),JSON.stringify(attachments),submissionChange]);
+ useWhenChanged(handoff?.seq,()=>{if(!handoff||handoff.sessionId!==sessionId.current||!handoff.draft)return;const value=handoff.draft;setDraft(value.text);setContext(value.context||[]);setAttachments(value.attachments||[]);setPendingPrompt(value.submission||null);lastSaved.current=value.saved;dirty.current=value.dirty});
+ const persistTimer=useRef<ReturnType<typeof setTimeout>>(undefined);
+ const persistDraft=(owner:string,id:string)=>{persistTimer.current=undefined;const value=drafts.current.get(id);if(value)void persistWindowDraft(owner,id,value).catch(onError)};
+ // Typing persists after a pause; leaving the conversation (or unmounting) persists immediately.
+ useEffect(()=>{if(!ownerId||!session?.id)return;const owner=ownerId,id=session.id;clearTimeout(persistTimer.current);persistTimer.current=setTimeout(()=>persistDraft(owner,id),DRAFT_PERSIST_DELAY)},[ownerId,session?.id,draft,JSON.stringify(context),JSON.stringify(attachments),submissionRevision]);
+ useEffect(()=>{
+  if(!ownerId||!session?.id)return;const owner=ownerId,id=session.id;
+  const flush=()=>{if(persistTimer.current){clearTimeout(persistTimer.current);persistDraft(owner,id)}};
+  const onHidden=()=>{if(document.visibilityState==='hidden')flush()};
+  window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',onHidden);
+  return()=>{window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',onHidden);flush()};
+ },[ownerId,session?.id]);
  function editAttachments(next:import('../lib/drafts').DraftAttachment[],baseText=draft,baseContext=context){setAttachments(next);if(session?.id){const old=drafts.current.get(session.id);drafts.current.set(session.id,{text:baseText,saved:lastSaved.current,context:baseContext,...old,attachments:next,dirty:old?.dirty||false})}}
  function editDraft(text:string,nextContext:ContextItem[]=context){setDraft(text);setContext(nextContext);dirty.current=true;if(session?.id){const old=drafts.current.get(session.id);drafts.current.set(session.id,{...old,text,context:nextContext,saved:old?.saved??lastSaved.current,savedContext:old?.savedContext??session.draft_context??[],dirty:true,revision:session.revision})}}
  useEffect(()=>{if(!incoming||!session?.id||(incoming.sessionId&&incoming.sessionId!==session.id)||consumedTransfers.has(incoming.id))return;const existing=drafts.current.get(session.id),baseText=existing?.text??session.draft_text??draft,baseContext=existing?.context??session.draft_context??context,baseImages=existing?.attachments||attachments;const selected=[...baseContext,...(incoming.context||[])];if(selected.length>16||new TextEncoder().encode(JSON.stringify(selected)).length>256000){onError(new Error('Browser context exceeds the 16-item or 256 KB draft limit. Remove a context item first.'));return}consumedTransfers.add(incoming.id);if(incoming.text||incoming.context?.length)editDraft(baseText+(incoming.text?(baseText?'\n\n':'')+incoming.text:''),selected);const safe=incoming.attachments.filter((item):item is {name:string;mime:string;data:string}=>!!item&&typeof item==='object'&&'data' in item&&'mime' in item&&'name' in item);if(safe.length)editAttachments([...baseImages,...safe].slice(0,4),baseText,selected)},[incoming?.id,session?.id]);
@@ -131,7 +170,6 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
  }
  useEffect(()=>{if(!session||!dirty.current)return;const identifier=session.id,text=draft,previous=lastSaved.current;const intent=captureSessionWrite();const timer=setTimeout(()=>saveDraft(identifier,text,previous,intent),500);return ()=>clearTimeout(timer)},[draft,JSON.stringify(context),session?.id]);
 
- useEffect(()=>{if(scroller.current&&messages.length&&scroller.current.scrollHeight-scroller.current.scrollTop-scroller.current.clientHeight<350)virtual.scrollToIndex(messages.length-1,{align:'end'})},[messages.length,latest?.result]);
  async function patch(changes:Record<string,unknown>){
   if(!session)return false;const identifier=session.id,intent=captureSessionWrite();
   try{
@@ -147,15 +185,19 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
   if(!session||(!draft.trim()&&!pendingPrompt)||submittingDrafts.has(session.id))return;
   if(connectionBlocked){setActionError({sessionId:session.id,kind:'connection',message:connectionProblem==='engine'?'Reconnect this engine before sending. Your draft is still here.':'Connect an account and model before sending. Your draft is still here.'});return}
   const writeIntent=captureSessionWrite(),submission=Symbol();
+  setSendRefusal(null);
+  scrollToLatest();
   const identifier=session.id,prompt=pendingPrompt?.prompt||draft,key=pendingPrompt?.key||crypto.randomUUID(),selected=pendingPrompt?.context||context,selectedImages=pendingPrompt?.attachments||attachments.map(image=>({...image})),operation=pendingPrompt?.intent||intent,interruptTask=pendingPrompt?.interruptTask||(operation==='interrupt'?latest?.id:undefined);
-  const pending={prompt,key,context:selected,attachments:selectedImages,intent:operation,interruptTask};
+  // A retry reuses the stored Auto setting so the same request_id never carries a different body.
+  const autoBody=pendingPrompt?pendingPrompt.auto:operation==='send'&&session.mode==='agent'&&auto.enabled&&!autoBlockedReason(session)?{enabled:true as const,ceilings:auto.ceilings}:undefined;
+  const pending={prompt,key,context:selected,attachments:selectedImages,intent:operation,interruptTask,...(autoBody?{auto:autoBody}:{})};
   setPendingPrompt(pending);
   const previous=drafts.current.get(identifier);drafts.current.set(identifier,{text:draft,saved:lastSaved.current,dirty:dirty.current,context,attachments,...previous,submission:pending});
   try{
-   submittingDrafts.add(identifier);draftSubmissionOwners.set(identifier,submission);window.dispatchEvent(new Event('termx-draft-submission'));
+   beginSubmission(identifier,submission);
    if(ownerId)await persistWindowDraft(ownerId,identifier,drafts.current.get(identifier)!);
    await draftWrites.get(identifier);writeIntent.assertCurrent();
-   await serializeSessionWrite(identifier,()=>request('/api/workspace/sessions/'+identifier+(operation==='send'?'/turns':'/queue'),{...json('POST',{prompt,request_id:key,attachments:selectedImages.length?selectedImages:undefined,context:selected,...(interruptTask?{interrupt_task_id:interruptTask}:{})}),signal:writeIntent.signal}),writeIntent);
+   await serializeSessionWrite(identifier,()=>request('/api/workspace/sessions/'+identifier+(operation==='send'?'/turns':'/queue'),{...json('POST',{prompt,request_id:key,attachments:selectedImages.length?selectedImages:undefined,context:selected,...(autoBody?{auto:autoBody}:{}),...(interruptTask?{interrupt_task_id:interruptTask}:{})}),signal:writeIntent.signal}),writeIntent);
    if(operation!=='send')setQueueChange(value=>value+1);
    const local=drafts.current.get(identifier);
    if(!local||(local.text===prompt&&sameContext(local.context,selected)&&JSON.stringify(local.attachments||[])===JSON.stringify(selectedImages))){
@@ -170,17 +212,22 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
    }
    const remaining=drafts.current.get(identifier);if(remaining){const {submission:_submission,...rest}=remaining;drafts.current.set(identifier,rest)}
    if(sessionId.current===identifier)setPendingPrompt(null);onRefresh();
-  }catch(error){if(writeIntent.isCurrent())onError(error)}finally{
-   if(draftSubmissionOwners.get(identifier)===submission){draftSubmissionOwners.delete(identifier);submittingDrafts.delete(identifier)}
+  }catch(error){if(writeIntent.isCurrent()){const reason=refusalText(error);if(reason&&sessionId.current===identifier)setSendRefusal({sessionId:identifier,message:reason});onError(error)}}finally{
+   endSubmission(identifier,submission);
    if(writeIntent.isCurrent()){const latest=drafts.current.get(identifier);if(latest?.dirty)void saveDraft(identifier,latest.text,latest.saved)}
-   writeIntent.release();window.dispatchEvent(new Event('termx-draft-submission'));
+   writeIntent.release();
   }
  }
+ // Dictation fills the draft; Send after dictation sends it on the next render, once the draft holds the text.
+ const [voiceSend,setVoiceSend]=useState(false);
+ const liveVoice=useLiveVoice({sessionId:session?.id,enabled:visible&&!!session,onOpenSettings:onOpenVoiceSettings});
+ const voice=useComposerVoice({ownerId,speechSuspended:liveVoice.active,sessionId:session?.id,enabled:visible&&!!session,reply:latest&&latest.status==='completed'&&latest.result?{id:latest.id,text:latest.result}:null,onOpenSettings:onOpenVoiceSettings,onTranscript:(text,sendNow)=>{editDraft(draft+(draft?'\n\n':'')+text);if(sendNow)setVoiceSend(true)}});
+ useEffect(()=>{if(!voiceSend)return;setVoiceSend(false);void send(running?'queue':'send')},[voiceSend]);
  async function upload(files:FileList|File[]|null){if(!files)return;try{const next:{name:string;mime:string;data:string}[]=[];if(attachments.length+files.length>4)throw new Error('Attach at most four images per turn');for(const file of Array.from(files)){if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('This session attachment path supports PNG, JPEG and WebP. Use project file context for code.');if(file.size>2_000_000)throw new Error('Image exceeds the 2 MB session attachment limit');const data=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});next.push({name:file.name,mime:file.type,data})}editAttachments([...attachments,...next])}catch(error){onError(error)}}
  async function chooseEngine(engine:string){if(!session||engine===session.engine)return;setForkEngine(engine);setForkOpen(true)}
  return <section className="chat-region coding-session" aria-label="Conversation">
   {session&&(latest||!!changes?.files)&&<ConversationSurfaceHeader task={latest} changes={changes} onOpenSurface={onOpenSurface} onReviewTask={reviewCurrentTask}/>}
-  <div className="conversation-scroll" ref={scroller} tabIndex={0} role="log" aria-label="Conversation messages" aria-live="polite">
+  <div className="conversation-scroll" ref={scroller} tabIndex={0} role="log" aria-label="Conversation messages" aria-live="off">
    {session?.hasEarlier&&<Button className="history-button" variant="ghost" onClick={onHistory}>Load earlier messages</Button>}
    {!messages.length?<ChatWelcome session={session} engines={engines} providers={providers} onPrompt={text=>{editDraft(text);composer.current?.focus()}} onConfigureAgent={onConfigureAgent} hideConnectionHelp/>:<div className="message-list" style={{height:virtual.getTotalSize()}}>
     {virtual.getVirtualItems().map(item=>{
@@ -191,29 +238,35 @@ export default function Chat({session,engines,providers,onSelect,onRefresh,onErr
     })}
    </div>}
   </div>
-  {awayFromLatest&&messages.length>0&&<Button className="jump-latest" variant="secondary" size="sm" onClick={()=>{virtual.scrollToIndex(messages.length-1,{align:'end'});setAwayFromLatest(false);scroller.current?.focus()}}>Jump to latest</Button>}
+  {session&&<StatusAnnouncer sessionId={session.id} task={latest} extra={liveVoice.announcement}/>}
+  {awayFromLatest&&messages.length>0&&<Button className="jump-latest" variant="secondary" size="sm" onClick={()=>{scrollToLatest();scroller.current?.focus()}}>Jump to latest</Button>}
   <div className="composer-container">
    {session&&connectionProblem&&!running&&<ChatConnectionSetup key={(ownerId||'')+':'+session.id} session={session} providers={providers} engines={engines} enabled={visible&&!sending} onConfigureAgent={onConfigureAgent} onRefresh={onRefresh} onConnect={patch}/>}
    {session?.linked_from&&<div className="session-context"><span title="This conversation is a linked fork"><GitFork size={12}/> Linked fork</span></div>}
+   {session&&meter&&<TaskMeterLine meter={meter}/>}
    {session&&<PromptQueue visible={visible} sessionId={session.id} changed={queueChange} onError={onError} onRefresh={onRefresh} onTask={setSupervised}/>}
+   {liveVoice.panel}
    <PromptInputBody className="composer">
-    {context.length>0&&<section className="composer-context" aria-label="Selected browser context">{context.map((item,index)=><div className="context-chip" key={index}><details><summary>{contextLabel(item)}</summary><p>{contextDescription(item)}</p><p>Shares this snapshot or file reference. Browser control requires a separate handoff.</p><pre role="region" tabIndex={0} aria-label="Exact selected context">{JSON.stringify(item,null,2)}</pre></details><Button size="icon" variant="ghost" aria-label={'Remove context '+contextLabel(item)} onClick={()=>editDraft(draft,context.filter((_,i)=>i!==index))}><X size={12}/></Button></div>)}</section>}
-    {attachments.length>0&&<Attachments variant="inline" className="attachment-row">{attachments.map((item,index)=><Attachment className="ai-attachment" key={index} data={{id:String(index),type:'file',mediaType:item.mime,filename:item.name,url:'data:'+item.mime+';base64,'+item.data}} onRemove={()=>editAttachments(attachments.filter((_,i)=>i!==index))}><AttachmentPreview className="ai-attachment-preview"/><AttachmentInfo/><AttachmentRemove className="ai-attachment-remove" label={'Remove '+item.name}/></Attachment>)}</Attachments>}
-    {pendingPrompt&&!sending&&<div className="composer-retry" role="status"><span>A previous send needs retry. Retry uses the same request; your newer draft stays separate.</span><Button size="sm" variant="ghost" disabled={connectionBlocked||sending} onClick={()=>void send(pendingPrompt.intent)}>Retry send</Button></div>}
+    {context.length>0&&<section className="composer-context" aria-label="Selected browser context">{context.map((item,index)=><div className="context-chip" key={stableKey(item)}><details><summary>{contextLabel(item)}</summary><p>{contextDescription(item)}</p><p>Shares this snapshot or file reference. Browser control requires a separate handoff.</p><pre role="region" tabIndex={0} aria-label="Exact selected context">{JSON.stringify(item,null,2)}</pre></details><Button size="icon" variant="ghost" aria-label={'Remove context '+contextLabel(item)} onClick={()=>editDraft(draft,context.filter((_,i)=>i!==index))}><X size={12}/></Button></div>)}</section>}
+    {attachments.length>0&&<Attachments variant="inline" className="attachment-row">{attachments.map((item,index)=><Attachment className="ai-attachment" key={stableKey(item)} data={{id:String(index),type:'file',mediaType:item.mime,filename:item.name,url:'data:'+item.mime+';base64,'+item.data}} onRemove={()=>editAttachments(attachments.filter((_,i)=>i!==index))}><AttachmentPreview className="ai-attachment-preview"/><AttachmentInfo/><AttachmentRemove className="ai-attachment-remove" label={'Remove '+item.name}/></Attachment>)}</Attachments>}
+    {pendingPrompt&&!sending&&<div className="composer-retry" role="status"><span>{sendRefusal&&sendRefusal.sessionId===session?.id?sendRefusal.message+' Your draft stays here. Retry sends the same request.':'A previous send needs retry. Retry uses the same request; your newer draft stays separate.'}</span><Button size="sm" variant="ghost" disabled={connectionBlocked||sending} onClick={()=>void send(pendingPrompt.intent)}>Retry send</Button></div>}
     {actionError?.sessionId===session?.id&&<p className="composer-action-error" role="alert">{actionError?.message}</p>}
     <PromptInputTextarea onFiles={files=>void upload(files)} onRemoveLast={attachments.length?()=>editAttachments(attachments.slice(0,-1)):undefined} ref={composer} aria-label="Message" placeholder={running?'Add a follow-up…':'Ask anything, or describe a change…'} value={draft} disabled={!session} onChange={e=>editDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send(running?'queue':'send')}}}/>
     <PromptInputTools>
      <input type="file" hidden ref={fileInput} accept="image/png,image/jpeg,image/webp" multiple onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void upload(files)}}/>
-     <Button size="icon" variant="ghost" aria-label="Attach image" title="Attach image" disabled={!session} onClick={()=>fileInput.current?.click()}><Plus size={17}/></Button>
-     <SessionModePicker session={session} running={running} onPatch={patch}/>
+     <Button className="composer-attach" size="icon" variant="ghost" aria-label="Attach image" title="Attach image" disabled={!session} onClick={()=>fileInput.current?.click()}><Plus size={17}/></Button>
+     {voice.mic}
+     {liveVoice.button}
+     <SessionModePicker key={session?.id} session={session} running={running} onPatch={patch} auto={auto} onAutoChange={changeAuto}/>
      <SessionModelControls coordinating={coordinating} session={session} engines={engines} providers={providers} runnerAccounts={runnerAccounts} models={models} favorites={favorites} favoriteKey={favoriteKey} running={running} onFavorite={favorite} onEngine={chooseEngine} onPatch={patch} onRefresh={onRefresh} onError={onError} onConfigureAgent={onConfigureAgent}/>
      <span className="flex-spacer"/>
      {running&&draft.trim()&&!pendingPrompt&&<Button className="composer-queue" size="sm" variant="ghost" aria-label="Queue follow-up" title="Queue follow-up after this task" disabled={sending||connectionBlocked} onClick={()=>void send('queue')}><ListPlus size={16}/><span>Queue</span></Button>}
-     {running&&<Button size="icon" variant="ghost" aria-label="Running task actions" title="Queue, interrupt, or steer" aria-haspopup="dialog" aria-expanded={runActionsOpen} onClick={()=>setRunActionsOpen(true)}><MoreHorizontal size={17}/></Button>}
-     <Button size="icon" variant="ghost" aria-label="Session options" title="Session options" aria-haspopup="dialog" aria-expanded={optionsOpen} disabled={!session} onClick={()=>setOptionsOpen(true)}><SlidersHorizontal size={15}/></Button>
+     {running&&<Button className="composer-running-actions" size="icon" variant="ghost" aria-label="Running task actions" title="Queue, interrupt, or steer" aria-haspopup="dialog" aria-expanded={runActionsOpen} onClick={()=>setRunActionsOpen(true)}><MoreHorizontal size={17}/></Button>}
+     <Button className="composer-session-options" size="icon" variant="ghost" aria-label="Session options" title="Session options" aria-haspopup="dialog" aria-expanded={optionsOpen} disabled={!session} onClick={()=>setOptionsOpen(true)}><SlidersHorizontal size={15}/></Button>
      <PromptInputSubmit className="composer-send" status={running?'streaming':sending?'submitted':'ready'} aria-label={running?'Stop task':'Send message'} title={stopping?'Stopping task…':running?'Stop task':pendingPrompt?'Retry pending send':'Send message'} type="button" disabled={!session||stopping||(!running&&(connectionBlocked||(!draft.trim()&&!pendingPrompt)||sending))} onStop={running?()=>void stopTask():undefined} onClick={()=>void send()}>{stopping?<LoaderCircle className="spin" size={16}/>:running?<Square size={14}/>:sending?<LoaderCircle className="spin" size={17}/>:<ArrowUp size={17}/>}</PromptInputSubmit>
     </PromptInputTools>
    </PromptInputBody>
+   {voice.row}
    <p className="composer-hint">{stopping?'Stopping task and its delegated agents…':sending?'Sending your message…':connectionBlocked&&!running?(connectionProblem==='engine'?'Reconnect this engine to send. Your draft stays here.':'Connect an account and model to send. Your draft stays here.'):pendingPrompt?'Retry the pending message before sending your newer draft.':running?'Enter to queue a follow-up · Shift + Enter for a new line':'Enter to send · Shift + Enter for a new line'}</p>
   </div>
   <Dialog open={runActionsOpen&&running} onOpenChange={setRunActionsOpen}><DialogContent className="running-task-dialog"><DialogTitle>While the agent works</DialogTitle><DialogDescription>Choose how to use your follow-up.</DialogDescription><div className="running-task-actions">

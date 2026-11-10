@@ -25,6 +25,9 @@ def termx_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TERMX_ACP_HOME", str(tmp_path / "acp-registry"))
     # Catalogue tests opt in; unrelated tests never start real vendor agents.
     monkeypatch.setenv("TERMX_ENGINE_STARTUP_REFRESH", "0")
+    monkeypatch.setenv("TERMX_PROVIDER_STARTUP_REFRESH", "0")
+    monkeypatch.setenv("TERMX_AGENT_DESKTOP_STARTUP_REFRESH", "0")
+    monkeypatch.delenv("TERMX_AGENT_DESKTOP", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -44,3 +47,63 @@ def isolated_virtual_registry(monkeypatch: pytest.MonkeyPatch):
     yield
     virtual._active.clear()
     virtual._impls.clear()
+
+
+@pytest.fixture(autouse=True)
+def no_real_process_tree(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Desktop control refuses TermX's ancestor processes. Tests never walk the real process tree (it differs per host,
+    and a fake application pid could collide with a real ancestor). Tests that need ancestors patch ``ancestor_pids``."""
+    from termx.agent import desktop_data
+
+    monkeypatch.setattr(desktop_data, "ancestor_pids", lambda: frozenset({0}))
+
+
+@pytest.fixture
+def desktop_platform(monkeypatch: pytest.MonkeyPatch):
+    """Judge desktop actions as the named OS does (macos, linux, windows) without changing the real platform."""
+    from termx.desktop import agent_desktop
+
+    def choose(name: str = "macos") -> None:
+        monkeypatch.setattr(agent_desktop, "host_os", lambda: name)
+
+    choose("macos")
+    return choose
+
+
+@pytest.fixture
+def fake_agent_desktop(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Factory for a ready fake agent-desktop CLI installed as the process-wide client.
+
+    The shim is a Python script run by the interpreter that runs pytest, so the suite behaves the same on
+    macOS, Linux and Windows hosts. Every denial test can assert on ``desk.calls()``; at teardown every call the
+    shim saw must be a command and flag the client is allowed to build.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from agent_desktop_fixtures import FakeDesktop
+    from termx.desktop import agent_desktop
+
+    made: list[FakeDesktop] = []
+
+    def make(platform: str = "macos") -> FakeDesktop:
+        monkeypatch.setattr(agent_desktop, "host_os", lambda: platform)
+        desk = FakeDesktop(tmp_path / f"fake-desktop-{len(made)}", platform=platform).install()
+        with ThreadPoolExecutor(1) as pool:  # a private loop, so the fixture also works under a running one
+            pool.submit(asyncio.run, desk.client.ensure_fresh(0)).result()
+        made.append(desk)
+        return desk
+
+    yield make
+    agent_desktop.set_client(None)
+    for desk in made:
+        for call in desk.calls():
+            assert call["argv"][0] in agent_desktop.ALLOWED_COMMANDS
+            head = call["argv"][: call["argv"].index("--")] if "--" in call["argv"] else call["argv"]
+            assert not {item.split("=", 1)[0] for item in head} & agent_desktop.FORBIDDEN_FLAGS
+
+
+@pytest.fixture
+def ready_desktop(fake_agent_desktop):
+    """A host where desktop control is set up, whatever the test runs on (macOS-shaped, with a complete pin)."""
+    return fake_agent_desktop()

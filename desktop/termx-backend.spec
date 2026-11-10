@@ -10,6 +10,8 @@ ROOT = Path(SPECPATH).parent
 datas = [
     (str(ROOT / "src" / "termx" / "static"), "termx/static"),
     (str(ROOT / "src" / "termx" / "characters" / "assets"), "termx/characters/assets"),
+    # The pinned agent-desktop version and sha256 hashes desktop control checks before it runs the program.
+    (str(ROOT / "src" / "termx" / "desktop" / "agent_desktop_pins.json"), "termx/desktop"),
     (os.environ.get("TERMX_PACKAGE_WEB_DIR", str(ROOT / "desktop" / "workspace" / "dist")), "web"),
 ]
 # Chromium's complete macOS .app/framework layout must survive unchanged.

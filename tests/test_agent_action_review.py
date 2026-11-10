@@ -50,6 +50,10 @@ def test_unknown_shell_parks_exact_human_approval_and_revocation_blocks_executio
             await manager.resolve_approval(task['id'],task['approvals'][0]['id'],'approved')
             _,approval=await wait_for_pending_approval(store,task['id'],'tool')
             assert not (tmp_path/'outcome.txt').exists() and approval['payload']['browser_review']['effect']=='unknown'
+            # The owner reads what the command does, not the gate's reason code.
+            said=approval['payload']['consequence']
+            assert 'printf done > outcome.txt' in said and 'consequential_or_unknown' not in said and 'needs your decision' in said
+            assert approval['payload']['browser_review']['reason']=='consequential_or_unknown'
             live=False
             await manager.resolve_approval(task['id'],approval['id'],'approved')
             await wait_for_status(store,task['id'],'completed')

@@ -2,3 +2,10 @@
 .schedule-run pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
 .schedule-manager label:has(>input[type=checkbox]){display:flex;flex-direction:row;align-items:center;gap:8px;font-size:13px}.schedule-manager input[type=checkbox]{width:16px;height:16px;min-height:16px;margin:0;flex:none}
 .schedule-editor pre,.schedule-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;font-size:12px}.schedule-editor section[aria-label="Unattended browser permission"]{border:1px solid var(--border);border-radius:8px;padding:12px;min-width:0}.schedule-editor section[aria-label="Unattended browser permission"] fieldset{border:1px solid var(--border);border-radius:6px;min-width:0}.schedule-editor section[aria-label="Unattended browser permission"] label:has(input[type=checkbox]){overflow-wrap:anywhere}
+
+.schedule-computer{display:grid;gap:10px;margin:0;padding:12px;min-width:0;border:1px solid var(--border);border-radius:8px}
+.schedule-computer .manager-help{margin:0}
+.schedule-computer-apps{display:flex;flex-wrap:wrap;gap:6px 18px}
+.schedule-computer-panel{display:grid;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px}
+.schedule-computer-panel h4{margin:0;font-size:14px;font-weight:550}
+.schedule-computer-panel p{margin:0}

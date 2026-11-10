@@ -48,7 +48,7 @@
 .chat-region.coding-session .session-context{font-size:11px;min-height:19px;margin:0 3px 6px;gap:12px}
 .chat-region.coding-session .session-context>span{gap:5px}
 .chat-region.coding-session .session-context .composer-review-task{height:23px;padding:0 7px;font-size:11px;margin-left:auto}
-.chat-region.coding-session .composer-hint{font-size:11px;margin:7px 0 0;color:var(--secondary);opacity:.7}
+.chat-region.coding-session .composer-hint{font-size:11px;margin:7px 0 0;color:var(--secondary)}
 .chat-region.coding-session .composer-retry{font-size:12px;color:var(--warning);margin:0 0 8px}
 .chat-region.coding-session .prompt-queue{border:0;padding:0 3px;margin:0 0 7px;min-height:0;font-size:11px;max-height:min(180px,25vh)}
 .chat-region.coding-session .prompt-queue summary{padding:3px 0}
@@ -69,13 +69,13 @@
  .chat-region.coding-session .chat-empty h3{font-size:22px}
  .chat-region.coding-session .chat-empty p{font-size:13px}
  .chat-region.coding-session .task-activity>summary .activity-latest{display:none}
- .chat-region.coding-session .session-model-chip{max-width:32cqw}
+ .chat-region.coding-session .session-model-chip{max-width:32cqw;min-width:56px}
  .chat-region.coding-session .composer-hint{display:none}
 }
 @container(max-width:340px){
  .chat-region.coding-session .session-mode-chip{padding:0 3px}
  .chat-region.coding-session .session-mode-chip>svg{display:none}
- .chat-region.coding-session .session-model-chip{max-width:28cqw}
+ .chat-region.coding-session .session-model-chip{max-width:28cqw;min-width:56px}
  .chat-region.coding-session .composer-controls>.button-icon{width:26px}
  .chat-region.coding-session .task-attention{flex-wrap:wrap}
 }
@@ -122,3 +122,6 @@
 .model-connection-notice p{font-size:12px;line-height:1.6;color:var(--secondary);margin:0 0 10px}
 .model-connection-notice p:last-child{margin:0}
 @container(max-width:520px){.chat-region.coding-session .composer-controls>.composer-queue{width:27px;padding:0;justify-content:center}.composer-queue>span{display:none}.chat-region.coding-session .composer-retry{align-items:flex-start;flex-direction:column;gap:3px}}
+
+/* Motion in the conversation is decoration; respect the system setting even where a global rule is overridden. */
+@media(prefers-reduced-motion:reduce){.chat-region.coding-session .message-actions{transition:none}.chat-region.coding-session .spin,.chat-region.coding-session .composer-send .spin,.chat-region.coding-session .run-activity .spin{animation:none}.chat-region.coding-session .conversation-scroll{scroll-behavior:auto}.mode-popover{transition:none;animation:none}}

@@ -151,7 +151,7 @@ class DecisionBroker:
         if row['expires_at']<time():raise ValueError('approval expired')
         row['status']='approved_once' if approve else 'blocked';row['decision']='ALLOW' if approve else 'BLOCK';row['reason']='exact human decision';row['decision_source']='human'
         self.records.put('review',id,row);return row
-    async def authorize(self,action:ActionEnvelope,*,validate:Callable[[],bool],context=None,hard_deny=None,existing_consent:Callable[[],bool]|None=None):
+    async def authorize(self,action:ActionEnvelope,*,validate:Callable[[],bool],context=None,hard_deny=None,existing_consent:Callable[[],bool]|None=None,autonomous:Callable[[],bool]|None=None):
         lock=self._locks.setdefault(action.action_id,asyncio.Lock())
         async with lock:
             fingerprint=action.fingerprint();row=self.records.get('review',action.action_id)
@@ -171,9 +171,18 @@ class DecisionBroker:
             rules=[r for r in self.records.list('review-rule') if r['expires_at']>time() and r['scope']==self._scope(action)]
             used_model=False
             used_coding_consent=False
+            used_autonomous=False
             if any(r['decision']=='BLOCK' for r in rules):
                 row=self._record(action,'BLOCK','remembered deny','blocked');raise ActionBlocked(row)
-            if action.intended_effect in SENSITIVE or action.intended_effect=='unknown' or 'secret' in action.data_labels:
+            # The owner's own Auto or autonomous setting, re-checked by the caller against the
+            # current policy. The caller's risk classification already excludes blocked risk
+            # classes; the envelope effect of a shell command is 'unknown' only because the
+            # gate cannot parse it, so unknown is accepted here but sensitive effects and
+            # secrets still need a person.
+            if autonomous and action.intended_effect not in SENSITIVE and 'secret' not in action.data_labels and autonomous():
+                used_autonomous=True
+                verdict=ReviewVerdict('ALLOW','task_auto','Owner-enabled Auto or autonomous approval','host-policy-v1',time()+15)
+            elif action.intended_effect in SENSITIVE or action.intended_effect=='unknown' or 'secret' in action.data_labels:
                 verdict=ReviewVerdict('NEEDS_USER','consequential_or_unknown','Exact human review required','host-policy-v1',time()+300)
             elif existing_consent and existing_consent():
                 used_coding_consent=True
@@ -198,6 +207,9 @@ class DecisionBroker:
             row=self._record(action,verdict.decision,verdict.reason_code,status,expires_at=min(verdict.expires_at,time()+(15 if status=='permitted' else 300)),reviewer_version=verdict.reviewer_version,**({'human_preview':context['human_preview']} if context and context.get('human_preview') else {}))
             if used_coding_consent:
                 row['decision_source']='coding-policy'
+                self.records.put('review',row['id'],row)
+            if used_autonomous:
+                row['decision_source']='task-auto'
                 self.records.put('review',row['id'],row)
             if used_model:
                 row.update(decision_source='model',reviewer_account_revision=getattr(self.reviewer,'account_revision',''),reviewer_model_identity=getattr(self.reviewer,'expected_model',None))

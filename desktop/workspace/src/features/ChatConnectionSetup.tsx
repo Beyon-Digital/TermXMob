@@ -2,11 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Select} from '../components/ui/select';
 import type {Engine,Provider,Session} from '../lib/api';
+import {chatModels} from '../lib/model-info';
 import './chat-connection-setup.css';
-
-export function configuredModels(provider?:Provider){
- return [...new Set((provider?.model||'').split(/[\n,]/).map(model=>model.trim()).filter(Boolean))];
-}
 
 /** Configuration readiness is local metadata, never proof of provider access. */
 export function chatConnectionProblem(session:Session|null,providers:Provider[],engines:Engine[]){
@@ -17,7 +14,7 @@ export function chatConnectionProblem(session:Session|null,providers:Provider[],
  }
  const account=providers.find(provider=>provider.id===session.provider_id);
  if(!account?.secret_configured)return 'account';
- const models=configuredModels(account);
+ const models=chatModels(account);
  return !models.length||!!session.model&&!models.includes(session.model)?'model':null;
 }
 
@@ -31,10 +28,10 @@ export default function ChatConnectionSetup({session,providers,engines,enabled,o
  const engine=engines.find(value=>value.id===session.engine),signInRequired=['unauthenticated','expired'].includes(engine?.auth_state||'');
  const connected=providers.filter(provider=>provider.secret_configured);
  const account=connected.find(provider=>provider.id===selection.providerId)||connected.find(provider=>provider.id===session.provider_id)||connected[0];
- const models=configuredModels(account);
+ const models=chatModels(account);
  const model=account?.id===selection.providerId&&models.includes(selection.model)?selection.model:account?.id===session.provider_id&&session.model&&models.includes(session.model)?session.model:models[0]||'';
  if(!problem)return null;
- function choose(providerId:string,nextModel?:string){setSelection({providerId,model:nextModel??configuredModels(connected.find(provider=>provider.id===providerId))[0]??''});setSaved(false);setError('')}
+ function choose(providerId:string,nextModel?:string){setSelection({providerId,model:nextModel??chatModels(connected.find(provider=>provider.id===providerId))[0]??''});setSaved(false);setError('')}
  async function connect(){
   if(!enabled||current.current.busy||saved||!account||!model)return;
   current.current.busy=true;const generation=current.current.generation;setBusy(true);setError('');

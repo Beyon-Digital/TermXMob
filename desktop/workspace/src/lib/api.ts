@@ -4,7 +4,7 @@ export function csrf(){const value=document.cookie.split('; ').find(value=>value
 let refreshing:Promise<void>|undefined;
 const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('termx-session-state'):undefined;
 channel?.addEventListener('message',event=>{if(['signed-out','session-locked','session-unlocked'].includes(event.data))window.dispatchEvent(new Event('termx-'+event.data))});
-function locked(){channel?.postMessage('session-locked');window.dispatchEvent(new Event('termx-session-locked'));}
+export function locked(){channel?.postMessage('session-locked');window.dispatchEvent(new Event('termx-session-locked'));}
 function signedOut(){channel?.postMessage('signed-out');window.dispatchEvent(new Event('termx-signed-out'));}
 export async function refreshSession(){
  if(refreshing)return refreshing;
@@ -84,7 +84,7 @@ export interface Task{coordination_report?:{source_session_id?:string;source_tas
 export interface Turn{id:string;prompt:string;task_id?:string;task?:Task;sequence:number}
 export interface Session{reasoning_config?:Record<string,string>;custom_agent_id?:string|null;custom_agent_revision?:string|null;id:string;title:string;project_id?:string;cwd?:string;engine:string;provider_id?:string;model?:string;mode:string;pinned:boolean;archived:boolean;draft_text:string;draft_context?:import('./context').ContextItem[];revision:number;turns?:Turn[];linked_from?:string;updated_at:number;scroll:number;scroll_anchor?:import('./conversation-position').ConversationAnchor|null;extension_ids?:string[];workflow?:string|null;hasEarlier?:boolean;group_id?:string|null;runner_id?:string|null;runner_credential_ref?:string|null;run_limits?:Record<string,number>;latest_status?:string|null;worktree_id?:string|null;worktree_digest?:string|null;worktree_branch?:string|null}
 export interface Engine{id:string;name?:string;available?:boolean;auth_state?:string|null;auth_detail?:string|null;error?:string|null;capabilities?:Record<string,unknown>}
-export interface Provider{id:string;name:string;model:string;capabilities:string[];secret_configured:boolean}
+export interface Provider{id:string;name:string;model:string;models?:string[]|null;capabilities:string[];secret_configured:boolean}
 
 export async function login(username:string,password:string,setup=false,bootstrap=''){
  if(nativeWorkspace())return nativeLogin(username,password,setup);

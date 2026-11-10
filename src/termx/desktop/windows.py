@@ -21,7 +21,8 @@ class WindowCapture:
         return {'supported': supported, 'backend': 'coregraphics-window' if sys.platform == 'darwin' else 'print-window' if sys.platform == 'win32' else 'x11-window',
                 'reason': '' if supported else 'Exact window capture requires X11 with wmctrl and ImageMagick; a Wayland portal adapter is required on Wayland.'}
 
-    def list(self):
+    def list(self, all_layers=False):
+        """On-screen windows, front to back. macOS lists only ordinary windows unless ``all_layers`` (Dock, menu bar, panels)."""
         if sys.platform == 'darwin':
             cg = ctypes.CDLL(ctypes.util.find_library('CoreGraphics'))
             cf = ctypes.CDLL(ctypes.util.find_library('CoreFoundation'))
@@ -42,8 +43,8 @@ class WindowCapture:
                 result = []
                 for row in rows:
                     bounds = row.get('kCGWindowBounds', {})
-                    if row.get('kCGWindowLayer') != 0 or bounds.get('Width', 0) < 20 or bounds.get('Height', 0) < 20: continue
-                    result.append({'id': str(row['kCGWindowNumber']), 'pid': int(row['kCGWindowOwnerPID']), 'app': row.get('kCGWindowOwnerName', ''), 'title': row.get('kCGWindowName', ''),
+                    if (row.get('kCGWindowLayer') != 0 and not all_layers) or bounds.get('Width', 0) < 20 or bounds.get('Height', 0) < 20: continue
+                    result.append({'id': str(row['kCGWindowNumber']), 'layer': int(row.get('kCGWindowLayer', 0)), 'pid': int(row['kCGWindowOwnerPID']), 'app': row.get('kCGWindowOwnerName', ''), 'title': row.get('kCGWindowName', ''),
                                    'x': int(bounds.get('X', 0)), 'y': int(bounds.get('Y', 0)), 'width': int(bounds['Width']), 'height': int(bounds['Height'])})
                 return result
             finally:

@@ -18,14 +18,19 @@ from strawberry.types import Info
 from termx.audit import log_event
 from termx.engines.env import env_diff_report, resolve_executable
 from termx.graphql.context import TermxContext
-from termx.graphql.errors import resolver
+from termx.graphql.domains.desktop_workspace import principal as session_principal
+from termx.graphql.errors import fail, resolver
+from termx.workspace.store import Conflict
 from termx.workspace.public_events import context_task_snapshot
 from termx.graphql.inputs import (
     AgentApprovalInput,
     AgentProviderInput,
+    ModelRoutingInput,
     AgentRetentionInput,
     AgentTaskInput,
+    AutoModeInput,
     PolicyRuleInput,
+    ReassignNodeInput,
     PolicyRulePatchInput,
     WorktreeActionInput,
 )
@@ -33,7 +38,8 @@ from termx.graphql import types as T
 
 Ctx = Info[TermxContext, None]
 
-_APPROVAL_DECISIONS = {"approved", "denied", "cancel"}
+_APPROVAL_DECISIONS = {"approved", "denied", "cancel", "revise"}
+_MAX_APPROVAL_FEEDBACK = 10_000
 
 
 def _visible_coding_consent(ctx, rule):
@@ -48,6 +54,27 @@ def _legacy_policy_editor(ctx, rule=None):
     ctx.require_host('host-admin')
     if rule and rule.get('consent_binding'):
         raise HTTPException(403,'Owner-scoped coding consent requires the versioned CAS editor')
+
+
+async def _board_call(info, scope, operation):
+    """Run one task-graph operation as the signed-in user. Every call returns the whole board."""
+    ctx = info.context
+    ctx.require(scope)
+    actor = session_principal(info)
+    graph = ctx.state.workspace.orchestrator.graph
+    try:
+        if operation is not None:
+            await operation(graph, actor)
+        return T.OrchestratorBoard.wrap(graph.board(actor))
+    except PermissionError as exc:
+        fail(403, str(exc) or "Permission denied")
+    except KeyError:
+        fail(404, "node not found")
+    except Conflict as exc:
+        fail(409, str(exc))
+    except ValueError as exc:
+        fail(400, str(exc))
+
 
 _APPROVAL_REMEMBER = {"once", "task", "conversation", "project", "custom_agent", "session", "always"}
 
@@ -113,6 +140,18 @@ class AgentQueries:
     def agent_providers(self, info: Ctx) -> list[T.AgentProvider]:
         info.context.require("agent-view")
         return T.AgentProvider.wrap_all(info.context.state.agent.list_providers())
+
+    @strawberry.field
+    @resolver
+    async def orchestrator_board(self, info: Ctx) -> T.OrchestratorBoard:
+        """The main agent's task graph: nodes with dependencies, status, usage and a rollup."""
+        return await _board_call(info, "agent-view", None)
+
+    @strawberry.field
+    @resolver
+    def model_routing(self, info: Ctx) -> JSON:
+        info.context.require("agent-view")
+        return info.context.state.agent.routing()
 
     @strawberry.field
     @resolver
@@ -332,6 +371,28 @@ class AgentQueries:
 class AgentMutations:
     @strawberry.mutation
     @resolver
+    async def retry_node(self, info: Ctx, node_id: str) -> T.OrchestratorBoard:
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.retry(actor, node_id))
+
+    @strawberry.mutation
+    @resolver
+    async def reassign_node(self, info: Ctx, node_id: str, input: ReassignNodeInput) -> T.OrchestratorBoard:
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.reassign(
+            actor, node_id, provider_id=input.provider_id, model=input.model))
+
+    @strawberry.mutation
+    @resolver
+    async def start_ready_nodes(self, info: Ctx) -> T.OrchestratorBoard:
+        """Start the waiting tasks whose dependencies have finished, as the signed-in owner."""
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.start_ready(actor))
+
+    @strawberry.mutation
+    @resolver
+    async def cancel_node(self, info: Ctx, node_id: str) -> T.OrchestratorBoard:
+        return await _board_call(info, "agent-control", lambda graph, actor: graph.cancel(actor, node_id))
+
+    @strawberry.mutation
+    @resolver
     async def refresh_acp_registry(self, info: Ctx) -> JSON:
         info.context.require_host('host-admin')
         return await info.context.state.engines.acp_registry.refresh()
@@ -435,6 +496,8 @@ class AgentMutations:
                 model=input.model,
                 capabilities=input.capabilities,
                 api_key=input.api_key,
+                model_meta=input.model_meta,
+                wire=input.wire,
             )
         except (ValueError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -457,11 +520,35 @@ class AgentMutations:
 
     @strawberry.mutation
     @resolver
-    async def test_agent_provider(self, info: Ctx, provider_id: str) -> JSON:
+    async def refresh_provider_models(self, info: Ctx, provider_id: str) -> T.AgentProvider:
+        """Ask the provider which models it serves. A failure keeps the old catalog and sets catalog_error."""
         ctx = info.context
         ctx.require_host('ai-settings')
         try:
-            return await ctx.state.agent.test_provider(provider_id)
+            return T.AgentProvider.wrap(await ctx.state.agent.refresh_provider_models(provider_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="provider not found") from exc
+
+    @strawberry.mutation
+    @resolver
+    def set_model_routing(self, info: Ctx, input: ModelRoutingInput) -> JSON:
+        ctx = info.context
+        ctx.require_host('ai-settings')
+        try:
+            routing = ctx.state.agent.validate_routing(input.routing)
+            ctx.state.store.update_agent({"routing": routing})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("agent_model_routing_set", roles=sorted(routing))
+        return routing
+
+    @strawberry.mutation
+    @resolver
+    async def test_agent_provider(self, info: Ctx, provider_id: str, billed: bool = False) -> JSON:
+        ctx = info.context
+        ctx.require_host('ai-settings')
+        try:
+            return await ctx.state.agent.test_provider(provider_id, billed=billed)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
         except (ValueError, RuntimeError) as exc:
@@ -475,6 +562,9 @@ class AgentMutations:
         state = ctx.state
         body = input
         project_id = ctx.require_path('agent-run', body.cwd)
+        if body.auto is not None and body.auto.enabled:
+            # Auto removes the approval step, which needs agent-control to resolve.
+            ctx.require_path('agent-control', body.cwd)
         if body.conversation_id:
             ctx.require_resource('agent-control', 'conversation', body.conversation_id)
         conversation = (
@@ -501,12 +591,22 @@ class AgentMutations:
             _require_custom_agent(ctx,custom_agent)
             if not custom_agent.get('enabled'):
                 raise HTTPException(409,'custom agent is disabled')
+            try:
+                state.workspace.bots.guard_agent(custom_agent_id)  # a paused bot or one past its ceiling cannot be started here either
+            except PermissionError as exc:
+                raise HTTPException(403,str(exc)) from exc
+            except ValueError as exc:  # workspace Conflict
+                raise HTTPException(409,str(exc)) from exc
         attachments = body.attachments or []
         profile_engine = ((custom_agent or {}).get("file") or {}).get("engine")
         previous = state.agent_store.engine_session_for_conversation(body.conversation_id) if body.conversation_id else None
         engine = body.engine or (profile_engine if profile_engine not in (None, "inherit") else None) or (
             previous["engine"] if previous else "internal")
         if engine != "internal":
+            if body.mode == "plan":
+                raise HTTPException(status_code=400, detail="Plan mode is only available for Internal tasks; native engines use their own planning")
+            if body.auto is not None and body.auto.enabled:
+                raise HTTPException(status_code=400, detail="Auto mode is only available for Internal tasks")
             try:
                 from termx.mcp.scope import authorize as authorize_mcp
                 task = await state.engines.create_task(
@@ -597,6 +697,7 @@ class AgentMutations:
                 conversation_id=body.conversation_id or None,
                 custom_agent_id=custom_agent_id,
                 custom_agent_snapshot=custom_agent,on_created=mcp_created,
+                auto={"enabled": body.auto.enabled, "ceilings": body.auto.ceilings} if body.auto else None,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="provider not found") from exc
@@ -619,6 +720,19 @@ class AgentMutations:
 
     @strawberry.mutation
     @resolver
+    def set_task_auto(self, info: Ctx, task_id: str, input: AutoModeInput) -> T.AgentTask:
+        ctx = info.context
+        ctx.require_resource('agent-control', 'task', task_id)
+        try:
+            ctx.state.agent.set_task_auto(task_id, enabled=input.enabled, ceilings=input.ceilings)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="task not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return T.AgentTask.wrap(ctx.state.agent_store.get_task(task_id))
+
+    @strawberry.mutation
+    @resolver
     def delete_agent_task(self, info: Ctx, task_id: str) -> T.Ok:
         ctx = info.context
         ctx.require_resource('agent-control', 'task', task_id)
@@ -638,7 +752,9 @@ class AgentMutations:
         ctx = info.context
         ctx.require_resource('agent-control', 'task', task_id)
         if input.decision not in _APPROVAL_DECISIONS:
-            raise HTTPException(status_code=422, detail="decision must be approved, denied or cancel")
+            raise HTTPException(status_code=422, detail="decision must be approved, denied, revise or cancel")
+        if input.feedback is not None and len(input.feedback) > _MAX_APPROVAL_FEEDBACK:
+            raise HTTPException(status_code=422, detail=f"feedback must be at most {_MAX_APPROVAL_FEEDBACK} characters")
         if input.remember is not None and input.remember not in _APPROVAL_REMEMBER:
             raise HTTPException(status_code=422, detail=f"remember must be one of {sorted(_APPROVAL_REMEMBER)}")
         try:
@@ -656,7 +772,7 @@ class AgentMutations:
                 return resolved
             return await ctx.state.agent.resolve_approval(
                 task_id, approval_id, input.decision, remember=input.remember,
-                limits=input.limits,
+                limits=input.limits, feedback=input.feedback,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="approval not found") from exc

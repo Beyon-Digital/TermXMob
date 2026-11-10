@@ -55,6 +55,8 @@
 .run-activity-count{margin-left:auto;white-space:nowrap;flex:none;font-size:11px}
 .disclosure-chevron{transition:transform .15s;flex:none}[data-state=open]>.disclosure-chevron{transform:rotate(90deg)}
 .run-activity-body{border-top:1px solid var(--border);padding:8px 12px 10px;max-height:min(60dvh,640px);overflow:auto}
+.agent-notes{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:3px;font-size:12px;line-height:1.5;color:var(--secondary)}
+.agent-notes>li{overflow-wrap:anywhere;padding-left:10px;border-left:2px solid var(--border)}
 .run-inspect{font-size:11px;margin-top:4px;color:var(--secondary)}
 .activity-loading{display:flex;align-items:center;gap:8px;padding:6px 0;color:var(--secondary);font-size:12px;margin:0}.activity-load-error{font-size:12px;line-height:1.6;color:var(--destructive);margin:5px 0}
 .tool-timeline{list-style:none!important;margin:0!important;padding:0!important;line-height:1.5}
@@ -71,6 +73,7 @@
 .message-content .tool-value pre,.message-content .tool-event-details pre{max-height:260px;overflow:auto;white-space:pre-wrap;margin:0;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--background);font-size:11px;line-height:1.6;color:var(--foreground)}
 .tool-call-id{display:block;font-size:9px;opacity:.75;margin:8px 0;overflow-wrap:anywhere}
 .tool-event-details{margin-top:8px}.tool-event-details summary{font-size:11px;color:var(--secondary);cursor:pointer}.tool-event-details[open]>pre{margin-top:8px}
+.desktop-facts{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px}.desktop-facts li{display:flex;gap:10px;align-items:baseline}.desktop-facts span{flex:0 0 112px;color:var(--secondary)}.desktop-facts strong{font-weight:500;color:var(--foreground);min-width:0;overflow-wrap:anywhere}.desktop-note{margin:8px 0 0;color:var(--secondary);max-width:70ch}
 .tool-detail-empty{font-size:11px;margin:8px 0}.activity-overflow{font-size:11px;color:var(--secondary);margin:8px}
 .agent-team{margin:5px 0 12px}.agent-team>h3{display:flex;align-items:center;gap:7px;color:var(--secondary);font-size:11px;font-weight:500;margin:6px 0 8px}
 .delegated-agents{list-style:none!important;margin:0!important;padding:0!important;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--background)}

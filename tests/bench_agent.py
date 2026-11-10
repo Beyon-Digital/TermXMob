@@ -21,27 +21,6 @@ from termx.agent.store import AgentStore
 TERMINAL = {"completed", "failed", "cancelled"}
 
 
-class FakeComputer:
-    def __init__(self, screenshot: bytes = b"jpeg" * 64) -> None:
-        self.actions: list[list[dict[str, Any]]] = []
-        self.screenshot = screenshot
-        self.released = 0
-
-    async def execute(
-        self,
-        actions: list[dict[str, Any]],
-        *,
-        cancel: asyncio.Event | None = None,
-    ) -> bytes:
-        self.actions.append(actions)
-        if cancel is not None and cancel.is_set():
-            raise asyncio.CancelledError
-        return self.screenshot
-
-    async def release_all(self) -> None:
-        self.released += 1
-
-
 class BenchAdapter:
     """Scripted provider: each entry in `script` is one turn's call list."""
 
@@ -72,7 +51,6 @@ class BenchAdapter:
         manifest: dict[str, Any],
         previous_response_id: str | None = None,
         input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
         read_only: bool = False,
         allow_subagents: bool = True,
     ) -> ProviderTurn:
@@ -106,10 +84,6 @@ def fn(call_id: str, name: str, **arguments: Any) -> ProviderCall:
     return ProviderCall(type="function", call_id=call_id, name=name, arguments=arguments)
 
 
-def computer(call_id: str, *actions: dict[str, Any]) -> ProviderCall:
-    return ProviderCall(type="computer", call_id=call_id, actions=list(actions))
-
-
 def make_files(root: Path, count: int = 10) -> list[str]:
     names = []
     for index in range(count):
@@ -122,14 +96,13 @@ def make_files(root: Path, count: int = 10) -> list[str]:
 def build_manager(tmp_path: Path, adapter: BenchAdapter) -> tuple[AgentManager, AgentStore]:
     store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
     manager = AgentManager(store, CredentialStore(memory={}), desktop=None, adapter_factory=lambda _p, _k: adapter)
-    manager._computer = FakeComputer()  # type: ignore[assignment]
     manager.save_provider(
         provider_id="bench",
         kind="openai-compatible",
         name="Bench",
         base_url="http://127.0.0.1:9/v1",
         model="bench-model",
-        capabilities=["shell", "computer"],
+        capabilities=["shell", "functions"],
         api_key="bench-key",
     )
     return manager, store
@@ -249,16 +222,60 @@ async def scenario_subagents_two(tmp_path: Path) -> dict[str, Any]:
                               prompt="Fan out two readers")
 
 
-async def scenario_computer_loop(tmp_path: Path) -> dict[str, Any]:
-    root = tmp_path / "computer"
+class DesktopLoopAdapter(BenchAdapter):
+    """Reads the app handle and the control ref from earlier tool output: apps, snapshot, act, snapshot, done."""
+
+    async def turn(self, *, prompt: str, cwd: str, manifest: dict[str, Any], previous_response_id: str | None = None,
+                   input_items: list[dict[str, Any]] | None = None, read_only: bool = False,
+                   allow_subagents: bool = True, **_ignored: Any) -> ProviderTurn:
+        import re
+
+        self.turns += 1
+        screens = []
+        for item in input_items or []:
+            if isinstance(item, dict) and item.get("type") == "function_call_output":
+                try:
+                    screens.append(json.loads(item["output"]).get("screen", ""))
+                except ValueError:
+                    pass
+        handle = next((m.group(0) for text in screens if (m := re.search(r"\ba[0-9a-f]{8}\b", text))), "")
+        ref = next((m.group(0) for text in screens if (m := re.search(r"@s[0-9a-z]+:e\d+", text))), "")
+        steps = [
+            ("desktop_apps", {}),
+            ("desktop_snapshot", {"app_id": handle}),
+            ("desktop_act", {"ref": ref, "action": "click"}),
+            ("desktop_snapshot", {"app_id": handle}),
+        ]
+        calls: list[ProviderCall] = []
+        if len(screens) < len(steps):
+            name, arguments = steps[len(screens)]
+            calls = [fn(f"d{self.turns}", name, **arguments)]
+        return ProviderTurn(
+            response_id=f"response-{self.turns}", text="" if calls else "Done.", calls=calls,
+            usage={"input_tokens": 8, "output_tokens": 4},
+            output_items=[{"type": "function_call", "call_id": c.call_id, "name": c.name, "arguments": json.dumps(c.arguments)} for c in calls]
+            or [{"type": "message", "content": [{"type": "output_text", "text": "Done."}]}],
+        )
+
+
+async def scenario_desktop_loop(tmp_path: Path) -> dict[str, Any]:
+    """apps, snapshot, act, snapshot against the fake agent-desktop; the result counts CLI calls too."""
+    from agent_desktop_fixtures import FakeDesktop, app_row, node, tree, window_row
+    from termx.desktop import agent_desktop
+
+    root = tmp_path / "desktop"
     root.mkdir(parents=True, exist_ok=True)
-    script = [
-        [computer("k1", {"type": "screenshot"})],
-        [computer("k2", {"type": "click", "x": 10, "y": 10})],
-        [computer("k3", {"type": "type", "text": "hi"})],
-        [],
-    ]
-    return await run_scenario(root, BenchAdapter(script), prompt="Drive the desktop")
+    desk = FakeDesktop(root / "fake").install()
+    sid = "s1bench00001"
+    notes = app_row("Notes", 6001, "com.apple.Notes")
+    desk.arrange_apps((notes, [window_row("w-7", notes)], tree(sid, node("button", "Save", f"@{sid}:e1", available_actions=["Click"]))))
+    try:
+        await desk.client.ensure_fresh(0)
+        result = await run_scenario(root, DesktopLoopAdapter([]), prompt="Drive the desktop")
+        result["cli_commands"] = [c for c in desk.commands() if c not in {"version", "status"}]
+        return result
+    finally:
+        agent_desktop.set_client(None)
 
 
 SCENARIOS = {
@@ -267,7 +284,7 @@ SCENARIOS = {
     "file_inspection_structured": scenario_file_inspection_structured,
     "check_command": scenario_check_command,
     "subagents_two": scenario_subagents_two,
-    "computer_loop": scenario_computer_loop,
+    "desktop_loop": scenario_desktop_loop,
 }
 
 

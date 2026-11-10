@@ -97,6 +97,52 @@ persistent main conversation under a scheduled grant is refused before context
 or provider dispatch: its cross-project coordination surface exceeds one target
 grant. Existing scheduled conversations do not gain access to other children.
 
+## Task graph
+
+For work with dependencies the main agent records a graph of **nodes** instead of
+spawning ad-hoc children. A node is a durable `orchestrator_node` record in
+`workspace.sqlite3` with a title, prompt, role, `ask` or `agent` mode, the IDs it
+`depends_on`, its task IDs, status, attempt count, last event time and a result
+summary. Each node runs as its own top-level task through `AgentManager.create_task`,
+so delegation depth stays 1, the sub-agent parallel and total limits do not apply, and
+every node has its own budget, approvals and isolation: a Git worktree when the main
+folder is a repository, the managed scratch folder when it is scratch, and
+read-only `ask` otherwise. At most four nodes run at once. Nodes use the `worker`
+model route, or the provider and model set by `reassign_node`.
+
+| Tool | Approval | What it does |
+| --- | --- | --- |
+| `plan_nodes` | none | Records up to 20 nodes per call (100 per main agent). Rejects unknown dependencies, self-dependencies, duplicate keys and cycles. A replayed call ID returns the same nodes. |
+| `start_ready` | always | Starts pending nodes whose dependencies all completed. Each brief carries the dependency summaries, labelled as untrusted evidence. A failed or cancelled dependency keeps its dependents pending. |
+| `node_status` | none | Nodes plus a rollup. `wait_seconds` (max 120) waits for a running node to change state, which is how a turn waits without a background loop. |
+| `retry_node` | always | Reruns a failed, stalled or cancelled node, stopping a stalled one first. A node gets 2 attempts per model. |
+| `reassign_node` | always | Moves a stopped or pending node to another configured provider/model (resolved like any worker route) with a fresh attempt count. The model must differ from the current one. |
+| `cancel_node` | none | Cancels the node and, transitively, every dependent that has not completed. Completed work is kept. |
+
+**Monitoring.** Every event of a node's current task refreshes its `last_event_at`,
+not only the notable ones (the stored value is written at most every 5 seconds per
+node). A running node with no event for `stall_seconds` becomes `stalled`: 300 by
+default, set with `state.node_stall_seconds` or `TaskGraph(stall_seconds=...)`. One
+`orchestrator.node_stalled` event is added to the activity feed and steers an active
+main turn. Nothing is stopped automatically. A task that waits for an approval or
+a decision is not stalled, and any new event returns a stalled node to `running`.
+Failures and completions are reported the same way (`orchestrator.node_failed`,
+`orchestrator.node_completed`). A read repairs a node whose finishing event was
+missed, for example across a host restart.
+
+**Rollup.** The orchestrator snapshot includes `nodes` and `rollup`: counts per status,
+percent complete (completed over total), and summed tokens and cost across all
+attempts. Cost is `null` until some node has a priced turn.
+
+**User control.** The same operations are available over GraphQL. `orchestrator_board`
+(`agent-view`) returns `{nodes, rollup}`; `retry_node`, `reassign_node` and
+`cancel_node` (`agent-control`, plus `agent-run` for the two that start a task) call
+the methods behind the tools and return the updated board. They act as the signed-in
+user, only on that user's own main agent graph, and answer 403 without the scope, 404
+for an unknown node, 409 for a state conflict and 400 for an invalid model. Users have no
+approval step for these actions; the tools do, because the model is not the user.
+Stall, failure and completion events appear in the main agent activity feed.
+
 ## Updates and direct control
 
 Child status, approvals, failures, recovery decisions and results enter a durable,

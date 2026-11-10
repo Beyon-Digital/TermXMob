@@ -111,7 +111,7 @@ class WorkspaceStore:
                      1, json.dumps(body), now, now))
                 for kind, record, changes in (
                     ('schedule',current,{'next_run':next_due,'last_run':identifier,'queued':False,
-                        **({'enabled':False,'state':'completed'} if next_due is None else {})}),
+                        **({'enabled':False,'state':'completed'} if next_due is None and (current.get('trigger') or {}).get('kind','time')=='time' else {})}),
                     ('delegation',grant,{'used_runs':grant['used_runs']+1}),
                     ('goal',goal,{'runs_started':goal['runs_started']+1})):
                     clean = {k:v for k,v in {**record,**changes}.items()

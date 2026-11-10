@@ -164,7 +164,6 @@ def run(destination):
                     page.get_by_role('button', name='Continue with password', exact=True).click()
                     composer = page.get_by_role('textbox', name='Message', exact=True)
                     expect(composer).to_be_enabled(timeout=25000)
-                    page.get_by_role('navigation', name='Workspace view').get_by_role('button', name='Chat', exact=True).click()
                     expect(page.get_by_role('heading', name='Session recovery is ready')).to_be_visible()
                     page.get_by_role('log').evaluate('(node)=>node.scrollTop=0')
                     page.screenshot(path=str(output/'first-desktop-dark.png'))
@@ -196,7 +195,8 @@ def run(destination):
                     dialog.get_by_role('button', name='Close', exact=True).click()
                     page.get_by_role('button', name='Session mode', exact=True).click()
                     page.screenshot(path=str(output/'mode-desktop-dark.png'))
-                    page.get_by_role('dialog', name='Choose a mode', exact=True).get_by_text('Ask', exact=True).click()
+                    # The mode chooser is a popover radio group, not a dialog.
+                    page.get_by_role('radiogroup', name='Session mode', exact=True).get_by_text('Ask', exact=True).click()
                     expect(page.get_by_role('button', name='Session mode', exact=True)).to_contain_text('Ask')
                     assert state.workspace.session(owner, conversation['id'], turns=False)['mode'] == 'ask'
                     page.get_by_role('button', name='Session options', exact=True).click()
@@ -217,7 +217,8 @@ def run(destination):
                         page.get_by_role('button', name='Workspace actions', exact=True).click()
                         page.get_by_role('button', name='Appearance', exact=True).click()
                         preferences = page.get_by_role('dialog', name='Settings', exact=True)
-                        preferences.get_by_role('navigation', name='Settings categories').get_by_role('button', name='Appearance', exact=True).click()
+                        # Appearance lives under Preferences, which the Appearance menu entry already selects.
+                        expect(preferences.get_by_role('navigation', name='Settings categories').get_by_role('link', name='Preferences', exact=True)).to_have_attribute('aria-current', 'page')
                         preferences.get_by_role('radio', name=theme.title(), exact=True).check()
                         preferences.get_by_role('button', name='Close', exact=True).click()
                         expect(page.locator('html')).to_have_attribute('data-theme', theme)

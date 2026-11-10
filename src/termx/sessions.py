@@ -144,7 +144,15 @@ def with_shell_integration(argv: list[str], env: dict[str, str]) -> list[str]:
 def default_shell() -> str:
     if os.name == "nt":
         return os.environ.get("COMSPEC") or "powershell.exe"
-    return os.environ.get("SHELL") or "/bin/zsh"
+    configured = os.environ.get("SHELL")
+    if configured:
+        return configured
+    # No SHELL (containers, services): prefer zsh, then whichever POSIX shell
+    # this host actually has, so a new session never starts a missing binary.
+    for candidate in ("/bin/zsh", "/bin/bash", "/bin/sh"):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return "/bin/sh"
 
 
 def default_argv(shell: str | None = None) -> list[str]:

@@ -1,0 +1,38 @@
+/* Live voice panel, docked above the message box. Quiet text and buttons; the level meter is the only moving part. */
+.live-voice-panel{display:flex;flex-direction:column;gap:8px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:13px}
+.live-voice-line{display:flex;align-items:center;gap:10px;min-width:0}
+.live-voice-status{margin:0;color:var(--foreground);line-height:1.5}
+.live-voice-text,.live-voice-hint{margin:0;color:var(--secondary);line-height:1.6;font-size:12px}
+.live-voice-notice{margin:0;color:var(--destructive);line-height:1.5;font-size:12px}
+.live-voice-lines{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;color:var(--secondary);font-size:12px;line-height:1.5;flex:1 1 auto;min-height:0;max-height:min(22dvh,168px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.live-voice-lines li{overflow-wrap:anywhere}
+.live-voice-lines span{color:var(--foreground);font-weight:500}
+.live-voice-actions{display:flex;flex-wrap:wrap;gap:6px}
+.live-voice-consent{display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin:0;font-weight:400;line-height:1.5}
+.live-voice-consent input{margin:3px 0 0;accent-color:var(--accent);flex-shrink:0}
+.live-voice-button.is-live{color:var(--accent)}
+.live-voice-host{display:contents}
+.live-voice-label{white-space:nowrap}
+/* The panel gives way before the message box does: the composer keeps its toolbar in reach and the transcript list scrolls.
+   Only the transcript list can shrink inside the panel, so the status, actions and notice never get clipped. */
+.live-voice-panel{flex:0 100 auto}
+.chat-region .composer-container:has(.live-voice-panel.is-live){max-height:min(64%,calc(100% - 96px))}
+/* Small or short viewports: one compact bar (status on the left, icon buttons on the right). The transcript list and the
+   10-minute hint are left out; the actions keep their names for assistive technology. */
+@media(max-width:480px),(max-height:700px){
+ .live-voice-panel.is-live{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:4px 6px 4px 10px;margin-bottom:6px;max-height:none;overflow:visible}
+ .live-voice-panel.is-live .live-voice-line{flex:1 1 120px}
+ .live-voice-panel.is-live .live-voice-lines,.live-voice-panel.is-live .live-voice-hint{display:none}
+ .live-voice-panel.is-live .live-voice-notice{order:3;flex:1 1 100%}
+ .live-voice-panel.is-live .live-voice-actions{flex-wrap:nowrap;gap:2px;margin-left:auto}
+ .live-voice-panel.is-live .live-voice-actions .button{min-width:44px;min-height:44px;padding:0;justify-content:center}
+ .live-voice-panel.is-live .live-voice-label{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
+}
+@media(max-width:480px){.live-voice-panel{padding:8px 10px}.live-voice-panel.is-live{padding:4px 6px 4px 10px}}
+/* Consent, setup and the ended notice are text-heavy and not live yet. The panel gets room before the message box does, the
+   text scrolls inside it, and the action row never scrolls out of reach: Start live voice, Cancel and Close stay tappable
+   at every width and height. */
+.chat-region .composer-container:has(.live-voice-panel:not(.is-live)){max-height:min(72%,calc(100% - 96px))}
+.live-voice-panel:not(.is-live){min-height:0;overflow:hidden;max-height:min(45dvh,300px)}
+.live-voice-panel:not(.is-live)>:not(.live-voice-actions){min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.live-voice-panel:not(.is-live)>.live-voice-actions{flex:none}

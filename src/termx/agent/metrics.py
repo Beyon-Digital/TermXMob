@@ -19,10 +19,14 @@ class TaskMetrics:
             "tool_calls": {},
             "shell_ms": 0,
             "shell_calls": 0,
-            "screenshots": 0,
-            "screenshot_bytes": 0,
+            "desktop_calls": 0,
+            "desktop_bytes": 0,
             "input_tokens": 0,
             "output_tokens": 0,
+            # USD from per-model prices; None until a priced turn is recorded.
+            "cost_usd": None,
+            # Tokens from turns whose model has no known price.
+            "unpriced_tokens": 0,
             "subagents": 0,
             "approval_wait_ms": 0,
         }
@@ -33,21 +37,35 @@ class TaskMetrics:
                 elif key in self._data:
                     self._data[key] = value
 
-    def record_provider(self, duration_ms: int, usage: dict[str, Any] | None = None) -> None:
+    def record_provider(
+        self,
+        duration_ms: int,
+        usage: dict[str, Any] | None = None,
+        prices: tuple[float | None, float | None] | None = None,
+    ) -> float | None:
+        """Record one provider turn; returns its cost in USD, or None when the price is unknown.
+
+        ``prices`` is (input, output) USD per 1M tokens. An unknown price is
+        never treated as zero: the turn's tokens count as unpriced instead.
+        """
         self._data["provider_calls"] += 1
         self._data["provider_ms"] += duration_ms
         if self._data["provider_first_ms"] is None:
             self._data["provider_first_ms"] = duration_ms
+        cost = None
         if usage:
-            for key, target in (("input_tokens", "input_tokens"), ("output_tokens", "output_tokens")):
-                try:
-                    self._data[target] += int(usage.get(key) or 0)
-                except (TypeError, ValueError):
-                    pass
-            try:
-                self._data["provider_output_tokens"] += int(usage.get("output_tokens") or 0)
-            except (TypeError, ValueError):
-                pass
+            turn_in = _count(usage.get("input_tokens"))
+            turn_out = _count(usage.get("output_tokens"))
+            price_in, price_out = prices or (None, None)
+            if price_in is not None and price_out is not None:
+                cost = (turn_in * price_in + turn_out * price_out) / 1_000_000
+                self._data["cost_usd"] = (self._data["cost_usd"] or 0.0) + cost
+            else:
+                self._data["unpriced_tokens"] += turn_in + turn_out
+            self._data["input_tokens"] += turn_in
+            self._data["output_tokens"] += turn_out
+            self._data["provider_output_tokens"] += turn_out
+        return cost
 
     def record_provider_stream(self, first_token_ms: int | None, stream_ms: int) -> None:
         if self._data["provider_first_token_ms"] is None and first_token_ms is not None:
@@ -70,9 +88,9 @@ class TaskMetrics:
         self._data["shell_ms"] += duration_ms
         self._data["shell_calls"] += 1
 
-    def record_screenshot(self, size_bytes: int) -> None:
-        self._data["screenshots"] += 1
-        self._data["screenshot_bytes"] += int(size_bytes)
+    def record_desktop(self, size_bytes: int) -> None:
+        self._data["desktop_calls"] += 1
+        self._data["desktop_bytes"] += int(size_bytes)
 
     def record_subagent(self) -> None:
         self._data["subagents"] += 1
@@ -85,3 +103,20 @@ class TaskMetrics:
             key: (dict(value) if isinstance(value, dict) else value)
             for key, value in self._data.items()
         }
+
+
+def usage_tokens(usage: dict[str, Any] | None) -> int:
+    """Input plus output tokens of one provider turn, tolerant of missing or malformed values."""
+    return _count((usage or {}).get("input_tokens")) + _count((usage or {}).get("output_tokens"))
+
+
+def input_tokens(usage: dict[str, Any] | None) -> int:
+    """Prompt tokens the provider reported for one turn, tolerant of missing or malformed values."""
+    return _count((usage or {}).get("input_tokens"))
+
+
+def _count(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0

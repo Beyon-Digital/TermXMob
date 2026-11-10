@@ -1,36 +1,45 @@
-import {useEffect,useRef,useState} from 'react';
+import {lazy,Suspense,useEffect,useState} from 'react';
 import {Button} from '../components/ui/button';
-import SettingsIcon from '../components/SettingsIcon';
+import {SettingsRow,SettingsSection} from '../components/ui/settings-section';
+import {AppearanceChoices} from '../components/AppearancePicker';
 import {gql} from '../lib/api';
 import type {ThemePreference} from '../lib/theme';
+import type {Bindings} from '../lib/keybindings';
 
-export type SettingsGeneralProps={account:string;hostKey?:string;theme:ThemePreference;onTheme:(value:ThemePreference)=>void;onSelect:(category:string)=>void;onSignOut:()=>Promise<void>};
+const Keybindings=lazy(()=>import('./Keybindings'));
 
-export default function SettingsGeneral({account,hostKey,theme,onTheme,onSelect,onSignOut}:SettingsGeneralProps){
- const identity=hostKey||account;
- const [host,setHost]=useState({identity,name:'Connected host'}),[operation,setOperation]=useState({identity,busy:false,error:''});
- const current=useRef({identity,generation:0,busy:false});
- if(current.current.identity!==identity)current.current={identity,generation:current.current.generation+1,busy:false};
+export type SettingsGeneralProps={account:string;theme:ThemePreference;onTheme:(value:ThemePreference)=>void;bindings:Bindings;onBindings:(value:Bindings)=>void;onSignOut:()=>Promise<void>};
+
+/** The Preferences page. Mount it with `key` set to the account and host so a different identity starts clean. */
+export default function SettingsGeneral({account,theme,onTheme,bindings,onBindings,onSignOut}:SettingsGeneralProps){
+ const [host,setHost]=useState('Connected host'),[busy,setBusy]=useState(false),[error,setError]=useState('');
  useEffect(()=>{
   let live=true;
-  setHost({identity,name:'Connected host'});setOperation({identity,busy:false,error:''});
-  void gql<{machine:{hostname:string}}>('{ machine { hostname } }').then(value=>{if(live&&value.machine?.hostname)setHost({identity,name:value.machine.hostname})}).catch(()=>{});
-  return()=>{live=false;current.current.generation++;current.current.busy=false};
- },[identity]);
- const busy=operation.identity===identity&&operation.busy,error=operation.identity===identity?operation.error:'';
+  void gql<{machine:{hostname:string}}>('{ machine { hostname } }').then(value=>{if(live&&value.machine?.hostname)setHost(value.machine.hostname)}).catch(()=>{});
+  return()=>{live=false};
+ },[]);
  async function logout(){
-  if(current.current.busy)return;
-  const generation=current.current.generation;current.current.busy=true;setOperation({identity,busy:true,error:''});
+  if(busy)return;
+  setBusy(true);setError('');
   try{await onSignOut()}
-  catch(reason){if(generation===current.current.generation)setOperation({identity,busy:false,error:reason instanceof Error?reason.message:'Could not sign out. Try again.'})}
-  finally{if(generation===current.current.generation){current.current.busy=false;setOperation(value=>({...value,busy:false}))}}
+  catch(reason){setError(reason instanceof Error?reason.message:'Could not sign out. Try again.')}
+  finally{setBusy(false)}
  }
- return <section className="settings-general" aria-label="General settings">
-  <header className="settings-page-heading"><SettingsIcon kind="general" size={36}/><div><h1>General</h1><p>Your everyday controls.</p></div></header>
-  <div className="settings-row"><div><h2>Account</h2><p>{account}</p></div><Button variant="outline" disabled={busy} onClick={()=>void logout()}>{busy?'Signing out…':'Sign out'}</Button></div>
+ return <section className="settings-general" aria-labelledby="preferences-heading">
+  <header className="settings-page-heading"><div><h2 id="preferences-heading">Preferences</h2><p>Your account, appearance and keyboard shortcuts.</p></div></header>
+  <SettingsSection level={3} title="Account">
+   <SettingsRow label="Signed in as" description={account}><Button variant="outline" disabled={busy} onClick={()=>void logout()}>{busy?'Signing out…':'Sign out'}</Button></SettingsRow>
+   <SettingsRow label="Host" description={host}>{null}</SettingsRow>
+  </SettingsSection>
   {error&&<p role="alert" className="manager-error">{error}</p>}
-  <div className="settings-row"><div><h2>Host</h2><p>{host.identity===identity?host.name:'Connected host'}</p></div><Button variant="ghost" onClick={()=>onSelect('access')}>Manage access</Button></div>
-  <div className="settings-row"><div><h2>Theme</h2><p>{{system:'Follows your device',light:'Light',dark:'Dark'}[theme]}</p></div><Button variant="ghost" onClick={()=>onSelect('appearance')}>Change appearance</Button></div>
-  <div className="settings-row"><div><h2>Models &amp; engines</h2><p>Choose what powers your agents.</p></div><Button variant="ghost" onClick={()=>onSelect('models')}>Manage models</Button></div>
+  <section className="settings-block" aria-labelledby="preferences-appearance" data-settings-autosave>
+   <h3 id="preferences-appearance">Appearance</h3>
+   <p className="settings-block-help">System follows your device appearance.</p>
+   <AppearanceChoices value={theme} onChange={onTheme}/>
+  </section>
+  <section className="settings-block" aria-labelledby="preferences-shortcuts" data-settings-autosave>
+   <h3 id="preferences-shortcuts">Keyboard shortcuts</h3>
+   <Suspense fallback={<p className="settings-block-help">Loading shortcuts…</p>}><Keybindings bindings={bindings} onChange={onBindings}/></Suspense>
+  </section>
  </section>;
 }

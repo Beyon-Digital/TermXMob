@@ -334,12 +334,21 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             log_event("agent_registry_sync_error")
         for task_id in state.agent.pending_recoveries():
             asyncio.create_task(state.agent.recover_task(task_id))
+        if os.environ.get("TERMX_AGENT_DESKTOP_STARTUP_REFRESH", "1") != "0":
+            # Re-hash the desktop-control program and read its permission state, off the startup path.
+            from termx.desktop.agent_desktop import get_client as desktop_client
+
+            asyncio.create_task(desktop_client().ensure_fresh(0))
         state.automation.start()
         state.runners.start()
         state.previews.start()
         await state.runner_agents.startup_reconcile()
         state.prompt_queue.start()
+        state.workspace.orchestrator.graph.resume()
         state.push.start()
+        if os.environ.get("TERMX_PROVIDER_STARTUP_REFRESH", "1") != "0":
+            # Discovery only: failures keep the saved catalog and set catalog_error.
+            state.agent.catalogue.start()
         yield
         await state.push.close()
         await state.prompt_queue.close()
@@ -390,6 +399,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_project_pins(app, state)
     from termx.media.http import mount_media
     mount_media(app, state)
+    from termx.voice.http import mount_voice
+    mount_voice(app, state)
     from termx.characters.http import mount_characters
     mount_characters(app, state)
     from termx.runners.http import mount_runners

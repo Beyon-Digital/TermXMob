@@ -1,5 +1,6 @@
 """MCP tools for the existing Internal loop; no alternate agent/runtime loop."""
 import json
+from termx.agent.manager import READ_ONLY_MODES
 from termx.agent.policy import redact
 from termx.agent.store import ACTIVE_STATUSES
 from .client import McpConnectionError
@@ -78,7 +79,7 @@ class McpTaskBroker:
 
     async def call(self,task_id,conn_id,tool,arguments):
         task,conn,link,meta=self._binding(task_id,conn_id)
-        if task['mode']=='ask':raise PermissionError('Ask mode cannot invoke external MCP effects')
+        if task['mode'] in READ_ONLY_MODES:raise PermissionError('Ask and Plan modes cannot invoke external MCP effects')
         if not isinstance(arguments,dict) or len(json.dumps(arguments).encode())>64_000 or not isinstance(tool,str) or not tool or len(tool)>200:
             raise ValueError('Provide bounded MCP arguments and a tool name')
         selected=link.get('tools')

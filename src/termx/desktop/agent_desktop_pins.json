@@ -1,0 +1,47 @@
+{
+  "version": "1.2.0",
+  "tag": "v1.2.0",
+  "repo": "vercel-labs/agent-desktop",
+  "envelope": "2.6",
+  "assets": {
+    "macos-arm64": {
+      "asset": "agent-desktop-v1.2.0-aarch64-apple-darwin.tar.gz",
+      "sha256": "219813428bb1ad8decae172faed05c5964a2415170df402e2786ccfa6452ba82",
+      "size": 2230641,
+      "files": {
+        "agent-desktop": "dec75e0bba0d1f9b589bdb88188770ad1a199cde9e02cf0a5b94175491f738e9",
+        "agent-desktop-macos-helper": "4a795a40ba7fc93b726b0834342f0225779c30d83e28f1f219db479860c38a78"
+      }
+    },
+    "macos-x86_64": {
+      "asset": "agent-desktop-v1.2.0-x86_64-apple-darwin.tar.gz",
+      "sha256": "d9dc50226f28d7fc86a2f5b0945f0c206dff6c31e418907749f493b6f9e773e6",
+      "size": 2359765,
+      "files": null
+    },
+    "linux-x86_64": {
+      "asset": "agent-desktop-v1.2.0-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "591ae7f4a38479dc045df97e27447c0c8b530441730ab6b990e27c813162af44",
+      "size": 3458001,
+      "files": null
+    },
+    "linux-aarch64": {
+      "asset": "agent-desktop-v1.2.0-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "68e8ebbb4f80e44485d2f1cf972943a38ee43108e2e0ce56bdfa641fd1599f68",
+      "size": 3333305,
+      "files": null
+    },
+    "windows-x86_64": {
+      "asset": "agent-desktop-v1.2.0-x86_64-pc-windows-msvc.tar.gz",
+      "sha256": "a4199f741a441cedd349bf56c5eba01783b1261258b498efeb7ec9945220c3e8",
+      "size": 1759368,
+      "files": null
+    },
+    "windows-aarch64": {
+      "asset": "agent-desktop-v1.2.0-aarch64-pc-windows-msvc.tar.gz",
+      "sha256": "d6d8643310c2c13eace2261444d9e4c0d16ca09581f38500983104903604caa6",
+      "size": 1706239,
+      "files": null
+    }
+  }
+}

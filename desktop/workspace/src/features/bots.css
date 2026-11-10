@@ -1,0 +1,104 @@
+/* Bots settings. Colours and spacing come from the theme tokens only. */
+.bot-toolbar{display:flex;justify-content:flex-end;margin-bottom:12px}
+.bot-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.bot-list li+li{border-top:1px solid var(--border)}
+.bot-row{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;padding:14px;min-height:56px;text-align:left;background:transparent;color:inherit;border:0;border-radius:8px;cursor:pointer;font:inherit}
+.bot-row:hover{background:var(--muted)}
+.bot-row:focus-visible,.bot-tab:focus-visible,.bot-link:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.bot-row-main{display:grid;gap:3px;min-width:0}
+.bot-row-main strong{font-size:14px;font-weight:550}
+.bot-row-main small,.bot-row-meta small{font-size:12px;color:var(--secondary);overflow-wrap:anywhere}
+.bot-row-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
+.bot-detail{display:grid;gap:16px;min-width:0}
+.bot-detail-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bot-detail-head h3{margin:0;font-size:17px;font-weight:580}
+.bot-tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--border);scrollbar-width:thin}
+.bot-tab{flex:0 0 auto;min-height:40px;padding:8px 12px;background:transparent;color:var(--secondary);border:0;border-bottom:2px solid transparent;font:inherit;font-size:13px;cursor:pointer}
+.bot-tab[aria-selected=true]{color:var(--foreground);border-bottom-color:var(--accent);font-weight:550}
+.bot-panel{display:grid;gap:20px;min-width:0}
+.bot-panel .settings-rows .bot-form-row{display:block;padding:14px}
+.bot-panel .settings-rows .bot-form-row .manager-form{max-width:none}
+.bot-instructions{min-height:200px}
+
+.bot-templates,.bot-tools{display:grid;gap:8px;border:1px solid var(--border);border-radius:8px;padding:12px;min-width:0}
+.bot-templates legend,.bot-tools legend{padding:0 6px;font-size:13px;font-weight:500}
+.bot-template,.bot-check{display:flex;align-items:flex-start;gap:10px;min-height:36px;font-size:13px;cursor:pointer}
+.manager-form label.bot-template:has(>input),.manager-form label.bot-check:has(>input[type=checkbox]),.bot-template,.bot-check{flex-direction:row;align-items:flex-start;text-align:left}
+.bot-template span,.bot-check span{display:grid;gap:2px}
+.bot-template small,.bot-check small{color:var(--secondary);font-size:12px;line-height:1.5}
+/* A global label rule gives every label a 16px vertical margin, which put the rows 80px apart. The label keeps a 44px hit area
+   through its own padding and min-height, so rows can sit flush; wide forms flow the tools into columns. */
+.bot-tools .bot-check{margin:0;padding:11px 0;min-height:44px}
+.bot-tool-group{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));column-gap:20px;row-gap:0}
+.bot-tool-group h4{grid-column:1/-1;margin:10px 0 0;font-size:12px;font-weight:550;color:var(--secondary)}
+.bot-tool-group:first-of-type h4{margin-top:0}
+.bot-tool-group .bot-check span{min-width:0;overflow-wrap:anywhere}
+.bot-dialog{max-width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto}
+.bot-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;flex-wrap:wrap}
+.bot-changes{margin:12px 0 0;padding-left:20px;font-size:13px;line-height:1.7}
+.bot-violation{margin:0}
+
+.bot-history{display:grid;gap:8px;margin-top:20px}
+.bot-history h4{margin:0;font-size:14px;font-weight:550}
+.bot-history-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--border)}
+.bot-history-list li{padding:12px 0;border-bottom:1px solid var(--border);display:grid;gap:6px;overflow-wrap:anywhere}
+.bot-history-list li>div{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.bot-history-list p{margin:0;font-size:13px;line-height:1.6;color:var(--secondary);white-space:pre-wrap}
+.bot-history-list small{font-size:12px;color:var(--secondary)}
+.bot-history-error{color:var(--destructive)!important}
+.bot-link{background:none;border:0;padding:0;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
+
+.needs-you{display:grid;gap:8px;margin-bottom:16px}
+.needs-you h3{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:580}
+.needs-you-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.needs-you-list li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;flex-wrap:wrap}
+.needs-you-list li+li{border-top:1px solid var(--border)}
+.needs-you-text{display:grid;gap:3px;min-width:0;flex:1 1 260px}
+.needs-you-text strong{font-size:13px;font-weight:550}
+.needs-you-text p{margin:0;font-size:13px;line-height:1.5;color:var(--secondary);overflow-wrap:anywhere;white-space:pre-wrap}
+.needs-you-text small{font-size:12px;color:var(--secondary)}
+.needs-you-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bot-banner{display:grid;gap:6px;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.bot-banner h4{margin:0;font-size:14px;font-weight:580}
+.bot-banner p{margin:0;font-size:13px;line-height:1.6;color:var(--secondary)}
+
+
+.bot-threads,.bot-trigger-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface);width:100%}
+.bot-threads>li{display:grid;gap:6px;padding:12px 14px;justify-items:start}
+.bot-threads>li+li,.bot-trigger-list>li+li{border-top:1px solid var(--border)}
+.bot-thread-head{display:flex;width:100%;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:32px;padding:0;background:transparent;color:inherit;border:0;font:inherit;text-align:left;cursor:pointer}
+.bot-thread-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bot-thread-subject{font-size:14px;font-weight:550;overflow-wrap:anywhere}
+.bot-thread-head small,.bot-message-head small{font-size:12px;color:var(--secondary)}
+.bot-path{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.bot-path li+li::before{content:"\203a";margin-right:6px;color:var(--secondary)}
+.bot-path li{display:flex;align-items:center}
+.bot-message-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:12px;width:100%}
+.bot-message{display:grid;gap:6px;padding-left:12px;border-left:2px solid var(--border)}
+.bot-message-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bot-message-to{font-size:12px;color:var(--secondary)}
+.bot-message-body{margin:0;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+
+.bot-triggers{display:grid;gap:12px;margin-top:20px}
+.bot-triggers .schedule-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.bot-triggers h3{margin:0;font-size:15px;font-weight:580}
+.bot-triggers .schedule-heading p{margin:4px 0 0;font-size:13px;color:var(--secondary)}
+.bot-trigger-list>li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;flex-wrap:wrap}
+.bot-trigger-text{display:grid;gap:3px;min-width:0;flex:1 1 280px}
+.bot-trigger-text strong{font-size:13px;font-weight:550}
+.bot-trigger-text p{margin:0;font-size:13px;line-height:1.5;color:var(--secondary);overflow-wrap:anywhere}
+.bot-trigger-text small{font-size:12px;color:var(--secondary)}
+.bot-trigger-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bot-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.bot-secret{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:12px 0;font-size:13px}
+.bot-secret dt{color:var(--secondary)}
+.bot-secret dd{margin:0;min-width:0}
+.bot-secret code{overflow-wrap:anywhere;user-select:all}
+
+.manager-embedded-body{display:grid;gap:12px;min-width:0}
+.bot-skill-warning{max-width:none;color:var(--foreground);font-weight:500}
+.bot-check small{overflow-wrap:anywhere}
+
+@media (max-width:700px){.bot-row{flex-direction:column;align-items:flex-start}.bot-row-meta{justify-content:flex-start}}
+@media (prefers-reduced-motion:reduce){.bot-row,.bot-tab{transition:none}}

@@ -65,12 +65,18 @@ class FileInput(Input):
     worktree_id:str|None=None
 
 
+class AutoInput(Input):
+    enabled: bool=True
+    ceilings: dict | None=None
+
+
 class TurnInput(Input):
     prompt: str=Field(min_length=1,max_length=64000)
     request_id: str=Field(min_length=8,max_length=128)
     limits: dict | None=None
     attachments: list[dict] | None=None
     context: list[dict] | None=None
+    auto: AutoInput | None=None
 
 
 class ForkInput(Input):
@@ -94,6 +100,8 @@ class MemoryInput(Input):
     excluded: bool=False
     identifier: str | None=None
     revision: int | None=None
+    scope: str | None=Field(default=None,pattern='^(user|project|agent)$')
+    agent_id: str | None=Field(default=None,max_length=200)
 
 
 class HookInput(Input):
@@ -142,6 +150,12 @@ class ScheduledBrowserPermission(Input):
     max_seconds: int = Field(ge=10,le=3600)
 
 
+class ScheduledComputerPermission(Input):
+    apps: list[str] = Field(min_length=1,max_length=20)
+    expires_at: float = Field(gt=0)
+    max_seconds: int = Field(ge=10,le=3600)
+
+
 class AutomationInput(GoalInput):
     runbook_id: str | None = None
     command: str | None = Field(default=None,min_length=1,max_length=32000)
@@ -152,6 +166,7 @@ class AutomationInput(GoalInput):
     missed: str = 'skip'
     overlap: str = 'skip'
     browser_permission: ScheduledBrowserPermission | None = None
+    computer_permission: ScheduledComputerPermission | None = None
 
 
 class ScheduleEdit(Input):
@@ -204,6 +219,18 @@ class SkillPublishInput(Input):
     project_id:str|None=None
 
 
+MAX_SKILL_IMPORT_BODY=4_000_000
+
+
+class SkillImportInput(Input):
+    files:dict[str,str]|None=Field(default=None,max_length=200)
+    skipped:list[str]=Field(default_factory=list,max_length=1000)
+    token:str|None=Field(default=None,max_length=64)
+    name:str|None=Field(default=None,max_length=200)
+    project_id:str|None=None
+    version:str=Field(default='1',max_length=80)
+
+
 class RegistryCredential(Input):
     credential:str=Field(min_length=1,max_length=4096)
     revision:int
@@ -245,6 +272,8 @@ def mount_workspace(app,state):
     workspace=state.workspace
     from termx.workspace.coding_policies import mount_coding_policies
     mount_coding_policies(app,state)
+    from termx.workspace.bot_hooks import mount_bot_hooks
+    mount_bot_hooks(app,state)
     workspace.principal_lookup=state.identity.principal_by_id
     if not getattr(state,'automation',None):
         state.automation=AutomationService(workspace,principal_lookup=state.identity.principal_by_id)
@@ -263,6 +292,24 @@ def mount_workspace(app,state):
         if session.locked:
             raise HTTPException(423,'Session locked; unlock required')
         return session.principal
+
+    def require_bot_host(request,conversation_id):
+        """A bot's schedule is unattended authority. Starting one, or changing what it reads or when it runs, needs the
+        owner's host-level session, exactly as in the GraphQL schedule mutations. Other conversations are unchanged."""
+        if not conversation_id or workspace.bots.for_conversation(conversation_id) is None:
+            return
+        raw=extract_passcode(authorization=request.headers.get('authorization')) or request.cookies.get(ACCESS_COOKIE)
+        scopes=state.auth.scopes(raw)
+        if scopes is None:
+            raise HTTPException(401,'invalid passcode')
+        for scope in ('agent-control','agent-run'):
+            if scope not in scopes:
+                raise HTTPException(403,f'missing scope: {scope}')
+        state.authorization.require(raw,'agent-control')  # host-wide, as the GraphQL schedule mutations' context.require_host('agent-control') + require('agent-run')
+
+    def schedule_conversation(actor,identifier):
+        row=call(workspace.record,actor,'schedule',identifier,scope='agent-control')  # ownership first, so another user's schedule is a 404
+        return (workspace.store.get('goal',row['goal_id']) or {}).get('conversation_id')
 
     def call(fn,*args,**kwargs):
         try:
@@ -422,8 +469,9 @@ def mount_workspace(app,state):
         return call(workspace.commit_fork,principal(request),identifier,**body.model_dump())
 
     @router.get('/memory')
-    def memories(request:Request,project_id:str|None=None):
-        return {'memory':call(workspace.memories,principal(request),project_id=project_id)}
+    def memories(request:Request,project_id:str|None=None,scope:str|None=None,agent_id:str|None=None,state:str|None=None):
+        # Without an agent, the owner sees every agent's notes; with one, that agent's view.
+        return {'memory':call(workspace.memories,principal(request),project_id=project_id,scope=scope,agent_id=agent_id,state=state,all_agents=agent_id is None)}
 
     @router.post('/memory')
     def save_memory(request:Request,body:MemoryInput):
@@ -436,7 +484,7 @@ def mount_workspace(app,state):
 
     @router.get('/memory/export')
     def memory_export(request:Request,project_id:str|None=None):
-        return {'format':'termx-memory/v1','memory':call(workspace.memories,principal(request),project_id=project_id)}
+        return {'format':'termx-memory/v1','memory':call(workspace.memories,principal(request),project_id=project_id,all_agents=True)}
 
     @router.get('/hooks')
     def hooks(request:Request,project_id:str|None=None):
@@ -490,11 +538,18 @@ def mount_workspace(app,state):
 
     @router.post('/schedules')
     def schedule(request:Request,body:ScheduleInput):
-        return call(automation.schedule,principal(request),**body.model_dump())
+        actor=principal(request)
+        goal=call(workspace.record,actor,'goal',body.goal_id,scope='agent-control')  # ownership first, so another user's goal is a 404, before the host-session check
+        require_bot_host(request,goal['conversation_id'])
+        return call(automation.schedule,actor,**body.model_dump())
 
     @router.patch('/schedules/{identifier}')
     def schedule_enable(request:Request,identifier:str,body:ScheduleEdit):
-        return call(automation.edit,principal(request),identifier,**body.model_dump())
+        actor=principal(request)
+        conversation_id=schedule_conversation(actor,identifier)
+        if body.enabled or body.prompt is not None or body.spec is not None:  # stopping and timing-neutral policy stay open
+            require_bot_host(request,conversation_id)
+        return call(automation.edit,actor,identifier,**body.model_dump())
 
     @router.post('/schedules/{identifier}/run')
     async def schedule_run(request:Request,identifier:str,body:ScheduleRevision):
@@ -538,7 +593,10 @@ def mount_workspace(app,state):
 
     @router.post('/automations')
     async def automation_create(request:Request,body:AutomationInput):
-        return await await_call(automation.create_with_browser,principal(request),**body.model_dump())
+        actor=principal(request)
+        call(workspace.record,actor,'conversation',body.conversation_id,scope='agent-run')  # ownership first, then the host-session check
+        require_bot_host(request,body.conversation_id)
+        return await await_call(automation.create_with_browser,actor,**body.model_dump())
 
     @router.get('/automations')
     def automations(request:Request,project_id:str|None=None):
@@ -678,7 +736,7 @@ def mount_workspace(app,state):
     @router.get('/available-extensions')
     def available_extensions(request:Request,project_id:str|None=None):
         actor=principal(request);call(workspace.require,actor,'agent-view',project_id)
-        return {'extensions':[{k:row[k] for k in ('id','version','permissions','description')} for row in workspace.store.list('extension') if row['enabled']]}
+        return {'extensions':[{**{k:row[k] for k in ('id','version','permissions','description')},**({'computer_apps':row['computer_apps']} if row.get('computer_apps') else {})} for row in workspace.store.list('extension') if row['enabled']]}
 
     @router.get('/extensions')
     def extension_list(request:Request):
@@ -752,6 +810,28 @@ def mount_workspace(app,state):
     @router.post('/skill-sources/publish-preview')
     def publish_skill(request:Request,body:SkillPublishInput):
         return call(skills.publish_preview,principal(request),**body.model_dump())
+
+    @router.get('/skill-sources/detected')
+    def detected_skill_sources(request:Request,project_id:str|None=None):
+        return {'sources':call(skills.detected,principal(request),project_id)}
+
+    @router.post('/skill-sources/import-preview')
+    async def import_skill_preview(request:Request):
+        actor=principal(request)
+        # A picked folder holds at most 2 MB of text; refuse a larger body before it is parsed or held whole.
+        declared=request.headers.get('content-length','')
+        if declared.isdigit() and int(declared)>MAX_SKILL_IMPORT_BODY:
+            raise HTTPException(413,'This folder is too large to import; pick the skill folder itself')
+        received=bytearray()
+        async for chunk in request.stream():
+            received.extend(chunk)
+            if len(received)>MAX_SKILL_IMPORT_BODY:
+                raise HTTPException(413,'This folder is too large to import; pick the skill folder itself')
+        try:
+            body=SkillImportInput.model_validate_json(bytes(received))
+        except ValueError:
+            raise HTTPException(422,'The import request is not valid; pick the folder again') from None
+        return await asyncio.to_thread(call,skills.preview_import,actor,**body.model_dump())
 
     @router.get('/skill-sources/compatibility')
     def compatibility_sources(request:Request,project_id:str|None=None):

@@ -17,3 +17,20 @@ it('opens active window controls and clears successful stops even when another c
 it('does not poll or display capture authority while disabled',()=>{render(<CaptureStatus enabled={false} onOpen={vi.fn()} onError={vi.fn()}/>);expect(api).not.toHaveBeenCalled();expect(screen.queryByRole('group',{name:'Active capture controls'})).not.toBeInTheDocument()});
 it('names simultaneous browser agent and computer control and routes takeover separately from Stop',async()=>{let rows=[{id:'tab',kind:'tab',state:'agent',stop_allowed:true},{id:'viewer',kind:'computer',state:'control',stop_allowed:true}];api.mockImplementation(async(path,init)=>{if(path==='/api/desktop/recording/status')return {captures:rows};if(path==='/api/browser/tabs/tab/takeover'){rows[0]={...rows[0],state:'watching'};return {ok:true}}if(path==='/api/desktop/recording/viewers/viewer'&&init?.method==='DELETE'){rows=rows.filter(r=>r.id!=='viewer');return {stopped:true}}if(path==='/api/browser/tabs/tab/capture/stop'){rows=rows.filter(r=>r.id!=='tab');return {ok:true}}throw Error(path)});render(<CaptureStatus onOpen={vi.fn()} onError={vi.fn()}/>);await screen.findByText('1 agent tab · 1 computer control');fireEvent.click(screen.getByRole('button',{name:'Take over browser'}));await screen.findByText('1 computer control · 1 watching');expect(api).toHaveBeenCalledWith('/api/browser/tabs/tab/takeover',expect.objectContaining({body:JSON.stringify({private:false})}));fireEvent.click(screen.getByRole('button',{name:'Stop capture'}));await waitFor(()=>expect(screen.queryByRole('group',{name:'Active capture controls'})).not.toBeInTheDocument());expect(api).toHaveBeenCalledWith('/api/desktop/recording/viewers/viewer',expect.objectContaining({method:'DELETE'}))});
 it('shows an expired private observation pause and exposes explicit authorized recovery',async()=>{let rows=[{id:'expired',kind:'window',state:'private',expired:true,stop_allowed:true}];api.mockImplementation(async(path,init)=>{if(path==='/api/desktop/recording/status')return {captures:rows};if(path==='/api/desktop/recording/captures/expired'&&init?.method==='DELETE'){rows=[];return {stopped:true}}throw Error(path)});render(<CaptureStatus onOpen={vi.fn()} onError={vi.fn()}/>);await screen.findByText('1 private · models paused · Private consent ended · Stop capture to resume models');fireEvent.click(screen.getByRole('button',{name:'Stop capture'}));await waitFor(()=>expect(screen.queryByRole('group',{name:'Active capture controls'})).not.toBeInTheDocument());expect(api).toHaveBeenCalledWith('/api/desktop/recording/captures/expired',expect.objectContaining({method:'DELETE'}))});
+it('stops asking the host for capture status while the tab is hidden and asks again when it returns',async()=>{
+ vi.useFakeTimers();
+ try{
+  api.mockResolvedValue({captures:[]});
+  render(<CaptureStatus onOpen={vi.fn()} onError={vi.fn()}/>);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(api).toHaveBeenCalledTimes(1);
+  Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+  document.dispatchEvent(new Event('visibilitychange'));
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(api).toHaveBeenCalledTimes(1);
+  Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+  document.dispatchEvent(new Event('visibilitychange'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(api).toHaveBeenCalledTimes(2);
+ }finally{delete (document as unknown as {hidden?:boolean}).hidden;vi.useRealTimers()}
+});

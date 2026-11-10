@@ -35,6 +35,28 @@ it('does not require a project in the conversation entry state',()=>{
  expect(screen.getByRole('heading',{name:'Start with a conversation'})).toBeVisible();expect(screen.queryByText(/choose a project/i)).toBeNull();
 });
 
+it('shows the host reason when a send is refused with a 400, keeps Retry send, and clears it on the next attempt',async()=>{
+ const session={...row('refused'),draft_text:'Run the build'};let attempts=0;
+ const refusal=Object.assign(new Error('Model fixture-model cannot call tools, so Agent and Auto modes are unavailable. Choose Ask mode or a different model.\u0007'),{status:400});
+ vi.mocked(request).mockImplementation(async(path)=>{if(path.endsWith('/turns')){if(attempts++===0)throw refusal;return {id:'ok-task'}}return baseResponse(path,session) as any});
+ render(<Chat session={session} {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Send message'}));
+ const notice=await screen.findByText(/cannot call tools, so Agent and Auto modes are unavailable/);
+ expect(notice.textContent).not.toMatch(/\u0007/);expect(notice.closest('.composer-retry')).not.toBeNull();
+ expect(screen.queryByText(/A previous send needs retry/)).toBeNull();
+ expect(screen.getByRole('button',{name:'Retry send'})).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Retry send'}));
+ await waitFor(()=>expect(screen.queryByText(/cannot call tools/)).toBeNull());
+});
+
+it('truncates a very long host reason and still shows the generic retry text for an unknown failure',async()=>{
+ const session={...row('long-reason'),draft_text:'Go'};let attempts=0;
+ vi.mocked(request).mockImplementation(async(path)=>{if(path.endsWith('/turns')){if(attempts++===0)throw Object.assign(new Error('x'.repeat(2000)),{status:400});throw Error('Connection dropped')}return baseResponse(path,session) as any});
+ render(<Chat session={session} {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Send message'}));
+ const notice=await screen.findByText(/^x{50,}/);expect(notice.textContent!.length).toBeLessThan(400);
+ fireEvent.click(screen.getByRole('button',{name:'Retry send'}));
+ expect(await screen.findByText(/A previous send needs retry/)).toBeVisible();
+});
+
 it('keeps an uncertain send request identity and exact payload across a panel remount',async()=>{
  const session={...row('uncertain'),draft_text:'Original instruction'};let attempts=0;
  vi.mocked(request).mockImplementation(async(path)=>{if(path.endsWith('/turns')){if(attempts++===0)throw Error('Connection dropped after dispatch');return {id:'same-task'}}return baseResponse(path,session) as any});

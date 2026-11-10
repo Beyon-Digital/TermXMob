@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Managers from './Managers';
 import { request } from '../lib/api';
-vi.mock('../lib/api', () => ({ request: vi.fn() }));
+vi.mock('../lib/api', () => {
+ const request = vi.fn();
+ return { request, json: (method: string, value?: unknown) => ({method, body: JSON.stringify(value)}),
+  // Desktop control reads through gql; route it to the same mocked transport the other managers use.
+  gql: async (query: string, variables: Record<string, unknown> = {}) => ((await request('/graphql', {method:'POST', body: JSON.stringify({query, variables})})) as {data: unknown}).data };
+});
 const mocked = vi.mocked(request);
 afterEach(cleanup);
 beforeEach(() => mocked.mockReset());
@@ -19,6 +24,18 @@ describe('workspace managers', () => {
   fireEvent.click(screen.getByRole('button',{name:'Edit account'}));
   const edit=within(await screen.findByRole('form',{name:'Edit provider account'}));expect(edit.getByLabelText('Image generation and editing')).toBeChecked();fireEvent.click(edit.getByLabelText('Audio transcription and speech'));fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
   await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>String(init?.body).includes('save_agent_provider'))).toBe(true));const mutation=mocked.mock.calls.find(([,init])=>String(init?.body).includes('save_agent_provider'))!;expect(JSON.parse(String(mutation[1]?.body)).variables.input).toMatchObject({id:'existing',api_key:null,capabilities:['shell','image','audio'],model:'future-default'});expect(screen.queryByText('active engine',{exact:false})).not.toBeInTheDocument();await waitFor(()=>expect(changed).toHaveBeenCalledOnce());
+ });
+ it('offers a project scope once a project is chosen, and says where to choose one while none is', async () => {
+  mocked.mockImplementation(async (path) => path === '/auth/me' ? { principal:{scopes:[]} } : { memory:[] } as any);
+  const view = render(<Managers section="memory" projectId={null} sessionId={null}/>);
+  const form = within(await screen.findByRole('form',{name:'Add memory'}));
+  expect(form.getAllByRole('option').map(option=>option.textContent)).toEqual(['All your projects']);
+  expect(form.getByText(/choose that project under “Settings apply to”/)).toBeInTheDocument();
+  view.unmount();
+  render(<Managers section="memory" projectId="project" sessionId={null}/>);
+  const scoped = within(await screen.findByRole('form',{name:'Add memory'}));
+  expect(scoped.getAllByRole('option').map(option=>option.textContent)).toEqual(['This project','All your projects']);
+  expect(scoped.queryByText(/choose that project/)).toBeNull();
  });
  it('keeps excluded memory inspectable and preserves its scope and revision on inclusion', async () => {
   mocked.mockImplementation(async (path) => path === '/auth/me' ? { principal:{scopes:[]} } : { memory:[{id:'fact',revision:3,content:'Project decision',provenance:'review',project_id:'project',retention_days:30,excluded:true}] } as any);
@@ -47,7 +64,7 @@ describe('workspace managers', () => {
 });
 
 it('preserves an unsaved provider form while testing and refreshing another account',async()=>{const provider={id:'existing',name:'Existing API',kind:'openai-compatible',base_url:'https://api.example/v1',model:'model',secret_configured:true,capabilities:['shell']};mocked.mockImplementation(async(path,init)=>{if(path==='/auth/me')return {principal:{scopes:['host-admin']}} as any;const body=JSON.parse(String(init?.body||'{}'));return body.query?.includes('test_agent_provider')?{data:{test_agent_provider:{ok:true}}}:{data:{engines:[],agent_providers:[provider],acp_registry:[]}} as any});render(<Managers section="models" projectId={null} sessionId={null}/>);await screen.findByRole('button',{name:'Test connection'});await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh'})).toBeEnabled());const form=within(screen.getByRole('form',{name:'Add provider account'}));fireEvent.change(form.getByLabelText('Display name'),{target:{value:'Unsaved provider draft'}});fireEvent.click(screen.getByRole('button',{name:'Test connection'}));fireEvent.click(screen.getByRole('button',{name:'Send test request'}));await screen.findByText('Provider connection tested');await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh'})).toBeEnabled());expect(within(screen.getByRole('form',{name:'Add provider account'})).getByLabelText('Display name')).toHaveValue('Unsaved provider draft')});
-it('preserves another memory draft through an inclusion mutation and catalog refresh',async()=>{mocked.mockImplementation(async(path)=>path==='/auth/me'?{principal:{scopes:[]}}:{memory:[{id:'fact',revision:3,content:'Existing memory',provenance:'review',retention_days:30,excluded:true}]} as any);render(<Managers section="memory" projectId={null} sessionId={null}/>);await screen.findByText('Existing memory');fireEvent.change(screen.getByLabelText('Fact or decision'),{target:{value:'Unsaved memory draft'}});fireEvent.change(screen.getByLabelText('Source or reason'),{target:{value:'Draft source'}});fireEvent.click(screen.getByRole('button',{name:'Include in context'}));await screen.findByText('Memory scope updated');await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh'})).toBeEnabled());expect(screen.getByLabelText('Fact or decision')).toHaveValue('Unsaved memory draft');expect(screen.getByLabelText('Source or reason')).toHaveValue('Draft source')});
+it('preserves another memory draft through an inclusion mutation and catalog refresh',async()=>{mocked.mockImplementation(async(path)=>path==='/auth/me'?{principal:{scopes:[]}}:{memory:[{id:'fact',revision:3,content:'Existing memory',provenance:'review',retention_days:30,excluded:true}]} as any);render(<Managers section="memory" projectId={null} sessionId={null}/>);await screen.findByText('Existing memory');fireEvent.change(screen.getByLabelText(/^Fact or decision/),{target:{value:'Unsaved memory draft'}});fireEvent.change(screen.getByLabelText(/^Source or reason/),{target:{value:'Draft source'}});fireEvent.click(screen.getByRole('button',{name:'Include in context'}));await screen.findByText('Memory scope updated');await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh'})).toBeEnabled());expect(screen.getByLabelText(/^Fact or decision/)).toHaveValue('Unsaved memory draft');expect(screen.getByLabelText(/^Source or reason/)).toHaveValue('Draft source')});
 
 it('reviews the exact billable provider test before dispatch and cancels without a model request',async()=>{
  const provider={id:'api',name:'Fixture API',kind:'openai-compatible',base_url:'https://provider.example/v1',model:'fixture-model',secret_configured:true,capabilities:['shell']};
@@ -143,4 +160,29 @@ it('puts account setup before engines and keeps model favorites collapsed withou
  expect(add.compareDocumentPosition(engines)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  expect(screen.getByText('Model favorites',{selector:'summary'}).closest('details')).not.toHaveAttribute('open');
  expect(screen.getByRole('button',{name:'Continue in browser'})).toBeVisible();
+});
+
+it('shows desktop control under Tools & connections for a host admin, after the tool connections', async () => {
+ const status={installed:false,source:null,path:null,version:null,pinned_version:'1.2.0',verified:false,helper_ok:null,platform:'macos',arch:'arm64',platform_supported:true,platform_reason:null,envelope_version:null,ready:false,
+  permission:{state:'unknown',guidance:'',grant_to:null},supported_surfaces:[],issues:[],install:{available:true,asset:'a.tar.gz',size_bytes:2230641,host:'github.com',note:'Checked.'},configured_path:null,setting_locked:false};
+ mocked.mockImplementation(async (path, init) => {
+  if (path === '/auth/me') return { principal:{scopes:['host-admin']} } as any;
+  const query = String(JSON.parse(String(init?.body || '{}')).query || '');
+  return { data: query.includes('desktop_control_status') ? { desktop_control_status: status } : { mcp_connections: [], projects: [] } } as any;
+ });
+ render(<Managers section="connections" projectId={null} sessionId={null}/>);
+ const tools = await screen.findByRole('heading',{name:'Tool connections'});
+ const desktop = await screen.findByRole('heading',{name:'Desktop control'});
+ expect(tools.compareDocumentPosition(desktop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ expect(await screen.findByRole('button',{name:'Install desktop control'})).toBeVisible();
+});
+it('gives people without host-admin one line about desktop control and no install controls', async () => {
+ mocked.mockImplementation(async (path, init) => {
+  if (path === '/auth/me') return { principal:{scopes:[]} } as any;
+  const query = String(JSON.parse(String(init?.body || '{}')).query || '');
+  return { data: query.includes('machine') ? { machine:{ capabilities:{ agent_desktop:{ ready:false } } } } : { mcp_connections: [], projects: [] } } as any;
+ });
+ render(<Managers section="connections" projectId={null} sessionId={null}/>);
+ expect(await screen.findByText(/Desktop control is not set up on this computer\. A host admin can set it up/)).toBeVisible();
+ expect(screen.queryByRole('button',{name:'Install desktop control'})).toBeNull();
 });

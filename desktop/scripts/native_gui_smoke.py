@@ -31,6 +31,11 @@ ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
 # WorkspaceCommands.tsx); neither carries an aria-label of its own.
 STATUS_LOCK = '//footer//button[normalize-space()="Lock workspace"]'
 STATUS_COMMANDS = '//footer//button[normalize-space()="Commands"]'
+# Sidebar footer "Projects & operations" opens the control plane (App.tsx); the
+# rail's Home icon is now the "Main agent" button. Sign out is a text button in
+# Settings > General (SettingsGeneral.tsx), not an aria-label.
+SIDEBAR_OPERATIONS = '//div[contains(@class,"sidebar-foot")]//button[normalize-space()="Projects & operations"]'
+SETTINGS_SIGN_OUT = '//button[normalize-space()="Sign out"]'
 COMMAND_STOP_HOST = '//button[contains(@class,"command-row")][normalize-space()="Stop this host"]'
 
 
@@ -428,7 +433,7 @@ def main():
             username,password = 'native-fixture-owner','isolated-native-fixture-password-123'
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True
-            driver.click('//nav[@aria-label="Workspace navigation"]//button[@aria-label="Home"]','xpath')
+            driver.click(SIDEBAR_OPERATIONS,'xpath')
             for label, heading in [('Projects','Projects'),('Runs','Runs'),('Overview','Control plane')]:
                 driver.click('//nav[@aria-label="Control plane views"]//button[normalize-space()="'+label+'"]','xpath')
                 wait(lambda:driver.script('return document.querySelector(".control-heading h1")?.textContent === arguments[0]',heading),'native control plane '+label)
@@ -533,7 +538,7 @@ def main():
             driver.click('//div[contains(@class,"sidebar-foot")]//button[normalize-space()="Settings"]','xpath')
             wait(lambda:driver.element('.settings-surface'),'canonical native settings dialog')
             driver.click('//nav[@aria-label="Settings categories"]//button[normalize-space()="General"]','xpath')
-            driver.click('[aria-label="Sign out"]')
+            driver.click(SETTINGS_SIGN_OUT,'xpath')
             wait(lambda:driver.element('.sign-in'),'native logout')
             driver.call('DELETE','/cookie')
             driver.stop();driver.start()

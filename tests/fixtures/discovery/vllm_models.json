@@ -1,0 +1,3 @@
+{"object": "list", "data": [
+  {"id": "Qwen/Qwen2.5-Coder-32B-Instruct", "object": "model", "owned_by": "vllm", "root": "Qwen/Qwen2.5-Coder-32B-Instruct", "max_model_len": 32768}
+]}

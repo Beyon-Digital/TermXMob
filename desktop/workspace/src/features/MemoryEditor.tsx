@@ -2,13 +2,35 @@ import {useSettingsRequest} from './SettingsSurface';
 import { useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import type { MemoryRow } from '../lib/host-types';
 
-export interface MemoryRecord {
-  id: string; revision: number; content: string; provenance: string;
-  project_id?: string | null; retention_days: number; excluded?: boolean;
+export type MemoryRecord = Pick<MemoryRow, 'id' | 'revision' | 'content' | 'provenance' | 'project_id' | 'retention_days' | 'excluded' | 'scope' | 'agent_id' | 'author' | 'state'>;
+
+export type MemoryScope = NonNullable<MemoryRow['scope']>;
+
+/** Rows saved before scopes existed map by project, as the host does. */
+export const scopeOf = (memory: Pick<MemoryRow, 'scope' | 'project_id'>): MemoryScope => memory.scope || (memory.project_id ? 'project' : 'user');
+
+export const appliesToLabel: Record<MemoryScope, string> = {
+  user: 'All your projects', project: 'This project', agent: 'This agent only',
+};
+
+/** One label for a note's scope. `viewerAgentId` is the agent whose page lists it; omit it where no list is involved. */
+export function appliesToText(memory: Pick<MemoryRow, 'scope' | 'project_id' | 'agent_id'>, viewerAgentId?: string | null): string {
+  const scope = scopeOf(memory);
+  return scope === 'agent' && viewerAgentId !== undefined && memory.agent_id !== viewerAgentId ? 'One agent' : appliesToLabel[scope];
 }
 
-/** Keep the original revision and scope until an explicit successful save. */
+/** The body the memory endpoint takes to save a note again. Scope, agent and project stay as saved. */
+export function memoryPayload(memory: MemoryRecord, changes: Record<string, unknown> = {}) {
+  return {
+    identifier: memory.id, revision: memory.revision, content: memory.content, provenance: memory.provenance,
+    project_id: memory.project_id || null, scope: memory.scope, agent_id: memory.agent_id || undefined,
+    retention_days: memory.retention_days, excluded: Boolean(memory.excluded), ...changes,
+  };
+}
+
+/** Keep the original revision, scope and agent until an explicit successful save. */
 export function MemoryEditor({ memory, onSaved, onCancel }: {
   memory: MemoryRecord; onSaved: () => void; onCancel: () => void;
 }) {
@@ -28,16 +50,15 @@ export function MemoryEditor({ memory, onSaved, onCancel }: {
     pending.current = true; setBusy(true); setError('');
     try {
       await request('/api/workspace/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: original.id, revision: original.revision,
-          project_id: original.project_id || null, excluded: Boolean(original.excluded),
-          content, provenance, retention_days: Number(retention) }) });
+        body: JSON.stringify(memoryPayload(original, { content, provenance, retention_days: Number(retention) })) });
       onSaved();
     } catch (exception) {
       setError(`${exception instanceof Error ? exception.message : String(exception)}. Your draft is kept. If this memory changed, cancel and reopen its current version before saving.`);
     } finally { pending.current = false; setBusy(false); }
   }
   return <form className="manager-form" aria-label="Edit memory" onSubmit={save}>
-    <p className="manager-help">{original.project_id ? 'Project memory' : 'Account memory'} · revision {original.revision} · {original.excluded ? 'Excluded from execution' : 'Included in context'}. Saving restarts the selected retention period.</p>
+    <p className="manager-help">Applies to: {appliesToText(original)}. Cannot be changed after saving. To change it, save a new note and delete this one.</p>
+    <p className="manager-help">Revision {original.revision} · {original.excluded ? 'Excluded from execution' : 'Included in context'}. Saving restarts the selected retention period.{original.author === 'agent' && ' An agent wrote this note. Changing its text makes it yours.'}</p>
     <label className="manager-field"><span>Fact or decision</span><textarea aria-label="Fact or decision" required maxLength={64000} value={content} onChange={event => setContent(event.target.value)} /></label>
     <label className="manager-field"><span>Source or reason</span><Input required maxLength={1000} value={provenance} onChange={event => setProvenance(event.target.value)} /></label>
     <label className="manager-field"><span>Retention in days</span><Input required type="number" min={1} max={3650} step={1} value={retention} onChange={event => setRetention(event.target.value)} /></label>

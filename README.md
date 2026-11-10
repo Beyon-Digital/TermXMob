@@ -364,7 +364,7 @@ TermX credential. Tokens, PKCE verifiers and callback codes are never returned
 through GraphQL. The account model catalog is refreshed after sign-in; settings
 also offers **Refresh models**. Requests use streamed Responses with `store=false`,
 local transcript history and namespaced function tools. ChatGPT plan usage does
-not enable the native computer-use tool in this implementation.
+not change desktop control, which uses accessibility trees through function tools and works with any tool-calling model.
 
 Official contract: [registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
 [accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions),

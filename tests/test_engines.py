@@ -647,15 +647,45 @@ def test_gateway_create_complete_and_approve(tmp_path):
 
 
 def test_gateway_marks_sessions_lost_on_recover(tmp_path):
+    """recover() also fails native tasks orphaned by the restart.
+
+    A running native task with no engine session was starting up when the host
+    died, so it counts as its own affected item next to the lost session. Both
+    are counted: the session (``b1``) and the orphaned task (``task:<id>``).
+    """
     store = _store(tmp_path)
-    store.create_task(prompt="x", cwd="/tmp", provider_id="engine:codex",
-                      model="", limits={}, engine="codex", status="running")
+    task = store.create_task(prompt="x", cwd="/tmp", provider_id="engine:codex",
+                             model="", limits={}, engine="codex", status="running")
     store.save_engine_session(
         "b1", task_id=None, engine="codex", native_session_id="thr_x",
         status="active")
     gateway = EngineGateway(store, lambda *a: {})
+    assert gateway.recover() == 2
+    assert store.get_engine_session("b1")["status"] == "lost"
+    failed = store.get_task(task["id"])
+    assert failed["status"] == "failed"
+    assert failed["error"] == (
+        "Host restarted during native startup. Inspect the engine before "
+        "sending a new instruction; no work was replayed.")
+
+
+def test_gateway_recover_counts_a_task_with_a_bound_session_once(tmp_path):
+    store = _store(tmp_path)
+    task = store.create_task(prompt="x", cwd="/tmp", provider_id="engine:codex",
+                             model="", limits={}, engine="codex", status="running")
+    store.save_engine_session(
+        "b1", task_id=task["id"], engine="codex", native_session_id="thr_x",
+        status="active")
+    gateway = EngineGateway(store, lambda *a: {})
     assert gateway.recover() == 1
     assert store.get_engine_session("b1")["status"] == "lost"
+    failed = store.get_task(task["id"])
+    assert failed["status"] == "failed"
+    assert failed["error"] == (
+        "Host restarted during this turn; resume the native session with a "
+        "new task")
+    # A second recovery has nothing left to fail.
+    assert gateway.recover() == 0
 
 
 # ------------------------------------------------------------------- store

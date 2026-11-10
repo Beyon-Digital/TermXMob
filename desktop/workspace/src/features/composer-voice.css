@@ -1,0 +1,16 @@
+/* Dictation and spoken replies in the composer. Quiet until used; the meter is the only moving part. */
+.composer-voice-row{display:flex;flex-direction:column;gap:6px;margin:8px 0 0;font-size:12px;color:var(--secondary)}
+.composer-voice-line{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-height:0}
+.composer-voice-status:empty{display:none}
+.composer-voice-error{margin:0;color:var(--destructive);line-height:1.5}
+.composer-voice-hint{margin:0;line-height:1.6}
+.composer-voice-toggles{display:flex;flex-wrap:wrap;gap:4px 16px}
+.composer-voice-toggles label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;margin:0;font-weight:400}
+.composer-voice-toggles input{margin:0;accent-color:var(--accent)}
+.voice-credit{color:var(--secondary);text-decoration:underline;text-underline-offset:2px}
+.voice-credit:hover{color:var(--foreground)}
+.voice-meter{display:inline-block;width:72px;height:6px;border-radius:3px;background:var(--muted);overflow:hidden;flex-shrink:0}
+.voice-meter>span{display:block;height:100%;width:100%;background:var(--accent);transform-origin:left center;transition:transform 80ms linear}
+.composer-mic.is-recording{color:var(--accent)}
+@media(prefers-reduced-motion:reduce){.voice-meter>span{transition:none}.composer-mic .spin{animation:none}}
+@media(max-width:480px){.voice-meter{width:48px}}

@@ -119,6 +119,24 @@ class AgentProviderInput:
     model: str = ""
     capabilities: list[str] | None = None
     api_key: str | None = None
+    # {model_id: {context_window, max_output, price_in, price_out, capabilities}}; user values win over discovered ones.
+    model_meta: JSON | None = None
+    wire: str | None = None  # "responses" (default) or "chat" (Chat Completions)
+
+
+@strawberry.input
+class ReassignNodeInput:
+    """The model a task-graph node moves to; omit the provider to stay on the main agent's provider."""
+
+    provider_id: str | None = None
+    model: str | None = None
+
+
+@strawberry.input
+class ModelRoutingInput:
+    """{role: {provider_id, model, fallbacks: [{provider_id, model}]}} for orchestrator, worker, planner, summariser."""
+
+    routing: JSON
 
 
 @strawberry.input
@@ -126,6 +144,14 @@ class AgentImageInput:
     name: str = "image"
     mime: str = "image/png"
     data: str = ""
+
+
+@strawberry.input
+class AutoModeInput:
+    """Auto mode switch. `ceilings` keys: tool_calls, steps, seconds, tokens, cost_usd."""
+
+    enabled: bool = True
+    ceilings: JSON | None = None
 
 
 @strawberry.input
@@ -141,6 +167,7 @@ class AgentTaskInput:
     limits: JSON | None = None
     mode: str = "agent"
     execution_mode: str | None = None
+    auto: AutoModeInput | None = None
     conversation_id: str | None = None
     custom_agent_id: str | None = None
     turn_prompt: str | None = None
@@ -156,6 +183,7 @@ class WorktreeActionInput:
 @strawberry.input
 class AgentApprovalInput:
     decision: str
+    feedback: str | None = None
     remember: str | None = None
     content: JSON | None = None
     limits: JSON | None = None

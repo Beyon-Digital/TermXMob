@@ -41,7 +41,10 @@ _SECRET = re.compile(
     r"(?i)(sk-[A-Za-z0-9_-]{16,}|(?:api[_-]?key|token|password|secret)\s*[:=]\s*[^\s]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
 _SENSITIVE_PATH = re.compile(
-    r"(?:^|[\s/\\])(?:\.env(?:\.[^/\\\s]+)?|id_(?:rsa|ed25519)[^/\\\s]*|credentials\.json|[^/\\\s]+\.(?:pem|key))(?:$|\s)",
+    r"(?:^|[\s/\\])(?:\.env(?:\.[^/\\\s]+)?|id_(?:rsa|ed25519)[^/\\\s]*|credentials\.json|[^/\\\s]+\.(?:pem|key))(?:$|\s)"
+    # TermX's desktop-control state: the program that runs with the desktop permission, its saved path, its refmaps.
+    # Keep the directory name in step with ``agent_desktop.DIR_NAME``. This is an accident guard, not a boundary.
+    r"|(?:^|[\s/\\])desktop-control(?:[/\\]|$|[\s\"';&|])",
     re.IGNORECASE,
 )
 
@@ -106,29 +109,6 @@ def evaluate_shell(command: str, root: str) -> PolicyDecision:
             f"May access {sample}, which is outside the approved folder",
         )
     return PolicyDecision(True, False, "Within approved task", "Runs on the paired host")
-
-
-def evaluate_computer(actions: list[dict[str, Any]]) -> PolicyDecision:
-    typed = " ".join(
-        str(action.get("text") or "")
-        for action in actions
-        if action.get("type") in {"type", "paste_text"}
-    )
-    if _SECRET.search(typed):
-        return PolicyDecision(
-            True,
-            True,
-            "Sensitive text entry",
-            "Types information that resembles a credential or secret into another application",
-        )
-    if any(action.get("type") == "keypress" and "ENTER" in str(action.get("keys", "")).upper() for action in actions) and typed:
-        return PolicyDecision(
-            True,
-            True,
-            "Form submission",
-            "Submits text through the remote desktop",
-        )
-    return PolicyDecision(True, False, "Within approved task", "Controls the selected desktop")
 
 
 _WIN_PATH_SHAPE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|~(?:[\\/]|$))")

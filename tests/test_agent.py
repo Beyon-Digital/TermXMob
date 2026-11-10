@@ -17,10 +17,9 @@ from fastapi.testclient import TestClient
 from _gql import data, err_status, gql
 
 from termx.agent import providers as agent_providers
-from termx.agent.computer import ComputerController
 from termx.agent.context import workspace_manifest
 from termx.agent.manager import AgentManager
-from termx.agent.policy import evaluate_computer, evaluate_shell, redact
+from termx.agent.policy import evaluate_shell, redact
 from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderError, ProviderTurn, _parse_plan
 from termx.agent.secrets import CredentialStore
 from termx.agent.store import AgentStore
@@ -28,26 +27,6 @@ from termx.app import AppState, create_app
 from termx.desktop import broker, input as desktop_input
 
 
-class FakeComputer:
-    def __init__(self, frames: list[bytes] | None = None) -> None:
-        self.released = 0
-        self.actions: list[list[dict[str, Any]]] = []
-        self._frames = frames or [b"jpeg"]
-        self._frame_index = 0
-
-    async def execute(
-        self,
-        actions: list[dict[str, Any]],
-        *,
-        cancel: asyncio.Event | None = None,
-    ) -> bytes:
-        self.actions.append(actions)
-        frame = self._frames[min(self._frame_index, len(self._frames) - 1)]
-        self._frame_index += 1
-        return frame
-
-    async def release_all(self) -> None:
-        self.released += 1
 
 
 def test_parse_plan_rejects_tool_markup_and_honors_requested_step_count() -> None:
@@ -59,10 +38,10 @@ def test_parse_plan_rejects_tool_markup_and_honors_requested_step_count() -> Non
 
     assert plan["summary"] == prompt
     assert plan["steps"] == [
-        "Inspect the current desktop state",
+        "Look at the application with desktop_snapshot",
         "Verify and report the requested result",
     ]
-    assert plan["tools"] == ["computer"]
+    assert plan["tools"] == ["shell"]
 
 
 def test_parse_plan_rejects_nested_json_and_invalid_step_values() -> None:
@@ -82,7 +61,7 @@ def test_parse_plan_rejects_nested_json_and_invalid_step_values() -> None:
     assert plan == {
         "summary": prompt,
         "steps": [
-            "Inspect the current desktop state",
+            "Look at the application with desktop_snapshot",
             "Verify and report the requested result",
         ],
         "tools": ["computer"],
@@ -90,15 +69,15 @@ def test_parse_plan_rejects_nested_json_and_invalid_step_values() -> None:
     }
 
 
-def test_parse_plan_fallback_preserves_explicit_screenshot_and_wait_actions() -> None:
+def test_parse_plan_fallback_points_screen_requests_at_the_desktop_tools_and_keeps_waits() -> None:
     prompt = "Take a screenshot of the current desktop, then wait for 15 seconds in exactly two safe steps."
-    plan = _parse_plan("<tool_call>computer</tool_call>", prompt)
+    plan = _parse_plan("<tool_call>shell</tool_call>", prompt)
 
     assert plan["steps"] == [
-        "Capture a screenshot of the current desktop",
+        "Look at the application with desktop_snapshot",
         "Wait for 15 seconds while keeping the task interruptible",
     ]
-    assert plan["tools"] == ["computer"]
+    assert "screenshot" not in " ".join(plan["steps"]).lower()
 
 
 class FakeAdapter:
@@ -130,7 +109,6 @@ class FakeAdapter:
         manifest: dict[str, Any],
         previous_response_id: str | None = None,
         input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
         read_only: bool = False,
         allow_subagents: bool = True,
     ) -> ProviderTurn:
@@ -169,138 +147,10 @@ class FakeAdapter:
         )
 
 
-class ComputerAdapter(FakeAdapter):
-    async def turn(
-        self,
-        *,
-        prompt: str,
-        cwd: str,
-        manifest: dict[str, Any],
-        previous_response_id: str | None = None,
-        input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
-        read_only: bool = False,
-        allow_subagents: bool = True,
-    ) -> ProviderTurn:
-        self.inputs.append(input_items)
-        self.turns += 1
-        if self.turns == 1:
-            call = ProviderCall(
-                type="computer",
-                call_id="computer-1",
-                actions=[{"type": "click", "x": 24, "y": 32}],
-            )
-            return ProviderTurn(
-                response_id="computer-response-1",
-                text="I will inspect the visible result.",
-                calls=[call],
-                usage={},
-                output_items=[{"type": "computer_call", "call_id": call.call_id, "action": call.actions[0]}],
-            )
-        assert allow_computer is True
-        assert input_items is not None
-        assert any(item.get("type") == "computer_call_output" for item in input_items)
-        return ProviderTurn(
-            response_id="computer-response-2",
-            text="The visible result is verified.",
-            calls=[],
-            usage={},
-            output_items=[{"type": "message", "content": [{"type": "output_text", "text": "The visible result is verified."}]}],
-        )
 
 
-class ComputerFunctionAdapter(FakeAdapter):
-    async def turn(
-        self,
-        *,
-        prompt: str,
-        cwd: str,
-        manifest: dict[str, Any],
-        previous_response_id: str | None = None,
-        input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
-        read_only: bool = False,
-        allow_subagents: bool = True,
-    ) -> ProviderTurn:
-        self.inputs.append(input_items)
-        self.turns += 1
-        if self.turns == 1:
-            call = ProviderCall(
-                type="computer",
-                call_id="computer-function-1",
-                name="use_computer",
-                actions=[{"type": "screenshot"}],
-            )
-            return ProviderTurn(
-                response_id="computer-function-response-1",
-                text="I will inspect the current screen.",
-                calls=[call],
-                usage={},
-                output_items=[
-                    {
-                        "type": "function_call",
-                        "call_id": call.call_id,
-                        "name": call.name,
-                        "arguments": json.dumps({"actions": call.actions}),
-                    }
-                ],
-            )
-        assert allow_computer is True
-        assert input_items is not None
-        output = next(item for item in input_items if item.get("type") == "function_call_output")
-        assert output["output"] == "Computer action completed."
-        screenshot = next(item for item in input_items if item.get("role") == "user")
-        assert screenshot["content"][1]["type"] == "input_image"
-        assert screenshot["content"][1]["image_url"].startswith("data:image/jpeg;base64,")
-        return ProviderTurn(
-            response_id="computer-function-response-2",
-            text="The current screen is visible.",
-            calls=[],
-            usage={},
-            output_items=[
-                {"type": "message", "content": [{"type": "output_text", "text": "The current screen is visible."}]}
-            ],
-        )
 
 
-class SecretComputerAdapter(ComputerAdapter):
-    async def turn(
-        self,
-        *,
-        prompt: str,
-        cwd: str,
-        manifest: dict[str, Any],
-        previous_response_id: str | None = None,
-        input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
-        read_only: bool = False,
-        allow_subagents: bool = True,
-    ) -> ProviderTurn:
-        if self.turns == 0:
-            self.turns += 1
-            call = ProviderCall(
-                type="computer",
-                call_id="computer-secret",
-                actions=[{"type": "type", "text": "token=super-secret-value"}],
-            )
-            return ProviderTurn(
-                response_id="computer-secret-response-1",
-                text="I will enter the approved value.",
-                calls=[call],
-                usage={},
-                output_items=[
-                    {"type": "computer_call", "call_id": call.call_id, "action": call.actions[0]}
-                ],
-            )
-        return await super().turn(
-            prompt=prompt,
-            cwd=cwd,
-            manifest=manifest,
-            previous_response_id=previous_response_id,
-            input_items=input_items,
-            allow_computer=allow_computer,
-            read_only=read_only,
-        )
 
 
 class BlockingProviderAdapter(FakeAdapter):
@@ -316,7 +166,6 @@ class BlockingProviderAdapter(FakeAdapter):
         manifest: dict[str, Any],
         previous_response_id: str | None = None,
         input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
         read_only: bool = False,
         allow_subagents: bool = True,
     ) -> ProviderTurn:
@@ -377,7 +226,6 @@ def build_manager(tmp_path: Path, adapter: FakeAdapter) -> tuple[AgentManager, A
         adapter_factory=lambda _provider, _key: adapter,
         runner_for=lambda profile, **kw: HostSandboxRunner(profile=profile),
     )
-    manager._computer = FakeComputer()  # type: ignore[assignment]
     manager.save_provider(
         provider_id="fake",
         kind="openai-compatible",
@@ -461,19 +309,15 @@ def test_consequential_tool_pauses_and_denial_cancels(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
-def test_approved_tool_executes_private_call_without_persisting_secrets(tmp_path: Path) -> None:
+def test_approved_tool_keeps_secrets_out_of_the_pending_approval(tmp_path: Path) -> None:
     async def run() -> None:
-        manager, store = build_manager(tmp_path, SecretComputerAdapter())
+        manager, store = build_manager(tmp_path, FakeAdapter("curl -d token=super-secret-value http://127.0.0.1:9/x"))
         task = await manager.create_task(prompt="Enter the value", cwd=str(tmp_path), provider_id="fake")
         await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
         _, pending = await wait_for_pending_approval(store, task["id"], "tool")
 
         assert "super-secret-value" not in json.dumps(pending["payload"])
-        await manager.resolve_approval(task["id"], pending["id"], "approved")
-        await wait_for_status(store, task["id"], "completed")
-        assert manager._computer.actions == [
-            [{"type": "type", "text": "token=super-secret-value"}]
-        ]
+        await manager.resolve_approval(task["id"], pending["id"], "denied")
         await manager.close()
         store.close()
 
@@ -482,7 +326,7 @@ def test_approved_tool_executes_private_call_without_persisting_secrets(tmp_path
 
 def test_approved_tool_without_private_call_is_an_approval_conflict(tmp_path: Path) -> None:
     async def run() -> None:
-        manager, store = build_manager(tmp_path, SecretComputerAdapter())
+        manager, store = build_manager(tmp_path, FakeAdapter("curl -d token=super-secret-value http://127.0.0.1:9/x"))
         task = await manager.create_task(prompt="Enter the value", cwd=str(tmp_path), provider_id="fake")
         await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
         _, pending = await wait_for_pending_approval(store, task["id"], "tool")
@@ -546,7 +390,6 @@ class ScriptedAdapter(FakeAdapter):
         manifest: dict[str, Any],
         previous_response_id: str | None = None,
         input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
         read_only: bool = False,
         allow_subagents: bool = True,
     ) -> ProviderTurn:
@@ -682,7 +525,6 @@ class _FanOutAdapter(FakeAdapter):
         manifest: dict[str, Any],
         previous_response_id: str | None = None,
         input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
         read_only: bool = False,
         allow_subagents: bool = True,
     ) -> ProviderTurn:
@@ -994,28 +836,6 @@ def test_subagent_handles_rebuilt_from_store(tmp_path: Path) -> None:
     store.close()
 
 
-def test_computer_actions_are_replayed_and_takeover_releases_input(tmp_path: Path) -> None:
-    async def run() -> None:
-        manager, store = build_manager(tmp_path, ComputerAdapter())
-        computer = manager._computer
-        task = await manager.create_task(prompt="Inspect the desktop", cwd=str(tmp_path), provider_id="fake")
-        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
-        completed = await wait_for_status(store, task["id"], "completed")
-        assert any(event["type"] == "computer.screenshot" for event in completed["events"])
-        assert any(artifact["kind"] == "screenshot" for artifact in completed["artifacts"])
-
-        paused = await manager.create_task(prompt="Pause before acting", cwd=str(tmp_path), provider_id="fake")
-        taken_over = await manager.takeover(paused["id"])
-        assert taken_over["status"] == "cancelled"
-        assert computer.released == 1
-        await manager.takeover(paused["id"])
-        events = store.events(paused["id"])
-        assert len([event for event in events if event["type"] == "control.takeover"]) == 1
-        assert len([event for event in events if event["type"] == "task.cancelled"]) == 1
-        await manager.close()
-        store.close()
-
-    asyncio.run(run())
 
 
 def test_takeover_preserves_terminal_task_status(tmp_path: Path) -> None:
@@ -1029,7 +849,6 @@ def test_takeover_preserves_terminal_task_status(tmp_path: Path) -> None:
 
         assert taken_over["status"] == "completed"
         assert taken_over["result"] == completed["result"]
-        assert manager._computer.released == 0
         assert not any(event["type"] == "control.takeover" for event in store.events(task["id"]))
         await manager.close()
         store.close()
@@ -1055,18 +874,6 @@ def test_cancel_interrupts_provider_wait_without_overwriting_cancelled_state(tmp
     asyncio.run(run())
 
 
-def test_computer_function_returns_screenshot_as_follow_up_input(tmp_path: Path) -> None:
-    async def run() -> None:
-        adapter = ComputerFunctionAdapter()
-        manager, store = build_manager(tmp_path, adapter)
-        task = await manager.create_task(prompt="Inspect the desktop", cwd=str(tmp_path), provider_id="fake")
-        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
-        completed = await wait_for_status(store, task["id"], "completed")
-        assert completed["result"] == "The current screen is visible."
-        await manager.close()
-        store.close()
-
-    asyncio.run(run())
 
 
 def test_policy_and_manifest_boundaries(tmp_path: Path) -> None:
@@ -1082,123 +889,15 @@ def test_policy_and_manifest_boundaries(tmp_path: Path) -> None:
     assert evaluate_shell("rm -rf /tmp/example", str(tmp_path)).approval_required is True
     assert evaluate_shell("cat ../outside.txt", str(tmp_path)).approval_required is True
     assert evaluate_shell("cat .env", str(tmp_path)).approval_required is True
-    assert evaluate_computer([{"type": "type", "text": "password=secret"}]).approval_required is True
     assert "secret-value" not in redact("api_key=secret-value")
 
 
-def test_provider_call_public_redacts_sensitive_action_text() -> None:
-    call = ProviderCall(
-        type="computer",
-        call_id="computer-secret",
-        arguments={"purpose": "Use token=super-secret-value"},
-        actions=[{"type": "type", "text": "password=super-secret-value"}],
-        safety_checks=[{"message": "Submit api_key=super-secret-value"}],
-    )
-
-    public = call.public()
-
-    assert "super-secret-value" not in json.dumps(public)
-    assert public["actions"][0]["text"] == "[redacted]"
 
 
-def test_computer_controller_interrupts_and_executes_key_chords(monkeypatch) -> None:
-    async def run() -> None:
-        events: list[dict[str, Any]] = []
-        controller = ComputerController()
-
-        monkeypatch.setattr(
-            "termx.agent.computer.apply_event",
-            lambda event, target=None: events.append(event),
-        )
-
-        async def screenshot() -> bytes:
-            return b"jpeg"
-
-        monkeypatch.setattr(controller, "screenshot", screenshot)
-        result = await controller.execute([{"type": "keypress", "keys": ["CTRL", "L"]}])
-        assert result == b"jpeg"
-        assert events == [
-            {
-                "type": "key",
-                "key": "l",
-                "action": "tap",
-                "modifiers": ["control"],
-            },
-        ]
-
-        events.clear()
-        cancel = asyncio.Event()
-        cancel.set()
-        with pytest.raises(asyncio.CancelledError):
-            await controller.execute([{"type": "wait", "seconds": 5}], cancel=cancel)
-        assert events == [{"type": "release_all"}]
-
-    asyncio.run(run())
 
 
-def test_computer_controller_releases_drag_on_cancellation(monkeypatch) -> None:
-    async def run() -> None:
-        events: list[dict[str, Any]] = []
-        cancel = asyncio.Event()
-        controller = ComputerController()
-
-        def apply(event: dict[str, Any], target: str | None = None) -> None:
-            events.append(event)
-            if event.get("action") == "down":
-                cancel.set()
-
-        monkeypatch.setattr("termx.agent.computer.apply_event", apply)
-        monkeypatch.setattr(
-            controller,
-            "_display",
-            lambda: (None, 100.0, 100.0),
-        )
-
-        with pytest.raises(asyncio.CancelledError):
-            await controller.execute(
-                [{"type": "drag", "path": [{"x": 10, "y": 10}, {"x": 20, "y": 20}]}],
-                cancel=cancel,
-            )
-
-        assert events[-1] == {"type": "release_all"}
-
-    asyncio.run(run())
 
 
-def test_computer_controller_stops_typing_before_takeover_release(monkeypatch) -> None:
-    async def run() -> None:
-        first_character = threading.Event()
-        finish_character = threading.Event()
-        events: list[dict[str, Any]] = []
-        cancel = asyncio.Event()
-        controller = ComputerController()
-
-        def apply(event: dict[str, Any], target: str | None = None) -> None:
-            events.append(event)
-            if event.get("type") == "text":
-                first_character.set()
-                assert finish_character.wait(timeout=1)
-
-        monkeypatch.setattr("termx.agent.computer.apply_event", apply)
-        typing = asyncio.create_task(
-            controller.execute([{"type": "type", "text": "long input"}], cancel=cancel)
-        )
-        assert await asyncio.to_thread(first_character.wait, 1)
-
-        cancel.set()
-        release = asyncio.create_task(controller.release_all())
-        finish_character.set()
-
-        with pytest.raises(asyncio.CancelledError):
-            await typing
-        await release
-
-        assert [event for event in events if event.get("type") == "text"] == [
-            {"type": "text", "data": "l"}
-        ]
-        assert events[-1] == {"type": "release_all"}
-
-    asyncio.run(run())
 
 
 def test_desktop_input_release_all_releases_xtest_buttons_and_modifiers(monkeypatch) -> None:
@@ -1451,62 +1150,19 @@ def test_openai_adapter_normalizes_text_and_calls(monkeypatch) -> None:
             "output": [
                 {"type": "message", "content": [{"type": "output_text", "text": "Working"}]},
                 {"type": "function_call", "call_id": "fn", "name": "run_shell", "arguments": '{"command":"pwd","purpose":"inspect"}'},
-                {
-                    "type": "computer_call",
-                    "call_id": "pc",
-                    "action": {"type": "click", "x": 1, "y": 2},
-                    "pending_safety_checks": [{"id": "check-1", "code": "external_side_effect", "message": "Submits a form"}],
-                },
+                {"type": "computer_call", "call_id": "pc", "action": {"type": "click", "x": 1, "y": 2}},
             ],
             "usage": {"input_tokens": 3},
         }
 
     monkeypatch.setattr(adapter, "_post", fake_post)
-    turn = asyncio.run(adapter.turn(prompt="do it", cwd="/tmp", manifest={"files": []}, allow_computer=True))
+    turn = asyncio.run(adapter.turn(prompt="do it", cwd="/tmp", manifest={"files": []}))
     assert turn.text == "Working"
-    assert [(call.type, call.call_id) for call in turn.calls] == [("function", "fn"), ("computer", "pc")]
+    # A native computer_call from an old conversation is ignored: there is no screenshot loop to answer it.
+    assert [(call.type, call.call_id) for call in turn.calls] == [("function", "fn")]
     assert turn.calls[0].arguments["command"] == "pwd"
-    assert turn.calls[1].actions[0]["type"] == "click"
-    assert turn.calls[1].safety_checks[0]["id"] == "check-1"
 
 
-def test_compatible_adapter_uses_function_computer_tool(monkeypatch) -> None:
-    adapter = OpenAIResponsesAdapter(
-        base_url="https://example.com/v1",
-        model="model",
-        api_key="secret",
-        capabilities=["shell", "computer"],
-        native_computer=False,
-    )
-    payloads: list[dict[str, Any]] = []
-
-    async def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
-        payloads.append(payload)
-        return {
-            "id": "resp",
-            "output": [
-                {
-                    "type": "function_call",
-                    "call_id": "pc",
-                    "name": "use_computer",
-                    "arguments": '{"actions":[{"type":"screenshot"}]}',
-                }
-            ],
-        }
-
-    monkeypatch.setattr(adapter, "_post", fake_post)
-    turn = asyncio.run(adapter.turn(prompt="look", cwd="/tmp", manifest={}, allow_computer=True))
-    computer_tool = next(tool for tool in payloads[0]["tools"] if tool.get("name") == "use_computer")
-    assert computer_tool["type"] == "function"
-    assert computer_tool["parameters"]["properties"]["actions"]["maxItems"] == 12
-    assert turn.calls == [
-        ProviderCall(
-            type="computer",
-            call_id="pc",
-            name="use_computer",
-            actions=[{"type": "screenshot"}],
-        )
-    ]
 
 
 def test_agent_api_scopes_and_write_only_provider(tmp_path: Path) -> None:
@@ -1519,7 +1175,6 @@ def test_agent_api_scopes_and_write_only_provider(tmp_path: Path) -> None:
         credentials=credentials,
         adapter_factory=lambda _provider, _key: adapter,
     )
-    state.agent._computer = FakeComputer()  # type: ignore[assignment]
     viewer = state.tokens.issue(["agent-view"])
     with TestClient(create_app(state, web_dir=None)) as client:
         assert err_status(client, "{ agent_providers { id } }") == 401
@@ -1580,7 +1235,6 @@ def test_selected_model_and_image_attachment(tmp_path: Path) -> None:
 
         store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
         manager = AgentManager(store, CredentialStore(memory={}), desktop=None, adapter_factory=factory)
-        manager._computer = FakeComputer()  # type: ignore[assignment]
         manager.save_provider(
             provider_id="fake",
             kind="openai-compatible",
@@ -2010,385 +1664,33 @@ def test_stream_retry_allowed_before_first_delta(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — Observation v2 + richer computer actions (AG2-015 / AG2-016)
+# Phase 4 — machine capabilities
 
 
-class ComputerDedupAdapter(FakeAdapter):
-    """Two use_computer calls then a text turn; records the final input."""
-
-    async def turn(
-        self,
-        *,
-        prompt: str,
-        cwd: str,
-        manifest: dict[str, Any],
-        previous_response_id: str | None = None,
-        input_items: list[dict[str, Any]] | None = None,
-        allow_computer: bool = False,
-        read_only: bool = False,
-        allow_subagents: bool = True,
-    ) -> ProviderTurn:
-        self.inputs.append(input_items)
-        self.turns += 1
-        if self.turns <= 2:
-            call = ProviderCall(
-                type="computer",
-                call_id=f"computer-{self.turns}",
-                name="use_computer",
-                actions=[{"type": "screenshot"}],
-            )
-            return ProviderTurn(
-                response_id=f"dedup-response-{self.turns}",
-                text="",
-                calls=[call],
-                usage={},
-                output_items=[
-                    {
-                        "type": "function_call",
-                        "call_id": call.call_id,
-                        "name": "use_computer",
-                        "arguments": json.dumps({"actions": call.actions}),
-                    }
-                ],
-            )
-        self.final_items = input_items
-        return ProviderTurn(
-            response_id="dedup-response-3",
-            text="Done.",
-            calls=[],
-            usage={},
-            output_items=[
-                {"type": "message", "content": [{"type": "output_text", "text": "Done."}]}
-            ],
-        )
 
 
-def test_jpeg_size_parses_sof_marker() -> None:
-    from termx.agent.observation import jpeg_size
-
-    frame = (
-        b"\xff\xd8"  # SOI
-        + b"\xff\xe0" + (16).to_bytes(2, "big") + b"\x00" * 14  # APP0
-        + b"\xff\xc0" + (17).to_bytes(2, "big") + b"\x08"
-        + (480).to_bytes(2, "big") + (640).to_bytes(2, "big")
-        + b"\x03" + b"\x00" * 6
-    )
-    assert jpeg_size(frame) == (640, 480)
-    assert jpeg_size(b"jpeg") is None
-    assert jpeg_size(b"") is None
 
 
-def test_frame_identity_dedupes_identical_frames() -> None:
-    from termx.agent.observation import ObservationTracker, frame_identity
-
-    kind, digest = frame_identity(b"jpeg")
-    assert kind == "sha256" and len(digest) == 16
-    tracker = ObservationTracker()
-    first = tracker.record(
-        frame=b"jpeg", display_id="1", width=10, height=10, dpr=1.0, backend="fake"
-    )
-    second = tracker.record(
-        frame=b"jpeg", display_id="1", width=10, height=10, dpr=1.0, backend="fake"
-    )
-    third = tracker.record(
-        frame=b"jpeg2", display_id="1", width=10, height=10, dpr=1.0, backend="fake"
-    )
-    assert first.changed is True
-    assert second.changed is False
-    assert third.changed is True
-    payload = second.payload()
-    assert payload["previous_id"] == first.id
-    assert payload["age_ms"] >= 0
 
 
-def test_screenshot_region_parsed_from_actions() -> None:
-    from termx.agent.manager import _screenshot_region
-
-    assert _screenshot_region([{"type": "click"}, {"type": "screenshot"}]) is None
-    assert _screenshot_region(
-        [{"type": "screenshot", "region": {"x": 1.7, "y": 2, "width": 100, "height": 50}}]
-    ) == {"x": 1, "y": 2, "width": 100, "height": 50}
-    assert (
-        _screenshot_region(
-            [{"type": "screenshot", "region": {"x": -5, "y": "bad", "width": 0, "height": 20}}]
-        )
-        is None
-    )
-    assert _screenshot_region(
-        [{"type": "screenshot", "region": {"x": -5, "y": 0, "width": 10, "height": 10}}]
-    ) == {"x": 0, "y": 0, "width": 10, "height": 10}
 
 
-def test_computer_observation_schema_and_batch_events(tmp_path: Path) -> None:
-    async def run() -> None:
-        manager, store = build_manager(tmp_path, ComputerAdapter())
-        task = await manager.create_task(prompt="Look", cwd=str(tmp_path), provider_id="fake")
-        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
-        await wait_for_status(store, task["id"], "completed")
-        events = store.events(task["id"])
-        started = next(e for e in events if e["type"] == "computer.action.started")
-        finished = next(e for e in events if e["type"] == "computer.action.finished")
-        assert started["payload"]["batch_id"] == finished["payload"]["batch_id"]
-        assert started["payload"]["actions"] == ["click"]
-        assert finished["payload"]["ok"] is True
-        obs_event = next(e for e in events if e["type"] == "computer.observation")
-        assert obs_event["payload"]["batch_id"] == started["payload"]["batch_id"]
-        observation = obs_event["payload"]["observation"]
-        for field in (
-            "id",
-            "display_id",
-            "width",
-            "height",
-            "dpr",
-            "captured_at",
-            "age_ms",
-            "artifact_id",
-            "frame_hash",
-            "changed",
-            "control_owner",
-            "capture_backend",
-        ):
-            assert field in observation, field
-        assert observation["changed"] is True
-        assert observation["control_owner"] == "agent"
-        artifact = store.get_artifact(task["id"], observation["artifact_id"])
-        assert artifact is not None and artifact["kind"] == "screenshot"
-        await manager.close()
-        store.close()
-
-    asyncio.run(run())
 
 
-def test_computer_no_change_suppresses_duplicate_frame(tmp_path: Path) -> None:
-    async def run() -> None:
-        adapter = ComputerDedupAdapter()
-        manager, store = build_manager(tmp_path, adapter)
-        task = await manager.create_task(prompt="Look twice", cwd=str(tmp_path), provider_id="fake")
-        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
-        await wait_for_status(store, task["id"], "completed")
-        events = store.events(task["id"])
-        observations = [e for e in events if e["type"] == "computer.observation"]
-        assert len(observations) == 2
-        assert observations[0]["payload"]["observation"]["changed"] is True
-        assert observations[1]["payload"]["observation"]["changed"] is False
-        no_change = [e for e in events if e["type"] == "computer.no_change"]
-        assert len(no_change) == 1
-        # The second frame produced a text-only follow-up — no input_image item.
-        final_items = getattr(adapter, "final_items", None) or []
-        second_output = next(
-            index
-            for index, item in enumerate(final_items)
-            if item.get("type") == "function_call_output"
-            and item.get("call_id") == "computer-2"
-        )
-        trailing = final_items[second_output + 1 :]
-        assert not any(
-            content.get("type") == "input_image"
-            for item in trailing
-            if item.get("role") == "user"
-            for content in item.get("content", [])
-        )
-        assert any(
-            "unchanged" in str(content.get("text") or "").lower()
-            for item in final_items
-            if item.get("role") == "user"
-            for content in item.get("content", [])
-        )
-        # Both frames are still persisted as artifacts for replay.
-        artifacts = [a for a in store.artifacts(task["id"]) if a["kind"] == "screenshot"]
-        assert len(artifacts) == 2
-        await manager.close()
-        store.close()
-
-    asyncio.run(run())
 
 
-def test_computer_control_changed_on_takeover(tmp_path: Path) -> None:
-    async def run() -> None:
-        manager, store = build_manager(tmp_path, ComputerAdapter())
-        task = await manager.create_task(prompt="Look", cwd=str(tmp_path), provider_id="fake")
-        # Takeover while the plan approval is pending — an active status.
-        await manager.takeover(task["id"])
-        changed = [
-            e for e in store.events(task["id"]) if e["type"] == "computer.control.changed"
-        ]
-        assert changed[-1]["payload"]["owner"] == "user"
-        # The next agent batch on a fresh task reasserts agent control.
-        task2 = await manager.create_task(prompt="Look", cwd=str(tmp_path), provider_id="fake")
-        await manager.resolve_approval(task2["id"], task2["approvals"][0]["id"], "approved")
-        await wait_for_status(store, task2["id"], "completed")
-        back = [
-            e for e in store.events(task2["id"]) if e["type"] == "computer.control.changed"
-        ]
-        assert back[-1]["payload"]["owner"] == "agent"
-        await manager.close()
-        store.close()
-
-    asyncio.run(run())
 
 
-def test_computer_region_screenshot_records_region(tmp_path: Path) -> None:
-    class RegionAdapter(FakeAdapter):
-        async def turn(self, **kwargs: Any) -> ProviderTurn:
-            self.turns += 1
-            self.inputs.append(kwargs.get("input_items"))
-            if self.turns == 1:
-                call = ProviderCall(
-                    type="computer",
-                    call_id="region-1",
-                    name="use_computer",
-                    actions=[
-                        {
-                            "type": "screenshot",
-                            "region": {"x": 0, "y": 0, "width": 50, "height": 50},
-                        }
-                    ],
-                )
-                return ProviderTurn(
-                    response_id="region-response-1",
-                    text="",
-                    calls=[call],
-                    usage={},
-                    output_items=[
-                        {
-                            "type": "function_call",
-                            "call_id": call.call_id,
-                            "name": "use_computer",
-                            "arguments": json.dumps({"actions": call.actions}),
-                        }
-                    ],
-                )
-            return ProviderTurn(
-                response_id="region-response-2",
-                text="Done.",
-                calls=[],
-                usage={},
-                output_items=[
-                    {"type": "message", "content": [{"type": "output_text", "text": "Done."}]}
-                ],
-            )
-
-    async def run() -> None:
-        manager, store = build_manager(tmp_path, RegionAdapter())
-        task = await manager.create_task(prompt="Region", cwd=str(tmp_path), provider_id="fake")
-        await manager.resolve_approval(task["id"], task["approvals"][0]["id"], "approved")
-        await wait_for_status(store, task["id"], "completed")
-        obs_event = next(
-            e for e in store.events(task["id"]) if e["type"] == "computer.observation"
-        )
-        observation = obs_event["payload"]["observation"]
-        assert observation["region"] == {"x": 0, "y": 0, "width": 50, "height": 50}
-        # The fake frame is undecodable, so hosts serve the full frame honestly.
-        assert observation["region_cropped"] is False
-        await manager.close()
-        store.close()
-
-    asyncio.run(run())
 
 
-def test_machine_snapshot_reports_observation_v2(tmp_path: Path) -> None:
-    from termx.config import ConfigStore
-    from termx.machine import machine_snapshot
-
-    snapshot = machine_snapshot(ConfigStore(tmp_path / "config.json"))
-    assert snapshot["capabilities"]["computer_observation_v2"] is True
-    assert snapshot["capabilities"]["agent_subagents"] is True
 
 
-def test_paste_text_uses_clipboard_chord(monkeypatch: pytest.MonkeyPatch) -> None:
-    from termx.agent import computer as computer_module
-
-    events: list[dict[str, Any]] = []
-    clipboard: dict[str, str] = {}
-    monkeypatch.setattr(
-        computer_module,
-        "list_displays",
-        lambda: [{"id": "1", "main": True, "width": 100, "height": 100}],
-    )
-    monkeypatch.setattr(computer_module, "pointer_target", lambda _d: None)
-    monkeypatch.setattr(computer_module, "apply_event", lambda e, *_a, **_k: events.append(e))
-    monkeypatch.setattr(
-        computer_module, "clipboard_set", lambda text: clipboard.__setitem__("v", text)
-    )
-    monkeypatch.setattr(computer_module, "clipboard_get", lambda: clipboard.get("v"))
-
-    controller = ComputerController()
-    asyncio.run(controller._action({"type": "paste_text", "text": "long text here"}))
-    assert clipboard["v"] == "long text here"
-    assert events == [
-        {
-            "type": "key",
-            "key": "v",
-            "action": "tap",
-            "modifiers": ["control"] if sys.platform != "darwin" else ["meta"],
-        }
-    ]
 
 
-def test_paste_text_falls_back_to_typing(monkeypatch: pytest.MonkeyPatch) -> None:
-    from termx.agent import computer as computer_module
-
-    events: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        computer_module,
-        "list_displays",
-        lambda: [{"id": "1", "main": True, "width": 100, "height": 100}],
-    )
-    monkeypatch.setattr(computer_module, "pointer_target", lambda _d: None)
-    monkeypatch.setattr(computer_module, "apply_event", lambda e, *_a, **_k: events.append(e))
-    monkeypatch.setattr(computer_module, "clipboard_set", lambda _t: None)
-    monkeypatch.setattr(computer_module, "clipboard_get", lambda: None)
-
-    controller = ComputerController()
-    asyncio.run(controller._action({"type": "paste_text", "text": "ab"}))
-    assert events == [
-        {"type": "text", "data": "a"},
-        {"type": "text", "data": "b"},
-    ]
 
 
-def test_mouse_and_key_hold_actions(monkeypatch: pytest.MonkeyPatch) -> None:
-    from termx.agent import computer as computer_module
-
-    events: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        computer_module,
-        "list_displays",
-        lambda: [{"id": "1", "main": True, "width": 100, "height": 100}],
-    )
-    monkeypatch.setattr(computer_module, "pointer_target", lambda _d: None)
-    monkeypatch.setattr(computer_module, "apply_event", lambda e, *_a, **_k: events.append(e))
-
-    controller = ComputerController()
-
-    async def run() -> None:
-        await controller._action({"type": "mouse_down", "x": 10, "y": 20, "button": "left"})
-        await controller._action({"type": "mouse_up", "x": 10, "y": 20})
-        await controller._action({"type": "key_down", "keys": ["control"]})
-        await controller._action({"type": "key_up", "keys": ["a"]})
-        await controller._action({"type": "release_all"})
-        await controller._action({"type": "set_display", "display_id": "7"})
-
-    asyncio.run(run())
-    assert events[0] == {
-        "type": "pointer",
-        "action": "down",
-        "x": 0.1,
-        "y": 0.2,
-        "button": 1,
-    }
-    assert events[1]["action"] == "up"
-    assert events[2] == {"type": "key", "key": "control", "action": "down", "modifiers": ["control"]}
-    assert events[3]["action"] == "up"
-    assert events[4] == {"type": "release_all"}
-    assert controller.display_id == "7"
 
 
-def test_paste_text_secret_scanned_like_type() -> None:
-    decision = evaluate_computer(
-        [{"type": "paste_text", "text": "password=super-secret-123"}]
-    )
-    assert decision.approval_required is True
 
 
 # ---------------------------------------------------------------------------
@@ -2845,7 +2147,6 @@ def test_worktree_rest_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         credentials=credentials,
         adapter_factory=lambda _provider, _key: adapter,
     )
-    state.agent._computer = FakeComputer()  # type: ignore[assignment]
     state.agent.save_provider(
         provider_id="fake",
         kind="openai-compatible",
@@ -2926,7 +2227,6 @@ def test_activity_endpoint_and_snapshot(tmp_path: Path) -> None:
         credentials=CredentialStore(memory={}),
         adapter_factory=lambda _provider, _key: adapter,
     )
-    state.agent._computer = FakeComputer()  # type: ignore[assignment]
     headers = {"x-termx-passcode": "secret"}
 
     with TestClient(create_app(state, web_dir=None)) as client:
@@ -3124,7 +2424,6 @@ def _runbook_state(tmp_path: Path) -> AppState:
         credentials=CredentialStore(memory={}),
         adapter_factory=lambda _p, _k: FakeAdapter(),
     )
-    state.agent._computer = FakeComputer()  # type: ignore[assignment]
     return state
 
 
@@ -3513,38 +2812,6 @@ def test_provider_tools_hide_subagents_for_children() -> None:
     assert "list_files" in child_names  # other tools unaffected
 
 
-def test_observation_dedup_scoped_per_task_display_region() -> None:
-    """Dedup compares within one stream only: same task+display+region."""
-    from termx.agent.observation import ObservationTracker
-
-    tracker = ObservationTracker()
-    a1 = tracker.record(
-        scope="task-a", frame=b"jpeg", display_id="1",
-        width=10, height=10, dpr=1.0, backend="fake",
-    )
-    b1 = tracker.record(
-        scope="task-b", frame=b"jpeg", display_id="1",
-        width=10, height=10, dpr=1.0, backend="fake",
-    )
-    # Task B's first capture must not inherit A's frame as its baseline.
-    assert a1.changed is True
-    assert b1.changed is True
-    assert "previous_id" not in b1.extra
-    # Same frame again in B dedupes against B's own stream.
-    b2 = tracker.record(
-        scope="task-b", frame=b"jpeg", display_id="1",
-        width=10, height=10, dpr=1.0, backend="fake",
-    )
-    assert b2.changed is False
-    assert b2.extra["previous_id"] == b1.id
-    # A different region on the same display is a different stream.
-    b_region = tracker.record(
-        scope="task-b", frame=b"jpeg", display_id="1",
-        width=10, height=10, dpr=1.0, backend="fake",
-        region={"x": 0, "y": 0, "width": 5, "height": 5},
-    )
-    assert b_region.changed is True
-    assert "previous_id" not in b_region.extra
 
 
 def test_task_uses_custom_agent_instructions_and_limits(tmp_path: Path) -> None:

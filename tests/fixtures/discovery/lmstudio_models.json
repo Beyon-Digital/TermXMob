@@ -1,0 +1,5 @@
+{"object": "list", "data": [
+  {"id": "qwen2.5-coder-14b-instruct", "object": "model", "type": "llm", "state": "not-loaded", "max_context_length": 32768, "capabilities": ["tool_use"]},
+  {"id": "qwen2-vl-7b", "object": "model", "type": "vlm", "max_context_length": 8192},
+  {"id": "text-embedding-nomic", "object": "model", "type": "embeddings", "max_context_length": 2048}
+]}

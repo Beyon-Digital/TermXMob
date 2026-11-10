@@ -16,6 +16,7 @@ from typing import Any, Self
 import strawberry
 from strawberry.scalars import JSON
 from strawberry.types import Info
+from termx.agent.limits import auto_summary
 from termx.graphql.errors import resolver
 
 
@@ -525,10 +526,77 @@ class AgentProvider(DictBacked):
     base_url: str | None
     model: str | None
     models: list[str] | None
+    selected_models: list[str] | None
+    model_catalog: JSON | None
+    model_overrides: JSON | None
+    catalog_refreshed_at: float | None
+    catalog_error: str | None
+    wire: str | None
     capabilities: list[str] | None
     secret_configured: bool | None
     created_at: float | None
     updated_at: float | None
+
+
+@strawberry.type
+class TaskUsage(DictBacked):
+    tokens: int
+    cost_usd: float | None  # null when no turn had a known price
+
+
+@strawberry.type
+class TaskContext(DictBacked):
+    used: int | None  # tokens the next prompt takes; null before the first turn
+    window: int | None  # the model's context window; null when discovery had no value
+    limit: int  # the budget compaction works against (120k when the window is unknown)
+    window_known: bool
+
+
+@strawberry.type
+class OrchestratorNode(DictBacked):
+    """One task-graph node of the main agent. ``status`` is pending, running, stalled, completed, failed or cancelled."""
+
+    id: str
+    title: str
+    role: str
+    mode: str
+    isolation: str | None
+    depends_on: list[str]
+    blocked_by: list[str]
+    task_id: str | None
+    status: str
+    attempts: int
+    max_attempts: int
+    waiting: str | None  # approval, paused or recovery while a running node's task waits on a person
+    last_event_at: float | None
+    result_summary: str
+    error: str
+    provider_id: str | None
+    model: str | None
+    tokens: int
+    cost_usd: float | None
+    created_at: float | None
+    updated_at: float | None
+
+
+@strawberry.type
+class OrchestratorRollup(DictBacked):
+    total: int
+    counts: JSON
+    percent_complete: int
+    tokens: int
+    cost_usd: float | None  # null when no node had a known price
+
+
+@strawberry.type
+class OrchestratorBoard(DictBacked):
+    @strawberry.field
+    def nodes(self) -> list[OrchestratorNode]:
+        return OrchestratorNode.wrap_all(object.__getattribute__(self, '_d').get('nodes'))
+
+    @strawberry.field
+    def rollup(self) -> OrchestratorRollup:
+        return OrchestratorRollup.wrap(object.__getattribute__(self, '_d')['rollup'])
 
 
 @strawberry.type
@@ -617,6 +685,24 @@ class AgentTask(DictBacked):
         value = object.__getattribute__(self, '_d')
         info.context.require_resource('agent-view', 'task', value['id'])
         return context_task_runtime(info.context, value.get('runtime'))
+    @strawberry.field
+    @resolver
+    def auto(self, info: Info) -> JSON | None:
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return auto_summary(value.get('runtime'))
+    @strawberry.field
+    @resolver
+    def usage(self, info: Info) -> TaskUsage:
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return TaskUsage.wrap(info.context.state.agent.task_usage(value['id']))
+    @strawberry.field
+    @resolver
+    def context(self, info: Info) -> TaskContext:
+        value = object.__getattribute__(self, '_d')
+        info.context.require_resource('agent-view', 'task', value['id'])
+        return TaskContext.wrap(info.context.state.agent.task_context(value['id']))
     metrics: JSON | None
     created_at: float | None
     updated_at: float | None

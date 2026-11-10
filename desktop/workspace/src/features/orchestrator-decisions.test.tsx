@@ -4,7 +4,7 @@ import {request, type Session, type Task} from '../lib/api';
 import OrchestratorDecisions from './OrchestratorDecisions';
 import OrchestratorStatus, {type OrchestratorChild} from './OrchestratorStatus';
 
-vi.mock('../lib/api', () => ({request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
+vi.mock('../lib/api', () => ({gql: async () => ({orchestrator_board: {nodes: [], rollup: {total: 0, counts: {}, percent_complete: 0, tokens: 0, cost_usd: null}}}), request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
 const api = vi.mocked(request), refreshed = vi.fn();
 const child: OrchestratorChild = {session_id: 'source-chat', task_id: 'source/task', title: 'Native reviewer',
   status: 'awaiting_approval', pending_approvals: 1, engine: 'acp', origin: 'native', capability_limits: {},
@@ -201,7 +201,7 @@ it('uses the original budget review and its exact allowance without a coordinato
   api.mockImplementation(async (_path, init) => init?.method === 'POST' ? {} as any : budget);
   render(<OrchestratorDecisions {...props} children={[{...child, task_id: 'budget-task'}]}/>);
   fireEvent.click(await screen.findByRole('button', {name: 'Review budget extension'}));
-  expect(screen.getByLabelText('Extended max_steps')).toHaveValue(4);
+  expect(screen.getByLabelText('Step limit (tool calls and turns)')).toHaveValue(4);
   fireEvent.click(screen.getByRole('button', {name: 'Approve budget extension'}));
   await waitFor(() => expect(refreshed).toHaveBeenCalledOnce());
   expect(posts()).toHaveLength(1);

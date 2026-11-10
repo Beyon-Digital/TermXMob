@@ -1,0 +1,23 @@
+.character-sprite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.character-sprite canvas {
+  display: block;
+  image-rendering: auto;
+}
+
+.character-art-error {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--secondary);
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  font-size: 20px;
+}

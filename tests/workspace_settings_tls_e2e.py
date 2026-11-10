@@ -40,23 +40,26 @@ def run(destination):
                 page.goto(f'http://127.0.0.1:{port}/')
                 page.get_by_label('Username',exact=True).fill('settings-fixture');page.get_by_label('Password',exact=True).fill('settings-fixture-password-123');page.get_by_role('button',name='Continue with password').click()
                 page.get_by_role('button',name='Settings',exact=True).wait_for(timeout=20000)
-                sidebar=page.get_by_role('complementary',name='Projects and conversations')
+                sidebar=page.get_by_role('complementary',name='Chats and agents',exact=True)
                 workspace_nav=page.get_by_role('navigation',name='Workspace navigation',exact=True)
-                opener=workspace_nav.get_by_role('button',name='Settings',exact=True)
+                # With the sidebar pinned, the icon rail is hidden and the sidebar footer holds the one Settings entry.
+                opener=sidebar.get_by_role('button',name='Settings',exact=True)
                 assert opener.count()==1
-                assert sidebar.get_by_role('button',name='Settings',exact=True).count()==0
+                assert workspace_nav.get_by_role('button',name='Settings',exact=True).count()==0
                 assert sidebar.get_by_role('button',name='Access & sessions',exact=True).count()==0
-                assert workspace_nav.get_by_role('button',name='Home',exact=True).count()==1
-                assert sidebar.get_by_role('button',name='Home',exact=True).count()==0
+                assert sidebar.get_by_role('button',name='Main agent').count()==1
                 page.screenshot(path=str(output/'drawer-desktop.png'))
                 opener.click()
                 dialog=page.get_by_role('dialog',name='Settings',exact=True);dialog.wait_for()
-                categories=['Models & engines','Cloud accounts','Agents','Characters','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Appearance','Keyboard shortcuts','Safety & Auto Review','General']
+                categories=['Preferences','Characters','Models & engines','Voice','Cloud accounts','Agents','Bots','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Safety & Auto Review']
                 nav=dialog.get_by_role('navigation',name='Settings categories')
-                assert nav.get_by_role('button').count()==len(categories)
+                assert nav.get_by_role('link').count()==len(categories)
                 for category in categories:
-                    assert nav.get_by_role('button',name=category,exact=True).count()==1
-                nav.get_by_role('button',name='Access & sessions',exact=True).click();dialog.get_by_role('heading',name='Local network HTTPS',exact=True).wait_for()
+                    assert nav.get_by_role('link',name=category,exact=True).count()==1
+                nav.get_by_role('link',name='Access & sessions',exact=True).click()
+                # LAN HTTPS sits in the collapsed "Host connectivity" disclosure, and the port in its "Network settings" disclosure.
+                dialog.get_by_text('Host connectivity',exact=True).click();dialog.get_by_role('heading',name='Local network HTTPS',exact=True).wait_for()
+                dialog.get_by_text('Network settings',exact=True).click()
                 assert page.url.endswith('/manage/access')
                 # Stage and undo configuration on a throwaway profile. The proof
                 # never restarts or exposes a LAN listener or opens firewall rules.
@@ -66,12 +69,12 @@ def run(destination):
                 for width,height in [(1440,1000),(768,900),(390,844)]:
                     page.set_viewport_size({'width':width,'height':height})
                     for theme in ['dark','light']:
-                        nav.get_by_role('button',name='Appearance',exact=True).click()
+                        nav.get_by_role('link',name='Preferences',exact=True).click()
                         dialog.get_by_role('radio',name=theme.title(),exact=True).check()
                         assert page.locator('html').get_attribute('data-theme')==theme
                         page.wait_for_timeout(100)
                         # Take a real category view, without mock layout or hidden controls.
-                        nav.get_by_role('button',name='Memory',exact=True).click()
+                        nav.get_by_role('link',name='Memory',exact=True).click()
                         dialog.get_by_text('Use verified TLS for LAN connections',exact=True).wait_for()
                         bounds=dialog.bounding_box();assert bounds and bounds['x']>=-1 and bounds['x']+bounds['width']<=width+1
                         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
@@ -83,28 +86,32 @@ def run(destination):
                         page.screenshot(path=str(output/f'settings-{width}-{theme}.png'))
                         report['viewports'].append({'width':width,'height':height,'theme':theme,'bounds':bounds,'category_layout':category_layout,'page_overflow':False,'focus_trapped':True})
                 page.set_viewport_size({'width':1440,'height':1000})
-                nav.get_by_role('button',name='Memory',exact=True).click();dialog.get_by_role('button',name='Edit memory',exact=True).click()
+                nav.get_by_role('link',name='Memory',exact=True).click();dialog.get_by_role('button',name='Edit memory',exact=True).click()
                 form=dialog.get_by_role('form',name='Edit memory');form.get_by_label('Fact or decision').fill('Keep this unsaved security decision')
-                page.once('dialog',lambda prompt:prompt.dismiss());nav.get_by_role('button',name='Hooks',exact=True).click();assert form.get_by_label('Fact or decision').input_value()=='Keep this unsaved security decision'
-                page.once('dialog',lambda prompt:prompt.dismiss());page.keyboard.press('Escape');assert dialog.is_visible()
+                # Unsaved edits are guarded by an in-page confirmation (not a native prompt); the footer reports the draft.
+                discard_prompt=page.get_by_role('dialog',name='Discard unsaved changes?',exact=True)
+                expect(dialog.get_by_role('status').filter(has_text='Unsaved changes')).to_be_visible()
+                nav.get_by_role('link',name='Hooks',exact=True).click();discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Keep editing',exact=True).click();expect(discard_prompt).to_be_hidden();assert form.get_by_label('Fact or decision').input_value()=='Keep this unsaved security decision'
+                page.keyboard.press('Escape');discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Keep editing',exact=True).click();expect(discard_prompt).to_be_hidden();assert dialog.is_visible()
                 form.get_by_role('button',name='Save memory changes',exact=True).click();dialog.get_by_text('Memory updated',exact=True).wait_for()
                 assert state.workspace.store.get('memory',memory['id'])['content']=='Keep this unsaved security decision'
                 dialog.get_by_role('button',name='Delete',exact=True).click();review=page.get_by_role('dialog',name='Delete?',exact=True);review.wait_for();review.get_by_role('button',name='Cancel',exact=True).click();assert state.workspace.store.get('memory',memory['id'])
                 # A successful validation request must not commit the source draft.
-                nav.get_by_role('button',name='Plugins & skills',exact=True).click()
+                nav.get_by_role('link',name='Plugins & skills',exact=True).click()
+                dialog.get_by_text('Add a skill',exact=True).click()
                 dialog.get_by_label('Skill folder name',exact=True).fill('inspect-fixture')
                 instructions='---\nname: inspect-fixture\ndescription: Inspect a temporary fixture without changing files.\n---\nRead the selected fixture and report findings.\n'
                 dialog.get_by_label('Skill instructions',exact=True).fill(instructions)
                 dialog.get_by_role('button',name='Validate skill',exact=True).click()
                 dialog.get_by_text('Skill metadata and instructions validated',exact=True).wait_for()
-                page.once('dialog',lambda prompt:prompt.dismiss());nav.get_by_role('button',name='Memory',exact=True).click()
+                nav.get_by_role('link',name='Memory',exact=True).click();discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Keep editing',exact=True).click();expect(discard_prompt).to_be_hidden()
                 assert dialog.get_by_label('Skill instructions',exact=True).input_value()==instructions
-                page.once('dialog',lambda prompt:prompt.accept());nav.get_by_role('button',name='Memory',exact=True).click()
+                nav.get_by_role('link',name='Memory',exact=True).click();discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Discard changes',exact=True).click();expect(discard_prompt).to_be_hidden()
                 report['checks'].append('successful skill validation preserves unsaved draft and guarded navigation')
                 # All categories remain reachable through one registry.
                 for category in categories:
-                    nav.get_by_role('button',name=category,exact=True).click();assert nav.get_by_role('button',name=category,exact=True).get_attribute('aria-current')=='page'
-                nav.get_by_role('button',name='Memory',exact=True).click()
+                    nav.get_by_role('link',name=category,exact=True).click();assert nav.get_by_role('link',name=category,exact=True).get_attribute('aria-current')=='page'
+                nav.get_by_role('link',name='Memory',exact=True).click()
                 axe=Path(__file__).resolve().parents[1]/'desktop/workspace/node_modules/axe-core/axe.min.js'
                 page.add_script_tag(path=str(axe))
                 for width in [1440,390]:

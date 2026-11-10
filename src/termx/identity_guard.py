@@ -108,8 +108,16 @@ class SessionGuard:
             await self.app(scope, receive, send)
             return
         token = token or query_token
-        def inspect_current():
+        def inspect_current(renew=False):
+            nonlocal token
             current = service.resolve(token)
+            if current is None and renew and token and token.count('.') == 2:
+                # An admitted socket outlives the five-minute access token. It stays valid for as long as its
+                # session does; sign-out, revocation, a lock or a reduced policy still close it.
+                renewed = service.renew_access(token)
+                if renewed:
+                    token = renewed
+                    current = service.resolve(token)
             scopes = list(current.principal.scopes) if current else self.state.auth.scopes(token)
             return current, scopes
 
@@ -126,7 +134,7 @@ class SessionGuard:
             # Each frame still resolves current durable session/principal state.
             # Serialize snapshots without holding the event loop during SQLite IO.
             async with validation_lock:
-                current, scopes = await asyncio.to_thread(inspect_current)
+                current, scopes = await asyncio.to_thread(inspect_current, True)
                 if token and initial_scopes is None:
                     initial_scopes = scopes
                 if current:

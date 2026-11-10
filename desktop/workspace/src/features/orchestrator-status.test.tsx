@@ -1,9 +1,10 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import OrchestratorStatus, {type OrchestratorChild, type OrchestratorSnapshot} from './OrchestratorStatus';
-import {request, type Session} from '../lib/api';
+import {gql, request, type Session} from '../lib/api';
+import {expectNoAxeViolations} from '../test-axe';
 
-vi.mock('../lib/api', () => ({request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
+vi.mock('../lib/api', () => ({gql: vi.fn(async () => ({orchestrator_board: {nodes: [], rollup: {total: 0, counts: {}, percent_complete: 0, tokens: 0, cost_usd: null}}})), request: vi.fn(), json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
 const api = vi.mocked(request), open = vi.fn(), primary = vi.fn(), refreshed = vi.fn();
 const child: OrchestratorChild = {session_id: 'child-chat', task_id: 'child-task', title: 'Review access controls', status: 'awaiting_approval', engine: 'internal', origin: 'delegated', capability_limits: {time_budget: 'shared-host', tool_steps: 'shared-host', tokens: 'unmeasured', cost: 'unmeasured'}, control_owner: 'orchestrator', revision: 7, updated_at: 1000, parent_session_id: 'main'};
 const snapshot = (children = [child]): OrchestratorSnapshot => ({
@@ -124,7 +125,16 @@ it('discards late responses after an account switch, including switching back', 
   expect(primary).not.toHaveBeenCalledWith('foreign-main');
   await act(async () => pending[2](snapshot([])));
   await waitFor(() => expect(primary).toHaveBeenCalledWith('main'));
-  expect(screen.getByText('No tasks yet')).toBeVisible();
+  expect(screen.getByText('No delegated chats yet')).toBeVisible();
+});
+
+it('surfaces a bot report in the summary and the updates list when no task was delegated', async () => {
+  api.mockResolvedValue({...snapshot([]), activity: [{id: 'bot-note', sequence: 2, kind: 'bot.message', session_id: 'bot-chat', task_id: 't', status: 'completed', message: 'Repo eye (report): all tests pass', created_at: 1000}]});
+  render(<OrchestratorStatus {...props}/>);
+  await screen.findByText('1 report from bots');
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  fireEvent.click(screen.getByText('Recent updates'));
+  expect(screen.getByText('Repo eye (report): all tests pass')).toBeVisible();
 });
 
 it('does not show unrelated conversation content or a nonexistent primary', async () => {
@@ -175,4 +185,42 @@ it('keeps an adopted idle chat user-owned until the user explicitly grants main-
   await waitFor(() => expect(open).toHaveBeenCalledWith('main'));
   expect(api.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   expect(api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body).toBe(JSON.stringify({owner: 'orchestrator', revision: 7}));
+});
+
+it('shows the task board inside delegated work and keeps it accessible', async () => {
+  const node = {id: 'n1', title: 'Draft summary', role: 'worker', depends_on: [], blocked_by: [], task_id: 't', status: 'running', attempts: 1, max_attempts: 2, last_event_at: null, result_summary: '', error: '', provider_id: 'p', model: 'model-a', tokens: 10, cost_usd: null, created_at: Date.now() / 1000 - 90, updated_at: null};
+  vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node], rollup: {total: 1, counts: {running: 1}, percent_complete: 0, tokens: 10, cost_usd: null}}});
+  const view = render(<OrchestratorStatus {...props}/>);
+  await screen.findByText('1 need attention');
+  expect(screen.queryByRole('region', {name: 'Task board'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  expect(await screen.findByRole('listitem', {name: 'Draft summary'})).toBeVisible();
+  expect(screen.getByRole('progressbar', {name: 'Tasks complete'})).toBeInTheDocument();
+  await expectNoAxeViolations(view.container);
+});
+
+it('describes planned tasks in the header once the board lists them, instead of saying there are none', async () => {
+  const node = (id: string, status: string) => ({id, title: 'Task ' + id, role: 'worker', depends_on: [], blocked_by: [], task_id: 't' + id, status, attempts: 1, max_attempts: 2, last_event_at: null, result_summary: '', error: '', provider_id: 'p', model: 'm', tokens: 0, cost_usd: null, created_at: 1, updated_at: null});
+  vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node('a', 'running'), node('b', 'pending'), node('c', 'completed')], rollup: {total: 3, counts: {running: 1, pending: 1, completed: 1}, percent_complete: 33, tokens: 0, cost_usd: null}}});
+  api.mockResolvedValue(snapshot([]));
+  render(<OrchestratorStatus {...props}/>);
+  // The header agrees with the board before it is opened.
+  expect(await screen.findByText('1 planned task in progress')).toBeVisible();
+  expect(screen.queryByText('No delegated chats yet')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
+  await screen.findByRole('listitem', {name: 'Task a'});
+  expect(screen.queryByText('No tasks yet')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name: /Delegated work/})).toHaveTextContent('1 planned task in progress');
+});
+
+it('counts waiting planned tasks in the collapsed header, with the same words as the open board', async () => {
+  const node = (id: string) => ({id, title: 'Task ' + id, role: 'worker', depends_on: [], blocked_by: [], task_id: null, status: 'pending', attempts: 0, max_attempts: 2, last_event_at: null, result_summary: '', error: '', provider_id: null, model: null, tokens: 0, cost_usd: null, created_at: 1, updated_at: null});
+  vi.mocked(gql).mockResolvedValue({orchestrator_board: {nodes: [node('a'), node('b'), node('c')], rollup: {total: 3, counts: {pending: 3}, percent_complete: 0, tokens: 0, cost_usd: null}}});
+  api.mockResolvedValue(snapshot([]));
+  render(<OrchestratorStatus {...props}/>);
+  const header = screen.getByRole('button', {name: /Delegated work/});
+  await waitFor(() => expect(header).toHaveTextContent('0 of 3 planned tasks done'));
+  fireEvent.click(header);
+  await screen.findByRole('listitem', {name: 'Task a'});
+  expect(header).toHaveTextContent('0 of 3 planned tasks done');
 });

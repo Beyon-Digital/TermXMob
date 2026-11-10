@@ -5,6 +5,7 @@ import hashlib
 import json
 import asyncio
 
+from termx.agent.manager import READ_ONLY_MODES
 from termx.agent.providers import ProviderCall
 from termx.workspace.store import Conflict
 
@@ -33,7 +34,7 @@ async def assemble(workspace, principal, task_id, *, request_id, members):
         task = workspace.agents.get_task(task_id)
         if not task or task.get('parent_id') or task.get('engine', 'internal') != 'internal':
             raise ValueError('Choose a root task using the internal engine')
-        if task['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'} or task.get('mode') == 'ask':
+        if task['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'} or task.get('mode') in READ_ONLY_MODES:
             raise Conflict('Choose an active Agent mode coordinator before creating a team')
         labels = [m['agent'].strip().casefold() for m in members]
         if not members or len(members) > 8 or len(set(labels)) != len(labels) or any(not label for label in labels):

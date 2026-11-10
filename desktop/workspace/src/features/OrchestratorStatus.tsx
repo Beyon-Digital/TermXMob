@@ -2,9 +2,13 @@ import {useEffect, useRef, useState} from 'react';
 import {ArrowLeft, ChevronDown, ChevronRight, CircleAlert, GitBranch, RefreshCw} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {json, request, type Session} from '../lib/api';
+import {loadBoard, rollupHeadline, type BoardRollup} from '../lib/orchestrator-board';
+import {subscribePlanEvents} from '../lib/plan-signal';
 import {taskState} from '../lib/task-presentation';
+import {usePolling} from '../lib/use-polling';
 import {useObservationActive} from '../lib/use-observation-active';
 import OrchestratorDecisions from './OrchestratorDecisions';
+import TaskBoard from './TaskBoard';
 import './orchestrator-status.css';
 
 export type CoordinationLimits = {
@@ -60,12 +64,33 @@ function ChildEngineDetails({child}: {child: OrchestratorChild}) {
   </details>;
 }
 
+/** How often the collapsed header re-reads the plan graph: quickly while work is live, slowly when nothing is planned or running. */
+export const COLLAPSED_BOARD_LIVE_MS = 4000, COLLAPSED_BOARD_IDLE_MS = 15000, PLAN_EVENT_DEBOUNCE_MS = 300;
+/** A plan with nodes that are running, waiting to run, or stalled is still changing. */
+export const boardIsLive = (board: BoardRollup | null) => !!board && ['running', 'pending', 'stalled'].some(status => (board.counts[status] || 0) > 0);
+
 /** The primary chat owns coordination; inspecting a child never starts work. */
 export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, onPrimary, onRefresh}: Props) {
   const observing = useObservationActive(enabled);
   const [snapshot, setSnapshot] = useState<OrchestratorSnapshot | null>(null), [receivedOwner, setReceivedOwner] = useState('');
   const [expanded, setExpanded] = useState(false), [error, setError] = useState(''), [readError, setReadError] = useState('');
   const [stale, setStale] = useState(false), [busy, setBusy] = useState(''), [stateOwner, setStateOwner] = useState(ownerId);
+  const [board, setBoard] = useState<BoardRollup | null>(null);
+  useEffect(() => setBoard(null), [ownerId]);
+  // A plan change made through the main chat (plan_nodes, start_ready, retry_node, cancel_node, an approval) moves no orchestrator
+  // cursor. The chat's task event stream reports it instead; a short debounce turns a burst into one restart of the board loop.
+  const [planTick, setPlanTick] = useState(0);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = subscribePlanEvents(() => { if (!timer) timer = setTimeout(() => { timer = undefined; setPlanTick(value => value + 1); }, PLAN_EVENT_DEBOUNCE_MS); });
+    return () => { unsubscribe(); clearTimeout(timer); };
+  }, []);
+  // The board is mounted only while the section is open. While it is collapsed, read the same board so the header
+  // counts planned tasks too; once open, the board itself feeds the header.
+  // Poll every 4 s while delegated work or a plan is live so the collapsed header tracks the plan graph, and every 15 s when idle.
+  // A new orchestrator event (the snapshot cursor moving) or a plan event from the main chat restarts the loop, which reads the board at once.
+  const live = (snapshot?.children || []).some(row => taskState(row.status).active) || boardIsLive(board);
+  usePolling(() => loadBoard(), {interval: live ? COLLAPSED_BOARD_LIVE_MS : COLLAPSED_BOARD_IDLE_MS, backoff: false, enabled: observing && !expanded && selected !== undefined, resetKey: ownerId + ':' + (snapshot?.cursor ?? '') + ':' + planTick, onResult: value => setBoard(value.rollup)});
   const read = useRef<AbortController | null>(null), flight = useRef<object | null>(null);
   const generation = useRef(0), identity = useRef(ownerId), alive = useRef(true);
   const observation = useRef(observing), selection = useRef(selected), primaryCallback = useRef(onPrimary);
@@ -134,6 +159,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   const active = children.filter(row => taskState(row.status).active).length;
   const attention = children.filter(row => taskState(row.status).attention).length;
   const recent = [...(current?.activity || [])].slice(-12).reverse();
+  const botReports = recent.filter(item => item.kind === 'bot.message').length;
   const ordered = [...children].sort((a, b) => Number(taskState(b.status).attention) - Number(taskState(a.status).attention) || b.updated_at - a.updated_at);
   return <section className={'orchestrator-status' + (child ? ' orchestrator-child-view' : '')} aria-label="Main agent coordination">
     {child ? <div className="orchestrator-child-banner">
@@ -146,7 +172,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     </div> : <div className="orchestrator-summary">
       <Button variant="ghost" size="sm" className="orchestrator-disclosure" aria-expanded={expanded} aria-controls="orchestrator-detail" onClick={() => setExpanded(value => !value)}>
         {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}<GitBranch size={14}/><span>Delegated work</span>
-        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : children.length ? `${children.length} finished or idle` : 'No tasks yet'}</small>
+        <small role="status">{isStale ? 'Updates interrupted' : !current ? 'Connecting…' : attention ? `${attention} need attention` : active ? `${active} in progress` : board?.total ? rollupHeadline(board) : children.length ? `${children.length} finished or idle` : botReports ? `${botReports} ${botReports === 1 ? 'report' : 'reports'} from bots` : 'No delegated chats yet'}</small>
       </Button>
       {attention > 0 && !expanded && <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}><CircleAlert size={13}/>Review</Button>}
     </div>}
@@ -154,8 +180,9 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
     {!child && primary && selected === primary.id && <OrchestratorDecisions ownerId={ownerId} children={children} enabled={observing && !isStale} onRefresh={() => {void refresh(); onRefresh?.();}}/>}
     {!child && expanded && <div id="orchestrator-detail" className="orchestrator-detail">
       <p>Your main agent coordinates delegated work here. Open a chat to inspect it; take control when you want to direct it yourself.</p>
+      <TaskBoard enabled={observing && !isStale} onSummary={setBoard}/>
       {!current && !failure && <p role="status">Loading delegated work…</p>}
-      {current && !children.length && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
+      {current && !children.length && !botReports && <p className="orchestrator-empty">Ask your main agent to delegate a task. Results, blockers, and requests for decisions will appear here.</p>}
       {current?.children_truncated && <p>Showing up to 100 delegated chats, prioritizing active work. Other conversations remain available in chat history.</p>}
       {ordered.length > 0 && <ul className="orchestrator-children">{ordered.map(row => <li key={row.session_id}>
         <button className="orchestrator-child-link" onClick={() => onOpen(row.session_id)}><strong>{row.title || 'Delegated task'}</strong><span className={'orchestrator-state ' + childState(row).tone}>{childState(row).label}</span><ChevronRight size={13}/></button>

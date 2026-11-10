@@ -7,35 +7,38 @@ import json
 import mimetypes
 import shutil
 import uuid
+from contextlib import asynccontextmanager
 from collections import defaultdict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import monotonic, time
 from typing import Any, TypeVar
+from urllib.parse import urlsplit
 
-from termx.agent.computer import ComputerController
+from termx.desktop import agent_desktop
+from termx.desktop import apps as desktop_apps
 from termx.agent.context import ContextEngine
+from termx.agent.desktop_data import DesktopState, storable_call, storable_history
+from termx.agent.context.handoff import build_brief, changed_files
 from termx.agent.context.engine import (
+    SUMMARY_PROMPT,
     checkpoint_message,
     checkpoint_message_payload,
-    estimate_tokens,
+    limits_for_model,
+    parse_summary,
+    render_for_summary,
+    summary_input_chars,
 )
-from termx.agent.metrics import TaskMetrics
-from termx.agent.observation import (
-    ObservationTracker,
-    crop_region,
-    jpeg_size,
-    scale_for_model,
-)
+from termx.agent.discovery import ProviderCatalogue, catalog_key, clean_overrides, discover_models, merge_meta, model_info
+from termx.agent.metrics import TaskMetrics, input_tokens, usage_tokens
 from termx.agent.retry import classify, retrying
 from termx.agent.policy import (
-    PolicyDecision,
-    evaluate_computer,
     is_sensitive_path,
     redact,
 )
 from termx.agent.providers import (
+    OpenAIChatAdapter,
     OpenAIResponsesAdapter,
     ProviderAdapter,
     ProviderCall,
@@ -47,13 +50,35 @@ from termx.agent.runtime import ProviderHttpRuntime
 from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
 from termx.agent.tree_budget import TreeTimeExceeded
+from termx.config import parse_routing
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
-from termx.agent.limits import DEFAULT_LIMITS, resolve_limits
+from termx.agent.limits import DEFAULT_LIMITS, auto_summary, auto_usage, resolve_auto_ceilings, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
+from termx.agent.tools.registry import DESKTOP_TOOLS, expand_tools
 from termx.agent import worktrees
 
 T = TypeVar("T")
+
+# Modes that may only inspect the project. Plan mode explores read-only, then
+# submits a plan with `exit_plan`; approval flips it to Agent mode.
+READ_ONLY_MODES = frozenset({"ask", "plan"})
+_AUTO_NEEDS_WORKTREE = "Auto mode needs an isolated worktree. Start the task with worktree execution."
+_AUTO_PAUSE_TEXT = {
+    "title": "Auto mode reached a limit. Continue?",
+    "consequence": "Starts a fresh Auto allowance for this task; Auto mode keeps approving low-risk calls",
+}
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
+
+
+@dataclass(frozen=True)
+class Route:
+    """Where a task's turns go: provider, model, that model's metadata and its fallbacks."""
+
+    provider_id: str
+    model: str
+    meta: dict[str, Any]
+    fallbacks: tuple[tuple[str, str], ...] = ()
+    source: str = "default"  # explicit | role | default
 
 
 class AgentManager:
@@ -63,7 +88,7 @@ class AgentManager:
         self,
         store: AgentStore,
         credentials: CredentialStore,
-        desktop: Any,
+        desktop: Any,  # unused since the screenshot controller was removed; kept so existing callers still work
         *,
         adapter_factory: AdapterFactory | None = None,
         project_files: Any = None,
@@ -73,7 +98,6 @@ class AgentManager:
         self.store = store
         self._settings = settings
         self.credentials = credentials
-        self.desktop = desktop
         self._adapter_factory = adapter_factory or self._default_adapter
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._cancel: dict[str, asyncio.Event] = {}
@@ -82,18 +106,27 @@ class AgentManager:
         # persisted event in addition to the per-task subscriber queues.
         self._listeners: set[Callable[[str, dict[str, Any]], None]] = set()
         self._steering: dict[str, list[str]] = defaultdict(list)
+        self._plan_submissions: dict[str, str] = {}
         self._pending_approval_calls: dict[str, dict[str, Any]] = {}
-        self._computer = ComputerController()
+        self.desktop_state = DesktopState()  # refs and app handles for desktop control; in memory only
+        try:  # session directories hold element names: drop the ones a crashed run left behind
+            agent_desktop.get_client().sweep()
+        except OSError:
+            pass
         self._tools = default_registry()
         self.browser = None  # AppState attaches the managed broker after mounting.
         self.execution_authority: Callable[[str], None] | None = None
+        # Set by the workspace: True for a task running under a schedule's unattended grant.
+        self.is_unattended: Callable[[str], bool] | None = None
+        # Set by the workspace: the computer permission an unattended task runs under, or None when it has none.
+        self.computer_permission: Callable[[str], dict[str, Any] | None] | None = None
         self._scheduler = CallScheduler(self._tools)
         self._http = ProviderHttpRuntime()
+        self.catalogue = ProviderCatalogue(self.store, self._fetch_catalog)
         self._metrics: dict[str, TaskMetrics] = {}
         self._context_engines: dict[str, ContextEngine] = {}
         self._subagents: dict[str, dict[str, _SubagentHandle]] = {}
         self._spawn_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._observation = ObservationTracker()
         from termx.agent.policies.engine import PolicyEngine
         from termx.sandbox import runner_for as default_runner_for
 
@@ -340,6 +373,8 @@ class AgentManager:
         model: str,
         capabilities: list[str] | None,
         api_key: str | None = None,
+        model_meta: dict[str, Any] | None = None,
+        wire: str | None = None,
     ) -> dict[str, Any]:
         current = self.store.get_provider(provider_id)
         if provider_id.startswith("chatgpt-") or (current and current["kind"] == "chatgpt"):
@@ -348,25 +383,37 @@ class AgentManager:
             raise ValueError("provider kind must be openai or openai-compatible")
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("provider URL must use HTTP or HTTPS")
+        if wire is not None and wire not in {"responses", "chat"}:
+            raise ValueError("provider wire must be 'responses' or 'chat'")
+        overrides = clean_overrides(model_meta) if model_meta is not None else None
         # These are account declarations, not a probe of model entitlement or
         # permission to invoke a billed operation. Preserve declarations on
         # credential rotation when the caller omits this optional field.
         declared = capabilities if capabilities is not None else (
             current.get("capabilities", ["shell"]) if current else ["shell"]
         )
-        supported = {"shell", "functions", "computer", "image", "audio"}
+        supported = {"shell", "functions", "computer", "image", "audio", "realtime"}
         if not isinstance(declared, list) or len(declared) > len(supported) or any(
             not isinstance(item, str) or item not in supported for item in declared
         ):
-            raise ValueError("provider capabilities must declare shell, functions, computer, image or audio")
+            raise ValueError("provider capabilities must declare shell, functions, computer, image, audio or realtime")
         allowed = list(dict.fromkeys(declared)) or ["shell"]
+        api_key = api_key.strip() if api_key else api_key
+        if api_key and (not api_key.isprintable() or any(ch.isspace() for ch in api_key)):
+            raise ValueError("API key must not contain spaces or control characters")
         configured = bool(self.credentials.get(provider_id))
         if api_key:
             self.credentials.set(provider_id, api_key)
             configured = True
+        elif configured and current and _origin(current["base_url"]) != _origin(base_url):
+            # The key was issued for the old server; do not send it to a new one.
+            self.credentials.delete(provider_id)
+            configured = False
         # Config or key changed: drop the pooled client so the next adapter
         # does not reuse a stale base URL or credential.
         self._http.evict(provider_id)
+        # A refresh already in flight was started against the old settings.
+        self.catalogue.invalidate(provider_id)
         provider = self.store.put_provider(
             provider_id,
             kind=kind,
@@ -375,13 +422,179 @@ class AgentManager:
             model=model,
             capabilities=allowed,
             secret_configured=configured,
+            model_overrides=overrides,
+            wire=wire,
         )
+        if current and current["base_url"] != provider["base_url"]:
+            # The old catalog describes a different server.
+            self.store.clear_provider_catalog(provider_id)
+            provider = self.store.get_provider(provider_id) or provider
         return provider
 
-    async def test_provider(self, provider_id: str) -> dict[str, str]:
+    async def test_provider(self, provider_id: str, *, billed: bool = False) -> dict[str, str]:
+        """Check the connection with the free model-list request; ``billed`` runs one real model call instead."""
         provider = self._provider(provider_id)
-        message = await self._adapter(provider).test()
+        try:
+            model = _resolve_model(provider, None)
+        except ValueError:
+            model = ""  # nothing selected or discovered yet; the check reports the connection only
+        adapter = self._adapter({**provider, "model": model})
+        message = await (adapter.test(billed=True) if billed else adapter.test())
         return {"status": "connected", "message": message}
+
+    async def refresh_provider_models(self, provider_id: str) -> dict[str, Any]:
+        """Discover the provider's models. A failed refresh keeps the old catalog and sets ``catalog_error``."""
+        return await self.catalogue.refresh(provider_id)
+
+    async def _fetch_catalog(self, provider: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        if provider["kind"] == "chatgpt":
+            fetched_at = time()
+            models = await self.chatgpt.models(provider["id"])
+            return {m["slug"]: model_info("chatgpt", fetched_at) for m in models}
+        timeout = float(self._settings().provider_timeout_s) if self._settings else 15.0
+        return await discover_models(
+            provider, self.credentials.get(provider["id"]) or "", timeout_s=min(timeout, 15.0)
+        )
+
+    # Model routing -------------------------------------------------
+
+    def routing(self) -> dict[str, dict[str, Any]]:
+        return dict(self._settings().routing) if self._settings else {}
+
+    def validate_routing(self, routing: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Check a routing table against the configured providers and their models; returns it normalised."""
+        cleaned = parse_routing(routing)
+        for role, route in cleaned.items():
+            for target in [route, *route["fallbacks"]]:
+                provider = self.store.get_provider(target["provider_id"])
+                if provider is None:
+                    raise ValueError(f"{role}: provider '{target['provider_id']}' is not configured")
+                if target["model"] and target["model"] not in provider["models"]:
+                    raise ValueError(f"{role}: model '{target['model']}' is not available on {provider['name']}")
+        for role in ("orchestrator", "worker"):
+            # These roles run Agent-mode tasks; a fallback that cannot call tools would only chat.
+            for target in (cleaned.get(role) or {}).get("fallbacks") or []:
+                provider = dict(self.store.get_provider(target["provider_id"]))
+                model = target["model"] or _resolve_model(provider, None)
+                if not self.tools_supported(provider, model):
+                    raise ValueError(f"{role}: model '{model}' on {provider['name']} cannot call tools, so it cannot be a fallback")
+        return cleaned
+
+    @staticmethod
+    def task_role(task: dict[str, Any]) -> str:
+        role = (task.get("runtime") or {}).get("role")
+        if role in {"planner", "orchestrator", "worker"}:
+            return role
+        if task.get("parent_id"):
+            return "worker"
+        return "planner" if task.get("mode") == "plan" else "orchestrator"
+
+    def resolve_route(
+        self, role: str, task: dict[str, Any] | None = None, *, default_provider_id: str | None = None
+    ) -> Route:
+        """Pick provider and model for ``role``. Explicit task value > role route > provider default.
+
+        ``task`` carries the explicit ``provider_id`` and ``model`` when the caller chose them. A role
+        route that no longer matches a configured provider or model is skipped, not an error, so a stale
+        setting cannot stop tasks from starting. Raises KeyError for an unknown explicit provider and
+        ValueError for a model the provider does not offer.
+        """
+        task = task or {}
+        explicit_provider = str(task.get("provider_id") or "").strip()
+        explicit_model = str(task.get("model") or "").strip()
+        configured = self.routing().get(role) or {}
+        role_route = self._usable_target(configured) if configured else None
+        provider_id = model = None
+        source = "default"
+        if explicit_model:
+            provider_id = explicit_provider or (role_route or ("", ""))[0] or default_provider_id
+            model, source = explicit_model, "explicit"
+        elif explicit_provider:
+            provider_id, source = explicit_provider, "explicit"
+            if role_route and role_route[0] == explicit_provider and role_route[1]:
+                model, source = role_route[1], "role"
+        elif role_route:
+            provider_id, model, source = role_route[0], role_route[1], "role"
+        else:
+            provider_id = default_provider_id
+        if not provider_id:
+            raise KeyError("")  # no explicit provider, no usable role route, no default
+        provider = dict(self._provider(provider_id))
+        chosen = _resolve_model(provider, model)
+        fallbacks = tuple(
+            (item["provider_id"], item.get("model", "")) for item in configured.get("fallbacks") or []
+        )
+        return Route(provider_id, chosen, self.model_meta(provider, chosen), fallbacks, source)
+
+    def _message_recipients(self, task: dict[str, Any]) -> list[dict[str, str]] | None:
+        """Who this task may message, or ``None`` when it is neither a bot's nor the attended main agent's (the tools stay hidden)."""
+        workspace = getattr(getattr(self, "orchestrator", None), "workspace", None)
+        bots = getattr(workspace, "bots", None)
+        return bots.messages.recipients_for_task(task) if bots is not None else None
+
+    @staticmethod
+    def _stream_fn(adapter: Any) -> Any:
+        return getattr(adapter, "stream_turn", None) if getattr(adapter, "supports_streaming", False) else None
+
+    def _fallback_targets(self, task: dict[str, Any], provider: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Configured fallbacks for the task's role, resolved. Stale and repeated targets are skipped."""
+        tried = {(provider["id"], provider["model"])}
+        for fallback in self.routing().get(self.task_role(task), {}).get("fallbacks") or []:
+            try:
+                target = dict(self._provider(fallback["provider_id"]))
+                target["model"] = _resolve_model(target, fallback.get("model") or None)
+            except (KeyError, ValueError):
+                continue
+            if (target["id"], target["model"]) in tried:
+                continue
+            tried.add((target["id"], target["model"]))
+            if task.get("mode") == "agent" and not self.tools_supported(target, target["model"]):
+                # A model that cannot call tools would answer in plain text and the task would
+                # end as "completed" with no work done; the primary route is refused up front too.
+                self._emit(task["id"], "provider.fallback_skipped", {
+                    "provider_id": target["id"], "model": target["model"], "reason": "cannot call tools"})
+                continue
+            yield target
+
+    def _usable_target(self, target: dict[str, Any]) -> tuple[str, str] | None:
+        provider = self.store.get_provider(str(target.get("provider_id") or ""))
+        if provider is None:
+            return None
+        model = str(target.get("model") or "")
+        if model and model not in provider["models"]:
+            return None
+        return provider["id"], model
+
+    def task_usage(self, task_id: str) -> dict[str, Any]:
+        """Tokens and USD cost so far. Cost is None when no turn had a known price, never zero."""
+        task = self._task(task_id)
+        metrics = self._metrics[task_id].snapshot() if task_id in self._metrics else (task.get("metrics") or {})
+        return {
+            "tokens": int(metrics.get("input_tokens") or 0) + int(metrics.get("output_tokens") or 0),
+            "cost_usd": metrics.get("cost_usd"),
+        }
+
+    def model_meta(self, provider: dict[str, Any], model: str) -> dict[str, Any]:
+        """Discovered metadata for one model with the user's overrides on top. Unknown values are None."""
+        catalog = provider.get("model_catalog") or {}
+        overrides = provider.get("model_overrides") or {}
+        key = catalog_key(model, catalog) or model
+        return merge_meta(catalog.get(key), overrides.get(model) or overrides.get(key))
+
+    def tools_supported(self, provider: dict[str, Any], model: str) -> bool:
+        """False only when the provider or the user says this model cannot call tools.
+
+        A provider that declares none of ``shell``, ``functions`` or ``computer`` offers no tools. A user
+        override that lists capabilities without ``tools`` turns tools off for that model.
+        Discovery alone never does: an unknown capability list stays usable.
+        """
+        declared = set(provider.get("capabilities") or [])
+        if not declared & {"shell", "functions", "computer"}:
+            return False
+        meta = self.model_meta(provider, model)
+        if "capabilities" in (meta.get("overridden") or []):
+            return "tools" in (meta.get("capabilities") or [])
+        return True
 
     def delete_provider(self, provider_id: str) -> bool:
         current = self.store.get_provider(provider_id)
@@ -412,6 +625,10 @@ class AgentManager:
         conversation_id: str | None = None,
         custom_agent_id: str | None = None,
         custom_agent_snapshot: dict[str, Any] | None = None,
+        auto: dict[str, Any] | None = None,
+        isolated: bool = False,
+        role: str | None = None,
+        computer_apps: list[str] | None = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -447,10 +664,16 @@ class AgentManager:
             model = str(conversation["model"])
         agent_limits = dict(custom_agent.get("limits") or {}) if custom_agent else {}
         limits = {**agent_limits, **(limits or {})}
-        mode = "ask" if mode == "ask" else "agent"
+        mode = mode if mode in READ_ONLY_MODES else "agent"
         execution = (execution_mode or "direct").strip().lower()
         if execution not in {"direct", "worktree"}:
             raise ValueError("execution_mode must be 'direct' or 'worktree'")
+        auto_state = None
+        if auto is not None:
+            enabled = bool(auto.get("enabled", True))
+            auto_state = self._auto_state(enabled, resolve_auto_ceilings(auto.get("ceilings")))
+            if enabled:
+                self._require_auto_allowed(mode, execution == "worktree" or isolated)
         root = Path(cwd).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError("project folder is not a directory")
@@ -470,15 +693,25 @@ class AgentManager:
         try:
             images = _decode_images(attachments)
             try:
-                provider = dict(self._provider(provider_id))
+                route = self.resolve_route(
+                    role or self.task_role({"parent_id": parent_id, "mode": mode}),
+                    {"provider_id": provider_id, "model": model},
+                )
+                provider = dict(self._provider(route.provider_id))
             except KeyError:
                 missing = provider_id or "(none selected)"
                 raise ValueError(
                     f"Model provider '{missing}' is not configured. Add a provider account under "
                     "Managers → Models & engines, then choose it in the composer's model picker."
                 ) from None
-            chosen = _resolve_model(provider, model)
+            provider_id = route.provider_id
+            chosen = route.model
             provider["model"] = chosen
+            if mode == "agent" and not self.tools_supported(provider, chosen):
+                raise ValueError(
+                    f"Model '{chosen}' cannot call tools, so Agent and Auto modes are unavailable. "
+                    "Use Ask or Plan mode, or choose another model."
+                )
             adapter = self._adapter(provider)
             bounded = self._limits(limits)
             task = self.store.create_task(
@@ -542,10 +775,15 @@ class AgentManager:
         upload_ids = [item["id"] for item in uploads]
         # Provider planning is execution work too. Persist its phase before
         # admission so an exhausted tree cannot bypass planning/plan approval.
-        self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids})
+        self.store.update_task(task_id, runtime={"tree_phase": "planning", "planning_seed": seed, "uploads": upload_ids,
+                                                 **({"auto": auto_state} if auto_state else {}),
+                                                 **({"isolated": True} if isolated else {}),
+                                                 **({"role": role} if role else {}),
+                                                 **({"computer_apps": [str(app) for app in computer_apps][:20]} if computer_apps is not None else {}),
+                                                 "route_source": route.source})
         await self._meter_worker(task_id, self._prepare_task(task_id, cancel=cancel))
         ready = self._task(task_id)
-        if ready["status"] == "planning" and ready.get("mode") == "ask":
+        if ready["status"] == "planning" and ready.get("mode") in READ_ONLY_MODES:
             self._launch(task_id, self._drive(task_id))
         return self.store.get_task(task_id, include_events=True) or ready
 
@@ -563,8 +801,8 @@ class AgentManager:
             self._metrics[task_id] = TaskMetrics()
             self._emit(task_id, "context.snapshot", {"snapshot": _snapshot_event(manifest)})
             history = seed + ([self._upload_message(task_id, upload_ids)] if upload_ids else [])
-            if task.get("mode") == "ask":
-                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
+            if task.get("mode") in READ_ONLY_MODES:
+                self.store.update_task(task_id, status="planning", runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_runtime(runtime)})
                 return
             provider = dict(self._provider(task["provider_id"]))
             provider["model"] = str(task["model"])
@@ -574,7 +812,7 @@ class AgentManager:
             self._metrics[task_id].record_provider(int((monotonic() - plan_started) * 1000))
             self.store.update_task(task_id, status="awaiting_approval", plan=plan,
                 previous_response_id=response_id,
-                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None})
+                runtime={"manifest": manifest, "history": history, "uploads": upload_ids, "step": 0, "started_at": None, **self._carry_runtime(runtime)})
             self._emit(task_id, "plan.ready", {"plan": plan})
             approval = self.store.create_approval(task_id, "plan", {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"})
             self._emit(task_id, "approval.requested", {"approval": approval})
@@ -591,7 +829,7 @@ class AgentManager:
     async def _resume_planning(self, task_id: str) -> None:
         await self._prepare_task(task_id)
         task = self._task(task_id)
-        if task["status"] == "planning" and task.get("mode") == "ask":
+        if task["status"] == "planning" and task.get("mode") in READ_ONLY_MODES:
             await self._drive(task_id)
 
     async def resolve_approval(
@@ -602,6 +840,7 @@ class AgentManager:
         *,
         remember: str | None = None,
         limits: dict[str, Any] | None = None,
+        feedback: str | None = None,
     ) -> dict[str, Any]:
         task = self._task(task_id)
         approval = self.store.get_approval(approval_id)
@@ -643,6 +882,16 @@ class AgentManager:
             raise ValueError("task is not awaiting approval")
         if approval["status"] != "pending":
             raise ValueError("approval is already resolved")
+        if decision == "revise" and (approval["kind"] != "plan" or task.get("mode") != "plan"):
+            raise ValueError("revise is only available for plans made in plan mode")
+        if decision == "approved" and approval["kind"] == "plan" and task.get("mode") == "plan":
+            provider = self._provider(task["provider_id"])
+            model = str(task.get("model") or _resolve_model(provider, None))
+            if not self.tools_supported(provider, model):
+                raise ValueError(
+                    f"Model '{model}' cannot call tools, so the plan cannot be carried out in Agent mode. "
+                    "Switch to a model that can call tools."
+                )
         if approval['kind'] == 'budget' and escalation:
             # Validate and commit the real child grant before consuming its UI
             # wrapper. A stale/invalid renewal must stay inspectable on both
@@ -724,7 +973,7 @@ class AgentManager:
         if approval["kind"] == "budget" and decision == "approved" and approval['payload'].get('tree_budget') and not escalation:
             approval = self.tree_budget.approve(task_id, approval_id, next_limits, version=current['version'] if not renew_shared else shared['version'], renew=renew_shared)
         else:
-            approval = self.store.resolve_approval(approval_id, decision)
+            approval = self.store.resolve_approval(approval_id, "revised" if decision == "revise" else decision)
         metrics = self._metrics.get(task_id)
         if metrics is not None and approval.get("resolved_at") and approval.get("created_at"):
             metrics.record_approval_wait(int((approval["resolved_at"] - approval["created_at"]) * 1000))
@@ -751,6 +1000,9 @@ class AgentManager:
             self.store.update_task(task_id, status="cancelled", error="Approval denied")
             self._emit(task_id, "task.cancelled", {"message": "Approval denied"})
             return approval
+        if decision == "revise":
+            self._revise_plan(task, feedback)
+            return approval
         if approval["kind"] == "budget":
             if next_limits is None:
                 self._mark_cancelled(task_id)
@@ -758,10 +1010,17 @@ class AgentManager:
             runtime = dict(task.get("runtime") or {})
             runtime["started_at"] = None
             runtime.pop("tree_budget_resume", None)
+            if str(approval["payload"].get("reason") or "").startswith("auto_") and runtime.get("auto"):
+                # A renewed allowance counts from now, not from when Auto was enabled.
+                runtime["auto"] = {**runtime["auto"], "base_step": int(runtime.get("step") or 0), "turns": 0,
+                                   "calls": 0, "tokens": 0, "cost_usd": 0.0, "since": time()}
             self.store.update_task(task_id, limits=next_limits, runtime=runtime)
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
             self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
         elif approval["kind"] == "plan":
+            if task.get("mode") == "plan":
+                self._approve_plan_mode(task)
+                self._follow_conversation_to_agent(task_id)
             self._launch(task_id, self._drive(task_id))
         elif approval["kind"] == "tool":
             assert private_payload is not None
@@ -860,10 +1119,9 @@ class AgentManager:
         if task["status"] not in ACTIVE_STATUSES:
             return task
         self.cancel(task_id)
-        await self._computer.release_all()
-        if self._observation.control_owner != "user":
-            self._observation.control_owner = "user"
-            self._emit(task_id, "computer.control.changed", {"owner": "user"})
+        agent_desktop.get_client().kill_task(task_id)
+        self.desktop_state.drop_task(task_id)
+        self.desktop_state.blocked[task_id] = "The user took over. Ask before using the desktop again."
         if not any(event["type"] == "control.takeover" for event in self.store.events(task_id)):
             self._emit(task_id, "control.takeover", {"message": "You have control"})
         self._mark_cancelled(task_id)
@@ -1015,7 +1273,8 @@ class AgentManager:
         workers = list(self._workers.values()) + watchers
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
-        await self._computer.release_all()
+        await self.catalogue.stop()
+        agent_desktop.get_client().kill_all()
         await self.runbooks.shutdown()
         await self._http.aclose()
         await asyncio.to_thread(self.store.prune)
@@ -1031,6 +1290,154 @@ class AgentManager:
             self._emit(task_id, "task.authority.revoked", {"reason": str(exc)})
             self._cancel.setdefault(task_id, asyncio.Event()).set()
             raise asyncio.CancelledError from exc
+
+    def _context_limits(self, task: dict[str, Any], provider: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Context limits for a model, from its (discovered or overridden) metadata.
+
+        Defaults to the task's own provider and model; pass ``provider`` (with its ``model`` set) for a fallback.
+        """
+        try:
+            provider = provider or {**self._provider(task["provider_id"]), "model": str(task.get("model") or "")}
+            return limits_for_model(self.model_meta(provider, provider["model"]))
+        except KeyError:
+            return limits_for_model(None)
+
+    def task_context(self, task_id: str) -> dict[str, Any]:
+        """Context used against the model's window. ``window`` is None when the model's window is unknown."""
+        task = self._task(task_id)
+        limits = self._context_limits(task)
+        used = (task.get("runtime") or {}).get("context_used")
+        return {
+            "used": used or None,
+            "window": limits["context_window"],
+            "limit": limits["max_context_estimate_tokens"],
+            "window_known": limits["context_window"] is not None,
+        }
+
+    def _summariser(
+        self, task: dict[str, Any], metrics: TaskMetrics
+    ) -> Callable[[list[dict[str, Any]]], Awaitable[dict[str, Any]]] | None:
+        """A model-backed summariser when the ``summariser`` role is configured, else None.
+
+        Its turns count toward the task's usage, the tree budget and the Auto allowance like any other turn.
+        """
+        if not self.routing().get("summariser"):
+            return None
+
+        async def summarise(older: list[dict[str, Any]]) -> dict[str, Any]:
+            route = self.resolve_route("summariser", default_provider_id=task["provider_id"])
+            provider = dict(self._provider(route.provider_id))
+            provider["model"] = route.model
+            started = monotonic()
+            turn = await self._adapter(provider).turn(
+                prompt=SUMMARY_PROMPT,
+                cwd=task["cwd"],
+                manifest={},
+                # Sized to the summariser's own window, never the task model's.
+                input_items=[{"role": "user", "content": render_for_summary(older, summary_input_chars(route.meta))}],
+                read_only=True,
+                allow_subagents=False,
+            )
+            cost = metrics.record_provider(
+                int((monotonic() - started) * 1000), turn.usage, (route.meta["price_in"], route.meta["price_out"])
+            )
+            tokens = usage_tokens(turn.usage)
+            self.tree_budget.record_usage(task["id"], tokens, cost)
+            self._auto_note_turn(task["id"], tokens, cost)
+            if turn.calls:
+                raise ValueError("summariser asked for tools")
+            return parse_summary(turn.text)
+
+        return summarise
+
+    async def _fit_history(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        engine: ContextEngine,
+        provider: dict[str, Any],
+        history: list[dict[str, Any]],
+        step: int,
+        manifest: Any,
+        metrics: TaskMetrics,
+        cancel: asyncio.Event,
+    ) -> list[dict[str, Any]]:
+        """Fit ``history`` to the window of the model the next call goes to: adopt its limits, compact, then slim."""
+        engine.configure(self._context_limits(task, provider))
+        history = await self._compact_history(task_id, task, engine, history, step, manifest, metrics, cancel)
+        return engine.slim_history(history)
+
+    async def _compact_history(
+        self,
+        task_id: str,
+        task: dict[str, Any],
+        engine: ContextEngine,
+        history: list[dict[str, Any]],
+        step: int,
+        manifest: Any,
+        metrics: TaskMetrics,
+        cancel: asyncio.Event,
+    ) -> list[dict[str, Any]]:
+        """Compact ``history`` when it no longer fits the engine's window; persists a context checkpoint."""
+        # Compaction runs BEFORE slim_history: the compactor must see the
+        # un-trimmed transcript or older history would be dropped permanently
+        # before it could be summarized durably.
+        used = engine.context_used(history)
+        summarise = self._summariser(task, metrics)
+        compaction = await engine.compact(
+            history,
+            git_state=manifest.get("git") if isinstance(manifest, dict) else None,
+            summarise=(lambda older: _race_cancel(summarise(older), cancel)) if summarise else None,
+        )
+        if compaction is None:
+            return history
+        self._emit(
+            task_id,
+            "context.compaction.started",
+            {"estimated_tokens": used, "items": len(history)},
+        )
+        payload = dict(compaction["payload"])
+        payload["approvals"] = [
+            {"id": approval["id"], "kind": approval["kind"], "status": approval["status"]}
+            for approval in self.store.approvals(task_id)
+            if approval.get("status") == "pending"
+        ]
+        payload["artifacts"] = [
+            {"id": artifact["id"], "kind": artifact["kind"], "mime": artifact["mime"]}
+            for artifact in self.store.artifacts(task_id)
+        ][:20]
+        last_safe = self.store.latest_checkpoint(task_id, kind="execution")
+        payload["last_safe_execution_checkpoint"] = last_safe["id"] if last_safe else None
+        checkpoint = self.store.create_checkpoint(
+            task_id,
+            kind="context",
+            history_cursor=int(compaction["history_cursor"]),
+            plan_step=step,
+            payload=payload,
+        )
+        history = compaction["history"]
+        # Re-serialize the injected message with the real checkpoint id (its
+        # content stays a plain user message).
+        for item in history:
+            body = checkpoint_message_payload(item)
+            if body is not None:
+                item["content"] = checkpoint_message(
+                    body["summary"], body["compacted_items"], checkpoint["id"]
+                )["content"]
+                break
+        self._emit(task_id, "context.checkpoint", {"checkpoint_id": checkpoint["id"]})
+        self._emit(
+            task_id,
+            "context.compaction.completed",
+            {
+                "checkpoint_id": checkpoint["id"],
+                "retained": len(history),
+                "dropped": compaction["dropped"],
+                "summariser": compaction["summariser"],
+                **({"summariser_error": compaction["summariser_error"]} if compaction.get("summariser_error") else {}),
+            },
+        )
+        return history
 
     async def _drive(
         self,
@@ -1064,6 +1471,10 @@ class AgentManager:
                 if reason:
                     self._pause_budget(task_id, history, step, started_at, reason)
                     return
+                breach = self._auto_breach(task, step)
+                if breach:
+                    self._pause_auto(task_id, history, step, started_at, breach)
+                    return
                 parked=(task.get('runtime') or {}).get('tree_pending_calls')
                 if parked:
                     paused,history,step=await self._run_calls(task_id,[self._call(call) for call in parked],history,step,started_at,
@@ -1079,61 +1490,12 @@ class AgentManager:
                 provider["model"] = str(task.get("model") or _resolve_model(provider, None))
                 adapter = self._adapter(provider)
                 manifest = await engine.snapshot()
-                # Compaction runs BEFORE slim_history: the compactor must see
-                # the un-trimmed transcript or older history would be dropped
-                # permanently before it could be summarized durably.
-                compaction = engine.plan_compaction(
-                    history, git_state=manifest.get("git") if isinstance(manifest, dict) else None
-                )
-                if compaction is not None:
-                    self._emit(
-                        task_id,
-                        "context.compaction.started",
-                        {"estimated_tokens": estimate_tokens(history), "items": len(history)},
-                    )
-                    payload = dict(compaction["payload"])
-                    payload["approvals"] = [
-                        {"id": approval["id"], "kind": approval["kind"], "status": approval["status"]}
-                        for approval in self.store.approvals(task_id)
-                        if approval.get("status") == "pending"
-                    ]
-                    payload["artifacts"] = [
-                        {"id": artifact["id"], "kind": artifact["kind"], "mime": artifact["mime"]}
-                        for artifact in self.store.artifacts(task_id)
-                    ][:20]
-                    last_safe = self.store.latest_checkpoint(task_id, kind="execution")
-                    payload["last_safe_execution_checkpoint"] = (
-                        last_safe["id"] if last_safe else None
-                    )
-                    checkpoint = self.store.create_checkpoint(
-                        task_id,
-                        kind="context",
-                        history_cursor=int(compaction["history_cursor"]),
-                        plan_step=step,
-                        payload=payload,
-                    )
-                    history = compaction["history"]
-                    # Re-serialize the injected message with the real
-                    # checkpoint id (its content stays a plain user message).
-                    for item in history:
-                        body = checkpoint_message_payload(item)
-                        if body is not None:
-                            item["content"] = checkpoint_message(
-                                body["summary"], body["compacted_items"], checkpoint["id"]
-                            )["content"]
-                            break
-                    self._emit(task_id, "context.checkpoint", {"checkpoint_id": checkpoint["id"]})
-                    self._emit(
-                        task_id,
-                        "context.compaction.completed",
-                        {
-                            "checkpoint_id": checkpoint["id"],
-                            "retained": len(history),
-                            "dropped": compaction["dropped"],
-                        },
-                    )
-                history = engine.slim_history(history)
-                read_only = task.get("mode") == "ask"
+                # The window follows the task's current model: a user switch or a
+                # reassignment shrinks it here, and the next call compacts first.
+                history = await self._fit_history(
+                    task_id, task, engine, provider, history, step, manifest, metrics, cancel)
+                read_only = task.get("mode") in READ_ONLY_MODES
+                plan_mode = task.get("mode") == "plan"
                 turn_started = monotonic()
                 first_token: list[float] = []
                 stream_id = uuid.uuid4().hex[:12]
@@ -1161,24 +1523,30 @@ class AgentManager:
                         },
                     )
 
-                stream_fn = (
-                    getattr(adapter, "stream_turn", None)
-                    if getattr(adapter, "supports_streaming", False)
-                    else None
-                )
+                stream_fn = self._stream_fn(adapter)
 
                 async def _request() -> Any:
                     attempt_no[0] += 1
+                    if self._desktop_wanted(task_id, task, provider, read_only):
+                        # So the first turn after a restart already offers desktop control when it is ready.
+                        await agent_desktop.get_client().ensure_fresh()
                     kwargs: dict[str, Any] = {
                         "prompt": task["prompt"],
                         "cwd": task["cwd"],
                         "manifest": manifest,
                         "input_items": history if history else None,
-                        "allow_computer": (not read_only) and "computer" in provider["capabilities"],
                         "read_only": read_only,
                         # Terminal-parent gate: children may not fan out further.
                         "allow_subagents": task.get("parent_id") is None,
                     }
+                    if plan_mode:
+                        kwargs["plan_mode"] = True
+                    preset_tools = (self.store.task_agent(task) or {}).get("tools")
+                    if preset_tools:  # a bot or custom agent: advertise only what it may call
+                        kwargs["allowed_tools"] = sorted(preset_tools)
+                    recipients = self._message_recipients(task)
+                    if recipients:  # nobody to message or hear from: the tools stay hidden
+                        kwargs["message_recipients"] = recipients
                     if stream_fn is not None:
                         self._emit(
                             task_id,
@@ -1217,19 +1585,53 @@ class AgentManager:
                         )
                     self._emit(task_id, event_type, payload)
 
-                turn = await self._budget_await(task_id, _race_cancel(
-                    retrying(
-                        _request,
-                        emit=_emit_retry,
-                        cancel=cancel,
-                        # Once a delta is visible, transparently restarting the
-                        # stream would duplicate text in replay — fail instead.
-                        may_retry=lambda: not first_token,
-                    ),
-                    cancel,
-                ))
+                try:
+                    turn = await self._budget_await(task_id, _race_cancel(
+                        retrying(
+                            _request,
+                            emit=_emit_retry,
+                            cancel=cancel,
+                            # Once a delta is visible, transparently restarting the
+                            # stream would duplicate text in replay — fail instead.
+                            may_retry=lambda: not first_token,
+                        ),
+                        cancel,
+                    ))
+                except Exception as failure:
+                    if isinstance(failure, TreeTimeExceeded) or cancel.is_set() or first_token:
+                        raise
+                    # Same-provider retries are exhausted. Try each configured
+                    # fallback once, for this turn only.
+                    for next_provider in self._fallback_targets(task, provider):
+                        reason = classify(failure)
+                        self._emit(task_id, "provider.fallback", {
+                            "from": {"provider_id": provider["id"], "model": provider["model"]},
+                            "to": {"provider_id": next_provider["id"], "model": next_provider["model"]},
+                            "reason_class": reason.kind, "status_code": reason.status_code,
+                        })
+                        provider, adapter = next_provider, self._adapter(next_provider)
+                        stream_fn = self._stream_fn(adapter)
+                        # The fallback model has its own window: fit the history to it first.
+                        history = await self._fit_history(
+                            task_id, task, engine, provider, history, step, manifest, metrics, cancel)
+                        try:
+                            turn = await self._budget_await(task_id, _race_cancel(
+                                retrying(_request, emit=_emit_retry, cancel=cancel, max_attempts=1,
+                                         may_retry=lambda: not first_token),
+                                cancel,
+                            ))
+                            break
+                        except Exception as next_failure:
+                            if isinstance(next_failure, TreeTimeExceeded) or cancel.is_set() or first_token:
+                                raise
+                            failure = next_failure
+                    else:
+                        raise  # every fallback failed: the original error fails the task
                 stream_ms = int((monotonic() - turn_started) * 1000)
-                metrics.record_provider(stream_ms, turn.usage)
+                meta = self.model_meta(provider, provider["model"])
+                cost = metrics.record_provider(stream_ms, turn.usage, (meta["price_in"], meta["price_out"]))
+                tokens = usage_tokens(turn.usage)
+                self.tree_budget.record_usage(task_id, tokens, cost)
                 if stream_fn is not None:
                     first_ms = int((first_token[0] - turn_started) * 1000) if first_token else None
                     metrics.record_provider_stream(first_ms, stream_ms)
@@ -1251,13 +1653,22 @@ class AgentManager:
                 if turn.text:
                     self._emit(task_id, "assistant.message", {"text": turn.text})
                 if turn.usage:
-                    self._emit(task_id, "provider.usage", {"usage": turn.usage})
+                    self._emit(task_id, "provider.usage", {
+                        "usage": turn.usage, "model": provider["model"],
+                        "cost_usd": cost, "tokens": tokens,
+                    })
+                engine.note_usage(input_tokens(turn.usage), len(history))
                 history.extend(turn.output_items)
+                self._auto_note_turn(task_id, tokens, cost)
+                if not turn.calls and plan_mode:
+                    # The model answered without calling exit_plan: its answer is the plan.
+                    self._request_plan_approval(task_id, turn.text or "No plan was produced.", history, step)
+                    return
                 if not turn.calls:
                     result = turn.text or "Task completed."
                     snapshot = metrics.snapshot()
                     self._finalize_worktree(task_id)
-                    self.store.update_task(task_id, status="completed", result=result, runtime={}, metrics=snapshot)
+                    self.store.update_task(task_id, status="completed", result=result, runtime=self._carry_runtime(self._task(task_id).get("runtime")), metrics=snapshot)
                     self._emit(task_id, "task.metrics", {"metrics": snapshot})
                     self._emit(task_id, "task.completed", {"result": result})
                     return
@@ -1269,9 +1680,17 @@ class AgentManager:
                     started_at,
                     turn_id=turn.response_id,
                 )
+                # Cap new tool results where they enter the transcript.
+                history = engine.cap_tool_results(history)
                 if paused:
                     return
-                runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at}
+                submitted_plan = self._plan_submissions.pop(task_id, None)
+                if submitted_plan is not None:
+                    self._request_plan_approval(task_id, submitted_plan, history, step)
+                    return
+                runtime = {"manifest": manifest, "history": history, "step": step, "started_at": started_at,
+                           **self._carry_runtime(self._task(task_id).get("runtime")),
+                           "context_used": engine.context_used(history)}
                 self.store.update_task(task_id, runtime=runtime)
         except TreeTimeExceeded:
             self._pause_budget(task_id,history,step,started_at,'shared_max_seconds')
@@ -1293,8 +1712,204 @@ class AgentManager:
                 # crashed worker — not just the paths that call _finish_state.
                 self.store.expire_task_policy_rules(task_id)
 
+    def submit_plan(self, task_id: str, plan_markdown: str) -> None:
+        """Called by the `exit_plan` tool; `_drive` turns it into a plan approval."""
+        self._plan_submissions[task_id] = plan_markdown
+
+    def _request_plan_approval(
+        self, task_id: str, markdown: str, history: list[dict[str, Any]], step: int
+    ) -> None:
+        text = markdown.strip() or "No plan was produced."
+        plan = {
+            "summary": text.splitlines()[0][:200],
+            "markdown": text,
+            "steps": [],
+            "tools": [],
+            "risks": [],
+        }
+        task = self._task(task_id)
+        runtime = {**(task.get("runtime") or {}), "history": history, "step": step, "started_at": None}
+        self.store.update_task(task_id, status="awaiting_approval", plan=plan, runtime=runtime)
+        self._emit(task_id, "plan.ready", {"plan": plan})
+        approval = self.store.create_approval(
+            task_id,
+            "plan",
+            {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"},
+        )
+        self._emit(task_id, "approval.requested", {"approval": approval})
+        self._emit(task_id, "task.status", {"status": "awaiting_approval"})
+
+    def _append_history(self, task: dict[str, Any], message: str) -> None:
+        runtime = dict(task.get("runtime") or {})
+        runtime["history"] = [*(runtime.get("history") or []), {"role": "user", "content": message}]
+        self.store.update_task(task["id"], runtime=runtime)
+
+    def _revise_plan(self, task: dict[str, Any], feedback: str | None) -> None:
+        note = (feedback or "").strip() or "The plan was not accepted. Revise it."
+        self._append_history(task, f"Revise the plan. Feedback from the user: {note}")
+        self._emit(task["id"], "plan.revised", {"feedback": note})
+        self._launch(task["id"], self._drive(task["id"]))
+
+    def _follow_conversation_to_agent(self, task_id: str) -> None:
+        """The approved plan runs in Agent mode, so the conversation's own mode follows it and the next message is not sent as a plan.
+
+        REST and GraphQL both resolve approvals here, so both get the same behaviour.
+        """
+        conversation_id = self.store.conversation_id_for_task(task_id)
+        if not conversation_id or (self.store.get_conversation(conversation_id, include_turns=False) or {}).get("mode") != "plan":
+            return
+        self.store.update_conversation(conversation_id, mode="agent")
+        orchestrator = getattr(self, "orchestrator", None)
+        metadata = orchestrator.store.get("task", task_id) if orchestrator else None
+        if metadata:
+            orchestrator.workspace.store.log(metadata["owner"], "conversation", conversation_id, "updated",
+                                             {"fields": ["mode"], "reason": "plan approved"})
+
+    def _approve_plan_mode(self, task: dict[str, Any]) -> None:
+        self._append_history(task, "The plan is approved. Implement it now.")
+        changes: dict[str, Any] = {}
+        if (task.get("runtime") or {}).get("route_source") != "explicit" and not (task.get("runtime") or {}).get("role"):
+            # The planner route chose this model; implementation follows the orchestrator route.
+            # A model the user picked is kept, and so is the current one if the new one cannot call tools.
+            try:
+                route = self.resolve_route("orchestrator", {}, default_provider_id=task["provider_id"])
+                provider = {**self._provider(route.provider_id), "model": route.model}
+            except (KeyError, ValueError):
+                route = None
+            if route is not None and self.tools_supported(provider, route.model):
+                changes = {"provider_id": route.provider_id, "model": route.model}
+        self.store.update_task(task["id"], mode="agent", **changes)
+
+    @staticmethod
+    def _auto_state(enabled: bool, ceilings: dict[str, Any], step: int = 0) -> dict[str, Any]:
+        return {"enabled": enabled, "ceilings": ceilings, "base_step": step, "turns": 0, "calls": 0,
+                "tokens": 0, "cost_usd": 0.0, "since": time()}
+
+    @staticmethod
+    def _require_auto_allowed(mode: str, in_worktree: bool) -> None:
+        if mode == "ask":
+            raise ValueError("Ask mode is read-only — Auto mode requires Agent mode")
+        if not in_worktree:
+            raise ValueError(_AUTO_NEEDS_WORKTREE)
+
+    _GATE_REASONS = {
+        "reviewer_unavailable": "No automatic reviewer is set up, so this needs your decision.",
+        "consequential_or_unknown": "The host cannot tell what this will change, so it needs your decision.",
+        "reviewer account or qualification changed": "The automatic reviewer changed since it was checked, so this needs your decision.",
+    }
+
+    @classmethod
+    def _gate_consequence(cls, decision: Any, call: ProviderCall, record: dict[str, Any]) -> str:
+        """What the owner reads first: the policy's own wording, or what the call will do, then why they are asked.
+
+        The gate's reason code stays in `browser_review` for the details disclosure.
+        """
+        from termx.agent.policy import redact
+
+        arguments = call.arguments if isinstance(call.arguments, dict) else {}
+        if call.name == "write_file":
+            what = f"Writes {redact(str(arguments.get('path') or 'a file'))} ({len(str(arguments.get('content') or ''))} characters)."
+        elif call.name == "apply_patch":
+            what = "Applies a patch to files in the project."
+        elif call.name == "run_shell":
+            what = "Runs this command in the project folder: " + redact(" ".join(str(arguments.get("command") or "").split()))[:300]
+            if arguments.get("purpose"):
+                what += f" Purpose given: {redact(str(arguments['purpose']))[:200]}"
+        elif decision.consequence:
+            # Tools that write their own wording, such as memory_write, keep it.
+            what = decision.consequence
+        else:
+            what = f"Runs {call.name or call.type}."
+        code = str(record.get("reason") or "")
+        why = cls._GATE_REASONS.get(code, "")
+        return f"{what} {why}".strip()
+
+    def _auto_enabled(self, task_id: str) -> bool:
+        return bool((((self._task(task_id).get("runtime") or {}).get("auto")) or {}).get("enabled"))
+
+    @staticmethod
+    def _carry_runtime(runtime: dict[str, Any] | None) -> dict[str, Any]:
+        """The Auto state, last context size, session-worktree flag, application list and computer seconds spent, for runtime rewrites that would otherwise drop them."""
+        carried = {key: (runtime or {}).get(key) for key in ("auto", "context_used", "isolated", "role", "route_source", "computer_spent")}
+        kept = {key: value for key, value in carried.items() if value}
+        # An empty application list means no application is allowed, so it must survive as much as a full one.
+        if isinstance((runtime or {}).get("computer_apps"), list):
+            kept["computer_apps"] = list(runtime["computer_apps"])
+        return kept
+
+    @staticmethod
+    def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int | float, int | float] | None:
+        """(ceiling, limit, used) for the first Auto ceiling reached, else None.
+
+        The cost ceiling only sees turns with a known price, so an unpriced
+        model never trips it; the token ceiling still counts its tokens.
+        """
+        auto = (task.get("runtime") or {}).get("auto") or {}
+        if not auto.get("enabled"):
+            return None
+        ceilings = auto.get("ceilings") or {}
+        for name, value in auto_usage(auto, step).items():
+            limit = ceilings.get(name) or 0
+            if limit and value >= limit:
+                return name, limit, value
+        return None
+
+    def _park_calls(self, task_id: str, calls: list[ProviderCall], index: int, approved_first: bool) -> None:
+        """Keep the calls not yet run so a budget approval resumes them."""
+        runtime = {**(self._task(task_id).get("runtime") or {}),
+                   "tree_pending_calls": [self._call_payload(call) for call in calls[index:]],
+                   "tree_approved_first": approved_first}
+        self.store.update_task(task_id, runtime=runtime)
+
+    def _pause_auto(self, task_id: str, history: list[dict[str, Any]], step: int,
+                    started_at: float, breach: tuple[str, int | float, int | float]) -> None:
+        ceiling, limit, used = breach
+        self._emit(task_id, "auto.ceiling", {"ceiling": ceiling, "limit": limit, "used": used})
+        self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}", {"ceiling": ceiling, "limit": limit, "used": used})
+
+    def _auto_note_call(self, task_id: str) -> None:
+        """Count one auto-approved tool call, where its auto.decision event is emitted, in the persisted task runtime."""
+        runtime = self._task(task_id).get("runtime") or {}
+        auto = runtime.get("auto")
+        if auto and auto.get("enabled"):
+            self.store.update_task(task_id, runtime={**runtime, "auto": {**auto, "calls": int(auto.get("calls") or 0) + 1}})
+
+    def _auto_note_turn(self, task_id: str, tokens: int = 0, cost_usd: float | None = None) -> None:
+        """Count a provider turn against the Auto allowance. An unknown price adds tokens but no cost."""
+        runtime = self._task(task_id).get("runtime") or {}
+        auto = runtime.get("auto")
+        if auto and auto.get("enabled"):
+            self.store.update_task(task_id, runtime={**runtime, "auto": {
+                **auto,
+                "turns": int(auto.get("turns") or 0) + 1,
+                "tokens": int(auto.get("tokens") or 0) + tokens,
+                "cost_usd": float(auto.get("cost_usd") or 0) + (cost_usd or 0.0),
+            }})
+
+    def set_task_auto(self, task_id: str, *, enabled: bool,
+                      ceilings: dict[str, Any] | None = None) -> None:
+        """Switch Auto mode on or off mid-task; the next tool call is decided under the new setting."""
+        task = self._task(task_id)
+        if task["status"] in {"completed", "failed", "cancelled"}:
+            raise ValueError("task has finished")
+        runtime = dict(task.get("runtime") or {})
+        previous = runtime.get("auto")
+        if enabled:
+            record = self.store.task_worktree(task_id)
+            self._require_auto_allowed(
+                task.get("mode"),
+                bool(runtime.get("isolated") or (record and record["mode"] == "worktree" and record["status"] == "active")),
+            )
+        resolved = resolve_auto_ceilings(ceilings, (previous or {}).get("ceilings"))
+        if previous and (previous.get("enabled") or not enabled):
+            # Counters keep running when only the ceilings change or Auto goes off.
+            runtime["auto"] = {**previous, "enabled": enabled, "ceilings": resolved}
+        else:
+            runtime["auto"] = self._auto_state(enabled, resolved, int(runtime.get("step") or 0))
+        self.store.update_task(task_id, runtime=runtime)
+
     def _pause_budget(self, task_id: str, history: list[dict[str, Any]],
-                      step: int, started_at: float, reason: str) -> None:
+                      step: int, started_at: float, reason: str, auto_ceiling: dict[str, Any] | None = None) -> None:
         task = self._task(task_id)
         runtime = {**(task.get("runtime") or {}), "history": history,
                    "step": step, "started_at": started_at}
@@ -1304,11 +1919,12 @@ class AgentManager:
         suggested = {"max_steps": min(100000, max((shared['used_steps'] if shared else step) + chunk, (shared['max_steps'] if shared else task["limits"]["max_steps"])))}
         if shared:suggested['max_seconds']=shared['max_execution_seconds']
         approval = self.store.create_approval(task_id, "budget", {
-            "title": "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
+            "title": _AUTO_PAUSE_TEXT["title"] if reason.startswith("auto_") else "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
             **({'tree_budget':shared,'reuse_grant':reason=='shared_resume' and not shared['reason']} if shared else {}),
             "reason": reason, "completed_steps": step, "limits": task["limits"],
+            **({"auto_ceiling": auto_ceiling} if auto_ceiling else {}),
             "suggested_limits": suggested,
-            "consequence": "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
+            "consequence": _AUTO_PAUSE_TEXT["consequence"] if reason.startswith("auto_") else "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
         })
         self._emit(task_id, "task.budget.exhausted", approval["payload"])
         self._emit(task_id, "approval.requested", {"approval": approval})
@@ -1323,20 +1939,33 @@ class AgentManager:
         started_at: float,
         *,
         approved_first: bool = False,
+        approved_fingerprint: str | None = None,
         turn_id: str | None = None,
     ) -> tuple[bool, list[dict[str, Any]], int]:
         task = self._task(task_id)
-        read_only = task.get("mode") == "ask"
+        read_only = task.get("mode") in READ_ONLY_MODES
         ctx = self._tool_context(task_id, task)
         groups = self._scheduler.schedule(calls, ctx)
         index = 0
         for group in groups:
             self._check_execution_authority(task_id)
+            breach = None if approved_first and index == 0 else self._auto_breach(self._task(task_id), step)
+            if breach:
+                self._park_calls(task_id, calls, index, False)
+                self._pause_auto(task_id, history, step, started_at, breach)
+                return True, history, step
             preset=self.store.task_agent(task)
             if preset and preset.get('tools'):
                 for entry in group:
                     name=entry.call.name or ('run_shell' if entry.call.type=='shell' else entry.call.type)
-                    if name not in preset['tools']:raise PermissionError('This tool is outside the task agent preset')
+                    if name not in expand_tools(preset['tools']) and entry.call.type!='function':raise PermissionError('This tool is outside the task agent preset')
+                if len(group)==1 and group[0].call.type=='function' and group[0].call.name not in expand_tools(preset['tools']):
+                    # A model can still name a tool it was not offered. Tell it, so it can adjust, rather than failing the task.
+                    refused=group[0].call
+                    self._emit(task_id,'tool.started',{'call':refused.public()})
+                    outcome=self._outside_preset(refused)
+                    self._emit(task_id,'tool.finished',outcome.finished_payload(refused));history.extend(outcome.output_items(refused));step+=1;index+=1
+                    continue
             # A controlled browser grant must not be bypassed via arbitrary
             # shell, runbook, subagent, computer or Git process tools. Typed
             # project file/search operations remain available for code context.
@@ -1348,13 +1977,11 @@ class AgentManager:
                 broker_tools={'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
                 for item in group:
                     if item.call.type!='function' or item.call.name not in broker_tools:
-                        raise PermissionError('Restricted browser task cannot run process/computer tools; take over all granted tabs before resuming coding execution')
+                        raise PermissionError('Restricted browser task cannot run process or desktop tools; take over all granted tabs before resuming coding execution')
             positions=[str(step+offset)+':'+hashlib.sha256(json.dumps(self._call_payload(entry.call),sort_keys=True).encode()).hexdigest() for offset,entry in enumerate(group)]
             shared_reason=self.tree_budget.reserve(task_id,positions)
             if shared_reason:
-                current=self._task(task_id)
-                runtime={**(current.get('runtime') or {}),'tree_pending_calls':[self._call_payload(call) for call in calls[index:]],'tree_approved_first':approved_first and index==0}
-                self.store.update_task(task_id,runtime=runtime)
+                self._park_calls(task_id, calls, index, approved_first and index == 0)
                 self._pause_budget(task_id,history,step,started_at,shared_reason)
                 return True,history,step
             if len(group) > 1:
@@ -1395,7 +2022,7 @@ class AgentManager:
                     public_payload={'title':'Browser action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':[]}
                     approval=self.store.create_approval(task_id,'tool',public_payload)
                     self._pending_approval_calls[approval['id']]={**public_payload,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
-                    runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at}
+                    runtime={**(self._task(task_id).get('runtime') or {}),'history':history,'step':step,'started_at':started_at}
                     self.store.update_task(task_id,status='awaiting_approval',runtime=runtime)
                     self._emit(task_id,'approval.requested',{'approval':approval});self._emit(task_id,'task.status',{'status':'awaiting_approval'})
                     self._persist_metrics(task_id)
@@ -1403,12 +2030,11 @@ class AgentManager:
                 self._emit(task_id,'tool.finished',outcome.finished_payload(call));history.extend(outcome.output_items(call));step+=1;index+=1
                 continue
             if read_only:
-                if call.type == "computer":
-                    raise RuntimeError("Ask mode cannot use the computer. Switch to Agent mode.")
-                if entry.spec is not None and entry.spec.expose_read_only:
-                    # Read-only Ask mode never enters the approval flow: mutating
-                    # commands are refused inline so the model can adjust, and
-                    # share_file is bounded to non-sensitive project files.
+                if entry.spec is not None:
+                    # Read-only Ask/Plan mode never enters the approval flow:
+                    # mutating commands and tools hidden from the schema are
+                    # refused inline so the model can adjust, and share_file
+                    # is bounded to non-sensitive project files.
                     self._emit(task_id, "tool.started", {"call": call.public()})
                     outcome = await self._invoke_tool(entry, ctx)
                     self._emit(task_id, "tool.finished", outcome.finished_payload(call))
@@ -1419,15 +2045,30 @@ class AgentManager:
                     index += 1
                     continue
             decision = entry.decision
+            if decision.auto_resolved == "autonomous" and entry.spec is not None and not self._auto_enabled(task_id):
+                # Auto was switched off after this batch was scheduled; the
+                # call is decided again under the current setting.
+                decision = entry.spec.decide(call, self._tool_context(task_id, self._task(task_id)))
             if decision.intent is None and call.type=='function' and call.name in {'write_file','apply_patch'}:
                 from termx.auto_review import canonical_hash
                 exact=canonical_hash({'tool':call.name,'cwd':ctx.cwd,'arguments':call.arguments})
                 decision=self._policy_engine.decide_tool(call,ctx,fingerprint=exact,display=call.name+' · exact typed arguments',matcher={'arguments_digest':exact},base=decision,capabilities=('fs.workspace.write',),risk='consequential')
+            first_approved = approved_first and index == 0
+            if call.name in DESKTOP_TOOLS and entry.spec is not None:
+                # Rules, grants and the readiness of desktop control can change while an approval waits.
+                # Decide again, and honour an approval only for the application and action it named.
+                decision = entry.spec.decide(call, ctx)
+                first_approved = (
+                    first_approved
+                    and approved_fingerprint is not None
+                    and decision.intent is not None
+                    and decision.intent.fingerprint == approved_fingerprint
+                )
             authority=self.browser.records.get('agent-task-authority',task_id) if self.browser else None
             if authority and entry.spec and entry.spec.mutability!='read' and decision.approval_kind!='capability':
                 from termx.agent.action_review import proposal
                 from termx.auto_review import ReviewRequired,ActionBlocked
-                envelope,validate,hard_deny=proposal(self.browser,task_id,authority,call.name or call.type,call.arguments if call.type!='computer' else {'actions':call.actions},task['cwd'],call_id=task_id+':'+call.call_id,decision=decision,read_only=read_only)
+                envelope,validate,hard_deny=proposal(self.browser,task_id,authority,call.name or call.type,call.public()['arguments'] if call.name in DESKTOP_TOOLS else call.arguments,task['cwd'],call_id=task_id+':'+call.call_id,decision=decision,read_only=read_only)
                 consent=None
                 if decision.auto_resolved=='allow' and decision.matched_rule_id and decision.intent:
                     matched=self.store.get_policy_rule(decision.matched_rule_id)
@@ -1440,9 +2081,27 @@ class AgentManager:
                     consent=current_consent
                     base_validate=validate
                     validate=lambda:base_validate() and current_consent()
+                autonomous=None
+                if decision.intent is not None and not read_only and decision.allowed and (decision.auto_resolved=='autonomous' or (decision.auto_resolved is None and not decision.approval_required)):
+                    from termx.agent.policies.defaults import AUTONOMOUS_BLOCKED_RISKS
+                    if decision.intent.risk_class not in AUTONOMOUS_BLOCKED_RISKS:
+                        agent_autonomous=decision.auto_resolved=='autonomous'
+                        def autonomous():
+                            # The gate would otherwise ask for every shell command and write,
+                            # because it cannot tell them apart. Auto answers for the owner only
+                            # for classes the policy never blocks, and only while it is still on.
+                            if self._auto_enabled(task_id):return True
+                            if not agent_autonomous:return False
+                            # A custom Agent's own autonomous mode: decided again under the current policy.
+                            return entry.spec.decide(call,self._tool_context(task_id,self._task(task_id))).auto_resolved=='autonomous'
                 checkpoint = None
                 try:
-                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,existing_consent=consent,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    permit=await self.browser.review.authorize(envelope,validate=validate,hard_deny=hard_deny,existing_consent=consent,autonomous=autonomous,context={'task_summary':task['prompt'],'effect_summary':envelope.intended_effect})
+                    if permit.get('decision_source')=='task-auto':
+                        auto_run=(self._task(task_id).get('runtime') or {}).get('auto') or {}
+                        if auto_run.get('enabled'):
+                            self._emit(task_id,'auto.decision',{'tool':call.name or call.type,'call_id':call.call_id,'risk':decision.intent.risk_class if decision.intent is not None else None,'rule':'task_auto','index':step-int(auto_run.get('base_step') or 0)})
+                            self._auto_note_call(task_id)
                     checkpoint = self.store.create_checkpoint(
                         task_id,
                         kind="execution",
@@ -1453,9 +2112,9 @@ class AgentManager:
                         provider_turn_id=turn_id,
                         payload={
                             "task_id": task_id,
-                            "call": self._call_payload(call),
-                            "remaining_calls": [self._call_payload(item) for item in calls[index + 1:]],
-                            "history": history,
+                            "call": self._stored_call_payload(call),
+                            "remaining_calls": [self._stored_call_payload(item) for item in calls[index + 1:]],
+                            "history": storable_history(history),
                             "step": step,
                             "started_at": started_at,
                             # Identity only: never persist or reconstruct a permit.
@@ -1487,10 +2146,10 @@ class AgentManager:
                     else:
                         eligible=decision.intent is not None and envelope.intended_effect not in {'unknown','send','publish','purchase','delete','credential','privilege','export','upload'} and 'secret' not in envelope.data_labels
                         remember_options=list(self._policy_engine._remember_options(decision.intent,ctx.project_id,decision.intent.custom_agent_id)) if eligible else []
-                        public={'title':'Action needs your approval','consequence':exc.record['reason'],'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':remember_options,'policy_intent':decision.intent.to_public() if eligible else None,'policy_source':'Current typed tool / sandbox policy'}
+                        public={'title':'Action needs your approval','consequence':self._gate_consequence(decision,call,exc.record),'call':call.public(),'browser_review':exc.record,'remaining_calls':[item.public() for item in calls[index+1:]],'step':step,'started_at':started_at,'remember_options':remember_options,'policy_intent':decision.intent.to_public() if eligible else None,'policy_source':'Current typed tool / sandbox policy'}
                         approval=self.store.create_approval(task_id,'tool',public)
                         self._pending_approval_calls[approval['id']]={**public,'intent':decision.intent.to_record() if eligible else None,'approval_kind':decision.approval_kind,'task_id':task_id,'call':self._call_payload(call),'remaining_calls':[self._call_payload(item) for item in calls[index+1:]],'history':history,'browser_review_id':exc.record['id']}
-                        self.store.update_task(task_id,status='awaiting_approval',runtime={**(task.get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
+                        self.store.update_task(task_id,status='awaiting_approval',runtime={**(self._task(task_id).get('runtime') or {}),'history':history,'step':step,'started_at':started_at})
                         self._emit(task_id,'approval.requested',{'approval':approval});self._persist_metrics(task_id)
                         return True,history,step
                 if checkpoint is not None and checkpoint["side_effect_state"] == "prepared":
@@ -1507,7 +2166,8 @@ class AgentManager:
                     raise asyncio.CancelledError
                 step+=1;index+=1
                 continue
-            if decision.auto_resolved and not (approved_first and index == 0):
+            if decision.auto_resolved and (decision.auto_resolved == "deny" or not first_approved):
+                # A deny that appeared after the approval was given still stops the call.
                 # A remembered rule or the Agent's own mode resolved this call.
                 # The audit trail is the point — every auto-resolution is an
                 # event, never a silent skip of the approval system.
@@ -1533,6 +2193,20 @@ class AgentManager:
                         "reason": decision.reason,
                     },
                 )
+                auto_run = (self._task(task_id).get("runtime") or {}).get("auto") or {}
+                if decision.auto_resolved == "autonomous" and auto_run.get("enabled"):
+                    self._emit(
+                        task_id,
+                        "auto.decision",
+                        {
+                            "tool": call.name or call.type,
+                            "call_id": call.call_id,
+                            "risk": decision.intent.risk_class if decision.intent is not None else None,
+                            "rule": "task_auto",
+                            "index": step - int(auto_run.get("base_step") or 0),
+                        },
+                    )
+                    self._auto_note_call(task_id)
                 if decision.auto_resolved == "deny":
                     # Refused in-band like a policy refusal: the model sees the
                     # denial and can choose a different approach; the task keeps
@@ -1553,7 +2227,7 @@ class AgentManager:
                     continue
                 # "allow"/"autonomous": fall through to normal execution with
                 # the checkpoint/recovery machinery untouched.
-            if decision.approval_required and not (approved_first and index == 0):
+            if decision.approval_required and not first_approved:
                 public_payload = {
                     "title": decision.reason,
                     "consequence": decision.consequence,
@@ -1610,11 +2284,11 @@ class AgentManager:
                     provider_turn_id=turn_id,
                     payload={
                         "task_id": task_id,
-                        "call": self._call_payload(call),
+                        "call": self._stored_call_payload(call),
                         "remaining_calls": [
-                            self._call_payload(item) for item in calls[index + 1 :]
+                            self._stored_call_payload(item) for item in calls[index + 1 :]
                         ],
-                        "history": history,
+                        "history": storable_history(history),
                         "step": step,
                         "started_at": started_at,
                     },
@@ -1829,6 +2503,7 @@ class AgentManager:
                 step,
                 started_at,
                 approved_first=True,
+                approved_fingerprint=str((payload.get("intent") or {}).get("fingerprint") or "") or None,
             )
             if not paused:
                 await self._drive(task_id, history=history, step=step, started_at=started_at)
@@ -1836,6 +2511,10 @@ class AgentManager:
             await self._cancelled(task_id)
         except Exception as exc:
             self._fail(task_id, exc)
+
+    @staticmethod
+    def _outside_preset(call: Any) -> ToolOutcome:
+        return ToolOutcome({"refused": True, "error": f"{call.name} is not one of this agent's tools. Use one of the tools you were given."})
 
     async def _invoke_tool(self, entry: Any, ctx: ToolContext) -> ToolOutcome:
         self._check_execution_authority(ctx.task_id)
@@ -1845,8 +2524,12 @@ class AgentManager:
         if entry.spec is None:
             raise ValueError(f"unsupported provider tool: {call.name or call.type}")
         preset=self.store.task_agent(ctx.task)
-        if preset and preset.get("tools") and call.name not in preset["tools"]:
-            raise PermissionError("This tool is outside the task agent preset")
+        if preset and preset.get("tools") and call.name not in expand_tools(preset["tools"]):
+            return self._outside_preset(call)
+        if ctx.read_only and not entry.spec.expose_read_only:
+            # Read-only modes hide these tools from the model's schema; a call
+            # to one anyway is refused here, whatever approval or Auto says.
+            return ToolOutcome({"refused": True, "error": f"{call.name} is not available in a read-only mode. Switch to Agent mode."})
         started = monotonic()
         try:
             outcome = await self._budget_await(ctx.task_id,entry.spec.execute(call,ctx))
@@ -1919,7 +2602,7 @@ class AgentManager:
             task_id=task_id,
             cwd=task["cwd"],
             task=task,
-            read_only=task.get("mode") == "ask",
+            read_only=task.get("mode") in READ_ONLY_MODES,
             cancel=self._cancel.setdefault(task_id, asyncio.Event()),
             emit=lambda event_type, payload: self._emit(task_id, event_type, payload),
             store=self.store,
@@ -1968,179 +2651,83 @@ class AgentManager:
         # forgotten project is re-registered instead of leaving a stale id.
         return str(self._files_service().register(cwd)["id"])
 
-    async def _execute_computer(
-        self,
-        task_id: str,
-        call: ProviderCall,
-        cancel: asyncio.Event,
-    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        batch_id = uuid.uuid4().hex[:12]
-        action_types = [str(action.get("type") or "") for action in call.actions]
-        self._emit(
-            task_id,
-            "computer.action.started",
-            {"batch_id": batch_id, "actions": action_types},
-        )
-        # Taking control back: a user takeover flips control_owner to "user";
-        # the next agent batch reasserts it with a visible transition.
-        if self._observation.control_owner != "agent":
-            self._observation.control_owner = "agent"
-            self._emit(task_id, "computer.control.changed", {"owner": "agent"})
+    def _desktop_wanted(self, task_id: str, task: dict[str, Any], provider: dict[str, Any], read_only: bool) -> bool:
+        """Whether this turn could be offered the desktop tools at all. Nothing about the CLI is probed otherwise."""
+        if read_only or not self.tools_supported(provider, provider["model"]):
+            return False
+        if not set(provider.get("capabilities") or []) & {"functions", "computer"}:
+            return False
+        preset = (self.store.task_agent(task) or {}).get("tools")
+        if preset and not ({"computer"} | set(DESKTOP_TOOLS)) & set(preset):
+            return False
+        if self.is_unattended is not None and self.is_unattended(task_id):
+            return self.computer_permission is not None and self.computer_permission(task_id) is not None
+        return True
+
+    def computer_limits(self, task_id: str) -> tuple[list[str] | None, dict[str, Any] | None]:
+        """The applications this task may drive and, when it runs unattended, the permission it runs under.
+
+        Lists from the task and every task above it (skills, and the schedule's permission) must all allow an
+        application. None means no list is active. An ancestry that cannot be followed allows nothing.
+        """
+        lists: list[list[str] | None] = []
+        seen: set[str] = set()
+        current: str | None = task_id
+        while current:
+            if current in seen or len(seen) >= 64:
+                return [], None
+            seen.add(current)
+            task = self.store.get_task(current) or {}
+            apps = (task.get("runtime") or {}).get("computer_apps")
+            if isinstance(apps, list):
+                lists.append([str(app) for app in apps])
+            current = task.get("parent_id")
+        permission = None
+        if self.is_unattended is not None and self.is_unattended(task_id) and self.computer_permission is not None:
+            permission = self.computer_permission(task_id)
+            if permission is not None:
+                lists.append(list(permission["apps"]))
+        return desktop_apps.combine(lists), permission
+
+    def _computer_spent(self, run_id: str) -> float:
+        """Seconds of computer control the run has used, kept on the run's own task so a restart does not reset it."""
+        return float((((self.store.get_task(run_id) or {}).get("runtime")) or {}).get("computer_spent") or 0.0)
+
+    def _charge_computer(self, run_id: str, seconds: float) -> None:
+        task = self.store.get_task(run_id)
+        if task is not None:
+            runtime = dict(task.get("runtime") or {})
+            runtime["computer_spent"] = float(runtime.get("computer_spent") or 0.0) + seconds
+            self.store.update_task(run_id, runtime=runtime)
+
+    @asynccontextmanager
+    async def desktop_budget(self, task_id: str):
+        """Wall-time budget for one desktop call under a schedule's permission. No-op for attended runs.
+
+        The seconds spent are kept on the run's own task so a restart does not reset them. Raises PermissionError
+        when the run has no seconds left or the call outlasts them.
+        """
+        _apps, permission = self.computer_limits(task_id)
+        if permission is None and self.is_unattended is not None and self.is_unattended(task_id):
+            raise PermissionError("Unattended computer control is off for this run")
+        if permission is None:
+            yield
+            return
+        run_id = str(permission.get("run_id") or task_id)
+        remaining = float(permission["max_seconds"]) - self._computer_spent(run_id)
+        if remaining <= 0:
+            raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control")
+        started = monotonic()
+        limit = asyncio.timeout(remaining)
         try:
-            screenshot = await self._computer.execute(call.actions, cancel=cancel)
-        except BaseException as exc:
-            self._emit(
-                task_id,
-                "computer.action.finished",
-                {
-                    "batch_id": batch_id,
-                    "ok": False,
-                    "error": "cancelled" if isinstance(exc, asyncio.CancelledError) else str(exc),
-                },
-            )
-            raise
-        self._emit(task_id, "computer.action.finished", {"batch_id": batch_id, "ok": True})
-
-        region = _screenshot_region(call.actions)
-        cropped = crop_region(screenshot, region) if region is not None else None
-        model_frame = cropped if cropped is not None else screenshot
-        display_id, logical_w, logical_h = _computer_display(self._computer)
-        size = jpeg_size(model_frame) or (0, 0)
-        dpr = (size[0] / logical_w) if size[0] and logical_w else 1.0
-        observation = self._observation.record(
-            scope=task_id,
-            frame=model_frame,
-            display_id=display_id,
-            width=size[0],
-            height=size[1],
-            dpr=round(dpr, 3),
-            backend=_capture_backend(),
-            region=region,
-            region_cropped=cropped is not None,
-        )
-        # The model-bound frame is saved as the screenshot artifact; the full
-        # display frame is preserved alongside it when a region was cropped so
-        # replay never loses context.
-        artifact = await asyncio.to_thread(
-            self.store.save_artifact, task_id, "screenshot", "image/jpeg", model_frame
-        )
-        observation.artifact_id = artifact["id"]
-        if cropped is not None:
-            full_artifact = await asyncio.to_thread(
-                self.store.save_artifact, task_id, "screenshot", "image/jpeg", screenshot
-            )
-            observation.extra["full_artifact_id"] = full_artifact["id"]
-        metrics = self._metrics.get(task_id)
-        if metrics is not None:
-            metrics.record_screenshot(len(model_frame))
-        self._emit(task_id, "computer.screenshot", {"artifact": artifact})
-        self._emit(
-            task_id,
-            "computer.observation",
-            {"batch_id": batch_id, "observation": observation.payload()},
-        )
-        image = base64.b64encode(scale_for_model(model_frame)).decode("ascii")
-        if call.name == "use_computer":
-            if not observation.changed:
-                self._emit(
-                    task_id,
-                    "computer.no_change",
-                    {
-                        "batch_id": batch_id,
-                        "observation_id": observation.id,
-                        "frame_hash": observation.frame_hash,
-                    },
-                )
-                return artifact, [
-                    {
-                        "type": "function_call_output",
-                        "call_id": call.call_id,
-                        "output": "Computer action completed.",
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": (
-                                    f"Screen unchanged (frame matches observation "
-                                    f"{observation.extra.get('previous_id') or observation.id}). "
-                                    "Continue the approved task without re-inspecting."
-                                ),
-                            }
-                        ],
-                    },
-                ]
-            return artifact, [
-                {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": "Computer action completed.",
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Inspect the screenshot and continue the approved task.",
-                        },
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:image/jpeg;base64,{image}",
-                        },
-                    ],
-                },
-            ]
-        items: list[dict[str, Any]] = [
-            {
-                "type": "computer_call_output",
-                "call_id": call.call_id,
-                "output": {"type": "computer_screenshot", "image_url": f"data:image/jpeg;base64,{image}"},
-                "acknowledged_safety_checks": call.safety_checks,
-            }
-        ]
-        if not observation.changed:
-            self._emit(
-                task_id,
-                "computer.no_change",
-                {
-                    "batch_id": batch_id,
-                    "observation_id": observation.id,
-                    "frame_hash": observation.frame_hash,
-                },
-            )
-            # The computer_call_output contract needs an image, so the dedup
-            # signal travels in an adjacent user message instead.
-            items.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": (
-                                f"Screen unchanged (frame matches observation "
-                                f"{observation.extra.get('previous_id') or observation.id})."
-                            ),
-                        }
-                    ],
-                }
-            )
-        return artifact, items
-
-    @staticmethod
-    def _decide_computer(call: ProviderCall) -> PolicyDecision:
-        if call.safety_checks:
-            detail = "; ".join(
-                str(item.get("message") or item.get("code") or "Provider flagged this action")
-                for item in call.safety_checks
-            )
-            return PolicyDecision(
-                True,
-                True,
-                "Provider safety check",
-                detail[:500],
-            )
-        return evaluate_computer(call.actions)
+            async with limit:
+                yield
+        except TimeoutError:
+            if not limit.expired():
+                raise
+            raise PermissionError(f"This run used its {permission['max_seconds']} seconds of computer control") from None
+        finally:
+            self._charge_computer(run_id, monotonic() - started)
 
     # Helpers ---------------------------------------------------------
 
@@ -2292,8 +2879,8 @@ class AgentManager:
         current = self.store.get_task(task_id)
         if cancel.is_set() or not current or current['status'] not in {'planning', 'running', 'awaiting_approval', 'paused'}:
             return {'ok': False, 'error': 'The coordinator is no longer accepting sub-agents'}
-        if current.get('mode') == 'ask':
-            return {'ok': False, 'error': 'Switch to Agent mode before creating sub-agents'}
+        if current.get('mode') in READ_ONLY_MODES:
+            return {'ok': False, 'error': 'Switch to Agent mode before creating sub-agents; Ask and Plan modes are read-only'}
         task = current
         prompt = str(call.arguments.get("task") or "").strip()
         if not prompt:
@@ -2304,13 +2891,39 @@ class AgentManager:
                 "error": "sub-agents cannot spawn sub-agents (max depth 1)",
             }
         agent = str(call.arguments.get("agent") or "").strip() or "Sub-agent"
+        # The child picks its own model: the call's `model`, else the worker route,
+        # else the parent provider's default. It never inherits the parent's model.
+        requested_model = str(call.arguments.get("model") or "").strip()
+        try:
+            try:
+                child_route = self.resolve_route(
+                    "worker", {"model": requested_model}, default_provider_id=task["provider_id"]
+                )
+            except ValueError:
+                if not requested_model:
+                    raise
+                # A model the worker route's provider lacks may belong to the parent's provider.
+                child_route = self.resolve_route(
+                    "worker", {"provider_id": task["provider_id"], "model": requested_model}
+                )
+        except KeyError:
+            return {"ok": False, "error": "No model provider is available for the sub-agent"}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
         instructions = str(call.arguments.get("instructions") or "").strip()
+        files = call.arguments.get("files")
+        context = str(call.arguments.get("context") or "").strip()
         child_prompt = prompt
-        if instructions:
-            child_prompt = (
-                f'You are the "{agent}" sub-agent. Follow these instructions:\n'
-                f"{instructions}\n\nTask: {prompt}"
+        if instructions or context or files:
+            # A bare task stays as typed; anything more becomes a structured brief.
+            child_prompt = build_brief(
+                prompt,
+                constraints=instructions,
+                files=[str(path) for path in files] if isinstance(files, list) else [],
+                context=context,
             )
+            if instructions:
+                child_prompt = f'You are the "{agent}" sub-agent.\n\n{child_prompt}'
         parent_limits = task["limits"]
         handles = self._subagent_handles(task_id)
         running = sum(1 for handle in handles.values() if not handle.done.is_set())
@@ -2395,7 +3008,7 @@ class AgentManager:
             child = await _race_cancel(self.create_task(
             prompt=child_prompt,
             cwd=child_cwd,
-            provider_id=task["provider_id"],
+            provider_id=child_route.provider_id,
             limits={
                 "max_steps": min(24, parent_limits["max_steps"]),
                 "max_seconds": min(900, parent_limits["max_seconds"]),
@@ -2403,7 +3016,7 @@ class AgentManager:
             },
             mode=child_mode,
             execution_mode=child_execution,
-            model=str(task.get("model") or "") or None,
+            model=child_route.model,
             # A child's own cancellation must never signal its siblings or
             # coordinator. The outer race observes cancellation during planning.
             cancel=asyncio.Event(),
@@ -2571,6 +3184,30 @@ class AgentManager:
             entry["result"] = handle.result[:4000]
         return entry
 
+    async def _add_changed_files(
+        self, targets: dict[str, _SubagentHandle], children: dict[str, dict[str, Any]]
+    ) -> None:
+        """Add the files each finished worktree child changed, read in a worker thread once per child."""
+        for child_id, handle in targets.items():
+            entry = children.get(child_id)
+            if entry is None or entry.get("unavailable") or not handle.done.is_set():
+                continue
+            if handle.changed_files is None:
+                record = self.store.task_worktree(child_id)
+                if not (record and record.get("worktree_path") and record["status"] == "active"):
+                    continue
+                handle.changed_files = (
+                    await asyncio.to_thread(changed_files, record["worktree_path"], record["base_ref"])
+                )[:100]
+            entry["changed_files"] = handle.changed_files
+
+    async def _subagent_report(self, task_id: str, call: ProviderCall) -> dict[str, Any]:
+        """``_subagent_statuses`` plus each finished worktree child's changed files."""
+        result = self._subagent_statuses(task_id, call)
+        targets, _missing = self._subagent_targets(task_id, call)
+        await self._add_changed_files(targets, result["children"])
+        return result
+
     async def _await_subagents(
         self,
         task_id: str,
@@ -2604,6 +3241,7 @@ class AgentManager:
         children = {
             child_id: self._subagent_summary(handle) for child_id, handle in targets.items()
         }
+        await self._add_changed_files(targets, children)
         self._emit(
             task_id,
             "subagent.awaited",
@@ -2792,16 +3430,21 @@ class AgentManager:
                                            model=provider["model"],
                                            timeout_s=self._settings().provider_timeout_s if self._settings else 300)
         key = self.credentials.get(provider["id"]) or ""
+        provider = {**provider, "meta": self.model_meta(provider, provider["model"])}
         return self._adapter_factory(provider, key)
 
     def _default_adapter(self, provider: dict[str, Any], key: str) -> ProviderAdapter:
-        adapter = OpenAIResponsesAdapter(
+        capabilities = provider["capabilities"]
+        if not self.tools_supported(provider, provider["model"]):
+            # A model that cannot call tools gets a plain conversation: no function tools.
+            capabilities = [c for c in capabilities if c not in {"shell", "functions", "computer"}]
+        adapter = (OpenAIChatAdapter if provider.get("wire") == "chat" else OpenAIResponsesAdapter)(
             base_url=provider["base_url"],
             model=provider["model"],
             api_key=key,
-            capabilities=provider["capabilities"],
-            native_computer=provider["kind"] == "openai",
+            capabilities=capabilities,
             timeout_s=self._settings().provider_timeout_s if self._settings else 300,
+            max_output_tokens=_output_cap(provider.get("meta")),
         )
         adapter.client = self._http.client_for(
             provider["id"],
@@ -2826,8 +3469,6 @@ class AgentManager:
             call_id=str(value.get("call_id") or ""),
             name=str(value.get("name") or ""),
             arguments=value.get("arguments") if isinstance(value.get("arguments"), dict) else {},
-            actions=value.get("actions") if isinstance(value.get("actions"), list) else [],
-            safety_checks=value.get("safety_checks") if isinstance(value.get("safety_checks"), list) else [],
         )
 
     @staticmethod
@@ -2837,9 +3478,14 @@ class AgentManager:
             "call_id": call.call_id,
             "name": call.name,
             "arguments": call.arguments,
-            "actions": call.actions,
-            "safety_checks": call.safety_checks,
         }
+
+    @staticmethod
+    def _stored_call_payload(call: ProviderCall) -> dict[str, Any]:
+        """The call as written to a durable checkpoint: text typed into other applications is not kept."""
+        payload = AgentManager._call_payload(call)
+        payload["arguments"] = storable_call(call.name, call.arguments)
+        return payload
 
     @staticmethod
     def _public_value(value: Any) -> Any:
@@ -2927,6 +3573,10 @@ class AgentManager:
         self._context_engines.pop(task_id, None)
         self._metrics.pop(task_id, None)
         self._steering.pop(task_id, None)
+        self.desktop_state.drop_task(task_id)
+        client = agent_desktop.get_client()
+        client.kill_task(task_id)
+        client.cleanup_task(task_id)
         # Task-scoped remembered rules die with their task — they can never
         # leak into a later task in the same project.
         self.store.expire_task_policy_rules(task_id)
@@ -2939,7 +3589,7 @@ class AgentManager:
     async def _cancelled(self, task_id: str) -> None:
         if self._task(task_id)["status"] == "cancelled":
             return
-        await self._computer.release_all()
+        agent_desktop.get_client().kill_task(task_id)
         self._mark_cancelled(task_id)
 
     def _mark_cancelled(self, task_id: str) -> None:
@@ -2958,7 +3608,6 @@ class AgentManager:
         cwd: str,
         manifest: dict[str, Any],
         input_items: list[dict[str, Any]] | None,
-        allow_computer: bool,
         read_only: bool,
     ) -> ProviderTurn:
         return await _race_cancel(
@@ -2967,7 +3616,6 @@ class AgentManager:
                 cwd=cwd,
                 manifest=manifest,
                 input_items=input_items,
-                allow_computer=allow_computer,
                 read_only=read_only,
             ),
             cancel,
@@ -2997,45 +3645,6 @@ _SHARE_MAX_BYTES = 16 * 1024 * 1024
 _SUBAGENT_MAX_SECONDS = 1800
 
 
-def _screenshot_region(actions: list[dict[str, Any]]) -> dict[str, int] | None:
-    """Region requested by the last screenshot action, normalized to pixels."""
-    for action in reversed(actions):
-        if str(action.get("type") or "") != "screenshot":
-            continue
-        region = action.get("region")
-        if not isinstance(region, dict):
-            return None
-        try:
-            return {
-                "x": max(0, int(region.get("x") or 0)),
-                "y": max(0, int(region.get("y") or 0)),
-                "width": max(1, int(region.get("width") or region.get("w") or 0)),
-                "height": max(1, int(region.get("height") or region.get("h") or 0)),
-            }
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def _computer_display(computer: Any) -> tuple[str | None, float, float]:
-    display_fn = getattr(computer, "_display", None)
-    if not callable(display_fn):
-        return None, 0.0, 0.0
-    try:
-        return display_fn()
-    except Exception:
-        return None, 0.0, 0.0
-
-
-def _capture_backend() -> str:
-    try:
-        from termx.desktop.capabilities import probe_desktop
-
-        return str(probe_desktop().capture_backend or "unknown")
-    except Exception:
-        return "unknown"
-
-
 @dataclass
 class _SubagentHandle:
     """Parent-side handle for an async child task (AG2-012).
@@ -3055,6 +3664,7 @@ class _SubagentHandle:
     deadline: float = 0.0
     status: str = "running"
     result: str = ""
+    changed_files: list[str] | None = None  # filled on the first report after the child finishes
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -3092,8 +3702,31 @@ def _slim_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return slim
 
 
+MAX_DISCOVERED_OUTPUT = 32_000
+
+
+def _output_cap(meta: dict[str, Any] | None) -> int | None:
+    """Per-request output limit. A user override is used as set; a discovered value is untrusted and bounded."""
+    meta = meta or {}
+    limit = meta.get("max_output")
+    if not limit or "max_output" in (meta.get("overridden") or []):
+        return limit
+    window = meta.get("context_window")
+    return min(limit, MAX_DISCOVERED_OUTPUT, window // 2 if window else MAX_DISCOVERED_OUTPUT)
+
+
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parts = urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    return (parts.scheme.lower(), (parts.hostname or "").lower(), port)
+
+
 def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:
-    models = configured_models(str(provider.get("model") or ""))
+    # The user's selection, or every discovered model when nothing is selected.
+    models = list(provider.get("models") or configured_models(str(provider.get("model") or "")))
     if not models:
         raise ValueError("provider has no model configured")
     chosen = (requested or "").strip()

@@ -17,7 +17,6 @@ from fastapi import HTTPException
 from termx.agent.manager import _resolve_model,_decode_images
 from termx.agent.providers import ProviderCall
 from termx.agent.policy import is_sensitive_path,redact
-from termx.agent.store import configured_models
 from termx.auto_review import ActionEnvelope, ActionBlocked, ReviewRequired, canonical_hash
 from termx.runners.worker import PROTOCOL, MAX_FRAME, TOOLS, frame
 
@@ -41,7 +40,7 @@ class RunnerAgentService:
         return canonical_hash({'provider':provider,'credential_digest':hashlib.sha256((value or '').encode()).hexdigest()})
     def accounts(self,principal):
         self.state.authorization.require_principal(principal,'host-admin')
-        return [{'provider_id':p['id'],'credential_ref':p['id'],'name':p['name'],'models':configured_models(p['model'])} for p in self.store.list_providers() if p['kind'] in {'openai','openai-compatible'} and p.get('secret_configured') and self.state.credentials.get(p['id'])]
+        return [{'provider_id':p['id'],'credential_ref':p['id'],'name':p['name'],'models':p['models']} for p in self.store.list_providers() if p['kind'] in {'openai','openai-compatible'} and p.get('secret_configured') and self.state.credentials.get(p['id'])]
     async def preflight(self,principal,runner_id,provider_id,credential_ref,model=None):
         self.state.authorization.require_principal(principal,'host-admin')
         runner=self.runners.row(principal.id,runner_id)
@@ -101,7 +100,7 @@ class RunnerAgentService:
     async def create_task(self,principal,runner_id,credential_ref,prompt,model=None,mode='agent',limits=None,conversation_id=None,request_id=None,on_created=None,attachments=None,provider_id=None,custom_agent=None):
         if not request_id or not re.fullmatch(r'[A-Za-z0-9._-]{8,128}',request_id):raise HTTPException(400,'A stable request ID is required')
         if not prompt or len(prompt)>100000:raise HTTPException(400,'Provide a bounded prompt')
-        if mode not in {'ask','agent'}:raise HTTPException(400,'Choose Ask or Agent mode')
+        if mode not in {'ask','agent'}:raise HTTPException(400,'Runner tasks support Ask or Agent mode only')
         images=_decode_images(attachments)
         frame({'attachments':attachments,'prompt':prompt}) # bound before admission/effects
         provider_id=provider_id or credential_ref
@@ -255,7 +254,7 @@ class RunnerAgentService:
                 adapter=self._adapter(provider,permitted)
                 if method=='plan':result=await adapter.plan(str(args.get('prompt','')), root, args.get('manifest') or {})
                 else:
-                    result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd=root,manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),allow_computer=False,read_only=self.store.get_task(task_id)['mode']=='ask'))
+                    result=asdict(await adapter.turn(prompt=str(args.get('prompt','')),cwd=root,manifest=args.get('manifest') or {},previous_response_id=args.get('previous_response_id'),input_items=args.get('input_items'),read_only=self.store.get_task(task_id)['mode']=='ask'))
                 if not self._valid(job):raise PermissionError('Authority changed during provider request')
             elif method=='review':result=await self._review(job,identifier,args)
             elif method=='effect-result':
@@ -289,7 +288,7 @@ class RunnerAgentService:
         except ActionBlocked:return {'allowed':False}
         except ReviewRequired as exc:
             if exc.record['status']!='needs_user':return {'allowed':False}
-            local=self.store.create_approval(task_id,'tool',{'title':'Dedicated runner action','call':ProviderCall(**call).public(),'browser_review':exc.record,'remote_targets':state,'remember_options':[]})
+            local=self.store.create_approval(task_id,'tool',{'title':'Dedicated runner action','call':ProviderCall.from_wire(call).public(),'browser_review':exc.record,'remote_targets':state,'remember_options':[]})
             future=asyncio.get_running_loop().create_future();self.approvals[local['id']]={'task_id':task_id,'future':future,'review_id':envelope.action_id}
             self.store.update_task(task_id,status='awaiting_approval');self._emit(task_id,'approval.requested',{'approval':local})
             await asyncio.wait_for(future,300)

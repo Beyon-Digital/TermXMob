@@ -22,6 +22,7 @@ type ActivitySnapshot {
 
 input AgentApprovalInput {
   decision: String!
+  feedback: String = null
   remember: String = null
   content: JSON = null
   limits: JSON = null
@@ -40,6 +41,12 @@ type AgentProvider {
   base_url: String
   model: String
   models: [String!]
+  selected_models: [String!]
+  model_catalog: JSON
+  model_overrides: JSON
+  catalog_refreshed_at: Float
+  catalog_error: String
+  wire: String
   capabilities: [String!]
   secret_configured: Boolean
   created_at: Float
@@ -54,6 +61,8 @@ input AgentProviderInput {
   model: String! = ""
   capabilities: [String!] = null
   api_key: String = null
+  model_meta: JSON = null
+  wire: String = null
 }
 
 input AgentRetentionInput {
@@ -94,13 +103,16 @@ type AgentTask {
   conversation_id: String
   custom_agent_id: String
   parent_id: String
-  runtime: JSON
   metrics: JSON
   created_at: Float
   updated_at: Float
+  artifacts: JSON
+  runtime: JSON
+  auto: JSON
+  usage: TaskUsage!
+  context: TaskContext!
   events: JSON
   approvals: JSON
-  artifacts: JSON
 }
 
 input AgentTaskInput {
@@ -115,10 +127,210 @@ input AgentTaskInput {
   limits: JSON = null
   mode: String! = "agent"
   execution_mode: String = null
+  auto: AutoModeInput = null
   conversation_id: String = null
   custom_agent_id: String = null
   turn_prompt: String = null
   context_refs: [JSON!] = null
+}
+
+type ArtifactNode implements Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
+  canonical_id: String!
+  title: String!
+  kind: String!
+  version: Int!
+  content: JSON
+}
+
+input AutoModeInput {
+  enabled: Boolean! = true
+  ceilings: JSON = null
+}
+
+type Bot {
+  id: String!
+  revision: Int!
+  name: String!
+  state: String!
+  template: String
+  description: String!
+  instructions: String!
+  project_id: String
+  conversation_id: String!
+  custom_agent_id: String!
+  model: String
+  provider_id: String
+  tools: [String!]!
+  approval_mode: String
+  sandbox_profile: String
+  limits: JSON!
+  ceiling: JSON!
+  peers: [String!]!
+  effective: JSON
+  violations: [String!]!
+  rules: JSON!
+  needs_you: Int!
+  active_tasks: Int!
+  last_task: JSON
+  created_by: String!
+  config_changed_at: Float
+  created_at: Float!
+  updated_at: Float!
+}
+
+input BotCeilingInput {
+  tools: [String!]!
+  approval_mode: String!
+  sandbox_profile: String!
+  deny_capabilities: [String!]!
+}
+
+input BotComputerPermissionInput {
+  apps: [String!]!
+  expires_at: Float!
+  max_seconds: Int!
+}
+
+input BotInput {
+  name: String!
+  template: String = null
+  instructions: String = null
+  description: String = null
+  project_id: String = null
+  tools: [String!] = null
+  model: String = null
+  provider_id: String = null
+  peers: [String!] = null
+  request_id: String = null
+}
+
+type BotMessage {
+  id: String!
+  thread_id: String!
+  sender: JSON!
+  recipient: JSON!
+  kind: String!
+  subject: String!
+  body: String!
+  task_ref: String
+  source_task_id: String
+  hops: Int!
+  status: String!
+  reason: String
+  automatic: Boolean!
+  in_reply_to: String
+  created_at: Float!
+  updated_at: Float!
+}
+
+input BotPatchInput {
+  revision: Int!
+  name: String = null
+  description: String = null
+  instructions: String = null
+  model: String = null
+  provider_id: String = null
+  tools: [String!] = null
+  approval_mode: String = null
+  sandbox_profile: String = null
+  limits: JSON = null
+  peers: [String!] = null
+}
+
+type BotRun {
+  task_id: String!
+  status: String!
+}
+
+type BotSchedule {
+  id: String!
+  revision: Int!
+  bot_id: String!
+  conversation_id: String!
+  goal_id: String!
+  grant_id: String!
+  prompt: String!
+  spec: JSON!
+  missed: String!
+  overlap: String!
+  enabled: Boolean!
+  state: String!
+  reason: String
+  next_run: Float
+  last_run: String
+  queued: Boolean!
+  success_criteria: String!
+  max_runs: Int!
+  runs_started: Int!
+  limits: JSON!
+  grant_expires_at: Float
+  grant_used_runs: Int!
+  needs_reauthorization: Boolean!
+  paused_by_bot: Boolean!
+  trigger: JSON!
+  report_to: JSON!
+  computer_permission: JSON
+  webhook_path: String
+  webhook_secret: String
+  created_at: Float!
+  updated_at: Float!
+}
+
+input BotScheduleEditInput {
+  revision: Int!
+  prompt: String = null
+  spec: JSON = null
+  missed: String = null
+  overlap: String = null
+  trigger: JSON = null
+  report_to: String = null
+  computer_permission: BotComputerPermissionInput = null
+  clear_computer_permission: Boolean! = false
+}
+
+input BotScheduleInput {
+  request_id: String!
+  prompt: String!
+  spec: JSON = null
+  success_criteria: String = null
+  max_runs: Int! = 30
+  grant_days: Int! = 30
+  missed: String! = "skip"
+  overlap: String! = "skip"
+  limits: JSON = null
+  trigger: JSON = null
+  report_to: String = null
+  computer_permission: BotComputerPermissionInput = null
+}
+
+type BotScheduleRun {
+  id: String!
+  schedule_id: String
+  goal_id: String
+  bot_id: String!
+  status: String!
+  reason: String
+  task_id: String
+  task_status: String
+  trigger_kind: String
+  due: Float
+  manual: Boolean!
+  acknowledged: Boolean!
+  started_at: Float
+  finished_at: Float
+  created_at: Float!
+  updated_at: Float!
+}
+
+type BotTemplate {
+  id: String!
+  name: String!
+  description: String!
+  requires_project: Boolean!
+  tools: [String!]!
+  instructions: String!
 }
 
 input CommandInput {
@@ -244,6 +456,7 @@ input CustomAgentPatchInput {
   engine_mode: String = null
   config_options: JSON = null
   tools: [String!] = null
+  tools_mode: String = null
   limits: JSON = null
   approval_mode: String = null
   sandbox_profile: String = null
@@ -261,6 +474,62 @@ input CustomAgentPatchInput {
 
 type Deleted {
   deleted: String
+}
+
+type DesktopControlInstallInfo {
+  available: Boolean!
+  asset: String
+  size_bytes: Int
+  host: String!
+  note: String!
+}
+
+input DesktopControlInstallInput {
+  version: String!
+  consent: Boolean!
+}
+
+type DesktopControlIssue {
+  code: String!
+  message: String!
+  action: String!
+}
+
+type DesktopControlPermission {
+  state: String!
+  guidance: String!
+  grant_to: String
+}
+
+type DesktopControlStatus {
+  installed: Boolean!
+  source: String
+  path: String
+  version: String
+  pinned_version: String!
+  verified: Boolean!
+  helper_ok: Boolean
+  platform: String!
+  arch: String!
+  platform_supported: Boolean!
+  platform_reason: String
+  envelope_version: String
+  ready: Boolean!
+  permission: DesktopControlPermission!
+  supported_surfaces: [String!]!
+  issues: [DesktopControlIssue!]!
+  install: DesktopControlInstallInfo!
+  configured_path: String
+  setting_locked: Boolean!
+}
+
+type DetectedSkillSource {
+  token: String!
+  folder: String!
+  name: String!
+  description: String!
+  source: String!
+  project_id: String
 }
 
 type DeviceInfo {
@@ -571,6 +840,11 @@ type McpConnectionInfo {
   url: String
   enabled: Boolean
   owner: String
+  allowed_projects: [String!]
+  definition: JSON
+  definition_digest: String
+  credential_configured: Boolean
+  catalog: JSON
   auth: JSON
   secret_refs: [String!]
   approved_tools: [String!]
@@ -583,13 +857,48 @@ type McpConnectionInfo {
 
 input McpConnectionInput {
   data: JSON!
+  expected_digest: String = null
 }
 
 input McpToolCallInput {
   arguments: JSON = null
 }
 
+type MemoryEntry {
+  id: String!
+  revision: Int!
+  content: String!
+  provenance: String!
+  project_id: String
+  retention_days: Int!
+  excluded: Boolean!
+  expires_at: Float
+  scope: String!
+  agent_id: String
+  author: String!
+  state: String!
+}
+
+input MemoryInput {
+  content: String!
+  provenance: String!
+  project_id: String = null
+  retention_days: Int! = 30
+  excluded: Boolean! = false
+  scope: String = null
+  agent_id: String = null
+  identifier: String = null
+  revision: Int = null
+}
+
+input ModelRoutingInput {
+  routing: JSON!
+}
+
 type Mutation {
+  desktop_control_install(input: DesktopControlInstallInput!): DesktopControlStatus!
+  desktop_control_remove: DesktopControlStatus!
+  desktop_control_set_path(path: String = null): DesktopControlStatus!
   notify(input: NotifyInput!): Ok!
   request_permissions(input: PermissionsInput = null): JSON!
   set_launch_at_login(enabled: Boolean!): LaunchAtLogin!
@@ -599,6 +908,8 @@ type Mutation {
   revoke_device(device_id: String!): Ok!
   set_device_scopes(device_id: String!, scopes: [String!]!): DeviceInfo!
   publish_notification(input: NotifyInput!, kind: String! = "info"): HostNotification!
+  register_push_device(token: String!, host: String!): JSON!
+  unregister_push_device(token: String!): JSON!
   mark_notifications_read(ids: [String!]!): Int!
   mark_all_notifications_read: Int!
   create_session(input: CreateSessionInput = null): SessionInfo!
@@ -641,6 +952,10 @@ type Mutation {
   delete_display(display_id: String!): Ok!
   rtc_offer(input: RtcOfferInput!): JSON!
   rtc_ice(session_id: String!, candidate: JSON!): Ok!
+  retry_node(node_id: String!): OrchestratorBoard!
+  reassign_node(node_id: String!, input: ReassignNodeInput!): OrchestratorBoard!
+  start_ready_nodes: OrchestratorBoard!
+  cancel_node(node_id: String!): OrchestratorBoard!
   refresh_acp_registry: JSON!
   install_acp_runner(registry_id: String!): JSON!
   update_agent_configuration(input: JSON!): JSON!
@@ -648,8 +963,11 @@ type Mutation {
   authenticate_engine(engine_id: String!, method_id: String!): JSON!
   save_agent_provider(input: AgentProviderInput!): AgentProvider!
   delete_agent_provider(provider_id: String!): Ok!
-  test_agent_provider(provider_id: String!): JSON!
+  refresh_provider_models(provider_id: String!): AgentProvider!
+  set_model_routing(input: ModelRoutingInput!): JSON!
+  test_agent_provider(provider_id: String!, billed: Boolean! = false): JSON!
   create_agent_task(input: AgentTaskInput!): AgentTask!
+  set_task_auto(task_id: String!, input: AutoModeInput!): AgentTask!
   delete_agent_task(task_id: String!): Ok!
   resolve_agent_approval(task_id: String!, approval_id: String!, input: AgentApprovalInput!): JSON!
   steer_agent_task(task_id: String!, message: String!): JSON!
@@ -673,11 +991,12 @@ type Mutation {
   rescan_extensions: ExtensionsResult!
   set_extension_state(qid: String!, input: ExtensionStateInput!): JSON!
   create_mcp_connection(input: McpConnectionInput!): JSON!
-  trust_mcp_connection(conn_id: String!): JSON!
-  connect_mcp_connection(conn_id: String!): McpConnectResult!
+  set_mcp_credential(conn_id: String!, binding: String!, value: String, expected_digest: String!, kind: String! = "env"): JSON!
+  trust_mcp_connection(conn_id: String!, expected_digest: String!): JSON!
+  connect_mcp_connection(conn_id: String!, project_id: String = null): McpConnectResult!
   disconnect_mcp_connection(conn_id: String!): JSON!
-  call_mcp_tool(conn_id: String!, tool: String!, input: McpToolCallInput = null): JSON!
-  delete_mcp_connection(conn_id: String!): JSON!
+  call_mcp_tool(conn_id: String!, tool: String!, input: McpToolCallInput = null, project_id: String = null, expected_definition_digest: String = null): JSON!
+  delete_mcp_connection(conn_id: String!, expected_digest: String!): JSON!
   start_chatgpt_sign_in(account_id: String = null): JSON!
   cancel_chatgpt_sign_in(attempt_id: String!): JSON!
   refresh_chatgpt_models(account_id: String!): JSON!
@@ -689,6 +1008,51 @@ type Mutation {
   run_runbook(runbook_id: String!, profile: String! = "host"): RunbookRun!
   confirm_runbook_run(run_id: String!): RunbookRun!
   cancel_runbook_run(run_id: String!): RunbookRun!
+  save_memory(input: MemoryInput!): MemoryEntry!
+  resolve_memory_proposal(memory_id: String!, keep: Boolean!): MemoryEntry
+  preview_skill_import(input: SkillImportInput!): SkillImportPreview!
+  create_bot(input: BotInput!): Bot!
+  patch_bot(bot_id: String!, input: BotPatchInput!): Bot!
+  set_bot_state(bot_id: String!, state: String!, revision: Int = null): Bot!
+  set_bot_ceiling(bot_id: String!, revision: Int!, ceiling: BotCeilingInput!): Bot!
+  delete_bot(bot_id: String!): Bot!
+  revoke_bot_rule(bot_id: String!, rule_id: String!): Bot!
+  bot_run_now(bot_id: String!, prompt: String = null, report_to: String = null): BotRun!
+  create_schedule(conversation_id: String!, input: BotScheduleInput!): BotSchedule!
+  edit_schedule(conversation_id: String!, schedule_id: String!, input: BotScheduleEditInput!): BotSchedule!
+  rotate_webhook_secret(conversation_id: String!, schedule_id: String!): BotSchedule!
+  set_schedule_enabled(conversation_id: String!, schedule_id: String!, enabled: Boolean!, revision: Int!): BotSchedule!
+  archive_schedule(conversation_id: String!, schedule_id: String!, revision: Int!): BotSchedule!
+  run_schedule_now(conversation_id: String!, schedule_id: String!, revision: Int!): BotScheduleRun!
+  revoke_schedule_grant(conversation_id: String!, grant_id: String!): Boolean!
+  reauthorize_schedules(conversation_id: String!, grant_days: Int! = 30): [BotSchedule!]!
+  acknowledge_schedule_run(conversation_id: String!, run_id: String!): BotScheduleRun!
+  send_bot_message(input: SendBotMessageInput!): BotMessage!
+  mark_message(message_id: String!, status: String!): BotMessage!
+  save_voice_settings(input: VoiceSettingsInput!): VoiceStatus!
+}
+
+type NeedsYouItem {
+  id: String!
+  kind: String!
+  bot_id: String!
+  bot_name: String!
+  title: String!
+  detail: String!
+  scheduled: Boolean!
+  task_id: String
+  approval_id: String
+  run_id: String
+  schedule_id: String
+  memory_id: String
+  message_id: String
+  created_at: Float
+}
+
+"""An object with a Globally Unique ID"""
+interface Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
 }
 
 input NotifyInput {
@@ -699,6 +1063,43 @@ input NotifyInput {
 
 type Ok {
   ok: Boolean!
+}
+
+type OrchestratorBoard {
+  nodes: [OrchestratorNode!]!
+  rollup: OrchestratorRollup!
+}
+
+type OrchestratorNode {
+  id: String!
+  title: String!
+  role: String!
+  mode: String!
+  isolation: String
+  depends_on: [String!]!
+  blocked_by: [String!]!
+  task_id: String
+  status: String!
+  attempts: Int!
+  max_attempts: Int!
+  waiting: String
+  last_event_at: Float
+  result_summary: String!
+  error: String!
+  provider_id: String
+  model: String
+  tokens: Int!
+  cost_usd: Float
+  created_at: Float
+  updated_at: Float
+}
+
+type OrchestratorRollup {
+  total: Int!
+  counts: JSON!
+  percent_complete: Int!
+  tokens: Int!
+  cost_usd: Float
 }
 
 input PairInput {
@@ -847,6 +1248,17 @@ type ProjectTree {
 }
 
 type Query {
+  node(
+    """The ID of the object."""
+    id: ID!
+  ): Node
+  nodes(
+    """The IDs of the objects."""
+    ids: [ID!]!
+  ): [Node!]!
+  workspace_sessions(query: String! = "", archived: Boolean! = false, project_id: String = null, first: Int! = 50, after: String = null): WorkspaceSessionConnection!
+  workspace_turns(session_id: String!, first: Int = null, after: String = null, last: Int = null, before: String = null): WorkspaceTurnConnection!
+  desktop_control_status(refresh: Boolean! = false): DesktopControlStatus!
   health: Health!
   connect_info: ConnectInfo!
   machine: MachineInfo!
@@ -879,10 +1291,13 @@ type Query {
   forwards: ForwardsResult!
   displays: DisplaysResult!
   activity: ActivitySnapshot!
+  agent_task_page(cursor: String = null, status: String! = "all", search: String! = ""): JSON!
   agent_configuration: JSON!
   engine_configuration(engine_id: String!, cwd: String = null): JSON!
   engine_task_configuration(task_id: String!): JSON!
   agent_providers: [AgentProvider!]!
+  orchestrator_board: OrchestratorBoard!
+  model_routing: JSON!
   engines: [EngineDescriptor!]!
   acp_registry: JSON!
   engine_probe(engine_id: String!): EngineDescriptor!
@@ -890,6 +1305,7 @@ type Query {
   engine_diagnostics: JSON!
   agent_tasks(limit: Int! = 100): [AgentTask!]!
   agent_task(task_id: String!): AgentTask!
+  agent_task_tree(task_id: String!): JSON!
   agent_task_worktree(task_id: String!): TaskWorktree!
   agent_task_export(task_id: String!): JSON!
   agent_storage: AgentStorageStatus!
@@ -902,13 +1318,29 @@ type Query {
   custom_agent_export(agent_id: String!): CustomAgentFile!
   extensions(kind: String = null, source: String = null, enabled: Boolean = null): ExtensionsResult!
   extension(qid: String!): ExtensionEntry!
-  mcp_connections: [McpConnectionInfo!]!
+  mcp_connections(project_id: String = null): [McpConnectionInfo!]!
   chatgpt_accounts: JSON!
   chatgpt_sign_in_status(attempt_id: String!): JSON!
   runbooks(project_id: String = null): [Runbook!]!
   runbook(runbook_id: String!): RunbookDetail!
   runbook_runs(runbook_id: String = null): [RunbookRun!]!
   runbook_run(run_id: String!): RunbookRun!
+  memories(project_id: String = null, scope: String = null, agent_id: String = null, state: String = null): [MemoryEntry!]!
+  detected_skill_sources(project_id: String = null): [DetectedSkillSource!]!
+  bots(include_archived: Boolean! = false): [Bot!]!
+  bot(bot_id: String!): Bot!
+  bot_templates: [BotTemplate!]!
+  agent_tool_names: [String!]!
+  schedules(conversation_id: String!): [BotSchedule!]!
+  schedule_runs(conversation_id: String!, limit: Int! = 50): [BotScheduleRun!]!
+  needs_you(bot_id: String = null): [NeedsYouItem!]!
+  bot_messages(bot_id: String!, thread_id: String = null, limit: Int! = 100): [BotMessage!]!
+  voice_status: VoiceStatus!
+}
+
+input ReassignNodeInput {
+  provider_id: String = null
+  model: String = null
 }
 
 input RtcOfferInput {
@@ -985,6 +1417,14 @@ type SearchResults {
   results: [SearchResult!]!
 }
 
+input SendBotMessageInput {
+  to: String!
+  body: String!
+  kind: String! = "request"
+  subject: String! = ""
+  in_reply_to: String = null
+}
+
 type SessionInfo {
   id: String!
   title: String!
@@ -998,10 +1438,61 @@ type SessionInfo {
   shell: String
 }
 
+type SkillImportFile {
+  path: String!
+  bytes: Int!
+  kind: String!
+  note: String
+}
+
+input SkillImportInput {
+  version: String! = "1"
+  name: String = null
+  files: JSON = null
+  skipped: [String!] = null
+  token: String = null
+  project_id: String = null
+}
+
+type SkillImportPreview {
+  preview_id: String!
+  digest: String!
+  bundle_id: String!
+  version: String!
+  permissions_added: [String!]!
+  permissions_removed: [String!]!
+  file_count: Int!
+  bytes: Int!
+  progressive: Boolean!
+  expires_at: Float!
+  previous_revision: Int
+  skills: [SkillImportSkill!]!
+  skipped: [SkippedSkillFile!]!
+}
+
+type SkillImportSkill {
+  id: String!
+  name: String!
+  description: String!
+  files: [SkillImportFile!]!
+}
+
+type SkippedSkillFile {
+  path: String!
+  reason: String!
+}
+
 type Subscription {
   activity_events: ActivityEvent!
   agent_task_events(task_id: String!, after: Int! = 0): TaskEventEnvelope!
   notification_events: HostNotification!
+}
+
+type TaskContext {
+  used: Int
+  window: Int
+  limit: Int!
+  window_known: Boolean!
 }
 
 type TaskEventEnvelope {
@@ -1010,6 +1501,11 @@ type TaskEventEnvelope {
   task_id: String
   payload: JSON
   created_at: Float
+}
+
+type TaskUsage {
+  tokens: Int!
+  cost_usd: Float
 }
 
 type TaskWorktree {
@@ -1102,9 +1598,43 @@ input VirtualDisplayInput {
   refresh_hz: Int! = 60
 }
 
+input VoiceSettingsInput {
+  engine: String = null
+  provider: String = null
+  model: String = null
+  transcribe_model: String = null
+  voice: String = null
+  auto_send: Boolean = null
+  auto_speak: Boolean = null
+  cloud_fallback: Boolean = null
+  keep_audio: Boolean = null
+  live_provider: String = null
+  live_model: String = null
+  live_voice: String = null
+  live_transcribe_model: String = null
+  consent_provider: Boolean = null
+  consent_live: Boolean = null
+  accept_woof_license: String = null
+}
+
+type VoiceStatus {
+  available: Boolean!
+  settings: JSON!
+  engines: JSON!
+  stt: JSON!
+  live: JSON!
+}
+
 type Workspace {
   saved_at: Float
   sessions: [WorkspaceSession!]!
+}
+
+type WorkspacePageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
 }
 
 type WorkspaceRestoreResult {
@@ -1119,10 +1649,58 @@ type WorkspaceSession {
   cwd: String
 }
 
+type WorkspaceSessionConnection {
+  pageInfo: WorkspacePageInfo!
+
+  """Contains the nodes in this connection"""
+  edges: [WorkspaceSessionNodeEdge!]!
+}
+
 input WorkspaceSessionInput {
   title: String! = ""
   shell: String! = ""
   cwd: String! = ""
+}
+
+type WorkspaceSessionNode implements Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
+  canonical_id: String!
+  title: String!
+  engine: String!
+  revision: Int!
+  project_id: String
+  snapshot: JSON!
+}
+
+"""An edge in a connection."""
+type WorkspaceSessionNodeEdge {
+  """A cursor for use in pagination"""
+  cursor: String!
+
+  """The item at the end of the edge"""
+  node: WorkspaceSessionNode!
+}
+
+type WorkspaceTurnConnection {
+  edges: [WorkspaceTurnEdge!]!
+  pageInfo: WorkspacePageInfo!
+}
+
+type WorkspaceTurnEdge {
+  cursor: String!
+  node: WorkspaceTurnNode!
+}
+
+type WorkspaceTurnNode implements Node {
+  """The Globally Unique ID of this object"""
+  id: ID!
+  canonical_id: String!
+  session_id: String!
+  sequence: Int!
+  prompt: String!
+  task_id: String
+  task: JSON
 }
 
 input WorktreeActionInput {

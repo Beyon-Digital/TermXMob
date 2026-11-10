@@ -454,6 +454,41 @@ class AuthenticationService:
         expires=jwt.decode(token,options={'verify_signature':False})['exp']
         return SessionCredentials(token,raw,csrf,sid,max(0,expires-int(time())),self.session_policy.absolute_remaining(db,sid))
 
+    def renew_access(self, token: str | None) -> str | None:
+        """A fresh access token for the session behind an expired one, or None when that session may no longer act.
+
+        Only server code that already admitted a long-lived socket with this token calls it; it is never offered
+        to a client. The signature, issuer, session, revocation, session deadline, auth generation and policy
+        version are all checked, so sign-out, revocation, a reduced policy or the session's own end still stop
+        the socket. Only the five-minute access expiry is ignored.
+        """
+        if not token or len(token) > 16384:
+            return None
+        try:
+            header = jwt.get_unverified_header(token)
+            if header.get("typ") != "at+jwt" or header.get("alg") != "HS256":
+                return None
+            kid = header.get("kid")
+            if not isinstance(kid, str):
+                return None
+            with self._db() as db:
+                key = db.execute("SELECT secret FROM signing_keys WHERE id=?", (kid,)).fetchone()
+                if key is None:
+                    return None
+                claims = jwt.decode(token, key[0], algorithms=["HS256"], issuer=self.issuer, audience=self.audience,
+                                    options={"require": ["iss", "aud", "sub", "sid", "iat", "exp", "token_type", "policy_version"], "strict_aud": True, "verify_exp": False})
+                if claims["token_type"] != "access" or not isinstance(claims["sid"], str):
+                    return None
+                session = db.execute("SELECT * FROM sessions WHERE id=? AND principal_id=?", (claims["sid"], claims["sub"])).fetchone()
+                if session is None or claims.get("auth_generation", 0) != session["auth_generation"]:
+                    return None
+                principal = self._live_principal(db, session, allow_locked=True)
+                if principal is None or principal.policy_version != claims["policy_version"]:
+                    return None
+                return self._issue(db, principal, session["id"])
+        except (jwt.PyJWTError, ValueError, TypeError, KeyError):
+            return None
+
     def resolve(self, token: str | None, *, allow_locked: bool = False) -> SessionIdentity | None:
         if not token or len(token) > 16384:
             return None

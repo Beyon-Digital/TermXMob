@@ -44,6 +44,11 @@ def _connect_target(state: Any) -> tuple[str, str | None]:
     return str(target), tunnel.get("url")
 
 
+def _voice_ready(state) -> bool:
+    voice = getattr(state, "voice", None)
+    return bool(voice and voice.available())
+
+
 @strawberry.type
 class CoreQueries:
     @strawberry.field
@@ -53,7 +58,7 @@ class CoreQueries:
         # capabilities here (machine detail lives behind auth in /api/machine).
         state = info.context.state
         capabilities = dict(
-            machine_snapshot(state.store, webrtc=state.rtc.available())["capabilities"]
+            machine_snapshot(state.store, webrtc=state.rtc.available(), voice=_voice_ready(state))["capabilities"]
         )
         capabilities["agent_credentials"] = state.credentials.available()
         return T.Health.wrap(
@@ -92,7 +97,8 @@ class CoreQueries:
         state = ctx.state
         return T.MachineInfo.wrap(
             machine_snapshot(
-                state.store, state.tunnels.status_public(), webrtc=state.rtc.available()
+                state.store, state.tunnels.status_public(), webrtc=state.rtc.available(),
+                voice=_voice_ready(state),
             )
         )
 
