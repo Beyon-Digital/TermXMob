@@ -71,11 +71,12 @@ def run(destination):
         from termx.agent.secrets import CredentialStore
         from termx.agent.limits import DEFAULT_LIMITS
         state = AppState(passcode=None, credentials=CredentialStore(memory={}))
+        state.credentials.set('offline-fixture', 'offline-fixture-key-never-used')
         owner = state.identity.setup_owner('chat-fixture', 'chat-fixture-password-123')
         project = state.projects.register(str(root), name='TermX workspace')
         state.agent_store.put_provider('offline-fixture', kind='openai-compatible', name='Offline fixture account',
                                       base_url='http://127.0.0.1:1/v1', model='fixture-fast,fixture-deep',
-                                      capabilities=['chat'], secret_configured=False)
+                                      capabilities=['chat'], secret_configured=True)
         # A recorded capability response, not a replacement engine or a request
         # interceptor. Real reasoning validation and PATCH handlers consume it.
         effort = {'id': 'reasoning_effort', 'name': 'Reasoning effort', 'category': 'thought_level', 'type': 'select',
@@ -186,13 +187,13 @@ def run(destination):
                     activity.click()
                     report['checks'].append('Completed history loads once on expansion; nested persisted agents and tool results render')
 
-                    # Real model, mode and run-style mutations; no inference dispatch.
+                    # Real model, mode and runtime settings; no inference dispatch.
                     page.get_by_role('button', name='Model and effort', exact=True).click()
                     dialog = page.get_by_role('dialog', name='Model and effort', exact=True)
-                    dialog.get_by_label('Session model', exact=True).select_option('fixture-deep')
-                    expect(dialog.get_by_label('Session model', exact=True)).to_have_value('fixture-deep')
+                    dialog.get_by_role('listbox', name='Session model', exact=True).get_by_role('option', name='fixture-deep', exact=True).click()
+                    expect(dialog).to_be_hidden()
+                    expect(page.get_by_role('button', name='Model and effort', exact=True)).to_contain_text('fixture-deep')
                     assert state.workspace.session(owner, conversation['id'], turns=False)['model'] == 'fixture-deep'
-                    dialog.get_by_role('button', name='Close', exact=True).click()
                     page.get_by_role('button', name='Session mode', exact=True).click()
                     page.screenshot(path=str(output/'mode-desktop-dark.png'))
                     # The mode chooser is a popover radio group, not a dialog.
@@ -201,14 +202,23 @@ def run(destination):
                     assert state.workspace.session(owner, conversation['id'], turns=False)['mode'] == 'ask'
                     page.get_by_role('button', name='Session options', exact=True).click()
                     settings = page.get_by_role('dialog', name='Session settings', exact=True)
-                    settings.get_by_text('Extended', exact=True).click()
-                    expect(settings.get_by_role('radio', name='Extended', exact=False)).to_be_checked()
-                    assert state.workspace.session(owner, conversation['id'], turns=False)['run_limits']['max_steps'] == 1024
+                    automatic_limits = state.workspace.session(owner, conversation['id'], turns=False).get('run_limits')
+                    expect(settings.get_by_text('Run style', exact=True)).to_have_count(0)
+                    expect(settings.get_by_text('Extended', exact=True)).to_have_count(0)
+                    sections = settings.get_by_role('navigation', name='Session settings sections', exact=True)
+                    sections.get_by_role('button', name='Runtime', exact=True).click()
+                    location = settings.get_by_role('combobox', name='Session execution location', exact=True)
+                    expect(location).to_be_enabled(); location.select_option('')
+                    expect(location).to_have_value('')
+                    assert state.workspace.session(owner, conversation['id'], turns=False).get('runner_id') is None
+                    assert state.workspace.session(owner, conversation['id'], turns=False).get('run_limits') == automatic_limits
+                    sections.get_by_role('button', name='Agent', exact=True).click()
                     settings.get_by_label('Session engine', exact=True).select_option('codex')
                     fork = page.get_by_role('dialog', name='Continue with codex', exact=True)
                     expect(fork).to_be_visible(); fork.get_by_role('button', name='Close', exact=True).click()
                     assert state.workspace.session(owner, conversation['id'], turns=False)['engine'] == 'internal'
-                    report['checks'].append('Model, mode and profile choices persist; engine switch opens reviewable linked-fork flow')
+                    assert state.workspace.session(owner, conversation['id'], turns=False).get('run_limits') == automatic_limits
+                    report['checks'].append('Model and mode choices persist; local runtime and automatic limits survive settings and cancelled linked-fork flow')
 
                     # Actual appearance settings, never an injected class or stylesheet.
                     def set_theme(theme):
@@ -217,9 +227,11 @@ def run(destination):
                         page.get_by_role('button', name='Workspace actions', exact=True).click()
                         page.get_by_role('button', name='Appearance', exact=True).click()
                         preferences = page.get_by_role('dialog', name='Settings', exact=True)
-                        # Appearance lives under Preferences, which the Appearance menu entry already selects.
-                        expect(preferences.get_by_role('navigation', name='Settings categories').get_by_role('link', name='Preferences', exact=True)).to_have_attribute('aria-current', 'page')
-                        preferences.get_by_role('radio', name=theme.title(), exact=True).check()
+                        # General is a desktop link and a native Category choice on narrow screens.
+                        category = preferences.get_by_role('combobox', name='Settings category', exact=True)
+                        if category.is_visible(): expect(category).to_have_value('preferences')
+                        else: expect(preferences.get_by_role('navigation', name='Settings categories').get_by_role('link', name='General', exact=True)).to_have_attribute('aria-current', 'page')
+                        preferences.get_by_role('combobox', name='Theme preference', exact=True).select_option(theme)
                         preferences.get_by_role('button', name='Close', exact=True).click()
                         expect(page.locator('html')).to_have_attribute('data-theme', theme)
 
@@ -231,7 +243,7 @@ def run(destination):
                         assert not failures, failures
 
                     def bounds(width, height):
-                        values = page.locator('.chat-region').evaluate('''node=>{const rect=n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};const controls=[...node.querySelectorAll('.composer-controls button')].map(n=>({name:n.getAttribute('aria-label'),...rect(n),covered:!n.contains(document.elementFromPoint(n.getBoundingClientRect().x+n.clientWidth/2,n.getBoundingClientRect().y+n.clientHeight/2))}));return {region:rect(node),composer:rect(node.querySelector('.composer')),draftBody:rect(node.querySelector('.composer-draft-body')||node.querySelector('textarea[aria-label="Message"]')),controlRow:rect(node.querySelector('.composer-controls')),toolbar:rect(node.querySelector('.conversation-surface-header')),controls,overflow:node.querySelector('.composer-controls').scrollWidth>node.querySelector('.composer-controls').clientWidth,pageOverflow:document.documentElement.scrollWidth>innerWidth}}''')
+                        values = page.locator('.chat-region').evaluate('''node=>{const rect=n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};const controls=[...node.querySelectorAll('.composer-controls button')].map(n=>({name:n.getAttribute('aria-label'),...rect(n),covered:!n.contains(document.elementFromPoint(n.getBoundingClientRect().x+n.clientWidth/2,n.getBoundingClientRect().y+n.clientHeight/2))}));return {region:rect(node),composer:rect(node.querySelector('.composer')),draftBody:rect(node.querySelector('.composer-draft-body')||node.querySelector('textarea[aria-label="Message"]')),controlRow:rect(node.querySelector('.composer-controls')),toolbar:rect(node.closest('.workspace-shell').querySelector('.workspace-header')),controls,overflow:node.querySelector('.composer-controls').scrollWidth>node.querySelector('.composer-controls').clientWidth,pageOverflow:document.documentElement.scrollWidth>innerWidth}}''')
                         assert not values['overflow'] and not values['pageOverflow'], values
                         for box in [values['composer'], values['toolbar'], *values['controls']]:
                             assert box['x'] >= -1 and box['right'] <= width+1 and box['y'] >= -1 and box['bottom'] <= height+1, box
@@ -269,7 +281,7 @@ def run(destination):
                             box = model_dialog.bounding_box()
                             assert box and box['x'] >= -1 and box['x']+box['width'] <= width+1 and box['y'] >= -1 and box['y']+box['height'] <= height+1, box
                             page.screenshot(path=str(output/f'model-{width}x{height}-{theme}.png'))
-                            if (width, height) in [(1440, 1000), (390, 844)]: audit('model settings', '.session-model-settings', width, theme)
+                            if (width, height) in [(1440, 1000), (390, 844)]: audit('model settings', '.session-model-popover', width, theme)
                             page.keyboard.press('Escape')
                             print(json.dumps({'stage': 'responsive controls verified', 'width': width, 'height': height, 'theme': theme}), flush=True)
                     report['checks'].append('Composer and dialogs fit desktop, 390px, 320px and short keyboard-like viewports in both themes')
@@ -309,20 +321,25 @@ def run(destination):
                     wait_until(lambda: state.workspace.session(owner, native['id'], turns=False).get('reasoning_config', {}).get('reasoning_effort') == 'high', 'Effort was not persisted with the current revision', page=page)
                     expect(slider).to_be_enabled()
                     expect(slider).to_have_attribute('aria-valuetext', 'High')
-                    audit('effort slider', '.session-model-settings', 390, 'light')
+                    audit('effort slider', '.session-model-popover', 390, 'light')
                     page.screenshot(path=str(output/'native-effort-390-light.png'))
                     page.keyboard.press('Escape')
                     report['checks'].append('Advertised native effort slider persists using a refreshed canonical revision')
 
                     page.goto(base+'/?session='+active_conversation['id'])
                     expect(page.get_by_role('button', name='Stop task', exact=True)).to_be_visible()
+                    active_header = page.locator('.conversation-surface-header').bounding_box()
+                    assert active_header and active_header['x']>=-1 and active_header['x']+active_header['width']<=391 and active_header['y']>=-1 and active_header['y']+active_header['height']<=845, active_header
                     expect(page.get_by_text('Preparing a response', exact=True)).to_be_visible()
-                    expect(page.locator('.response-skeleton')).to_have_count(1)
+                    expect(page.locator('.response-loader.is-loading')).to_be_visible()
+                    expect(page.locator('.response-skeleton')).to_have_count(0)
                     page.screenshot(path=str(output/'working-loader-390-light.png'))
                     page.get_by_role('button', name='Session options', exact=True).click()
                     settings = page.get_by_role('dialog', name='Session settings', exact=True)
                     expect(settings.get_by_label('Session engine', exact=True)).to_be_disabled()
-                    for radio in settings.get_by_role('radio').all(): expect(radio).to_be_disabled()
+                    settings.get_by_role('navigation', name='Session settings sections', exact=True).get_by_role('button', name='Runtime', exact=True).click()
+                    expect(settings.get_by_role('combobox', name='Session execution location', exact=True)).to_be_disabled()
+                    assert state.workspace.session(owner, active_conversation['id'], turns=False).get('run_limits') == automatic_limits
                     page.keyboard.press('Escape')
                     report['checks'].append('Active task loader and stop action render; execution settings remain immutable')
                     assert not report['errors'], report['errors']

@@ -18,7 +18,9 @@ from playwright.sync_api import expect, sync_playwright
 
 def contrast(hex_one,hex_two):
     def light(value):
-        value=value.strip().lstrip('#');channels=[int(value[i:i+2],16)/255 for i in (0,2,4)]
+        value=value.strip().lstrip('#')
+        if len(value)==3:value=''.join(channel*2 for channel in value)
+        channels=[int(value[i:i+2],16)/255 for i in (0,2,4)]
         linear=[x/12.92 if x<=.04045 else ((x+.055)/1.055)**2.4 for x in channels]
         return sum(a*b for a,b in zip(linear,(.2126,.7152,.0722)))
     first,second=sorted((light(hex_one),light(hex_two)),reverse=True)
@@ -37,8 +39,9 @@ def run(destination, axe_source):
     with tempfile.TemporaryDirectory(prefix='termx-a11y-proof-') as scratch:
         root=Path(scratch);os.environ['TERMX_CONFIG_DIR']=str(root/'config');os.environ['TERMX_AGENTS_DIR']=str(root/'agents');os.environ['TERMX_ENGINE_STARTUP_REFRESH']='0'
         from termx.app import AppState,create_app
+        from termx.agent.secrets import CredentialStore
         (root/'a11y.py').write_text('def greet(name):\n    # Visible syntax contrast fixture\n    return f"Hello {name}"\n')
-        state=AppState(passcode=None);owner=state.identity.setup_owner('accessibility-owner','accessibility-fixture-password-123')
+        state=AppState(passcode=None,credentials=CredentialStore(memory={}));owner=state.identity.setup_owner('accessibility-owner','accessibility-fixture-password-123')
         project=state.projects.register(str(root),name='Accessibility fixture')
         from workspace_ui_snapshot import snapshot_ui
         app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))
@@ -85,9 +88,11 @@ def run(destination, axe_source):
                             page.get_by_role('button',name='Workspace actions',exact=True).click()
                             page.get_by_role('button',name='Appearance',exact=True).click()
                             preferences=page.get_by_role('dialog',name='Settings',exact=True)
-                            # Appearance now lives under the Preferences category; settings navigation items are links.
-                            expect(preferences.get_by_role('navigation',name='Settings categories').get_by_role('link',name='Preferences',exact=True)).to_have_attribute('aria-current','page')
-                            preferences.get_by_role('radio',name=theme.title(),exact=True).check()
+                            # General is selected through links on desktop and a native category chooser on narrow screens.
+                            category=preferences.get_by_role('combobox',name='Settings category',exact=True)
+                            if category.is_visible():expect(category).to_have_value('preferences')
+                            else:expect(preferences.get_by_role('navigation',name='Settings categories').get_by_role('link',name='General',exact=True)).to_have_attribute('aria-current','page')
+                            preferences.get_by_role('combobox',name='Theme preference',exact=True).select_option(theme)
                             preferences.get_by_role('button',name='Close',exact=True).click()
                             expect(preferences).to_be_hidden()
                             expect(page.locator('html')).to_have_attribute('data-theme',theme)

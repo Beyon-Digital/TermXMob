@@ -42,17 +42,21 @@ def run(destination):
                 page.get_by_role('button',name='Settings',exact=True).wait_for(timeout=20000)
                 sidebar=page.get_by_role('complementary',name='Chats and agents',exact=True)
                 workspace_nav=page.get_by_role('navigation',name='Workspace navigation',exact=True)
-                # With the sidebar pinned, the icon rail is hidden and the sidebar footer holds the one Settings entry.
-                opener=sidebar.get_by_role('button',name='Settings',exact=True)
+                # One persistent Settings entry lives in the activity rail.
+                opener=workspace_nav.get_by_role('button',name='Settings',exact=True)
                 assert opener.count()==1
-                assert workspace_nav.get_by_role('button',name='Settings',exact=True).count()==0
+                assert sidebar.get_by_role('button',name='Settings',exact=True).count()==0
                 assert sidebar.get_by_role('button',name='Access & sessions',exact=True).count()==0
                 assert sidebar.get_by_role('button',name='Main agent').count()==1
                 page.screenshot(path=str(output/'drawer-desktop.png'))
                 opener.click()
                 dialog=page.get_by_role('dialog',name='Settings',exact=True);dialog.wait_for()
-                categories=['Preferences','Characters','Models & engines','Voice','Cloud accounts','Agents','Bots','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Safety & Auto Review']
+                categories=['General','Characters','Models & engines','Voice','Cloud accounts','Agents','Bots','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Safety & auto review']
                 nav=dialog.get_by_role('navigation',name='Settings categories')
+                mobile_category=dialog.get_by_role('combobox',name='Settings category',exact=True)
+                def choose_category(label):
+                    if mobile_category.is_visible():mobile_category.select_option(label=label)
+                    else:nav.get_by_role('link',name=label,exact=True).click()
                 assert nav.get_by_role('link').count()==len(categories)
                 for category in categories:
                     assert nav.get_by_role('link',name=category,exact=True).count()==1
@@ -69,17 +73,21 @@ def run(destination):
                 for width,height in [(1440,1000),(768,900),(390,844)]:
                     page.set_viewport_size({'width':width,'height':height})
                     for theme in ['dark','light']:
-                        nav.get_by_role('link',name='Preferences',exact=True).click()
-                        dialog.get_by_role('radio',name=theme.title(),exact=True).check()
+                        choose_category('General')
+                        dialog.get_by_role('combobox',name='Theme preference',exact=True).select_option(theme)
                         assert page.locator('html').get_attribute('data-theme')==theme
                         page.wait_for_timeout(100)
                         # Take a real category view, without mock layout or hidden controls.
-                        nav.get_by_role('link',name='Memory',exact=True).click()
+                        choose_category('Memory')
                         dialog.get_by_text('Use verified TLS for LAN connections',exact=True).wait_for()
                         bounds=dialog.bounding_box();assert bounds and bounds['x']>=-1 and bounds['x']+bounds['width']<=width+1
                         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-                        category_layout=nav.evaluate('(node)=>({scroll:node.scrollWidth,width:node.clientWidth,display:getComputedStyle(node).display})')
-                        if width==390:assert category_layout['scroll']>category_layout['width'] and category_layout['display']=='flex'
+                        category_control=mobile_category if width<=768 else nav
+                        category_layout=category_control.evaluate('(node)=>({scroll:node.scrollWidth,width:node.clientWidth,height:node.getBoundingClientRect().height,display:getComputedStyle(node).display})')
+                        if width<=768:
+                            expect(mobile_category).to_be_visible();expect(mobile_category).to_have_value('memory')
+                            assert mobile_category.get_by_role('option').count()==len(categories)
+                            assert category_layout['height']>=44 and category_layout['scroll']<=category_layout['width']
                         # Focus remains inside the modal across forward/backward tab cycles.
                         for key in ['Tab','Shift+Tab']*8:
                             page.keyboard.press(key);assert dialog.evaluate('(node)=>node.contains(document.activeElement)')

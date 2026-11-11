@@ -223,4 +223,3 @@ class ElevenLabsMusicAdapter:
         finally:
             if own_client:
                 await client.aclose()
-
