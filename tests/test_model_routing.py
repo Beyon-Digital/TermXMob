@@ -191,7 +191,7 @@ def test_without_a_route_the_child_gets_the_provider_default_model(tmp_path: Pat
     asyncio.run(run())
 
 
-def test_max_output_tokens_comes_from_model_meta(tmp_path: Path) -> None:
+def test_output_tokens_are_limited_only_by_explicit_provider_or_model_settings(tmp_path: Path) -> None:
     manager, store = _routed(tmp_path, FakeAdapter())
     manager._adapter_factory = manager._default_adapter
     provider = dict(store.get_provider("fake"))
@@ -201,12 +201,18 @@ def test_max_output_tokens_comes_from_model_meta(tmp_path: Path) -> None:
         return adapter._turn_payload(prompt="x", cwd=str(tmp_path), manifest={}, previous_response_id=None,
                                      input_items=None, read_only=True)
 
-    assert payload_for("fake-model")["max_output_tokens"] == 1000
-    assert payload_for("big-model")["max_output_tokens"] == 8000
-    # Unknown stays unknown: the previous default applies and nothing is enforced.
+    assert "max_output_tokens" not in payload_for("fake-model")
+    assert "max_output_tokens" not in payload_for("big-model")
+    # Missing discovered metadata also leaves the request unrestricted.
     store.set_provider_catalog("fake", {"fake-model": _info()}, refreshed_at=NOW)
     provider = dict(store.get_provider("fake"))
-    assert payload_for("fake-model")["max_output_tokens"] == 2200
+    assert "max_output_tokens" not in payload_for("fake-model")
+    manager.save_provider(provider_id="fake", kind=provider["kind"], name=provider["name"],
+        base_url=provider["base_url"], model=provider["model"], capabilities=provider["capabilities"],
+        limits={"max_output_tokens": 75_000}, model_meta={"fake-model": {"max_output": 60_000}})
+    provider = dict(store.get_provider("fake"))
+    assert payload_for("fake-model")["max_output_tokens"] == 60_000
+    assert payload_for("big-model")["max_output_tokens"] == 75_000
     store.close()
 
 
@@ -435,34 +441,31 @@ async def _auto_start(tmp_path: Path, monkeypatch, adapter, ceilings, model="fak
     return manager, store, task
 
 
-def test_token_ceiling_pauses_auto_mode(tmp_path: Path, monkeypatch) -> None:
+def test_auto_token_usage_exceeds_legacy_ceiling_without_pausing(tmp_path: Path, monkeypatch) -> None:
     async def run() -> None:
         adapter = UsageAdapter([("", [_shell("c1", "rm -rf one")]), ("", [_shell("c2", "rm -rf two")])],
                                {"input_tokens": 700, "output_tokens": 400})
         manager, store, task = await _auto_start(tmp_path, monkeypatch, adapter, {"tokens": 1000})
         await _approve_plan(manager, store, task["id"])
-        await wait_for_pending_approval(store, task["id"], "budget")
-        ceiling = _events(store, task["id"], "auto.ceiling")
-        assert [e["payload"]["ceiling"] for e in ceiling] == ["tokens"]
-        assert ceiling[0]["payload"]["used"] == 1100
-        assert _auto(store, task["id"])["used"]["tokens"] == 1100
+        await wait_for_status(store, task["id"], "completed")
+        assert not _events(store, task["id"], "auto.ceiling")
+        assert _auto(store, task["id"])["used"]["tokens"] >= 2200
         await manager.close()
         store.close()
 
     asyncio.run(run())
 
 
-def test_cost_ceiling_pauses_when_the_price_is_known(tmp_path: Path, monkeypatch) -> None:
+def test_auto_priced_usage_exceeds_legacy_cost_ceiling_without_pausing(tmp_path: Path, monkeypatch) -> None:
     async def run() -> None:
         # fake-model: $1 in / $2 out per 1M. One turn = $3.
         adapter = UsageAdapter([("", [_shell("c1", "rm -rf one")]), ("", [_shell("c2", "rm -rf two")])],
                                {"input_tokens": 1_000_000, "output_tokens": 1_000_000})
         manager, store, task = await _auto_start(tmp_path, monkeypatch, adapter, {"cost_usd": 2.5, "tokens": 1_000_000_000})
         await _approve_plan(manager, store, task["id"])
-        await wait_for_pending_approval(store, task["id"], "budget")
-        ceiling = _events(store, task["id"], "auto.ceiling")
-        assert [e["payload"]["ceiling"] for e in ceiling] == ["cost_usd"]
-        assert ceiling[0]["payload"]["limit"] == 2.5 and ceiling[0]["payload"]["used"] == pytest.approx(3.0)
+        await wait_for_status(store, task["id"], "completed")
+        assert not _events(store, task["id"], "auto.ceiling")
+        assert _auto(store, task["id"])["used"]["cost_usd"] >= 6.0
         await manager.close()
         store.close()
 

@@ -21,6 +21,6 @@ it('lists plan and Auto notes as quiet lines in the activity disclosure',async()
  const {container}=render(<ConversationMessage role="assistant" text="" task={{...base,status:'running',approvals:[],events}} {...handlers}/>);
  fireEvent.click(screen.getByRole('button',{name:/Working on your request/}));
  const list=screen.getByRole('list',{name:'Plan and Auto notes'});
- expect([...list.querySelectorAll('li')].map(item=>item.textContent)).toEqual(['You asked for changes: Skip the migration','Auto approved 2 calls: read_file, edit_file','Auto paused at its tool-call limit (100 of 100). Approve more budget in the request below to continue.']);
+ expect([...list.querySelectorAll('li')].map(item=>item.textContent)).toEqual(['You asked for changes: Skip the migration','Auto approved 2 calls: read_file, edit_file','Auto paused at a previous tool-call limit (100 of 100).']);
  await expectNoAxeViolations(container);
 });

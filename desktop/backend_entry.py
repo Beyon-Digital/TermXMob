@@ -3,7 +3,12 @@ import sys
 # The frozen executable can run only explicitly bundled runtime modules.
 # It never interprets arbitrary scripts/modules or acts as the target interpreter.
 if __name__ == '__main__':
-    if sys.argv[1:] == ['--runtime-probe']:
+    if sys.argv[1:] == ['--runtime-module', 'termx.workspace.workflows.worker']:
+        # Start before bundle configuration or CLI execution: stdout belongs
+        # solely to bounded worker JSON-lines and stdin is the parent pipe.
+        from termx.workspace.workflows.worker import main
+        raise SystemExit(main())
+    elif sys.argv[1:] == ['--runtime-probe']:
         import json
         from termx.desktop.runtime import probe
         print(json.dumps(probe()))

@@ -257,8 +257,8 @@ class DesktopPrefs:
 
 @dataclass
 class AgentPrefs:
-    limits: dict[str, int] = field(default_factory=lambda: _agent_limits())
-    provider_timeout_s: int = 300
+    limits: dict[str, int | None] = field(default_factory=lambda: _agent_limits())
+    provider_timeout_s: int | None = None
     engines: dict[str, dict[str, Any]] = field(default_factory=dict)
     acp_runners: dict[str, dict[str, Any]] = field(default_factory=dict)
     # {role: {provider_id, model, fallbacks: [{provider_id, model}]}} for the roles in ROUTING_ROLES.
@@ -306,9 +306,11 @@ def _agent_prefs(raw: dict[str, Any]) -> AgentPrefs:
         raise ValueError("agent configuration must be an object")
     if raw.keys() - {"limits", "provider_timeout_s", "engines", "acp_runners", "routing"}:
         raise ValueError("unknown agent configuration field")
-    timeout = raw.get("provider_timeout_s", 300)
-    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
-        raise ValueError("provider_timeout_s must be an integer between 1 and 86400")
+    legacy_timeout = raw.get("provider_timeout_s")
+    if legacy_timeout is not None and (isinstance(legacy_timeout, bool) or not isinstance(legacy_timeout, int) or legacy_timeout < 1):
+        raise ValueError("provider_timeout_s must be a positive integer or null")
+    # Provider request bounds belong to explicit per-provider configuration.
+    timeout = None
     engines = raw.get("engines", {})
     if not isinstance(engines, dict):
         raise ValueError("agent.engines must be an object")

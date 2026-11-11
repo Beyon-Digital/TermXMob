@@ -37,6 +37,7 @@ class EngineGateway:
         self._emit = emit
         self._adapters: dict[str, EngineAdapter] = {}
         self.browser_service = None
+        self.workflow_tools = None
         # set by AppState: resolve connection.<id> -> ConnectionDef-like obj
         self.mcp_resolver: Any = None
         self.credential_lookup: Any = None  # ref -> secret
@@ -61,6 +62,8 @@ class EngineGateway:
     def register(self, adapter: EngineAdapter) -> None:
         if self.browser_service is not None:
             adapter.browser_service = self.browser_service
+        if self.workflow_tools is not None:
+            adapter.workflow_tools = self.workflow_tools
         self._adapters[adapter.descriptor().id] = adapter
 
     def set_browser_service(self, service) -> None:
@@ -71,6 +74,11 @@ class EngineGateway:
         service.task_live = lambda task_id: (self._store.get_task(task_id) or {}).get('status') in ACTIVE_STATUSES - {'cancelling'}
         for adapter in self._adapters.values():
             adapter.browser_service = service
+
+    def set_workflow_tools(self, service) -> None:
+        self.workflow_tools = service
+        for adapter in self._adapters.values():
+            adapter.workflow_tools = service
 
     def adapter(self, engine: str) -> EngineAdapter:
         try:

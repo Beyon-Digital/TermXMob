@@ -44,6 +44,7 @@ type AgentProvider {
   selected_models: [String!]
   model_catalog: JSON
   model_overrides: JSON
+  limits: JSON
   catalog_refreshed_at: Float
   catalog_error: String
   wire: String
@@ -63,6 +64,7 @@ input AgentProviderInput {
   api_key: String = null
   model_meta: JSON = null
   wire: String = null
+  limits: JSON = null
 }
 
 input AgentRetentionInput {

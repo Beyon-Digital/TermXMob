@@ -225,3 +225,29 @@ def test_queue_reviewer_account_rotation_requires_new_binding_without_exposing_c
     after=queue.binding(origin.principal,row['id']);assert after!=before
     assert 'private-key' not in str(after) and 'fixture.invalid' not in str(after)
     records.delete('reviewer-config','active');assert queue.binding(origin.principal,row['id'])!=after
+
+
+@pytest.mark.anyio
+async def test_legacy_queued_limits_do_not_block_explicit_renewal_or_exact_dispatch(queued):
+    queue,workspace,origin,credentials,row,agent=queued
+    item=queue.enqueue(origin.principal,row['id'],sid=origin.session_id,prompt='Continue queued work',
+        request_id='legacy-limit-request',limits={'max_steps':1})
+    saved=queue.store.get('prompt_queue',item['id'])
+    assert all(value is None for value in saved['limits'].values())
+    with pytest.raises(Conflict,match='different content'):
+        queue.enqueue(origin.principal,row['id'],sid=origin.session_id,prompt='Continue queued work',
+            request_id='legacy-limit-request',limits={'max_steps':2})
+    # A pre-upgrade queue row can still contain numeric task quotas. Renewing
+    # current consent must preserve its target and remove quota enforcement.
+    blocked=queue.store.update('prompt_queue',item['id'],{**saved,'status':'blocked',
+        'limits':{'max_steps':1000,'max_seconds':18000,'shell_timeout_s':120},'reason':'Review current target'})
+    current=queue.current(origin.principal,item['id'])
+    queue.renew(origin.principal,item['id'],sid=origin.session_id,revision=blocked['revision'],
+        target_digest=current['target_digest'])
+    await queue.tick()
+    dispatched=queue.store.get('prompt_queue',item['id'])
+    assert dispatched['status']=='dispatched' and len(agent.calls)==1
+    assert all(value is None for value in agent.calls[0]['limits'].values())
+    assert agent.calls[0]['prompt']=='Continue queued work'
+    await queue.tick()
+    assert len(agent.calls)==1

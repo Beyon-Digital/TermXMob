@@ -18,19 +18,19 @@ def test_managed_provider_media_declarations_and_safe_rotation(tmp_path):
         assert response.status_code == 200
         return response.json()
 
-    result = save(capabilities=['image','audio'], api_key='isolated-first-key')
+    result = save(capabilities=['image','video','audio'], api_key='isolated-first-key')
     assert not result.get('errors'), result
-    assert set(result['data']['save_agent_provider']['capabilities']) == {'image','audio'}
+    assert set(result['data']['save_agent_provider']['capabilities']) == {'image','video','audio'}
     inventory = client.post('/graphql', headers=owner, json={
         'query':'{agent_providers{id kind capabilities secret_configured}}'}).json()
     row = next(row for row in inventory['data']['agent_providers'] if row['id']=='media-account')
-    assert row['kind']=='openai-compatible' and set(row['capabilities'])=={'image','audio'}
+    assert row['kind']=='openai-compatible' and set(row['capabilities'])=={'image','video','audio'}
     assert row['secret_configured'] is True and 'isolated-first-key' not in str(inventory)
     # A legacy credential-only update omits capabilities; it cannot erase media
     # declarations or silently add a different account capability.
     rotated = save(api_key='isolated-rotated-key')
     assert not rotated.get('errors'), rotated
-    assert set(rotated['data']['save_agent_provider']['capabilities'])=={'image','audio'}
+    assert set(rotated['data']['save_agent_provider']['capabilities'])=={'image','video','audio'}
     assert state.credentials.get('media-account')=='isolated-rotated-key'
     edited = save(capabilities=['image'], api_key=None)
     assert not edited.get('errors'), edited

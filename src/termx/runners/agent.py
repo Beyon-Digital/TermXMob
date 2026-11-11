@@ -117,8 +117,8 @@ class RunnerAgentService:
             if preset['workspace_revision']!=custom_agent.get('workspace_revision'):raise HTTPException(409,'Agent preset changed before runner admission')
             if not set(preset.get('tools') or []).issubset(set(admission['capabilities']['tools'])):raise HTTPException(409,'Runner image does not support this preset tool set')
         bounded=self.state.agent._limits({**(preset.get('limits') or {}),**(limits or {})} if preset else limits)
-        bounded['max_seconds']=min(bounded['max_seconds'],int(runner['expires']-time()),3600)
-        bounded['shell_timeout_s']=min(bounded['shell_timeout_s'],bounded['max_seconds'])
+        bounded['max_seconds']=min(bounded['max_seconds'] or 3600,int(runner['expires']-time()),3600)
+        bounded['shell_timeout_s']=min(bounded['shell_timeout_s'] or bounded['max_seconds'],bounded['max_seconds'])
         if bounded['max_seconds']<1:raise HTTPException(409,'Runner lease expired')
         original_limits=self.state.agent._limits({**(preset.get('limits') or {}),**(limits or {})} if preset else limits)
         request={'prompt':prompt,'model':provider['model'],'mode':mode,'limits':bounded,'attachments':attachments,'conversation_id':conversation_id,'provider_id':provider_id,'credential_ref':credential_ref,'custom_agent':preset}

@@ -1,5 +1,7 @@
 """Complete external app layouts must bypass PyInstaller's partial binary cache."""
 import importlib.util
+import ast
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -15,6 +17,40 @@ def sidecar_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_frozen_data_sql_parsers_use_the_sidecar_dialect_recipe(tmp_path):
+    """Exercise lazy parser loading in a real freezer, without a source checkout."""
+    pytest.importorskip('PyInstaller', reason='install the packaging group for actual freezer qualification')
+    from PyInstaller.utils.hooks import collect_submodules
+
+    root = Path(__file__).resolve().parents[1]
+    recipe = root / 'desktop/termx-backend.spec'
+    tree = ast.parse(recipe.read_text())
+    assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == 'hiddenimports'
+                              for target in node.targets))
+    hiddenimports = eval(compile(ast.Expression(assignment.value), str(recipe), 'eval'),
+                         {'collect_submodules': collect_submodules})
+    # Use the production recipe's SQLGlot imports, rather than repeating a
+    # separate freezer configuration which could hide a broken app recipe.
+    parser_imports = [name for name in hiddenimports if name.startswith('sqlglot.')]
+    source = tmp_path / 'data_parser_probe.py'
+    source.write_text('import json, sqlglot\n'
+                      'print(json.dumps({dialect: str(sqlglot.parse_one("SELECT 1", read=dialect))\n'
+                      '                  for dialect in ("sqlite", "postgres", "mysql")}))\n')
+    env = dict(os.environ, PYINSTALLER_CONFIG_DIR=str(tmp_path / 'config'))
+    subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
+                    '--log-level', 'WARN', '--distpath', str(tmp_path / 'dist'),
+                    '--workpath', str(tmp_path / 'work'), '--specpath', str(tmp_path),
+                    *['--hidden-import=' + name for name in parser_imports], str(source)],
+                   cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=180)
+    binary = tmp_path / 'dist/data_parser_probe' / ('data_parser_probe.exe' if os.name == 'nt'
+                                                  else 'data_parser_probe')
+    env.pop('PYTHONPATH', None)
+    result = subprocess.run([str(binary)], cwd=tmp_path, env=env, check=True,
+                            capture_output=True, text=True, timeout=30)
+    assert json.loads(result.stdout) == {name: 'SELECT 1' for name in ('sqlite', 'postgres', 'mysql')}
 
 
 def test_macos_excludes_unused_x11_but_preserves_pillow_and_other_platforms():

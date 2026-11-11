@@ -39,15 +39,15 @@ class ManyReads(FakeAdapter):
 def test_internal_task_survives_more_than_old_default_requests(tmp_path):
     (tmp_path / "sample.txt").write_text("sample")
     async def run():
-        adapter = ManyReads()
+        adapter = ManyReads(300)
         manager, store = build_manager(tmp_path, adapter)
         try:
             task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
                                              provider_id="fake", mode="ask")
             done = await wait_for_status(store, task["id"], "completed", timeout=10)
             assert done["result"] == "verified"
-            assert adapter.turns == 31
-            assert len([e for e in store.events(task["id"]) if e["type"] == "tool.finished"]) == 30
+            assert adapter.turns == 301
+            assert len([e for e in store.events(task["id"]) if e["type"] == "tool.finished"]) == 300
             assert not any(e["type"] == "task.failed" for e in store.events(task["id"]))
         finally:
             await manager.close()
@@ -55,32 +55,40 @@ def test_internal_task_survives_more_than_old_default_requests(tmp_path):
     asyncio.run(run())
 
 
-def test_budget_approval_resumes_without_replaying_tools_after_restart(tmp_path):
+@pytest.mark.parametrize("reason", ["shared_max_steps", "auto_tokens"])
+def test_legacy_budget_approval_resumes_without_numeric_limits_after_restart(tmp_path, reason):
     (tmp_path / "sample.txt").write_text("sample")
     async def run():
-        adapter = ManyReads(2)
+        adapter = ManyReads(0)
         manager, store = build_manager(tmp_path, adapter)
-        task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
-                                         provider_id="fake", mode="ask", limits={"max_steps": 1})
-        paused = await wait_for_status(store, task["id"], "awaiting_approval")
-        assert paused["runtime"]["step"] == 1
-        approval = store.approvals(task["id"])[-1]
-        assert approval["kind"] == "budget"
+        task = store.create_task(prompt="Inspect", cwd=str(tmp_path), provider_id="fake",
+            model="fake-model", mode="ask", limits={"max_steps": 1, "max_seconds": 1})
+        manager.tree_budget.reserve(task["id"], ["completed-read-1"])
+        history = [{"type": "function_call_output", "call_id": "read-1", "output": "saved result"}]
+        parked = ProviderCall("function", "read-2", "read_file", {"path": "sample.txt"})
+        store.update_task(task["id"], status="awaiting_approval", runtime={"history": history,
+            "step": 1, "tree_pending_calls": [manager._call_payload(parked)],
+            "auto": {"enabled": False, "calls": 99, "tokens": 456, "cost_usd": 7.0}})
+        approval = store.create_approval(task["id"], "budget", {
+            "reason": reason, "tree_budget": manager.tree_budget.snapshot(task["id"]),
+            "suggested_limits": {"max_steps": 2}})
         await manager.close()
         store.close()
         manager, store = build_manager(tmp_path, adapter)
         try:
             assert store.get_task(task["id"])["status"] == "awaiting_approval"
-            with pytest.raises(ValueError, match="must exceed"):
-                await manager.resolve_approval(task["id"], approval["id"], "approved",
-                                               limits={"max_steps": 1})
-            assert store.get_approval(approval["id"])["status"] == "pending"
-            await manager.resolve_approval(task["id"], approval["id"], "approved", limits={"max_steps": 10})
-            await wait_for_status(store, task["id"], "completed")
+            assert adapter.turns == 0
+            await manager.resolve_approval(task["id"], approval["id"], "approved")
+            done = await wait_for_status(store, task["id"], "completed")
+            assert all(value is None for value in done["limits"].values())
             finished = [e["payload"]["call_id"] for e in store.events(task["id"])
                         if e["type"] == "tool.finished"]
-            assert finished == ["read-1", "read-2"]
+            assert finished == ["read-2"]
             assert any(i.get("call_id") == "read-1" for i in adapter.seen[-1])
+            assert manager.tree_budget.snapshot(task["id"])["used_steps"] == 2
+            assert done["runtime"]["auto"]["calls"] == 99
+            assert done["runtime"]["auto"]["tokens"] == 456
+            assert done["runtime"]["auto"]["cost_usd"] == 7.0
             with pytest.raises(ValueError):
                 await manager.resolve_approval(task["id"], approval["id"], "approved")
         finally:
@@ -89,17 +97,15 @@ def test_budget_approval_resumes_without_replaying_tools_after_restart(tmp_path)
     asyncio.run(run())
 
 
-def test_time_budget_pauses_and_approval_renews_clock(tmp_path):
+def test_old_task_time_limit_does_not_stop_a_task_after_four_hours(tmp_path):
     async def run():
         manager, store = build_manager(tmp_path, ManyReads(0))
         try:
             task = store.create_task(prompt="Inspect", cwd=str(tmp_path), provider_id="fake",
-                                     model="fake-model", limits=resolve_limits({"max_seconds": 1}), mode="ask")
-            await manager._drive(task["id"], started_at=monotonic() - 2)
-            approval = store.approvals(task["id"])[-1]
-            assert approval["payload"]["reason"] == "max_seconds"
-            await manager.resolve_approval(task["id"], approval["id"], "approved")
-            await wait_for_status(store, task["id"], "completed")
+                model="fake-model", limits={"max_seconds": 1, "max_steps": 1}, mode="ask")
+            await manager._drive(task["id"], started_at=monotonic() - 18_000)
+            assert store.get_task(task["id"])["status"] == "completed"
+            assert not store.approvals(task["id"])
         finally:
             await manager.close()
             store.close()
@@ -113,7 +119,7 @@ def test_host_configuration_persists_and_does_not_silently_clamp(tmp_path):
             "args": ["acp"], "env_names": ["DEVIN_API_KEY"], "mode": "code",
             "model": "fast", "config_options": {"safe": True}}}})
     assert ConfigStore(store.path).get().agent == prefs
-    assert resolve_limits(prefs.limits)["max_steps"] == 2000
+    assert all(value is None for value in resolve_limits(prefs.limits).values())
     for patch in ({"limits": {"max_steps": 0}}, {"provider_timeout_s": True},
                   {"engines": {"devin": {"env": {"SECRET": "value"}}}}):
         with pytest.raises(ValueError):
@@ -122,7 +128,7 @@ def test_host_configuration_persists_and_does_not_silently_clamp(tmp_path):
 
 
 @pytest.mark.parametrize("limits", [{"max_steps": 1.2}, {"max_steps": "100"},
-                                   {"max_runs": 50}, {"max_seconds": None}, {"max_steps": True}])
+                                   {"max_runs": 50}, {"max_seconds": 0}, {"max_steps": True}])
 def test_invalid_run_limits_are_actionable(limits):
     with pytest.raises(ValueError):
         resolve_limits(limits)
@@ -136,12 +142,12 @@ def test_graphql_host_agent_configuration_is_applied_and_reloaded(tmp_path):
                    variables={"input": {"limits": {"max_steps": 1500, "max_seconds": 14400,
                         "shell_timeout_s": 120, "max_parallel_subagents": 3,
                         "max_subagents_total": 8}, "provider_timeout_s": 500}}, headers=headers)
-        assert out["update_agent_configuration"]["limits"]["max_steps"] == 1500
-        assert state.agent._limits(None)["max_steps"] == 1500
+        assert out["update_agent_configuration"]["limits"]["max_steps"] is None
+        assert state.agent._limits(None)["max_steps"] is None
         out = data(client, "{ agent_configuration }", headers=headers)
-        assert out["agent_configuration"]["provider_timeout_s"] == 500
+        assert out["agent_configuration"]["provider_timeout_s"] is None
         assert err_status(client, '{ agent_configuration }') == 401
-    assert ConfigStore(state.store.path).get().agent.limits["max_steps"] == 1500
+    assert ConfigStore(state.store.path).get().agent.limits["max_steps"] is None
 
 
 @pytest.mark.parametrize("visible_output", [False, True])

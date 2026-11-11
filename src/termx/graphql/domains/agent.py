@@ -498,6 +498,7 @@ class AgentMutations:
                 api_key=input.api_key,
                 model_meta=input.model_meta,
                 wire=input.wire,
+                limits=input.limits,
             )
         except (ValueError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

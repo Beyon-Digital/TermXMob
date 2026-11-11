@@ -844,6 +844,11 @@ def test_provider_runtime_updates_timeout_without_replacing_active_request_setti
             assert same is client
             assert started_request.extensions["timeout"]["read"] == 5
             assert next_request.extensions["timeout"]["read"] == 30
+            unlimited = runtime.client_for("fixture", timeout_s=None, headers={})
+            unlimited_request = unlimited.build_request("GET", "https://fixture.invalid")
+            assert unlimited is client
+            assert set(unlimited_request.extensions["timeout"].values()) == {None}
+            assert next_request.extensions["timeout"]["read"] == 30
         finally:
             await runtime.aclose()
     asyncio.run(run())
@@ -859,13 +864,13 @@ def test_run_check_ask_refusal(env):
     assert outcome.result["ok"] is False and outcome.result["refused"] is True
 
 
-def test_run_check_timeout_clamped(env):
+def test_run_check_explicit_timeout_is_not_clamped_by_legacy_task_settings(env):
     from termx.agent.tools.shell import _shell_timeout
 
     _, make_ctx, _ = env
     ctx = make_ctx()
     call = _call("run_check", {"kind": "test", "command": "x", "timeout_s": 600})
-    assert _shell_timeout(call, ctx, 300.0) == 30.0  # task limit is 30 in env
+    assert _shell_timeout(call, ctx, 300.0) == 600.0
 
 
 def test_stream_redactor_splits_secret():

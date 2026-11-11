@@ -295,7 +295,7 @@ class OrchestratorService:
                 from termx.agent.limits import DEFAULT_LIMITS
                 roots=self.workspace.active(row['parent_session_id'])
                 allowance=(roots[-1].get('limits') or DEFAULT_LIMITS)['max_parallel_subagents'] if roots else DEFAULT_LIMITS['max_parallel_subagents']
-                if len(active)>allowance:raise Conflict('Returning this conversation would exceed the main agent active worker allowance')
+                if allowance is not None and len(active)>allowance:raise Conflict('Returning this conversation would exceed the main agent active worker allowance')
             updated = self.store.update('delegated_session', identifier,
                 {**row, 'control_owner': owner}, revision)
             self.store.log(principal.id, 'conversation', identifier, 'orchestrator.control', {'owner': owner})

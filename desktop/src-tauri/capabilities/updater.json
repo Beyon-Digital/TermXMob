@@ -4,5 +4,9 @@
   "description": "Only the bundled software update window can check, download, install, or restart.",
   "windows": ["updater"],
   "local": true,
-  "permissions": ["allow-desktop-update-state", "allow-desktop-update-action"]
+  "permissions": [
+    "allow-desktop-update-state",
+    "allow-desktop-update-action",
+    "notification:allow-is-permission-granted"
+  ]
 }

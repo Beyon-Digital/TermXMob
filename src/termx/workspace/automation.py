@@ -19,6 +19,13 @@ from termx.workspace.bot_triggers import is_event
 from termx.workspace.schedule_spec import next_run
 
 
+def _scheduled_command_limits(value):
+    """Keep command-runbook deadlines separate from unlimited agent tasks."""
+    resolve_limits(value)  # Validate legacy keys and positive integer values.
+    defaults = {'max_steps': 256, 'max_seconds': 14400, 'shell_timeout_s': 120}
+    return {key: (value or {}).get(key) or default for key, default in defaults.items()}
+
+
 class AutomationService:
     def __init__(self, workspace, *, principal_lookup, clock=time):
         self.workspace = workspace
@@ -130,12 +137,13 @@ class AutomationService:
                     from termx.runbooks import validate_steps
                     created_runbook=self.workspace.agents.create_runbook(name=prompt[:200],project_id=conversation.get('project_id'),steps=validate_steps([{'command':command}]))
                     runbook=self.runbook(principal,conversation_id,created_runbook['id'])
-                if runbook and len(runbook['steps'])>resolve_limits(limits)['max_steps']:
+                command_limits = _scheduled_command_limits(limits) if runbook else None
+                if runbook and len(runbook['steps'])>command_limits['max_steps']:
                     raise ValueError('Command step count exceeds the run budget')
                 goal=self.goal(principal,conversation_id=conversation_id,success_criteria=success_criteria,max_runs=max_runs,limits=limits)
                 grant=self.grant(principal,goal_id=goal['id'],expires_at=self.clock()+grant_days*86400,max_runs=max_runs,limits=limits)
                 if runbook:
-                    grant=self.store.update('delegation',grant['id'],{**grant,'runbook':runbook})
+                    grant=self.store.update('delegation',grant['id'],{**grant,'runbook':runbook,'command_limits':command_limits})
                 if _prepared_browser_permission is not None:
                     grant=self.store.update('delegation',grant['id'],{**grant,'browser_permission':_prepared_browser_permission})
                 if computer_permission is not None:
@@ -207,8 +215,8 @@ class AutomationService:
         limits = resolve_limits(limits)
         if expires_at<=self.clock() or expires_at>self.clock()+90*86400 or not 1<=max_runs<=goal['max_runs']:
             raise ValueError('Delegation must expire within 90 days and stay within goal run budget')
-        if any(limits[k]>goal['limits'][k] for k in limits):
-            raise ValueError('Delegation cannot exceed goal budgets')
+        resolve_limits(goal.get('limits'))  # Legacy task quotas do not constrain agent grants.
+        self.workspace.prepare_session_checkout(principal, conversation['id'])
         row = self.store.create('delegation',principal.id,{'goal_id':goal_id,'expires_at':expires_at,
             'max_runs':max_runs,'used_runs':0,'limits':limits,'revoked':False,
             'policy_version':principal.policy_version,'authority':'explicit_unattended_agent_run','execution_target':self.workspace.execution_target(self.workspace.session(principal,conversation['id'],turns=False))},goal.get('project_id'))
@@ -485,7 +493,8 @@ class AutomationService:
         try:
             self._dispatch_guard(run)
             if grant.get('runbook'):
-                snapshot={**grant['runbook'],'steps':[{**step,'_timeout_s':min(grant['limits']['shell_timeout_s'],grant['limits']['max_seconds'])} for step in grant['runbook']['steps']]}
+                command_limits = _scheduled_command_limits(grant.get('command_limits', grant.get('limits')))
+                snapshot={**grant['runbook'],'steps':[{**step,'_timeout_s':min(command_limits['shell_timeout_s'],command_limits['max_seconds'])} for step in grant['runbook']['steps']]}
                 command=self.workspace.state.agent.runbooks.start(snapshot,conversation['cwd'],profile='host',project_id=conversation.get('project_id'))
                 return self.store.update('schedule_run',run['id'],{**run,'status':'running','runbook_run_id':command['id'],'started_at':now,'grant_id':grant['id']})
             task=await self.workspace.send(principal,conversation['id'],prompt=schedule['prompt']+
@@ -552,7 +561,7 @@ class AutomationService:
             try:
                 if not grant or grant['revoked'] or grant['expires_at']<=self.clock() or not principal or grant['policy_version']!=principal.policy_version:
                     raise PermissionError('Scheduled command authority expired or changed')
-                if self.clock()-run['started_at']>=grant['limits']['max_seconds']:
+                if self.clock()-run['started_at']>=_scheduled_command_limits(grant.get('command_limits', grant.get('limits')))['max_seconds']:
                     raise PermissionError('Scheduled command time budget exhausted')
                 self.runbook(principal,goal['conversation_id'],grant['runbook']['id'])
             except Exception as exc:

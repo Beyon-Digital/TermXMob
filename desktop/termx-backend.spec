@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_submodules, collect_all
+from PyInstaller.utils.hooks import collect_submodules, collect_all, copy_metadata
 
 ROOT = Path(SPECPATH).parent
 
@@ -12,6 +12,9 @@ datas = [
     (str(ROOT / "src" / "termx" / "characters" / "assets"), "termx/characters/assets"),
     # The pinned agent-desktop version and sha256 hashes desktop control checks before it runs the program.
     (str(ROOT / "src" / "termx" / "desktop" / "agent_desktop_pins.json"), "termx/desktop"),
+    (str(ROOT / "src" / "termx" / "media" / "studio_models.json"), "termx/media"),
+    (str(ROOT / "src" / "termx" / "workspace" / "workflows" / "worker.py"), "termx/workspace/workflows"),
+    (str(ROOT / "src" / "termx" / "workspace" / "workflows" / "bridge.js"), "termx/workspace/workflows"),
     (os.environ.get("TERMX_PACKAGE_WEB_DIR", str(ROOT / "desktop" / "workspace" / "dist")), "web"),
 ]
 # Chromium's complete macOS .app/framework layout must survive unchanged.
@@ -25,6 +28,12 @@ if ROOT.joinpath("helpers", "macos", "bin").is_dir():
     datas.append((str(ROOT / "helpers" / "macos" / "bin"), "helpers/macos/bin"))
 
 hiddenimports = [
+    'termx.workspace.workflows.worker',
+    # SQLGlot loads dialects through importlib. Include each Data adapter's
+    # parser explicitly; source imports alone omit SQLite/PostgreSQL in frozen apps.
+    'sqlglot.dialects.sqlite',
+    'sqlglot.dialects.postgres',
+    'sqlglot.dialects.mysql',
     'termx.sandbox._win_shim',
     'termx.sandbox._win_conpty',
     'termx.sandbox._win_conpty_host',
@@ -39,7 +48,7 @@ hiddenimports = [
 
 binaries = []
 # Browser driver, Node, FFmpeg, office schemas and debugger data are runtime assets.
-for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_wheel", "debugpy", "imageio_ffmpeg", "openpyxl", "PIL", "pypdf", "docx", "pptx", "tzdata"):
+for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_wheel", "debugpy", "imageio_ffmpeg", "openpyxl", "PIL", "pypdf", "docx", "pptx", "tzdata", "quickjs"):
 
     try:
         __import__(optional)
@@ -49,6 +58,11 @@ for optional in ("aiortc", "av", "numpy", "playwright", "basedpyright", "nodejs_
     datas.extend(package_data)
     binaries.extend(package_binaries)
     hiddenimports.extend(package_imports)
+    if optional == "quickjs":
+        # quickjs-ng exposes quickjs plus its native _quickjs extension. Keep
+        # distribution metadata for the runtime's exact dependency probe.
+        hiddenimports.extend(["quickjs", "_quickjs"])
+        datas.extend(copy_metadata("quickjs-ng"))
 
 excludes = [
     "tkinter",

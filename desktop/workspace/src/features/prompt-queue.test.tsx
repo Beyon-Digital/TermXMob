@@ -64,9 +64,11 @@ it('keeps recovery awaiting confirmation active, queues follow-ups and blocks co
  expect(screen.getByRole('combobox',{name:'Session engine'})).toBeDisabled();
  fireEvent.click(screen.getByRole('button',{name:'Close'}));
  fireEvent.click(screen.getByRole('button',{name:'Model and effort'}));
- expect(screen.getByRole('combobox',{name:'Session provider'})).toBeDisabled();
- expect(screen.getByRole('combobox',{name:'Session model'})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:'Close'}));
+ expect(screen.getByRole('button',{name:'Choose account'})).toBeDisabled();
+ const models=screen.getByRole('listbox',{name:'Session model'});
+ expect(models).toHaveAttribute('aria-disabled','true');
+ for(const option of screen.getAllByRole('option'))expect(option).toBeDisabled();
+ fireEvent.keyDown(screen.getByRole('dialog',{name:'Model and effort'}),{key:'Escape'});
  fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
  for(const radio of screen.getAllByRole('radio'))expect(radio).toBeDisabled();
  expect(api.mock.calls.filter(([path,init])=>path.endsWith('/queue')&&init?.method==='POST')).toHaveLength(1);

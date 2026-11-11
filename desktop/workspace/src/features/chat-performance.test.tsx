@@ -13,7 +13,7 @@ it('keeps recovery and pending approvals visible while secondary controls stay o
   {id:'approval',sequence:2,prompt:'Run this command',task:{prompt:'Run this command',id:'approval-task',status:'awaiting_approval',result:'',events:[],approvals:[{id:'approval-exact',kind:'tool',status:'pending',payload:{reason:'Run a command'}}]}}
  ]};
  const {container}=render(<Chat session={session} engines={[]} providers={[]} onSelect={()=>{}} onRefresh={()=>{}} onError={()=>{}}/>);
- expect(await screen.findByRole('button',{name:'Review task'})).toBeVisible();
+ expect(await screen.findByRole('button',{name:'Review recovery'})).toBeVisible();
  expect(screen.getByText('Recovery needs your confirmation.')).toBeVisible();expect(screen.getByRole('button',{name:'Review action'})).toBeVisible();
  expect(container.querySelector('.message-author')).not.toBeInTheDocument();expect(container.querySelector('.task-meta')).not.toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Queue next'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Running task actions'})).toBeVisible();expect(screen.getByRole('button',{name:'Stop task'})).toBeVisible();
@@ -41,10 +41,10 @@ it('cancels approval focus when the conversation changes before the requested fr
  const session:Session={pinned:false,archived:false,updated_at:1,scroll:0,id:'old-approval',title:'Old approval',engine:'internal',mode:'agent',revision:1,draft_text:'',turns:[{id:'old-turn',sequence:1,prompt:'Old operation',task:{id:'old-task',prompt:'Old operation',status:'awaiting_approval',approvals:[{id:'old-pending',kind:'budget',status:'pending',payload:{suggested_limits:{max_steps:256}}}]}}]};
  const props={engines:[],providers:[],onSelect:()=>{},onRefresh:()=>{},onError:()=>{}};
  const view=render(<Chat session={session} {...props}/>);
- await screen.findByRole('button',{name:'Review budget extension'});
+ await screen.findByRole('button',{name:'Review continuation'});
  fireEvent.click(screen.getByRole('button',{name:'Review current task'}));
  view.rerender(<Chat session={{...session,id:'new-conversation',title:'New conversation',turns:[]}} {...props}/>);
  const draft=screen.getByRole('textbox',{name:'Message'});draft.focus();
  await act(async()=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))) });
- expect(draft).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Approve budget extension'})).not.toBeInTheDocument();
+ expect(draft).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Continue task'})).not.toBeInTheDocument();
 });

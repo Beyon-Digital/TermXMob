@@ -1,22 +1,49 @@
-import {useLayoutEffect,useId,useRef,useState,type ReactNode} from 'react';
-import {createPortal} from 'react-dom';
+import {useCallback,useLayoutEffect,useRef,useState,type ReactNode,type KeyboardEvent} from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import {MoreHorizontal} from 'lucide-react';
 import {Button} from './ui/button';
+import {useNavigationLayerRef} from './ui/navigation-layer';
+import {observeClosedState} from '../lib/disclosure-motion';
 import './workspace-menu.css';
 
-/** A small, keyboard-accessible command popover that can escape dock overflow. */
+/** A button-anchored command surface; Radix owns dismissal and focus scope. */
 export default function WorkspaceMenu({label,children,icon}:{label:string;children:ReactNode;icon?:ReactNode}){
  const [open,setOpen]=useState(false),[position,setPosition]=useState({top:0,left:0});
- const trigger=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null),id=useId();
+ const trigger=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null),sourceActive=useRef(true),observer=useRef<MutationObserver|null>(null);
+ const layer=useNavigationLayerRef<HTMLDivElement>();
+ const active=()=>!!trigger.current?.isConnected&&!trigger.current.closest('[hidden],[inert],[aria-hidden="true"]');
+ const attach=useCallback((node:HTMLDivElement|null)=>{
+  observer.current?.disconnect();panel.current=node;layer(node);
+  observer.current=node?observeClosedState(node,()=>{if(sourceActive.current&&active())trigger.current?.focus({preventScroll:true})}):null;
+ },[layer]);
  useLayoutEffect(()=>{
   if(!open)return;
-  const place=()=>{const bounds=trigger.current?.getBoundingClientRect();if(!bounds)return;setPosition({top:Math.min(bounds.bottom+4,Math.max(8,window.innerHeight-(panel.current?.offsetHeight||260)-8)),left:Math.max(8,Math.min(bounds.right-244,window.innerWidth-252))})};
-  place();panel.current?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled)')?.focus();
-  const outside=(event:PointerEvent)=>{if(!panel.current?.contains(event.target as Node)&&!trigger.current?.contains(event.target as Node))setOpen(false)};
-  const focus=(event:FocusEvent)=>{if(!panel.current?.contains(event.target as Node)&&!trigger.current?.contains(event.target as Node))setOpen(false)};
-  const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setOpen(false);trigger.current?.focus()}};
-  document.addEventListener('pointerdown',outside);document.addEventListener('focusin',focus);document.addEventListener('keydown',escape,true);window.addEventListener('resize',place);
-  return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('focusin',focus);document.removeEventListener('keydown',escape,true);window.removeEventListener('resize',place)};
+  const place=()=>{
+   const bounds=trigger.current?.getBoundingClientRect();if(!bounds)return;
+   const width=panel.current?.offsetWidth||244,height=panel.current?.offsetHeight||260;
+   const below=bounds.bottom+8,above=bounds.top-height-8;
+   setPosition({top:Math.max(8,Math.min(below+height<=window.innerHeight-8?below:above,window.innerHeight-height-8)),left:Math.max(8,Math.min(bounds.right-width,window.innerWidth-width-8))});
+  };
+  place();window.addEventListener('resize',place);window.addEventListener('scroll',place,true);
+  const resize=typeof ResizeObserver==='undefined'?null:new ResizeObserver(place);
+  if(trigger.current)resize?.observe(trigger.current);if(panel.current)resize?.observe(panel.current);
+  return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);resize?.disconnect()};
  },[open]);
- return <><Button ref={trigger} variant="ghost" size="icon" aria-label={label} title={label} aria-expanded={open} aria-controls={open?id:undefined} aria-haspopup="dialog" onClick={()=>setOpen(value=>!value)}>{icon||<MoreHorizontal size={16}/>}</Button>{open&&createPortal(<div ref={panel} id={id} className="workspace-command-menu" role="dialog" aria-label={label} style={position} onClick={event=>{if((event.target as HTMLElement).closest('button[data-close-menu]')){setOpen(false);trigger.current?.focus()}}}>{children}</div>,trigger.current?.closest('.workspace-shell')||document.body)}</>
+ // Hiding a mounted source invalidates the portal and its focus return target.
+ useLayoutEffect(()=>{sourceActive.current=active();if(open&&!sourceActive.current)setOpen(false)});
+ const navigate=(event:KeyboardEvent<HTMLDivElement>)=>{
+  if((event.target as HTMLElement).closest('select,input,textarea'))return;
+  const controls=Array.from(panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')||[]).filter(node=>!node.closest('[hidden],[inert]'));
+  if(!controls.length)return;
+  const current=controls.indexOf(document.activeElement as HTMLButtonElement);
+  const next=event.key==='ArrowDown'?(current+1)%controls.length:event.key==='ArrowUp'?(current-1+controls.length)%controls.length:event.key==='Home'?0:event.key==='End'?controls.length-1:null;
+  if(next===null)return;event.preventDefault();controls[next].focus({preventScroll:true});controls[next].scrollIntoView?.({block:'nearest'});
+ };
+ return <Dialog.Root modal={false} open={open} onOpenChange={value=>{sourceActive.current=active();setOpen(value&&sourceActive.current)}}>
+  <Dialog.Trigger asChild><Button ref={trigger} variant="ghost" size="icon" aria-label={label} title={label}>{icon||<MoreHorizontal size={16}/>}</Button></Dialog.Trigger>
+  <Dialog.Portal container={trigger.current?.closest('.workspace-shell')||undefined}><Dialog.Content ref={attach} className="workspace-command-menu" style={position} aria-describedby={undefined} onOpenAutoFocus={event=>{event.preventDefault();(panel.current?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled)')??panel.current)?.focus({preventScroll:true})}} onCloseAutoFocus={event=>event.preventDefault()} onEscapeKeyDown={()=>{if(sourceActive.current&&active())trigger.current?.focus({preventScroll:true})}} onKeyDown={navigate} onClick={event=>{if((event.target as HTMLElement).closest('button[data-close-menu]')){if(sourceActive.current&&active()&&panel.current?.contains(document.activeElement))trigger.current?.focus({preventScroll:true});setOpen(false)}}}>
+   <Dialog.Title className="workspace-menu-accessible-title">{label}</Dialog.Title>
+   {children}
+  </Dialog.Content></Dialog.Portal>
+ </Dialog.Root>;
 }

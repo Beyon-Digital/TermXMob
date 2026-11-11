@@ -329,8 +329,10 @@ class BotSchedules:
                     todo.append((row, old, goal))
             now, renewed = self._clock(), []
             for row, old, goal in todo:
-                # The new grant is never wider than the bot's current budget, so narrowing a bot sticks.
-                limits = {key: min(value, agent_limits.get(key, value)) for key, value in goal['limits'].items()}
+                # Task quota fields are compatibility metadata now. Normalize
+                # old numeric rows and current nulls without comparing them;
+                # grant expiry, remaining runs and bot authority stay scoped.
+                limits = resolve_limits(goal.get('limits'), defaults=agent_limits)
                 grant = automation.grant(principal, goal_id=goal['id'], expires_at=now + grant_days * 86400,
                                          max_runs=goal['max_runs'] - goal['runs_started'], limits=limits)
                 resume = bool(row['enabled']) or row.get('resume_when') == 'reauthorize' or row['state'] == 'needs_attention'

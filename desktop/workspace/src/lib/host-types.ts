@@ -24,31 +24,35 @@ export interface ModelInfo {
 export type ModelOverride = Partial<Pick<ModelInfo, 'context_window' | 'max_output' | 'price_in' | 'price_out'>>;
 export type ModelOverrides = Record<string, ModelOverride>;
 
+/** Explicit request controls. Empty values leave the provider defaults in place. */
+export interface ProviderLimits { max_output_tokens: number | null; request_timeout_s: number | null }
+
 /** schema.graphql `AgentProvider`. The catalog fields are JSON scalars written by model discovery. */
 export interface AgentProvider {
   id: string; kind: string; name: string;
   base_url?: string | null; model?: string | null; models?: string[] | null; capabilities?: string[] | null;
   secret_configured?: boolean | null; created_at?: number | null; updated_at?: number | null;
   model_catalog?: Record<string, ModelInfo> | null; model_overrides?: ModelOverrides | null;
+  limits?: ProviderLimits | null;
   catalog_refreshed_at?: number | null; catalog_error?: string | null; wire?: string | null;
 }
 
 /** What ProviderAccountForm shows: the saved provider without its secret. */
 export interface ProviderAccount {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[];
-  model_catalog: Record<string, ModelInfo>; model_overrides: ModelOverrides;
+  model_catalog: Record<string, ModelInfo>; model_overrides: ModelOverrides; limits?: ProviderLimits | null;
   catalog_refreshed_at: number | null; catalog_error: string | null; wire?: string | null;
 }
 /** What ProviderAccountForm submits; matches `AgentProviderInput`. `model` lists the included models, empty meaning all. */
 export interface ProviderAccountInput {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[]; api_key: string | null;
-  model_meta?: ModelOverrides; wire?: 'responses' | 'chat';
+  model_meta?: ModelOverrides; wire?: 'responses' | 'chat'; limits?: ProviderLimits;
 }
 
 export function providerAccount(provider: AgentProvider): ProviderAccount {
   return {
     id: provider.id, name: provider.name, kind: provider.kind, base_url: provider.base_url ?? '', model: provider.model ?? '', capabilities: provider.capabilities ?? [],
-    model_catalog: provider.model_catalog ?? {}, model_overrides: provider.model_overrides ?? {},
+    model_catalog: provider.model_catalog ?? {}, model_overrides: provider.model_overrides ?? {}, limits: provider.limits ?? {max_output_tokens: null, request_timeout_s: null},
     catalog_refreshed_at: provider.catalog_refreshed_at ?? null, catalog_error: provider.catalog_error ?? null, wire: provider.wire ?? null,
   };
 }

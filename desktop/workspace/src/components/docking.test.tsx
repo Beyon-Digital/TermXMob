@@ -13,3 +13,18 @@ describe('workspace docking',()=>{
 it('independently docks Computer next to Browser, preserves both mounted canvases and detaches the actual panel',()=>{const detached:string[]=[];function Canvases(){const [map,setMap]=useState<DockMap>({...layouts.browser,computer:'split'});return <DockWorkspace map={map} onChange={setMap} rightVisible={false} rightWidth={380} onDetach={panel=>detached.push(panel)} children={{editor:null,conversation:null,browser:<input aria-label="Browser local state" defaultValue="page selection"/>,artifacts:null,computer:<input aria-label="Computer local state" defaultValue="capture state"/>}}/>}const view=render(<Canvases/>);expect(screen.getByRole('region',{name:'browser panel'})).toBeVisible();expect(screen.getByRole('region',{name:'computer panel'})).toBeVisible();fireEvent.change(screen.getByLabelText('Computer local state'),{target:{value:'preserve capture'}});fireEvent.click(screen.getByRole('button',{name:'Computer panel actions'}));fireEvent.click(screen.getByRole('button',{name:'Bottom'}));expect(screen.getByLabelText('Computer local state')).toHaveValue('preserve capture');expect(screen.getByLabelText('Browser local state')).toHaveValue('page selection');fireEvent.click(screen.getByRole('button',{name:'Computer panel actions'}));fireEvent.click(screen.getByRole('button',{name:'Detach computer'}));expect(detached).toEqual(['computer']);expect(view.container.querySelector('.dock-computer')).toHaveStyle({gridArea:'bottom'})});
 
 it('offers keyboard accessible panel commands without persistent location controls',()=>{render(<Workspace/>);const trigger=screen.getByRole('button',{name:'Files panel actions'});expect(screen.queryByRole('dialog',{name:'Files panel actions'})).not.toBeInTheDocument();fireEvent.click(trigger);expect(screen.getByRole('button',{name:'Open in full view'})).toHaveFocus();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Files panel actions'})).not.toBeInTheDocument();expect(trigger).toHaveFocus()});
+
+it('pauses global dock commands and Escape while inactive without losing expanded panels or drafts', () => {
+ function ActiveWorkspace({active}: {active: boolean}) {const [map, setMap] = useState<DockMap>(layouts.workbench); return <DockWorkspace active={active} map={map} onChange={setMap} rightVisible rightWidth={380} onDetach={() => {}} children={{conversation: <Draft/>, editor: <p>Editor buffer</p>}}/>}
+ const view = render(<ActiveWorkspace active/>);
+ const draft = screen.getByLabelText('Unsent draft'); fireEvent.change(draft, {target: {value: 'Retain inactive draft'}});
+ fireEvent.click(screen.getByRole('button', {name: 'Expand Files panel'}));
+ view.rerender(<ActiveWorkspace active={false}/>);
+ fireEvent.keyDown(window, {key: 'Escape'});
+ window.dispatchEvent(new CustomEvent('termx-panel-command', {detail: {command: 'close'}}));
+ expect(view.container.querySelector('.dock-workspace')).toHaveClass('dock-full-view');
+ expect(screen.getByLabelText('Unsent draft')).toBe(draft); expect(draft).toHaveValue('Retain inactive draft');
+ view.rerender(<ActiveWorkspace active/>);
+ fireEvent.keyDown(window, {key: 'Escape'});
+ expect(view.container.querySelector('.dock-workspace')).not.toHaveClass('dock-full-view');
+});

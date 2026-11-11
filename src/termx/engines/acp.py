@@ -526,7 +526,12 @@ class AcpEngine:
             models=self._configuration.get("models", []),
             modes=self._configuration.get("modes", {}).get("availableModes", []),
             config_options=self._configuration.get("config_options", []),
+            notes={"workflow_tools": "Unsupported: this adapter has native external MCP configuration but no authenticated host workflow callback transport. Workflow tools are not advertised to ACP agents."},
         )
+
+    def workflow_capabilities(self):
+        return {"supported": False, "available": False, "transport": None,
+                "reason": "ACP's external MCP configuration cannot call the scoped in-process host service; an authenticated leased broker transport is required."}
 
     # ------------------------------------------------------------- plumbing
 

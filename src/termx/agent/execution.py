@@ -41,7 +41,7 @@ async def run_shell(
     command: str,
     cwd: str,
     *,
-    timeout_s: float = 120,
+    timeout_s: float | None = 120,
     cancel: asyncio.Event | None = None,
     runner: Any = None,
     profile: str = "agent",
@@ -62,7 +62,7 @@ async def stream_shell(
     command: str,
     cwd: str,
     *,
-    timeout_s: float = 120,
+    timeout_s: float | None = 120,
     cancel: asyncio.Event | None = None,
     on_output: Any = None,
     chunk_size: int = 4096,
@@ -127,7 +127,7 @@ async def stream_shell(
     timed_out = False
     was_cancelled = False
     reader_open = True
-    deadline = asyncio.get_running_loop().time() + max(1.0, timeout_s)
+    deadline = None if timeout_s is None else asyncio.get_running_loop().time() + max(1.0, timeout_s)
     try:
         while True:
             waiters: set[asyncio.Task[Any]] = {exited}
@@ -135,8 +135,8 @@ async def stream_shell(
                 waiters.add(reader)
             if cancelled is not None:
                 waiters.add(cancelled)
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
+            remaining = None if deadline is None else deadline - asyncio.get_running_loop().time()
+            if remaining is not None and remaining <= 0:
                 timed_out = True
                 await spawned.terminate()
                 break

@@ -23,7 +23,7 @@ vi.mock('./features/CompanionHabitat',()=>({default:()=>null}));
 vi.mock('./components/LockScreen',()=>({default:()=>null}));
 vi.mock('./components/DockWorkspace',()=>({default:({children}:{children:Record<string,React.ReactNode>})=><div>{children.conversation}</div>}));
 vi.mock('./components/WorkspaceNavigation',()=>({default:({rail,children,footer}:{rail:React.ReactNode;children:React.ReactNode;footer:React.ReactNode})=><nav>{rail}{children}{footer}</nav>}));
-vi.mock('@tanstack/react-virtual',()=>({useVirtualizer:()=>({getTotalSize:()=>0,getVirtualItems:()=>[],scrollToIndex:vi.fn(),scrollToOffset:vi.fn(),measureElement:vi.fn()})}));
+vi.mock('@tanstack/react-virtual',()=>({useVirtualizer:()=>({getTotalSize:()=>0,getVirtualItems:()=>[],measure:vi.fn(),scrollToIndex:vi.fn(),scrollToOffset:vi.fn(),measureElement:vi.fn()})}));
 // App, Chat, the composer submission adapter, listSessions and SessionCache are
 // real. These deterministic HTTP/GraphQL boundaries perform no inference.
 
@@ -52,7 +52,8 @@ beforeEach(()=>{
    })};
   }
   if(query.includes('workspace_turns('))return {workspace_turns:variables.id==='focused'&&!historyReleased?await focusedHistory.promise:emptyTurns()};
-  if(query.includes('agent_providers'))return {projects:[],engines:[],agent_providers:[provider]};
+  if(query.includes('projects{id name path}'))return {projects:[]};
+  if(query.includes('agent_providers'))return {engines:[],agent_providers:[provider]};
   if(query.includes('engine_models'))return {engine_models:['fixture-model']};
   throw Error('Unexpected fixture GraphQL query '+query);
  });
@@ -78,17 +79,25 @@ afterEach(async()=>{
  cleanup();historyReleased=true;focusedHistory.resolve(emptyTurns());await Promise.resolve();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();consumedTransfers.clear();vi.unstubAllGlobals();history.replaceState(null,'','/');
 });
 
+async function openOptions(){
+ fireEvent.click(screen.getByRole('button',{name:'Workspace actions'}));
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Workspace actions'})).getByRole('button',{name:'New chat with options'}));
+}
+
 async function createFocused(){
  await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
  fireEvent.click(screen.getByRole('button',{name:'New chat'}));
- const dialog=await screen.findByRole('dialog',{name:'New conversation'});
- const create=within(dialog).getByRole('button',{name:'Create conversation'});await waitFor(()=>expect(create).toBeEnabled());fireEvent.click(create);
+ expect(screen.queryByRole('dialog',{name:'New chat with options'})).not.toBeInTheDocument();
  await waitFor(()=>expect(location.pathname).toBe('/session/focused'));
  await waitFor(()=>expect(mocks.gql.mock.calls.some(([query,variables])=>String(query).includes('workspace_turns(')&&(variables as {id?:string}|undefined)?.id==='focused')).toBe(true));
  // The pending history read must not leave the previous conversation bound to
  // this real composer, even for the first keystroke after creation.
  expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('');
+ await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveFocus());
+ const creation=mocks.request.mock.calls.find(([path,init])=>path==='/api/workspace/sessions'&&(init as RequestInit)?.method==='POST');
+ expect(JSON.parse((creation![1] as RequestInit).body as string)).not.toHaveProperty('title');
 }
+
 
 it('sends from a newly created real composer to the new conversation before history resolves',async()=>{
  render(<App/>);await createFocused();
@@ -121,20 +130,19 @@ it('keeps a newer child selection and real send target after the focused history
 
 it('starts a generic new chat without a hidden project or folder from a cancelled creation',async()=>{
  const previous=mocks.gql.getMockImplementation()!;
- mocks.gql.mockImplementation((query:string,...args:any[])=>query.includes('agent_providers')?Promise.resolve({projects:[{id:'project-a',name:'Project A',path:'/synthetic/project-a'}],engines:[],agent_providers:[provider]}):previous(query,...args));
+ mocks.gql.mockImplementation((query:string,...args:any[])=>query.includes('projects{id name path}')?Promise.resolve({projects:[{id:'project-a',name:'Project A',path:'/synthetic/project-a'}]}):previous(query,...args));
  render(<App/>);
  await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
- fireEvent.click(screen.getByRole('button',{name:'New chat'}));
- let dialog=await screen.findByRole('dialog',{name:'New conversation'});
- fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ await openOptions();
+ let dialog=await screen.findByRole('dialog',{name:'New chat with options'});
  fireEvent.change(within(dialog).getByRole('combobox',{name:'Project'}),{target:{value:'project-a'}});
- fireEvent.change(within(dialog).getByLabelText('Add a project folder'),{target:{value:'/synthetic/previous-folder'}});
+ fireEvent.click(within(dialog).getByText('Enter path',{selector:'summary'}));
+ fireEvent.change(within(dialog).getByLabelText('Folder path'),{target:{value:'/synthetic/previous-folder'}});
  fireEvent.click(within(dialog).getByRole('button',{name:/^Close$/}));
- fireEvent.click(screen.getByRole('button',{name:'New chat'}));
- dialog=await screen.findByRole('dialog',{name:'New conversation'});
- fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ await openOptions();
+ dialog=await screen.findByRole('dialog',{name:'New chat with options'});
  expect(within(dialog).getByRole('combobox',{name:'Project'})).toHaveValue('');
- expect(within(dialog).getByLabelText('Add a project folder')).toHaveValue('');
+ expect(within(dialog).getByLabelText('Folder path')).toHaveValue('');
  expect(mocks.request.mock.calls.some(([path,init])=>path==='/api/workspace/sessions'&&(init as RequestInit)?.method==='POST')).toBe(false);
  fireEvent.click(within(dialog).getByRole('button',{name:/^Close$/}));
  await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
@@ -145,23 +153,22 @@ it('a delayed project registration cannot retarget a newer creation dialog',asyn
  const registered=deferred<{register_project:{id:string;name:string;path:string}}>();
  const target={id:'late-project',name:'Late project',path:'/synthetic/late-project'};
  const previous=mocks.gql.getMockImplementation()!;
- mocks.gql.mockImplementation((query:string,...args:any[])=>query.includes('register_project')?registered.promise:query.includes('agent_providers')?Promise.resolve({projects:[target],engines:[],agent_providers:[provider]}):previous(query,...args));
+ mocks.gql.mockImplementation((query:string,...args:any[])=>query.includes('register_project')?registered.promise:query.includes('projects{id name path}')?Promise.resolve({projects:[target]}):previous(query,...args));
  render(<App/>);
  await waitFor(()=>expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Previous conversation draft'));
- fireEvent.click(screen.getByRole('button',{name:'New chat'}));
- let dialog=await screen.findByRole('dialog',{name:'New conversation'});
- fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
- fireEvent.change(within(dialog).getByLabelText('Add a project folder'),{target:{value:target.path}});
- const create=within(dialog).getByRole('button',{name:'Create conversation'});
+ await openOptions();
+ let dialog=await screen.findByRole('dialog',{name:'New chat with options'});
+ fireEvent.click(within(dialog).getByText('Enter path',{selector:'summary'}));
+ fireEvent.change(within(dialog).getByLabelText('Folder path'),{target:{value:target.path}});
+ const create=within(dialog).getByRole('button',{name:'Create chat'});
  await waitFor(()=>expect(create).toBeEnabled());fireEvent.click(create);
  await waitFor(()=>expect(mocks.gql.mock.calls.some(([query])=>String(query).includes('register_project'))).toBe(true));
  fireEvent.click(within(dialog).getByRole('button',{name:/^Close$/}));
- fireEvent.click(screen.getByRole('button',{name:'New chat'}));
- dialog=await screen.findByRole('dialog',{name:'New conversation'});
- fireEvent.click(within(dialog).getByText('Project & agent options',{selector:'summary'}));
+ await openOptions();
+ dialog=await screen.findByRole('dialog',{name:'New chat with options'});
  await act(async()=>registered.resolve({register_project:target}));
- await waitFor(()=>expect(within(dialog).getByRole('button',{name:'Create conversation'})).toBeEnabled());
+ await waitFor(()=>expect(within(dialog).getByRole('button',{name:'Create chat'})).toBeEnabled());
  expect(within(dialog).getByRole('combobox',{name:'Project'})).toHaveValue('');
- expect(within(dialog).getByLabelText('Add a project folder')).toHaveValue('');
+ expect(within(dialog).getByLabelText('Folder path')).toHaveValue('');
  expect(location.pathname).toBe('/session/previous');
 });

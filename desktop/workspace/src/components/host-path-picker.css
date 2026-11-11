@@ -1,0 +1,47 @@
+.host-path-picker{width:640px;min-width:0}
+.host-path-picker .host-path-toolbar{display:flex;align-items:center;gap:4px;min-width:0;margin:16px 0 12px}
+.host-path-picker .host-path-toolbar>.button{flex:none;margin:0}
+.host-path-breadcrumbs{display:flex;align-items:center;min-width:0;overflow:auto;flex:1;gap:4px}
+.host-path-breadcrumbs>span{display:flex;align-items:center;gap:4px;flex:none;min-width:0}
+.host-path-picker .host-path-breadcrumbs .button{max-width:192px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;padding:8px;min-height:40px}
+.host-path-filter{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;margin-bottom:12px}
+.host-path-filter>label:first-child{grid-column:1/-1;font-size:14px;font-weight:500}
+.host-path-filter>.input{min-width:0;width:100%}
+.host-path-hidden{display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap}
+.host-path-hidden input{accent-color:var(--accent);width:16px;height:16px}
+.host-path-entries{min-height:192px;max-height:320px;overflow:auto;overscroll-behavior:contain}
+.host-path-picker .host-path-entry{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;margin:0;text-align:left;justify-content:start;padding:8px 12px}
+.host-path-entry>svg{flex:none;stroke-width:1.5}
+.host-path-entry>span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.host-path-picker .host-path-entry[aria-pressed=true]{background:var(--muted);font-weight:500}
+.host-path-state{color:var(--secondary);padding:16px 12px;font-size:14px;line-height:20px}
+.host-path-state p{margin:0 0 12px;overflow-wrap:anywhere}
+.host-path-state .button{margin:0 8px 8px 0}
+.host-path-current{color:var(--secondary);font-size:12px;line-height:16px;overflow-wrap:anywhere;margin:12px 0 16px;max-height:48px;overflow:auto}
+.host-path-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px}
+.host-path-picker .host-path-actions>.button{margin:0}
+.host-path-field{margin-bottom:16px;min-width:0}
+.host-path-label{display:block;font-size:14px;font-weight:500;margin-bottom:8px}
+.host-path-choice{display:flex;align-items:center;gap:12px;min-width:0}
+.host-path-choice p{flex:1;min-width:0;font-size:14px;line-height:20px;margin:0;color:var(--secondary);overflow-wrap:anywhere}
+.host-path-choice>.button{flex:none;margin:0}
+.host-path-manual{font-size:12px;line-height:16px;color:var(--secondary);margin-top:8px}
+.host-path-manual summary{cursor:pointer;padding:8px 0;width:fit-content}
+.host-path-manual label{display:flex;flex-direction:column;gap:8px;font-size:14px;margin-top:8px}
+.host-path-manual .input{width:100%;min-width:0}
+@media(max-width:640px){.host-path-picker{max-height:calc(100dvh - 32px)}.host-path-filter{grid-template-columns:minmax(0,1fr)}.host-path-hidden{padding:4px 0}.host-path-entries{max-height:256px;min-height:128px}.host-path-choice{align-items:flex-start;flex-wrap:wrap}.host-path-choice p{flex-basis:100%}.host-path-actions .button{flex:1}}
+
+.context-file-choices{margin-top:24px;min-width:0}
+.context-file-heading{display:flex;align-items:center;gap:12px;justify-content:space-between;font-size:14px;font-weight:500}
+.context-file-choices>p{color:var(--secondary);font-size:14px;margin:12px 0 0}
+.context-file-choices>ul{list-style:none;margin:8px 0 0;padding:0}
+.context-file-choices li{display:flex;align-items:center;gap:12px;font-size:14px;min-height:40px}
+.context-file-choices li>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.host-path-manual summary[aria-disabled=true]{opacity:.5;cursor:default}
+
+html[data-app-workspace=agent] .dialog-content.host-path-picker{border:0}
+.host-path-picker svg{stroke-width:1.5}
+.host-path-filter label{margin:0}
+.host-path-filter>.host-path-hidden{flex-direction:row;justify-content:flex-start;font-weight:400}
+.host-path-picker .host-path-breadcrumbs .button[aria-current]{opacity:1;color:var(--foreground)}
+@media(pointer:coarse),(max-width:640px){.host-path-picker .button,.host-path-picker .dialog-close,.host-path-field .button,.context-file-choices .button{min-height:44px}.host-path-picker .button-icon,.host-path-picker .dialog-close,.dialog-content:has(.host-path-field) .dialog-close{width:44px;height:44px}.host-path-hidden{min-height:44px}}

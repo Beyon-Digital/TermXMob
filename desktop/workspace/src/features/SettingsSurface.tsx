@@ -2,6 +2,8 @@ import {request as baseRequest} from '../lib/api';
 import SettingsActions from './SettingsActions';
 import {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,type MouseEvent,type ReactNode,type RefObject} from 'react';
 import {Button} from '../components/ui/button';
+import {Select} from '../components/ui/select';
+import {Input} from '../components/ui/input';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
 import {settingsCategories,settingsGroups,canonicalSettingsCategory} from '../lib/settings-categories';
 import SettingsIcon from '../components/SettingsIcon';
@@ -27,18 +29,23 @@ export function useSettingsRequest(){const beginSave=useSettingsSave();return as
 
 export function SettingsNavigation({category,onSelect,waiting:given}:{category:string;onSelect:(id:string)=>void;waiting?:number}){
  const selected=canonicalSettingsCategory(category);
+ const [query,setQuery]=useState('');
+ const terms=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+ const matches=settingsCategories.filter(row=>terms.every(term=>(row.label+' '+row.id).toLocaleLowerCase().includes(term)));
  // Not a notification centre: one count on the Bots entry, so a bot waiting for an answer is noticed from any settings page.
  const own=useBotsNeedYouCount(given===undefined),waiting=given??own;
  function follow(event:MouseEvent<HTMLAnchorElement>,id:string){
   if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
   event.preventDefault();onSelect(id);
  }
- return <nav className="settings-categories" aria-label="Settings categories">
-  {settingsGroups.map(group=><div className="settings-nav-group" key={group}>
+ return <><label className="settings-mobile-category"><span>Category</span><Select aria-label="Settings category" data-settings-filter value={selected} onChange={event=>onSelect(event.target.value)}>{settingsGroups.map(group=><optgroup label={group} key={group}>{settingsCategories.filter(row=>row.group===group).map(({id,label})=><option key={id} value={id}>{label}</option>)}</optgroup>)}</Select></label><nav className="settings-categories" aria-label="Settings categories">
+  <label className="settings-category-search"><span className="visually-hidden">Search settings categories</span><Input type="search" aria-label="Search settings categories" data-settings-filter placeholder="Search settings" value={query} onChange={event=>setQuery(event.target.value)}/></label>
+  {settingsGroups.map(group=>{const rows=matches.filter(row=>row.group===group);return rows.length?<div className="settings-nav-group" key={group}>
    <p className="settings-nav-heading">{group}</p>
-   <ul>{settingsCategories.filter(row=>row.group===group).map(({id,label})=><li key={id}><a href={'/manage/'+id} aria-current={id===selected?'page':undefined} onClick={event=>follow(event,id)}><SettingsIcon kind={id}/><span>{label}</span>{id==='bots'&&waiting>0&&<><span className="visually-hidden">, {needsYouCount(waiting)}</span><span className="settings-nav-count" aria-hidden="true">{waiting}</span></>}</a></li>)}</ul>
-  </div>)}
- </nav>
+   <ul>{rows.map(({id,label})=><li key={id}><a href={'/manage/'+id} aria-current={id===selected?'page':undefined} onClick={event=>follow(event,id)}><SettingsIcon kind={id}/><span>{label}</span>{id==='bots'&&waiting>0&&<><span className="visually-hidden">, {needsYouCount(waiting)}</span><span className="settings-nav-count" aria-hidden="true">{waiting}</span></>}</a></li>)}</ul>
+  </div>:null})}
+  {!matches.length&&<p className="settings-category-empty" role="status">No settings categories match your search.</p>}
+ </nav></>
 }
 
 type Scope=HTMLFormElement|'page';

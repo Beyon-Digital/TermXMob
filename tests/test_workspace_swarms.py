@@ -56,14 +56,14 @@ def test_team_real_children_and_idempotent_retry(tmp_path):
 
 
 @pytest.mark.parametrize('limits', [{'max_parallel_subagents': 1}, {'max_subagents_total': 1}])
-def test_team_rejects_whole_request_before_dispatch(tmp_path, limits):
+def test_legacy_task_quotas_do_not_reject_team_dispatch(tmp_path, limits):
     async def run():
         workspace, manager, store, task = await setup_team(tmp_path, **limits)
         try:
-            with pytest.raises(Conflict, match='allowance'):
-                await assemble(workspace, SimpleNamespace(id='owner'), task['id'], request_id='large', members=members())
-            assert not manager._subagent_handles(task['id'])
-            assert not any(e['type'] == 'swarm.requested' for e in store.events(task['id']))
+            result = await assemble(workspace, SimpleNamespace(id='owner'), task['id'], request_id='large', members=members())
+            assert result['ok']
+            assert len(manager._subagent_handles(task['id'])) == 2
+            assert any(e['type'] == 'swarm.requested' for e in store.events(task['id']))
         finally:
             await asyncio.sleep(0)
             for worker in list(manager._workers.values()):
@@ -165,16 +165,15 @@ def test_interrupted_dispatch_cannot_replay(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
-def test_concurrent_provider_spawns_obey_parallel_cap(tmp_path):
+def test_concurrent_provider_spawns_ignore_legacy_parallel_cap(tmp_path):
     async def run():
         workspace, manager, store, task = await setup_team(tmp_path, max_parallel_subagents=1)
         try:
             results = await asyncio.gather(*(manager._spawn_subagent(task['id'], task,
                 ProviderCall(type='function', call_id=f'call-{i}', name='spawn_subagent', arguments=member),
                 manager._cancel[task['id']]) for i, member in enumerate(members())))
-            assert sum(r['ok'] for r in results) == 1
-            assert len(manager._subagent_handles(task['id'])) == 1
-            assert 'parallel limit' in next(r['error'] for r in results if not r['ok'])
+            assert sum(r['ok'] for r in results) == 2
+            assert len(manager._subagent_handles(task['id'])) == 2
         finally:
             await asyncio.sleep(0)
             for worker in list(manager._workers.values()):
@@ -193,8 +192,8 @@ def test_concurrent_team_and_provider_share_admission_lock(tmp_path):
                 manager._spawn_subagent(task['id'], task,
                     ProviderCall(type='function', call_id='provider', name='spawn_subagent', arguments=members(1)[0]),
                     manager._cancel[task['id']]), return_exceptions=True)
-            assert len(manager._subagent_handles(task['id'])) == 1
-            assert sum(isinstance(outcome, dict) and outcome.get('ok', False) for outcome in outcomes) == 1
+            assert len(manager._subagent_handles(task['id'])) == 2
+            assert sum(isinstance(outcome, dict) and outcome.get('ok', False) for outcome in outcomes) == 2
         finally:
             await asyncio.sleep(0)
             for worker in list(manager._workers.values()):

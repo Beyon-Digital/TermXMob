@@ -170,7 +170,8 @@ class ToolRegistry:
          "list_agent_projects", "spawn_project_agent","list_agent_engines","list_agent_sessions",
          "review_managed_session","adopt_managed_session","spawn_engine_agent",
          "plan_nodes","start_ready","node_status","retry_node","reassign_node","cancel_node",
-         "list_bots","bot_status","pause_bot","create_bot","update_bot","resume_bot","delete_bot","assign_bot_task","schedule_bot"}
+         "list_bots","bot_status","pause_bot","create_bot","update_bot","resume_bot","delete_bot","assign_bot_task","schedule_bot",
+         "list_workflows","get_workflow","save_workflow","validate_workflow","run_workflow","get_workflow_run","cancel_workflow_run"}
     )
 
     # Offered only to a bot's task or the main agent's, with the recipients that task may message.

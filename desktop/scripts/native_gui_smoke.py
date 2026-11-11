@@ -31,10 +31,9 @@ ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
 # WorkspaceCommands.tsx); neither carries an aria-label of its own.
 STATUS_LOCK = '//footer//button[normalize-space()="Lock workspace"]'
 STATUS_COMMANDS = '//footer//button[normalize-space()="Commands"]'
-# Sidebar footer "Projects & operations" opens the control plane (App.tsx); the
-# rail's Home icon is now the "Main agent" button. Sign out is a text button in
-# Settings > General (SettingsGeneral.tsx), not an aria-label.
-SIDEBAR_OPERATIONS = '//div[contains(@class,"sidebar-foot")]//button[normalize-space()="Projects & operations"]'
+# The Projects rail action opens workspace views. Sign out is a text button
+# in Settings > General; it is not an aria-label.
+SIDEBAR_OPERATIONS = '//button[@aria-label="Projects"]'
 SETTINGS_SIGN_OUT = '//button[normalize-space()="Sign out"]'
 COMMAND_STOP_HOST = '//button[contains(@class,"command-row")][normalize-space()="Stop this host"]'
 
@@ -434,8 +433,8 @@ def main():
             account = password_signin(driver,username,password,setup=True)
             report['steps']['fresh_native_owner_setup'] = True
             driver.click(SIDEBAR_OPERATIONS,'xpath')
-            for label, heading in [('Projects','Projects'),('Runs','Runs'),('Overview','Control plane')]:
-                driver.click('//nav[@aria-label="Control plane views"]//button[normalize-space()="'+label+'"]','xpath')
+            for label, heading in [('Projects','Projects'),('Activity','Activity'),('Workflows','Workflows'),('Overview','Overview')]:
+                driver.click('//nav[@aria-label="Workspace views"]//button[normalize-space()="'+label+'"]','xpath')
                 wait(lambda:driver.script('return document.querySelector(".control-heading h1")?.textContent === arguments[0]',heading),'native control plane '+label)
                 assert_workspace(driver)
             report['steps']['native_control_plane_navigation'] = True

@@ -1,0 +1,83 @@
+import {createRef} from 'react';
+import {biSvg} from '../../lib/data-bi';
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import {dataRequest} from '../../lib/data-studio';
+import BIStudio,{Chart,ReportResult} from './BIStudio';
+import DataCopilot from './DataCopilot';
+vi.mock('../../lib/data-studio',async original=>({...await original<typeof import('../../lib/data-studio')>(),dataRequest:vi.fn(),dataDownload:vi.fn()}));
+const request=vi.mocked(dataRequest);
+const query={id:'q',revision:1,name:'Revenue query',connection_id:'c',sql:'select region, amount from sales'};
+const report={id:'r',revision:1,name:'Revenue report',query_id:'q',visual:{kind:'table' as const,aggregate:'none' as const},filters:[]};
+const props={workspaceId:'w',connections:[],queries:[query],role:'owner' as const};
+const copilot={settings:{revision:1,configured:true,provider_id:'p',model:'model',share_with_team:false,can_configure:true},providers:[{id:'p',name:'Test account',model:'model',models:['model']}],runs:[]};
+const run={id:'run',status:'completed' as const,message:'Summarize sales',answer:'Returned provider response.',events:[],proposals:[]};
+function biRequests(reports:unknown[]=[report],dashboards:unknown[]=[]){request.mockImplementation(async(path)=>{if(path.endsWith('/reports'))return reports;if(path.endsWith('/dashboards'))return dashboards;throw new Error('Unexpected '+path)})}
+afterEach(()=>{cleanup();vi.clearAllMocks();vi.unstubAllGlobals()});
+beforeEach(()=>{request.mockReset()});
+describe('BI report and dashboard API journey',()=>{
+ it('creates a real table report from a saved query without running the source',async()=>{
+  biRequests([]);render(<BIStudio {...props}/>);await screen.findByText('No reports yet');fireEvent.click(screen.getByRole('button',{name:'Create report'}));fireEvent.change(screen.getByLabelText('Name'),{target:{value:'Quarterly report'}});
+  request.mockImplementation(async(path,init)=>{if(path.endsWith('/reports')&&init?.method==='POST')return {...report,name:'Quarterly report'};throw new Error('Unexpected '+path)});
+  fireEvent.click(screen.getByRole('button',{name:'Create'}));await screen.findByRole('heading',{name:'Quarterly report'});const call=request.mock.calls.find(([,init])=>init?.method==='POST');expect(JSON.parse(String(call?.[1]?.body))).toEqual({name:'Quarterly report',query_id:'q',visual:{kind:'table',aggregate:'none'},filters:[]});expect(request.mock.calls.some(([path])=>path.endsWith('/run'))).toBe(false);
+ });
+ it('runs a saved report and shows actual returned data and truncation',async()=>{
+  biRequests();render(<BIStudio {...props}/>);await screen.findByRole('heading',{name:'Revenue report'});
+  request.mockImplementation(async(path)=>{if(path.endsWith('/reports/r/run'))return {id:'j',revision:1,status:'completed',connection_id:'c',result:{columns:[{name:'region'},{name:'amount'}],rows:[['West',42]],row_count:1,truncated:true}};throw new Error('Unexpected '+path)});
+  fireEvent.click(screen.getByRole('button',{name:'Run report'}));expect(await screen.findByText('West')).toBeInTheDocument();expect(screen.getByText('1 row · Preview truncated')).toBeInTheDocument();expect(request.mock.calls.some(([path,init])=>path.endsWith('/reports/r/run')&&JSON.parse(String(init?.body)).request_id)).toBe(true);
+ });
+ it('hides report edits and publication controls for a viewer',async()=>{biRequests([{...report,published:true}]);render(<BIStudio {...props} role="viewer"/>);await screen.findByRole('heading',{name:'Revenue report'});expect(screen.queryByRole('button',{name:'New report'})).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Edit report'})).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Publish to workspace'})).not.toBeInTheDocument()});
+ it('publishes the saved revision and fetches real immutable versions',async()=>{
+  biRequests();render(<BIStudio {...props}/>);await screen.findByRole('heading',{name:'Revenue report'});request.mockImplementation(async(path)=>path.endsWith('/publish')?{...report,revision:2,published:true,version:1}:path.endsWith('/versions')?[{id:'v',version:1,created_at:'2026-11-11'}]:Promise.reject(new Error('Unexpected '+path)));
+  fireEvent.click(screen.getByRole('button',{name:'Publish to workspace'}));await screen.findByText('Published to workspace · Version 1');expect(JSON.parse(String(request.mock.calls.find(([path])=>path.endsWith('/publish'))?.[1]?.body))).toEqual({revision:1});fireEvent.click(screen.getByRole('button',{name:'Published versions'}));expect(await screen.findByText('Version 1')).toBeInTheDocument();
+ });
+ it('runs each authorized dashboard report pipeline',async()=>{
+  biRequests([report],[{id:'d',revision:1,name:'Sales dashboard',report_ids:['r']}]);render(<BIStudio {...props}/>);await screen.findByRole('heading',{name:'Revenue report'});fireEvent.click(screen.getByRole('button',{name:'Dashboards'}));request.mockImplementation(async(path)=>path.endsWith('/reports/r/run')?{id:'j',revision:1,status:'completed',connection_id:'c',result:{columns:[{name:'amount'}],rows:[[24]],row_count:1,truncated:false}}:Promise.reject(new Error('Unexpected '+path)));fireEvent.click(screen.getByRole('button',{name:'Run dashboard'}));expect(await screen.findByText('24')).toBeInTheDocument();
+ });
+ it('discards late results from the previous workspace',async()=>{let finish:(value:unknown)=>void=()=>{};request.mockImplementation((path)=>path.includes('/workspaces/w/')?new Promise(resolve=>{if(path.endsWith('/reports'))finish=resolve;else resolve([])}):Promise.resolve([]));const {rerender}=render(<BIStudio {...props}/>);rerender(<BIStudio {...props} workspaceId="other"/>);await screen.findByText('No reports yet');await act(async()=>finish([report]));expect(screen.queryByText('Revenue report')).not.toBeInTheDocument()});
+});
+describe('BI chart integrity',()=>{
+ const result={columns:[{name:'label'},{name:'value'}],rows:[['Safe <script>',10],['Missing',null]],row_count:2,truncated:false};
+ it.each(['bar','line','area','scatter','pie'] as const)('renders accessible %s without markup execution',kind=>{const data=kind==='scatter'?{...result,rows:[[1,10],[2,null]]}:result;render(<Chart result={data} visual={{kind,x:'label',y:'value'}} title="Actual chart"/>);expect(screen.getByRole('img',{name:'Actual chart — '+kind+' chart'})).toBeInTheDocument();expect(document.querySelector('script')).toBeNull();expect(screen.getByText(/1 row omitted/)).toBeInTheDocument()});
+ it('renders only the returned scalar KPI data',()=>{render(<Chart result={{...result,rows:[['Only',10]],row_count:1}} visual={{kind:'metric',y:'value'}} title="KPI"/>);expect(screen.getByText('10')).toBeInTheDocument()});
+ it('refuses a multirow KPI even when missing values leave one numeric point',()=>{render(<Chart result={result} visual={{kind:'metric',y:'value'}} title="KPI"/>);expect(screen.getByText('KPI needs one result row. Choose an aggregate.')).toBeInTheDocument()});
+ it('includes truncation and omissions in the standalone SVG description',()=>{render(<Chart result={{...result,truncated:true}} visual={{kind:'bar',x:'label',y:'value'}} title="Preview"/>);expect(document.querySelector('svg desc')).toHaveTextContent('Preview truncated; chart includes returned rows only.');expect(document.querySelector('svg desc')).toHaveTextContent('1 rows omitted')});
+ it('uses the backend count alias without frontend recomputation',()=>{render(<ReportResult report={{...report,visual:{kind:'metric',aggregate:'count'}}} job={{id:'j',revision:1,status:'completed',connection_id:'c',report_context:{visual:{kind:'metric',aggregate:'count',y:'count'}},result:{columns:[{name:'count'}],rows:[[517]],row_count:1,truncated:false}}}/>);expect(screen.getByText('517')).toBeInTheDocument()});
+});
+describe('Data Copilot explicit context and actions',()=>{
+ it('loads settings without inference and defaults context off',async()=>{request.mockResolvedValue(copilot);render(<DataCopilot workspaceId="w" visible connectionId="c" queryId="q" role="owner" onClose={()=>{}}/>);await screen.findByText('What would you like to explore?');expect(request).toHaveBeenCalledTimes(1);expect(screen.getByRole('button',{name:'Schema'})).toHaveAttribute('aria-pressed','false');expect(screen.getByRole('button',{name:'Results'})).toHaveAttribute('aria-pressed','false');expect(screen.getByRole('button',{name:'Send message'})).toBeDisabled()});
+ it('sends only selected schema/results flags and the actual message',async()=>{request.mockResolvedValue(copilot);render(<DataCopilot workspaceId="w" visible connectionId="c" queryId="q" role="editor" onClose={()=>{}}/>);await screen.findByText('What would you like to explore?');fireEvent.click(screen.getByRole('button',{name:'Schema'}));fireEvent.change(screen.getByLabelText('Message Copilot'),{target:{value:'Summarize sales'}});request.mockResolvedValue(run);fireEvent.click(screen.getByRole('button',{name:'Send message'}));await screen.findByText('Returned provider response.');const body=JSON.parse(String(request.mock.calls.find(([path])=>path.endsWith('/messages'))?.[1]?.body));expect(body).toMatchObject({message:'Summarize sales',connection_id:'c',query_id:'q',include_schema:true,include_results:false});expect(body.request_id).toBeTruthy()});
+ it('stops the actual active run',async()=>{request.mockResolvedValue({...copilot,runs:[{...run,status:'running'}]});render(<DataCopilot workspaceId="w" visible onClose={()=>{}}/>);await screen.findByRole('button',{name:'Stop Copilot'});request.mockResolvedValue({...run,status:'cancelled',answer:undefined});fireEvent.click(screen.getByRole('button',{name:'Stop Copilot'}));await screen.findByText('Stopped.');expect(request.mock.calls.some(([path,init])=>path.endsWith('/runs/run/cancel')&&init?.method==='POST')).toBe(true)});
+ it('opens query proposals without saving or executing',async()=>{const open=vi.fn();request.mockResolvedValue({...copilot,runs:[{...run,proposals:[{type:'query',title:'By region',definition:{connection_id:'c',sql:'select region from sales'}}]}]});render(<DataCopilot workspaceId="w" visible onClose={()=>{}} onOpenQuery={open}/>);fireEvent.click(await screen.findByRole('button',{name:'Open query'}));expect(open).toHaveBeenCalledWith({connection_id:'c',sql:'select region from sales',name:'By region'});expect(request).toHaveBeenCalledTimes(1)});
+ it('saves typed reports only on an explicit editor action',async()=>{request.mockResolvedValue({...copilot,runs:[{...run,proposals:[{type:'report',title:'Sales report',definition:{name:'Sales report',query_id:'q',visual:{kind:'table'}}}]}]});const saved=vi.fn();render(<DataCopilot workspaceId="w" visible role="editor" onClose={()=>{}} onSaveReport={saved}/>);const button=await screen.findByRole('button',{name:'Save report'});expect(request).toHaveBeenCalledTimes(1);request.mockResolvedValue(report);fireEvent.click(button);await waitFor(()=>expect(saved).toHaveBeenCalledOnce());expect(request.mock.calls.some(([path,init])=>path.endsWith('/reports')&&init?.method==='POST')).toBe(true)});
+ it('hides report mutation actions for viewers',async()=>{request.mockResolvedValue({...copilot,runs:[{...run,proposals:[{type:'report',title:'Sales report',definition:{name:'Sales report',query_id:'q',visual:{kind:'table'}}}]}]});render(<DataCopilot workspaceId="w" visible role="viewer" onClose={()=>{}}/>);await screen.findByText('Sales report');expect(screen.queryByRole('button',{name:'Save report'})).not.toBeInTheDocument()});
+ it('shows provider errors without fabricating an answer',async()=>{request.mockResolvedValue(copilot);render(<DataCopilot workspaceId="w" visible onClose={()=>{}}/>);await screen.findByText('What would you like to explore?');fireEvent.change(screen.getByLabelText('Message Copilot'),{target:{value:'Hello'}});request.mockRejectedValue(new Error('Provider authentication expired'));fireEvent.click(screen.getByRole('button',{name:'Send message'}));expect(await screen.findByRole('alert')).toHaveTextContent('Provider authentication expired');expect(screen.queryByText('Returned provider response.')).not.toBeInTheDocument()});
+ it('requires explicit owner team access and saves its settings revision',async()=>{request.mockResolvedValue({...copilot,settings:{...copilot.settings,configured:false}});render(<DataCopilot workspaceId="w" visible role="owner" onClose={()=>{}}/>);fireEvent.click(await screen.findByRole('button',{name:'Set up Copilot'}));expect(screen.getByRole('button',{name:'Off'})).toHaveAttribute('aria-pressed','false');fireEvent.click(screen.getByRole('button',{name:'Off'}));request.mockImplementation(async(path)=>path.endsWith('/settings')?{...copilot.settings,revision:2,share_with_team:true}:copilot);fireEvent.click(screen.getByRole('button',{name:'Save'}));await waitFor(()=>expect(request.mock.calls.some(([path])=>path.endsWith('/settings'))).toBe(true));expect(JSON.parse(String(request.mock.calls.find(([path])=>path.endsWith('/settings'))?.[1]?.body))).toEqual({revision:1,provider_id:'p',model:'model',share_with_team:true})});
+ it('aborts hidden-context requests and discards late data',async()=>{let resolve:(value:unknown)=>void=()=>{};request.mockImplementation(()=>new Promise(done=>{resolve=done}));const {rerender}=render(<DataCopilot workspaceId="w" visible onClose={()=>{}}/>);const signal=request.mock.calls[0][1]?.signal;rerender(<DataCopilot workspaceId="w" visible={false} onClose={()=>{}}/>);expect(signal?.aborted).toBe(true);await act(async()=>resolve({...copilot,runs:[run]}));expect(screen.queryByText('Returned provider response.')).not.toBeInTheDocument()});
+});
+
+describe('Measured chart viewport',()=>{
+ it('resizes chart geometry and exported SVG without scaling down text, then disconnects',()=>{
+  let resize:ResizeObserverCallback=()=>{};const observe=vi.fn(),disconnect=vi.fn();
+  vi.stubGlobal('ResizeObserver',class{constructor(callback:ResizeObserverCallback){resize=callback}observe=observe;disconnect=disconnect});
+  const svgRef=createRef<SVGSVGElement>(),data={columns:[{name:'category'},{name:'value'}],rows:Array.from({length:12},(_,index)=>['Region '+index,index*1000]),row_count:12,truncated:false};
+  const {container,unmount}=render(<Chart result={data} visual={{kind:'bar',x:'category',y:'value'}} title="Measured chart" svgRef={svgRef}/>),frame=container.querySelector('.bi-chart-frame')!;
+  expect(observe).toHaveBeenCalledWith(frame);
+  act(()=>resize([{target:frame,contentRect:{width:280}} as ResizeObserverEntry],{} as ResizeObserver));
+  expect(svgRef.current).toHaveAttribute('viewBox','0 0 280 320');expect(svgRef.current).toHaveAttribute('width','280');
+  expect([...container.querySelectorAll('svg text')].every(label=>label.getAttribute('font-size')==='12')).toBe(true);
+  expect(container.querySelector('.bi-chart-axis')).toHaveAttribute('x2','256');
+  const narrowLabelCount=container.querySelectorAll('svg text').length,exported=biSvg(svgRef.current!);
+  expect(exported).toContain('viewBox="0 0 280 320"');expect(exported).toContain('width="280"');
+  for(const bar of container.querySelectorAll('svg rect')){expect(Number(bar.getAttribute('x'))).toBeGreaterThanOrEqual(48);expect(Number(bar.getAttribute('x'))+Number(bar.getAttribute('width'))).toBeLessThanOrEqual(256)}
+  act(()=>resize([{target:frame,contentRect:{width:800}} as ResizeObserverEntry],{} as ResizeObserver));
+  expect(svgRef.current).toHaveAttribute('viewBox','0 0 800 320');expect(container.querySelectorAll('svg text').length).toBeGreaterThan(narrowLabelCount);
+  act(()=>resize([{target:frame,contentRect:{width:0}} as ResizeObserverEntry],{} as ResizeObserver));expect(svgRef.current).toHaveAttribute('viewBox','0 0 800 320');
+  unmount();expect(disconnect).toHaveBeenCalledOnce();
+ });
+ it('centers pie marks inside the measured mobile viewport',()=>{
+  let resize:ResizeObserverCallback=()=>{};vi.stubGlobal('ResizeObserver',class{constructor(callback:ResizeObserverCallback){resize=callback}observe(){}disconnect(){}});
+  const {container}=render(<Chart result={{columns:[{name:'category'},{name:'value'}],rows:[['Only',12]],row_count:1,truncated:false}} visual={{kind:'pie',x:'category',y:'value'}} title="Pie"/>),frame=container.querySelector('.bi-chart-frame')!;
+  act(()=>resize([{target:frame,contentRect:{width:280}} as ResizeObserverEntry],{} as ResizeObserver));expect(container.querySelector('svg circle')).toHaveAttribute('cx','140');expect(container.querySelector('svg circle')).toHaveAttribute('r','112');
+ });
+});

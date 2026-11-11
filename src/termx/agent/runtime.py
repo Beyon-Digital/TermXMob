@@ -86,7 +86,7 @@ class ProviderHttpRuntime:
         self,
         key: str,
         *,
-        timeout_s: float,
+        timeout_s: float | None,
         headers: dict[str, str],
     ) -> httpx.AsyncClient:
         client = self._clients.get(key)
