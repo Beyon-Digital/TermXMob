@@ -83,7 +83,7 @@ it('opens the main conversation when settings opened by a deep link are closed',
  fireEvent.click(screen.getByRole('button',{name:'Close settings'}));
  await waitFor(()=>expect(screen.getByTestId('selected-chat')).toHaveTextContent('main'));
  expect(mocks.ensure).toHaveBeenCalledOnce();
- expect(location.pathname).toBe('/session/main');
+ await waitFor(()=>expect(location.pathname).toBe('/session/main'));
 });
 
 it('resolves the main conversation when browser history returns to the root',async()=>{

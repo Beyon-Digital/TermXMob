@@ -460,10 +460,13 @@ it('loads an entering preview once and releases its blob when it leaves or locks
   Object.defineProperty(URL, 'revokeObjectURL', {configurable: true, value: revoke});
   vi.mocked(transfer).mockResolvedValue(new Blob(['image'], {type: 'image/png'}));
   vi.mocked(loadStudioJobs).mockResolvedValue([{...job, status: 'completed', outputs: ['/api/media/artifacts/owned/export?format=original']}]);
-  render(<MediaStudio projectId="project"/>); await ready();
-  expect(screen.getByRole('link', {name: 'Download Generation job, output 1'})).toHaveAttribute('href', '/api/media/artifacts/owned/export?format=original');
-  const element = [...observer.watched.keys()][0];
-  act(() => {observer.visible(element, true); observer.visible(element, true);});
+  render(<MediaStudio projectId="project"/>); await ready(false);
+  const download = screen.getByRole('link', {name: 'Download Generation job, output 1'});
+  expect(download).toHaveAttribute('href', '/api/media/artifacts/owned/export?format=original');
+  const element = download.closest('.studio-output')!;
+  expect(element).not.toBeNull();
+  await waitFor(() => {expect(observer.watched.size).toBe(1); expect(observer.watched.has(element)).toBe(true);});
+  await act(async () => {observer.visible(element, true); observer.visible(element, true);});
   await screen.findByRole('img', {name: 'Generation job, output 1'});
   expect(transfer).toHaveBeenCalledTimes(1);
   act(() => observer.visible(element, false));
