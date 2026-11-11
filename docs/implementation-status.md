@@ -51,14 +51,15 @@ The current slice is read-only. Source DML/DDL, administration, backup/restore, 
 
 ## Verification
 
-Local macOS evidence before publication:
+Local macOS evidence for the publication candidate:
 
 | Check | Result and scope |
 | --- | --- |
 | Full frontend suite | 1,877 passed; 267 suites. |
 | TypeScript and production UI build | Passed using the project's Node 24 runtime. |
-| Full backend suite | 3,544 passed, 147 skipped, 48 warnings. Skips include platform-specific and opt-in native/browser/container integrations. |
+| Full backend suite | 3,552 passed, 148 skipped, 48 warnings. Skips include platform-specific and opt-in native/browser/container integrations. |
 | Final focused Data backend suite | 102 passed, no skips. |
+| Frozen parser regression | 5 passed, 1 platform skip using the pinned freezer; all three supported SQL dialects load in the built executable. |
 | Data browser proof | 60 captured states, 12 full journeys and 32 inset-focus checks at 375px/1280px in light/dark. Zero axe violations; incomplete automated checks remain inconclusive. |
 | Data query/BI correctness | Actual 2,501-row SQLite file; 1,000-row truncated preview; full-source aggregate 3,128,751; source bytes unchanged. |
 | Copilot integration | Actual provider adapter/tool loop over 20 mocked HTTP requests; actual SQLite tool reads and typed proposals. No paid inference. |

@@ -154,6 +154,19 @@ html[data-app-workspace=agent] .workbench :is(.explorer-header, .explorer-tools,
 html[data-app-workspace=agent] .workbench .editor-tab { border: 0; border-radius: var(--agent-radius); margin-inline: var(--agent-space-4); background: transparent; }
 html[data-app-workspace=agent] .workbench .editor-tab.selected { background: var(--surface-2); color: var(--text); border: 0; }
 html[data-app-workspace=agent] .workbench .editor-breadcrumbs { min-height: var(--agent-control-height); padding: var(--agent-space-8) var(--agent-space-12); color: var(--text-2); }
+/* Keep nested tab chrome compact on short desktop viewports, including zoomed windows. */
+@media (max-height: 640px) and (pointer: fine) {
+  html[data-app-workspace=agent] .workbench .editor-tab-bar {
+    height: var(--agent-control-default);
+    min-height: var(--agent-control-default);
+    padding-block: 0;
+  }
+  html[data-app-workspace=agent] .workbench :is(.editor-tabs, .editor-tab) {
+    height: var(--agent-control-height);
+    min-height: var(--agent-control-height);
+    padding-block: 0;
+  }
+}
 html[data-app-workspace=agent] .editor-host .cm-editor { background: var(--bg); color: var(--text); }
 html[data-app-workspace=agent] .editor-host .cm-gutters { color: var(--text-3); background: var(--bg); }
 html[data-app-workspace=agent] .editor-empty { gap: var(--agent-space-16); padding: var(--agent-space-24); font-size: var(--agent-text-sm); }
