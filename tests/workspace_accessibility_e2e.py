@@ -6,6 +6,7 @@ No agents/providers are executed. No default configuration store is accessed.
 from __future__ import annotations
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import tempfile
@@ -71,7 +72,7 @@ def run(destination, axe_source):
                         # breadcrumb after authenticated deep-link restoration.
                         if zoom == 200:
                             page.get_by_role('button',name='Show sidebar',exact=True).click()
-                        page.get_by_role('complementary',name='Chats and agents',exact=True).get_by_role('button',name='Keyboard workspace fixture',exact=True).click()
+                        page.get_by_role('complementary',name='Chats and agents',exact=True).get_by_role('button',name=re.compile(r'^Keyboard workspace fixture(?:\s|$)')).click()
                         hide_sidebar=page.get_by_role('navigation',name='Workspace navigation',exact=True).get_by_role('button',name='Hide sidebar',exact=True)
                         if zoom == 200 and hide_sidebar.is_visible():
                             hide_sidebar.click()
