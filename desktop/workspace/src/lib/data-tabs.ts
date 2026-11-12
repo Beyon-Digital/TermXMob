@@ -15,6 +15,8 @@ export const pivotViewTabId = (viewId: string) => 'pivot:view:' + viewId;
 export const segmentTabId = (viewId: string) => 'segment:view:' + viewId;
 export const pivotDraftTabId = (connectionId: string, tableKey: string, n: number) => 'pivot:new:' + connectionId + ':' + tableKey + ':' + n;
 export const drillTabId = (n: number) => 'drill:' + n;
+/** A query spec names its table without a schema; the tab needs the schema the source lists it under (SQLite reports "main"). */
+export const schemaFor = (tables: {name: string; schema?: string}[] | undefined, table: string) => tables?.find(row => row.name === table)?.schema || undefined;
 const DRAFT_ID = /^pivot:new:[^:]+:.+:\d+$/;
 export const initialTabs = (): DataTabsState => ({tabs: [{...OVERVIEW_TAB}], activeId: OVERVIEW_TAB.id});
 

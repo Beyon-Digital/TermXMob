@@ -6,7 +6,7 @@ import {DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMen
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
 import {Input} from '../../components/ui/input';
 import {dataBody, dataError, dataPath, dataRequest, readDataSelection, rememberDataSelection, useDataScope, type DataBootstrap, type DataConnection, type DataQuery, type DataQueryDraft, type DataSnapshot, type DataWorkspace} from '../../lib/data-studio';
-import {closeTab, drillTabId, initialTabs, openTab, pivotDraftTabId, pivotViewTabId, pruneTabs, queryTabId, readTabs, rememberTabs, segmentTabId, selectTab, tableTabId, type DataTab, type DataTabsState} from '../../lib/data-tabs';
+import {closeTab, drillTabId, initialTabs, openTab, pivotDraftTabId, pivotViewTabId, pruneTabs, queryTabId, readTabs, rememberTabs, schemaFor, segmentTabId, selectTab, tableTabId, type DataTab, type DataTabsState} from '../../lib/data-tabs';
 import type {ViewDetail, ViewSummary, ViewUse} from '../../lib/data-views';
 import type {QuerySpec, SchemaTable} from '../../lib/query-spec';
 import DatabaseStudio from './DatabaseStudio';
@@ -196,13 +196,14 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   const openPivot = (row: ViewSummary) => showDatabase({id: pivotViewTabId(row.id), kind: 'pivot', viewId: row.id, connectionId: row.connection_id});
   const openSegment = (row: Pick<ViewSummary, 'id'>) => showDatabase({id: segmentTabId(row.id), kind: 'segment', viewId: row.id});
   const openUse = (use: ViewUse | Pick<ViewSummary, 'id' | 'kind'>) => {if (use.kind === 'pivot') showDatabase({id: pivotViewTabId(use.id), kind: 'pivot', viewId: use.id}); else if (use.kind === 'segment') openSegment(use);};
+  const schemaPart = (table: string) => {const schema = schemaFor(controller.schema?.tables, table); return schema ? {schema} : {};};
   function useForPivot(segment: ViewDetail) {
     draftCounter.current += 1;
-    showDatabase({id: pivotDraftTabId(segment.connection_id, segment.spec.from.table, draftCounter.current), kind: 'pivot', connectionId: segment.connection_id, table: segment.spec.from.table, segmentId: segment.id});
+    showDatabase({id: pivotDraftTabId(segment.connection_id, segment.spec.from.table, draftCounter.current), kind: 'pivot', connectionId: segment.connection_id, table: segment.spec.from.table, ...schemaPart(segment.spec.from.table), segmentId: segment.id});
   }
   function openDrill(spec: QuerySpec, title: string, note?: string) {
     draftCounter.current += 1;
-    showDatabase({id: drillTabId(draftCounter.current), kind: 'drill', connectionId, table: spec.from.table, spec, title, ...(note ? {note} : {})});
+    showDatabase({id: drillTabId(draftCounter.current), kind: 'drill', connectionId, table: spec.from.table, ...schemaPart(spec.from.table), spec, title, ...(note ? {note} : {})});
   }
   function pivotSaved(detail: ViewDetail, fromTabId: string) {
     updateTabs(state => openTab(fromTabId.startsWith('pivot:new:') ? closeTab(state, fromTabId) : state, {id: pivotViewTabId(detail.id), kind: 'pivot', viewId: detail.id, connectionId: detail.connection_id}));

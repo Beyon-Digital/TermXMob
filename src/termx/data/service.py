@@ -246,7 +246,11 @@ class DataService:
     def connections(self, actor, wid: str):
         workspace = self.require(actor, wid)
         if workspace['role'] == 'viewer':
-            return []
+            # Viewers only learn that a shared source exists, so the views built on it can be listed. No path, account or policy.
+            return [{'id': record['id'], 'workspace_id': wid, 'revision': record['revision'], 'name': record['name'], 'engine': record['engine'],
+                     'shared_read': True, 'config': {}}
+                    for record in self.store.list('connection', wid)
+                    if record.get('shared_read') and not record.get('revoked')]
         result = []
         for record in self.store.list('connection', wid):
             try:
