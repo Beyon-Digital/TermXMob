@@ -1,3 +1,4 @@
+import './lib/random-uuid';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import '@fontsource-variable/geist';
