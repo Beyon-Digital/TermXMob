@@ -11,7 +11,7 @@ import DatabaseStudio from './DatabaseStudio';
 import TeamSettings from './TeamSettings';
 import BIStudio from './BIStudio';
 import DataCopilot from './DataCopilot';
-import DataNavigation, {tableKey, type NamedRecord} from './DataNavigation';
+import DataNavigation, {tableLabel, type NamedRecord} from './DataNavigation';
 import DataTabs from './DataTabs';
 import TablesOverview from './TablesOverview';
 import TableTab from './TableTab';
@@ -43,7 +43,7 @@ export default function DataStudio({ownerId, visible, observing = true, locked =
     onRetain={(key, draft) => setRetained(previous => ({ownerId, drafts: {...(previous && previous.ownerId === ownerId ? previous.drafts : {}), [key]: draft}}))}/>;
 }
 
-const viewTitle: Record<'bi' | 'team', string> = {bi: 'Reports', team: 'Members'};
+const viewTitle: Record<'bi' | 'team', string> = {bi: 'Reports', team: 'Team'};
 const named = (rows: unknown[]): NamedRecord[] => rows.filter((row): row is NamedRecord => !!row && typeof row === 'object' && typeof (row as NamedRecord).id === 'string' && typeof (row as NamedRecord).name === 'string');
 
 function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRetain}: {ownerId?: string; navigationHost?: HTMLElement | null; onNavigate?: () => void; retainedDrafts: Record<string, DataQueryDraft>; onRetain: (key: string, draft: DataQueryDraft) => void}) {
@@ -105,7 +105,7 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     const tabs = stored.tabs.filter(tab => tab.kind === 'overview' || tab.kind === 'table' && tab.connectionId === connectionId || tab.kind === 'query' && (!tab.queryId || queries.find(row => row.id === tab.queryId)?.connection_id === connectionId || !snapshot));
     return {tabs, activeId: tabs.some(tab => tab.id === stored.activeId) ? stored.activeId : 'overview'};
   }, [stored, connectionId, queries, snapshot]);
-  const tabTitle = (tab: DataTab) => tab.kind === 'overview' ? 'Overview' : tab.kind === 'table' ? (tab.schema ? tab.schema + '.' : '') + tab.table : tab.queryId ? queries.find(row => row.id === tab.queryId)?.name || 'Saved query' : 'New query';
+  const tabTitle = (tab: DataTab) => tab.kind === 'overview' ? 'Overview' : tab.kind === 'table' ? tableLabel({name: tab.table!, schema: tab.schema}) : tab.queryId ? queries.find(row => row.id === tab.queryId)?.name || 'Saved query' : 'New query';
   const showDatabase = (tab?: DataTab) => {
     if (tab) updateTabs(state => openTab(state, tab));
     setSelection(previous => ({...previous, view: 'database'}));
@@ -170,7 +170,7 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     if (!snapshot) return null;
     if (tab.kind === 'overview') return <TablesOverview ownerId={ownerId} role={role} hasConnections={snapshot.connections.length > 0} source={source} engine={engine} controller={controller}
       canEditSource={writable && (!source?.created_by || source.created_by === ownerId)} onConnect={() => setSourceDialog({open: true})} onEditSource={() => setSourceDialog({open: true, record: source})} onArchiveSource={() => setArchiveSource(source)} onOpenTable={openTable}/>;
-    if (tab.kind === 'table') return <TableTab name={(tab.schema ? tab.schema + '.' : '') + tab.table} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))}/>;
+    if (tab.kind === 'table') return <TableTab name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))}/>;
     const retainedKey = workspaceId + ':' + tab.id;
     return <DatabaseStudio key={tab.id} ownerId={ownerId} workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} engines={engines} role={role} connectionId={connectionId}
       onConnectionChange={id => setSelection(previous => ({...previous, connectionId: id}))} onRefresh={requestRefresh} draft={queryDraft?.tabId === tab.id ? queryDraft.draft : null} onDraftConsumed={() => setQueryDraft(null)}

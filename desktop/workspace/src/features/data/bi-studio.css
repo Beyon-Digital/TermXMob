@@ -6,3 +6,4 @@
 
 .bi-dialog,.copilot-settings-dialog{color:var(--text);background:var(--surface);max-height:calc(100dvh - 32px);overflow:auto}
 @media(pointer:coarse){.bi-object,.bi-fields :is(.input,.select),.bi-filter :is(.input,.select),.bi-dialog :is(.input,.select),.copilot-settings-dialog :is(.input,.select),.bi-dashboard-name .input,.bi-add-tile .select{min-height:44px}.bi-table th,.bi-table td{height:44px}.bi-studio .button,.data-copilot .button,.bi-dialog .button,.copilot-settings-dialog .button,.bi-dialog .dialog-close,.copilot-settings-dialog .dialog-close{min-height:44px}.bi-dialog .button-icon,.copilot-settings-dialog .button-icon,.copilot-settings-dialog .dialog-close,.bi-dialog .dialog-close{width:44px;height:44px}}
+.data-copilot .copilot-header h2{font-size:16px;line-height:24px;font-weight:500}.copilot-header>div:first-child{display:flex;align-items:baseline;gap:8px;min-width:0}

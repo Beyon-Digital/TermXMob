@@ -1,4 +1,4 @@
-import {type ReactNode} from 'react';
+import {useEffect, useRef, type ReactNode} from 'react';
 import {X} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '../../components/ui/tabs';
@@ -14,10 +14,12 @@ type Props = {
 };
 /** Closable canvas tabs. Query tabs stay mounted while hidden so unsaved SQL survives a tab switch. */
 export default function DataTabs({state, title, onSelect, onClose, actions, banner, panel}: Props) {
-  const activeTab = state.tabs.find(tab => tab.id === state.activeId);
+  const activeTab = state.tabs.find(tab => tab.id === state.activeId), list = useRef<HTMLDivElement>(null);
+  // A narrow strip scrolls sideways, so keep the selected tab in view.
+  useEffect(() => {list.current?.querySelector<HTMLElement>('[role=tab][data-state=active]')?.scrollIntoView?.({block: 'nearest', inline: 'nearest'});}, [state.activeId]);
   return <Tabs className="data-tabs" value={state.activeId} onValueChange={onSelect}>
     <header className="data-header">
-      <TabsList className="data-tab-list" aria-label="Open tables and queries">
+      <TabsList ref={list} className="data-tab-list" aria-label="Open tables and queries">
         {state.tabs.map(tab => {
           const label = title(tab), closable = tab.kind !== 'overview';
           return <div className="data-tab" key={tab.id} data-closable={closable || undefined}>

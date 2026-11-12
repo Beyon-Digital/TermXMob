@@ -16,7 +16,11 @@ type Props = {
   onOpenOverview: () => void; onOpenTable: (table: SchemaTable) => void; onOpenQuery: (query: DataQuery) => void; onNewQuery: () => void; onOpenView: (view: 'bi' | 'team') => void;
 };
 export const TABLE_PAGE = 200;
+/** Identity of a table inside a source. */
 export const tableKey = (table: SchemaTable) => (table.schema ? table.schema + '.' : '') + table.name;
+/** What people read: the default schema (main, public) is implied. */
+export const tableLabel = (table: Pick<SchemaTable, 'name' | 'schema'>) => table.schema && !DEFAULT_SCHEMAS.includes(table.schema) ? table.schema + '.' + table.name : table.name;
+const DEFAULT_SCHEMAS = ['main', 'public'];
 const matches = (text: string, needle: string) => text.toLowerCase().includes(needle);
 
 /** Studio-pattern sidebar for Data: scope switchers, search, then Tables, Saved queries, Reports, Dashboards and Team. */
@@ -62,7 +66,7 @@ export default function DataNavigation(props: Props) {
           {source.schemaStatus === 'ready' && (!source.schema?.tables.length ? <p className="data-nav-note">No visible tables.</p> : !tables.length ? <p className="data-nav-note">No tables match.</p> : <>
             {tables.slice(0, shown).map(table => {
               const id = 'table:' + connectionId + ':' + tableKey(table), blocked = table.readable === false;
-              return <button type="button" key={id} className="data-nav-row" aria-current={current(id)} disabled={blocked} title={blocked ? table.reason || 'This table cannot be read.' : tableKey(table)} onClick={() => props.onOpenTable(table)}><span>{tableKey(table)}</span></button>;
+              return <button type="button" key={id} className="data-nav-row" aria-current={current(id)} disabled={blocked} title={blocked ? table.reason || 'This table cannot be read.' : tableLabel(table)} onClick={() => props.onOpenTable(table)}><span>{tableLabel(table)}</span></button>;
             })}
             {tables.length > shown && <Button variant="ghost" className="data-nav-row data-nav-action" onClick={() => setShown(value => value + TABLE_PAGE)}>Show more tables</Button>}
           </>)}

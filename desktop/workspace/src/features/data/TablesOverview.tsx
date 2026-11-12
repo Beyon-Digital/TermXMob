@@ -3,7 +3,7 @@ import {LayoutGrid, List, Pencil, Trash2} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import type {DataConnection, DataEngine, DataRole} from '../../lib/data-studio';
 import type {SchemaTable} from '../../lib/query-spec';
-import {tableKey} from './DataNavigation';
+import {tableKey, tableLabel} from './DataNavigation';
 import type {SourceController} from './use-source';
 
 export type OverviewMode = 'list' | 'grid';
@@ -31,7 +31,7 @@ export default function TablesOverview({ownerId, role, hasConnections, source, e
     {writable && <Button onClick={onConnect}>Connect database</Button>}
     {!writable && hasConnections && <p>Choose a source in the sidebar.</p>}
   </div>;
-  const tables = controller.schema?.tables || [], status = controller.schemaStatus;
+  const tables = controller.schema?.tables || [], status = controller.schemaStatus, estimated = tables.some(table => typeof table.row_estimate === 'number');
   return <section className="data-overview" aria-label="Tables overview" aria-busy={status === 'loading'}>
     <header className="data-source-header">
       <div><h1>{source.name}</h1><p className="data-muted">{engine?.label || source.engine} · {engine?.ready ? engine.status === 'qualified' ? 'Qualified · Read-only queries' : engine.reason || 'Driver installed' : engine?.reason || 'Driver unavailable'}</p></div>
@@ -57,18 +57,18 @@ export default function TablesOverview({ownerId, role, hasConnections, source, e
     {writable && status === 'ready' && !tables.length && <div className="data-empty-inline"><p>This source has no visible tables.</p><Button variant="secondary" onClick={controller.loadSchema}>Load schema</Button></div>}
     {writable && status === 'ready' && tables.length > 0 && (mode === 'list'
       ? <table className="data-table-list">
-        <thead><tr><th scope="col">Table</th><th scope="col" className="data-number">Columns</th><th scope="col" className="data-number">Rows</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+        <thead><tr><th scope="col">Table</th><th scope="col" className="data-number">Columns</th>{estimated && <th scope="col" className="data-number">Rows</th>}<th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
         <tbody>{tables.map(table => <tr key={tableKey(table)}>
-          <th scope="row"><span className="data-table-name">{tableKey(table)}</span>{table.readable === false && <small>{table.reason || 'This table cannot be read.'}</small>}</th>
-          <td className="data-number">{table.columns.length.toLocaleString()}</td><td className="data-number">{typeof table.row_estimate === 'number' ? table.row_estimate.toLocaleString() : 'Not estimated'}</td>
-          <td className="data-row-action"><Button variant="ghost" size="sm" aria-label={'Open ' + tableKey(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button></td>
+          <th scope="row"><span className="data-table-name">{tableLabel(table)}</span>{table.readable === false && <small>{table.reason || 'This table cannot be read.'}</small>}</th>
+          <td className="data-number">{table.columns.length.toLocaleString()}</td>{estimated && <td className="data-number">{typeof table.row_estimate === 'number' ? table.row_estimate.toLocaleString() : 'Not estimated'}</td>}
+          <td className="data-row-action"><Button variant="ghost" size="sm" aria-label={'Open ' + tableLabel(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button></td>
         </tr>)}</tbody>
       </table>
       : <ul className="data-tiles">{tables.map(table => <li key={tableKey(table)} className="data-tile">
-        <h3>{tableKey(table)}</h3>
+        <h3>{tableLabel(table)}</h3>
         <p className="data-muted">{count(table.columns.length, 'column')}</p>
         <p className="data-muted">{table.readable === false ? table.reason || 'This table cannot be read.' : typeof table.row_estimate === 'number' ? rows(table) + ' rows' : 'Row count not estimated'}</p>
-        <Button variant="secondary" size="sm" aria-label={'Open ' + tableKey(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button>
+        <Button variant="secondary" size="sm" aria-label={'Open ' + tableLabel(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button>
       </li>)}</ul>)}
   </section>;
 }
