@@ -32,7 +32,7 @@ export type DialectCapabilities = { quote:string; param_style:'named_colon'; tab
   text_equality:'exact'|'collation'; filter_ops:LeafOp[]; max_in_values:number; null_ordering:'last'; null_ordering_impl:'native'|'emulated';
   boolean:{literal_true:string; literal_false:string; bind:'integer'|'boolean'}; limit_syntax:'limit_offset'; aggregates:AggregateFn[];
   conditional_aggregation:'case'; date_bucket:{buckets:DateBucket[]; week_standard:'iso8601'; labels:Record<DateBucket,string>; kinds:ValueKind[]};
-  join_kinds:('inner'|'left')[]; max_joins:number; max_filters:number; pivot:boolean; version_floor:string };
+  join_kinds:('inner'|'left')[]; max_joins:number; max_filters:number; pivot:{max_columns:number; max_row_dims:number; column_kinds:ValueKind[]}; version_floor:string };
 export type CapabilitiesResult = {connection_id:string; engine:string; label:string; supported:boolean; reason:string|null; qualified:boolean;
   requires_source_test:boolean; source_tested:boolean; dialect:DialectCapabilities|null};
 export type SchemaColumn = {name:string; type?:string; nullable?:boolean; primary_key?:boolean; value_kind?:ValueKind};

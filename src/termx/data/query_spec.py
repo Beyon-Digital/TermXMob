@@ -111,7 +111,7 @@ class FilterLeaf(Spec):
 class FilterSegment(Spec):
     """Membership of a saved segment: the segment's filters, inlined at compile time."""
     segment: str = Field(min_length=1, max_length=64)
-    negate: bool = False
+    negate: bool = Field(default=False, strict=True)
 
 
 def _filter_tag(value: Any) -> str:
@@ -697,7 +697,10 @@ class _Compiler:
                         continue
                     item = item.model_copy(update={'field': ColumnRef(
                         table_alias=amap.get(item.field.table_alias, item.field.table_alias), column=item.field.column)})
+                before = len(self.errors)
                 text = self.leaf(item, sub)
+                if amap is not None:   # a problem inside a segment is reported at the outermost reference
+                    self.errors[before:] = [SpecError(e.code, path, e.message) for e in self.errors[before:]]
             if text:
                 parts.append(text)
         if not parts:
