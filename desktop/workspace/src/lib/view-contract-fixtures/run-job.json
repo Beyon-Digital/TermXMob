@@ -1,0 +1,98 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/views/v_pivot/run",
+    "as": "alice",
+    "body": {
+      "request_id": "fixture-run",
+      "mode": "rows"
+    }
+  },
+  "status": 200,
+  "response": {
+    "id": "job_01",
+    "status": "queued",
+    "connection_id": "conn_01",
+    "created_at": "<time>",
+    "updated_at": "<time>",
+    "cancel_requested": false,
+    "preview_limit": 1000,
+    "view_id": "v_pivot",
+    "view_revision": 1,
+    "mode": "rows",
+    "output": {
+      "columns": [
+        {
+          "label": "region",
+          "value_kind": "text",
+          "role": "pivot_row",
+          "alias": "pv_r1",
+          "table_alias": "s",
+          "column": "region"
+        },
+        {
+          "label": "2020-12",
+          "value_kind": "integer",
+          "role": "pivot_cell",
+          "alias": "pv_c1",
+          "fn": "sum",
+          "column_value": "2020-12",
+          "column_empty": false
+        },
+        {
+          "label": "2021-01",
+          "value_kind": "integer",
+          "role": "pivot_cell",
+          "alias": "pv_c2",
+          "fn": "sum",
+          "column_value": "2021-01",
+          "column_empty": false
+        },
+        {
+          "label": "2026-01",
+          "value_kind": "integer",
+          "role": "pivot_cell",
+          "alias": "pv_c3",
+          "fn": "sum",
+          "column_value": "2026-01",
+          "column_empty": false
+        },
+        {
+          "label": "2026-02",
+          "value_kind": "integer",
+          "role": "pivot_cell",
+          "alias": "pv_c4",
+          "fn": "sum",
+          "column_value": "2026-02",
+          "column_empty": false
+        },
+        {
+          "label": "2026-03",
+          "value_kind": "integer",
+          "role": "pivot_cell",
+          "alias": "pv_c5",
+          "fn": "sum",
+          "column_value": "2026-03",
+          "column_empty": false
+        },
+        {
+          "label": "(empty)",
+          "value_kind": "integer",
+          "role": "pivot_cell",
+          "alias": "pv_c6",
+          "fn": "sum",
+          "column_value": null,
+          "column_empty": true
+        },
+        {
+          "label": "Total amount",
+          "value_kind": "integer",
+          "role": "pivot_total",
+          "alias": "pv_total",
+          "fn": "sum"
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

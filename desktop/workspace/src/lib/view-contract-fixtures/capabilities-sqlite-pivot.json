@@ -1,0 +1,110 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/connections/conn_01/capabilities",
+    "as": "alice",
+    "body": null
+  },
+  "status": 200,
+  "response": {
+    "connection_id": "conn_01",
+    "engine": "sqlite",
+    "label": "SQLite",
+    "supported": true,
+    "reason": null,
+    "qualified": true,
+    "requires_source_test": false,
+    "source_tested": true,
+    "dialect": {
+      "quote": "\"",
+      "param_style": "named_colon",
+      "table_qualification": "none",
+      "text_match": {
+        "modes": [
+          "contains",
+          "starts_with"
+        ],
+        "case": "insensitive",
+        "case_folding": "ascii",
+        "like_escape": "!"
+      },
+      "text_equality": "exact",
+      "filter_ops": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "in",
+        "not_in",
+        "contains",
+        "starts_with",
+        "is_null",
+        "not_null"
+      ],
+      "max_in_values": 200,
+      "null_ordering": "last",
+      "null_ordering_impl": "native",
+      "boolean": {
+        "literal_true": "1",
+        "literal_false": "0",
+        "bind": "integer"
+      },
+      "limit_syntax": "limit_offset",
+      "aggregates": [
+        "count",
+        "count_distinct",
+        "sum",
+        "avg",
+        "min",
+        "max"
+      ],
+      "conditional_aggregation": "case",
+      "date_bucket": {
+        "buckets": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ],
+        "week_standard": "iso8601",
+        "labels": {
+          "day": "YYYY-MM-DD",
+          "week": "YYYY-Www",
+          "month": "YYYY-MM",
+          "quarter": "YYYY-Qn",
+          "year": "YYYY"
+        },
+        "kinds": [
+          "date",
+          "datetime",
+          "text",
+          "other"
+        ]
+      },
+      "join_kinds": [
+        "inner",
+        "left"
+      ],
+      "max_joins": 4,
+      "max_filters": 50,
+      "pivot": {
+        "max_columns": 12,
+        "max_row_dims": 2,
+        "column_kinds": [
+          "text",
+          "integer",
+          "boolean",
+          "uuid",
+          "date",
+          "datetime",
+          "other"
+        ]
+      },
+      "version_floor": "3.30"
+    }
+  }
+}

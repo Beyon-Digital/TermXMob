@@ -1,0 +1,62 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/views/v_segment/history",
+    "as": "alice",
+    "body": null
+  },
+  "status": 200,
+  "response": {
+    "view_id": "v_segment",
+    "revisions": [
+      {
+        "revision": 2,
+        "action": "updated",
+        "at": "<time>",
+        "actor": {
+          "id": "p_alice",
+          "name": "alice"
+        },
+        "name": "Big sales",
+        "changes": [
+          {
+            "field": "filters",
+            "op": "added",
+            "after": {
+              "field": {
+                "table_alias": "s",
+                "column": "amount"
+              },
+              "op": "gt",
+              "value": 200
+            }
+          },
+          {
+            "field": "filters",
+            "op": "removed",
+            "before": {
+              "field": {
+                "table_alias": "s",
+                "column": "amount"
+              },
+              "op": "gt",
+              "value": 100
+            }
+          }
+        ]
+      },
+      {
+        "revision": 1,
+        "action": "created",
+        "at": "<time>",
+        "actor": {
+          "id": "p_alice",
+          "name": "alice"
+        },
+        "name": "Big sales",
+        "changes": []
+      }
+    ],
+    "next_before": null
+  }
+}

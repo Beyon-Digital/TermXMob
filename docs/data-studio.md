@@ -51,7 +51,31 @@ SQLite, PostgreSQL, MySQL and MariaDB each have their own adapter (`src/termx/da
 - **Values.** UUID columns need a valid UUID. List columns can only be filtered by empty or by text they contain. A whole number past 64 bits is compared as a decimal number.
 - **Combining tables.** The builder warns when neither side of a match is a key, and when a match can repeat rows.
 
+## Pivots, segments and audit
+
+**Saved views** are named, versioned queries in the Data store: a *table* (anything the Table tab builds), a *pivot* or a *segment*. Each keeps one validated query, a revision number, its creator and timestamps.
+
+- **Pivots** show rows by columns with one value (a count, total, average, smallest, largest or unique count) and a Total column. Columns come from the data and are limited to **12 different values**; the empty value is a column of its own, labelled "(empty)". When the data has more, the pivot is refused with a message that suggests a larger step or a filter, and no subset is chosen. Column order does not depend on the engine (text by code point, dates in time order, empty last). Rows of text follow each engine's grouping order.
+- **Drill-down** returns the rows behind a pivot cell, a Total, or a group of a grouped table. A month, week or other date step becomes a start (included) and end (excluded) date range. Only editors and owners can drill: it reveals rows that a total hides. An empty date step on text dates in SQLite is approximate, and the result says so.
+- **Segments** are saved sets of filters on one table. A filter can say "in segment" or "not in segment"; the server puts the segment's own filters into the same statement, checks that its table and combined tables are present, and refuses loops, more than 3 levels and more than 20 segments in one query. "Not in" keeps rows where the segment test is empty, so a segment and its complement always add up to the whole table.
+- **Delete protection.** A segment that other views use cannot be deleted, and its table or combined tables cannot change; the response lists the views that use it. Editing its filters is allowed and reports how many views are affected.
+- **History.** Every create, edit and delete of a view writes a revision with who, when and what changed, in the same transaction as the change. Saving with an old revision returns a 409 that names who changed it. Run history lists who ran a view, when, how many rows and how long it took, from the existing jobs; it never contains cell values. Editors and owners see everyone's runs, viewers only their own.
+- **Roles.** Owners and editors create and edit views on connections they can use. The workspace owner or the view's creator can delete it. Viewers can run, count and export views on shared connections, and see their own runs; they cannot create, edit, drill, read edit history or run other queries. Another person's private connection is never usable, including by the workspace owner.
+- **CSV export** of a view run uses the display names of the columns (a pivot's SQL names are neutral).
+
+| Engine | Pivot cell | Notes |
+| --- | --- | --- |
+| SQLite | `SUM(CASE WHEN ... THEN ... END)`, `strftime` date steps | Text dates can be used as a column with a warning. |
+| PostgreSQL | same, `to_char` date steps | Averages are cast to a double. |
+| MySQL | same, `date_format` date steps | Text compared with a binary collation, as in tables. |
+| MariaDB | same as MySQL | Groups on the bare column as well, for `ONLY_FULL_GROUP_BY`. |
+
+An engine without an adapter fails closed: views can be listed and their history read, but they cannot be created, run or drilled.
+
+**Upgrading.** The Data store moves from schema version 1 to 2 (new history table and a run index; nothing existing is changed). A non-empty version 1 store is copied to `data.sqlite3.pre-views-v1` first. A TermX build from before saved views refuses to open a version 2 store; to go back, restore that copy (views made since are lost).
+
 ## Decisions
 
 - The sidebar Tables group shows 200 tables at a time with "Show more tables", not a virtualized list. Search filters the whole list, and virtualization is deferred until a source needs it.
 - The shared theme tokens keep the repository's monochrome accent. Moving Data to the DESIGN.md accent is a decision for the design owner, because Agent and Studio share the same tokens.
+- Pivots have a Total column but no bottom total row, because averages and unique counts cannot be added up. Run history keeps job results as long as jobs are kept; a retention rule needs an owner decision.

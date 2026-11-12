@@ -283,7 +283,7 @@ class ViewService:
     def _conflict(record: dict, expected: int) -> HTTPException:
         who, when = record.get('updated_by_name') or 'Someone', record['updated_at']
         clock = when[11:16] if len(when) >= 16 else when
-        return coded(409, 'revision_conflict', f'{who} changed this view at {clock}. Reload to see the latest version.',
+        return coded(409, 'revision_conflict', f'{who} changed this view at {clock} UTC. Reload to see the latest version.',
                      current_revision=record['revision'], updated_by={'id': record.get('updated_by') or '', 'name': who}, updated_at=when)
 
     async def update(self, actor, wid: str, vid: str, revision: int, name: str | None, description: str | None,
