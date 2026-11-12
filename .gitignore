@@ -44,3 +44,5 @@ desktop/signing.env
 # Isolated UI audit captures and CLI session metadata
 .playwright-cli/
 out/
+
+.claude/
