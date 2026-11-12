@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import {LayoutGrid, Link2, List, MoreHorizontal, Pencil, Trash2} from 'lucide-react';
+import {Grid3x3, LayoutGrid, Link2, List, MoreHorizontal, Pencil, Trash2} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger} from '../../components/ui/dropdown-menu';
 import {runSpecToCompletion} from '../../lib/data-query';
@@ -51,15 +51,16 @@ function RowCount({workspaceId, connectionId, table}: {workspaceId: string; conn
   return <span className="data-row-count" aria-live="polite">{body}</span>;
 }
 
-/** Secondary table actions. Pivot joins this menu in the next release. */
-function TableMenu({table, onCombine}: {table: SchemaTable; onCombine?: (table: SchemaTable) => void}) {
+/** Secondary table actions: combine with another table, start a pivot. */
+function TableMenu({table, onCombine, onPivot}: {table: SchemaTable; onCombine?: (table: SchemaTable) => void; onPivot?: (table: SchemaTable) => void}) {
   const chosen = useRef(false);
-  if (!onCombine) return null;
+  if (!onCombine && !onPivot) return null;
   return <DropdownMenu>
     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={'More actions for ' + tableLabel(table)} disabled={table.readable === false}><MoreHorizontal size={16} strokeWidth={1.5}/></Button></DropdownMenuTrigger>
     <DropdownMenuContent aria-label={'Actions for ' + tableLabel(table)} onCloseAutoFocus={event => {if (chosen.current) {event.preventDefault(); chosen.current = false;}}}>
       {/* Focus moves to the table that opens, so the menu must not pull it back to this row. */}
-      <DropdownMenuItem onSelect={() => {chosen.current = true; onCombine(table);}}><Link2 size={16} strokeWidth={1.5}/>Combine with another table</DropdownMenuItem>
+      {onCombine && <DropdownMenuItem onSelect={() => {chosen.current = true; onCombine(table);}}><Link2 size={16} strokeWidth={1.5}/>Combine with another table</DropdownMenuItem>}
+      {onPivot && <DropdownMenuItem onSelect={() => {chosen.current = true; onPivot(table);}}><Grid3x3 size={16} strokeWidth={1.5}/>Pivot this table</DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>;
 }
@@ -68,9 +69,10 @@ type Props = {
   workspaceId: string; ownerId?: string; role: DataRole; hasConnections: boolean; source?: DataConnection; engine?: DataEngine; controller: SourceController; canEditSource: boolean;
   onConnect: () => void; onEditSource: () => void; onArchiveSource: () => void; onOpenTable: (table: SchemaTable) => void;
   /** Opens the table with its Combine panel showing. */ onCombineTable?: (table: SchemaTable) => void;
+  /** Starts a pivot on the table. */ onPivotTable?: (table: SchemaTable) => void;
 };
 /** Home tab: the source and every table in it, as a list or as tiles. */
-export default function TablesOverview({workspaceId, ownerId, role, hasConnections, source, engine, controller, canEditSource, onConnect, onEditSource, onArchiveSource, onOpenTable, onCombineTable}: Props) {
+export default function TablesOverview({workspaceId, ownerId, role, hasConnections, source, engine, controller, canEditSource, onConnect, onEditSource, onArchiveSource, onOpenTable, onCombineTable, onPivotTable}: Props) {
   const writable = role !== 'viewer', [mode, setMode] = useState<OverviewMode>(() => readOverviewMode(ownerId));
   function choose(next: OverviewMode) {setMode(next); rememberOverviewMode(ownerId, next);}
   if (!source) return <div className="data-empty">
@@ -104,19 +106,19 @@ export default function TablesOverview({workspaceId, ownerId, role, hasConnectio
     {writable && status === 'error' && <div className="data-inline-error"><p role="alert">{controller.schemaError}</p>{controller.needsTest ? <Button variant="secondary" size="sm" onClick={controller.testConnection} disabled={controller.testing}>{controller.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="secondary" size="sm" onClick={controller.loadSchema}>Try again</Button>}</div>}
     {writable && status === 'ready' && !tables.length && <div className="data-empty-inline"><p>This source has no visible tables.</p><Button variant="secondary" onClick={controller.loadSchema}>Load schema</Button></div>}
     {writable && status === 'ready' && tables.length > 0 && (mode === 'list'
-      ? <table className="data-table-list">
+      ? <div className="data-table-scroll"><table className="data-table-list">
         <thead><tr><th scope="col">Table</th><th scope="col" className="data-number">Columns</th><th scope="col" className="data-number">Rows</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
         <tbody>{tables.map(table => <tr key={tableKey(table)}>
           <th scope="row"><span className="data-table-name">{tableLabel(table)}</span>{table.readable === false && <small>{table.reason || 'This table cannot be read.'}</small>}</th>
           <td className="data-number">{table.columns.length.toLocaleString()}</td><td className="data-number"><RowCount workspaceId={workspaceId} connectionId={source.id} table={table}/></td>
-          <td className="data-row-action"><Button variant="ghost" size="sm" aria-label={'Open ' + tableLabel(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button><TableMenu table={table} onCombine={onCombineTable}/></td>
+          <td className="data-row-action"><Button variant="ghost" size="sm" aria-label={'Open ' + tableLabel(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button><TableMenu table={table} onCombine={onCombineTable} onPivot={onPivotTable}/></td>
         </tr>)}</tbody>
-      </table>
+      </table></div>
       : <ul className="data-tiles">{tables.map(table => <li key={tableKey(table)} className="data-tile">
         <h3>{tableLabel(table)}</h3>
         <p className="data-muted">{count(table.columns.length, 'column')}</p>
         <p className="data-muted">{table.readable === false ? table.reason || 'This table cannot be read.' : typeof table.row_estimate === 'number' ? rows(table) + ' rows' : <RowCount workspaceId={workspaceId} connectionId={source.id} table={table}/>}</p>
-        <div className="data-tile-actions"><Button variant="secondary" size="sm" aria-label={'Open ' + tableLabel(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button><TableMenu table={table} onCombine={onCombineTable}/></div>
+        <div className="data-tile-actions"><Button variant="secondary" size="sm" aria-label={'Open ' + tableLabel(table)} disabled={table.readable === false} onClick={() => onOpenTable(table)}>Open</Button><TableMenu table={table} onCombine={onCombineTable} onPivot={onPivotTable}/></div>
       </li>)}</ul>)}
   </section>;
 }
