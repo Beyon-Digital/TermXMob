@@ -60,6 +60,9 @@ class SQLiteDialect(Dialect):
     def bool_literal(self, value: bool) -> str:
         return '1' if value else '0'
 
+    def pivot_cell_value(self, kind: str, value: object) -> object:
+        return int(value) if isinstance(value, bool) else value
+
     def cast_text(self, expr: str) -> str:
         return f'CAST({expr} AS TEXT)'
 

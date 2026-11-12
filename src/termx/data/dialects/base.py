@@ -32,6 +32,7 @@ AGGREGATES = ['count', 'count_distinct', 'sum', 'avg', 'min', 'max']
 MAX_IN_VALUES = 200
 MAX_JOINS = 4
 MAX_FILTERS = 50
+PIVOT_MAX_COLUMNS = 12
 INT64 = 2 ** 63
 
 DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -138,13 +139,26 @@ class Dialect(ABC):
         return f'COUNT(DISTINCT {expr})'
 
     def conditional_aggregate(self, fn: str, value: str | None, predicate: str) -> str:
-        """`FN(CASE WHEN p THEN v END)`. No FILTER clause: MySQL and MariaDB lack it."""
+        """`FN(CASE WHEN p THEN v END)`. No FILTER clause: MySQL and MariaDB lack it. `avg` goes through
+        `avg_expr`, so it is a double on every engine like a plain summary."""
         if fn not in AGGREGATES:
             raise ValueError('Unsupported aggregate.')
         inner = f'CASE WHEN {predicate} THEN {value if value is not None else "1"} END'
         if fn == 'count_distinct':
             return self.count_distinct(inner)
+        if fn == 'avg':
+            return self.avg_expr(inner)
         return f'{fn.upper()}({inner})'
+
+    def pivot_cell_value(self, kind: str, value: object) -> object:
+        """The Python value bound for `column = :p` when a pivot column holds `value`."""
+        return value
+
+    def pivot_column_kinds(self) -> list[str]:
+        """Kinds a pivot column dimension can use. Dates need a bucket."""
+        kinds = ['text', 'integer', 'boolean', 'uuid']
+        kinds += [k for k in ('date', 'datetime', 'other') if k in self.bucketable_kinds and k not in kinds]
+        return kinds
 
     @abstractmethod
     def date_bucket(self, column: str, kind: str, bucket: str) -> str: ...
@@ -194,7 +208,8 @@ class Dialect(ABC):
                                 'labels': dict(BUCKET_LABEL_FORMATS),
                                 'kinds': [k for k in ('date', 'datetime', 'text', 'other') if k in self.bucketable_kinds]},
                 'join_kinds': ['inner', 'left'], 'max_joins': MAX_JOINS, 'max_filters': MAX_FILTERS,
-                'pivot': False, 'version_floor': self.version_floor,
+                'pivot': {'max_columns': PIVOT_MAX_COLUMNS, 'max_row_dims': 2, 'column_kinds': self.pivot_column_kinds()},
+                'version_floor': self.version_floor,
             },
         }
 

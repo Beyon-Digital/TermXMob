@@ -335,7 +335,9 @@ def test_capability_matrix(engine):
         'labels': {'day': 'YYYY-MM-DD', 'week': 'YYYY-Www', 'month': 'YYYY-MM', 'quarter': 'YYYY-Qn', 'year': 'YYYY'},
         'kinds': expected['kinds']}
     assert spec['join_kinds'] == ['inner', 'left'] and spec['max_joins'] == 4 and spec['max_filters'] == 50
-    assert spec['pivot'] is False and spec['version_floor'] == expected['floor']
+    assert spec['pivot']['max_columns'] == 12 and spec['pivot']['max_row_dims'] == 2
+    assert {'text', 'integer', 'boolean', 'date', 'datetime'} <= set(spec['pivot']['column_kinds'])
+    assert spec['version_floor'] == expected['floor']
 
 
 def test_capability_flags_mirror_the_engine_catalog():
