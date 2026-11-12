@@ -126,7 +126,7 @@ def test_real_adapter_loop_scoped_tools_and_secret_free_payload(tmp_path, wire):
         for payload in env.host.payloads:
             tools = payload["tools"]
             names = {tool.get("name", tool.get("function", {}).get("name")) for tool in tools}
-            assert names == {"list_connections", "propose_query", "propose_report"}
+            assert names == {"list_connections", "propose_query", "propose_report", "propose_query_spec", "propose_pivot", "propose_segment"}
             assert "max_output_tokens" not in payload and "max_tokens" not in payload
             assert "/Users/" not in json.dumps(payload)
         assert any(e["kind"] == "tool.completed" for e in run["events"])

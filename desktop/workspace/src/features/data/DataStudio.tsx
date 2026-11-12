@@ -7,12 +7,13 @@ import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../compo
 import {Input} from '../../components/ui/input';
 import {dataBody, dataError, dataPath, dataRequest, readDataSelection, rememberDataSelection, useDataScope, type DataBootstrap, type DataConnection, type DataQuery, type DataQueryDraft, type DataSnapshot, type DataWorkspace} from '../../lib/data-studio';
 import {closeTab, drillTabId, initialTabs, openTab, pivotDraftTabId, pivotViewTabId, pruneTabs, queryTabId, readTabs, rememberTabs, schemaFor, segmentTabId, selectTab, tableTabId, type DataTab, type DataTabsState} from '../../lib/data-tabs';
-import type {ViewDetail, ViewSummary, ViewUse} from '../../lib/data-views';
+import {createView, type ViewDetail, type ViewSummary, type ViewUse} from '../../lib/data-views';
 import type {QuerySpec, SchemaTable} from '../../lib/query-spec';
 import DatabaseStudio from './DatabaseStudio';
 import TeamSettings from './TeamSettings';
 import BIStudio from './BIStudio';
 import DataCopilot from './DataCopilot';
+import CopilotPanel from './CopilotPanel';
 import DataNavigation, {tableKey, tableLabel, type NamedRecord} from './DataNavigation';
 import DataTabs from './DataTabs';
 import TablesOverview from './TablesOverview';
@@ -205,6 +206,25 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     draftCounter.current += 1;
     showDatabase({id: drillTabId(draftCounter.current), kind: 'drill', connectionId, table: spec.from.table, ...schemaPart(spec.from.table), spec, title, ...(note ? {note} : {})});
   }
+  /** Copilot proposals open as new, unsaved tabs. The person's own click is what opens them. */
+  function applyProposalTable(spec: QuerySpec, title: string, note: string) {
+    draftCounter.current += 1;
+    const schema = schemaFor(controller.schema?.tables, spec.from.table);
+    if (spec.source !== connectionId) setSelection(value => ({...value, connectionId: spec.source}));
+    showDatabase({id: drillTabId(draftCounter.current), kind: 'drill', connectionId: spec.source, table: spec.from.table, ...(schema ? {schema} : {}), spec, title, note});
+  }
+  function openProposalPivot(spec: QuerySpec, title: string) {
+    draftCounter.current += 1;
+    const schema = schemaFor(controller.schema?.tables, spec.from.table);
+    if (spec.source !== connectionId) setSelection(value => ({...value, connectionId: spec.source}));
+    showDatabase({id: pivotDraftTabId(spec.source, (schema ? schema + '.' : '') + spec.from.table, draftCounter.current), kind: 'pivot', connectionId: spec.source, table: spec.from.table, ...(schema ? {schema} : {}), spec, title});
+  }
+  async function saveProposalSegment(spec: QuerySpec, name: string, description: string) {
+    const detail = await createView(workspaceId, {kind: 'segment', name, description, spec});
+    views.refresh();
+    setNotice('Saved segment ' + detail.name + '.');
+    return detail;
+  }
   function pivotSaved(detail: ViewDetail, fromTabId: string) {
     updateTabs(state => openTab(fromTabId.startsWith('pivot:new:') ? closeTab(state, fromTabId) : state, {id: pivotViewTabId(detail.id), kind: 'pivot', viewId: detail.id, connectionId: detail.connection_id}));
     setNotice('Saved pivot ' + detail.name + '.');
@@ -277,7 +297,8 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   return <section className="data-studio" aria-label="Data Studio">
     {navigation}
     <div className="data-main">{content}</div>
-    {copilot && snapshot && <aside className="data-copilot-panel" aria-label="Data Copilot"><DataCopilot role={role} workspaceId={workspaceId} connectionId={connectionId || undefined} queryId={activeQueryId || undefined} visible onClose={() => setCopilot(false)} onOpenQuery={openQuery} onSaveReport={() => {setSelection(value => ({...value, view: 'bi'})); requestRefresh();}}/></aside>}
+    {copilot && snapshot && <CopilotPanel><DataCopilot role={role} workspaceId={workspaceId} connectionId={connectionId || undefined} queryId={activeQueryId || undefined} visible onClose={() => setCopilot(false)} onOpenQuery={openQuery} onSaveReport={() => {setSelection(value => ({...value, view: 'bi'})); requestRefresh();}}
+      onApplyTable={applyProposalTable} onOpenPivot={openProposalPivot} onSaveSegment={saveProposalSegment}/></CopilotPanel>}
     <SourceDialog open={sourceDialog.open} record={sourceDialog.record} engines={engines} workspaceId={workspaceId} ownerId={ownerId} onClose={() => setSourceDialog({open: false})}
       onSaved={result => {setSourceDialog({open: false}); setSelection(value => ({...value, connectionId: result.id})); setNotice('Connection saved. Test it when you are ready.'); requestRefresh();}}/>
     <ArchiveSourceDialog record={archiveSource} workspaceId={workspaceId} onClose={() => setArchiveSource(undefined)}
