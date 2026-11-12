@@ -1,0 +1,112 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -18,6 +18,56 @@
+ 
+ use std::sync::atomic::{AtomicBool, Ordering};
+ use tauri::{Manager, RunEvent, WindowEvent};
++
++
++// TEST-ONLY: this copied harness inspects its own WKWebView and exits boundedly.
++#[cfg(target_os = "macos")]
++fn fixture_native_probe(app: &tauri::AppHandle) {
++    let Ok(destination) = std::env::var("TERMX_FIXTURE_PROBE_DIR") else { return; };
++    let handle = app.clone();
++    std::thread::spawn(move || {
++        std::thread::sleep(std::time::Duration::from_secs(3));
++        if let Some(window) = handle.get_webview_window("main") {
++            let output = destination.clone();
++            let _ = window.with_webview(move |webview| {
++                extern "C" { fn termx_fixture_probe(view: *mut std::ffi::c_void, destination: *const std::ffi::c_char); }
++                let path = std::ffi::CString::new(output).unwrap();
++                unsafe { termx_fixture_probe(webview.inner(), path.as_ptr()); }
++            });
++        }
++        let updater_probe = std::env::var("TERMX_FIXTURE_PROBE_UPDATER").as_deref() == Ok("1");
++        if updater_probe {
++            let directory = std::path::Path::new(&destination).join("updater");
++            let _ = std::fs::create_dir_all(&directory);
++            let owner = handle.clone();
++            let _ = handle.run_on_main_thread(move || {
++                // Same bundled updater URL/capability; deliberately omit updater::show's network check.
++                let _ = tauri::WebviewWindowBuilder::new(&owner, "updater", tauri::WebviewUrl::App("updater.html".into()))
++                    .title("Termx fixture updater")
++                    .inner_size(560.0, 640.0)
++                    .initialization_script("window.__TERMX_FIXTURE_ERRORS=[];addEventListener('error',event=>window.__TERMX_FIXTURE_ERRORS.push(String(event.message)));addEventListener('unhandledrejection',event=>window.__TERMX_FIXTURE_ERRORS.push(String(event.reason)));")
++                    .on_navigation(|url| (url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")) && url.path() == "/updater.html")
++                    .build();
++            });
++            std::thread::sleep(std::time::Duration::from_secs(2));
++            if let Some(window) = handle.get_webview_window("updater") {
++                let output = directory.to_string_lossy().into_owned();
++                let _ = window.with_webview(move |webview| {
++                    extern "C" { fn termx_fixture_probe(view: *mut std::ffi::c_void, destination: *const std::ffi::c_char); }
++                    let path = std::ffi::CString::new(output).unwrap();
++                    unsafe { termx_fixture_probe(webview.inner(), path.as_ptr()); }
++                });
++            }
++        }
++        for _ in 0..300 {
++            let main_done = std::path::Path::new(&destination).join("done.txt").exists();
++            let updater_done = !updater_probe || std::path::Path::new(&destination).join("updater/done.txt").exists();
++            if main_done && updater_done { break; }
++            std::thread::sleep(std::time::Duration::from_millis(100));
++        }
++        crate::quit(&handle);
++    });
++}
+ 
+ pub static QUITTING: AtomicBool = AtomicBool::new(false);
+ 
+@@ -130,6 +180,8 @@
+             let backend = backend::Backend::new(handle.clone())?;
+             app.manage(backend.clone());
+             backend.start();
++            #[cfg(target_os = "macos")]
++            fixture_native_probe(&handle);
+             companions::start(&handle);
+             ui::first_run_onboarding(&handle, desktop_config.onboarded);
+             logging::desktop(&handle, "termx desktop started");
+--- a/src/ui.rs
++++ b/src/ui.rs
+@@ -26,6 +26,7 @@
+ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+         .title("Termx")
++        .initialization_script("window.__TERMX_FIXTURE_ERRORS=[];addEventListener('error',event=>window.__TERMX_FIXTURE_ERRORS.push(String(event.message)));addEventListener('unhandledrejection',event=>window.__TERMX_FIXTURE_ERRORS.push(String(event.reason)));")
+         .inner_size(1280.0, 820.0)
+         .min_inner_size(760.0, 520.0)
+         .visible(!START_HIDDEN.load(Ordering::SeqCst))
+--- a/macos/media_permission.m
++++ b/macos/media_permission.m
+@@ -47,3 +47,31 @@
+     delegate.port = port;
+     return true;
+ }
++
++// TEST-ONLY INSTRUMENTATION: own WKWebView snapshot. No screen/TCC capture.
++#import <AppKit/AppKit.h>
++void termx_fixture_probe(void *pointer, const char *destination) {
++    if (![NSThread isMainThread] || !pointer || !destination) return;
++    WKWebView *view = (__bridge WKWebView *)pointer;
++    NSString *directory = [NSString stringWithUTF8String:destination];
++    void (^finish)(NSString *) = ^(NSString *reason) {
++        [reason writeToFile:[directory stringByAppendingPathComponent:@"done.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
++    };
++    [view callAsyncJavaScript:@"for (let n=0;n<100&&!document.querySelector('.sign-in,.workspace-root');n++) await new Promise(r=>setTimeout(r,100));\nconst timeout=p=>Promise.race([p,new Promise((_,reject)=>setTimeout(()=>reject(new Error('probe request timed out')),5000))]);\nconst invoke=window.__TAURI_INTERNALS__?.invoke;\nlet methods=null,methodsError=null,mediaGate=null;\ntry{methods=await timeout(invoke('workspace_request',{path:'/auth/methods',method:'GET',data:null}));}catch(error){methodsError=String(error);}\ntry{await timeout(invoke('workspace_binary',{path:'/api/media/artifacts/native-studio-fixture/export?format=original',method:'GET',bodyBase64:null,contentType:'application/octet-stream'}));mediaGate={rejected:false};}catch(error){mediaGate={rejected:true,error:String(error)};}\nreturn JSON.stringify({proof:'instrumented-own-wkwebview-no-auth',href:location.href,title:document.title,ready:document.readyState,userAgent:navigator.userAgent,tauri:!!window.__TAURI_INTERNALS__,signIn:!!document.querySelector('.sign-in'),workspace:!!document.querySelector('.workspace-root'),headings:[...document.querySelectorAll('h1,h2,h3')].map(x=>x.textContent),body:document.body.innerText.slice(0,12000),inputs:[...document.querySelectorAll('input')].map(x=>({type:x.type,label:x.getAttribute('aria-label')})),buttons:[...document.querySelectorAll('button')].map(x=>x.textContent.trim()),alerts:[...document.querySelectorAll('[role=alert]')].map(x=>x.textContent),pageErrors:window.__TERMX_FIXTURE_ERRORS||[],methods,methodsError,mediaGate,resources:performance.getEntriesByType('resource').map(x=>({name:x.name,transferSize:x.transferSize}))});" arguments:@{} inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id result, NSError *error) {
++        if (error) {
++            [error.localizedDescription writeToFile:[directory stringByAppendingPathComponent:@"probe-error.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
++            finish(@"JavaScript probe failed"); return;
++        }
++        [(NSString *)result writeToFile:[directory stringByAppendingPathComponent:@"dom.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
++        [view takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
++            if (snapshotError || !image) {
++                [(snapshotError.localizedDescription ?: @"No native image") writeToFile:[directory stringByAppendingPathComponent:@"snapshot-error.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
++                finish(@"WK snapshot failed"); return;
++            }
++            NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
++            NSData *png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
++            [png writeToFile:[directory stringByAppendingPathComponent:@"native-signin.png"] atomically:YES];
++            finish(@"Native DOM and snapshot completed");
++        }];
++    }];
++}

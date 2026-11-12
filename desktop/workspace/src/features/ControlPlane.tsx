@@ -1,14 +1,17 @@
-import {useEffect, useMemo, useState} from 'react';
-import {Activity, ArrowUpRight, Box, Folder, GitBranch, Layers, Plus, RefreshCw, Search, Shield, Workflow, X} from 'lucide-react';
+import {useEffect, useMemo, useRef, useState, type MouseEvent} from 'react';
+import {ArrowUpRight, ChevronRight, Folder, MessageSquare, Plus, RefreshCw, Search} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
-import {type Engine, type Project, type Provider, type Session} from '../lib/api';
+import {Collapsible, CollapsibleContent, CollapsibleTrigger} from '../components/ui/collapsible';
+import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../components/ui/dialog';
+import {ApiError, type Engine, type Project, type Provider, type Session} from '../lib/api';
 import {listSessions, SessionCache} from '../lib/workspace-data';
 import {taskState} from '../lib/task-presentation';
-import './control-plane.css';
 import {latestExecutionTask} from '../lib/conversation-messages';
-import {folderName} from '../lib/path-label';
+import {isManagedFolder, scopeProjects} from '../lib/project-labels';
+import './control-plane.css';
+import WorkspaceViews,{type WorkspaceView} from '../components/WorkspaceViews';
 
 export type ControlPage = 'overview' | 'projects' | 'tasks';
 export type ExecutionView = 'chat' | 'workbench' | 'review' | 'browser' | 'computer';
@@ -20,7 +23,9 @@ type Props = {
   engines: Engine[];
   providers: Provider[];
   catalogState: 'loading' | 'ready' | 'failed';
-  onPage: (page: ControlPage) => void;
+  configurationState?: 'loading' | 'ready' | 'failed';
+  currentProjectId?: string;
+  onPage: (page: WorkspaceView) => void;
   onManage: (section: string) => void;
   onNew: (projectId?: string) => void;
   onAddProject: () => void;
@@ -29,6 +34,11 @@ type Props = {
   onRefresh: () => void;
 };
 type Filter = 'all' | 'running' | 'attention' | 'completed';
+type Catalog = {owner: string; sessions: Session[]; updated: number; loading: boolean; error: string};
+type Inspection = {owner: string; id: string; page: ControlPage; trigger: HTMLButtonElement};
+const emptyCatalog = (owner: string): Catalog => ({owner, sessions: [], updated: 0, loading: true, error: ''});
+const losesAccess = (reason: unknown) => reason instanceof ApiError && [401, 403, 404, 423].includes(reason.status) || reason instanceof Error && reason.message === 'Conversation is unavailable';
+
 export function controlRows(rows: Session[], query: string, project: string, filter: Filter) {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return rows.filter(row => {
@@ -41,20 +51,28 @@ export function controlRows(rows: Session[], query: string, project: string, fil
 
 export default function ControlPlane(props: Props) {
   const {page, ownerId, enabled, projects, engines, providers, onPage, onManage, onNew, onAddProject, onOpen, onProject} = props;
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loading, setLoading] = useState(true), [error, setError] = useState(''), [updated, setUpdated] = useState(0), [version, setVersion] = useState(0);
-  const [query, setQuery] = useState(''), [project, setProject] = useState(''), [filter, setFilter] = useState<Filter>('all'), [limit, setLimit] = useState(40), [inspected, setInspected] = useState('');
-  // Fetch the unarchived catalog independently of the sidebar's archive switch.
-  // One request at a time; hidden tabs and locked sessions do not poll.
+  const [catalog, setCatalog] = useState<Catalog>(() => emptyCatalog(ownerId));
+  const [version, setVersion] = useState(0);
+  const [projectQuery, setProjectQuery] = useState(''), [showWorkspaces, setShowWorkspaces] = useState(false);
+  const [query, setQuery] = useState(''), [project, setProject] = useState(''), [filter, setFilter] = useState<Filter>('all'), [limit, setLimit] = useState(40);
+  const [inspection, setInspection] = useState<Inspection | null>(null);
+  // Tag cached data with its authenticated owner. A prop change must not expose
+  // the previous owner's rows while effect cleanup is still pending.
+  const current = enabled && catalog.owner === ownerId ? catalog : emptyCatalog(ownerId);
+  const {sessions, updated, loading, error} = current;
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) { setCatalog(emptyCatalog(ownerId)); setInspection(null); return; }
     let stopped = false, busy = false;
     const refresh = async () => {
       if (stopped || busy || document.hidden) return;
-      busy = true; setLoading(true);
-      try { const rows = await listSessions(false); if (!stopped) { setSessions(rows); setUpdated(Date.now()); setError(''); } }
-      catch (reason) { if (!stopped) setError(reason instanceof Error ? reason.message : String(reason)); }
-      finally { busy = false; if (!stopped) setLoading(false); }
+      busy = true;
+      setCatalog(previous => ({...(previous.owner === ownerId ? previous : emptyCatalog(ownerId)), loading: true}));
+      try {
+        const rows = await listSessions(false);
+        if (!stopped) setCatalog({owner: ownerId, sessions: rows, updated: Date.now(), loading: false, error: ''});
+      } catch (reason) {
+        if (!stopped) setCatalog(previous => ({...(previous.owner === ownerId && !losesAccess(reason) ? previous : emptyCatalog(ownerId)), loading: false, error: reason instanceof Error ? reason.message : String(reason)}));
+      } finally { busy = false; }
     };
     void refresh();
     const timer = setInterval(() => void refresh(), 10000);
@@ -62,45 +80,94 @@ export default function ControlPlane(props: Props) {
     document.addEventListener('visibilitychange', visible);
     return () => { stopped = true; clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
   }, [ownerId, enabled, version]);
+  useEffect(() => { setInspection(null); }, [page, ownerId, enabled]);
   const rows = useMemo(() => controlRows(sessions, query, project, filter), [sessions, query, project, filter]);
-  const counts = {running: sessions.filter(row => taskState(row.latest_status || '').active).length, attention: sessions.filter(row => taskState(row.latest_status || '').attention).length, completed: sessions.filter(row => row.latest_status === 'completed').length};
-  const inspectedRow = sessions.find(row => row.id === inspected);
-  const openFilter = (value: Filter, projectId = project) => { setFilter(value); setProject(projectId); setLimit(40); setInspected(''); onPage('tasks'); };
-  const heading = page === 'overview' ? 'Control plane' : page === 'projects' ? 'Projects' : 'Runs';
-  return <section className="control-plane" aria-label="Desktop control plane">
-    <header className="control-heading"><div><span className="control-eyebrow">TERMX WORKSPACE</span><h1>{heading}</h1><p>Coordinate projects and agents. Inspect execution. Review and deliver work.</p></div><div className="control-actions"><Button variant="outline" disabled={loading || !enabled} onClick={() => { setVersion(value => value + 1); props.onRefresh(); }}><RefreshCw size={14}/>Refresh</Button><Button onClick={() => onNew(project || undefined)}><Plus size={15}/>New conversation</Button></div></header>
-    <nav className="control-tabs" aria-label="Control plane views">{([['overview', 'Overview'], ['projects', 'Projects'], ['tasks', 'Runs']] as const).map(([id, label]) => <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => onPage(id)}>{label}</button>)}<span role="status">{error ? 'Updates interrupted' : loading ? 'Refreshing…' : updated ? `Updated ${new Date(updated).toLocaleTimeString()}` : 'Waiting for host'}</span></nav>
-    {error && <div className="control-error" role="alert">{error}{updated ? ' — showing the last received state.' : ' — run state is unavailable.'}<Button variant="ghost" onClick={() => setVersion(value => value + 1)}>Retry</Button></div>}
-    {props.catalogState === 'failed' && <p className="control-error" role="alert">Project and engine catalog could not be refreshed. Use Refresh to retry.</p>}
-    {page === 'overview' && <>
-      <div className="control-metrics">{([{id:'attention', label:'Needs attention', icon:Shield}, {id:'running', label:'In progress', icon:Activity}, {id:'completed', label:'Completed', icon:GitBranch}] as const).map(item => <button key={item.id} onClick={() => openFilter(item.id, '')}><item.icon size={18}/><span>{item.label}</span><strong>{updated ? counts[item.id] : '—'}</strong><ArrowUpRight size={14}/></button>)}</div>
-      <div className="control-overview-grid"><section className="control-section"><div className="control-section-heading"><h2>Attention queue</h2><Button variant="ghost" size="sm" onClick={() => openFilter('attention', '')}>View queue</Button></div><p>Latest run in each conversation, across your accessible projects.</p>
-        {!updated ? <div className="control-empty">{loading ? 'Loading run state…' : 'Run state unavailable.'}</div> : !counts.attention ? <div className="control-empty"><Shield size={24}/><strong>No pending decisions</strong><span>Approvals, recovery decisions, paused runs and failures appear here.</span></div> : sessions.filter(row => taskState(row.latest_status || '').attention).slice(0, 5).map(row => <button className="control-queue-row" key={row.id} onClick={() => { setInspected(row.id); onPage('tasks'); }}><span><strong>{row.title || 'Untitled task'}</strong><small>{projects.find(item => item.id === row.project_id)?.name || row.cwd || 'Unassigned'}</small></span><Status value={row.latest_status}/><ArrowUpRight size={14}/></button>)}
-      </section><section className="control-section"><div className="control-section-heading"><h2>Execution & configuration</h2><Layers size={17}/></div><p>{props.catalogState === 'ready' ? `${engines.length} installed engines · ${providers.filter(row => row.secret_configured).length} configured provider accounts` : 'Loading engine and provider catalog…'}</p><div className="control-destinations">{[
-        {id:'agents', title:'Agent presets', text:'Instructions, tools, limits and execution policy', icon:Layers},
-        {id:'runners', title:'Runners', text:'Provision execution environments and inspect jobs', icon:Box},
-        {id:'automations', title:'Automations', text:'Schedules, goals and unattended work', icon:Workflow},
-        {id:'models', title:'Models & engines', text:'Accounts, installed engines and capabilities', icon:Activity},
-        {id:'access', title:'Access & sessions', text:'Pair remote clients and manage workspace access', icon:Shield},
-      ].map(item => <button key={item.id} onClick={() => onManage(item.id)}><item.icon size={18}/><span><strong>{item.title}</strong><small>{item.text}</small></span><ArrowUpRight size={14}/></button>)}</div></section></div>
-      <div className="control-section-heading"><h2>Project portfolio</h2><span><Button variant="ghost" onClick={onAddProject}><Plus size={14}/>Add project</Button><Button variant="ghost" onClick={() => onPage('projects')}>All projects</Button></span></div>
+  const accessible = useMemo(() => sessions.filter(row => !row.archived), [sessions]);
+  const counts = {running: accessible.filter(row => taskState(row.latest_status || '').active).length, attention: accessible.filter(row => taskState(row.latest_status || '').attention).length, completed: accessible.filter(row => row.latest_status === 'completed').length};
+  const inspectedRow = inspection?.owner === ownerId && inspection.page === page && enabled ? (page === 'tasks' ? rows : accessible).find(row => row.id === inspection.id) : undefined;
+  useEffect(() => { if (inspection && !inspectedRow) setInspection(null); }, [inspection, inspectedRow]);
+  const inspect = (row: Session, event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.focus({preventScroll: true});
+    setInspection({owner: ownerId, id: row.id, page, trigger: event.currentTarget});
+  };
+  const openFilter = (value: Filter, projectId = '') => { setFilter(value); setProject(projectId); setQuery(''); setLimit(40); setInspection(null); onPage('tasks'); };
+  const navigate = (value: WorkspaceView) => { setInspection(null); onPage(value); };
+  const refresh = () => { setVersion(value => value + 1); props.onRefresh(); };
+  const configurationState = props.configurationState || props.catalogState;
+  const currentProjectId = props.currentProjectId || project;
+  const heading = page === 'overview' ? 'Overview' : page === 'projects' ? 'Projects' : 'Activity';
+  return <section className={'control-plane control-page-' + page} aria-label="Projects workspace">
+    <WorkspaceViews current={page} onNavigate={navigate}/>
+    <header className="control-heading"><h1>{heading}</h1><div className="control-actions">
+      <Button variant="ghost" size="icon" aria-label="Refresh" title="Refresh" disabled={!enabled || loading || props.catalogState === 'loading'} onClick={refresh}><RefreshCw size={20} aria-hidden="true"/></Button>
+      {page === 'projects' ? <Button disabled={!enabled} onClick={onAddProject}><Plus size={16} aria-hidden="true"/>Add project</Button> : <Button disabled={!enabled} onClick={() => onNew(project || undefined)}><Plus size={16} aria-hidden="true"/>New chat</Button>}
+    </div></header>
+    {error && <div className="control-error" role="alert"><span>{error}. {updated ? 'Showing the last received activity.' : 'Activity is unavailable.'}</span><Button variant="ghost" disabled={!enabled || loading} onClick={() => setVersion(value => value + 1)}>Retry</Button></div>}
+    {props.catalogState === 'failed' && <div className="control-error" role="alert"><span>{projects.length ? 'Projects could not refresh. Showing the last received folders.' : 'Projects are unavailable.'}</span><Button variant="ghost" disabled={!enabled || loading} onClick={refresh}>Refresh projects</Button></div>}
+    {page === 'projects' && <>
+      <div className="control-project-tools-row"><label className="control-search"><Search size={16} aria-hidden="true"/><span className="visually-hidden">Search projects</span><Input type="search" placeholder="Search projects" value={projectQuery} onChange={event => setProjectQuery(event.target.value)}/></label>{projects.some(isManagedFolder) && <Button size="sm" variant="ghost" aria-pressed={showWorkspaces} onClick={() => setShowWorkspaces(value => !value)}>{showWorkspaces ? 'Hide workspaces' : 'Show workspaces'}</Button>}</div>
+      <ProjectCatalog projects={projects} sessions={accessible} query={projectQuery} showWorkspaces={showWorkspaces} currentProject={currentProjectId} catalogState={props.catalogState} received={!!updated} loading={loading} enabled={enabled} onClearSearch={() => setProjectQuery('')} onAddProject={onAddProject} onNew={onNew} onOpen={onOpen} onProject={onProject} onActivity={id => openFilter('all', id)}/>
     </>}
-    {(page === 'overview' || page === 'projects') && <>
-      {page === 'projects' && !!projects.length && <div className="control-section-heading"><h2>Registered folders</h2><Button variant="outline" onClick={onAddProject}><Plus size={14}/>Add project</Button></div>}
-      {!projects.length && <div className="control-empty"><Folder size={28}/><h2>{props.catalogState === 'loading' ? 'Loading projects…' : props.catalogState === 'failed' ? 'Projects unavailable' : 'Connect your first project'}</h2><p>Register a folder on the host to create tasks and open the development workbench.</p><Button onClick={onAddProject}>Add a project</Button></div>}
-      <div className="control-projects">{(page === 'overview' ? projects.slice(0, 6) : projects).map(item => {
-        const related = sessions.filter(row => row.project_id === item.id), active = related.filter(row => taskState(row.latest_status || '').active).length, attention = related.filter(row => taskState(row.latest_status || '').attention).length;
-        return <article key={item.id}><div className="control-section-heading"><Folder size={18}/><h3>{item.name}</h3></div><code title={item.path}>{item.path}</code><p>{updated ? `${active} active · ${attention} need attention · ${related.length} conversations` : 'Run counts unavailable'}</p><div className="control-actions"><Button size="sm" variant="outline" onClick={() => onProject(item)}>Open workbench</Button><Button size="sm" variant="ghost" onClick={() => openFilter('all', item.id)}>View runs</Button><Button size="sm" variant="ghost" onClick={() => onNew(item.id)}>New conversation</Button></div></article>;
-      })}</div>
+    {page === 'overview' && <>
+      <div className="control-metrics" aria-label="Activity summary">{([{id: 'attention', label: 'Needs attention'}, {id: 'running', label: 'In progress'}, {id: 'completed', label: 'Completed'}] as const).map(item => <button key={item.id} onClick={() => openFilter(item.id)}><strong>{updated ? counts[item.id] : '—'}</strong><span>{item.label}</span></button>)}</div>
+      <div className="control-overview-grid"><section className="control-section"><div className="control-section-heading"><h2>Needs attention</h2><Button variant="ghost" size="sm" onClick={() => openFilter('attention')}>View activity</Button></div>
+        {!updated ? <div className="control-empty">{loading ? 'Loading activity…' : 'Activity is unavailable.'}</div> : !counts.attention ? <div className="control-empty">No pending decisions.</div> : <ul className="control-attention-list">{accessible.filter(row => taskState(row.latest_status || '').attention).slice(0, 5).map(row => <li key={row.id}><button className="control-queue-row" aria-label={`Inspect ${row.title || 'Untitled conversation'}`} onClick={event => inspect(row, event)}><span><strong>{row.title || 'Untitled conversation'}</strong><small>{projects.find(item => item.id === row.project_id)?.name || 'Unassigned'}</small></span><Status value={row.latest_status}/><ChevronRight size={16} aria-hidden="true"/></button></li>)}</ul>}
+      </section><section className="control-section"><div className="control-section-heading"><h2>Manage</h2></div>
+        <p className="control-catalog-summary">{configurationState === 'ready' ? `${engines.length} installed engines · ${providers.filter(row => row.secret_configured).length} configured accounts` : configurationState === 'failed' ? 'Configuration counts unavailable.' : 'Loading configuration…'}</p>
+        <div className="control-destinations">{[{id: 'agents', title: 'Agents'}, {id: 'runners', title: 'Runners'}, {id: 'automations', title: 'Automations'}, {id: 'models', title: 'Models and engines'}, {id: 'access', title: 'Access and sessions'}].map(item => <button key={item.id} onClick={() => onManage(item.id)}><span>{item.title}</span><ArrowUpRight size={16} aria-hidden="true"/></button>)}</div>
+      </section></div>
+      <section className="control-section"><div className="control-section-heading"><h2>Projects</h2><Button variant="ghost" size="sm" onClick={() => navigate('projects')}>View projects</Button></div>
+        {!projects.length ? <div className="control-empty"><p>{props.catalogState === 'loading' ? 'Loading projects…' : props.catalogState === 'failed' ? 'Projects are unavailable.' : 'Add a folder to start a project.'}</p>{props.catalogState === 'ready' && <Button variant="ghost" disabled={!enabled} onClick={onAddProject}>Add project</Button>}</div> : <ul className="control-overview-projects">{scopeProjects(projects, currentProjectId).slice(0, 6).map(item => <li key={item.id}><button className="control-project-open" disabled={!enabled} onClick={() => onProject(item)}><Folder size={20} aria-hidden="true"/><span><strong>{item.name}</strong><small title={item.path}>{item.path}</small></span><ChevronRight size={16} aria-hidden="true"/></button><Button variant="ghost" size="sm" disabled={!enabled} onClick={() => onNew(item.id)}>New chat</Button></li>)}</ul>}
+      </section>
     </>}
     {page === 'tasks' && <>
-      <div className="control-run-tools"><Search size={17}/><Input aria-label="Search runs" placeholder="Search tasks, branches, models or runners" value={query} onChange={event => { setQuery(event.target.value); setLimit(40); }}/><Select aria-label="Filter runs by project" value={project} onChange={event => { setProject(event.target.value); setLimit(40); }}><option value="">All projects</option>{projects.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</Select><Select aria-label="Filter runs by status" value={filter} onChange={event => { setFilter(event.target.value as Filter); setLimit(40); }}><option value="all">All states</option><option value="attention">Needs attention</option><option value="running">In progress</option><option value="completed">Completed</option></Select></div>
-      <p className="control-description">Latest run per conversation. Open a workspace for the complete execution history and child-agent supervision.</p>
-      <div className={'control-run-layout' + (inspectedRow ? ' with-inspector' : '')}><div className="control-table-wrap"><table className="control-run-table"><thead><tr><th scope="col">Task / project</th><th scope="col">State</th><th scope="col">Execution target</th><th scope="col">Updated</th></tr></thead><tbody>{rows.slice(0, limit).map(row => <tr key={row.id} className={row.id === inspected ? 'selected' : ''}><td><button aria-label={`Inspect ${row.title || 'Untitled task'}`} aria-pressed={row.id === inspected} onClick={() => setInspected(row.id)}>{row.title || 'Untitled task'}</button><small>{projects.find(item => item.id === row.project_id)?.name || 'Unassigned'}</small></td><td><Status value={row.latest_status}/></td><td><span>{row.engine || 'TermX'}{row.model ? ` · ${row.model}` : ''}</span><small title={row.worktree_branch || row.cwd || undefined}>{row.runner_id ? `Runner ${row.runner_id}` : 'Host'} · {row.worktree_branch || folderName(row.cwd) || 'No checkout'}</small></td><td><time dateTime={new Date(row.updated_at * 1000).toISOString()}>{new Date(row.updated_at * 1000).toLocaleString()}</time></td></tr>)}</tbody></table>{!rows.length && <div className="control-empty">{!updated ? loading ? 'Loading runs…' : 'Run state unavailable.' : query || project || filter !== 'all' ? 'No runs match these filters.' : 'No conversations yet. Start a conversation to begin.'}</div>}{rows.length > limit && <Button variant="outline" onClick={() => setLimit(value => value + 40)}>Show more runs</Button>}</div>
-        {inspectedRow && <RunInspector key={ownerId + ':' + inspectedRow.id} row={inspectedRow} enabled={enabled} onClose={() => setInspected('')} onOpen={view => onOpen(inspectedRow.id, view)}/>}
-      </div>
+      <div className="control-run-tools"><label className="control-search"><Search size={16} aria-hidden="true"/><span className="visually-hidden">Search activity</span><Input type="search" placeholder="Search activity" value={query} onChange={event => { setQuery(event.target.value); setLimit(40); }}/></label><Select aria-label="Filter activity by project" value={project} onChange={event => { setProject(event.target.value); setLimit(40); }}><option value="">All projects</option>{projects.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</Select><Select aria-label="Filter activity by status" value={filter} onChange={event => { setFilter(event.target.value as Filter); setLimit(40); }}><option value="all">All states</option><option value="attention">Needs attention</option><option value="running">In progress</option><option value="completed">Completed</option></Select></div>
+      <p className="control-description">Latest activity in each conversation.</p>
+      <div className="control-activity-columns" aria-hidden="true"><span>Conversation</span><span>State</span><span>Updated</span></div>
+      <ul className="control-activity-list" aria-label="Activity">{rows.slice(0, limit).map(row => <li key={row.id}><button className="control-activity-row" aria-label={`Inspect ${row.title || 'Untitled conversation'}`} onClick={event => inspect(row, event)}><span className="control-activity-identity"><strong>{row.title || 'Untitled conversation'}</strong><small>{projects.find(item => item.id === row.project_id)?.name || 'Unassigned'}</small></span><Status value={row.latest_status}/><ProjectUpdated value={row.updated_at}/><ChevronRight size={16} aria-hidden="true"/></button></li>)}</ul>
+      {!rows.length && <div className="control-empty">{!updated ? loading ? 'Loading activity…' : 'Activity is unavailable.' : query || project || filter !== 'all' ? <><p>No activity matches these filters.</p><Button variant="ghost" onClick={() => { setQuery(''); setProject(''); setFilter('all'); }}>Clear filters</Button></> : 'No conversations yet.'}</div>}
+      {rows.length > limit && <Button variant="ghost" onClick={() => setLimit(value => value + 40)}>Show more</Button>}
     </>}
+    <Dialog open={!!inspectedRow} onOpenChange={open => { if (!open) setInspection(null); }}>{inspectedRow && <RunInspector key={ownerId + ':' + inspectedRow.id} row={inspectedRow} trigger={inspection!.trigger} enabled={enabled} onOpen={view => { setInspection(null); onOpen(inspectedRow.id, view); }}/>}</Dialog>
   </section>;
+}
+
+function ProjectCatalog({projects, sessions, query, showWorkspaces, currentProject, catalogState, received, loading, enabled, onClearSearch, onAddProject, onNew, onOpen, onProject, onActivity}: Pick<Props, 'projects' | 'catalogState' | 'enabled' | 'onAddProject' | 'onNew' | 'onOpen' | 'onProject'> & {sessions: Session[]; query: string; showWorkspaces: boolean; currentProject: string; received: boolean; loading: boolean; onClearSearch: () => void; onActivity: (id: string) => void}) {
+  const visible = useMemo(() => {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const scoped = new Set(scopeProjects(projects, currentProject).map(item => item.id));
+    return projects.filter(item => (showWorkspaces || terms.length > 0 || scoped.has(item.id)) && terms.every(term => `${item.name} ${item.path}`.toLowerCase().includes(term)));
+  }, [projects, query, showWorkspaces, currentProject]);
+  const related = useMemo(() => {
+    const byProject = new Map<string, Session[]>();
+    sessions.filter(row => !row.archived && row.project_id).forEach(row => {
+      const rows = byProject.get(row.project_id!) || [];
+      rows.push(row); byProject.set(row.project_id!, rows);
+    });
+    byProject.forEach(rows => rows.sort((a, b) => b.updated_at - a.updated_at));
+    return byProject;
+  }, [sessions]);
+  if (!projects.length) return <div className="control-empty control-project-empty"><p>{catalogState === 'loading' ? 'Loading projects…' : catalogState === 'failed' ? 'Projects are unavailable.' : 'Add a folder to start a project.'}</p>{catalogState === 'ready' && <Button variant="ghost" disabled={!enabled} onClick={onAddProject}>Add project</Button>}</div>;
+  return <div className="control-project-catalog">
+    <div className="control-project-columns" aria-hidden="true"><span>Project</span><span>Updated</span></div>
+    {!visible.length ? <div className="control-empty control-project-empty"><p>{query.trim() ? `No projects match “${query.trim()}”.` : 'No project folders to show.'}</p>{query.trim() && <Button variant="ghost" onClick={onClearSearch}>Clear search</Button>}</div> : <ul className="control-project-list" aria-label="Projects">{visible.map(item => {
+      const conversations = related.get(item.id) || [];
+      const latest = conversations.reduce((value, row) => Number.isFinite(row.updated_at) && row.updated_at > value ? row.updated_at : value, 0);
+      return <Collapsible key={item.id} asChild><li className="control-project-group">
+        <div className="control-project-row"><CollapsibleTrigger className="control-project-trigger" aria-label={item.name} title={item.path}><Folder size={20} strokeWidth={1.5} aria-hidden="true"/><span className="control-project-identity"><strong>{item.name}</strong><small title={item.path}>{item.path}</small></span><ChevronRight className="control-project-chevron" size={16} aria-hidden="true"/></CollapsibleTrigger><ProjectUpdated value={received ? latest : undefined} loading={!received && loading} description="Latest conversation update"/></div>
+        <CollapsibleContent className="control-project-content">
+          {conversations.length ? <ul className="control-project-conversations" aria-label={`${item.name} conversations`}>{conversations.map(row => <li key={row.id}><button className="control-project-conversation" aria-label={`Open ${row.title || 'Untitled conversation'}`} disabled={!enabled} onClick={() => onOpen(row.id, 'chat')}><MessageSquare size={16} strokeWidth={1.5} aria-hidden="true"/><span>{row.title || 'Untitled conversation'}</span><ProjectUpdated value={row.updated_at}/></button></li>)}</ul> : <p className="control-project-no-chats">{received ? 'No conversations in this project yet.' : loading ? 'Loading conversations…' : 'Conversations are unavailable.'}</p>}
+          <div className="control-project-tools"><Button variant="ghost" size="sm" disabled={!enabled} onClick={() => onProject(item)}>Open folder</Button><Button variant="ghost" size="sm" onClick={() => onActivity(item.id)}>Activity</Button><Button variant="ghost" size="sm" disabled={!enabled} onClick={() => onNew(item.id)}>New chat</Button></div>
+        </CollapsibleContent>
+      </li></Collapsible>;
+    })}</ul>}
+  </div>;
+}
+
+function ProjectUpdated({value, loading = false, description = 'Updated', full = false}: {value?: number; loading?: boolean; description?: string; full?: boolean}) {
+  const date = value && Number.isFinite(value) && value > 0 ? new Date(value * 1000) : null;
+  if (!date || !Number.isFinite(date.getTime())) return <span className="control-project-updated" title={loading ? 'Loading conversation updates' : 'No conversation update available'}>{loading ? '…' : '—'}</span>;
+  return <time className="control-project-updated" dateTime={date.toISOString()} title={`${description}: ${date.toLocaleString()}`}>{full ? date.toLocaleString() : date.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'})}</time>;
 }
 
 function Status({value}: {value?: string | null}) {
@@ -108,8 +175,9 @@ function Status({value}: {value?: string | null}) {
   return <span className={'control-state ' + state.tone}>{state.label}</span>;
 }
 
-function RunInspector({row, enabled, onClose, onOpen}: {row: Session; enabled: boolean; onClose: () => void; onOpen: (view: ExecutionView) => void}) {
-  const [session, setSession] = useState<Session | null>(null), [error, setError] = useState('');
+function RunInspector({row, enabled, trigger, onOpen}: {row: Session; enabled: boolean; trigger: HTMLButtonElement; onOpen: (view: ExecutionView) => void}) {
+  const content = useRef<HTMLDivElement>(null);
+  const [session, setSession] = useState<Session | null>(null), [error, setError] = useState(''), [unavailable, setUnavailable] = useState(false), [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let stopped = false, busy = false;
@@ -117,20 +185,29 @@ function RunInspector({row, enabled, onClose, onOpen}: {row: Session; enabled: b
     const read = async () => {
       if (stopped || busy || document.hidden) return;
       busy = true;
-      try { const value = await cache.read(row.id); if (!stopped) { setSession(value); setError(''); } }
-      catch (reason) { if (!stopped) setError(reason instanceof Error ? reason.message : String(reason)); }
-      finally { busy = false; }
+      try {
+        const value = await cache.read(row.id);
+        if (value.id !== row.id) throw new Error('Conversation is unavailable');
+        if (!stopped) { setSession(value); setError(''); setUnavailable(false); }
+      } catch (reason) {
+        if (!stopped) { setError(reason instanceof Error ? reason.message : String(reason)); if (losesAccess(reason)) { cache.clear(); setSession(null); setUnavailable(true); } }
+      } finally { busy = false; }
     };
     void read(); const timer = setInterval(() => void read(), 3000);
-    return () => { stopped = true; cache.clear(); clearInterval(timer); };
-  }, [row.id, enabled]);
-  const current = session || row, task = latestExecutionTask(session?.turns||[]);
+    const visible = () => { if (!document.hidden) void read(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { stopped = true; cache.clear(); clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
+  }, [row.id, enabled, retry]);
+  const current = session || row, task = latestExecutionTask(session?.turns || []);
   const pending = task?.approvals?.filter(approval => approval.status === 'pending') || [];
-  return <aside className="control-inspector" aria-label="Run inspector"><div className="control-section-heading"><h2>Run inspector</h2><Button size="icon" variant="ghost" aria-label="Close run inspector" onClick={onClose}><X size={16}/></Button></div><Status value={task?.status || current.latest_status}/><h3>{current.title}</h3>
-    {error && <p className="control-error" role="alert">{error}. Refreshing automatically; details may be stale.</p>}
-    {!session && !error && <p role="status">Loading execution details…</p>}
-    <dl><dt>Engine / model</dt><dd>{current.engine} · {current.model || 'Default model'}</dd><dt>Execution</dt><dd>{current.runner_id ? `Runner ${current.runner_id}` : 'Host'}</dd><dt>Checkout</dt><dd>{current.cwd || 'No checkout'}{current.worktree_branch && <><br/>{current.worktree_branch}</>}</dd></dl>
-    {task && <section><h4>Current task</h4><p>{task.prompt}</p>{pending.length > 0 && <p className="control-attention">{pending.length} pending approval{pending.length > 1 ? 's' : ''}. Review the exact action in the workspace.</p>}{task.error && <p className="control-error">{task.error}</p>}{task.result && <details><summary>Latest result</summary><p className="control-result">{task.result}</p></details>}</section>}
-    <div className="control-inspector-actions"><Button onClick={() => onOpen('chat')}>{taskState(task?.status || current.latest_status || '').attention ? 'Review in workspace' : 'Open workspace'}</Button><Button variant="outline" onClick={() => onOpen('review')}>Changes & delivery</Button><Button variant="ghost" onClick={() => onOpen('workbench')}>Files & terminal</Button><Button variant="ghost" onClick={() => onOpen('browser')}>Browser & preview</Button></div>
-  </aside>;
+  return <DialogContent ref={content} className="control-inspector" onOpenAutoFocus={event => { const close = content.current?.querySelector<HTMLButtonElement>('.dialog-close'); if (close) { event.preventDefault(); close.focus({preventScroll: true}); } }} onCloseAutoFocus={event => { if (trigger.isConnected) { event.preventDefault(); trigger.focus({preventScroll: true}); } }}>
+    <div className="control-inspector-heading"><DialogDescription>Activity details</DialogDescription><DialogTitle>{unavailable ? 'Conversation unavailable' : current.title || 'Untitled conversation'}</DialogTitle>{!unavailable && <Status value={task?.status || current.latest_status}/>}</div>
+    <div className="control-inspector-scroll" role="region" aria-label="Activity details content" tabIndex={0}>
+      {error && <div className="control-error" role="alert"><span>{error}{session ? '. Showing the last received details.' : '.'}</span><Button variant="ghost" size="sm" onClick={() => setRetry(value => value + 1)}>Retry</Button></div>}
+      {!session && !error && <p role="status">Loading details…</p>}
+      {!unavailable && <><dl><div><dt>Engine</dt><dd>{current.engine || 'TermX'}</dd></div><div><dt>Model</dt><dd>{current.model || 'Default'}</dd></div><div><dt>Execution</dt><dd>{current.runner_id ? `Runner ${current.runner_id}` : 'Host'}</dd></div><div><dt>Checkout</dt><dd>{current.cwd || 'No checkout'}</dd></div>{current.worktree_branch && <div><dt>Branch</dt><dd>{current.worktree_branch}</dd></div>}<div><dt>Updated</dt><dd><ProjectUpdated value={current.updated_at} full/></dd></div></dl>
+      {task && <section className="control-current-task"><h3>Latest task</h3><p>{task.prompt}</p>{pending.length > 0 && <p className="control-attention">{pending.length} pending approval{pending.length > 1 ? 's' : ''}.</p>}{task.error && <p className="control-error">{task.error}</p>}{task.result && <Collapsible><CollapsibleTrigger className="control-result-trigger">Latest result<ChevronRight size={16} aria-hidden="true"/></CollapsibleTrigger><CollapsibleContent><p className="control-result">{task.result}</p></CollapsibleContent></Collapsible>}</section>}</>}
+    </div>
+    {!unavailable && <div className="control-inspector-actions"><Button disabled={!enabled} onClick={() => onOpen('chat')}>Open chat</Button><Button variant="ghost" disabled={!enabled} onClick={() => onOpen('review')}>Changes</Button><Button variant="ghost" disabled={!enabled} onClick={() => onOpen('workbench')}>Files</Button><Button variant="ghost" disabled={!enabled} onClick={() => onOpen('browser')}>Browser</Button></div>}
+  </DialogContent>;
 }

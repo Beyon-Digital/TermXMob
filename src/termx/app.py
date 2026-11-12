@@ -350,6 +350,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             # Discovery only: failures keep the saved catalog and set catalog_error.
             state.agent.catalogue.start()
         yield
+        await state.data_studio.close()
+        await state.studio.close()
         await state.push.close()
         await state.prompt_queue.close()
         await state.automation.close()
@@ -399,6 +401,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_project_pins(app, state)
     from termx.media.http import mount_media
     mount_media(app, state)
+    from termx.data.http import mount_data
+    mount_data(app, state)
     from termx.voice.http import mount_voice
     mount_voice(app, state)
     from termx.characters.http import mount_characters

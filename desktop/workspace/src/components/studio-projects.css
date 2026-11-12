@@ -1,0 +1,42 @@
+.studio-project-heading-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.studio-project-heading-actions .studio-project-heading{margin:0}
+.studio-project-heading-actions>.button{min-width:40px;min-height:40px}
+.studio-project-navigation .studio-project-group-label{margin:12px 8px 4px;font-size:12px;line-height:16px;color:var(--secondary)}
+.studio-project-navigation>.studio-project-manage{justify-content:flex-start;min-height:40px;margin-top:8px;padding:8px;font-size:14px}
+.studio-project-navigation>.studio-project-scope-note{margin:8px;font-size:12px;line-height:16px;color:var(--secondary)}
+.studio-project-navigation .studio-nav-item:disabled{opacity:.5;cursor:not-allowed}
+.studio-project-dialog{display:flex;flex-direction:column;gap:16px;padding:24px;border-radius:12px;color:var(--foreground)}
+.studio-project-dialog>h2{margin:0;font-size:20px;font-weight:600;line-height:28px}
+.studio-project-dialog>p{margin:0;font-size:14px;line-height:20px;color:var(--secondary)}
+.studio-project-toolbar,.studio-project-actions,.studio-project-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.studio-project-toolbar{justify-content:space-between}
+.studio-project-dialog .button{min-height:40px;gap:8px;border-radius:8px;font-size:14px;font-weight:500;line-height:20px;padding:8px 16px}
+.studio-project-dialog .button>svg{flex:none;stroke-width:1.5}
+.studio-project-dialog .studio-project-back{align-self:flex-start;padding-left:0}
+.studio-project-dialog .studio-project-hint{margin:0;font-size:12px;line-height:16px;color:var(--secondary)}
+.studio-project-list{list-style:none;padding:0;margin:0;overflow-y:auto;min-height:0}
+.studio-project-list>li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--border)}
+.studio-project-copy{min-width:0;overflow-wrap:anywhere}
+.studio-project-copy>strong{font-size:14px;font-weight:500;line-height:20px}
+.studio-project-copy>p,.studio-project-copy>span{display:block;margin:4px 0 0;font-size:12px;line-height:16px;color:var(--secondary)}
+.studio-project-row-actions{flex:none}
+.studio-project-form{display:flex;flex-direction:column;gap:16px;min-width:0}
+.studio-project-form>p{margin:0;font-size:14px;line-height:20px;overflow-wrap:anywhere}
+.studio-project-form .form-field{gap:8px}
+.studio-project-form .form-field-label{font-size:14px;line-height:20px}
+.studio-project-form :is(input,textarea){width:100%;min-height:40px;box-sizing:border-box;padding:8px 12px;border:1px solid var(--border-strong,var(--border));border-radius:8px;background:var(--surface);color:var(--foreground);font-family:inherit;font-size:16px;line-height:24px}
+.studio-project-form textarea{resize:vertical;max-height:192px}
+.studio-project-actions{justify-content:flex-end}
+.studio-project-actions>.studio-project-archive{margin-right:auto;color:var(--destructive)}
+.studio-project-error{display:grid;justify-items:start;gap:8px}
+.studio-project-error>p{margin:0;font-size:14px;line-height:20px;color:var(--destructive)}
+.studio-project-dialog :is(button,input,textarea):focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
+.studio-project-dialog :is(button,input,textarea):disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:640px){.studio-project-dialog{padding:16px}.studio-project-list>li{gap:8px}.studio-project-actions{align-items:stretch}.studio-project-actions>.button{flex:1}.studio-project-actions>.studio-project-archive{margin-right:0}}
+@media(pointer:coarse){html[data-app-workspace=studio] .studio-project-dialog :is(.button,input,textarea),html[data-app-workspace=studio] .studio-project-switch-dialog .button,html[data-app-workspace=studio] .studio-project-heading-actions>.button,html[data-app-workspace=studio] .studio-project-navigation>.studio-project-manage{min-height:var(--agent-touch-height,44px)}html[data-app-workspace=studio] .studio-project-heading-actions>.button{min-width:var(--agent-touch-height,44px)}}
+
+html:is([data-app-workspace=agent],[data-app-workspace=studio]) .studio-project-dialog .studio-project-confirm{background:var(--danger,var(--destructive));border-color:var(--danger,var(--destructive));color:var(--accent-fg,var(--background))}
+
+html[data-app-workspace=studio] .studio-project-navigation .studio-managed-project{font-size:14px;line-height:20px}
+
+@media(pointer:coarse){html[data-app-workspace=studio] :is(.studio-project-dialog,.studio-project-switch-dialog) .dialog-close{min-width:var(--agent-touch-height,44px);min-height:var(--agent-touch-height,44px)}}

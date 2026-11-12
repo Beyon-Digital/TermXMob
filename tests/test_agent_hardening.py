@@ -36,14 +36,14 @@ def test_model_meta_finds_an_ollama_model_selected_without_its_latest_tag(tmp_pa
 @pytest.mark.parametrize(
     ("meta", "expected"),
     [
-        ({"max_output": 100_000_000, "context_window": 1_000_000, "overridden": []}, 32_000),
-        ({"max_output": 8000, "context_window": 8000, "overridden": []}, 4000),
-        ({"max_output": 4000, "context_window": 200_000, "overridden": []}, 4000),
+        ({"max_output": 100_000_000, "context_window": 1_000_000, "overridden": []}, None),
+        ({"max_output": 8000, "context_window": 8000, "overridden": []}, None),
+        ({"max_output": 4000, "context_window": 200_000, "overridden": []}, None),
         ({"max_output": 50_000, "context_window": 8000, "overridden": ["max_output"]}, 50_000),
         ({"max_output": None, "context_window": 8000, "overridden": []}, None),
     ],
 )
-def test_discovered_max_output_is_clamped_but_a_user_override_is_not(tmp_path: Path, meta, expected) -> None:
+def test_discovered_output_metadata_does_not_limit_requests_but_an_explicit_override_does(tmp_path: Path, meta, expected) -> None:
     manager, store = _routed(tmp_path, FakeAdapter())
     provider = {**store.get_provider("fake"), "meta": meta}
     assert manager._default_adapter(provider, "k").max_output_tokens == expected
@@ -117,3 +117,28 @@ def test_routing_rejects_a_tool_less_fallback_for_agent_roles(tmp_path: Path) ->
             manager.validate_routing({role: route})
     assert manager.validate_routing({"planner": route})["planner"]["fallbacks"]
     store.close()
+
+
+@pytest.mark.parametrize(("request_timeout", "metadata_timeout"), [(None, 15.0), (2.5, 2.5), (60, 15.0)])
+def test_catalog_discovery_accepts_retired_global_timeout_none(tmp_path, monkeypatch, request_timeout, metadata_timeout):
+    from termx.config import AgentPrefs
+
+    async def run():
+        manager, store = _routed(tmp_path, FakeAdapter())
+        manager._settings = lambda: AgentPrefs(provider_timeout_s=None)
+        calls = []
+
+        async def discover(provider, key, *, timeout_s):
+            calls.append((provider["id"], timeout_s))
+            return {"fake-model": model_info("test", 1.0)}
+
+        monkeypatch.setattr("termx.agent.manager.discover_models", discover)
+        provider = {**store.get_provider("fake"), "limits": {"request_timeout_s": request_timeout}}
+        try:
+            catalog = await manager._fetch_catalog(provider)
+            assert "fake-model" in catalog
+            assert calls == [("fake", metadata_timeout)]
+        finally:
+            await manager.close()
+            store.close()
+    asyncio.run(run())

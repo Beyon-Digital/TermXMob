@@ -7,7 +7,7 @@ const mocked=vi.mocked(request);
 const row={id:'schedule',revision:4,goal_id:'goal',grant_id:'grant',prompt:'Run project checks',spec:{kind:'cron',expression:'0 9 * * 1-5',timezone:'UTC'},enabled:true,state:'enabled',next_run:1800000000,missed:'skip',overlap:'skip'};
 afterEach(cleanup);
 beforeEach(()=>{mocked.mockReset();mocked.mockImplementation(async(path)=>{if(path.includes('/sessions'))return {sessions:[{id:'chat',title:'Project checks'}]} as any;if(path.endsWith('/preview'))return {next_runs:[1800000000]} as any;return {schedule:[row],schedule_run:[],goal:[{id:'goal',conversation_id:'chat',max_runs:10,runs_started:1}],delegation:[{id:'grant',expires_at:1900000000}]} as any})});
-it('creates cron schedules only after explicit budget authorization and preserves retry identity',async()=>{
+it('creates cron schedules only after explicit schedule authorization and preserves retry identity',async()=>{
  render(<ScheduleManager projectId={null} sessionId="chat"/>);
  fireEvent.click(await screen.findByRole('button',{name:'New scheduled task'}));
  fireEvent.change(screen.getByLabelText('Success criteria'),{target:{value:'All checks pass'}});
@@ -21,8 +21,9 @@ it('creates cron schedules only after explicit budget authorization and preserve
  expect(await screen.findByRole('alert')).toHaveTextContent('Response lost');
  fireEvent.click(screen.getByRole('button',{name:'Authorize and create schedule'}));
  await waitFor(()=>expect(screen.queryByRole('form',{name:'Create scheduled task'})).not.toBeInTheDocument());
+ expect(screen.queryByLabelText('Seconds per run')).not.toBeInTheDocument();
  const calls=mocked.mock.calls.filter(([path,init])=>path==='/api/workspace/automations'&&init?.method==='POST').map(([,init])=>JSON.parse(String(init?.body)));
- expect(calls).toHaveLength(2);expect(calls[0].request_id).toBe(calls[1].request_id);expect(calls[1]).toMatchObject({conversation_id:'chat',spec:{kind:'cron',expression:'0 9 * * 1-5'},max_runs:10,grant_days:7});
+ expect(calls).toHaveLength(2);expect(calls[0].limits).toEqual({});expect(calls[0].request_id).toBe(calls[1].request_id);expect(calls[1]).toMatchObject({conversation_id:'chat',spec:{kind:'cron',expression:'0 9 * * 1-5'},max_runs:10,grant_days:7});
 });
 it('uses optimistic revisions for pause and surfaces run conflicts without repeating dispatch',async()=>{
  render(<ScheduleManager projectId={null} sessionId={null}/>);
@@ -76,7 +77,7 @@ it('includes unattended browser scope only after an explicit exact authorization
  mocked.mockImplementation(async(path,init)=>path.includes('/sessions')?{sessions:[{id:'chat',title:'Browser task',engine:'internal',mode:'agent'}]}:path.includes('/scheduled-browser/tabs')?{tabs:[{id:'approved-tab',title:'Approved page',url:'https://example.com/tasks'}]}:base(path,init));
  render(<ScheduleManager projectId={null} sessionId="chat"/>);
  fireEvent.click(await screen.findByRole('button',{name:'New scheduled task'}));
- fireEvent.change(screen.getByLabelText('Success criteria'),{target:{value:'Check tasks'}});fireEvent.change(screen.getByLabelText('Task prompt'),{target:{value:'Read the approved page'}});fireEvent.click(screen.getByLabelText(/Allow unattended runs within these limits/));
+ fireEvent.change(screen.getByLabelText('Success criteria'),{target:{value:'Check tasks'}});fireEvent.change(screen.getByLabelText('Task prompt'),{target:{value:'Read the approved page'}});fireEvent.click(screen.getByLabelText(/Allow unattended runs/));
  const browser=await screen.findByRole('checkbox',{name:/Allow this schedule to use/});fireEvent.click(browser);
  expect(screen.getByRole('button',{name:'Authorize and create schedule'})).toBeDisabled();
  fireEvent.click(await screen.findByRole('checkbox',{name:/Approved page · tab approved-tab/}));

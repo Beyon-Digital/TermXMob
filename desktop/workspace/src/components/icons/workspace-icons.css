@@ -1,0 +1,3 @@
+:root{--agent-glyph-0:#88bc64;--agent-glyph-1:#6faee5;--agent-glyph-2:#60b9bf;--agent-glyph-3:#a787d7;--agent-glyph-4:#c88aca;--agent-glyph-5:#d6b84c;--agent-glyph-6:#d9789c;--agent-glyph-7:#84a8d9}
+:root[data-theme=light]{--agent-glyph-0:#497d29;--agent-glyph-1:#2877ba;--agent-glyph-2:#197e86;--agent-glyph-3:#7951ac;--agent-glyph-4:#9c4f9e;--agent-glyph-5:#8b6d0c;--agent-glyph-6:#b13d6c;--agent-glyph-7:#456fa8}
+.agent-glyph{display:block;flex:none;color:var(--glyph-color);overflow:visible}

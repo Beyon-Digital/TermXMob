@@ -32,7 +32,7 @@
 .chat-region .composer-context details[open]{max-width:100%}
 .chat-region .composer .attachment-row{margin:0 4px 12px}
 .chat-region .composer .prompt-queue{margin-bottom:12px}
-.chat-control-dialog.dialog-content{width:480px;max-width:calc(100vw - 32px);max-height:min(85dvh,760px);padding:26px;border-radius:22px;background:var(--surface);box-shadow:0 24px 100px #0005}
+.chat-control-dialog.dialog-content{width:480px;max-width:calc(100vw - 32px);max-height:min(85dvh,760px);padding:24px;border-radius:16px;background:var(--surface-raised,var(--surface));box-shadow:0 18px 72px #0003}
 .chat-control-dialog h2{font-size:20px;letter-spacing:-.45px;font-weight:600;margin:0 28px 6px 0}
 .chat-control-dialog>p{font-size:13px;line-height:1.6;color:var(--secondary);margin-bottom:20px}
 .chat-control-dialog label{font-size:13px;gap:8px}
@@ -45,11 +45,11 @@
 .model-selection-row .model-favorite[aria-pressed=true]{color:var(--accent)}
 .model-account-field{margin-top:22px;border-top:1px solid var(--border);padding-top:4px}
 .model-account-field>label{margin-bottom:8px}
-.reasoning-default{display:flex;gap:12px;align-items:flex-start;background:var(--background);border-radius:14px;padding:16px;color:var(--secondary)}
+.reasoning-default{display:flex;gap:12px;align-items:flex-start;padding:8px 0;color:var(--secondary)}
 .reasoning-default>svg{flex-shrink:0;margin-top:2px}
 .reasoning-default strong{font-size:12px;color:var(--foreground);font-weight:500}
 .reasoning-default p{font-size:12px;line-height:1.6;margin:4px 0 0}
-.reasoning-controls{padding:18px 16px 8px;background:var(--background);border:1px solid var(--border);border-radius:16px}
+.reasoning-controls{padding:16px 0 0;border-top:1px solid var(--border-subtle,var(--border))}
 .reasoning-control{margin-bottom:16px}
 .reasoning-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .reasoning-heading>label{margin:0;font-size:13px}
@@ -75,6 +75,7 @@
 .mode-option small{font-size:12px;font-weight:400;line-height:1.55}
 .mode-picker{position:relative;display:inline-flex}
 .mode-popover{position:fixed;z-index:60;width:min(320px,calc(100vw - 32px));padding:6px;border:1px solid var(--border);border-radius:12px;background:var(--background);box-shadow:0 8px 24px #00000026}
+.mode-popover[hidden]{display:none!important}
 .mode-popover .mode-options{gap:2px}
 .mode-popover .mode-option{padding:10px;border-color:transparent;border-radius:8px}
 .mode-popover .mode-option:hover{background:var(--muted)}
@@ -101,7 +102,7 @@
 .mode-popover .control-running-note{margin:6px 4px 2px;padding:8px 10px;border-radius:8px;background:var(--muted);font-size:12px;color:var(--secondary);line-height:1.5}
 .session-settings-dialog.dialog-content{width:520px;display:flex;flex-direction:column;overflow:hidden;padding-bottom:16px}
 .session-settings-dialog>p{flex-shrink:0}
-.session-settings-nav{display:flex;gap:4px;flex-shrink:0;background:var(--background);padding:4px;border-radius:13px;margin-bottom:18px}
+.session-settings-nav{display:flex;gap:4px;flex-shrink:0;padding:0 0 12px;border-bottom:1px solid var(--border-subtle,var(--border));margin-bottom:16px}
 .session-settings-nav>button{display:flex;align-items:center;justify-content:center;gap:6px;flex:1;min-width:0;font-size:12px;height:36px;border-radius:9px;color:var(--secondary)}
 .session-settings-nav>button[aria-current=page]{background:var(--muted);color:var(--foreground)}
 .session-settings-content{overflow-y:auto;overscroll-behavior:contain;min-height:0;scrollbar-width:thin;padding:2px}
@@ -112,8 +113,8 @@
 .run-profile-field{margin:0 0 8px;border:0;padding:0;min-width:0}
 .run-profile-field>legend{font-weight:500;font-size:13px;padding:0;margin-bottom:6px}
 .run-profile-options{display:flex;flex-direction:column;gap:7px}
-.run-profile-option{position:relative;display:flex;flex-direction:row;align-items:center;gap:12px!important;margin:0!important;padding:13px 14px;border:1px solid var(--border);border-radius:13px;cursor:pointer}
-.run-profile-option.selected{background:var(--muted);border-color:var(--secondary)}
+.run-profile-option{position:relative;display:flex;flex-direction:row;align-items:center;gap:12px!important;margin:0!important;padding:12px;border:1px solid transparent;border-radius:8px;cursor:pointer}
+.run-profile-option.selected{background:var(--muted);border-color:var(--border)}
 .run-profile-option:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
 .run-profile-option:has(input:disabled){cursor:not-allowed;opacity:.6}
 .run-profile-option>span{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
@@ -122,13 +123,13 @@
 .run-profile-option span>small{font-size:11px;line-height:1.5;font-weight:400}
 .run-profile-option>svg{color:var(--foreground);flex-shrink:0}
 .session-extension-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
-.session-extension{display:flex;flex-direction:row;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--border);border-radius:12px;margin:0!important}
+.session-extension{display:flex;flex-direction:row;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-subtle,var(--border));margin:0!important}
 .session-extension>span{display:flex;flex-direction:column;gap:4px;min-width:0}
 .session-extension strong{font-size:12px;overflow-wrap:anywhere}
 .session-extension small{font-size:11px;line-height:1.5;font-weight:400}
 .session-settings-pane details{font-size:12px;color:var(--secondary);line-height:1.6}
 .session-settings-pane details summary{cursor:pointer;color:var(--foreground);padding:8px 0}
-.runtime-location{font-family:'Geist Mono Variable',monospace;overflow-wrap:anywhere;padding:12px;background:var(--background);border-radius:12px}
+.runtime-location{font-family:'Geist Mono Variable',monospace;overflow-wrap:anywhere;padding:6px 0}
 .conversation-settings-link{display:flex;align-items:center;gap:12px;padding:16px 2px 2px;border-top:1px solid var(--border);margin-top:18px;text-align:left;flex-shrink:0;color:var(--secondary)}
 .conversation-settings-link>span{display:flex;flex-direction:column;gap:4px;flex:1;color:var(--foreground);font-size:12px}
 .conversation-settings-link small{font-size:11px;color:var(--secondary)}
@@ -142,7 +143,7 @@
  .chat-region .composer{flex-shrink:0}
  .chat-region .composer textarea{font-size:16px;min-height:44px}
  .chat-region .composer-hint{font-size:11px;margin-top:7px}
- .chat-control-dialog.dialog-content{top:auto;left:0;bottom:0;transform:none;max-width:100%;width:100%;max-height:88dvh;border-radius:24px 24px 0 0;padding:26px 22px max(22px,env(safe-area-inset-bottom))}
+ .chat-control-dialog.dialog-content{top:auto;left:0;bottom:0;transform:none;max-width:100%;width:100%;max-height:88dvh;border-radius:16px 16px 0 0;padding:24px 22px max(22px,env(safe-area-inset-bottom))}
  .session-settings-dialog.dialog-content{width:100%;padding-bottom:max(20px,env(safe-area-inset-bottom))}
 }
 @media(max-width:430px){
@@ -159,12 +160,63 @@
  .chat-region .composer-container{max-height:calc(100% - 48px);min-height:120px;padding-top:8px;padding-bottom:8px;flex-shrink:1}
  .chat-region .composer{min-height:104px;padding-top:12px;padding-bottom:8px}
  .chat-region .composer-controls{margin-top:8px}
- .chat-region .composer-hint{display:none}
+ .chat-region .composer-hint:not(.composer-status-hint){display:none}
  /* With the keyboard up, the usage line stays one line so the two control rows keep their room. */
  .chat-region .task-meter{flex-wrap:nowrap;margin-bottom:4px}
  .chat-region .task-meter>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 @media(prefers-reduced-motion:reduce){.chat-region .composer,.chat-control-dialog{transition:none;animation:none}}
+
+/* Agent control overlays share the DESIGN.md tokens, including portals mounted on body. */
+html[data-app-workspace=agent] .chat-control-dialog.dialog-content{padding:24px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-overlay);color:var(--text)}
+html[data-app-workspace=agent] .chat-control-dialog h2{font-size:20px;line-height:28px;letter-spacing:0;font-weight:600;margin:0 32px 8px 0}
+html[data-app-workspace=agent] .chat-control-dialog>p{font-size:14px;line-height:20px;color:var(--text-2);margin-bottom:24px}
+html[data-app-workspace=agent] .chat-control-dialog label{font-size:14px;line-height:20px;font-weight:500;gap:8px}
+html[data-app-workspace=agent] .chat-control-dialog .input{height:40px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font-size:16px;line-height:24px}
+html[data-app-workspace=agent] .chat-control-dialog .control-description{font-size:12px;line-height:16px;font-weight:400;color:var(--text-3);margin:0 0 16px}
+html[data-app-workspace=agent] :is(.chat-control-dialog,.mode-popover) .control-running-note{margin:16px 0 0;padding:12px;border-radius:8px;background:var(--surface-2);font-size:12px;line-height:16px;color:var(--text-2)}
+html[data-app-workspace=agent] .model-selection-row{gap:8px;margin-bottom:24px}
+html[data-app-workspace=agent] .model-selection-row .model-favorite{width:40px;height:40px;color:var(--text-2);border-radius:8px}
+html[data-app-workspace=agent] .model-selection-row .model-favorite[aria-pressed=true]{color:var(--accent)}
+html[data-app-workspace=agent] .model-account-field{margin-top:24px;padding-top:8px;border-color:var(--border)}
+html[data-app-workspace=agent] .reasoning-default{padding:8px 0;gap:12px;color:var(--text-2)}
+html[data-app-workspace=agent] .reasoning-default strong{font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
+html[data-app-workspace=agent] .reasoning-default p{font-size:12px;line-height:16px;margin:4px 0 0}
+html[data-app-workspace=agent] .reasoning-controls{padding:16px 0 0;border-color:var(--border)}
+html[data-app-workspace=agent] .reasoning-heading{gap:12px;margin-bottom:12px}
+html[data-app-workspace=agent] .reasoning-heading>label{font-size:14px;line-height:20px}
+html[data-app-workspace=agent] .reasoning-heading>span{font-size:12px;line-height:16px;color:var(--text-3);gap:4px}
+html[data-app-workspace=agent] .reasoning-slider{height:8px;margin:16px 0 12px;border-radius:8px;background:var(--border);accent-color:var(--accent)}
+html[data-app-workspace=agent] .reasoning-slider::-webkit-slider-thumb{width:16px;height:16px;border:0;border-radius:8px;background:var(--accent);box-shadow:none}
+html[data-app-workspace=agent] .reasoning-slider::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:8px;background:var(--accent);box-shadow:none}
+html[data-app-workspace=agent] .reasoning-slider:disabled{opacity:.5}
+html[data-app-workspace=agent] .reasoning-scale{gap:8px;font-size:12px;line-height:16px;color:var(--text-3)}
+html[data-app-workspace=agent] .reasoning-scale .selected{font-weight:500;color:var(--text)}
+html[data-app-workspace=agent] .chat-control-dialog .reasoning-controls>.control-description{font-size:12px;line-height:16px;margin-bottom:8px}
+html[data-app-workspace=agent] .mode-popover{padding:8px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-overlay)}
+html[data-app-workspace=agent] .mode-popover .mode-options{gap:4px}
+html[data-app-workspace=agent] .mode-popover .mode-option{padding:12px;gap:12px!important;border-radius:8px;border-color:transparent;background:transparent;transition:none}
+html[data-app-workspace=agent] .mode-popover .mode-option:hover{background:var(--surface-2)}
+html[data-app-workspace=agent] .mode-popover .mode-option.selected{background:var(--surface-2);border-color:transparent}
+html[data-app-workspace=agent] .mode-popover .mode-option.selected>svg:last-child{color:var(--accent)}
+html[data-app-workspace=agent] .mode-popover .mode-option>svg{color:var(--text-2)}
+html[data-app-workspace=agent] .mode-option:has(input:disabled){opacity:.5}
+html[data-app-workspace=agent] .mode-option>span{gap:4px}
+html[data-app-workspace=agent] .mode-option strong{font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
+html[data-app-workspace=agent] .mode-option small{font-size:12px;line-height:16px;color:var(--text-3)}
+html[data-app-workspace=agent] .mode-auto{margin:8px 0 0;padding:8px 0 0;border-color:var(--border)}
+html[data-app-workspace=agent] .mode-auto-row{padding:8px;gap:12px}
+html[data-app-workspace=agent] .mode-auto-row>span{gap:4px}
+html[data-app-workspace=agent] .mode-auto-row strong{font-size:14px;line-height:20px;font-weight:500}
+html[data-app-workspace=agent] .mode-auto-row small{font-size:12px;line-height:16px;color:var(--text-3)}
+html[data-app-workspace=agent] .mode-auto-row>input{appearance:auto;width:16px;height:16px;min-width:16px;margin:0;border-radius:8px;accent-color:var(--accent);transition:none}
+html[data-app-workspace=agent] .mode-auto-row>input::after{display:none}
+html[data-app-workspace=agent] .mode-auto-row>input:checked{background:var(--accent);border-color:var(--accent)}
+html[data-app-workspace=agent] .mode-auto-limits-toggle{margin:4px 0 0;color:var(--text-2);font-size:14px;line-height:20px;border-radius:8px}
+html[data-app-workspace=agent] .mode-auto-limits{gap:8px 12px;padding:8px}
+html[data-app-workspace=agent] .mode-auto-note{margin:4px 0 0;font-size:12px;line-height:16px;color:var(--text-3)}
+@media(max-width:640px){html[data-app-workspace=agent] .chat-control-dialog.dialog-content{padding:24px 16px max(24px,env(safe-area-inset-bottom));border-radius:12px 12px 0 0}}
+@media(pointer:coarse){html[data-app-workspace=agent] .chat-control-dialog .input,html[data-app-workspace=agent] .model-selection-row .model-favorite{height:44px}html[data-app-workspace=agent] .model-selection-row .model-favorite{width:44px}html[data-app-workspace=agent] .mode-popover .mode-option{min-height:44px}}
 
 /* Narrow chat panes (phones, docked panels): the toolbar wraps instead of overflowing, so no control is clipped.
    Up to 640px the row may wrap on its own. Up to 540px it is two fixed rows. Row one holds the model, the running-task

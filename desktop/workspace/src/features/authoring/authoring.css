@@ -1,0 +1,49 @@
+/* Describe-to-draft. Tokens only; spacing from the 4/8/12/16/24/32 scale. */
+.dialog-content.describe-dialog { width: 640px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface); box-shadow: var(--shadow-overlay); }
+.describe-dialog h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+.describe-dialog > [id] { margin: 0; font-size: 14px; line-height: 20px; color: var(--text-2, var(--secondary)); }
+.describe-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.describe-body p { margin: 0; }
+.describe-dialog .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.describe-thread-head, .describe-draft-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.describe-thread-head h3, .describe-draft-head h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--text, var(--foreground)); }
+.describe-draft-head small { color: var(--text-3, var(--secondary)); font-size: 12px; line-height: 16px; }
+
+.describe-thread { display: flex; flex-direction: column; gap: 12px; min-width: 0; font-size: 14px; line-height: 20px; }
+.describe-empty { color: var(--text-2, var(--secondary)); overflow-wrap: anywhere; }
+.describe-user { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: var(--radius-lg, 12px); background: var(--surface-2, var(--muted)); color: var(--text, var(--foreground)); overflow-wrap: anywhere; white-space: pre-wrap; }
+.describe-assistant { max-width: 68ch; color: var(--text, var(--foreground)); overflow-wrap: anywhere; white-space: pre-wrap; }
+.describe-pending { font-size: 14px; line-height: 20px; color: var(--text-2, var(--secondary)); }
+
+.describe-error { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border: 1px solid var(--danger, var(--destructive)); border-radius: var(--radius, 8px); font-size: 14px; line-height: 20px; color: var(--danger, var(--destructive)); overflow-wrap: anywhere; }
+
+.describe-draft { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border); min-width: 0; }
+.describe-rows { display: flex; flex-direction: column; margin: 0; }
+.describe-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; line-height: 20px; }
+.describe-row:first-child { border-top: 0; }
+.describe-row dt { color: var(--text-2, var(--secondary)); font-weight: 500; }
+.describe-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--text, var(--foreground)); }
+.describe-unset { color: var(--text-3, var(--secondary)); }
+.describe-long { margin: 0; max-height: 160px; overflow: auto; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius, 8px); background: var(--surface); font: inherit; font-size: 14px; line-height: 20px; white-space: pre-wrap; }
+.describe-warnings { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 20px; color: var(--text-2, var(--secondary)); }
+.describe-warnings li { display: flex; gap: 8px; align-items: flex-start; }
+.describe-warnings svg { flex: none; margin-top: 2px; }
+
+.describe-composer { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--border-strong, var(--border)); border-radius: var(--radius-lg, 12px); background: var(--surface); }
+.describe-composer:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.describe-composer textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 160px; padding: 8px 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--text, var(--foreground)); font-size: 16px; line-height: 24px; field-sizing: content; }
+.describe-composer textarea::placeholder { color: var(--text-3, var(--secondary)); }
+.describe-limit { font-size: 12px; line-height: 16px; color: var(--text-3, var(--secondary)); }
+.describe-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 640px) {
+  .dialog-content.describe-dialog { padding: 16px; }
+  .describe-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+
+/* The primary "New ..." action that starts every describe-to-draft flow. */
+.authoring-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .describe-dialog .spin { animation: none; }
+}

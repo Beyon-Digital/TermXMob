@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 it('starts from the chat layout with every panel open', () => {
   const {result} = renderHook(() => useLayout());
-  expect(result.current).toMatchObject({layout: 'chat', right: true, bottom: true, sidebarWidth: 244, rightWidth: 380, sidebarHover: false, dock: layouts.chat, dockGeometry: defaultGeometry});
+  expect(result.current).toMatchObject({layout: 'chat', right: true, bottom: true, sidebarWidth: 240, rightWidth: 380, sidebarHover: false, dock: layouts.chat, dockGeometry: defaultGeometry});
 });
 
 it('accepts values and updater functions, like state setters', () => {

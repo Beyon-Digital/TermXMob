@@ -529,6 +529,7 @@ class AgentProvider(DictBacked):
     selected_models: list[str] | None
     model_catalog: JSON | None
     model_overrides: JSON | None
+    limits: JSON | None
     catalog_refreshed_at: float | None
     catalog_error: str | None
     wire: str | None

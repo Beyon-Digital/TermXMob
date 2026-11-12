@@ -302,7 +302,8 @@ class MediaProvider:
             raise HTTPException(400, 'Select an explicit supported model')
         digest = hashlib.sha256(json.dumps({'project':project,'request':request},sort_keys=True).encode()).hexdigest()
         request_id = request['request_id']
-        with self.artifacts.db() as db:
+        from termx.media.studio_projects import project_mutation
+        with project_mutation(self.state, owner, project), self.artifacts.db() as db:
             db.execute('BEGIN IMMEDIATE')
             prior = db.execute('SELECT * FROM operations WHERE owner=? AND id=?', (owner,request_id)).fetchone()
             if prior:

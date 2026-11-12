@@ -1,0 +1,9 @@
+.workspace-views{display:flex;align-items:center;flex:none;gap:8px;max-width:100%;min-width:0;margin-bottom:24px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scroll-padding-inline:4px;padding:4px 0}
+.workspace-views>button{flex:none;min-height:40px;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:var(--text-2,var(--secondary));font-size:14px;line-height:20px;font-weight:400;white-space:nowrap}
+.workspace-views>button:hover,.workspace-views>button[aria-current=page]{background:var(--surface-2,var(--muted));color:var(--text,var(--foreground))}
+.workspace-views>button[aria-current=page]{font-weight:500}
+.workspace-views>button:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
+@media(pointer:coarse){.workspace-views>button{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.workspace-views{scroll-behavior:auto}}
+
+@media(max-width:640px){.workspace-views{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;overflow:visible}.workspace-views>button{min-width:0;min-height:44px;text-align:left}}

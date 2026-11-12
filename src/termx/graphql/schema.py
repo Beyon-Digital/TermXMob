@@ -10,6 +10,7 @@ import strawberry
 from strawberry.schema.config import StrawberryConfig
 
 from termx.graphql.domains.agent import AgentMutations, AgentQueries
+from termx.graphql.domains.authoring import AuthoringMutations
 from termx.graphql.domains.bot_messages import BotMessageMutations, BotMessageQueries
 from termx.graphql.domains.bot_schedules import BotScheduleMutations, BotScheduleQueries
 from termx.graphql.domains.bots import BotMutations, BotQueries
@@ -67,6 +68,7 @@ class Mutation(
     BotScheduleMutations,
     BotMessageMutations,
     VoiceMutations,
+    AuthoringMutations,
 ):
     pass
 

@@ -1,0 +1,42 @@
+/* The app owns the sidebar shell; one existing observer supplies this list. */
+html[data-app-workspace=agent] .orchestrator-status[data-presentation=sidebar]{border:0;background:transparent}
+html[data-app-workspace=agent] .coordination-sidebar{display:flex;flex-direction:column;gap:24px;min-height:0;min-width:0;height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:8px 12px 24px;color:var(--foreground);font-size:14px;line-height:20px}
+html[data-app-workspace=agent] .coordination-agent-group{min-width:0}
+html[data-app-workspace=agent] .coordination-agent-group>h3{display:flex;align-items:center;gap:8px;margin:0 8px 8px;font-size:12px;line-height:20px;font-weight:500;color:var(--secondary)}
+html[data-app-workspace=agent] .coordination-agent-group>h3>span{min-width:20px;padding:0 4px;border-radius:4px;background:var(--surface);text-align:center;font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
+html[data-app-workspace=agent] .coordination-agent-group>ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+html[data-app-workspace=agent] .coordination-agent-row{display:flex;align-items:center;gap:12px;min-height:52px;width:100%;min-width:0;padding:8px;border-radius:10px;color:var(--foreground);text-align:left}
+html[data-app-workspace=agent] .coordination-agent-row:hover,html[data-app-workspace=agent] .coordination-agent-row[aria-current=page]{background:var(--muted)}
+html[data-app-workspace=agent] .coordination-agent-row>svg{flex:none}
+html[data-app-workspace=agent] .coordination-agent-copy{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+html[data-app-workspace=agent] .coordination-agent-copy>strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:14px;line-height:20px;font-weight:400;overflow-wrap:anywhere}
+html[data-app-workspace=agent] .coordination-agent-copy>small{font-size:12px;line-height:16px;color:var(--secondary)}
+html[data-app-workspace=agent] .coordination-agent-row[data-status=failed] .coordination-agent-copy>small{color:var(--danger,var(--destructive))}
+html[data-app-workspace=agent] .coordination-agent-row :is(time,.coordination-agent-age){flex:none;align-self:flex-start;margin-top:2px;color:var(--secondary);font-size:12px;line-height:20px;font-variant-numeric:tabular-nums}
+html[data-app-workspace=agent] .coordination-group-empty,html[data-app-workspace=agent] .coordination-sidebar-note{margin:0 8px;color:var(--secondary);font-size:12px;line-height:20px;overflow-wrap:anywhere}
+html[data-app-workspace=agent] .coordination-show-more{justify-content:flex-start;gap:8px;margin:8px 0 0;color:var(--secondary);font-size:12px}
+html[data-app-workspace=agent] .coordination-show-more>span{font-variant-numeric:tabular-nums;color:var(--secondary)}
+html[data-app-workspace=agent] .coordination-sidebar-notice{display:grid;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px}
+html[data-app-workspace=agent] .coordination-sidebar-notice>p{margin:0;font-size:12px;line-height:20px;color:var(--secondary)}
+html[data-app-workspace=agent] .coordination-sidebar-notice>.button{justify-self:start}
+html[data-app-workspace=agent] .coordination-sidebar-plans{border-top:1px solid var(--border);padding-top:12px;min-width:0}
+html[data-app-workspace=agent] .coordination-plan-trigger{display:flex;align-items:center;gap:8px;min-height:40px;padding:8px;width:100%;border-radius:8px;font-size:14px;line-height:20px;text-align:left;color:var(--secondary)}
+html[data-app-workspace=agent] .coordination-plan-trigger:hover{background:var(--muted);color:var(--foreground)}
+html[data-app-workspace=agent] .coordination-plan-trigger>span{flex:1}
+html[data-app-workspace=agent] .coordination-plan-trigger>svg:last-child{transition:transform 140ms ease-out}
+html[data-app-workspace=agent] .coordination-plan-trigger[data-state=open]>svg:last-child{transform:rotate(90deg)}
+html[data-app-workspace=agent] .coordination-plan-summary{margin:0 8px 8px;color:var(--secondary);font-size:12px;line-height:20px}
+html[data-app-workspace=agent] .coordination-plan-content{padding:8px 0;min-width:0}
+html[data-app-workspace=agent] .coordination-sidebar .task-row-main{flex-wrap:wrap}
+html[data-app-workspace=agent] .coordination-sidebar .task-title{flex-basis:calc(100% - 60px)}
+html[data-app-workspace=agent] .coordination-sidebar .task-row{margin-inline-start:calc(var(--depth) * 8px)}
+html[data-app-workspace=agent] .coordination-sidebar .task-alert{flex-wrap:wrap;margin-inline-start:0}
+html[data-app-workspace=agent] .coordination-sidebar-recent{border-top:1px solid var(--border);padding-top:12px;font-size:12px;color:var(--secondary)}
+html[data-app-workspace=agent] .coordination-sidebar-recent>summary{min-height:40px;padding:8px;cursor:pointer;border-radius:8px}
+html[data-app-workspace=agent] .coordination-sidebar-recent>ol{list-style:none;margin:0;padding:8px;display:grid;gap:12px}
+html[data-app-workspace=agent] .coordination-sidebar-recent li{display:grid;gap:4px;overflow-wrap:anywhere}
+html[data-app-workspace=agent] .coordination-sidebar-recent button{text-align:left;color:var(--foreground);text-decoration:underline;min-height:32px}
+html[data-app-workspace=agent] .orchestrator-sidebar-attention{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 16px;color:var(--foreground);font-size:12px;line-height:20px}
+html[data-app-workspace=agent] .orchestrator-sidebar-attention>span{flex:1;min-width:120px}
+@media(pointer:coarse){html[data-app-workspace=agent] :is(.coordination-plan-trigger,.coordination-show-more,.coordination-sidebar-recent>summary,.coordination-sidebar-recent button){min-height:44px}}
+@media(prefers-reduced-motion:reduce){html[data-app-workspace=agent] .coordination-plan-trigger>svg:last-child{transition:none}}

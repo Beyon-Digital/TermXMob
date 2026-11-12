@@ -9,12 +9,18 @@ vi.mock('../lib/transfers',()=>({download:vi.fn(),transfer:vi.fn()}));
 const api=vi.mocked(request),graph=vi.mocked(gql);
 beforeEach(()=>{api.mockReset();graph.mockReset();graph.mockResolvedValue({projects:[{id:'project',name:'Fixture project',path:'/fixture'}],agent_providers:[{id:'account',name:'Configured API',model:'configured-model',capabilities:['image','audio']}]});api.mockImplementation(async(path:string)=>{if(path==='/api/runners')return [];if(path.startsWith('/api/media/artifacts?')||path.startsWith('/api/media/operations'))return [];throw new Error('Unexpected request '+path)})});
 afterEach(()=>{cleanup();vi.unstubAllGlobals()});
-it('requires explicit provider billing consent before generation',async()=>{
+it('runs the configured media capability only from its explicit action without a billing checkbox',async()=>{
+ vi.stubGlobal('crypto',webcrypto);localStorage.clear();
  render(<Media projectId="project"/>);await screen.findByRole('option',{name:'Configured API'});
  const generate=screen.getByRole('button',{name:'Run selected capability'});expect(generate).toBeDisabled();
- fireEvent.change(screen.getByLabelText('Configured account'),{target:{value:'account'}});expect(generate).toBeDisabled();
- fireEvent.click(screen.getByRole('checkbox'));expect(generate).toBeEnabled();
+ fireEvent.change(screen.getByLabelText('Configured account'),{target:{value:'account'}});expect(generate).toBeEnabled();
+ expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
  expect(api).not.toHaveBeenCalledWith('/api/media/generate',expect.anything());
+ fireEvent.click(generate);
+ await waitFor(()=>expect(api).toHaveBeenCalledWith('/api/media/generate',expect.objectContaining({method:'POST'})));
+ const call=api.mock.calls.find(([path])=>path==='/api/media/generate');
+ expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({project_id:'project',provider_id:'account',model:'configured-model',acknowledge_billing:true});
+ await screen.findByRole('alert');
 });
 it('preserves edited content when the server reports a version conflict',async()=>{
  const artifact={id:'artifact',kind:'document',title:'Notes',version:1,content:'Original'};

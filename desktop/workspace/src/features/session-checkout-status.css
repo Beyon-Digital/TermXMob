@@ -1,0 +1,21 @@
+.session-checkout-context{min-width:0;margin:0 0 8px;color:var(--secondary);font-size:12px;line-height:16px}
+.session-checkout-summary{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.session-checkout-context .session-checkout-trigger.button{min-height:32px;height:auto;max-width:100%;padding:4px 8px;gap:8px;border:0;border-radius:8px;background:transparent;color:var(--secondary);font-size:12px;line-height:16px;font-weight:400}
+.session-checkout-context .session-checkout-trigger:hover{background:var(--muted);color:var(--foreground)}
+.session-checkout-trigger>svg{flex:none;width:16px;height:16px;stroke-width:1.5}
+.session-checkout-trigger>span{white-space:nowrap}
+.session-checkout-trigger>code{max-width:28ch;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px}
+.session-checkout-chevron{transition:transform var(--motion-fast,140ms) ease-out}
+.session-checkout-trigger[data-state=open]>.session-checkout-chevron{transform:rotate(180deg)}
+.session-checkout-disclosure,.session-checkout-error{flex-basis:100%;margin:0;padding:0 8px;font-size:12px;line-height:16px;overflow-wrap:anywhere}
+.session-checkout-error{color:var(--danger,var(--destructive))}
+.session-checkout-details>section{margin:8px 0 8px 8px;padding:0 12px;border-left:1px solid var(--border);font-size:12px;line-height:20px}
+.session-checkout-details p{margin:0 0 8px}
+.session-checkout-details dl{display:flex;flex-direction:column;gap:8px;margin:12px 0 0}
+.session-checkout-details dl>div{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px}
+.session-checkout-details dt{color:var(--secondary);font-weight:400}
+.session-checkout-details dd{min-width:0;margin:0;color:var(--foreground)}
+.session-checkout-details code{font-family:var(--font-mono);font-size:12px;line-height:20px;overflow-wrap:anywhere;white-space:normal}
+@container (max-width:480px){.session-checkout-trigger>code{max-width:14ch}.session-checkout-details dl>div{grid-template-columns:minmax(0,1fr);gap:4px}}
+@media(pointer:coarse){.session-checkout-context .session-checkout-trigger.button{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.session-checkout-chevron{transition:none}}

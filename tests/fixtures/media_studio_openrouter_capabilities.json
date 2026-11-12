@@ -1,0 +1,1737 @@
+{
+  "retrieved_at": "2026-11-10T12:56:21.191682+00:00",
+  "method": "GET",
+  "credentials_sent": false,
+  "generation_requests_sent": false,
+  "selection": "Complete selected public model records; complete raw response hashes identify bounded originals. No provider secrets or generated assets.",
+  "responses": {
+    "/images/models": {
+      "url": "https://openrouter.ai/api/v1/images/models",
+      "response_sha256": "d84a2526d5200d83bf4d72b6df7f7cea72a23b84f7ebb288bc1957049ed59c02",
+      "body": {
+        "data": [
+          {
+            "id": "krea/k3-edit",
+            "name": "Krea: K3 Edit",
+            "description": "Krea K3 Edit is an image-to-image editing model from Krea. It takes one to eight reference images plus a text prompt and returns a single edited image, following instructions that...",
+            "created": 1792103728,
+            "architecture": {
+              "input_modalities": [
+                "text",
+                "image"
+              ],
+              "output_modalities": [
+                "image"
+              ]
+            },
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "1K",
+                  "2K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "4:3",
+                  "3:2",
+                  "16:9",
+                  "4:5",
+                  "2:3",
+                  "9:16"
+                ]
+              },
+              "input_references": {
+                "type": "range",
+                "min": 1,
+                "max": 8
+              },
+              "seed": {
+                "type": "boolean"
+              }
+            },
+            "supports_streaming": false,
+            "endpoints": "/api/v1/images/models/krea/k3-edit/endpoints"
+          },
+          {
+            "id": "google/gemini-3.1-flash-image",
+            "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
+            "description": "Gemini 3.1 Flash Image, a.k.a. \"Nano Banana 2,\" is Google\u2019s latest state of the art image generation and editing model, delivering Pro-level visual quality at Flash speed. It combines advanced...",
+            "created": 1781754065,
+            "architecture": {
+              "input_modalities": [
+                "image",
+                "text"
+              ],
+              "output_modalities": [
+                "image",
+                "text"
+              ]
+            },
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "512",
+                  "1K",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "1:4",
+                  "1:8",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:1",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "8:1",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "supports_streaming": false,
+            "endpoints": "/api/v1/images/models/google/gemini-3.1-flash-image/endpoints"
+          },
+          {
+            "id": "google/gemini-3-pro-image",
+            "name": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+            "description": "Nano Banana Pro is Google\u2019s most advanced image-generation and editing model, built on Gemini 3 Pro. It extends the original Nano Banana with significantly improved multimodal reasoning, real-world grounding, and...",
+            "created": 1781754054,
+            "architecture": {
+              "input_modalities": [
+                "image",
+                "text"
+              ],
+              "output_modalities": [
+                "image",
+                "text"
+              ]
+            },
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "1K",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "supports_streaming": false,
+            "endpoints": "/api/v1/images/models/google/gemini-3-pro-image/endpoints"
+          }
+        ]
+      }
+    },
+    "/videos/models": {
+      "url": "https://openrouter.ai/api/v1/videos/models",
+      "response_sha256": "695d00cbdfaf920eb16bf573b0d7ade2ab25e39a821e5d056bfb551819728325",
+      "body": {
+        "data": [
+          {
+            "id": "black-forest-labs/flux-video-edit",
+            "canonical_slug": "black-forest-labs/flux-video-edit-20260910",
+            "hugging_face_id": null,
+            "name": "Black Forest Labs: FLUX Video Edit",
+            "created": 1789073532,
+            "description": "FLUX Video Edit [fast] takes a source video and an edit prompt and returns a precisely edited video. Add, remove, or replace objects and characters, rebuild the setting, edit on-screen...",
+            "supported_resolutions": null,
+            "supported_aspect_ratios": null,
+            "supported_sizes": null,
+            "supported_durations": null,
+            "supported_frame_images": null,
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": false,
+            "seed": false,
+            "pricing_skus": {
+              "cents_per_second_output": "3"
+            },
+            "allowed_passthrough_parameters": [
+              "safety_tolerance"
+            ]
+          },
+          {
+            "id": "heygen/avatar-iv",
+            "canonical_slug": "heygen/avatar-iv-20260625",
+            "hugging_face_id": null,
+            "name": "HeyGen: Avatar IV",
+            "created": 1787595728,
+            "description": "HeyGen: Avatar IV is an image-to-video model that animates a single photo into an expressive, lip-synced talking-head video. Rather than only matching mouth shapes to words, it interprets the vocal...",
+            "supported_resolutions": [
+              "720p",
+              "1080p"
+            ],
+            "supported_aspect_ratios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ],
+            "supported_sizes": null,
+            "supported_durations": null,
+            "supported_frame_images": null,
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": false,
+            "seed": false,
+            "pricing_skus": {
+              "duration_seconds": "0.05"
+            },
+            "allowed_passthrough_parameters": [
+              "voice_id",
+              "voice_settings",
+              "motion_prompt",
+              "expressiveness",
+              "fit",
+              "remove_background",
+              "background",
+              "caption",
+              "title"
+            ]
+          },
+          {
+            "id": "bytedance/seedance-2.5",
+            "canonical_slug": "bytedance/seedance-2.5-20260807",
+            "hugging_face_id": null,
+            "name": "ByteDance: Seedance 2.5",
+            "created": 1786141253,
+            "description": "Seedance 2.5 is a video generation model from ByteDance. It is suited for long-form storytelling, multimodal reference-based generation, video editing, and video extension. It supports first-frame and first-and-last-frame control, up...",
+            "supported_resolutions": [
+              "480p",
+              "720p"
+            ],
+            "supported_aspect_ratios": [
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16",
+              "21:9"
+            ],
+            "supported_sizes": [
+              "854x480",
+              "752x560",
+              "640x640",
+              "560x752",
+              "480x854",
+              "992x432",
+              "1280x720",
+              "1112x834",
+              "960x960",
+              "834x1112",
+              "720x1280",
+              "1470x630"
+            ],
+            "supported_durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "supported_frame_images": [
+              "first_frame",
+              "last_frame"
+            ],
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": true,
+            "seed": true,
+            "pricing_skus": {
+              "video_tokens": "0.0000107",
+              "video_tokens_without_audio": "0.0000107",
+              "video_tokens_with_video_input": "0.0000064"
+            },
+            "allowed_passthrough_parameters": [
+              "watermark",
+              "req_key",
+              "output_format"
+            ]
+          },
+          {
+            "id": "runway/aleph-2",
+            "canonical_slug": "runway/aleph-2-20260729",
+            "hugging_face_id": null,
+            "name": "Runway: Aleph 2.0",
+            "created": 1785339484,
+            "description": "Runway Aleph 2.0 is an in-context video editing model from Runway. It applies text instructions and keyframe-guided edits across existing footage while preserving details that are not meant to change....",
+            "supported_resolutions": null,
+            "supported_aspect_ratios": [
+              "16:9",
+              "4:3",
+              "3:2",
+              "1:1",
+              "2:3",
+              "3:4",
+              "9:16",
+              "21:9"
+            ],
+            "supported_sizes": null,
+            "supported_durations": null,
+            "supported_frame_images": null,
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": false,
+            "seed": true,
+            "pricing_skus": {
+              "cents_per_second_output": "28",
+              "minimum_cents_per_generation": "56"
+            },
+            "allowed_passthrough_parameters": [
+              "contentModeration",
+              "keyframes"
+            ]
+          },
+          {
+            "id": "kwaivgi/kling-v3.0-pro",
+            "canonical_slug": "kwaivgi/kling-v3.0-pro-20260429",
+            "hugging_face_id": null,
+            "name": "Kling: Video v3.0 Pro",
+            "created": 1777496206,
+            "description": "Kling v3.0 Pro is Kuaishou's premium video generation model, offering higher visual quality than the Standard tier. It supports text-to-video and image-to-video workflows, with first-frame and last-frame control for precise...",
+            "supported_resolutions": [
+              "720p"
+            ],
+            "supported_aspect_ratios": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ],
+            "supported_sizes": [
+              "1280x720",
+              "720x1280",
+              "720x720"
+            ],
+            "supported_durations": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "supported_frame_images": [
+              "first_frame",
+              "last_frame"
+            ],
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": true,
+            "seed": false,
+            "pricing_skus": {
+              "duration_seconds": "0.112",
+              "duration_seconds_with_audio": "0.168",
+              "text_to_video_duration_seconds_480p": "0.112",
+              "text_to_video_duration_seconds_720p": "0.112",
+              "image_to_video_duration_seconds_720p": "0.112",
+              "text_to_video_duration_seconds_1080p": "0.112",
+              "image_to_video_duration_seconds_1080p": "0.112"
+            },
+            "allowed_passthrough_parameters": [
+              "negative_prompt",
+              "cfg_scale"
+            ]
+          },
+          {
+            "id": "bytedance/seedance-2.0",
+            "canonical_slug": "bytedance/seedance-2.0-20260414",
+            "hugging_face_id": null,
+            "name": "ByteDance: Seedance 2.0",
+            "created": 1776211362,
+            "description": "Seedance 2.0 is a video generation model from ByteDance. It supports text-to-video, image-to-video with first and last frame control, and multimodal reference-to-video. It is particularly strong at preserving character consistency,...",
+            "supported_resolutions": [
+              "480p",
+              "720p",
+              "1080p",
+              "4K"
+            ],
+            "supported_aspect_ratios": [
+              "1:1",
+              "3:4",
+              "9:16",
+              "4:3",
+              "16:9",
+              "21:9",
+              "9:21"
+            ],
+            "supported_sizes": [
+              "480x480",
+              "480x640",
+              "480x854",
+              "640x480",
+              "854x480",
+              "1120x480",
+              "720x720",
+              "720x960",
+              "720x1280",
+              "720x1680",
+              "960x720",
+              "1280x720",
+              "1680x720",
+              "1080x1080",
+              "1080x1440",
+              "1080x1920",
+              "1440x1080",
+              "1920x1080",
+              "2520x1080",
+              "3840x2160",
+              "2160x3840",
+              "2160x2160",
+              "2880x2160",
+              "2160x2880",
+              "5040x2160"
+            ],
+            "supported_durations": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "supported_frame_images": [
+              "first_frame",
+              "last_frame"
+            ],
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": true,
+            "seed": true,
+            "pricing_skus": {
+              "video_tokens": "0.000007",
+              "video_tokens_4k": "0.000004",
+              "video_tokens_1080p": "0.0000077",
+              "video_tokens_without_audio": "0.000007",
+              "video_tokens_with_video_input": "0.0000043",
+              "video_tokens_4k_with_video_input": "0.0000024",
+              "video_tokens_1080p_with_video_input": "0.0000047"
+            },
+            "allowed_passthrough_parameters": [
+              "watermark",
+              "req_key"
+            ]
+          },
+          {
+            "id": "google/veo-3.1",
+            "canonical_slug": "google/veo-3.1-20260320",
+            "hugging_face_id": null,
+            "name": "Google: Veo 3.1",
+            "created": 1774277148,
+            "description": "Google's state-of-the-art video generation model, built for maximum visual fidelity in final production cuts. Veo 3.1 generates high-quality 1080p video from text or image prompts with native synchronized audio \u2014...",
+            "supported_resolutions": [
+              "720p",
+              "1080p",
+              "4K"
+            ],
+            "supported_aspect_ratios": [
+              "16:9",
+              "9:16"
+            ],
+            "supported_sizes": [
+              "1280x720",
+              "1080x1920",
+              "1920x1080",
+              "720x1280",
+              "3840x2160",
+              "2160x3840"
+            ],
+            "supported_durations": [
+              4,
+              6,
+              8
+            ],
+            "supported_frame_images": [
+              "first_frame",
+              "last_frame"
+            ],
+            "upscale_factor": null,
+            "creativity": null,
+            "generate_audio": true,
+            "seed": true,
+            "pricing_skus": {
+              "duration_seconds_with_audio": "0.40",
+              "duration_seconds_with_audio_4k": "0.60",
+              "duration_seconds_without_audio": "0.20",
+              "duration_seconds_without_audio_4k": "0.40"
+            },
+            "allowed_passthrough_parameters": [
+              "personGeneration",
+              "aspectRatio",
+              "negativePrompt",
+              "conditioningScale",
+              "enhancePrompt"
+            ]
+          }
+        ]
+      }
+    },
+    "/models/heygen/avatar-iv/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/heygen/avatar-iv/endpoints",
+      "response_sha256": "263a54c5ac3f1c29263af4c9c75f5327dd34203228cc3f604298c0ba5c33283f",
+      "body": {
+        "data": {
+          "id": "heygen/avatar-iv",
+          "name": "HeyGen: Avatar IV",
+          "created": 1787595728,
+          "description": "HeyGen: Avatar IV is an image-to-video model that animates a single photo into an expressive, lip-synced talking-head video. Rather than only matching mouth shapes to words, it interprets the vocal...",
+          "architecture": {
+            "tokenizer": "Other",
+            "instruct_type": null,
+            "modality": "text+image+audio->video",
+            "input_modalities": [
+              "text",
+              "image",
+              "audio"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "HeyGen | heygen/avatar-iv-20260625",
+              "model_id": "heygen/avatar-iv",
+              "model_name": "HeyGen: Avatar IV",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "HeyGen",
+              "tag": "heygen",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": null,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 100,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models/black-forest-labs/flux-video-edit/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/black-forest-labs/flux-video-edit/endpoints",
+      "response_sha256": "5d1187f6e2be3e58ee605877d65a99610ab88275ff83a8233127a1d5e79ad059",
+      "body": {
+        "data": {
+          "id": "black-forest-labs/flux-video-edit",
+          "name": "Black Forest Labs: FLUX Video Edit",
+          "created": 1789073532,
+          "description": "FLUX Video Edit [fast] takes a source video and an edit prompt and returns a precisely edited video. Add, remove, or replace objects and characters, rebuild the setting, edit on-screen...",
+          "architecture": {
+            "tokenizer": "Media",
+            "instruct_type": null,
+            "modality": "text+video->video",
+            "input_modalities": [
+              "text",
+              "video"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "Black Forest Labs | black-forest-labs/flux-video-edit-20260910",
+              "model_id": "black-forest-labs/flux-video-edit",
+              "model_name": "Black Forest Labs: FLUX Video Edit",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "Black Forest Labs",
+              "tag": "black-forest-labs",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": null,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 100,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models/runway/aleph-2/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/runway/aleph-2/endpoints",
+      "response_sha256": "e56a7dc3a14a25dab0b537ea261908c8e83aaaefbb56b43b00cbc4ae7cc56c33",
+      "body": {
+        "data": {
+          "id": "runway/aleph-2",
+          "name": "Runway: Aleph 2.0",
+          "created": 1785339484,
+          "description": "Runway Aleph 2.0 is an in-context video editing model from Runway. It applies text instructions and keyframe-guided edits across existing footage while preserving details that are not meant to change....",
+          "architecture": {
+            "tokenizer": "Media",
+            "instruct_type": null,
+            "modality": "text+image+video->video",
+            "input_modalities": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "Runway | runway/aleph-2-20260729",
+              "model_id": "runway/aleph-2",
+              "model_name": "Runway: Aleph 2.0",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "Runway",
+              "tag": "runway",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": null,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 100,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models/bytedance/seedance-2.5/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/bytedance/seedance-2.5/endpoints",
+      "response_sha256": "7660db2bdcd61275126da4045d26d23f0a293702b823d17934c69417e62f2f65",
+      "body": {
+        "data": {
+          "id": "bytedance/seedance-2.5",
+          "name": "ByteDance: Seedance 2.5",
+          "created": 1786141253,
+          "description": "Seedance 2.5 is a video generation model from ByteDance. It is suited for long-form storytelling, multimodal reference-based generation, video editing, and video extension. It supports first-frame and first-and-last-frame control, up...",
+          "architecture": {
+            "tokenizer": "Media",
+            "instruct_type": null,
+            "modality": "text+image+audio+video->video",
+            "input_modalities": [
+              "text",
+              "image",
+              "video",
+              "audio"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "Seed | bytedance/seedance-2.5-20260807",
+              "model_id": "bytedance/seedance-2.5",
+              "model_name": "ByteDance: Seedance 2.5",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "Seed",
+              "tag": "seed",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [
+                "frequency_penalty"
+              ],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": null,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 94.9367088607595,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models/bytedance/seedance-2.0/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/bytedance/seedance-2.0/endpoints",
+      "response_sha256": "d375e167fb151298b7866da6f2fb8b0fa3d267f64f4759ce01be070d95d91d97",
+      "body": {
+        "data": {
+          "id": "bytedance/seedance-2.0",
+          "name": "ByteDance: Seedance 2.0",
+          "created": 1776211362,
+          "description": "Seedance 2.0 is a video generation model from ByteDance. It supports text-to-video, image-to-video with first and last frame control, and multimodal reference-to-video. It is particularly strong at preserving character consistency,...",
+          "architecture": {
+            "tokenizer": "Other",
+            "instruct_type": null,
+            "modality": "text+image+audio+video->video",
+            "input_modalities": [
+              "text",
+              "image",
+              "video",
+              "audio"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "Seed | bytedance/seedance-2.0-20260414",
+              "model_id": "bytedance/seedance-2.0",
+              "model_name": "ByteDance: Seedance 2.0",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "Seed",
+              "tag": "seed",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [
+                "frequency_penalty"
+              ],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": 100,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 100,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models/kwaivgi/kling-v3.0-pro/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/kwaivgi/kling-v3.0-pro/endpoints",
+      "response_sha256": "4d64a0cc4532c84c3b7b4781030f647003f3470590da0ce1e2ddb314d023dd33",
+      "body": {
+        "data": {
+          "id": "kwaivgi/kling-v3.0-pro",
+          "name": "Kling: Video v3.0 Pro",
+          "created": 1777496206,
+          "description": "Kling v3.0 Pro is Kuaishou's premium video generation model, offering higher visual quality than the Standard tier. It supports text-to-video and image-to-video workflows, with first-frame and last-frame control for precise...",
+          "architecture": {
+            "tokenizer": "Other",
+            "instruct_type": null,
+            "modality": "text+image->video",
+            "input_modalities": [
+              "text",
+              "image"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "AtlasCloud | kwaivgi/kling-v3.0-pro-20260429",
+              "model_id": "kwaivgi/kling-v3.0-pro",
+              "model_name": "Kling: Video v3.0 Pro",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "AtlasCloud",
+              "tag": "atlas-cloud",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p"
+              ],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": null,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 100,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models/google/veo-3.1/endpoints": {
+      "url": "https://openrouter.ai/api/v1/models/google/veo-3.1/endpoints",
+      "response_sha256": "2f74dc3df2791f4737611eed2f059bfbd3208065267bf6fca94d2334459be1fe",
+      "body": {
+        "data": {
+          "id": "google/veo-3.1",
+          "name": "Google: Veo 3.1",
+          "created": 1774277148,
+          "description": "Google's state-of-the-art video generation model, built for maximum visual fidelity in final production cuts. Veo 3.1 generates high-quality 1080p video from text or image prompts with native synchronized audio \u2014...",
+          "architecture": {
+            "tokenizer": "Other",
+            "instruct_type": null,
+            "modality": "text+image->video",
+            "input_modalities": [
+              "text",
+              "image"
+            ],
+            "output_modalities": [
+              "video"
+            ]
+          },
+          "endpoints": [
+            {
+              "name": "Google | google/veo-3.1-20260320",
+              "model_id": "google/veo-3.1",
+              "model_name": "Google: Veo 3.1",
+              "context_length": 0,
+              "pricing": {
+                "prompt": "0",
+                "completion": "0",
+                "discount": 0
+              },
+              "provider_name": "Google",
+              "tag": "google-vertex",
+              "service_tier": null,
+              "quantization": "unknown",
+              "max_completion_tokens": 0,
+              "max_prompt_tokens": null,
+              "supported_parameters": [
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "seed",
+                "response_format"
+              ],
+              "supports_tool_choice": {
+                "none": true,
+                "auto": true,
+                "required": true,
+                "function": true
+              },
+              "status": 0,
+              "uptime_last_30m": null,
+              "uptime_last_5m": null,
+              "uptime_last_1d": 100,
+              "supports_implicit_caching": false,
+              "native_tools": {},
+              "supports_voice_cloning": false,
+              "supports_multiple_audio_references": false,
+              "supports_image_reference": false,
+              "supports_diarization": false,
+              "latency_last_30m": null,
+              "throughput_last_30m": null
+            }
+          ]
+        }
+      }
+    },
+    "/models?output_modalities=video": {
+      "url": "https://openrouter.ai/api/v1/models?output_modalities=video",
+      "response_sha256": "851b1a2db54dbb8e9d93b06f5ff81f3677aa3e6e19857721244a899e67c417fa",
+      "body": {
+        "data": [
+          {
+            "id": "black-forest-labs/flux-video-edit",
+            "canonical_slug": "black-forest-labs/flux-video-edit-20260910",
+            "hugging_face_id": null,
+            "name": "Black Forest Labs: FLUX Video Edit",
+            "created": 1789073532,
+            "description": "FLUX Video Edit [fast] takes a source video and an edit prompt and returns a precisely edited video. Add, remove, or replace objects and characters, rebuild the setting, edit on-screen...",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+video->video",
+              "input_modalities": [
+                "text",
+                "video"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Media",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [],
+            "default_parameters": {},
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/black-forest-labs/flux-video-edit-20260910/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          },
+          {
+            "id": "heygen/avatar-iv",
+            "canonical_slug": "heygen/avatar-iv-20260625",
+            "hugging_face_id": null,
+            "name": "HeyGen: Avatar IV",
+            "created": 1787595728,
+            "description": "HeyGen: Avatar IV is an image-to-video model that animates a single photo into an expressive, lip-synced talking-head video. Rather than only matching mouth shapes to words, it interprets the vocal...",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+image+audio->video",
+              "input_modalities": [
+                "text",
+                "image",
+                "audio"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Other",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [],
+            "default_parameters": {
+              "temperature": null,
+              "top_p": null,
+              "top_k": null,
+              "frequency_penalty": null,
+              "presence_penalty": null,
+              "repetition_penalty": null
+            },
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/heygen/avatar-iv-20260625/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          },
+          {
+            "id": "bytedance/seedance-2.5",
+            "canonical_slug": "bytedance/seedance-2.5-20260807",
+            "hugging_face_id": null,
+            "name": "ByteDance: Seedance 2.5",
+            "created": 1786141253,
+            "description": "Seedance 2.5 is a video generation model from ByteDance. It is suited for long-form storytelling, multimodal reference-based generation, video editing, and video extension. It supports first-frame and first-and-last-frame control, up...",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+image+audio+video->video",
+              "input_modalities": [
+                "text",
+                "image",
+                "video",
+                "audio"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Media",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+              "frequency_penalty"
+            ],
+            "default_parameters": {},
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/bytedance/seedance-2.5-20260807/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          },
+          {
+            "id": "runway/aleph-2",
+            "canonical_slug": "runway/aleph-2-20260729",
+            "hugging_face_id": null,
+            "name": "Runway: Aleph 2.0",
+            "created": 1785339484,
+            "description": "Runway Aleph 2.0 is an in-context video editing model from Runway. It applies text instructions and keyframe-guided edits across existing footage while preserving details that are not meant to change....",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+image+video->video",
+              "input_modalities": [
+                "text",
+                "image",
+                "video"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Media",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [],
+            "default_parameters": {},
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/runway/aleph-2-20260729/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          },
+          {
+            "id": "kwaivgi/kling-v3.0-pro",
+            "canonical_slug": "kwaivgi/kling-v3.0-pro-20260429",
+            "hugging_face_id": null,
+            "name": "Kling: Video v3.0 Pro",
+            "created": 1777496206,
+            "description": "Kling v3.0 Pro is Kuaishou's premium video generation model, offering higher visual quality than the Standard tier. It supports text-to-video and image-to-video workflows, with first-frame and last-frame control for precise...",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+image->video",
+              "input_modalities": [
+                "text",
+                "image"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Other",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+              "max_tokens",
+              "temperature",
+              "top_p"
+            ],
+            "default_parameters": {},
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/kwaivgi/kling-v3.0-pro-20260429/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          },
+          {
+            "id": "bytedance/seedance-2.0",
+            "canonical_slug": "bytedance/seedance-2.0-20260414",
+            "hugging_face_id": null,
+            "name": "ByteDance: Seedance 2.0",
+            "created": 1776211362,
+            "description": "Seedance 2.0 is a video generation model from ByteDance. It supports text-to-video, image-to-video with first and last frame control, and multimodal reference-to-video. It is particularly strong at preserving character consistency,...",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+image+audio+video->video",
+              "input_modalities": [
+                "text",
+                "image",
+                "video",
+                "audio"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Other",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+              "frequency_penalty"
+            ],
+            "default_parameters": {
+              "temperature": null,
+              "top_p": null,
+              "top_k": null,
+              "frequency_penalty": null,
+              "presence_penalty": null,
+              "repetition_penalty": null
+            },
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/bytedance/seedance-2.0-20260414/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          },
+          {
+            "id": "google/veo-3.1",
+            "canonical_slug": "google/veo-3.1-20260320",
+            "hugging_face_id": null,
+            "name": "Google: Veo 3.1",
+            "created": 1774277148,
+            "description": "Google's state-of-the-art video generation model, built for maximum visual fidelity in final production cuts. Veo 3.1 generates high-quality 1080p video from text or image prompts with native synchronized audio \u2014...",
+            "context_length": 0,
+            "architecture": {
+              "modality": "text+image->video",
+              "input_modalities": [
+                "text",
+                "image"
+              ],
+              "output_modalities": [
+                "video"
+              ],
+              "tokenizer": "Other",
+              "instruct_type": null
+            },
+            "pricing": {
+              "prompt": "0",
+              "completion": "0"
+            },
+            "top_provider": {
+              "context_length": 0,
+              "max_completion_tokens": 0,
+              "is_moderated": false
+            },
+            "per_request_limits": null,
+            "supported_parameters": [
+              "max_tokens",
+              "response_format",
+              "seed",
+              "temperature",
+              "top_p"
+            ],
+            "default_parameters": {
+              "temperature": null,
+              "top_p": null,
+              "top_k": null,
+              "frequency_penalty": null,
+              "presence_penalty": null,
+              "repetition_penalty": null
+            },
+            "supported_voices": null,
+            "knowledge_cutoff": null,
+            "expiration_date": null,
+            "links": {
+              "details": "/api/v1/models/google/veo-3.1-20260320/endpoints"
+            },
+            "endpoints": [
+              "/api/v1/videos"
+            ]
+          }
+        ]
+      }
+    },
+    "/images/models/google/gemini-3-pro-image/endpoints": {
+      "url": "https://openrouter.ai/api/v1/images/models/google/gemini-3-pro-image/endpoints",
+      "retrieved_at": "2026-11-10T13:57:56.825638+00:00",
+      "response_sha256": "f6f2335110f49e58af434eb10f4e057eca9e85f2df3cbb7cc514c3b1023f6f1b",
+      "body": {
+        "id": "google/gemini-3-pro-image",
+        "endpoints": [
+          {
+            "provider_name": "Google AI Studio",
+            "provider_slug": "google-ai-studio/global",
+            "provider_tag": "google-ai-studio/global",
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "1K",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "allowed_passthrough_parameters": [
+              "cachedContent"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+              {
+                "billable": "input_image",
+                "unit": "token",
+                "cost_usd": 2e-06
+              },
+              {
+                "billable": "output_image",
+                "unit": "token",
+                "cost_usd": 0.00012
+              }
+            ]
+          },
+          {
+            "provider_name": "Google Vertex",
+            "provider_slug": "google-vertex/global",
+            "provider_tag": "google-vertex/global",
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "1K",
+                  "2K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "allowed_passthrough_parameters": [
+              "cachedContent"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+              {
+                "billable": "input_image",
+                "unit": "token",
+                "cost_usd": 2e-06
+              },
+              {
+                "billable": "output_image",
+                "unit": "token",
+                "cost_usd": 0.00012
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "/images/models/google/gemini-3.1-flash-image/endpoints": {
+      "url": "https://openrouter.ai/api/v1/images/models/google/gemini-3.1-flash-image/endpoints",
+      "retrieved_at": "2026-11-10T13:57:55.885688+00:00",
+      "response_sha256": "510766a8e11369b6761e0f0f093e05b191c0d3292729a9ee3ad012ef20f27933",
+      "body": {
+        "id": "google/gemini-3.1-flash-image",
+        "endpoints": [
+          {
+            "provider_name": "Google Vertex",
+            "provider_slug": "google-vertex/us",
+            "provider_tag": "google-vertex/us",
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "512",
+                  "1K",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "1:4",
+                  "1:8",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:1",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "8:1",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "allowed_passthrough_parameters": [
+              "cachedContent"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+              {
+                "billable": "output_image",
+                "unit": "token",
+                "cost_usd": 6.6e-05
+              }
+            ]
+          },
+          {
+            "provider_name": "Google AI Studio",
+            "provider_slug": "google-ai-studio",
+            "provider_tag": "google-ai-studio",
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "512",
+                  "1K",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "1:4",
+                  "1:8",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:1",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "8:1",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "allowed_passthrough_parameters": [
+              "cachedContent"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+              {
+                "billable": "output_image",
+                "unit": "token",
+                "cost_usd": 6e-05
+              }
+            ]
+          },
+          {
+            "provider_name": "Google Vertex",
+            "provider_slug": "google-vertex/global",
+            "provider_tag": "google-vertex/global",
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "512",
+                  "1K",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "1:4",
+                  "1:8",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:1",
+                  "4:3",
+                  "4:5",
+                  "5:4",
+                  "8:1",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "n": {
+                "type": "range",
+                "min": 1,
+                "max": 1
+              },
+              "input_references": {
+                "type": "range",
+                "min": 0,
+                "max": 14
+              }
+            },
+            "allowed_passthrough_parameters": [
+              "cachedContent"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+              {
+                "billable": "output_image",
+                "unit": "token",
+                "cost_usd": 6e-05
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "/images/models/krea/k3-edit/endpoints": {
+      "url": "https://openrouter.ai/api/v1/images/models/krea/k3-edit/endpoints",
+      "retrieved_at": "2026-11-10T13:57:55.873252+00:00",
+      "response_sha256": "ea5cab1aea31e3ff8f4e7bec76ae46dc45b0768eb6c5553f9e14b9c28df33627",
+      "body": {
+        "id": "krea/k3-edit",
+        "endpoints": [
+          {
+            "provider_name": "Krea",
+            "provider_slug": "krea",
+            "provider_tag": "krea",
+            "supported_parameters": {
+              "resolution": {
+                "type": "enum",
+                "values": [
+                  "1K",
+                  "2K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "enum",
+                "values": [
+                  "1:1",
+                  "4:3",
+                  "3:2",
+                  "16:9",
+                  "4:5",
+                  "2:3",
+                  "9:16"
+                ]
+              },
+              "input_references": {
+                "type": "range",
+                "min": 1,
+                "max": 8
+              },
+              "seed": {
+                "type": "boolean"
+              }
+            },
+            "allowed_passthrough_parameters": [
+              "preserve_references",
+              "skip_prompt_expansion",
+              "thinking_mode"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+              {
+                "billable": "output_image",
+                "unit": "image",
+                "cost_usd": 0.03
+              },
+              {
+                "billable": "output_image",
+                "unit": "image",
+                "cost_usd": 0.06,
+                "variant": "2k"
+              },
+              {
+                "billable": "input_image",
+                "unit": "image",
+                "cost_usd": 0.02
+              },
+              {
+                "billable": "input_image",
+                "unit": "image",
+                "cost_usd": 0.07,
+                "variant": "2k"
+              },
+              {
+                "billable": "output_image",
+                "unit": "request",
+                "cost_usd": 0.02,
+                "variant": "high_thinking_surcharge"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "documentation": {
+    "images": "https://openrouter.ai/docs/guides/overview/multimodal/image-generation",
+    "video_schema": "https://openrouter.ai/docs/api/api-reference/video-generation/submit-a-video-generation-request",
+    "local_image_video": {
+      "url": "https://github.com/OpenRouterTeam/skills/blob/main/skills/openrouter-video/SKILL.md",
+      "lines": "82-86",
+      "sha256": "5acb20a0eb0eadac5bdf7de46854631d4db872eef1452aad791b864b086663a8"
+    },
+    "local_audio_video": "No generation-specific inline support verified; public HTTPS only."
+  }
+}

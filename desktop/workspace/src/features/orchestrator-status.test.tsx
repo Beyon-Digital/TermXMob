@@ -1,5 +1,6 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
-import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import OrchestratorStatus, {type OrchestratorChild, type OrchestratorSnapshot} from './OrchestratorStatus';
 import {gql, request, type Session} from '../lib/api';
 import {expectNoAxeViolations} from '../test-axe';
@@ -21,7 +22,7 @@ it('summarizes delegated work without replacing the main conversation or dispatc
   expect(primary).toHaveBeenCalledWith('main');
   expect(screen.queryByText(child.title)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
-  fireEvent.click(screen.getByRole('button', {name: /Review access controls/}));
+  fireEvent.click(screen.getByRole('button', {name: /^Review access controls/}));
   expect(open).toHaveBeenCalledWith('child-chat');
   expect(api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
   expect(screen.getByText('Main agent is coordinating')).toBeVisible();
@@ -147,7 +148,8 @@ it('does not show unrelated conversation content or a nonexistent primary', asyn
 });
 
 
-it('reports the actual native engine and capability limits without claiming tool, token, or cost caps', async () => {
+it('opens actual engine limits in a closed-by-default dialog and restores focus after Escape without a mutation', async () => {
+  const user = userEvent.setup();
   const native: OrchestratorChild = {...child, engine: 'custom-acp-reviewer', origin: 'native', status: 'running', capability_limits: {
     time_budget: 'shared-host', tool_steps: 'unmeasured', tokens: 'unmeasured', cost: 'unmeasured',
     steer: 'unverified', resume: 'native', approvals: 'gateway', tools_filter: 'advisory', elapsed_deadline_seconds: 86400,
@@ -157,16 +159,63 @@ it('reports the actual native engine and capability limits without claiming tool
   await screen.findByText('1 in progress');
   fireEvent.click(screen.getByRole('button', {name: /Delegated work/}));
   expect(screen.getByText('Engine: custom-acp-reviewer')).toBeVisible();
-  const details = screen.getByLabelText('Engine details for Review access controls');
-  expect(details).not.toHaveAttribute('open');
-  fireEvent.click(screen.getByText('Engine capabilities & limits'));
-  expect(details).toHaveAttribute('open');
-  expect(screen.getByText('Tool steps are not measured by TermX')).toBeVisible();
-  expect(screen.getAllByText('Not measured or capped by TermX')).toHaveLength(2);
-  expect(screen.getByText('Not verified')).toBeVisible();
-  expect(screen.getByText('Advisory only')).toBeVisible();
-  expect(screen.getByText('24 hours while the main agent is in control')).toBeVisible();
+  const trigger = screen.getByRole('button', {name: 'Engine details for Review access controls'});
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByText('Tool steps are not measured by TermX')).not.toBeInTheDocument();
+  await user.click(trigger);
+  const details = within(screen.getByRole('dialog', {name: 'Engine capabilities & limits'}));
+  expect(details.getByRole('button', {name: 'Close'})).toHaveFocus();
+  expect(details.getByText('custom-acp-reviewer')).toBeVisible();
+  expect(details.getByText('Tool steps are not measured by TermX')).toBeVisible();
+  expect(details.getAllByText('Not measured or capped by TermX')).toHaveLength(2);
+  expect(details.getByText('Not verified')).toBeVisible();
+  expect(details.getByText('Advisory only')).toBeVisible();
+  expect(details.getByText('24 hours while the main agent is in control')).toBeVisible();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(trigger).toHaveFocus();
   expect(api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+});
+
+it('keeps dialog content scoped to the current child and resets it when observation, ownership, or account changes', async () => {
+  vi.useFakeTimers();
+  const sibling: OrchestratorChild = {...child, session_id: 'sibling', title: 'Check release notes', engine: 'codex', capability_limits: {resume: 'unsupported'}};
+  api.mockResolvedValue(snapshot([child, sibling]));
+  const view = render(<OrchestratorStatus {...props} selected="child-chat"/>);
+  await act(async () => {});
+  expect(screen.queryByText('Take control to direct this agent yourself. Its progress still returns to your main chat.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Engine details for Review access controls'}));
+  expect(within(screen.getByRole('dialog')).getByText('TermX Agent')).toBeVisible();
+
+  view.rerender(<OrchestratorStatus {...props} selected="sibling"/>);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Engine details for Check release notes'}));
+  const details = within(screen.getByRole('dialog'));
+  expect(details.getByText('Codex')).toBeVisible();
+  expect(details.getByText('Unavailable')).toBeVisible();
+  expect(details.queryByText('TermX Agent')).not.toBeInTheDocument();
+
+  view.rerender(<OrchestratorStatus {...props} selected="sibling" enabled={false}/>);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name: 'Engine details for Check release notes'})).toBeDisabled();
+  view.rerender(<OrchestratorStatus {...props} selected="sibling"/>);
+  await act(async () => {});
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Engine details for Check release notes'}));
+  api.mockResolvedValue(snapshot([child, {...sibling, control_owner: 'user', revision: 8}]));
+  await act(async () => {vi.advanceTimersByTime(4000);});
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByText('You are directing this chat')).toBeVisible();
+  expect(screen.queryByText('The main agent can see progress, but waits for you to return control before steering this chat.')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', {name: 'Engine details for Check release notes'}));
+  view.rerender(<OrchestratorStatus {...props} ownerId="other-owner" selected="sibling"/>);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => {});
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+  expect(refreshed).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
 });
 
 it('keeps an adopted idle chat user-owned until the user explicitly grants main-agent control', async () => {
@@ -178,7 +227,7 @@ it('keeps an adopted idle chat user-owned until the user explicitly grants main-
   expect(screen.getByText('No task started')).toBeVisible();
   expect(screen.getByText('Engine: Codex · Existing chat')).toBeVisible();
   view.rerender(<OrchestratorStatus {...props} selected="child-chat"/>);
-  expect(screen.getByText('This existing chat is included in updates. You stay in control until you give the main agent control.')).toBeVisible();
+  expect(screen.queryByText('This existing chat is included in updates. You stay in control until you give the main agent control.')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', {name: 'Return to main agent'})).not.toBeInTheDocument();
   expect(api.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
   fireEvent.click(screen.getByRole('button', {name: 'Give main agent control'}));
@@ -223,4 +272,44 @@ it('counts waiting planned tasks in the collapsed header, with the same words as
   fireEvent.click(header);
   await screen.findByRole('listitem', {name: 'Task a'});
   expect(header).toHaveTextContent('0 of 3 planned tasks done');
+});
+
+
+it('recedes only the known-empty summary while keeping coordination mounted', async () => {
+  api.mockResolvedValue({...snapshot([]), activity: []});
+  const view = render(<OrchestratorStatus {...props} quietWhenIdle/>);
+  await waitFor(() => expect(screen.getByRole('region', {name: 'Main agent coordination'})).toHaveAttribute('data-idle', 'true'));
+  expect(screen.queryByRole('button', {name: /Delegated work/})).not.toBeInTheDocument();
+  expect(primary).toHaveBeenCalledWith('main');
+  expect(api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+  view.rerender(<OrchestratorStatus {...props} quietWhenIdle={false}/>);
+  expect(screen.getByRole('button', {name: /Delegated work/})).toBeVisible();
+});
+
+it('keeps coordination failures visible in quiet mode', async () => {
+  api.mockRejectedValue(Error('Synthetic coordinator unavailable'));
+  render(<OrchestratorStatus {...props} quietWhenIdle/>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Synthetic coordinator unavailable');
+  expect(screen.getByRole('button', {name: 'Refresh status'})).toBeVisible();
+  expect(screen.getByRole('button', {name: /Delegated work/})).toBeVisible();
+});
+
+
+it('retains plan discovery until the independent board read confirms it is empty', async () => {
+  api.mockResolvedValue({...snapshot([]), activity: []});
+  let finish!: (value: unknown) => void;
+  const mockBoard = vi.mocked(gql), previous = mockBoard.getMockImplementation();
+  const pending = new Promise(resolve => { finish = resolve; });
+  // The first coordinator cursor starts a second board read. Both reads must
+  // remain unresolved to exercise the actual unknown-board state.
+  mockBoard.mockImplementation(() => pending);
+  try {
+    render(<OrchestratorStatus {...props} quietWhenIdle/>);
+    await waitFor(() => expect(primary).toHaveBeenCalledWith('main'));
+    expect(screen.getByRole('button', {name: /Delegated work/})).toBeVisible();
+    await act(async () => finish({orchestrator_board: {nodes: [], rollup: {total: 0, counts: {}, percent_complete: 0, tokens: 0, cost_usd: null}}}));
+    await waitFor(() => expect(screen.queryByRole('button', {name: /Delegated work/})).not.toBeInTheDocument());
+  } finally {
+    mockBoard.mockImplementation(previous!);
+  }
 });

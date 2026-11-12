@@ -28,6 +28,36 @@ describe('extension sources and registries',()=>{
   await waitFor(()=>expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(true));
   expect(JSON.parse(String(mocked.mock.calls.find(([,init])=>init?.method==='PUT')![1]?.body))).toMatchObject({scope:'user',project_id:null,markdown:'Host worker instructions',expected_digest:'disk-one'});
  });
+ it('drafts a skill from a description and only fills the add-a-skill form, saving nothing until Save source',async()=>{
+  const markdown='---\nname: "release-notes"\ndescription: "Use for release notes."\n---\n\nSummarise the git log.\n';
+  const root={scope:'user',project_id:null,path:'/host/.agents',editable:true};
+  mocked.mockImplementation((async(path:string,init?:RequestInit)=>{
+   if(path==='/graphql')return {data:{draft_definition:{status:'drafted',reply:'Drafted it.',draft:{name:'release-notes',description:'Use for release notes.',markdown},warnings:[],provider_id:'p',model:'m'}}};
+   if(path.includes('/compatibility'))return {sources:[]};
+   if(path.endsWith('/skill-sources'))return {sources:[],roots:[root],diagnostics:[]};
+   return {};
+  }) as any);
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'New skill'}));
+  fireEvent.change(await screen.findByLabelText('Describe the skill'),{target:{value:'Write release notes from the git log'}});
+  fireEvent.click(screen.getByRole('button',{name:'Send description'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Review and create'}));
+  expect(await screen.findByLabelText('Skill instructions')).toHaveValue(markdown);
+  expect(screen.getByPlaceholderText('inspect-source')).toHaveValue('release-notes');
+  expect(screen.getByText('Add a skill').closest('details')).toHaveAttribute('open');
+  expect(screen.getByRole('status')).toHaveTextContent('Draft ready');
+  const draftCall=JSON.parse(String(mocked.mock.calls.find(([path])=>path==='/graphql')![1]!.body));
+  expect(draftCall.variables.i).toMatchObject({kind:'skill',project_id:null});
+  expect(mocked.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
+ });
+ it('opens the add-a-skill form from Fill in manually without drafting',async()=>{
+  mocked.mockImplementation(async(path)=>path.includes('/compatibility')?{sources:[]}:{sources:[],roots:[{scope:'user',project_id:null,path:'/host/.agents',editable:true}],diagnostics:[]});
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'New skill'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Fill in manually'}));
+  await waitFor(()=>expect(screen.getByText('Add a skill').closest('details')).toHaveAttribute('open'));
+  expect(mocked.mock.calls.some(([path])=>path==='/graphql')).toBe(false);
+ });
  it('keeps source locations and the add editor collapsed until requested without discarding a collapsed draft',async()=>{
   mocked.mockImplementation(async(path)=>path.includes('/compatibility')?{sources:[]}:{sources:[],roots:[{scope:'user',project_id:null,path:'/host/.agents',editable:true}],diagnostics:[]});
   render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);

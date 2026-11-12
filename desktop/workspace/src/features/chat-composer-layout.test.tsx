@@ -34,6 +34,16 @@ it('gives every toolbar control a stable class and keeps Send a direct child of 
  expect(bar.querySelector(':scope>.mode-picker>.composer-mode-chip')).not.toBeNull();
  expect(bar.querySelector(':scope>.flex-spacer')).not.toBeNull();
 });
+it('keeps the editable draft in a keyboard reachable scroll region outside the fixed action controls',()=>{
+ const row=session();row.draft_text='Keep this unsent draft';host(row);render(<Chat session={row} {...props}/>);
+ const region=screen.getByRole('region',{name:'Message draft and attachments'});
+ expect(region).toHaveAttribute('tabindex','0');
+ expect(region).toContainElement(screen.getByRole('textbox',{name:'Message'}));
+ expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Keep this unsent draft');
+ expect(region).not.toContainElement(screen.getByRole('button',{name:'Send message'}));
+ expect(region).not.toContainElement(screen.getByRole('button',{name:'Session options'}));
+ expect(region.parentElement).toContainElement(screen.getByRole('button',{name:'Send message'}));
+});
 it('puts the running-task actions on their own class so the narrow layout can keep Send on the first row',()=>{
  const row=session(true);host(row);render(<Chat session={row} {...props}/>);
  expect(screen.getByRole('button',{name:'Running task actions'}).classList.contains('composer-running-actions')).toBe(true);

@@ -1,0 +1,5 @@
+import {Button} from '../components/ui/button';
+import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
+export default function StudioProjectSwitchDialog({open,busy=false,onDecision}:{open:boolean;busy?:boolean;onDecision:(allow:boolean)=>void}){
+ return <Dialog open={open} onOpenChange={value=>{if(!value)onDecision(false)}}><DialogContent className="studio-project-switch-dialog" onOpenAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>('[data-keep-studio-draft]')?.focus()}}><DialogTitle>Switch Studio project?</DialogTitle><DialogDescription>Switching projects clears unsaved prompts, references, lyrics and scene drafts. Generated media and saved history stay in their projects.</DialogDescription><div className="creation-actions"><Button variant="outline" data-keep-studio-draft onClick={()=>onDecision(false)}>Keep editing</Button><Button disabled={busy} onClick={()=>onDecision(true)}>Discard drafts and switch</Button></div></DialogContent></Dialog>;
+}

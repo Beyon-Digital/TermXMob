@@ -1,5 +1,5 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import Chat from './Chat';
 import ChatWelcome from './ChatWelcome';
 import {draftSubmissionOwners,draftWrites,sessionDrafts,submittingDrafts} from '../lib/drafts';
@@ -16,6 +16,8 @@ it('starts with goals and inserts a suggestion into the draft without dispatchin
  const session=row('welcome');vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
  render(<Chat session={session} {...props}/>);
  expect(screen.getByRole('heading',{name:'What can we work on?'})).toBeVisible();
+ expect(screen.getByRole('button',{name:/Make a plan/})).not.toBeVisible();
+ fireEvent.click(screen.getByText('Need a starting point?'));
  fireEvent.click(screen.getByRole('button',{name:/Make a plan/}));
  expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Help me turn my goal into a practical plan. Ask what you need to know first.');
  expect(screen.getByRole('textbox',{name:'Message'})).toHaveFocus();
@@ -33,6 +35,23 @@ it('offers connection setup while preserving a typed first message',()=>{
 it('does not require a project in the conversation entry state',()=>{
  render(<ChatWelcome session={null} engines={[]} providers={[]} onPrompt={vi.fn()}/>);
  expect(screen.getByRole('heading',{name:'Start with a conversation'})).toBeVisible();expect(screen.queryByText(/choose a project/i)).toBeNull();
+});
+
+it('keeps finished conversation tools and metadata in Session options without changing the draft',()=>{
+ const session={...row('quiet-completed'),draft_text:'Keep this unsent draft',linked_from:'original',turns:[{id:'completed-turn',prompt:'Inspect files',sequence:1,task:{id:'completed-task',prompt:'Inspect files',status:'completed',result:'Finished.',events:[]}}]};
+ vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
+ const open=vi.fn();render(<Chat session={session} {...props} changes={{files:2}} onOpenSurface={open}/>);
+ expect(screen.queryByRole('group',{name:'Conversation tools'})).not.toBeInTheDocument();
+ expect(screen.queryByText('Linked fork')).not.toBeInTheDocument();
+ expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Session options'}));
+ const details=screen.getByRole('region',{name:'Conversation details'});
+ expect(within(details).getByText('Linked fork')).toBeVisible();
+ fireEvent.click(within(details).getByRole('button',{name:'Open editor'}));
+ expect(open).toHaveBeenCalledWith('editor');
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+ expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Keep this unsent draft');
+ expect(vi.mocked(request).mock.calls.some(([path,init])=>path.endsWith('/turns')||init?.method==='POST')).toBe(false);
 });
 
 it('shows the host reason when a send is refused with a 400, keeps Retry send, and clears it on the next attempt',async()=>{
@@ -148,6 +167,7 @@ it('connects a newly saved account to the same main chat explicitly and sends it
  expect(sessionDrafts.get(session.id)?.submission).toBeUndefined();
  expect(vi.mocked(request).mock.calls.some(([path])=>path.endsWith('/turns'))).toBe(false);
  view.rerender(<Chat session={{...session}} {...props} providers={[connectedAccount]} coordinating/>);
+ fireEvent.click(screen.getByRole('button',{name:'Choose connection'}));
  expect(screen.getByRole('combobox',{name:'Chat account'})).toHaveValue(connectedAccount.id);
  expect(screen.getByRole('combobox',{name:'Chat model'})).toHaveValue('model-one');
  expect(session.provider_id).toBeUndefined();
@@ -174,6 +194,7 @@ it('keeps connection repair available after history and preserves a draft when i
  session.turns=[{id:'earlier',prompt:'Previous work',sequence:1,task:{id:'earlier-task',prompt:'Previous work',status:'completed',result:'Earlier answer'}}];
  vi.mocked(request).mockImplementation(async(path,init)=>{if(init?.method==='PATCH')throw Error('Settings changed in another window');return baseResponse(path,session) as any});
  render(<Chat session={session} {...props} providers={[connectedAccount]} coordinating/>);
+ fireEvent.click(screen.getByRole('button',{name:'Choose connection'}));
  fireEvent.click(screen.getByRole('button',{name:'Use for this chat'}));
  await screen.findByText('The connection was not saved. Your draft is still here; review the error and try again.');
  expect(screen.getByRole('textbox',{name:'Message'})).toHaveValue('Retry my work');
@@ -226,4 +247,23 @@ it('keeps the selected runner account contract separate from local provider read
  render(<Chat session={session} {...props} providers={[]}/>);
  expect(screen.getByRole('button',{name:'Send message'})).toBeEnabled();
  expect(screen.queryByRole('region',{name:'Connect this chat'})).not.toBeInTheDocument();
+});
+
+it.each(['Session mode','Model and effort','Session options','Running task actions'])('fences the %s portal when Agent becomes hidden and preserves the conversation draft',async(control)=>{
+ const session={...row('visibility-'+control,true),draft_text:'Keep this task draft'};
+ vi.mocked(request).mockImplementation(async(path)=>baseResponse(path,session) as any);
+ const surface=(visible:boolean)=><><button>Studio action</button><Chat session={session} {...props} visible={visible}/></>;
+ const view=render(surface(true));
+ fireEvent.click(screen.getByRole('button',{name:control}));
+ const role=control==='Session mode'?'radiogroup':'dialog';
+ expect(screen.getByRole(role)).toBeVisible();
+ view.rerender(surface(false));
+ await waitFor(()=>expect(screen.queryByRole(role)).not.toBeInTheDocument());
+ const studio=screen.getByRole('button',{name:'Studio action'});studio.focus();
+ await waitFor(()=>expect(studio).toHaveFocus());
+ view.rerender(surface(true));
+ expect(screen.getByRole('textbox',{name:'Message',hidden:true})).toHaveValue('Keep this task draft');
+ if(control==='Model and effort'){expect(screen.queryByRole(role)).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:control}))}
+ expect(screen.getByRole(role)).toBeVisible();
+ expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
 });

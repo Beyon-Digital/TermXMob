@@ -4,9 +4,6 @@
 .composer-voice-status:empty{display:none}
 .composer-voice-error{margin:0;color:var(--destructive);line-height:1.5}
 .composer-voice-hint{margin:0;line-height:1.6}
-.composer-voice-toggles{display:flex;flex-wrap:wrap;gap:4px 16px}
-.composer-voice-toggles label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;margin:0;font-weight:400}
-.composer-voice-toggles input{margin:0;accent-color:var(--accent)}
 .voice-credit{color:var(--secondary);text-decoration:underline;text-underline-offset:2px}
 .voice-credit:hover{color:var(--foreground)}
 .voice-meter{display:inline-block;width:72px;height:6px;border-radius:3px;background:var(--muted);overflow:hidden;flex-shrink:0}
@@ -14,3 +11,4 @@
 .composer-mic.is-recording{color:var(--accent)}
 @media(prefers-reduced-motion:reduce){.voice-meter>span{transition:none}.composer-mic .spin{animation:none}}
 @media(max-width:480px){.voice-meter{width:48px}}
+.response-voice-actions{align-items:center}.response-voice-reason{font-size:12px;line-height:20px;color:var(--text-3);max-width:48ch}

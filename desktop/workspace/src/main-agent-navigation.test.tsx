@@ -21,7 +21,7 @@ vi.mock('./features/CompanionHabitat',()=>({default:()=>null}));
 vi.mock('./components/LockScreen',()=>({default:()=> <div data-testid="locked">Locked</div>}));
 vi.mock('./components/DockWorkspace',()=>({default:({children}:{children:Record<string,React.ReactNode>})=><div>{children.conversation}</div>}));
 vi.mock('./components/WorkspaceNavigation',()=>({default:({rail,children,footer}:{rail:React.ReactNode;children:React.ReactNode;footer:React.ReactNode})=><nav>{rail}{children}{footer}</nav>}));
-vi.mock('@tanstack/react-virtual',()=>({useVirtualizer:()=>({getTotalSize:()=>0,getVirtualItems:()=>[]})}));
+vi.mock('@tanstack/react-virtual',()=>({useVirtualizer:()=>({getTotalSize:()=>0,getVirtualItems:()=>[],measure:vi.fn()})}));
 
 const principal={id:'owner',display_name:'Owner',scopes:[]};
 const auth={principal,session_id:'auth'};
@@ -69,21 +69,21 @@ it('keeps newer settings navigation when a manually opened primary resolves late
  fireEvent.click(screen.getAllByRole('button',{name:'Main agent'}).at(-1)!);
  await waitFor(()=>expect(mocks.ensure).toHaveBeenCalledOnce());
  fireEvent.click(screen.getAllByRole('button',{name:'Settings'}).at(-1)!);
- expect(await screen.findByRole('heading',{name:/^Preferences$/})).toBeVisible();
+ expect(await screen.findByRole('heading',{name:/^General$/})).toBeVisible();
  await act(async()=>pending.resolve({session:chat('main')}));
- expect(screen.getByRole('heading',{name:/^Preferences$/})).toBeVisible();
+ expect(screen.getByRole('heading',{name:/^General$/})).toBeVisible();
  expect(location.pathname).toBe('/manage/preferences');
 });
 
 it('opens the main conversation when settings opened by a deep link are closed',async()=>{
  history.replaceState(null,'','/manage/preferences');
  render(<App/>);
- expect(await screen.findByRole('heading',{name:/^Preferences$/})).toBeVisible();
+ expect(await screen.findByRole('heading',{name:/^General$/})).toBeVisible();
  expect(mocks.ensure).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button',{name:'Close settings'}));
  await waitFor(()=>expect(screen.getByTestId('selected-chat')).toHaveTextContent('main'));
  expect(mocks.ensure).toHaveBeenCalledOnce();
- expect(location.pathname).toBe('/session/main');
+ await waitFor(()=>expect(location.pathname).toBe('/session/main'));
 });
 
 it('resolves the main conversation when browser history returns to the root',async()=>{
@@ -116,9 +116,7 @@ it('binds a newly created chat before its asynchronous history read can return',
  render(<App/>);
  await waitFor(()=>expect(screen.getByTestId('selected-chat')).toHaveTextContent('previous'));
  fireEvent.click(screen.getByRole('button',{name:'New chat'}));
- const dialog=await screen.findByRole('dialog',{name:'New conversation'});
- await waitFor(()=>expect(dialog.querySelector('button[type="submit"]')).not.toBeDisabled());
- fireEvent.click(dialog.querySelector('button[type="submit"]')!);
+ expect(screen.queryByRole('dialog',{name:'New chat with options'})).not.toBeInTheDocument();
  await waitFor(()=>expect(location.pathname).toBe('/session/focused'));
  expect(screen.getByTestId('selected-chat')).toHaveTextContent('focused');
  await act(async()=>historyRead.resolve(chat('focused')));

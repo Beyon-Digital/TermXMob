@@ -1,5 +1,5 @@
-import {memo, useEffect, useMemo, useState} from 'react';
-import {Bot, Check, ChevronRight, CircleAlert, Copy, GitBranch, LoaderCircle, MoreHorizontal, Pause, Sparkles} from 'lucide-react';
+import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {Bot, Check, ChevronRight, CircleAlert, Copy, GitBranch, LoaderCircle, MoreHorizontal, Pause,Volume2,Square} from 'lucide-react';
 import {Message, MessageContent} from '../components/ai-elements/message';
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from '../components/ui/collapsible';
 import {Button} from '../components/ui/button';
@@ -12,16 +12,17 @@ import {GeneralApprovalCard} from './GeneralApprovalCard';
 import PlanReviewCard, {isRevisablePlan} from './PlanReviewCard';
 import {agentNotes} from '../lib/agentic';
 import ConversationResponse from './ConversationResponse';
+import {TaskContentAttachments,ResponseContentActions} from './ContentPreview';
 import './conversation-message.css';
 
-type Props = {role: 'user' | 'assistant'; text: string; task?: Task; engine?: string; visible?: boolean;
-  onOpenFile?: (path: string, line?: number) => void; onSupervise: (id: string) => void; onRefresh: () => void; onError: (error: unknown) => void};
+type Props = {role: 'user' | 'assistant'; text: string; task?: Task; engine?: string; visible?: boolean;contentOwner?:string;onReadAloud?:(reply:{id:string;text:string})=>void;onStopReading?:()=>void;readingTaskId?:string|null;readUnavailable?:string;onOpenVoiceSettings?:()=>void;
+  onOpenFile?: (path: string, line?: number) => void; onReviewChanges?:()=>void;changedFiles?:number; onSupervise: (id: string) => void; onRefresh: () => void; onError: (error: unknown) => void};
 
 function phase(status: string): ToolPhase {
   return status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : status === 'interrupted' ? 'interrupted' : taskIsActive(status) ? 'running' : 'pending';
 }
 
-function AgentRow({agent, rootTaskId, onSupervise, onOpenFile, depth = 0}: {agent: AgentActivity; rootTaskId: string; onOpenFile?: Props['onOpenFile']; onSupervise: (id: string) => void; depth?: number}) {
+function AgentRow({agent, rootTaskId, onSupervise, onOpenFile, visible=true, depth = 0}: {visible?:boolean;agent: AgentActivity; rootTaskId: string; onOpenFile?: Props['onOpenFile']; onSupervise: (id: string) => void; depth?: number}) {
   const [open, setOpen] = useState(false);
   const status = agent.status === 'interrupted' ? {label: 'No result reported'} : taskState(agent.status);
   return <li className="delegated-agent">
@@ -35,9 +36,9 @@ function AgentRow({agent, rootTaskId, onSupervise, onOpenFile, depth = 0}: {agen
       <CollapsibleContent className="agent-activity-content">
         {open && <>{agent.prompt && <p className="agent-task-prompt">{agent.prompt}</p>}
           {agent.truncated && <p className="activity-loading">Showing recent activity for this agent.</p>}
-          <ToolActivities events={agent.events} taskStatus={agent.status} limit={20}/>
-          {agent.result && <div className="agent-result"><ConversationResponse onOpenFile={onOpenFile} mode="static">{agent.result}</ConversationResponse></div>}
-          {agent.children.length > 0 && depth < 3 && <ul className="delegated-agents nested" aria-label={agent.name + ' delegated agents'}>{agent.children.slice(0, 12).map(child => <AgentRow key={child.id} agent={child} rootTaskId={rootTaskId} onSupervise={onSupervise} onOpenFile={onOpenFile} depth={depth + 1}/>)}</ul>}
+          <ToolActivities events={agent.events} taskStatus={agent.status} limit={20} taskId={agent.taskId||rootTaskId} onOpenFile={onOpenFile} visible={visible}/>
+          {agent.result && <div className="agent-result"><ConversationResponse onOpenFile={onOpenFile} visible={visible} mode="static">{agent.result}</ConversationResponse></div>}
+          {agent.children.length > 0 && depth < 3 && <ul className="delegated-agents nested" aria-label={agent.name + ' delegated agents'}>{agent.children.slice(0, 12).map(child => <AgentRow key={child.id} agent={child} rootTaskId={rootTaskId} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible} depth={depth + 1}/>)}</ul>}
           <Button variant="ghost" size="sm" onClick={() => onSupervise(agent.taskId || rootTaskId)}>{agent.taskId ? 'Open agent session' : 'Open parent task'} <GitBranch size={12}/></Button>
         </>}
       </CollapsibleContent>
@@ -45,7 +46,7 @@ function AgentRow({agent, rootTaskId, onSupervise, onOpenFile, depth = 0}: {agen
   </li>;
 }
 
-function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Task; onOpenFile?: Props['onOpenFile']; onSupervise: (id: string) => void; visible?: boolean}) {
+function RunActivity({task, onSupervise, onOpenFile,onResolvedTask, visible = true}: {onResolvedTask?:(task:Task)=>void;task: Task; onOpenFile?: Props['onOpenFile']; onSupervise: (id: string) => void; visible?: boolean}) {
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<Task | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -60,11 +61,11 @@ function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Tas
     const controller = new AbortController();
     setLoading(true); setError('');
     request<Task>('/api/workspace/tasks/' + encodeURIComponent(task.id) + '?activity=true', {signal: controller.signal})
-      .then(value => {if (!controller.signal.aborted && value.id === task.id) setSaved(value);})
+      .then(value => {if (!controller.signal.aborted && value.id === task.id){setSaved(value);onResolvedTask?.(value)}})
       .catch(reason => {if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Activity could not be loaded');})
       .finally(() => {if (!controller.signal.aborted) setLoading(false);});
     return () => controller.abort();
-  }, [open, visible, task.id, task.events, saved?.id, retry]);
+  }, [open, visible, task.id, task.events, saved?.id, retry,onResolvedTask]);
   const details = task.events !== undefined ? task : saved?.id === task.id ? saved : task;
   const events = details.events || [];
   const tools = useMemo(() => toolActivities(events, task.status), [details.events, task.status]);
@@ -80,7 +81,7 @@ function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Tas
   const count = [tools.length ? `${tools.length} ${tools.length === 1 ? 'tool' : 'tools'}` : '', agents.length ? `${agents.length} ${agents.length === 1 ? 'agent' : 'agents'}` : ''].filter(Boolean).join(' · ');
   return <Collapsible className={'run-activity' + (ongoing ? ' is-working' : '')} open={open} onOpenChange={setOpen}>
     <CollapsibleTrigger className="run-activity-trigger">
-      {ongoing ? <LoaderCircle size={15} className="spin" aria-hidden="true"/> : needsAttention || task.status === 'failed' ? <CircleAlert size={15} aria-hidden="true"/> : <GitBranch size={15} aria-hidden="true"/>}
+      {ongoing ? <LoaderCircle size={15} className="spin" aria-hidden="true"/> : needsAttention || task.status === 'failed' ? <CircleAlert size={15} aria-hidden="true"/> : null}
       <span className="run-activity-summary">{summary}</span><span className="run-activity-count">{count}</span>{failed > 0 && <span className="run-activity-failed">{failed} failed</span>}<ChevronRight size={14} className="disclosure-chevron" aria-hidden="true"/>
     </CollapsibleTrigger>
     <CollapsibleContent className="run-activity-body">
@@ -88,9 +89,9 @@ function RunActivity({task, onSupervise, onOpenFile, visible = true}: {task: Tas
         {error && <p className="activity-load-error" role="alert">{error} <Button size="sm" variant="ghost" onClick={() => setRetry(value => value + 1)}>Retry activity</Button></p>}
         {details.activity_truncated && <p className="activity-loading">Showing recent activity for this run.</p>}
         {!loading && !error && !tools.length && !agents.length && !notes.length && saved?.id === task.id && <p className="activity-loading">No tool or delegated-agent activity was found in this history.</p>}
-        {agents.length > 0 && <section className="agent-team"><h3><Bot size={14}/> Agent team</h3><ul className="delegated-agents" aria-label="Delegated agents">{agents.slice(0, 24).map(agent => <AgentRow key={agent.id} agent={agent} rootTaskId={task.id} onSupervise={onSupervise} onOpenFile={onOpenFile}/>)}</ul></section>}
+        {agents.length > 0 && <section className="agent-team"><h3><Bot size={14}/> Agent team</h3><ul className="delegated-agents" aria-label="Delegated agents">{agents.slice(0, 24).map(agent => <AgentRow key={agent.id} agent={agent} rootTaskId={task.id} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible}/>)}</ul></section>}
         {notes.length > 0 && <ul className="agent-notes" aria-label="Plan and Auto notes">{notes.map(note => <li key={note.key}>{note.text}</li>)}</ul>}
-        <ToolActivities events={events} taskStatus={task.status}/>
+        <ToolActivities events={events} taskStatus={task.status} taskId={task.id} onOpenFile={onOpenFile} visible={visible}/>
         <Button className="run-inspect" variant="ghost" size="sm" onClick={() => onSupervise(task.id)}>Open task details <ChevronRight size={12}/></Button>
       </>}
     </CollapsibleContent>
@@ -102,13 +103,17 @@ function ResponseLoader({task}: {task: Task}) {
   const labels: Record<string, string> = {queued: 'Waiting to start', planning: 'Planning the next steps', running: 'Preparing a response', recovering: 'Restoring this task', cancelling: 'Stopping this task', awaiting_approval: 'Waiting for your approval', paused: 'This task is paused', recovery_confirmation_required: 'Review recovery before continuing', cancelled: 'This task was stopped', failed: 'This task needs attention', completed: 'This turn finished without a text response'};
   // The conversation's single status announcer reports state changes; this label is visual only.
   return <div className={'response-loader' + (busy ? ' is-loading' : '')}>
-    <div className="response-loader-label">{busy ? <Sparkles size={15} aria-hidden="true"/> : task.status === 'failed' ? <CircleAlert size={15} aria-hidden="true"/> : <Pause size={15} aria-hidden="true"/>}<span>{labels[task.status] || 'Preparing this conversation'}</span></div>
-    {busy && <div className="response-skeleton" aria-hidden="true"><span/><span/><span/></div>}
+    <div className="response-loader-label">{busy ? <span className="response-streaming-caret" aria-hidden="true"/> : task.status === 'failed' ? <CircleAlert size={16} aria-hidden="true"/> : <Pause size={16} aria-hidden="true"/>}<span>{labels[task.status] || 'Preparing this conversation'}</span></div>
   </div>;
 }
 
-function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise, onRefresh, onError}: Props) {
+function ConversationMessage({role, text, task, visible,contentOwner,onReadAloud,onStopReading,readingTaskId,readUnavailable,onOpenVoiceSettings, onOpenFile,onReviewChanges,changedFiles, onSupervise, onRefresh, onError}: Props) {
   const [copied, setCopied] = useState(false);
+  const [historical,setHistorical]=useState<{owner:string|undefined;task:Task}|null>(null);
+  const identity=useRef({owner:contentOwner,id:task?.id,active:taskIsActive(task?.status)});identity.current={owner:contentOwner,id:task?.id,active:taskIsActive(task?.status)};
+  const rememberDetails=useCallback((value:Task)=>{const current=identity.current;if(current.owner===contentOwner&&current.id===value.id&&!current.active)setHistorical({owner:contentOwner,task:value})},[contentOwner,task?.id]);
+  useEffect(()=>{if(historical&&(historical.owner!==contentOwner||historical.task.id!==task?.id||taskIsActive(task?.status)||task?.events!==undefined))setHistorical(null)},[contentOwner,task?.id,task?.status,task?.events,historical]);
+  const actionTask=task&&task.events===undefined&&!taskIsActive(task.status)&&historical&&historical.owner===contentOwner&&historical.task.id===task.id?{...historical.task,status:task.status}:task;
   const content = task ? text || taskResponseText(task) : text;
   const report=task?.coordination_report;
   const reportStatus=report?.source_status||({'task.completed':'completed','task.failed':'failed','task.cancelled':'cancelled','approval.requested':'awaiting_approval','task.recovery.blocked':'recovery_confirmation_required'} as Record<string,string>)[report?.kind||''];
@@ -121,20 +126,25 @@ function ConversationMessage({role, text, task, visible, onOpenFile, onSupervise
     return () => clearTimeout(timer);
   }, [copied]);
   async function copy() {try {await navigator.clipboard.writeText(content); setCopied(true);} catch (error) {setCopied(false); onError(error);}}
-  if (role === 'user') return <Message from="user"><MessageContent><p className="user-message-text">{text}</p></MessageContent></Message>;
+  if (role === 'user') return <Message from="user"><MessageContent>{task&&<TaskContentAttachments task={task} role="user" visible={visible}/>}<p className="user-message-text">{text}</p></MessageContent></Message>;
   return <Message from="assistant"><MessageContent>
     {report&&<div className="coordination-report-source" role="note" aria-label="Delegated agent report"><Bot size={16} aria-hidden="true"/><span><strong>{report.label||'Delegated agent'}</strong><small>Direct agent report</small></span><span className={'coordination-report-status '+reportState.tone}>{reportState.label}</span>{report.source_task_id&&<Button size="sm" variant="ghost" onClick={()=>onSupervise(report.source_task_id!)}>Open source task</Button>}</div>}
-    {task && !report && <RunActivity key={task.id} task={task} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible}/>}
-    {content ? <ConversationResponse onOpenFile={onOpenFile} mode={ongoing ? 'streaming' : 'static'} isAnimating={ongoing}>{content}</ConversationResponse> : task ? <ResponseLoader task={task}/> : null}
+    {task && !report && <RunActivity key={(contentOwner||'')+':'+task.id} task={task} onResolvedTask={rememberDetails} onSupervise={onSupervise} onOpenFile={onOpenFile} visible={visible}/>}
+    {content ? <ConversationResponse className={ongoing ? 'is-streaming' : undefined} onOpenFile={onOpenFile} visible={visible} mode={ongoing ? 'streaming' : 'static'} isAnimating={ongoing}>{content}</ConversationResponse> : task ? <ResponseLoader task={task}/> : null}
+    {task&&!report&&<TaskContentAttachments task={task} role="assistant" visible={visible}/>}
     {task?.error && <div className={cancelled?'response-cancellation':'response-error'} role={cancelled?'status':'alert'}>{cancelled?<Pause size={16} aria-hidden="true"/>:<CircleAlert size={16} aria-hidden="true"/>}<div><strong>{cancelled?'Task stopped':'The task stopped with an error'}</strong><p>{task.error}</p><Button size="sm" variant="ghost" onClick={() => onSupervise(task.id)}>Review task</Button></div></div>}
-    {task && (['recovery_confirmation_required', 'paused'].includes(task.status) || (task.status === 'awaiting_approval' && !task.approvals?.some(approval => approval.status === 'pending'))) && <div className="task-attention"><span>{task.status === 'recovery_confirmation_required' ? 'Recovery needs your confirmation.' : task.status === 'paused' ? 'This task is paused.' : 'This task needs your approval.'}</span><Button variant="outline" size="sm" onClick={() => onSupervise(task.id)}>Review task</Button></div>}
+    {task && (['recovery_confirmation_required', 'paused'].includes(task.status) || (task.status === 'awaiting_approval' && !task.approvals?.some(approval => approval.status === 'pending'))) && <div className="task-attention"><span>{task.status === 'recovery_confirmation_required' ? 'Recovery needs your confirmation.' : task.status === 'paused' ? 'This task is paused.' : 'This task needs your approval.'}</span><Button variant="outline" size="sm" onClick={() => onSupervise(task.id)}>{task.status==='recovery_confirmation_required'?'Review recovery':'Review task'}</Button></div>}
     {(task?.approvals || []).filter(approval => approval.status === 'pending').map(approval => approval.kind === 'budget'
       ? <BudgetApproval key={approval.id} task={task!} approval={approval} onDone={onRefresh} onError={onError}/>
       : isRevisablePlan(approval)
       ? <PlanReviewCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError} onOpenFile={onOpenFile}/>
       : <GeneralApprovalCard key={approval.id} taskId={task!.id} approval={approval} onDone={onRefresh} onError={onError}/>)}
+    {actionTask&&!report&&<ResponseContentActions task={actionTask} onOpenFile={onOpenFile}/>}
+    {onReviewChanges&&typeof changedFiles==='number'&&Number.isSafeInteger(changedFiles)&&changedFiles>0&&<div className="response-content-actions"><Button variant="outline" onClick={onReviewChanges}>Review {changedFiles} changed {changedFiles===1?'file':'files'}</Button></div>}
+    {content&&onReadAloud&&readUnavailable&&<div className="response-content-actions response-voice-actions">{onOpenVoiceSettings&&<Button variant="ghost" title={readUnavailable} onClick={onOpenVoiceSettings}>Voice settings</Button>}<small className="response-voice-reason">{readUnavailable}</small></div>}
     {(content || task) && <div className="response-actions message-actions" role="group" aria-label="Response actions">
       {content && <Button size="icon" variant="ghost" aria-label={copied ? 'Answer copied' : 'Copy answer'} title={copied ? 'Copied' : 'Copy answer'} onClick={() => void copy()}>{copied ? <Check size={15}/> : <Copy size={15}/>}</Button>}
+      {content&&onReadAloud&&(readingTaskId&&readingTaskId===(task?.id||'response')?<Button variant="ghost" size="icon" aria-label="Stop reading" title="Stop reading" onClick={onStopReading}><Square size={16} aria-hidden="true"/></Button>:<Button variant="ghost" size="icon" aria-label="Read aloud" disabled={!!readUnavailable||visible===false} title={readUnavailable||'Read this response aloud'} onClick={()=>onReadAloud({id:task?.id||'response',text:content})}><Volume2 size={16} aria-hidden="true"/></Button>)}
       {task && !report && <Button variant="ghost" size="icon" onClick={() => onSupervise(task.id)} aria-label="Inspect task" title="Inspect task"><MoreHorizontal size={16}/></Button>}
     </div>}
   </MessageContent></Message>;

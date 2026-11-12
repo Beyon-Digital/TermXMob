@@ -43,6 +43,8 @@ function serve(bots:ReturnType<typeof bot>[],onGql?:Handler,extra?:(path:string,
 }
 const calls=()=>mocked.mock.calls.filter(([path])=>path==='/graphql').map(([,init])=>JSON.parse(String(init!.body)) as Body);
 const sent=(name:string)=>calls().find(body=>body.query?.includes(name));
+/** New bot starts with a description; most tests go straight to the manual form. */
+const newBot=async()=>{fireEvent.click(await screen.findByRole('button',{name:'New bot'}));fireEvent.click(await screen.findByRole('button',{name:'Fill in manually'}))};
 const open=()=>render(<Managers embedded section="bots" projectId={null} sessionId={null}/>);
 const openBot=async(row=bot())=>{
  serve([row]);
@@ -60,7 +62,7 @@ it('says what to do when there are no bots and creates one from a template',asyn
  const {container}=open();
  expect(await screen.findByText(/No bots yet\. Create one from a template/)).toBeInTheDocument();
  await expectNoAxeViolations(container);
- fireEvent.click(screen.getByRole('button',{name:'New bot'}));
+ await newBot();
  const dialog=within(await screen.findByRole('dialog'));
  expect(dialog.getAllByRole('radio').map(radio=>(radio.closest('label') as HTMLElement).textContent)).toEqual([
   expect.stringContaining('Inbox triager'),expect.stringContaining('Read-only repo watcher'),expect.stringContaining('Daily report'),expect.stringContaining('Custom')]);
@@ -76,6 +78,32 @@ it('says what to do when there are no bots and creates one from a template',asyn
  expect(location.search).toBe('?bot=b1');
 });
 
+it('drafts a bot from a description, pre-fills the form and creates it read-only with the drafted tools',async()=>{
+ const draft={name:'Morning watcher',description:'Reports overnight changes.',instructions:'Check git status and report.',tools:['read_file','git_status']};
+ let created=false;
+ serve([],body=>{
+  if(body.query?.includes('draft_definition'))return {data:{draft_definition:{status:'drafted',reply:'Drafted it.',draft,warnings:['Left off tools beyond read-only: run_shell. Turn them on in the editor if the bot needs them.'],provider_id:'p',model:'m'}}};
+  if(body.query?.includes('create_bot')){created=true;return {data:{create_bot:bot()}}}
+  return undefined;
+ });
+ open();
+ fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ fireEvent.change(await screen.findByLabelText('Describe the bot'),{target:{value:'Tell me each morning what changed'}});
+ fireEvent.click(screen.getByRole('button',{name:'Send description'}));
+ expect(await screen.findByText(/Left off tools beyond read-only: run_shell/)).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Review and create'}));
+ const dialog=within(await screen.findByRole('dialog',{name:'New bot'}));
+ expect(dialog.getByLabelText(/^Name/)).toHaveValue('Morning watcher');
+ expect(dialog.getByLabelText('Description')).toHaveValue('Reports overnight changes.');
+ expect(dialog.getByLabelText(/^Instructions/)).toHaveValue('Check git status and report.');
+ expect(dialog.getByText(/Can use: Read files, See git status/)).toBeInTheDocument();
+ expect(dialog.getByRole('radio',{name:/Custom/})).toBeChecked();
+ expect(created).toBe(false);
+ fireEvent.click(dialog.getByRole('button',{name:'Create bot'}));
+ await waitFor(()=>expect(created).toBe(true));
+ expect(sent('create_bot')!.variables).toEqual({input:{name:'Morning watcher',template:null,instructions:'Check git status and report.',project_id:null,description:'Reports overnight changes.',tools:['read_file','git_status']}});
+});
+
 it('shows a refused name inside the dialog, keeps it open and leaves no error or Retry on the page',async()=>{
  const taken='You already have a bot named “Morning triage”. Choose a different name, or rename that bot first.';
  let refuse=true;
@@ -87,7 +115,7 @@ it('shows a refused name inside the dialog, keeps it open and leaves no error or
   return undefined;
  });
  const {container}=open();
- fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ await newBot();
  const dialog=within(await screen.findByRole('dialog'));
  const name=dialog.getByLabelText(/^Name/);
  fireEvent.change(name,{target:{value:'Morning triage'}});
@@ -112,7 +140,7 @@ it('shows a refused name inside the dialog, keeps it open and leaves no error or
 it('clears a refused-name message when the dialog is cancelled',async()=>{
  serve([],body=>body.query?.includes('create_bot')?{errors:[{message:'You already have a bot named “X”.'}]}:undefined);
  open();
- fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ await newBot();
  let dialog=within(await screen.findByRole('dialog'));
  fireEvent.change(dialog.getByLabelText(/^Name/),{target:{value:'X'}});
  fireEvent.click(dialog.getByRole('button',{name:'Create bot'}));
@@ -121,7 +149,7 @@ it('clears a refused-name message when the dialog is cancelled',async()=>{
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
  expect(screen.queryByText('You already have a bot named “X”.')).toBeNull();
  expect(screen.queryByRole('button',{name:'Retry',hidden:true})).toBeNull();
- fireEvent.click(screen.getByRole('button',{name:'New bot'}));
+ await newBot();
  dialog=within(await screen.findByRole('dialog'));
  expect(dialog.queryByText('You already have a bot named “X”.')).toBeNull();
 });
@@ -131,7 +159,7 @@ it('does not offer host-made scratch or worktree folders as a bot project',async
  const worktree={id:'p3',name:'c'.repeat(32),path:`/cfg/worktrees/${'c'.repeat(32)}`};
  serve([],body=>body.query?.includes('bot_templates')?{data:{bots:[],bot_templates:templates,projects:[{id:'p1',name:'Website',path:'/w'},scratch,worktree]}}:undefined);
  open();
- fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ await newBot();
  const dialog=within(await screen.findByRole('dialog'));
  const options=dialog.getAllByRole('option').map(option=>option.textContent);
  expect(options).toEqual(['No project (scratch folder)','Website']);
@@ -140,7 +168,7 @@ it('does not offer host-made scratch or worktree folders as a bot project',async
 it('asks for a project before creating a project template, and for instructions on a custom bot',async()=>{
  serve([]);
  open();
- fireEvent.click(await screen.findByRole('button',{name:'New bot'}));
+ await newBot();
  const dialog=within(await screen.findByRole('dialog'));
  fireEvent.click(dialog.getByRole('radio',{name:/Read-only repo watcher/}));
  fireEvent.change(dialog.getByLabelText(/^Name/),{target:{value:'Watcher'}});

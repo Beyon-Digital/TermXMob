@@ -74,7 +74,7 @@ export function toolActivities(events: ActivityEvent[], taskStatus?: string): To
     let phase: ToolPhase = failed ? 'failed' : ['cancelled', 'canceled', 'interrupted'].includes(status) ? 'cancelled' : completed ? 'completed' : status === 'pending' ? 'pending' : 'running';
     // Stream output does not change a known terminal state.
     if (isOutput && current) phase = current.phase;
-    const output = p.result ?? p.rawOutput ?? p.output ?? item.aggregatedOutput ?? item.result ?? item.error ?? item.contentItems ?? (completed || failed ? p.content ?? p.error : undefined);
+    const output = p.result ?? p.rawOutput ?? p.output ?? item.aggregatedOutput ?? item.result ?? item.error ?? item.contentItems ?? (itemType==='fileChange'&&Array.isArray(item.changes)?{changes:item.changes}:itemType==='webSearch'&&Array.isArray(item.results)?{query:item.query,results:item.results}:undefined) ?? (completed || failed ? p.content ?? p.error : undefined);
     if (current) {
       current.events.push(event);
       current.phase = phase;

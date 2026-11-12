@@ -10,6 +10,7 @@ import strawberry
 from strawberry import relay
 from strawberry.scalars import JSON
 from strawberry.types import Info
+from fastapi import HTTPException
 from termx.graphql.errors import fail, resolver
 from termx.workspace.public_events import public_task_events, public_task_approvals
 
@@ -59,6 +60,7 @@ class WorkspaceTurnNode(relay.Node):
     sequence:int
     prompt:str
     task_id:str|None
+    artifact_snapshot:strawberry.Private[dict|None]=None
 
     @strawberry.field
     @resolver
@@ -72,6 +74,22 @@ class WorkspaceTurnNode(relay.Node):
         fields={'id','prompt','cwd','provider_id','model','status','limits','mode','parent_id','plan','result','error','engine','created_at','updated_at'}
         result={key:value for key,value in task.items() if key in fields}
         metadata=service.store.get('task',self.task_id) or {}
+        authorized_artifacts = False
+        result['artifacts'] = []
+        result['artifacts_truncated'] = False
+        try:
+            source = service.record(owner, 'task', self.task_id, scope='agent-view')
+            authorized_artifacts = source.get('conversation_id') == self.session_id
+        except (KeyError, PermissionError):
+            pass
+        except HTTPException as exc:
+            if exc.status_code not in {403, 404}:
+                raise
+        if authorized_artifacts:
+            snapshot = self.artifact_snapshot
+            if snapshot is None:
+                snapshot = service.agents.workspace_artifacts_snapshot([self.task_id])[self.task_id]
+            result.update(snapshot)
         if metadata.get('coordination_report'):
             result['result'],result['coordination_report']=service.orchestrator.public_report(owner,metadata['coordination_report'])
         for key in ('worktree_id','worktree_digest','worktree_branch','execution_location'):
@@ -81,6 +99,8 @@ class WorkspaceTurnNode(relay.Node):
             result['approvals']=public_task_approvals(service,owner,service.agents.approvals(self.task_id))
         current=current_principal(info,owner)
         service.record(current,'conversation',self.session_id,scope='agent-view')
+        if authorized_artifacts:
+            service.record(current, 'task', self.task_id, scope='agent-view')
         if metadata.get('coordination_report'):
             result['result'],result['coordination_report']=service.orchestrator.public_report(current,metadata['coordination_report'])
         return result
@@ -101,9 +121,9 @@ class WorkspaceTurnNode(relay.Node):
         current_principal(info,owner)
         return result
 
-def turn_node(row):
+def turn_node(row, artifact_snapshot=None):
     return WorkspaceTurnNode(id=row['id'],canonical_id=row['id'],session_id=row['conversation_id'],
-        sequence=row['sequence'],prompt=row['prompt'],task_id=row['task_id'])
+        sequence=row['sequence'],prompt=row['prompt'],task_id=row['task_id'],artifact_snapshot=artifact_snapshot)
 
 def cursor(session,sequence):return base64.b64encode(f'{session}:{sequence}'.encode()).decode()
 def read_cursor(value,session):
@@ -190,7 +210,21 @@ class DesktopWorkspaceQueries:
         rows=service.agents.workspace_turns_page(session_id,after_sequence=sequence,
             before_sequence=read_cursor(before,session_id) if before else None,descending=backward,limit=size+1)
         visible=list(reversed(rows[:size])) if backward else rows[:size]
-        edges=[WorkspaceTurnEdge(cursor=cursor(session_id,row['sequence']),node=turn_node(row)) for row in visible]
+        artifact_tasks = []
+        for row in visible:
+            if not row.get('task_id'):
+                continue
+            try:
+                source = service.record(owner, 'task', row['task_id'], scope='agent-view')
+                if source.get('conversation_id') == session_id:
+                    artifact_tasks.append(row['task_id'])
+            except (KeyError, PermissionError):
+                continue
+            except HTTPException as exc:
+                if exc.status_code not in {403, 404}:
+                    raise
+        artifacts = service.agents.workspace_artifacts_snapshot(artifact_tasks)
+        edges=[WorkspaceTurnEdge(cursor=cursor(session_id,row['sequence']),node=turn_node(row, artifacts.get(row.get('task_id'), {'artifacts':[], 'artifacts_truncated':False}))) for row in visible]
         service.record(current_principal(info,owner),'conversation',session_id,scope='agent-view')
         return WorkspaceTurnConnection(edges=edges,page_info=WorkspacePageInfo(has_next_page=bool(before) if backward else len(rows)>size,
             has_previous_page=len(rows)>size if backward else sequence>0,start_cursor=edges[0].cursor if edges else None,end_cursor=edges[-1].cursor if edges else None))

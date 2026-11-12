@@ -44,6 +44,7 @@ type AgentProvider {
   selected_models: [String!]
   model_catalog: JSON
   model_overrides: JSON
+  limits: JSON
   catalog_refreshed_at: Float
   catalog_error: String
   wire: String
@@ -63,6 +64,7 @@ input AgentProviderInput {
   api_key: String = null
   model_meta: JSON = null
   wire: String = null
+  limits: JSON = null
 }
 
 input AgentRetentionInput {
@@ -578,6 +580,29 @@ type DisplaysResult {
   displays: [DisplayInfo!]!
 }
 
+type DraftDefinition {
+  status: String!
+  reply: String!
+  draft: JSON
+  warnings: [String!]!
+  provider_id: String
+  model: String
+}
+
+input DraftDefinitionInput {
+  kind: String!
+  messages: [DraftMessageInput!]!
+  current_draft: JSON = null
+  provider_id: String = null
+  model: String = null
+  project_id: String = null
+}
+
+input DraftMessageInput {
+  role: String!
+  text: String!
+}
+
 type EffectivePolicies {
   approval_mode: String
   sandbox_profile: String
@@ -1030,6 +1055,7 @@ type Mutation {
   send_bot_message(input: SendBotMessageInput!): BotMessage!
   mark_message(message_id: String!, status: String!): BotMessage!
   save_voice_settings(input: VoiceSettingsInput!): VoiceStatus!
+  draft_definition(input: DraftDefinitionInput!): DraftDefinition!
 }
 
 type NeedsYouItem {

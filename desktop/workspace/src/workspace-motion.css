@@ -1,0 +1,39 @@
+/* Short, shared state transitions. No animation communicates task completion. */
+:root{--motion-fast:140ms;--motion-standard:180ms;--motion-exit:120ms;--motion-ease:cubic-bezier(.2,.8,.2,1)}
+html:is([data-app-workspace=agent],[data-app-workspace=studio]) :is(button,a,summary,input,select,textarea){transition-property:background-color,border-color,color,opacity,box-shadow;transition-duration:var(--motion-fast);transition-timing-function:var(--motion-ease)}
+@media(hover:hover) and (pointer:fine){
+ html:is([data-app-workspace=agent],[data-app-workspace=studio]) .button:active:not(:disabled){opacity:.78}
+}
+.ui-disclosure-trigger .disclosure-chevron{transition:transform var(--motion-standard) var(--motion-ease)}
+.ui-disclosure-trigger[data-state=open] .disclosure-chevron{transform:rotate(90deg)}
+.ui-disclosure-content{position:relative}
+.ui-disclosure-content[data-state=open]{animation:workspace-disclosure-in var(--motion-standard) var(--motion-ease)}
+.ui-disclosure-content[data-state=closed]{animation:workspace-disclosure-out var(--motion-exit) ease-in;pointer-events:none}
+.ui-disclosure-content:not([data-rail=false]){border-inline-start:1px solid var(--border);margin-inline-start:7px;padding-inline-start:12px}
+.ui-disclosure:focus-within>.ui-disclosure-content{border-inline-start-color:var(--border-strong,var(--border))}
+@keyframes workspace-disclosure-in{from{height:0;opacity:.35;overflow:hidden}to{height:var(--radix-collapsible-content-height);opacity:1;overflow:hidden}}
+@keyframes workspace-disclosure-out{from{height:var(--radix-collapsible-content-height);opacity:1;overflow:hidden}to{height:0;opacity:0;overflow:hidden}}
+/* Native disclosures retain native semantics; enhanced browsers interpolate
+   intrinsic content size. Others keep native open/close plus entry feedback. */
+html:is([data-app-workspace=agent],[data-app-workspace=studio]) details>summary{cursor:pointer}
+html:is([data-app-workspace=agent],[data-app-workspace=studio]) details[open]>summary{color:var(--foreground)}
+html:is([data-app-workspace=agent],[data-app-workspace=studio]) details[open]>:not(summary){animation:workspace-content-in var(--motion-standard) var(--motion-ease)}
+@keyframes workspace-content-in{from{opacity:.45;translate:0 -3px}to{opacity:1;translate:0 0}}
+@supports (interpolate-size:allow-keywords) and (transition-behavior:allow-discrete){
+ html:is([data-app-workspace=agent],[data-app-workspace=studio]) details{interpolate-size:allow-keywords}
+ html:is([data-app-workspace=agent],[data-app-workspace=studio]) details::details-content{pointer-events:none;block-size:0;opacity:0;overflow:clip;transition:block-size var(--motion-standard) var(--motion-ease),opacity var(--motion-fast) ease,content-visibility var(--motion-standard) allow-discrete;border-inline-start:1px solid var(--border);padding-inline-start:12px;margin-inline-start:7px}
+ html:is([data-app-workspace=agent],[data-app-workspace=studio]) details[open]::details-content{pointer-events:auto;block-size:auto;opacity:1}
+}
+.dialog-overlay[data-state=open]{animation:workspace-overlay-in var(--motion-standard) ease-out}
+.dialog-overlay[data-state=closed]{animation:workspace-overlay-out var(--motion-exit) ease-in;pointer-events:none}
+.dialog-content[data-state=open]{animation:workspace-dialog-in var(--motion-standard) var(--motion-ease)}
+.dialog-content[data-state=closed]{animation:workspace-dialog-out var(--motion-exit) ease-in;pointer-events:none}
+@keyframes workspace-overlay-in{from{opacity:0}to{opacity:1}}
+@keyframes workspace-overlay-out{from{opacity:1}to{opacity:0}}
+@keyframes workspace-dialog-in{from{opacity:0;translate:0 6px;scale:.99}to{opacity:1;translate:0 0;scale:1}}
+@keyframes workspace-dialog-out{from{opacity:1;translate:0 0}to{opacity:0;translate:0 4px}}
+html:is([data-app-workspace=agent],[data-app-workspace=studio]) :is(.workspace-command-menu,.mode-popover,.studio-parameter-panel){animation:workspace-content-in var(--motion-fast) var(--motion-ease);transform-origin:top}
+@media(prefers-reduced-motion:reduce){
+ html:is([data-app-workspace=agent],[data-app-workspace=studio]) *,html:is([data-app-workspace=agent],[data-app-workspace=studio]) *::before,html:is([data-app-workspace=agent],[data-app-workspace=studio]) *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+ .ui-disclosure-content,.dialog-content,.dialog-overlay{animation:none!important;transition:none!important}
+}

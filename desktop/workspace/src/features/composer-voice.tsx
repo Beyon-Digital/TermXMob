@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {LoaderCircle, Mic, Square} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {defaults, loadBindings, protectedSurface} from '../lib/keybindings';
@@ -7,13 +7,15 @@ import {transfer} from '../lib/transfers';
 import {SpeechPlayer, type PlayerState} from '../lib/voice/player';
 import {PushToTalk} from '../lib/voice/push-to-talk';
 import {claimMicrophone, type MicrophoneClaim} from '../lib/voice/microphone';
-import {saveVoiceSettings, type Attribution, type VoiceSettingsChange, type VoiceStatus} from '../lib/voice/settings';
+import {type Attribution, type VoiceStatus} from '../lib/voice/settings';
 import {useVoiceRecorder} from '../lib/voice/use-recorder';
 import {useVoiceStatus} from '../lib/voice/use-voice-status';
 import './composer-voice.css';
 
 export interface ComposerVoiceOptions {
   ownerId?: string;
+  /** Chat exposes explicit response actions and stages dictation regardless of saved automation preferences. */
+  manualActions?:boolean;
   sessionId?: string;
   /** False while the conversation is hidden or absent: recording and reading stop. */
   enabled: boolean;
@@ -50,8 +52,8 @@ function setupMessage(settings?: VoiceStatus['settings']) {
  * Dictation and spoken replies for the composer. `mic` goes in the toolbar, `row` under the text box. Both read
  * the same state, so the hook returns them together.
  */
-export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended = false, reply, onTranscript, onOpenSettings}: ComposerVoiceOptions) {
-  const {status, setStatus, error: statusError} = useVoiceStatus(enabled);
+export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended = false, manualActions=false, reply, onTranscript, onOpenSettings}: ComposerVoiceOptions) {
+  const {status, error: statusError} = useVoiceStatus(enabled,ownerId);
   const settings = status?.settings;
   const configured = !!status?.stt.configured;
   const [transcribing, setTranscribing] = useState(false);
@@ -59,17 +61,19 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
   const [notice, setNotice] = useState('');
   const [setupHint, setSetupHint] = useState(false);
   const [speech, setSpeech] = useState<PlayerState>('idle');
+  const [readingId,setReadingId]=useState<string|null>(null),readingNow=useRef<string|null>(null),locked=useRef(false);
+  const [lockedState,setLockedState]=useState(false);
   const [credit, setCredit] = useState<Attribution | null>(null);
   const epoch = useRef(0);
   const sessionNow = useRef(sessionId);
   sessionNow.current = sessionId;
-  const latest = useRef({settings, onTranscript});
-  latest.current = {settings, onTranscript};
-  const player = useMemo(() => new SpeechPlayer({onState: setSpeech, onCredit: setCredit, onNotice: setNotice}), []);
+  const latest = useRef({settings, onTranscript,manualActions,ownerId,sessionId,enabled,speechSuspended});
+  latest.current = {settings, onTranscript,manualActions,ownerId,sessionId,enabled,speechSuspended};
+  const player = useMemo(() => new SpeechPlayer({onState:next=>{setSpeech(next);if(next==='idle'){setReadingId(null);readingNow.current=null}}, onCredit: setCredit, onNotice: setNotice}), []);
 
   async function transcribe(blob: Blob) {
     const generation = epoch.current;
-    const session = sessionNow.current;
+    const session = sessionNow.current,owner=latest.current.ownerId;
     setTranscribing(true);
     setError('');
     setNotice('');
@@ -80,13 +84,13 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
         headers: {'Content-Type': (blob.type || 'audio/webm').split(';')[0]},
       });
       const text = String((JSON.parse(await response.text()) as {text?: string}).text ?? '').trim();
-      if (generation !== epoch.current) return;
+      if (generation !== epoch.current){if(session!==sessionNow.current&&owner===latest.current.ownerId&&!locked.current&&latest.current.enabled&&!latest.current.speechSuspended)setNotice('Dictation finished after you switched conversations, so it was not added.');return}
       if (session !== sessionNow.current) {
         setNotice('Dictation finished after you switched conversations, so it was not added.');
       } else if (!text) {
         setNotice('No speech was heard. Try again closer to the microphone.');
       } else {
-        latest.current.onTranscript(text, !!latest.current.settings?.auto_send);
+        latest.current.onTranscript(text, !latest.current.manualActions&&!!latest.current.settings?.auto_send);
       }
     } catch (failure) {
       if (generation === epoch.current) setError(failure instanceof Error ? failure.message : String(failure));
@@ -114,6 +118,8 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
   }, [speechSuspended]);
 
   function startRecording() {
+    if(!latest.current.enabled||locked.current||document.hidden)return;
+    if(latest.current.speechSuspended){setNotice(LIVE_HAS_MICROPHONE);return}
     if (mic.phase !== 'idle' || transcribing) return;
     if (!configured) return setSetupHint(true);
     // One capture at a time: a running live voice session keeps the microphone, so dictation says why it did not start.
@@ -167,7 +173,7 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
   }, [enabled, ownerId]);
 
   useEffect(() => {
-    if (!enabled || speechSuspended) player.stop();
+    if (!enabled || speechSuspended){epoch.current++;player.stop()}
   }, [enabled, speechSuspended, player]);
   // Escape ends a recording and drops it, so the microphone is never left on after the key the person pressed to get out.
   useEffect(() => {
@@ -180,19 +186,23 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
   }, [recording, requesting, mic]);
   useEffect(() => {
     const stopAll = () => {
-      epoch.current++;
-      player.stop();
+      epoch.current++;locked.current=true;setLockedState(true);
+      player.stop();mic.cancel();claim.current?.release();claim.current=null;
       setTranscribing(false);
       setError('');
       setNotice('');
     };
-    window.addEventListener('termx-locked', stopAll);
+    const unlock=()=>{locked.current=false;setLockedState(false)},hidden=()=>{if(document.hidden){epoch.current++;player.stop();setTranscribing(false)}};
+    document.addEventListener('visibilitychange',hidden);
+    for(const event of ['termx-locked','termx-session-locked','termx-signed-out'])window.addEventListener(event,stopAll);
+    window.addEventListener('termx-session-unlocked',unlock);
     return () => {
-      window.removeEventListener('termx-locked', stopAll);
+      for(const event of ['termx-locked','termx-session-locked','termx-signed-out'])window.removeEventListener(event,stopAll);
+      window.removeEventListener('termx-session-unlocked',unlock);document.removeEventListener('visibilitychange',hidden);
       epoch.current++;
       player.stop();
     };
-  }, [player]);
+  }, [player,mic.cancel]);
 
   // The reply on screen when a conversation opens is history; only a newer one is read aloud.
   const seen = useRef<{session?: string; id: string | null}>({id: null});
@@ -204,23 +214,23 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
     }
     if (id === seen.current.id) return;
     seen.current.id = id;
-    if (!id || !reply?.text || !settings?.auto_speak || speechSuspended) return;
+    if (manualActions||!enabled||locked.current||!id || !reply?.text || !settings?.auto_speak || speechSuspended) return;
     void player.speak(reply.text, {
       engine: settings.engine === 'browser' ? 'browser' : undefined,
       voice: settings.voice || undefined,
     });
-  }, [reply?.id, reply?.text, sessionId, settings?.auto_speak, settings?.engine, settings?.voice, speechSuspended, player]);
+  }, [reply?.id, reply?.text, sessionId, settings?.auto_speak, settings?.engine, settings?.voice, speechSuspended, enabled,manualActions,player]);
 
-  async function toggle(change: VoiceSettingsChange) {
-    const previous = status;
-    setStatus(old => (old ? ({...old, settings: {...old.settings, ...change}} as VoiceStatus) : old));
-    try {
-      setStatus(await saveVoiceSettings(change));
-    } catch (failure) {
-      setStatus(previous);
-      setError(failure instanceof Error ? failure.message : String(failure));
-    }
-  }
+  useEffect(()=>{player.stop();mic.cancel();claim.current?.release();claim.current=null;setTranscribing(false);setReadingId(null);readingNow.current=null;epoch.current++},[ownerId,sessionId,player,mic.cancel]);
+  const readUnavailable=!enabled?'This conversation is not active.':speechSuspended?'End live voice to read this response.':lockedState?'Unlock the workspace to read this response.':recording||requesting||transcribing?'Finish dictation before reading this response.':!settings?(statusError?'Voice settings could not be loaded. Open Voice settings to try again.':'Voice settings are loading.'):settings.engine==='browser'?(typeof speechSynthesis==='undefined'||typeof SpeechSynthesisUtterance==='undefined'?'This browser cannot read aloud. Choose a voice engine in Voice settings.':''):settings.engine==='provider'&&(!settings.provider||!settings.model||settings.consent?.provider?.id!==settings.provider)?'Choose a speech account and model, and allow it in Voice settings.':settings.engine==='woof'&&(!settings.consent?.woof?.sha256||!!status?.engines.find(engine=>engine.id==='woof')?.license&&status.engines.find(engine=>engine.id==='woof')?.license?.sha256!==settings.consent.woof.sha256)?'Review the local voice license in Voice settings.':!status?.engines.some(engine=>engine.id===settings.engine&&engine.state==='ready')?'The selected voice engine is unavailable. Check Voice settings.':'';
+  const capabilityNow=useRef(readUnavailable);capabilityNow.current=readUnavailable;
+  const readReply=useCallback((value:{id:string;text:string})=>{
+    const current=latest.current;
+    if(current.ownerId!==ownerId||current.sessionId!==sessionId||!current.enabled||current.speechSuspended||locked.current||document.hidden||capabilityNow.current||!value.text.trim()||readingNow.current===value.id)return;
+    player.stop();readingNow.current=value.id;setReadingId(value.id);setNotice('');
+    void player.speak(value.text,{engine:current.settings?.engine==='browser'?'browser':undefined,voice:current.settings?.voice||undefined});
+  },[ownerId,sessionId,player]);
+  const stopReading=useCallback(()=>{const current=latest.current;if(current.ownerId===ownerId&&current.sessionId===sessionId)player.stop()},[ownerId,sessionId,player]);
 
   const loading = enabled && !status && !statusError;
   const label = recording ? 'Stop dictation' : requesting ? 'Cancel microphone request' : transcribing ? 'Transcribing' : 'Start dictation';
@@ -242,7 +252,6 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
     </Button>
   );
 
-  const showToggles = !!settings && (configured || settings.auto_speak || settings.engine !== 'browser');
   const hint = setupHint && !configured ? setupMessage(settings) : '';
   const statusText = recording
     ? 'Recording. Press the microphone button or release the shortcut to stop.'
@@ -255,7 +264,7 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
           : speech === 'speaking'
             ? 'Reading the reply aloud.'
             : notice || hint;
-  const visible = showToggles || setupHint || !!error || !!statusText;
+  const visible = setupHint || !!error || !!statusText;
   const row: ReactNode = visible ? (
     <div className="composer-voice-row">
       <div className="composer-voice-line">
@@ -267,7 +276,7 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
         <span role="status" className="composer-voice-status">
           {statusText}
         </span>
-        {speech !== 'idle' && (
+        {speech !== 'idle' && !manualActions && (
           <Button type="button" size="sm" variant="ghost" onClick={() => player.stop()}>
             Stop reading
           </Button>
@@ -290,20 +299,9 @@ export function useComposerVoice({ownerId, sessionId, enabled, speechSuspended =
           </Button>
         </p>
       )}
-      {showToggles && settings && (
-        <div className="composer-voice-toggles">
-          <label>
-            <input type="checkbox" checked={settings.auto_send} onChange={event => void toggle({auto_send: event.target.checked})} />
-            Send after dictation
-          </label>
-          <label>
-            <input type="checkbox" checked={settings.auto_speak} onChange={event => void toggle({auto_speak: event.target.checked})} />
-            Read replies aloud
-          </label>
-        </div>
-      )}
+
     </div>
   ) : null;
 
-  return {mic: button, row};
+  return {mic:button,row,readReply,stopReading,readingId: speech==='idle'?null:readingId,readUnavailable,canRead:!readUnavailable};
 }

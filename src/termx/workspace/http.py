@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
+from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from termx.auth import extract_passcode
@@ -38,6 +40,7 @@ class AdoptConversationInput(Input):
 
 class SessionInput(Input):
     title: str=Field(default='',max_length=200)
+    title_auto: bool|None=None
     project_id: str | None=None
     cwd: str | None=None
     engine: str='internal'
@@ -667,6 +670,9 @@ def mount_workspace(app,state):
                 result['children'].append(tree(child['id'],depth+1))
             return result
         result=tree(identifier)
+        artifacts = state.agent_store.workspace_artifacts_snapshot(nodes)
+        for tid, snapshot in artifacts.items():
+            nodes[tid].update(snapshot)
         # Disk reads can outlive a session or a resource grant. Check every
         # returned node again before publishing its prompt and tool output.
         current=principal(request)
@@ -680,6 +686,32 @@ def mount_workspace(app,state):
             # projection also rechecks every nested source before publishing it.
             nodes[tid]['approvals']=public_task_approvals(workspace,current,nodes[tid]['approvals'])
         return result
+
+    @router.get('/tasks/{identifier}/artifacts/{artifact_id}')
+    def task_artifact(request:Request,identifier:str,artifact_id:str):
+        actor=principal(request)
+        metadata=call(workspace.record,actor,'task',identifier)
+        if metadata.get('conversation_id'):
+            call(workspace.record,actor,'conversation',metadata['conversation_id'])
+        artifact=state.agent_store.get_artifact(identifier,artifact_id)
+        if artifact is None:
+            raise HTTPException(404,'Artifact not found')
+        try:
+            path=Path(artifact['path']).resolve(strict=True)
+            if not path.is_file() or not path.is_relative_to(state.agent_store.artifact_dir.resolve()):
+                raise HTTPException(404,'Artifact file is unavailable')
+        except OSError as exc:
+            raise HTTPException(404,'Artifact file is unavailable') from exc
+        current=principal(request)
+        if current.id!=actor.id or current.policy_version!=actor.policy_version:
+            raise HTTPException(403,'Session authorization changed; reload the artifact')
+        call(workspace.record,current,'task',identifier)
+        if metadata.get('conversation_id'):
+            call(workspace.record,current,'conversation',metadata['conversation_id'])
+        suffix={'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp',
+                'video/mp4':'mp4','audio/mpeg':'mp3','audio/wav':'wav'}.get(artifact['mime'],'bin')
+        return FileResponse(path,media_type=artifact['mime'],filename=artifact_id+'.'+suffix,
+            headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':'sandbox'})
 
     @router.post('/tasks/{identifier}/cancel')
     async def cancel_task(request:Request,identifier:str):
@@ -846,5 +878,9 @@ def mount_workspace(app,state):
         actor=principal(request)
         return {'events':workspace.store.logs(actor.id)}
 
+    from termx.workspace.workflow_http import build_workflow_router
+    router.include_router(build_workflow_router(workspace, principal, call))
     app.include_router(router)
+    from termx.workspace.path_http import mount_workspace_paths
+    mount_workspace_paths(app, state)
     return workspace

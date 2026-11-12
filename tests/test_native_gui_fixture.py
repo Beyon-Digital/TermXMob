@@ -141,7 +141,9 @@ def test_every_native_workspace_handler_has_a_scoped_explicit_app_acl():
         'workspace_redock_cancel', 'workspace_binary',
     }
     assert handlers == manifest == expected_workspace_commands
-    assert allowed == {'allow-'+command.replace('_','-') for command in handlers | companion_handlers}
+    # Read the existing notification grant status without requesting permission
+    # or sending a notification. Other plugin permissions remain excluded.
+    assert allowed == {'notification:allow-is-permission-granted'} | {'allow-'+command.replace('_','-') for command in handlers | companion_handlers}
     assert '.app_manifest(manifest)' in build and 'tauri_build::try_build(' in build
     assert capability['windows'] == ['main','connect','workspace-*']
     assert capability['remote']['urls'] == ['http://127.0.0.1:*']
@@ -228,10 +230,15 @@ def test_native_scenario_selectors_exist_in_the_shipped_workspace_source():
     texts = set(re.findall(r'normalize-space\(\)="([^"]+)"',smoke))
     # password_signin builds this one from its setup flag.
     texts |= {'Create owner account','Continue with password'}
+    # Workspace navigation builds its XPath from the exact visible route names.
+    import ast
+    routes = ast.literal_eval(re.search(r'for label, heading in (\[.*\]):', smoke).group(1))
+    assert routes == [('Projects','Projects'),('Activity','Activity'),('Workflows','Workflows'),('Overview','Overview')]
+    texts |= {value for route in routes for value in route}
     classes = set(re.findall(r'(?<=[\'",(])\.([a-z]+(?:-[a-z]+)+)',smoke))|set(re.findall(r'@class,"([^"]+)"',smoke))
-    assert {'Message','Search commands'} <= labels
+    assert {'Message','Search commands','Projects','Workspace views'} <= labels
     texts = {text for text in texts if '+' not in text}
-    assert {'Projects & operations','Sign out','Return to main workspace','Unlock workspace','Stop host now','Lock workspace','Commands','Stop this host'} <= texts
+    assert {'Projects','Activity','Workflows','Overview','Sign out','Return to main workspace','Unlock workspace','Stop host now','Lock workspace','Commands','Stop this host'} <= texts
     assert {'sign-in','workspace-root','lock-screen','host-stop-effects','command-row'} <= classes
     missing = ([f'aria-label {label}' for label in labels if f'aria-label="{label}"' not in source]
                + [f'text {text}' for text in texts if text not in source]

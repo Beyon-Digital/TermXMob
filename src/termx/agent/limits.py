@@ -1,73 +1,65 @@
-"""Validated run budgets shared by host settings and task creation."""
+"""Compatibility settings and usage reporting for unlimited task execution."""
 
 from time import time
 from typing import Any
 
+# Stable compatibility keys for task rows and older clients. Task execution
+# does not enforce usage quotas; workflows and providers validate their own.
 DEFAULT_LIMITS = {
-    "max_steps": 256,
-    "max_seconds": 14400,
-    "shell_timeout_s": 120,
-    "max_parallel_subagents": 3,
-    "max_subagents_total": 8,
+    "max_steps": None,
+    "max_seconds": None,
+    "shell_timeout_s": None,
+    "max_parallel_subagents": None,
+    "max_subagents_total": None,
 }
-LIMIT_RANGES = {
-    "max_steps": (1, 100000),
-    "max_seconds": (1, 604800),
-    "shell_timeout_s": (1, 86400),
-    "max_parallel_subagents": (1, 8),
-    "max_subagents_total": (1, 32),
-}
+LIMIT_RANGES = {key: (1, None) for key in DEFAULT_LIMITS}
 
 
 def resolve_limits(value: dict[str, Any] | None = None,
-                   defaults: dict[str, Any] | None = None) -> dict[str, int]:
+                   defaults: dict[str, Any] | None = None) -> dict[str, None]:
+    """Normalize legacy task usage settings without carrying their quotas forward."""
     if value is not None and not isinstance(value, dict):
         raise ValueError("limits must be an object")
-    source = {**DEFAULT_LIMITS, **(defaults or {}), **(value or {})}
-    unknown = source.keys() - LIMIT_RANGES.keys()
+    source = {**(defaults or {}), **(value or {})}
+    unknown = source.keys() - DEFAULT_LIMITS.keys()
     if unknown:
         raise ValueError(f"unknown run limits: {', '.join(sorted(unknown))}")
-    for key, (low, high) in LIMIT_RANGES.items():
-        item = source[key]
-        if isinstance(item, bool) or not isinstance(item, int) or not low <= item <= high:
-            raise ValueError(f"{key} must be an integer between {low} and {high}")
-    return source
+    for key, item in source.items():
+        if item is not None and (isinstance(item, bool) or not isinstance(item, int) or item < 1):
+            raise ValueError(f"{key} must be a positive integer or null")
+    return dict(DEFAULT_LIMITS)
 
 
-# Bounds on one unattended Auto-mode run. A breach stops and asks again.
-# `cost_usd` only counts turns whose model has a known price; an unpriced
-# model never trips it (its tokens still count toward `tokens`).
+# Auto still controls approval policy. Its usage counters are informational.
 DEFAULT_AUTO_CEILINGS = {
-    "tool_calls": 100,
-    "steps": 50,
-    "seconds": 1800,
-    "tokens": 500000,
-    "cost_usd": 5.0,
+    "tool_calls": None,
+    "steps": None,
+    "seconds": None,
+    "tokens": None,
+    "cost_usd": None,
 }
-AUTO_CEILING_RANGES = {
-    "tool_calls": (1, 100000),
-    "steps": (1, 100000),
-    "seconds": (1, 604800),
-    "tokens": (1, 1000000000),
-    "cost_usd": (0.01, 100000),
-}
+AUTO_CEILING_RANGES = {key: (0.01 if key == "cost_usd" else 1, None)
+                       for key in DEFAULT_AUTO_CEILINGS}
 
 
 def resolve_auto_ceilings(value: dict[str, Any] | None = None,
-                          defaults: dict[str, Any] | None = None) -> dict[str, int | float]:
+                          defaults: dict[str, Any] | None = None) -> dict[str, None]:
+    """Accept old Auto usage settings without changing approval permissions."""
+    import math
+
     if value is not None and not isinstance(value, dict):
         raise ValueError("auto ceilings must be an object")
-    source = {**DEFAULT_AUTO_CEILINGS, **(defaults or {}), **(value or {})}
-    unknown = source.keys() - AUTO_CEILING_RANGES.keys()
+    source = {**(defaults or {}), **(value or {})}
+    unknown = source.keys() - DEFAULT_AUTO_CEILINGS.keys()
     if unknown:
         raise ValueError(f"unknown auto ceilings: {', '.join(sorted(unknown))}")
-    for key, (low, high) in AUTO_CEILING_RANGES.items():
-        item = source[key]
+    for key, item in source.items():
         kinds = (int, float) if key == "cost_usd" else (int,)
-        if isinstance(item, bool) or not isinstance(item, kinds) or not low <= item <= high:
-            kind = "a number" if key == "cost_usd" else "an integer"
-            raise ValueError(f"{key} must be {kind} between {low} and {high}")
-    return source
+        if item is not None and (isinstance(item, bool) or not isinstance(item, kinds)
+                                 or (isinstance(item, float) and not math.isfinite(item)) or item <= 0):
+            kind = "a positive number" if key == "cost_usd" else "a positive integer"
+            raise ValueError(f"{key} must be {kind} or null")
+    return dict(DEFAULT_AUTO_CEILINGS)
 
 
 def auto_usage(auto: dict[str, Any], step: int, now: float | None = None) -> dict[str, int | float]:
@@ -91,6 +83,6 @@ def auto_summary(runtime: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
     return {
         "enabled": bool(auto.get("enabled")),
-        "ceilings": auto.get("ceilings"),
+        "ceilings": dict(DEFAULT_AUTO_CEILINGS),
         "used": auto_usage(auto, int(runtime.get("step") or 0)),
     }

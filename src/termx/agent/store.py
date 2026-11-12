@@ -13,6 +13,8 @@ from time import time
 from typing import Any
 
 from termx.config import config_dir
+from termx.agent.provider_limits import clean_provider_limits
+from termx.agent.limits import resolve_limits
 
 def configured_models(model: str) -> list[str]:
     found: list[str] = []
@@ -351,6 +353,7 @@ class AgentStore:
             ("catalog_refreshed_at", "ALTER TABLE providers ADD COLUMN catalog_refreshed_at REAL"),
             ("catalog_error", "ALTER TABLE providers ADD COLUMN catalog_error TEXT"),
             ("wire", "ALTER TABLE providers ADD COLUMN wire TEXT NOT NULL DEFAULT 'responses'"),
+            ("limits", "ALTER TABLE providers ADD COLUMN limits TEXT NOT NULL DEFAULT '{}'"),
         ):
             if col not in provider_columns:
                 self._db.execute(ddl)
@@ -426,7 +429,9 @@ class AgentStore:
         secret_configured: bool | None = None,
         model_overrides: dict[str, Any] | None = None,
         wire: str | None = None,
+        limits: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        configured_limits = clean_provider_limits(limits) if limits is not None else None
         now = time()
         provider_id = provider_id.strip()
         if not provider_id:
@@ -472,6 +477,11 @@ class AgentStore:
                 )
             if wire is not None:
                 self._db.execute("UPDATE providers SET wire = ? WHERE id = ?", (wire, provider_id))
+            if configured_limits is not None:
+                self._db.execute(
+                    "UPDATE providers SET limits = ? WHERE id = ?",
+                    (_json(configured_limits), provider_id),
+                )
             self._db.commit()
         provider = self.get_provider(provider_id)
         if provider is None:  # pragma: no cover - defensive
@@ -554,6 +564,7 @@ class AgentStore:
             "model_catalog": catalog,
             "model_overrides": _load_json(row["model_overrides"], {}),
             "wire": row["wire"],
+            "limits": clean_provider_limits(_load_json(row["limits"], {})),
             "catalog_refreshed_at": row["catalog_refreshed_at"],
             "catalog_error": row["catalog_error"],
             "capabilities": _load_json(row["capabilities"], []),
@@ -630,6 +641,14 @@ class AgentStore:
                 (provider_id,),
             ).fetchall()
         return [self._task(row) for row in rows]
+
+    def stored_task_limits(self, task_id: str) -> dict[str, Any]:
+        """Read retained settings for native supervision's existing guards."""
+        with self._lock:
+            row = self._db.execute('SELECT limits FROM tasks WHERE id=?', (task_id,)).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            return _load_json(row['limits'], {})
 
     def list_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:
@@ -999,7 +1018,7 @@ class AgentStore:
             "provider_id": row["provider_id"],
             "model": row["model"],
             "status": row["status"],
-            "limits": _load_json(row["limits"], {}),
+            "limits": resolve_limits(_load_json(row["limits"], {})),
             "mode": (row["mode"] if "mode" in row.keys() else "agent") or "agent",
             "parent_id": (row["parent_id"] if "parent_id" in row.keys() else None) or None,
             "custom_agent_id": (
@@ -1136,6 +1155,30 @@ class AgentStore:
                 "SELECT * FROM artifacts WHERE task_id = ? ORDER BY created_at", (task_id,)
             ).fetchall()
         return [self._artifact(row) for row in rows]
+
+    def workspace_artifacts_snapshot(self, task_ids, *, per_task_limit=32, total_limit=256):
+        """Batch public metadata only; bounded across a whole history/tree read."""
+        identifiers = list(dict.fromkeys(task_ids))
+        per_task_limit = max(1, min(int(per_task_limit), 32))
+        remaining = max(0, min(int(total_limit), 256))
+        result = {identifier: {'artifacts': [], 'artifacts_truncated': False} for identifier in identifiers}
+        with self._lock:
+            for offset in range(0, len(identifiers), 500):
+                selected = identifiers[offset:offset + 500]
+                placeholders = ','.join('?' for _ in selected)
+                counts = self._db.execute(f'SELECT task_id, COUNT(*) AS count FROM artifacts WHERE task_id IN ({placeholders}) GROUP BY task_id', selected).fetchall()
+                if remaining:
+                    rows = self._db.execute(f"""SELECT id, task_id, kind, mime, size FROM (
+                        SELECT id, task_id, kind, mime, size, created_at,
+                            ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY created_at, id) AS ordinal
+                        FROM artifacts WHERE task_id IN ({placeholders}))
+                        WHERE ordinal <= ? ORDER BY created_at, id LIMIT ?""", (*selected, per_task_limit, remaining)).fetchall()
+                    for row in rows:
+                        result[row['task_id']]['artifacts'].append(dict(row))
+                    remaining -= len(rows)
+                for row in counts:
+                    result[row['task_id']]['artifacts_truncated'] = row['count'] > len(result[row['task_id']]['artifacts'])
+        return result
 
     @staticmethod
     def _artifact(row: sqlite3.Row, *, include_path: bool = False) -> dict[str, Any]:
