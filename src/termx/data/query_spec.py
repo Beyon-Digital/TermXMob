@@ -501,7 +501,7 @@ class _Compiler:
     def aggregate(self, i: int, agg: Aggregate) -> _Out | None:
         path = f'aggregates[{i}]'
         expr_col, info, alias = None, None, None
-        if agg.column is not None:
+        if agg.column is not None and agg.table_alias is not None:
             found = self.resolve_column(agg.table_alias, agg.column, path + '.column', path + '.table_alias')
             if found is None:
                 return None
@@ -520,11 +520,17 @@ class _Compiler:
         if agg.fn == 'count':
             expr = f'COUNT({expr_col or "*"})'
         elif agg.fn == 'count_distinct':
-            expr = self.d.count_distinct(expr_col)
+            expr = self.d.count_distinct(expr_col or '*')
         else:
             expr = f'{agg.fn.upper()}({expr_col})'
-        kind = {'count': 'integer', 'count_distinct': 'integer', 'avg': 'number'}.get(agg.fn) \
-            or (info.kind if agg.fn in ('min', 'max') else ('integer' if info.kind == 'integer' else 'number'))
+        if agg.fn in ('count', 'count_distinct'):
+            kind = 'integer'
+        elif agg.fn == 'avg' or info is None:
+            kind = 'number'
+        elif agg.fn in ('min', 'max'):
+            kind = info.kind
+        else:
+            kind = 'integer' if info.kind == 'integer' else 'number'
         if agg.label:
             label = agg.label
         elif info is None:
@@ -586,7 +592,7 @@ class _Compiler:
                 text = d.coerce_param(node.value, 'text')
             except ValueError as error:
                 return self.bad_value(path + '.value', name, error, node.value)
-            return d.text_match(x, kind, op, self.bind(d.like_pattern(text, op)))
+            return d.text_match(x, kind, op, self.bind(d.like_pattern(str(text), op)))
         if kind in _OPAQUE:
             self.err('bad_operator', path + '.op', f"'{name}' holds {'JSON' if kind == 'json' else 'binary data'}. "
                      'Filter it by whether it is empty, or by text it contains.')
@@ -740,7 +746,11 @@ class _Compiler:
         if where:
             lines.append('WHERE ' + where)
         if summary and spec.group_by:
-            lines.append('GROUP BY ' + ', '.join(o.expr for o in outs if o.role == 'group'))
+            grouping: list[str] = []
+            for o in outs:
+                if o.role == 'group':
+                    grouping += [g for g in d.group_by_items(o.expr, o.bucket is not None) if g not in grouping]
+            lines.append('GROUP BY ' + ', '.join(grouping))
         ordering, seen = [], set()
         for expr, direction in order_items:
             if expr not in seen:

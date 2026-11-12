@@ -4,11 +4,13 @@ from __future__ import annotations
 import logging
 import time
 from collections import OrderedDict
+from typing import Any
 
 from fastapi import HTTPException
 
 from termx.data.connectors import validate_read
 from termx.data.dialects import dialect_or_none, get_dialect, unsupported_capabilities
+from termx.data.dialects.base import Dialect
 from termx.data.query_spec import QuerySpec, SchemaIndex, SpecErrors, compile_spec
 from termx.data.relations import suggest_relations
 
@@ -22,9 +24,9 @@ class SchemaCache:
 
     def __init__(self, ttl: float = SCHEMA_TTL_SECONDS, maximum: int = SCHEMA_CACHE_SIZE, clock=time.monotonic):
         self.ttl, self.maximum, self.clock = ttl, maximum, clock
-        self._items: OrderedDict[tuple, tuple[float, object]] = OrderedDict()
+        self._items: OrderedDict[tuple, tuple[float, Any]] = OrderedDict()
 
-    def get(self, key: tuple):
+    def get(self, key: tuple) -> Any:
         found = self._items.get(key)
         if found is None:
             return None
@@ -34,7 +36,7 @@ class SchemaCache:
         self._items.move_to_end(key)
         return found[1]
 
-    def put(self, key: tuple, value: object) -> None:
+    def put(self, key: tuple, value: Any) -> None:
         self._items[key] = (self.clock() + self.ttl, value)
         self._items.move_to_end(key)
         while len(self._items) > self.maximum:
@@ -55,12 +57,14 @@ class QueryService:
 
     # Every call re-checks role, workspace, share state, engine and file authority. The cache
     # only skips the source round trip, never an authorisation check.
-    def _authorize(self, actor, wid: str, cid: str, *, need_dialect: bool = True):
+    def _authorize_connection(self, actor, wid: str, cid: str) -> dict:
         self.service.require(actor, wid, write=True)
-        connection = self.service.require_connection(actor, wid, cid)
-        dialect = get_dialect(connection['engine']) if need_dialect else dialect_or_none(connection['engine'])
-        if dialect is not None:
-            self.runtime.assert_connection_source(connection, wid)
+        return self.service.require_connection(actor, wid, cid)
+
+    def _authorize(self, actor, wid: str, cid: str) -> tuple[dict, Dialect]:
+        connection = self._authorize_connection(actor, wid, cid)
+        dialect = get_dialect(connection['engine'])    # 422 for engines without an adapter
+        self.runtime.assert_connection_source(connection, wid)
         return connection, dialect
 
     async def schema_index(self, actor, wid: str, cid: str):
@@ -112,7 +116,10 @@ class QueryService:
         return {'connection_id': cid, 'relations': suggest_relations(index, dialect, table)}
 
     def capabilities(self, actor, wid: str, cid: str) -> dict:
-        connection, dialect = self._authorize(actor, wid, cid, need_dialect=False)
+        connection = self._authorize_connection(actor, wid, cid)
+        dialect = dialect_or_none(connection['engine'])
+        if dialect is not None:
+            self.runtime.assert_connection_source(connection, wid)
         body = dialect.capabilities() if dialect else unsupported_capabilities(connection['engine'])
         tested = dialect is not None and self.runtime.read_verified(connection)
         return {'connection_id': cid, 'engine': body['engine'], 'label': body['label'], 'supported': body['supported'],

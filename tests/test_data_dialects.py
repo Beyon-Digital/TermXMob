@@ -122,6 +122,14 @@ def test_in_list_between_limit_offset_and_aggregates(dialect):
         dialect.conditional_aggregate('median', 'X', 'P')
 
 
+def test_group_by_items_only_differ_for_derived_expressions_on_mysql_family():
+    for engine in ('sqlite', 'postgresql'):
+        assert get_dialect(engine).group_by_items('X', True) == ['X']
+    for engine in ('mysql', 'mariadb'):
+        assert get_dialect(engine).group_by_items('X', False) == ['X']
+        assert get_dialect(engine).group_by_items('f(X)', True) == ['f(X)', '(f(X) IS NULL)']
+
+
 def test_bool_literals_and_order_item(dialect):
     expected = ('1', '0') if dialect.engine == 'sqlite' else ('TRUE', 'FALSE')
     assert (dialect.bool_literal(True), dialect.bool_literal(False)) == expected

@@ -601,6 +601,17 @@ def test_schema_has_value_kinds_foreign_keys_and_row_estimates(shop):
     assert tables['unsafe_view']['readable'] is False and tables['unsafe_view']['foreign_keys'] == []
 
 
+def test_declared_types_keep_the_width_mysql_uses_for_booleans():
+    from sqlalchemy.dialects import mysql, postgresql
+    from termx.data.connectors import declared_type
+    assert declared_type(mysql.TINYINT(display_width=1), mysql.dialect()) == 'TINYINT(1)'
+    assert get_dialect('mysql').classify_type(declared_type(mysql.TINYINT(display_width=1), mysql.dialect())) == 'boolean'
+    assert get_dialect('mysql').classify_type(declared_type(mysql.TINYINT(), mysql.dialect())) == 'integer'
+    assert declared_type(postgresql.TIMESTAMP(), postgresql.dialect()) == 'TIMESTAMP WITHOUT TIME ZONE'
+    from sqlalchemy.types import NullType
+    assert declared_type(NullType(), mysql.dialect()) == 'NULL'
+
+
 def test_implicit_foreign_key_targets_resolve_to_the_parent_primary_key(tmp_path):
     path = tmp_path / 'fk.sqlite3'
     with sqlite3.connect(path) as db:

@@ -443,7 +443,8 @@ class NetworkSQLConnector:
                     for k in metadata.get_foreign_keys(name, schema=schema)
                     if k.get('referred_schema') in (None, schema) and k.get('referred_table')]
             tables.append({'name': name, 'schema': schema, 'kind': 'table', 'row_estimate': estimates.get(name), 'columns': [
-                {'name': c['name'], 'type': str(c['type']), 'nullable': bool(c.get('nullable', True)), 'primary_key': c['name'] in primary} for c in columns],
+                {'name': c['name'], 'type': declared_type(c['type'], conn.dialect), 'nullable': bool(c.get('nullable', True)),
+                 'primary_key': c['name'] in primary} for c in columns],
                 'foreign_keys': keys})
         return {'tables': tables, 'engine': self.engine, 'limitations': 'Base tables only; source views and routines are excluded.'}
 
@@ -500,6 +501,14 @@ class NetworkSQLConnector:
                 return output
             finally:
                 result.close()
+
+
+def declared_type(sql_type, dialect) -> str:
+    """The type as the server declares it, e.g. MySQL `TINYINT(1)`, which `str()` renders without its width."""
+    try:
+        return sql_type.compile(dialect=dialect)
+    except Exception:
+        return str(sql_type)
 
 
 def validate_read_sql(sql: str, engine: str = 'sqlite') -> str:

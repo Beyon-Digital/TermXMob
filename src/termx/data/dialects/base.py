@@ -115,6 +115,10 @@ class Dialect(ABC):
     @abstractmethod
     def limit_offset(self, limit: int, offset: int) -> str: ...
 
+    def group_by_items(self, expr: str, derived: bool) -> list[str]:
+        """GROUP BY entries for one group expression. `derived` is true for a bucket expression."""
+        return [expr]
+
     # Aggregation -----------------------------------------------------------------------
     def count_distinct(self, expr: str) -> str:
         return f'COUNT(DISTINCT {expr})'

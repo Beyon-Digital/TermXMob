@@ -80,6 +80,11 @@ class MySQLFamilyDialect(Dialect, ABC):
         # No NULLS LAST: NULLs sort first ascending, so lead with the IS NULL flag.
         return f'({expr} IS NULL), {expr} {self._direction(direction)}'
 
+    def group_by_items(self, expr: str, derived: bool) -> list[str]:
+        # With ONLY_FULL_GROUP_BY (the MySQL default) the emulated null flag in ORDER BY must itself be a
+        # GROUP BY expression when it wraps a derived expression. Grouping by it does not change the groups.
+        return [expr, f'({expr} IS NULL)'] if derived else [expr]
+
     def limit_offset(self, limit: int, offset: int) -> str:
         return self._limit_offset(limit, offset)
 
