@@ -569,6 +569,8 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
 
 def policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,ownerjob,views_state,out,report,theme,width):
     prefix=f'/api/data/workspaces/{wid}'
+    editor_panel=page.get_by_role('dialog',name='SQL editor',exact=True)
+    if editor_panel.count():close_advanced(page,editor_panel)
     nav(page,'Team');team=page.get_by_role('region',name='Workspace team',exact=True)
     team.get_by_role('button',name='Add member',exact=True).click()
     dialog=page.get_by_role('dialog',name='Add workspace member',exact=True);dialog_check(page,dialog,report,'Exact team username','Exact username')

@@ -79,7 +79,7 @@ export default function AuditPanel({workspaceId, viewId, canSeeHistory, refreshK
         {runs.page.status === 'loading' && <Skeleton label="Loading runs"/>}
         {runs.page.status === 'error' && !runs.page.rows.length && <div className="data-inline-error"><p role="alert">{runs.page.error}</p><Button variant="secondary" size="sm" onClick={runs.retry}>Try again</Button></div>}
         {runs.page.status === 'ready' && !runs.page.rows.length && <div className="data-empty-inline"><p>Nothing here yet. This {noun} has not been run{canSeeHistory ? '' : ' by you'}.</p></div>}
-        {runs.page.rows.length > 0 && <div className="data-table-scroll"><table className="data-table-list data-audit-runs" aria-label={canSeeHistory ? 'Runs' : 'Your runs'}>
+        {runs.page.rows.length > 0 && <div className="data-table-scroll" role="region" aria-label={(canSeeHistory ? 'Runs' : 'Your runs') + ' (scrollable)'} tabIndex={0}><table className="data-table-list data-audit-runs" aria-label={canSeeHistory ? 'Runs' : 'Your runs'}>
           <thead><tr><th scope="col">Who</th><th scope="col">When</th><th scope="col" className="data-number">Rows</th><th scope="col" className="data-number">Time</th><th scope="col">Result</th><th scope="col" className="data-number">Revision</th></tr></thead>
           <tbody>{runs.page.rows.map(row => <tr key={row.job_id}>
             <th scope="row">{row.mine ? 'You' : row.actor.name}</th>

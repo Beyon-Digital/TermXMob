@@ -74,6 +74,20 @@ An engine without an adapter fails closed: views can be listed and their history
 
 **Upgrading.** The Data store moves from schema version 1 to 2 (new history table and a run index; nothing existing is changed). A non-empty version 1 store is copied to `data.sqlite3.pre-views-v1` first. A TermX build from before saved views refuses to open a version 2 store; to go back, restore that copy (views made since are lost).
 
+### Using pivots, segments and audit
+
+1. **Pivot.** In the sidebar, choose the plus next to **Pivots** and pick a table. Under **Rows** pick a column, under **Columns** a column (a date column is grouped by month unless you change **Columns by**), and under **Value** choose **Show** (Number of rows, Total of, Average of, Smallest, Largest, Unique values of) and the column. The pivot updates as you change the controls. **Combine with another table** and filters work as in a table.
+2. **Drill into a number.** Select any number, or move with the arrow keys and press Enter, to open the rows behind it in a new tab. For a saved pivot the server answers; for an unsaved one the rows are built from the same definition on the page. Only editors and owners can drill.
+3. **Save as a view.** **Save view** names the pivot and adds it to the **Pivots** group. After that a changed pivot shows **Save changes**, and **Reset** goes back to the saved version. Opening a saved pivot runs it as that view, so the run is attributed to it.
+4. **Segment.** In a table, add filters and choose **Save as segment**. Segments appear in the **Segments** group with "Used in N" once other views use them. In any table or pivot tab, **Add segment** keeps rows in or outside a segment. **Edit filters** in the segment tab changes the definition; **Save changes** writes a new revision. **Count members** counts the rows without showing them.
+5. **Audit.** Each segment tab has an **Audit** section. **Revisions** (editors and owners) lists who changed the segment, when, and what changed in sentences. **Runs** lists who ran it, when, how many rows, how long it took, the result and the revision it ran on. Viewers see **Your runs** only.
+6. **Conflicts.** If someone saves a newer revision while you edit, your save is refused and a banner names who changed it. **Reload latest** discards your edits and shows the new revision; nothing is overwritten.
+7. **Viewers.** A viewer sees the shared source and its pivots and segments, can count and export them, and sees their own runs. Editing, drilling, revisions and other people's runs are not offered, and the server refuses them with 403.
+
+The viewer's workspace snapshot lists a shared source with its name and engine only. The file path, account and read policy stay hidden; they were never part of what a viewer can open.
+
+**Verification.** `tests/workspace_data_studio_e2e.py` runs these flows in a real browser against a running host and a synthetic SQLite file with `customers`, `regions` and `sales`: pivot of the total of `amount` by region and month checked against the file, a drill whose row count equals the file, a saved view, a segment reused in a second table tab, a revision and runs read back in the Audit section, a delete refused while a view uses the segment, a viewer who cannot edit, and a 409 from a second editor. It runs in light and dark at 375 and 1280 px, and every state is checked with axe.
+
 ## Decisions
 
 - The sidebar Tables group shows 200 tables at a time with "Show more tables", not a virtualized list. Search filters the whole list, and virtualization is deferred until a source needs it.

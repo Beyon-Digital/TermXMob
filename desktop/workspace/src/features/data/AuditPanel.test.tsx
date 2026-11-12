@@ -124,3 +124,11 @@ it('has no axe violations on either tab', async () => {
   await screen.findByRole('table', {name: 'Runs'});
   await expectNoAxeViolations(container);
 });
+it('puts the runs table in a labelled region that the keyboard can reach, so it scrolls on a narrow screen', async () => {
+  const user = userEvent.setup();
+  view();
+  await user.click(await screen.findByRole('tab', {name: 'Runs'}));
+  const region = await screen.findByRole('region', {name: 'Runs (scrollable)'});
+  expect(region).toHaveAttribute('tabindex', '0');
+  expect(within(region).getByRole('table', {name: 'Runs'})).toBeInTheDocument();
+});
