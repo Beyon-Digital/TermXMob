@@ -1,0 +1,23 @@
+/* Tabs, popover and menu share the neutral overlay surface: tokens only, border plus overlay shadow, no blur. */
+.ui-tabs-list{display:flex;align-items:stretch;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.ui-tabs-list::-webkit-scrollbar{display:none}
+.ui-tabs-trigger{position:relative;display:inline-flex;align-items:center;gap:8px;flex-shrink:0;height:40px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--text-2);font:inherit;font-size:14px;line-height:20px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background-color 140ms ease-out,color 140ms ease-out}
+.ui-tabs-trigger:hover{background:var(--surface-2);color:var(--text)}
+.ui-tabs-trigger[data-state=active]{color:var(--text)}
+.ui-tabs-trigger[data-state=active]::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;background:var(--accent)}
+.ui-tabs-trigger:disabled{opacity:.5;cursor:not-allowed}
+.ui-tabs-content{min-width:0}
+.ui-tabs-content[hidden]{display:none}
+
+.ui-popover,.ui-menu{z-index:60;min-width:192px;max-width:calc(100vw - 16px);padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-overlay);font-size:14px;line-height:20px}
+.ui-popover[data-state=open],.ui-menu[data-state=open]{animation:ui-overlay-in 140ms ease-out}
+.ui-menu{padding:4px}
+.ui-menu-item{position:relative;display:flex;align-items:center;gap:8px;min-height:36px;padding:8px 8px 8px 32px;border-radius:8px;outline:0;cursor:pointer;user-select:none}
+.ui-menu-item[data-highlighted]{background:var(--surface-2)}
+.ui-menu-item[data-disabled]{opacity:.5;cursor:not-allowed}
+.ui-menu-indicator{position:absolute;left:8px;display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;color:var(--accent)}
+.ui-menu-label{padding:8px 8px 4px;font-size:12px;line-height:16px;color:var(--text-3)}
+.ui-menu-separator{height:1px;margin:4px 0;background:var(--border)}
+@keyframes ui-overlay-in{from{opacity:0}to{opacity:1}}
+@media(pointer:coarse){.ui-tabs-trigger{height:44px}.ui-menu-item{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.ui-popover,.ui-menu,.ui-tabs-trigger{animation:none;transition:none}}
