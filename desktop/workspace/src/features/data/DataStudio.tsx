@@ -1,7 +1,8 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {MessageSquare, Settings2} from 'lucide-react';
+import {MessageSquare, Settings2, Wrench} from 'lucide-react';
 import {Button} from '../../components/ui/button';
+import {DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger} from '../../components/ui/dropdown-menu';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
 import {Input} from '../../components/ui/input';
 import {dataBody, dataError, dataPath, dataRequest, readDataSelection, rememberDataSelection, useDataScope, type DataBootstrap, type DataConnection, type DataQuery, type DataQueryDraft, type DataSnapshot, type DataWorkspace} from '../../lib/data-studio';
@@ -19,6 +20,7 @@ import SourceDialog from './SourceDialog';
 import ArchiveSourceDialog from './ArchiveSourceDialog';
 import {useDataSource} from './use-source';
 import './data-studio.css';
+import './data-query.css';
 
 type Props = {
   ownerId?: string; visible: boolean; observing?: boolean; locked?: boolean;
@@ -44,6 +46,10 @@ export default function DataStudio({ownerId, visible, observing = true, locked =
 }
 
 const viewTitle: Record<'bi' | 'team', string> = {bi: 'Reports', team: 'Team'};
+/** Whether the person last left the SQL editor open. A boolean only; SQL text is never stored. */
+export const advancedKey = (ownerId?: string) => 'termx.data.advanced.' + (ownerId || 'managed');
+function readAdvanced(ownerId?: string) {try {return localStorage.getItem(advancedKey(ownerId)) === 'true';} catch {return false;}}
+function rememberAdvanced(ownerId: string | undefined, open: boolean) {try {localStorage.setItem(advancedKey(ownerId), String(open));} catch {/* storage may be blocked */}}
 const named = (rows: unknown[]): NamedRecord[] => rows.filter((row): row is NamedRecord => !!row && typeof row === 'object' && typeof (row as NamedRecord).id === 'string' && typeof (row as NamedRecord).name === 'string');
 
 function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRetain}: {ownerId?: string; navigationHost?: HTMLElement | null; onNavigate?: () => void; retainedDrafts: Record<string, DataQueryDraft>; onRetain: (key: string, draft: DataQueryDraft) => void}) {
@@ -52,6 +58,8 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   const [copilot, setCopilot] = useState(false), [queryDraft, setQueryDraft] = useState<{tabId: string; draft: DataQueryDraft} | null>(null), [activeQueryId, setActiveQueryId] = useState(''), [manageDialog, setManageDialog] = useState(false);
   const [sourceDialog, setSourceDialog] = useState<{open: boolean; record?: DataConnection}>({open: false}), [archiveSource, setArchiveSource] = useState<DataConnection | undefined>(), [notice, setNotice] = useState('');
   const [tabsByWorkspace, setTabsByWorkspace] = useState<Record<string, DataTabsState>>({});
+  const [advancedOn, setAdvancedOn] = useState(() => readAdvanced(ownerId));
+  const setAdvanced = useCallback((open: boolean) => {setAdvancedOn(open); rememberAdvanced(ownerId, open);}, [ownerId]);
   const scope = useDataScope(), snapshotTicket = useRef(0), flight = useRef(false), workspaceId = selection.workspaceId, connectionId = selection.connectionId;
   const currentWorkspace = bootstrap?.workspaces.find(row => row.id === workspaceId), role = snapshot?.workspace.role || currentWorkspace?.role || 'viewer', writable = role !== 'viewer';
   const source = snapshot?.connections.find(row => row.id === connectionId), engines = bootstrap?.engines || [], engine = engines.find(row => row.id === source?.engine);
@@ -141,11 +149,20 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     setQueryDraft({tabId: tab.id, draft});
     setSelection(value => ({...value, view: 'database', connectionId: draft.connection_id}));
     updateTabs(state => openTab(state, tab));
+    if (writable) setAdvanced(true);
   }
   function openSavedQuery(row: DataQuery) {
     if (row.connection_id !== connectionId) setSelection(value => ({...value, connectionId: row.connection_id}));
+    if (writable) setAdvanced(true);
     showDatabase({id: queryTabId(row.id), kind: 'query', queryId: row.id});
   }
+  /** Show the SQL editor over a query tab. A table or overview tab gets a new query tab first. */
+  function openAdvanced() {
+    if (!writable) return;
+    setAdvanced(true);
+    if (shownTabs.tabs.find(tab => tab.id === shownTabs.activeId)?.kind !== 'query' || selection.view !== 'database') showDatabase({id: queryTabId(), kind: 'query'});
+  }
+  const activeKind = shownTabs.tabs.find(tab => tab.id === shownTabs.activeId)?.kind, advancedShown = writable && advancedOn && activeKind === 'query' && selection.view === 'database';
   function openTable(table: SchemaTable) {showDatabase({id: tableTabId(connectionId, table.name, table.schema), kind: 'table', connectionId, table: table.name, ...(table.schema ? {schema: table.schema} : {})});}
 
   const reports = useMemo(() => named(snapshot?.reports || []), [snapshot]), dashboards = useMemo(() => named(snapshot?.dashboards || []), [snapshot]);
@@ -153,10 +170,16 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     role={role} connections={snapshot?.connections || []} connectionId={connectionId} onConnection={id => {setSelection(previous => ({...previous, connectionId: id})); onNavigate?.();}} onConnect={() => setSourceDialog({open: true})}
     source={controller} queries={queries} reports={reports} dashboards={dashboards} view={selection.view} activeTabId={shownTabs.activeId}
     onOpenOverview={() => {updateTabs(state => selectTab(state, 'overview')); showDatabase();}} onOpenTable={openTable} onOpenQuery={openSavedQuery}
-    onNewQuery={() => showDatabase({id: queryTabId(), kind: 'query'})} onOpenView={view => {setSelection(previous => ({...previous, view})); onNavigate?.();}}/>;
+    onNewQuery={() => {if (writable) setAdvanced(true); showDatabase({id: queryTabId(), kind: 'query'});}} onOpenView={view => {setSelection(previous => ({...previous, view})); onNavigate?.();}}/>;
   const navigation = navigationHost === undefined ? <nav className="data-navigation-inline" aria-label="Data navigation">{nav}</nav> : navigationHost ? createPortal(nav, navigationHost) : null;
 
   const actions = <>
+    {workspaceId && writable && <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button variant="ghost" aria-label="Advanced"><Wrench size={20} strokeWidth={1.5}/><span className="data-action-label">Advanced</span></Button></DropdownMenuTrigger>
+      <DropdownMenuContent aria-label="Advanced">
+        <DropdownMenuCheckboxItem checked={advancedShown} onCheckedChange={checked => {if (checked) openAdvanced(); else setAdvanced(false);}}>SQL editor</DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>}
     {workspaceId && role === 'owner' && <Button variant="ghost" size="icon" aria-label="Workspace settings" title="Workspace settings" onClick={() => setManageDialog(true)}><Settings2 size={20}/></Button>}
     <Button variant="ghost" aria-pressed={copilot} onClick={() => setCopilot(value => !value)} disabled={!workspaceId}><MessageSquare size={20}/><span className="data-action-label">Copilot</span></Button>
   </>;
@@ -170,12 +193,12 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     if (!snapshot) return null;
     if (tab.kind === 'overview') return <TablesOverview ownerId={ownerId} role={role} hasConnections={snapshot.connections.length > 0} source={source} engine={engine} controller={controller}
       canEditSource={writable && (!source?.created_by || source.created_by === ownerId)} onConnect={() => setSourceDialog({open: true})} onEditSource={() => setSourceDialog({open: true, record: source})} onArchiveSource={() => setArchiveSource(source)} onOpenTable={openTable}/>;
-    if (tab.kind === 'table') return <TableTab name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))}/>;
+    if (tab.kind === 'table') return <TableTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))} onOpenAdvanced={writable ? openAdvanced : undefined}/>;
     const retainedKey = workspaceId + ':' + tab.id;
     return <DatabaseStudio key={tab.id} ownerId={ownerId} workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} engines={engines} role={role} connectionId={connectionId}
       onConnectionChange={id => setSelection(previous => ({...previous, connectionId: id}))} onRefresh={requestRefresh} draft={queryDraft?.tabId === tab.id ? queryDraft.draft : null} onDraftConsumed={() => setQueryDraft(null)}
       initialQueryId={tab.queryId} initialDraft={retainedDrafts[retainedKey] || null} onDraftSnapshot={draft => onRetain(retainedKey, draft)}
-      active={active && selection.view === 'database'} onQueryChange={query => setActiveQueryId(query.id || '')} onQueryArchived={id => updateTabs(state => closeTab(state, queryTabId(id)))}/>;
+      active={active && selection.view === 'database'} panelOpen={writable && advancedOn} onPanelOpen={writable ? openAdvanced : undefined} onPanelClose={() => setAdvanced(false)} onQueryChange={query => setActiveQueryId(query.id || '')} onQueryArchived={id => updateTabs(state => closeTab(state, queryTabId(id)))}/>;
   }
 
   let content;

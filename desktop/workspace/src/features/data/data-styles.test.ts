@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {describe, expect, it} from 'vitest';
 
-const files = ['data-studio.css', 'bi-studio.css'] as const;
+const files = ['data-studio.css', 'data-query.css', 'bi-studio.css'] as const;
 const source = (name: string) => readFileSync(new URL('./' + name, import.meta.url), 'utf8');
 /** Removes every @media block that targets coarse pointers, where 44px touch targets belong. */
 function withoutCoarseBlocks(css: string) {

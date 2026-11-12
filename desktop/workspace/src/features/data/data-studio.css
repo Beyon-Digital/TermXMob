@@ -93,17 +93,10 @@
 /* SQL workbench. */
 .data-editor-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .data-query-title{font-weight:500}
-.data-sql-editor{width:100%;height:256px;min-height:192px;resize:vertical;box-sizing:border-box;border:1px solid var(--border-strong);border-radius:8px;padding:12px;background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:14px;line-height:20px}
-.data-sql-editor::placeholder{color:var(--text-3)}
 .data-parameters>summary{cursor:pointer;color:var(--text-2);min-height:40px;display:flex;align-items:center}
 .data-parameters label{display:flex;flex-direction:column;gap:8px}
 .data-parameters textarea{min-height:96px;padding:12px;background:var(--surface);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;font-family:var(--font-mono);font-size:14px;line-height:20px}
 .data-results{min-width:0;display:flex;flex-direction:column;gap:12px;padding-top:16px}
-.data-result-scroll{max-width:100%;overflow:auto;max-height:480px;border:1px solid var(--border);border-radius:8px}
-.data-results table{border-collapse:collapse;width:100%;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;text-align:left}
-.data-results :is(th,td){height:40px;padding:0 16px;border-bottom:1px solid var(--border);white-space:nowrap;max-width:480px;overflow:hidden;text-overflow:ellipsis}
-.data-results th{font-weight:500;background:var(--surface)}
-.data-results th small{display:block;font-weight:400}
 
 /* Team. */
 .data-team{max-width:960px;gap:24px}
