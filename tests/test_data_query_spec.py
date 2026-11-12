@@ -411,7 +411,11 @@ def test_fan_out_classification_and_warning(shop):
     assert many_join.joins == [{'alias': 'i', 'fan_out': 'many',
                                 'message': 'Each orders row can match many order_items rows, so counts and totals may repeat.'}]
     assert many_join.warnings == [{'code': 'fan_out', 'message': many_join.joins[0]['message'], 'join_alias': 'i'}]
-    assert compile_dict(shop, {**partial, 'aggregates': []}).warnings == []   # detail rows: no warning
+    # detail rows: nothing is counted, but the result can have more rows than the base table
+    assert compile_dict(shop, {**partial, 'aggregates': []}).warnings == [
+        {'code': 'row_multiplication', 'join_alias': 'i',
+         'message': 'Each orders row can match many order_items rows, so the result can have more rows than orders.'}]
+    assert compile_dict(shop, S(joins=[JOIN('customers', 'c', ('o', 'customer_id'), 'id')])).warnings == []
     composite = S(joins=[{'kind': 'left', 'table': 'order_items', 'alias': 'i', 'on': [
         {'left': C('o', 'id'), 'right': C('i', 'order_id')}, {'left': C('o', 'status'), 'right': C('i', 'sku')}]}], aggregates=[{'fn': 'count'}])
     assert compile_dict(shop, composite).joins[0]['fan_out'] == 'none'   # the whole composite key is matched

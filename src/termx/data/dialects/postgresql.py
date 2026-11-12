@@ -14,6 +14,7 @@ class PostgreSQLDialect(Dialect):
     case_folding = 'unicode'
     text_equality = 'exact'
     bool_bind = 'boolean'
+    max_alias_bytes = 63        # NAMEDATALEN - 1; longer aliases are silently cut
 
     def table_ref(self, schema: str | None, table: str, alias: str) -> str:
         name = (self.quote(schema) + '.' if schema else '') + self.quote(table)
@@ -21,8 +22,10 @@ class PostgreSQLDialect(Dialect):
 
     def classify_type(self, declared: str) -> TypeKind:
         text = declared_words(declared)
-        if text.endswith('[]') or text.startswith('array'):
-            return 'other'
+        if text.endswith('[]') or text.startswith('array') or text.startswith('_'):
+            return 'array'
+        if text == 'uuid':
+            return 'uuid'
         if text in ('bool', 'boolean'):
             return 'boolean'
         if text in ('smallint', 'integer', 'int', 'bigint', 'int2', 'int4', 'int8', 'smallserial',
@@ -46,6 +49,9 @@ class PostgreSQLDialect(Dialect):
 
     def coerce_param(self, value: object, kind: str) -> object:
         return self._coerce_base(value, kind)
+
+    def avg_expr(self, expr: str) -> str:
+        return f'CAST(AVG({expr}) AS DOUBLE PRECISION)'
 
     def bool_literal(self, value: bool) -> str:
         return 'TRUE' if value else 'FALSE'
@@ -77,3 +83,10 @@ class PostgreSQLDialect(Dialect):
         pattern = {'day': 'YYYY-MM-DD', 'week': 'IYYY-"W"IW', 'month': 'YYYY-MM',
                    'quarter': 'YYYY-"Q"Q', 'year': 'YYYY'}[bucket]
         return f"to_char({column},'{pattern}')"
+
+    def statement_timeout_sql(self, seconds: float) -> str:
+        # set_config(..., is_local=true) is SET LOCAL with a bindable value; it ends with the transaction.
+        return f"SELECT set_config('statement_timeout', '{int(seconds * 1000)}', true)"
+
+    def is_statement_timeout(self, error: BaseException) -> bool:
+        return getattr(error, 'sqlstate', None) == '57014' and 'statement timeout' in str(error)

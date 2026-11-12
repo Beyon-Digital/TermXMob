@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
 from termx.data.dialects.base import DATE_RE, MAX_FILTERS, Dialect
 
@@ -23,13 +23,25 @@ MAX_NESTING = 4
 
 ALIAS_PATTERN = r'^[A-Za-z_][A-Za-z0-9_]{0,31}$'
 Alias = Annotated[str, Field(pattern=ALIAS_PATTERN)]
-Name = Annotated[str, Field(min_length=1, max_length=128)]
-Label = Annotated[str, Field(min_length=1, max_length=60)]
+
+
+def _encodable(value: str) -> str:
+    """Lone surrogates are valid Python text but cannot be sent to a driver or hashed."""
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError:
+        raise ValueError('Text must be valid Unicode.') from None
+    return value
+
+
+Text = Annotated[str, AfterValidator(_encodable)]
+Name = Annotated[Text, Field(min_length=1, max_length=128)]
+Label = Annotated[Text, Field(min_length=1, max_length=60)]
 Scalar = Union[
     Annotated[bool, Field(strict=True)],
     Annotated[int, Field(strict=True)],
     Annotated[float, Field(strict=True, allow_inf_nan=False)],
-    Annotated[str, Field(strict=True, max_length=500)]]
+    Annotated[Text, Field(strict=True, max_length=500)]]
 Bucket = Literal['day', 'week', 'month', 'quarter', 'year']
 LeafOp = Literal['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'not_in',
                  'contains', 'starts_with', 'is_null', 'not_null']
@@ -145,7 +157,7 @@ def _empty_filters() -> FilterGroup:
 
 class QuerySpec(Spec):
     version: Literal[1] = 1
-    source: str = Field(min_length=1, max_length=200)
+    source: Text = Field(min_length=1, max_length=200)
     from_: TableRef = Field(alias='from')
     joins: list[Join] = Field(default_factory=list, max_length=4)
     select: list[SelectColumn] = Field(default_factory=list, max_length=200)
@@ -184,6 +196,7 @@ class ColumnInfo:
     kind: str
     declared: str = ''
     primary_key: bool = False
+    charset: str | None = None      # MySQL family only; decides how text is compared exactly
 
 
 @dataclass(frozen=True)
@@ -212,7 +225,7 @@ class SchemaIndex:
             for column in raw.get('columns', []):
                 kind = column.get('value_kind') or dialect.classify_type(column.get('type') or '')
                 columns[column['name']] = ColumnInfo(column['name'], kind, str(column.get('type') or ''),
-                                                     bool(column.get('primary_key')))
+                                                     bool(column.get('primary_key')), column.get('charset'))
             tables[raw['name']] = TableInfo(
                 raw['name'], raw.get('schema'), raw.get('kind') or 'table', columns,
                 tuple(name for name, info in columns.items() if info.primary_key),
@@ -260,11 +273,15 @@ class CompiledQuery:
 
 
 _FAN_OUT_MESSAGE = 'Each {left} row can match many {table} rows, so counts and totals may repeat.'
+_ROWS_MULTIPLY_MESSAGE = 'Each {left} row can match many {table} rows, so the result can have more rows than {left}.'
+_MANY_TO_MANY_MESSAGE = ('Neither side of the match with {table} is a unique key, so rows can multiply a great deal. '
+                         'This query may be slow, and it is stopped if it takes too long.')
 _NO_PK_MESSAGE = '{table} has no primary key, so matching rows cannot be guaranteed to be unique.'
 _AGGREGATE_LABELS = {'count': 'Number of {}', 'count_distinct': 'Unique {}', 'sum': 'Total {}',
                      'avg': 'Average {}', 'min': 'Smallest {}', 'max': 'Largest {}'}
 _NUMERIC = {'integer', 'number'}
-_OPAQUE = {'json', 'binary'}   # no equality or ordering on every engine
+_OPAQUE = {'json', 'binary', 'array'}   # no equality or ordering on every engine
+_OPAQUE_NAMES = {'json': 'JSON', 'binary': 'binary data', 'array': 'a list of values'}
 
 
 def _bad_name(name: str) -> bool:
@@ -294,6 +311,7 @@ class _Out:
     bucket: str | None = None
     label_path: str = 'select'
     explicit: bool = False
+    derived: bool = False   # an expression over the column (bucket, exact text), not the bare column
 
     def public(self) -> dict:
         body: dict = {'label': self.label, 'value_kind': self.kind, 'role': self.role}
@@ -312,6 +330,8 @@ class _Compiler:
         self.order: list[str] = []                  # aliases in FROM/JOIN order
         self.used: dict[str, dict[str, str]] = {}   # table -> column -> kind, for the schema hash
         self.warnings: list[dict] = []
+        self.join_left: dict[str, str] = {}          # join alias -> table on the left of its first match
+        self.many_to_many: set[str] = set()         # join aliases where neither side of ON is a key
         self._too_many = False
 
     # --- helpers -------------------------------------------------------------------------
@@ -394,7 +414,7 @@ class _Compiler:
                 self.aliases[join.alias] = table
                 self.order.append(join.alias)
                 self.use(table)
-            conditions, right_columns, left_table = [], set(), None
+            conditions, right_columns, left_table, left_columns = [], set(), None, {}
             for j, pair in enumerate(join.on):
                 p = f'{path}.on[{j}]'
                 if pair.right.table_alias != join.alias:
@@ -413,9 +433,12 @@ class _Compiler:
                     self.err('join_type_mismatch', p, f"'{left[1].name}.{left[2].name}' ({left[2].kind}) cannot be matched "
                              f"with '{right[1].name}.{right[2].name}' ({right[2].kind}).")
                     continue
-                conditions.append(f'{self.col_sql(*(pair.left.table_alias, pair.left.column))} = '
-                                  f'{self.col_sql(pair.right.table_alias, pair.right.column)}')
+                a, b = self.col_sql(pair.left.table_alias, pair.left.column), self.col_sql(pair.right.table_alias, pair.right.column)
+                if left[2].kind == 'text' and right[2].kind == 'text':   # same exactness as filters and groups
+                    a, b = self.d.text_operand(a, left[2].charset), self.d.text_operand(b, right[2].charset)
+                conditions.append(f'{a} = {b}')
                 right_columns.add(pair.right.column)
+                left_columns.setdefault(pair.left.table_alias, set()).add(pair.left.column)
                 left_table = left_table or left[1].name
             if table is None or not claimed or len(conditions) != len(join.on):
                 continue
@@ -429,6 +452,12 @@ class _Compiler:
                 info = {'alias': join.alias, 'fan_out': 'many',
                         'message': _FAN_OUT_MESSAGE.format(left=left_table, table=table.name)}
             infos.append(info)
+            self.join_left[join.alias] = left_table
+            right_unique = bool(table.primary_key) and set(table.primary_key) <= right_columns
+            left_unique = any(self.aliases[a].primary_key and set(self.aliases[a].primary_key) <= cols
+                              for a, cols in left_columns.items())
+            if not right_unique and not left_unique:
+                self.many_to_many.add(join.alias)
             for key in table.primary_key:
                 self.use(table, table.columns[key])
         return lines, infos
@@ -468,9 +497,12 @@ class _Compiler:
                 elif info.kind == 'json':
                     self.err('bad_type', path + '.column', f"'{info.name}' holds JSON, which cannot be grouped.")
                     continue
+                elif info.kind == 'text':
+                    expr = self.d.text_operand(expr, info.charset)
                 default = f'{info.name} by {group.bucket}' if group.bucket else info.name
                 outs.append(_Out(group.label or default, expr, kind, 'group', alias, info.name, bucket=group.bucket,
-                                 label_path=path + '.label', explicit=bool(group.label)))
+                                 label_path=path + '.label', explicit=bool(group.label),
+                                 derived=expr != self.col_sql(alias, info.name)))
             for i, agg in enumerate(spec.aggregates):
                 out = self.aggregate(i, agg)
                 if out is not None:
@@ -507,6 +539,8 @@ class _Compiler:
                 return None
             alias, _, info = found
             expr_col = self.col_sql(alias, info.name)
+            if agg.fn == 'count_distinct' and info.kind == 'text':
+                expr_col = self.d.text_operand(expr_col, info.charset)
             if agg.fn in ('sum', 'avg') and info.kind not in _NUMERIC:
                 self.err('bad_type', path + '.column', f"'{info.name}' is not a number column, so it cannot be "
                          f"{'totalled' if agg.fn == 'sum' else 'averaged'}.")
@@ -521,6 +555,8 @@ class _Compiler:
             expr = f'COUNT({expr_col or "*"})'
         elif agg.fn == 'count_distinct':
             expr = self.d.count_distinct(expr_col or '*')
+        elif agg.fn == 'avg':
+            expr = self.d.avg_expr(expr_col)
         else:
             expr = f'{agg.fn.upper()}({expr_col})'
         if agg.fn in ('count', 'count_distinct'):
@@ -549,10 +585,18 @@ class _Compiler:
             if not out.explicit and counts[out.label.lower()] > 1 and out.table_alias and out.column and out.role == 'column':
                 out.label = f'{out.table_alias}.{out.column}'
         seen: dict[str, _Out] = {}
+        limit = self.d.max_alias_bytes
         for out in outs:
             path = out.label_path
             if not self.label_ok(out.label, path):
                 continue
+            if len(out.label.encode('utf-8')) > limit:
+                if out.explicit:
+                    self.err('label_too_long', path, f'A result name can be at most {limit} bytes on {self.d.label}. '
+                             'Use a shorter name.')
+                    continue
+                # The server would cut a longer alias, so the result column would no longer match its label.
+                out.label = out.label.encode('utf-8')[:limit].decode('utf-8', errors='ignore').rstrip()
             key = out.label.lower()
             if key in seen:
                 self.err('duplicate_label', path, f"Two results are named '{out.label}'. Give one a different name.")
@@ -583,6 +627,8 @@ class _Compiler:
         alias, _, info = found
         x, kind, op, d = self.col_sql(alias, info.name), info.kind, node.op, self.d
         name = info.name
+        if kind == 'text' and op in ('eq', 'ne', 'in', 'not_in', 'contains', 'starts_with'):
+            x = d.text_operand(x, info.charset)
         if op == 'is_null':
             return f'{x} IS NULL'
         if op == 'not_null':
@@ -594,7 +640,7 @@ class _Compiler:
                 return self.bad_value(path + '.value', name, error, node.value)
             return d.text_match(x, kind, op, self.bind(d.like_pattern(str(text), op)))
         if kind in _OPAQUE:
-            self.err('bad_operator', path + '.op', f"'{name}' holds {'JSON' if kind == 'json' else 'binary data'}. "
+            self.err('bad_operator', path + '.op', f"'{name}' holds {_OPAQUE_NAMES[kind]}. "
                      'Filter it by whether it is empty, or by text it contains.')
             return None
         if op in ('gt', 'gte', 'lt', 'lte', 'between') and kind not in d.orderable_kinds:
@@ -736,11 +782,18 @@ class _Compiler:
         order_items = self.sorting(outs, summary)
         if self.errors:
             raise SpecErrors(self.errors)
-        # fan-out warnings only matter when something is being counted or totalled
-        if spec.aggregates:
-            for info in join_infos:
-                if info['fan_out'] == 'many':
+        for info in join_infos:
+            if info['alias'] in self.many_to_many:
+                table = self.aliases[info['alias']].name
+                self.warnings.append({'code': 'many_to_many', 'join_alias': info['alias'],
+                                      'message': _MANY_TO_MANY_MESSAGE.format(table=table)})
+            elif info['fan_out'] == 'many':
+                if spec.aggregates:   # repeated rows only change what is counted or totalled
                     self.warnings.append({'code': 'fan_out', 'message': info['message'], 'join_alias': info['alias']})
+                else:
+                    self.warnings.append({'code': 'row_multiplication', 'join_alias': info['alias'],
+                                          'message': _ROWS_MULTIPLY_MESSAGE.format(
+                                              left=self.join_left[info['alias']], table=self.aliases[info['alias']].name)})
         select = ', '.join(f'{o.expr} AS {d.quote(o.label)}' for o in outs)
         lines = ['SELECT ' + select, *from_lines]
         if where:
@@ -749,7 +802,7 @@ class _Compiler:
             grouping: list[str] = []
             for o in outs:
                 if o.role == 'group':
-                    grouping += [g for g in d.group_by_items(o.expr, o.bucket is not None) if g not in grouping]
+                    grouping += [g for g in d.group_by_items(o.expr, o.derived, None if o.bucket else self.col_sql(o.table_alias, o.column)) if g not in grouping]
             lines.append('GROUP BY ' + ', '.join(grouping))
         ordering, seen = [], set()
         for expr, direction in order_items:

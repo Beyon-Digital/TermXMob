@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import functools
 from dataclasses import replace
 import hashlib
 import io
@@ -12,6 +13,7 @@ import re
 import sqlite3
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +22,16 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from termx.config import config_dir
-from termx.data.connectors import (PREVIEW_ROWS, NetworkSQLConnector, SQLiteConnector,
+from termx.data.connectors import (PREVIEW_ROWS, RESULT_KINDS, NetworkSQLConnector, SQLiteConnector, StatementTimeout,
     engine_spec, engines, quote_identifier, validate_read)
 from termx.data.store import identifier_for
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'unknown'}
+# Source reads run on their own bounded pool, so a burst of Data queries cannot take every thread of the
+# host's default executor. Each person and each connection also has a cap on runs in flight.
+READ_WORKERS = 16
+MAX_RUNS_PER_ACTOR = 4
+MAX_RUNS_PER_CONNECTION = 8
 
 
 def _revision(value):
@@ -42,6 +49,8 @@ def _name(value):
 def _safe_error(error):
     if isinstance(error, HTTPException):
         return str(error.detail)[:500]
+    if isinstance(error, StatementTimeout):
+        return str(error)
     if isinstance(error, sqlite3.Error):
         return 'SQLite read failed: ' + str(error)[:300]
     if isinstance(error, (InterruptedError, asyncio.CancelledError)):
@@ -58,6 +67,8 @@ class DataRuntime:
         self._tasks: dict[str, asyncio.Task] = {}
         self._cancel: dict[str, threading.Event] = {}
         self._active: dict[str, Any] = {}
+        self._inflight: dict[str, tuple[str, str]] = {}   # job id -> (actor id, connection id)
+        self._reads = ThreadPoolExecutor(max_workers=READ_WORKERS, thread_name_prefix='data-read')
         self._job_lock = threading.RLock()
         self._closed = False
 
@@ -362,11 +373,16 @@ class DataRuntime:
             raise HTTPException(409, 'Test this source first to verify its current read-only role and session.')
 
     def _read_definition(self, definition, connection):
-        if not isinstance(definition, dict) or set(definition) - {'connection_id', 'sql', 'parameters', 'report_context'}:
+        if not isinstance(definition, dict) or set(definition) - {'connection_id', 'sql', 'parameters', 'report_context', 'column_kinds'}:
             raise HTTPException(422, 'Invalid query definition.')
         sql, parameters = validate_read(definition.get('sql'), connection['engine'], definition.get('parameters'))
+        kinds = definition.get('column_kinds')
+        if kinds is not None and (not isinstance(kinds, list) or len(kinds) > 500
+                                  or any(not isinstance(kind, str) or kind not in RESULT_KINDS for kind in kinds)):
+            raise HTTPException(422, 'Invalid result column kinds.')
         self.require_verified_read(connection)
         return {'connection_id': connection['id'], 'sql': sql, 'parameters': parameters,
+                **({'column_kinds': kinds} if kinds else {}),
                 **({'report_context': definition['report_context']} if definition.get('report_context') else {})}
 
     async def execute_read(self, actor, wid: str, definition: dict, *, from_report=False,
@@ -375,8 +391,10 @@ class DataRuntime:
             raise HTTPException(422, 'The result preview bound is invalid.')
         connection = self._source(actor, wid, definition, from_report)
         query = self._read_definition(definition, connection)
-        result = await asyncio.to_thread(self._connector(connection, cancel_event, _active).execute,
-                                        query['sql'], query['parameters'], max_rows)
+        connector = self._connector(connection, cancel_event, _active)
+        extra = {'kinds': query['column_kinds']} if query.get('column_kinds') else {}
+        result = await asyncio.get_running_loop().run_in_executor(
+            self._reads, functools.partial(connector.execute, query['sql'], query['parameters'], max_rows, **extra))
         current = self._source(actor, wid, definition, from_report)
         if self.fingerprint(current) != self.fingerprint(connection):
             raise HTTPException(409, 'Source authority or credentials changed while the query was running. Its result was discarded.')
@@ -405,6 +423,10 @@ class DataRuntime:
             raise HTTPException(503, 'The query runtime is shutting down.')
         if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 200:
             raise HTTPException(422, 'A request_id containing 1–200 characters is required.')
+        try:
+            request_id.encode('utf-8')
+        except UnicodeEncodeError:
+            raise HTTPException(422, 'The request_id must be valid Unicode text.') from None
         connection = self._source(actor, wid, definition, from_report)
         query = self._read_definition(definition, connection)
         payload = {'definition': query, 'from_report': bool(from_report)}
@@ -417,6 +439,7 @@ class DataRuntime:
                 if existing.get('_request_digest') != digest:
                     raise HTTPException(409, 'This request_id was already used with a different query.')
                 return self.get_job(actor, wid, jid)
+            self._check_capacity(actor, connection['id'])
             body = {'actor_id': actor.id, 'connection_id': connection['id'], 'status': 'queued',
                     'cancel_requested': False, 'preview_limit': PREVIEW_ROWS, '_definition': query, '_from_report': bool(from_report),
                     '_source_fingerprint': self.fingerprint(connection), '_request_digest': digest,
@@ -434,9 +457,21 @@ class DataRuntime:
                     raise HTTPException(409, 'This request_id was already used with a different query.')
                 return self.get_job(actor, wid, jid)
             cancel = self._cancel[jid] = threading.Event()
+            self._inflight[jid] = (actor.id, connection['id'])
             self._tasks[jid] = asyncio.create_task(self._worker(actor, wid, jid, cancel))
         self.store.audit(actor.id, wid, 'query.queued', jid, {'connection_id': connection['id']})
         return self._public_job(job)
+
+    def _check_capacity(self, actor, cid: str) -> None:
+        """Refuse a new run while the person or the connection already has too many in flight."""
+        mine = sum(1 for who, _ in self._inflight.values() if who == actor.id)
+        if mine >= MAX_RUNS_PER_ACTOR:
+            raise HTTPException(429, f'You already have {mine} queries running. Wait for one to finish or cancel it, then run again.',
+                                headers={'Retry-After': '2'})
+        busy = sum(1 for _, source in self._inflight.values() if source == cid)
+        if busy >= MAX_RUNS_PER_CONNECTION:
+            raise HTTPException(429, 'This connection is busy with other queries. Try again in a moment.',
+                                headers={'Retry-After': '2'})
 
     def _update_job(self, jid, changes):
         with self._job_lock:
@@ -466,6 +501,7 @@ class DataRuntime:
             self._active.pop(jid, None)
             self._cancel.pop(jid, None)
             self._tasks.pop(jid, None)
+            self._inflight.pop(jid, None)
 
     def _set_active(self, jid, db):
         with self._job_lock:
@@ -577,6 +613,7 @@ class DataRuntime:
             # SQLite interrupts; network cancellation is honestly pending until
             # the source returns. No arbitrary task deadline or silent replay.
             await asyncio.gather(*tasks, return_exceptions=True)
+        self._reads.shutdown(wait=False, cancel_futures=True)
 
 
 class _Input(BaseModel):

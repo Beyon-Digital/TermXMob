@@ -266,10 +266,10 @@ def test_authority_change_between_compile_and_run_discards_the_result(env, monke
     started, release = threading.Event(), threading.Event()
     execute = SQLiteConnector.execute
 
-    def blocked(self, *args):
+    def blocked(self, *args, **kwargs):
         started.set()
         assert release.wait(5)
-        return execute(self, *args)
+        return execute(self, *args, **kwargs)
     monkeypatch.setattr(SQLiteConnector, 'execute', blocked)
     assert post(env, '/query-specs/compile', {'spec': spec(env.source['id'])}, 'bob').status_code == 200
     job = post(env, '/query-specs/run', {'request_id': 'revoked', 'spec': spec(env.source['id'])}, 'bob').json()
@@ -363,7 +363,7 @@ def network(env, monkeypatch):
         seen['schema'] += 1
         return copy.deepcopy(schema)
 
-    def fake_execute(self, sql, parameters, max_rows):
+    def fake_execute(self, sql, parameters, max_rows, kinds=None):
         seen['execute'].append((sql, parameters))
         return {'columns': [{'name': 'id', 'type': 'unknown'}], 'rows': [[17]], 'row_count': 1, 'truncated': False}
     monkeypatch.setattr(NetworkSQLConnector, 'schema', fake_schema)

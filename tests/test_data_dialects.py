@@ -162,14 +162,14 @@ CLASSIFY = {
                    'NUMERIC(10, 2)': 'number', 'DOUBLE PRECISION': 'number', 'BOOLEAN': 'boolean', 'DATE': 'date',
                    'TIMESTAMP WITHOUT TIME ZONE': 'datetime', 'TIMESTAMP WITH TIME ZONE': 'datetime',
                    'timestamptz': 'datetime', 'TIME WITHOUT TIME ZONE': 'time', 'JSONB': 'json', 'JSON': 'json',
-                   'BYTEA': 'binary', 'UUID': 'other', 'INTEGER[]': 'other', 'tinyint(1)': 'other'},
+                   'BYTEA': 'binary', 'UUID': 'uuid', 'uuid': 'uuid', 'INTEGER[]': 'array', 'text[]': 'array', '_int4': 'array', 'tinyint(1)': 'other'},
     'mysql': {'TINYINT(1)': 'boolean', 'tinyint(1)': 'boolean', 'TINYINT': 'integer', 'INTEGER': 'integer',
               'BIGINT(20)': 'integer', 'INT UNSIGNED': 'integer', 'VARCHAR(255)': 'text', 'LONGTEXT': 'text',
               "ENUM('a','b')": 'text', 'DATETIME': 'datetime', 'TIMESTAMP': 'datetime', 'DATE': 'date', 'TIME': 'time',
               'DECIMAL(10, 2)': 'number', 'DOUBLE': 'number', 'JSON': 'json', 'BLOB': 'binary', 'VARBINARY(16)': 'binary',
               'POINT': 'other', 'UUID': 'other'},
     'mariadb': {'TINYINT(1)': 'boolean', 'TINYINT': 'integer', 'VARCHAR(255)': 'text', 'DATETIME': 'datetime',
-                'DECIMAL(10, 2)': 'number', 'LONGTEXT': 'text', 'UUID': 'text', 'INET6': 'text', 'POINT': 'other'},
+                'DECIMAL(10, 2)': 'number', 'LONGTEXT': 'text', 'UUID': 'uuid', 'INET6': 'text', 'POINT': 'other'},
 }
 
 
@@ -304,9 +304,9 @@ MATRIX = {
     'postgresql': dict(qualified=False, requires_source_test=True, quote='"', table_qualification='schema', case_folding='unicode',
                        text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='12'),
     'mysql': dict(qualified=False, requires_source_test=True, quote='`', table_qualification='database', case_folding='unicode',
-                  text_equality='collation', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='8.0'),
+                  text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='8.0'),
     'mariadb': dict(qualified=False, requires_source_test=True, quote='`', table_qualification='database', case_folding='unicode',
-                    text_equality='collation', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='10.6'),
+                    text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='10.6'),
 }
 
 

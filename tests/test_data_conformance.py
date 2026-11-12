@@ -288,7 +288,8 @@ def test_engine_specific_shapes_in_compiled_sql(sqlite_shop):
 # --- comparison with the oracle ---------------------------------------------------------------------------
 def oracle_for(engine, rows):
     fold = ascii_lower if engine == 'sqlite' else str.lower
-    return Oracle(rows, fold=fold, collation_equal=engine in ('mysql', 'mariadb'))
+    # Every engine compares text exactly: the MySQL family is told to by the compiler (`text_operand`).
+    return Oracle(rows, fold=fold)
 
 
 def compare(engine, name, body, compiled, columns, db_rows, rows):

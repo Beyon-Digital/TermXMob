@@ -19,8 +19,12 @@ class MySQLFamilyDialect(Dialect, ABC):
     quote_char = '`'
     table_qualification = 'database'
     case_folding = 'unicode'
-    text_equality = 'collation'     # = and <> follow the column collation, case-insensitive by default
+    # Column collations are case- and often accent-insensitive; the compiler compares, groups and counts text
+    # through `text_operand`, so results equal SQLite and PostgreSQL.
+    text_equality = 'exact'
     bool_bind = 'boolean'
+    max_alias_bytes = 255       # column alias limit is 256 characters
+    timeout_error_code: int = 0
 
     def table_ref(self, schema: str | None, table: str, alias: str) -> str:
         # `schema` is the configured database; MySQL has no separate schema level.
@@ -58,6 +62,14 @@ class MySQLFamilyDialect(Dialect, ABC):
     def coerce_param(self, value: object, kind: str) -> object:
         return self._coerce_base(value, kind)   # pymysql sends bool as 1/0
 
+    def text_operand(self, expr: str, charset: str | None = None) -> str:
+        if charset in (None, '', 'utf8mb4'):
+            return f'{expr} COLLATE utf8mb4_bin'
+        return f'CONVERT({expr} USING utf8mb4) COLLATE utf8mb4_bin'   # another character set cannot take that collation
+
+    def avg_expr(self, expr: str) -> str:
+        return f'CAST(AVG({expr}) AS DOUBLE)'
+
     def bool_literal(self, value: bool) -> str:
         return 'TRUE' if value else 'FALSE'
 
@@ -80,7 +92,7 @@ class MySQLFamilyDialect(Dialect, ABC):
         # No NULLS LAST: NULLs sort first ascending, so lead with the IS NULL flag.
         return f'({expr} IS NULL), {expr} {self._direction(direction)}'
 
-    def group_by_items(self, expr: str, derived: bool) -> list[str]:
+    def group_by_items(self, expr: str, derived: bool, column: str | None = None) -> list[str]:
         # With ONLY_FULL_GROUP_BY (the MySQL default) the emulated null flag in ORDER BY must itself be a
         # GROUP BY expression when it wraps a derived expression. Grouping by it does not change the groups.
         return [expr, f'({expr} IS NULL)'] if derived else [expr]
@@ -95,3 +107,7 @@ class MySQLFamilyDialect(Dialect, ABC):
             return f"CONCAT(date_format({x},'%Y'),'-Q',CAST(quarter({x}) AS CHAR))"
         pattern = {'day': '%Y-%m-%d', 'week': '%x-W%v', 'month': '%Y-%m', 'year': '%Y'}[bucket]
         return f"date_format({x},'{pattern}')"
+
+    def is_statement_timeout(self, error: BaseException) -> bool:
+        args = getattr(error, 'args', ())
+        return bool(args) and args[0] == self.timeout_error_code

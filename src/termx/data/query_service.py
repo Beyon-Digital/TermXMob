@@ -107,7 +107,8 @@ class QueryService:
         if not result['ok']:
             raise HTTPException(422, result['errors'][0]['message'])
         return await self.runtime.run(actor, wid, {'connection_id': spec.source, 'sql': result['sql'],
-                                                    'parameters': result['parameters']}, request_id)
+                                                    'parameters': result['parameters'],
+                                                    'column_kinds': [c['value_kind'] for c in result['columns']]}, request_id)
 
     async def relations(self, actor, wid: str, cid: str, table: str | None) -> dict:
         _, index, dialect = await self.schema_index(actor, wid, cid)

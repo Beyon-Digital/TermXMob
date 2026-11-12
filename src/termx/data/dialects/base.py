@@ -11,10 +11,11 @@ from __future__ import annotations
 import datetime as dt
 import math
 import re
+import uuid
 from abc import ABC, abstractmethod
 from typing import ClassVar, Literal
 
-TypeKind = Literal['text', 'integer', 'number', 'boolean', 'date', 'datetime', 'time', 'json', 'binary', 'other']
+TypeKind = Literal['text', 'integer', 'number', 'boolean', 'date', 'datetime', 'time', 'json', 'binary', 'uuid', 'array', 'other']
 Bucket = Literal['day', 'week', 'month', 'quarter', 'year']
 TextMode = Literal['contains', 'starts_with']
 Direction = Literal['asc', 'desc']
@@ -56,6 +57,8 @@ class Dialect(ABC):
     orderable_kinds: ClassVar[frozenset[str]] = frozenset({'integer', 'number', 'text', 'date', 'datetime', 'time'})
     # SQLite columns without a declared type hold any storage class, so joins on them are not type checked.
     loose_typing: ClassVar[bool] = False
+    # Longest output alias the server keeps verbatim, in UTF-8 bytes. PostgreSQL truncates at 63.
+    max_alias_bytes: ClassVar[int] = 255
 
     # Identifiers and names -------------------------------------------------------------
     def quote(self, identifier: str) -> str:
@@ -115,11 +118,22 @@ class Dialect(ABC):
     @abstractmethod
     def limit_offset(self, limit: int, offset: int) -> str: ...
 
-    def group_by_items(self, expr: str, derived: bool) -> list[str]:
-        """GROUP BY entries for one group expression. `derived` is true for a bucket expression."""
+    def group_by_items(self, expr: str, derived: bool, column: str | None = None) -> list[str]:
+        """GROUP BY entries for one group expression. `derived` is true when `expr` is an expression over the
+        column rather than the bare column. `column` is that bare column when the expression only changes how its
+        text compares (never for a date bucket)."""
         return [expr]
 
     # Aggregation -----------------------------------------------------------------------
+    def text_operand(self, expr: str, charset: str | None = None) -> str:
+        """A text column as it must be compared, grouped or counted: exact, like SQLite and PostgreSQL.
+        Engines whose column collation folds case or accents override this."""
+        return expr
+
+    def avg_expr(self, expr: str) -> str:
+        """AVG as a double on every engine, so the scale of the result does not depend on the server."""
+        return f'AVG({expr})'
+
     def count_distinct(self, expr: str) -> str:
         return f'COUNT(DISTINCT {expr})'
 
@@ -134,6 +148,16 @@ class Dialect(ABC):
 
     @abstractmethod
     def date_bucket(self, column: str, kind: str, bucket: str) -> str: ...
+
+    # Session limits --------------------------------------------------------------------
+    def statement_timeout_sql(self, seconds: float) -> str | None:
+        """Statement that makes the server stop a read after `seconds`, or None when the engine is bounded
+        in-process (SQLite uses a progress handler). Rendered from a number, never from user text."""
+        return None
+
+    def is_statement_timeout(self, error: BaseException) -> bool:
+        """Whether a driver exception means the server stopped the statement at the deadline."""
+        return False
 
     # Capability matrix -----------------------------------------------------------------
     @abstractmethod
@@ -240,6 +264,7 @@ class Dialect(ABC):
                 result = int(text) if re.fullmatch(r'[+-]?\d{1,18}', text) else float(text)
             else:
                 raise ValueError('Enter a number.')
+            result = _fit_driver_number(result)
             if isinstance(result, float) and not math.isfinite(result):
                 raise ValueError('Enter a number.')
             return result
@@ -287,6 +312,13 @@ class Dialect(ABC):
                         raise ValueError('Enter a time as HH:MM:SS.') from None
                     return f'{hour}:{minute}:{second or "00"}{fraction or ""}'
             raise ValueError('Enter a time as HH:MM:SS.')
+        if kind == 'uuid':
+            if isinstance(value, str):
+                try:
+                    return str(uuid.UUID(value.strip()))
+                except ValueError:
+                    pass
+            raise ValueError('Enter a UUID, for example 123e4567-e89b-12d3-a456-426614174000.')
         if isinstance(value, str) and '\x00' in value:
             raise ValueError('Text cannot contain a null character.')
         if kind == 'text':
@@ -296,8 +328,19 @@ class Dialect(ABC):
                 return value if isinstance(value, str) else str(value)
             raise ValueError('Enter text.')
         if isinstance(value, (str, int, float, bool)):
-            return value
+            return value if isinstance(value, (str, bool)) else _fit_driver_number(value)
         raise ValueError('Unsupported value.')
+
+
+def _fit_driver_number(value: int | float) -> int | float:
+    """Drivers bind integers as 64-bit values (SQLite raises OverflowError beyond that). A larger whole
+    number can only be compared as a float, which is how the string form is already read."""
+    if isinstance(value, int) and not -INT64 <= value < INT64:
+        try:
+            return float(value)
+        except OverflowError:
+            raise ValueError('That number is too large.') from None
+    return value
 
 
 def _check_mode(mode: str) -> None:
