@@ -36,8 +36,8 @@
 .chat-region.coding-session .task-activity .tool-content{padding:0;border:0}
 .chat-region.coding-session .task-activity .tool-badge{background:transparent;font-size:11px;padding:0 3px}
 .chat-region.coding-session>.composer-container{max-width:calc(var(--transcript-width) + 56px);padding:10px 28px 14px;flex:0 1 auto;overflow:visible}
-.chat-region.coding-session .composer{background:var(--surface);border:1px solid var(--border);border-radius:17px;padding:13px 12px 9px;box-shadow:0 2px 8px #00000008}
-.chat-region.coding-session .composer:focus-within{border-color:color-mix(in srgb,var(--foreground) 32%,var(--border))}
+.chat-region.coding-session .composer{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 12px 9px;box-shadow:none}
+.chat-region.coding-session .composer:focus-within{border-color:color-mix(in srgb,var(--foreground) 32%,var(--border));box-shadow:none}
 .chat-region.coding-session .composer textarea{font-size:14px;line-height:23px;min-height:58px;max-height:min(30vh,220px);padding:0 3px}
 .chat-region.coding-session .composer-controls{flex-wrap:nowrap;gap:2px;margin-top:7px;min-width:0}
 .chat-region.coding-session .composer-controls>.button-icon{flex-shrink:0;color:var(--secondary);width:29px;height:29px}
@@ -49,6 +49,7 @@
 .chat-region.coding-session .session-context>span{gap:5px}
 .chat-region.coding-session .session-context .composer-review-task{height:23px;padding:0 7px;font-size:11px;margin-left:auto}
 .chat-region.coding-session .composer-hint{font-size:11px;margin:7px 0 0;color:var(--secondary)}
+.chat-region.coding-session .composer-status-hint{display:block}
 .chat-region.coding-session .composer-retry{font-size:12px;color:var(--warning);margin:0 0 8px}
 .chat-region.coding-session .prompt-queue{border:0;padding:0 3px;margin:0 0 7px;min-height:0;font-size:11px;max-height:min(180px,25vh)}
 .chat-region.coding-session .prompt-queue summary{padding:3px 0}
@@ -70,7 +71,7 @@
  .chat-region.coding-session .chat-empty p{font-size:13px}
  .chat-region.coding-session .task-activity>summary .activity-latest{display:none}
  .chat-region.coding-session .session-model-chip{max-width:32cqw;min-width:56px}
- .chat-region.coding-session .composer-hint{display:none}
+ .chat-region.coding-session .composer-hint:not(.composer-status-hint){display:none}
 }
 @container(max-width:340px){
  .chat-region.coding-session .session-mode-chip{padding:0 3px}
@@ -125,3 +126,110 @@
 
 /* Motion in the conversation is decoration; respect the system setting even where a global rule is overridden. */
 @media(prefers-reduced-motion:reduce){.chat-region.coding-session .message-actions{transition:none}.chat-region.coding-session .spin,.chat-region.coding-session .composer-send .spin,.chat-region.coding-session .run-activity .spin{animation:none}.chat-region.coding-session .conversation-scroll{scroll-behavior:auto}.mode-popover{transition:none;animation:none}}
+
+/* Agent follows the supplied native ChatGPT reference: one quiet reading column. */
+.workspace-shell[data-workspace=agent] .chat-region.coding-session{--transcript-width:var(--agent-reading-width,736px);--chat-control-size:40px;position:relative;color:var(--text);background:var(--bg)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session>.conversation-scroll{padding:32px 32px 8px;scroll-padding-bottom:24px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-list{max-width:var(--transcript-width)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-row{padding-bottom:40px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-content{width:100%;font-size:15px;line-height:24px;letter-spacing:0;color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-assistant .message-content{background:transparent;padding:0;max-width:100%}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-user{justify-content:flex-end}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-user .message-content{width:fit-content;max-width:70%;background:var(--agent-user-bg,var(--surface-2));padding:12px 16px;border:0;border-radius:18px;font-size:15px;line-height:24px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response{max-width:100%;font-size:15px;line-height:24px;letter-spacing:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response p{margin:0 0 16px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response p:last-child{margin-bottom:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response :is(h1,h2,h3,h4,h5,h6){font-weight:600;margin:24px 0 8px;letter-spacing:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response h1{font-size:24px;line-height:32px;letter-spacing:-.01em}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response h2{font-size:20px;line-height:28px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response h3{font-size:18px;line-height:28px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response h4{font-size:16px;line-height:24px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response :is(h5,h6){font-size:14px;line-height:20px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response>:first-child{margin-top:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response :is(ul,ol){margin:8px 0 16px;padding-left:24px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response li{margin:0;padding-left:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-actions{margin-top:8px;gap:4px;opacity:1}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-actions .button{width:32px;height:32px;border-radius:50%;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session>.composer-container{max-width:calc(var(--transcript-width) + 64px);padding:16px 32px max(16px,env(safe-area-inset-bottom));min-height:0;max-height:100%;flex:0 1 auto;overflow:visible}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-container:before{display:none}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-support{display:flex;flex-direction:column;min-height:0;flex:0 100 auto;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-support:empty{display:none}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer{display:flex;flex-direction:column;min-height:0;flex:0 1 auto;background:var(--agent-composer-bg,var(--surface));border:0;border-radius:22px;padding:12px;box-shadow:none}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer:focus-within{border-color:transparent;box-shadow:none}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer:has(textarea:focus-visible){outline:2px solid var(--agent-focus,var(--accent));outline-offset:2px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-draft-body{min-height:40px;max-height:min(30dvh,240px);min-width:0;flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-draft-body:focus-visible{outline:2px solid var(--agent-focus,var(--accent));outline-offset:2px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer textarea{font-size:15px;line-height:24px;letter-spacing:0;min-height:40px;max-height:min(30dvh,240px);padding:0;color:var(--text);background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer textarea::placeholder{color:var(--text-3);opacity:1}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls{gap:4px;margin-top:8px;padding-top:0;flex-shrink:0;background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.button-icon{width:var(--chat-control-size);height:var(--chat-control-size);border-radius:50%;color:var(--text-2);padding:8px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls :is(.composer-mode-chip,.composer-model-chip){height:var(--chat-control-size);padding:0 8px;gap:4px;border-radius:12px;font-size:12px;line-height:20px;font-weight:400;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-model-chip{max-width:min(42cqw,240px);margin-left:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls .composer-mode-chip.is-auto{color:var(--text);background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls :is(.composer-mode-chip,.composer-model-chip,.composer-session-options):not(:disabled):hover{background:var(--surface-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-send{margin-left:4px;border-radius:50%;background:var(--text);color:var(--bg);border:0;filter:none}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-send:not(:disabled):hover{background:var(--accent-hover);filter:none}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-send:disabled{background:var(--surface-2);color:var(--text-3);opacity:.5;cursor:not-allowed}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-stop{background:var(--text);color:var(--bg)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-queue{height:var(--chat-control-size);padding:0 8px;gap:4px;border-radius:12px;font-size:12px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .model-effort-label{font-size:12px;line-height:16px;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-hint{flex-shrink:0;font-size:12px;line-height:16px;margin:8px 0 0;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .prompt-queue{border:0;padding:0;margin:0 0 8px;font-size:12px;line-height:16px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-retry{gap:12px;padding:12px;background:var(--surface-2);border:0;border-radius:12px;color:var(--text);font-size:14px;line-height:20px;margin-bottom:12px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-retry>.button{font-size:14px;color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-action-error{color:var(--danger);font-size:14px;line-height:20px;margin:0 0 12px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .task-attention{padding:12px 16px;margin-top:16px;gap:12px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;color:var(--text);font-size:14px;line-height:20px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session>.conversation-surface-header{min-height:40px;width:100%;max-width:calc(var(--transcript-width) + 64px);margin:0 auto;padding:4px 32px;border:0;gap:8px;color:var(--text-2);font-size:12px;line-height:16px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-surface-header .button{height:32px;border-radius:8px;font-size:12px;line-height:16px;gap:4px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-task-state{flex:1 1 auto;min-width:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-task-state>svg{flex-shrink:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-task-state>span:not(.status-dot){min-width:0;overflow:hidden;text-overflow:ellipsis}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-task-state small{font-size:12px;line-height:16px;opacity:1;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.conversation-task-state.attention,.conversation-task-review){color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-task-state.failed{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-file-reference{color:var(--accent);border-radius:8px;text-decoration-color:currentColor;text-underline-offset:4px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-file-reference code{padding:0 4px;border-radius:8px;background:var(--surface-2);font-size:14px}
+html[data-app-workspace=agent] .session-conversation-details{margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
+html[data-app-workspace=agent] .session-conversation-details>h3{font-size:14px;line-height:20px;font-weight:500;margin:0 0 12px;color:var(--text)}
+html[data-app-workspace=agent] .session-conversation-details .session-context{font-size:12px;line-height:20px;gap:8px;margin:0 0 8px;color:var(--text-2)}
+html[data-app-workspace=agent] .session-conversation-details .task-meter{display:flex;flex-direction:column;gap:4px;margin:0 0 12px;font-size:12px;line-height:20px;color:var(--text-2)}
+html[data-app-workspace=agent] .session-conversation-details .conversation-surface-header{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:32px;border:0;padding:0;color:var(--text-2);font-size:12px;line-height:20px}
+html[data-app-workspace=agent] .session-conversation-details .conversation-surface-header>.flex-spacer{display:none}
+html[data-app-workspace=agent] .session-conversation-details .conversation-surface-header>nav{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%}
+html[data-app-workspace=agent] .session-conversation-details .conversation-task-state{min-width:0;flex:1}
+html[data-app-workspace=agent] .session-conversation-details .conversation-task-state small{display:none}
+html[data-app-workspace=agent] .session-conversation-details .conversation-surface-header .button{height:40px;font-size:14px;border-radius:10px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session.is-empty>.conversation-scroll{flex:0 1 auto;min-height:0;overflow:auto;margin-top:auto;margin-bottom:24px;padding-top:0;padding-bottom:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session.is-empty>.composer-container{margin-bottom:auto;padding-top:0}
+@media(min-width:768px) and (pointer:fine){.workspace-shell[data-workspace=agent] .chat-region.coding-session{--chat-control-size:32px}}
+@container(max-width:640px){
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session{--chat-control-size:40px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session>.conversation-scroll{padding:24px 16px 8px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session>.composer-container{padding:12px 16px max(16px,env(safe-area-inset-bottom))}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer textarea{font-size:16px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .message-user .message-content{max-width:85%;font-size:16px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response{font-size:16px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls{flex-wrap:wrap}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-retry{align-items:flex-start;flex-direction:column;gap:8px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session>.conversation-surface-header{padding-inline:16px;gap:4px;flex-wrap:wrap}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-task-review{flex-shrink:0;max-width:50%;overflow:hidden;text-overflow:ellipsis}
+}
+@container(max-width:540px){
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-model-chip.session-model-chip{flex:1 1 0;min-width:0;max-width:none;margin-left:0}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.flex-spacer{display:none}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls>.composer-send{margin-left:0}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-controls:has(>.composer-queue,>.composer-running-actions)>.composer-model-chip.session-model-chip{flex:1 1 56px;max-width:none;min-width:0}
+}
+@media(pointer:coarse){
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session{--chat-control-size:44px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .message-actions .button{width:44px;height:44px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .conversation-surface-header .button{height:44px}
+ html[data-app-workspace=agent] .session-conversation-details .conversation-surface-header .button{height:44px}
+}
+@container(max-height:450px){
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session>.conversation-scroll{padding:4px 16px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session>.composer-container{padding:4px 16px max(8px,env(safe-area-inset-bottom))}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-draft-body{min-height:24px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session.is-empty>.conversation-scroll{flex:1 1 auto;margin-top:0;margin-bottom:8px;min-height:0}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session.is-empty>.composer-container{margin-bottom:0}
+}

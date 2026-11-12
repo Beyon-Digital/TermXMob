@@ -122,6 +122,7 @@ class AgentProviderInput:
     # {model_id: {context_window, max_output, price_in, price_out, capabilities}}; user values win over discovered ones.
     model_meta: JSON | None = None
     wire: str | None = None  # "responses" (default) or "chat" (Chat Completions)
+    limits: JSON | None = None  # Explicit per-provider request controls; omitted values are unlimited.
 
 
 @strawberry.input

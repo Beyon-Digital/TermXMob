@@ -2,7 +2,9 @@ import {useMemo, useState} from 'react';
 import {Button} from '../components/ui/button';
 import {Check, ChevronRight, Circle, CircleAlert, FileText, Globe, LoaderCircle, Monitor, Terminal, Wrench} from 'lucide-react';
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from '../components/ui/collapsible';
-import {activityPreview, eventObject, toolActivities, type ActivityEvent, type ToolActivity, type ToolPhase} from '../lib/tool-activity';
+import {StructuredToolResult,RawContentDetails,isWorkflowReceiptTool,workflowRunReceipt} from './ContentPreview';
+import {workflowStatus} from '../lib/workflows';
+import {eventObject, toolActivities, type ActivityEvent, type ToolActivity, type ToolPhase} from '../lib/tool-activity';
 
 const phases: Record<ToolPhase, string> = {running: 'Running', pending: 'Waiting', completed: 'Completed', failed: 'Failed', cancelled: 'Stopped', interrupted: 'No result reported'};
 
@@ -16,16 +18,6 @@ function ToolIcon({kind}: {kind: string}) {
   if (/file|File/.test(kind)) return <FileText size={15}/>;
   if (/browser|Search/.test(kind)) return <Globe size={15}/>;
   return <Wrench size={15}/>;
-}
-
-function outputText(value: unknown) {
-  const object = eventObject(value);
-  const content = object.stdout ?? object.output ?? object.text ?? object.error ?? object.content ?? object.value ?? value;
-  if (Array.isArray(content)) return content.map(item => {
-    const row = eventObject(item), nested = eventObject(row.content);
-    return row.text ?? nested.text ?? item;
-  }).map(item => activityPreview(item)).join('\n');
-  return activityPreview(content);
 }
 
 function DesktopDetails({activity}: {activity: ToolActivity}) {
@@ -60,21 +52,31 @@ function DesktopActivityRow({activity}: {activity: ToolActivity}) {
   </Row>;
 }
 
-export function ToolActivityRow({activity}: {activity: ToolActivity}) {
+function workflowActivityKind(activity:ToolActivity){
+ if(isWorkflowReceiptTool(activity.kind))return activity.kind;
+ if(!['dynamicToolCall','mcpToolCall'].includes(activity.kind))return activity.kind;
+ for(const event of activity.events){
+  const item=eventObject(event.payload.item),tool=typeof item.tool==='string'?item.tool:'';
+  if(isWorkflowReceiptTool(tool)&&(activity.kind==='dynamicToolCall'&&!item.namespace||item.server==='termx-workflows'))return tool;
+ }
+ return activity.kind;
+}
+
+export function ToolActivityRow({activity,taskId,onOpenFile,visible=true}: {activity: ToolActivity;taskId?:string;onOpenFile?:(path:string,line?:number)=>void;visible?:boolean}) {
   if (activity.desktop) return <DesktopActivityRow activity={activity}/>;
-  const input = activityPreview(activity.input), output = outputText(activity.output);
-  return <Row activity={activity} status={phases[activity.phase]}>
-    {input && <div className="tool-value"><h4>Input</h4><pre tabIndex={0} aria-label={activity.title + ' input'}>{input}</pre></div>}
-    {output && <div className="tool-value"><h4>Result</h4><pre tabIndex={0} aria-label={activity.title + ' result'}>{output}</pre></div>}
-    {!input && !output && <p className="tool-detail-empty">{activity.phase === 'running' ? 'Waiting for the tool to return a result.' : 'This tool did not provide a text result.'}</p>}
-    {activity.callId && <code className="tool-call-id">{activity.callId}</code>}
-    <details className="tool-event-details"><summary>Event details</summary><pre tabIndex={0}>{activityPreview(activity.events.map(event => ({event: event.type, ...event.payload})), 16000)}</pre></details>
+  const hasInput=activity.input!==undefined&&activity.input!==null,hasOutput=activity.output!==undefined&&activity.output!==null;
+  const kind=workflowActivityKind(activity),complete=['completed','failed'].includes(activity.phase),receipt=workflowRunReceipt(activity.output,kind,complete);
+  return <Row activity={activity} status={receipt?workflowStatus(receipt.status).label:phases[activity.phase]} statusIcon={receipt?<Circle size={12} aria-hidden="true"/>:undefined}>
+    {hasOutput&&<div className="tool-value"><h4>Result</h4><div role="region" tabIndex={0} aria-label={activity.title+' result'}><StructuredToolResult value={activity.output} kind={kind} taskId={taskId} onOpenFile={onOpenFile} visible={visible} complete={complete}/></div></div>}
+    {!hasInput&&!hasOutput&&<p className="tool-detail-empty">{activity.phase==='running'?'Waiting for the tool to return a result.':'This tool did not provide a text result.'}</p>}
+    {hasInput&&<RawContentDetails title={activity.title+' arguments'} value={activity.input}/>}
+    <RawContentDetails title="Raw details" value={{call_id:activity.callId,state:activity.state,phase:activity.phase,input:activity.input,result:activity.output,events:activity.events.map(event=>({event:event.type,...event.payload}))}}/>
   </Row>;
 }
 
-export default function ToolActivities({events, taskStatus, limit = 60}: {events: ActivityEvent[]; taskStatus?: string; limit?: number}) {
+export default function ToolActivities({events, taskStatus, limit = 60,taskId,onOpenFile,visible=true}: {events: ActivityEvent[]; taskStatus?: string; limit?: number;taskId?:string;onOpenFile?:(path:string,line?:number)=>void;visible?:boolean}) {
   const [shown, setShown] = useState(limit);
   const activities = useMemo(() => toolActivities(events, taskStatus), [events, taskStatus]);
   if (!activities.length) return null;
-  return <>{activities.length > shown && <p className="activity-overflow">Showing the latest {shown} of {activities.length} actions. <Button variant="ghost" size="sm" onClick={() => setShown(value => value + limit)}>Show earlier actions</Button></p>}<ol className="tool-timeline" aria-label="Tool activity">{activities.slice(-shown).map(activity => <ToolActivityRow key={activity.key} activity={activity}/>)}</ol></>;
+  return <>{activities.length > shown && <p className="activity-overflow">Showing the latest {shown} of {activities.length} actions. <Button variant="ghost" size="sm" onClick={() => setShown(value => value + limit)}>Show earlier actions</Button></p>}<ol className="tool-timeline" aria-label="Tool activity">{activities.slice(-shown).map(activity => <ToolActivityRow key={activity.key} activity={activity} taskId={taskId} onOpenFile={onOpenFile} visible={visible}/>)}</ol></>;
 }

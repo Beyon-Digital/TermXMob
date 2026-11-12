@@ -26,7 +26,7 @@ it('shows the source decision in Main while delegated work is collapsed, with no
     if (path === '/api/workspace/tasks/source%2Ftask?activity=false') return await sourceRead;
     throw Error('Unexpected request in Main decision fixture: ' + path);
   });
-  render(<OrchestratorStatus ownerId="owner" selected="main" enabled onOpen={open}/>);
+  render(<OrchestratorStatus ownerId="owner" selected="main" enabled quietWhenIdle onOpen={open}/>);
   expect(api.mock.calls.some(([path]) => path === '/api/workspace/orchestrator')).toBe(true);
   // Two independent effects are involved: the coordinator snapshot mounts the
   // source reader, then its authenticated task read mounts the exact review.
@@ -195,18 +195,18 @@ it('a failed decision refreshes the source but never retransmits the mutation', 
   expect(posts()).toHaveLength(1);
 });
 
-it('uses the original budget review and its exact allowance without a coordinator grant', async () => {
+it('uses the exact legacy continuation decision without reinstating task quotas', async () => {
   const budget = {...task, id: 'budget-task', limits: {max_steps: 2, max_seconds: 60}, approvals: [{id: 'budget-source',
     status: 'pending', kind: 'budget', payload: {suggested_limits: {max_steps: 4, max_seconds: 90}}}]};
   api.mockImplementation(async (_path, init) => init?.method === 'POST' ? {} as any : budget);
   render(<OrchestratorDecisions {...props} children={[{...child, task_id: 'budget-task'}]}/>);
-  fireEvent.click(await screen.findByRole('button', {name: 'Review budget extension'}));
-  expect(screen.getByLabelText('Step limit (tool calls and turns)')).toHaveValue(4);
-  fireEvent.click(screen.getByRole('button', {name: 'Approve budget extension'}));
+  fireEvent.click(await screen.findByRole('button', {name: 'Review continuation'}));
+  expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Continue task'}));
   await waitFor(() => expect(refreshed).toHaveBeenCalledOnce());
   expect(posts()).toHaveLength(1);
   expect(posts()[0][0]).toBe('/api/workspace/tasks/budget-task/approvals/budget-source/resolve');
-  expect(JSON.parse(String(posts()[0][1]?.body))).toEqual({decision: 'approved', limits: {max_steps: 4, max_seconds: 90}});
+  expect(JSON.parse(String(posts()[0][1]?.body))).toEqual({decision: 'approved'});
 });
 
 it('keeps an unchanged exact review open while another agent requests a decision', async () => {

@@ -31,11 +31,13 @@ it('browser navigation still creates shareable manager and conversation routes a
 // The sign-out event resets the control plane while retaining the URL. Signing
 // back in must restore the requested surface before browser history resumes.
 it.each([
- ['/?session=conversation', {selected:'conversation',manager:''}],
- ['/session/conversation%20with%20spaces', {selected:'conversation with spaces',manager:''}],
- ['/?layout=workbench', {selected:'',manager:''}],
- ['/manage/agents', {selected:'',manager:'agents'}],
- ['/', {selected:'',manager:''}],
+ ['/?session=conversation', {selected:'conversation',manager:'',project:''}],
+ ['/session/conversation%20with%20spaces', {selected:'conversation with spaces',manager:'',project:''}],
+ ['/?layout=workbench', {selected:'',manager:'',project:''}],
+ ['/?project=project%20with%20spaces', {selected:'',manager:'',project:'project with spaces'}],
+ ['/manage/projects?project=project', {selected:'',manager:'projects',project:'project'}],
+ ['/manage/agents', {selected:'',manager:'agents',project:''}],
+ ['/', {selected:'',manager:'',project:''}],
 ])('restores the requested authenticated surface after sign-out: %s',(initial,expected)=>{
  history.replaceState(null,'',initial);
  expect(workspaceRoute()).toEqual(expected);

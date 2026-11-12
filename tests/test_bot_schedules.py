@@ -475,16 +475,39 @@ def test_editing_a_paused_bot_then_resuming_parks_its_schedules(tmp_path):
         asyncio.run(close(workspace, manager, ledger))
 
 
-def test_reauthorize_never_widens_a_bots_narrowed_limits(tmp_path):
+def test_reauthorize_does_not_restore_legacy_task_quotas(tmp_path):
     workspace, owner, manager, ledger, registry, identity = setup(tmp_path)
     try:
         scheduler(workspace, identity)
         bot = make(workspace, owner)
         schedule = add(workspace, owner, bot, limits={'max_steps': 60})
-        assert workspace.store.get('delegation', schedule['grant_id'])['limits']['max_steps'] == 60
-        workspace.bots.patch(owner, bot['id'], revision=bot['revision'], limits={'max_steps': 3})
+        assert all(value is None for value in workspace.store.get('delegation', schedule['grant_id'])['limits'].values())
+        workspace.bots.patch(owner, bot['id'], revision=bot['revision'], limits={'max_steps': 3}, instructions='Review the updated task')
         done = workspace.bots.schedules.reauthorize(owner, bot['id'])
-        assert workspace.store.get('delegation', done[0]['grant_id'])['limits']['max_steps'] <= 3
+        assert all(value is None for value in workspace.store.get('delegation', done[0]['grant_id'])['limits'].values())
+    finally:
+        asyncio.run(close(workspace, manager, ledger))
+
+
+@pytest.mark.parametrize('legacy_limits', [None, {}, {'max_steps': None}, {'max_steps': 60, 'max_seconds': None}])
+def test_reauthorize_normalizes_legacy_limits_and_keeps_grant_authority(tmp_path, legacy_limits):
+    workspace, owner, manager, ledger, registry, identity = setup(tmp_path)
+    try:
+        _automation, clock = scheduler(workspace, identity)
+        bot = make(workspace, owner)
+        schedule = add(workspace, owner, bot, max_runs=5)
+        goal = workspace.store.get('goal', schedule['goal_id'])
+        workspace.store.update('goal', goal['id'], {**goal, 'limits': legacy_limits, 'runs_started': 2})
+        workspace.bots.patch(owner, bot['id'], revision=bot['revision'], instructions='Review the changed task')
+        done = workspace.bots.schedules.reauthorize(owner, bot['id'], grant_days=7)
+        assert len(done) == 1 and done[0]['enabled']
+        grant = workspace.store.get('delegation', done[0]['grant_id'])
+        assert all(value is None for value in grant['limits'].values())
+        assert grant['max_runs'] == 3 and grant['used_runs'] == 0
+        assert grant['expires_at'] == clock[0] + 7 * 86400
+        assert grant['owner'] == owner.id and grant['policy_version'] == owner.policy_version
+        assert workspace.store.get('delegation', schedule['grant_id'])['revoked'] is True
+        assert 'computer_permission' not in grant
     finally:
         asyncio.run(close(workspace, manager, ledger))
 

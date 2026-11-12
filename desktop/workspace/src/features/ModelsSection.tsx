@@ -13,7 +13,7 @@ import {gql,useManagerLoad,useManagerMutation} from './use-manager';
 
 interface ModelsData { engines?: EngineDescriptor[]; agent_providers?: AgentProvider[]; acp_registry?: unknown; model_routing?: Routing }
 interface ProviderTestReply { status?: string; ok?: boolean; message?: string }
-const providerFields='id name kind model models base_url secret_configured capabilities model_catalog model_overrides catalog_refreshed_at catalog_error wire';
+const providerFields='id name kind model models base_url secret_configured capabilities model_catalog model_overrides catalog_refreshed_at catalog_error wire limits';
 const loadModels=()=>gql<ModelsData>(`{ engines { id label installed version auth_state auth_detail protocol error capabilities } agent_providers { ${providerFields} } acp_registry model_routing }`);
 const saveProvider='mutation($input:AgentProviderInput!){save_agent_provider(input:$input){id}}';
 

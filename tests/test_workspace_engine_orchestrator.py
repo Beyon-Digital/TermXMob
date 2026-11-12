@@ -218,7 +218,7 @@ def test_native_takeover_stops_coordinator_watch_and_return_restarts_lease(tmp_p
     asyncio.run(run())
 
 
-def test_native_worker_cap_and_unverified_readonly_are_fail_closed(tmp_path):
+def test_native_legacy_worker_caps_are_ignored_but_unverified_readonly_is_fail_closed(tmp_path):
     async def run():
         workspace,owner,manager,ledger,primary=setup(tmp_path)
         gateway,adapter=configure(workspace,manager,ledger)
@@ -229,9 +229,8 @@ def test_native_worker_cap_and_unverified_readonly_are_fail_closed(tmp_path):
                 await workspace.orchestrator.command(parent['id'],spawn(mode='ask'))
             assert adapter.sent==[]
             first=await workspace.orchestrator.command(parent['id'],spawn())
-            with pytest.raises(Conflict,match='worker allowance'):
-                await workspace.orchestrator.command(parent['id'],spawn('second-worker'))
-            assert len(adapter.sent)==1
+            second=await workspace.orchestrator.command(parent['id'],spawn('second-worker'))
+            assert second['task_id'] != first['task_id'] and len(adapter.sent)==2
             cancel=ProviderCall(type='function',call_id='native-cancel',name='cancel_managed_session',arguments={'session_id':first['session_id']})
             outcome=await workspace.orchestrator.command(parent['id'],cancel)
             assert adapter.cancelled==['native-1'] and outcome['cancelled']==[first['task_id']]
@@ -259,7 +258,7 @@ def test_returning_new_user_turn_does_not_inherit_cancelled_original_main(tmp_pa
             await asyncio.sleep(.55)
             assert adapter.cancelled==[] and ledger.get_task(direct['id'])['status']=='running'
             current=next(row for row in workspace.orchestrator.snapshot(owner)['children'] if row['session_id']==original['session_id'])
-            assert current['capability_limits']['time_budget']=='host-monitoring'
+            assert current['capability_limits']['time_budget']=='unlimited'
             fresh=await workspace.send(owner,primary['id'],prompt='Manage the returned child',request_id='fresh-primary-native')
             await manager.resolve_approval(fresh['id'],fresh['approvals'][0]['id'],'approved')
             await asyncio.sleep(0)
@@ -370,5 +369,38 @@ def test_legacy_status_and_await_hide_cached_result_after_source_revocation(tmp_
                 assert 'result' not in result['children'][child['task_id']]
                 assert 'Private project specialist' not in json.dumps(result)
                 assert 'Synthetic native progress' not in json.dumps(result)
+        finally:await finish_all(workspace,manager,ledger,gateway)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('elapsed', [dict(native_active_seconds=2000),dict(native_monitor_started_at=1)])
+def test_native_workers_run_past_old_deadlines_until_explicit_stop(tmp_path, elapsed):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        gateway,adapter=configure(workspace,manager,ledger)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            child=await workspace.orchestrator.command(parent['id'],spawn())
+            metadata=workspace.store.get('task',child['task_id'])
+            workspace.store.update('task',child['task_id'],{**metadata,**elapsed},metadata['revision'])
+            await asyncio.sleep(.55)
+            assert ledger.get_task(child['task_id'])['status']=='running' and adapter.cancelled==[]
+            limits=workspace.orchestrator.native.capabilities('fixture-native')
+            assert limits['time_budget']=='unlimited' and limits['elapsed_deadline_seconds'] is None
+            await workspace.orchestrator.native.cancel_once(child['task_id'],'Explicit user stop')
+            assert adapter.cancelled==['native-1']
+        finally:await finish_all(workspace,manager,ledger,gateway)
+    asyncio.run(run())
+
+
+def test_native_more_than_eight_workers_have_no_task_count_quota(tmp_path):
+    async def run():
+        workspace,owner,manager,ledger,primary=setup(tmp_path)
+        gateway,adapter=configure(workspace,manager,ledger)
+        try:
+            parent=await running_primary(workspace,owner,manager,primary)
+            children=[await workspace.orchestrator.command(parent['id'],spawn('native-unlimited-'+str(index))) for index in range(10)]
+            assert len({child['task_id'] for child in children})==10 and len(adapter.sent)==10
+            assert all(ledger.get_task(child['task_id'])['status']=='running' for child in children)
         finally:await finish_all(workspace,manager,ledger,gateway)
     asyncio.run(run())

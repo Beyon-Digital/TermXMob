@@ -32,7 +32,7 @@ it('keeps active-turn sliders disabled and shows no invented missing-model or in
  transport();const {rerender}=render(<ReasoningPicker session={session} disabled onUpdated={()=>{}} onError={()=>{}}/>);
  await waitFor(()=>expect(slider()).toBeDisabled());setEffort(1);expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(false);
  rerender(<ReasoningPicker session={{...session,model:'unknown'}} onUpdated={()=>{}} onError={()=>{}}/>);
- await waitFor(()=>expect(screen.getByText('Engine default effort')).toBeInTheDocument());expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+ await waitFor(()=>expect(screen.getByText('Default')).toBeInTheDocument());expect(screen.queryByRole('slider')).not.toBeInTheDocument();
  rerender(<ReasoningPicker session={{...session,engine:'internal'}} onUpdated={()=>{}} onError={()=>{}}/>);
  expect(screen.queryByRole('slider')).not.toBeInTheDocument();
 });
@@ -40,7 +40,7 @@ it('keeps active-turn sliders disabled and shows no invented missing-model or in
 it('does not expose stale capabilities or replace an existing choice when discovery fails',async()=>{
  vi.mocked(request).mockResolvedValue({...catalogue,stale:true,refresh_error:'offline'});
  render(<ReasoningPicker session={{...session,reasoning_config:{reasoning_effort:'low'}}} onUpdated={()=>{}} onError={()=>{}}/>);
- expect(await screen.findByText('Effort temporarily unavailable')).toBeInTheDocument();expect(screen.queryByRole('slider')).not.toBeInTheDocument();expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(false);
+ expect(await screen.findByText('Effort unavailable')).toBeInTheDocument();expect(screen.queryByRole('slider')).not.toBeInTheDocument();expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(false);
 });
 
 it('refuses a change if the current conversation moved to a different model after the slider opened',async()=>{
@@ -67,4 +67,30 @@ it('fences A→B→A responses and prevents duplicate commits from pointer relea
  rerender(<ReasoningPicker session={session} {...props}/>);await waitFor(()=>expect(slider()).toBeEnabled());
  await act(async()=>{settle({...session,reasoning_config:{reasoning_effort:'low'}});await pending});
  expect(changed).not.toHaveBeenCalled();expect(error).not.toHaveBeenCalled();
+});
+
+
+it('shows short effort identities across seven discrete stops and resets through the advertised contract',async()=>{
+ const current={...session,reasoning_config:{reasoning_effort:'ultra',other:'preserved'}};
+ const values=['low','medium','high','xhigh','max','ultra'];
+ const advertised={model_configurations:{fast:{config_options:[{...option(values),options:values.map(value=>({value,name:'A full paragraph explaining '+value+' reasoning and response time.'}))}]}},stale:false};
+ vi.mocked(request).mockImplementation(async(path,init)=>path.endsWith('/reasoning')?advertised as any:init?.method==='PATCH'?{...current,reasoning_config:JSON.parse(init.body as string).changes.reasoning_config} as any:current as any);
+ const updated=vi.fn();render(<ReasoningPicker session={current} onUpdated={updated} onError={()=>{}}/>);
+ await waitFor(()=>expect(slider()).toBeEnabled());expect(slider()).toHaveAttribute('max','6');expect(slider()).toHaveAttribute('step','1');expect(slider()).toHaveAttribute('aria-valuetext','Ultra');
+ expect(screen.getByText('Ultra')).toBeVisible();expect(screen.queryByText(/A full paragraph/)).not.toBeInTheDocument();expect(screen.queryByText('Default')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Reset effort'}));await waitFor(()=>expect(updated).toHaveBeenCalled());
+ const call=vi.mocked(request).mock.calls.find(([,init])=>init?.method==='PATCH')!;expect(JSON.parse(call[1]!.body as string).changes.reasoning_config).toEqual({other:'preserved'});
+});
+
+
+it('preserves a keyboard-owned model button when delayed effort discovery resolves',async()=>{
+ let resolve!:(value:typeof catalogue)=>void;
+ const pending=new Promise<typeof catalogue>(done=>resolve=done);
+ vi.mocked(request).mockReturnValue(pending as any);
+ render(<ReasoningPicker session={session} onUpdated={()=>{}} onError={()=>{}} renderHeader={({label})=><div><strong>{label}</strong><button>Choose model</button></div>}/>);
+ expect(screen.getByText('Loading effort options')).toBeInTheDocument();
+ const model=screen.getByRole('button',{name:'Choose model'});model.focus();expect(model).toHaveFocus();
+ await act(async()=>{resolve(catalogue);await pending});
+ await waitFor(()=>expect(slider()).toBeEnabled());expect(screen.getByRole('button',{name:'Choose model'})).toBe(model);expect(model).toHaveFocus();
+ expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='PATCH')).toBe(false);
 });

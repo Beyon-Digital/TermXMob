@@ -9,6 +9,7 @@
   ],
   "permissions": [
     "core:default",
+    "notification:allow-is-permission-granted",
     "allow-companion-capabilities",
     "allow-companion-home",
     "allow-workspace-login",

@@ -60,6 +60,8 @@ def test_real_managed_write_checkpoint_and_exact_receipt_restart_boundary(tmp_pa
         service = BrowserService(original_root / "browser", session_valid=lambda *_: True)
         manager.browser = service
         entered, release = asyncio.Event(), asyncio.Event()
+        recovered, continue_recovery = asyncio.Event(), asyncio.Event()
+        recovered_inputs = []
         attempts = []
         spec = manager._tools.get("write_file")
         assert spec is not None
@@ -117,10 +119,25 @@ def test_real_managed_write_checkpoint_and_exact_receipt_restart_boundary(tmp_pa
             restored_root = tmp_path / "reopened"
             _backup(store.path, restored_root / "agent.sqlite3")
             _backup(service.records.path, restored_root / "browser" / "browser.sqlite3")
-            restored, restored_store = build_manager(
-                restored_root, _FanOutAdapter({"Managed write": ([], 0.0), "Fresh instruction": ([[_fn(
+
+            class PausedRecoveryAdapter(_FanOutAdapter):
+                async def turn(self, **kwargs):
+                    if "Managed write" in kwargs["prompt"]:
+                        # Recovery must commit/reuse the exact saved result
+                        # before requesting another provider turn. Hold that
+                        # turn deterministically so the boundary is inspectable.
+                        recovered_inputs.append(list(kwargs.get("input_items") or []))
+                        recovered.set()
+                        await continue_recovery.wait()
+                    return await super().turn(**kwargs)
+
+            recovered_adapter = PausedRecoveryAdapter({
+                "Managed write": ([], 0.0), "Fresh instruction": ([[_fn(
                     "inspect-state", "read_file", path="once.txt",
-                )]], 0.0)}),
+                )]], 0.0),
+            })
+            restored, restored_store = build_manager(
+                restored_root, recovered_adapter,
             )
             restored_service = BrowserService(restored_root / "browser", session_valid=lambda *_: True)
             restored.browser = restored_service
@@ -128,26 +145,33 @@ def test_real_managed_write_checkpoint_and_exact_receipt_restart_boundary(tmp_pa
             assert invalidated["status"] == "invalidated"
             if boundary == "completed_uncommitted":
                 assert restored_store.get_task(task["id"])["status"] == "recovering"
+                usage = restored.tree_budget.snapshot(task["id"])
                 await restored.recover_task(task["id"])
-                _, budget = await wait_for_pending_approval(restored_store, task["id"], "budget")
-                assert budget["payload"]["reason"] == "shared_max_seconds"
-                allowance = budget["payload"]["tree_budget"]
-                assert allowance["used_execution_seconds"] >= allowance["max_execution_seconds"]
+                await asyncio.wait_for(recovered.wait(), 5)
+                assert restored_store.get_task(task["id"])["status"] == "running"
                 assert restored_store.latest_checkpoint(task["id"], kind="execution")["side_effect_state"] == "committed"
                 finished = [event for event in restored_store.events(task["id"]) if event["type"] == "tool.finished"]
                 assert len(finished) == 1 and finished[0]["payload"]["result"]["ok"] is True
+                started = [event for event in restored_store.events(task["id"]) if event["type"] == "tool.started"]
+                assert len(started) == 1
                 assert attempts == ["exact-write"]
-                # An uncertain live lease exhausts the old time allowance at
-                # startup. Result reuse cannot silently reset that boundary:
-                # approve a separate, bounded fresh budget through the real API.
-                await restored.resolve_approval(task["id"], budget["id"], "approved", limits={
-                    "max_steps": allowance["used_steps"] + 2, "max_seconds": 30,
-                })
-                await wait_for_status(restored_store, task["id"], "completed")
-                renewed = restored.tree_budget.snapshot(task["id"])
-                assert renewed["version"] == allowance["version"] + 1
-                assert renewed["used_steps"] == allowance["used_steps"]
-                assert renewed["max_execution_seconds"] == 30
+                assert len(recovered_inputs) == 1
+                reused = [item for item in recovered_inputs[0] if item.get("type") == "function_call_output"
+                    and item.get("call_id") == "exact-write"]
+                assert reused == checkpoint["result"]["output_items"]
+                assert not [approval for approval in restored_store.approvals(task["id"])
+                    if approval["kind"] == "budget" and approval["status"] == "pending"]
+                # Restart preserves usage without introducing a quota review.
+                # Releasing only the scripted provider wait allows normal
+                # completion; the consumed exact permit is never recreated.
+                continue_recovery.set()
+                completed = await wait_for_status(restored_store, task["id"], "completed")
+                assert completed["result"] == "Managed write done."
+                assert recovered_adapter.turns == 1
+                continued = restored.tree_budget.snapshot(task["id"])
+                assert continued["version"] == usage["version"]
+                assert continued["used_steps"] == usage["used_steps"]
+                assert continued["max_execution_seconds"] is None and continued["reason"] is None
             else:
                 failed = restored_store.get_task(task["id"])
                 assert failed["status"] == "failed"

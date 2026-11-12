@@ -15,10 +15,10 @@ const task=(patch:Partial<Task>={}):Task=>({id:'t1',status:'completed',prompt:'x
 it('says Unknown for a missing price and names the assumed window',async()=>{
  const {container}=render(<TaskMeterLine meter={meter}/>);
  expect(screen.getByText('Context 30K of an unknown window (120K assumed)')).toBeInTheDocument();
- expect(screen.getByText('12.4K tokens · Unknown')).toBeInTheDocument();expect(screen.getByText('Auto 7 of 100 calls')).toBeInTheDocument();
+ expect(screen.getByText('12.4K tokens · Unknown')).toBeInTheDocument();expect(screen.getByText('Auto')).toBeInTheDocument();
  await expectNoAxeViolations(container);
 });
-it('hides the Auto allowance when Auto is off',()=>{
+it('hides Auto when Auto is off',()=>{
  render(<TaskMeterLine meter={{...meter,auto:{enabled:false,ceilings:null,used:{}}}}/>);expect(screen.queryByText(/Auto/)).toBeNull();
 });
 it('reads a finished task once instead of polling it',async()=>{

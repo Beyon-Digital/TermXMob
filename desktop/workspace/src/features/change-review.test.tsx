@@ -42,3 +42,26 @@ it('explains binary files and cloud checkout limits without a false local diff',
  view.rerender(<ChangeReview {...props} session={{...session,runner_id:'cloud'}}/>);
  expect(screen.getByText('Cloud changes belong to the runner workspace.')).toBeInTheDocument();expect(vi.mocked(request)).not.toHaveBeenCalled();
 });
+
+
+it('keeps file-list controls valid when checkout context stops reporting changed files',async()=>{
+ const props={project,session,onError:vi.fn()};const view=render(<ChangeReview {...props}/>);
+ await screen.findByText('after text');
+ const trigger=screen.getByLabelText('Hide changed files');
+ expect(document.getElementById(trigger.getAttribute('aria-controls')!)).toBe(screen.getByLabelText('Changed files'));
+ for(const next of [
+  {...base,data:{...base.data!,repo:false,files:[]}},
+  {...base,data:{...base.data!,files:[]}},
+  {...base,data:null,loading:true},
+  {...base,error:'Checkout access changed'},
+  {...base,data:null,available:false,unavailableReason:'No local checkout'},
+ ]){
+  vi.mocked(useSessionChanges).mockReturnValue(next);view.rerender(<ChangeReview {...props}/>);
+  expect(screen.queryByLabelText('Hide changed files')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Show changed files')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Changed files')).not.toBeInTheDocument();
+ }
+ vi.mocked(useSessionChanges).mockReturnValue(base);view.rerender(<ChangeReview {...props}/>);
+ const restored=screen.getByLabelText('Hide changed files');
+ expect(document.getElementById(restored.getAttribute('aria-controls')!)).toBe(screen.getByLabelText('Changed files'));
+});

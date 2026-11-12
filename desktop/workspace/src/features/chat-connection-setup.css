@@ -1,9 +1,31 @@
-.chat-connection-setup{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:14px 16px;margin:0 0 12px;text-align:left}
-.chat-connection-heading h3{font-size:13px;font-weight:550;margin:0 0 5px;color:var(--foreground)}
-.chat-connection-heading p,.chat-connection-note{font-size:12px;line-height:1.6;color:var(--secondary);margin:0 0 10px}
-.chat-connection-setup form{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0 8px}
-.chat-connection-setup form label{display:flex;flex:1 1 140px;min-width:0;flex-direction:column;gap:5px;font-size:12px}
-.chat-connection-setup form label select{width:100%;min-width:0}
-.chat-connection-setup>.button{font-size:12px;padding-left:0}
-.chat-connection-error{font-size:12px;line-height:1.5;color:var(--destructive);margin:8px 0}
-@container(max-width:440px){.chat-connection-setup{padding:12px;max-height:max(120px,24cqh);overflow-y:auto;overscroll-behavior:contain}.chat-connection-setup form{gap:8px}.chat-connection-setup form label{flex-basis:100%}.chat-connection-setup form>.button{width:100%}}
+/* Connection repair is inline, with details revealed only when requested. */
+.workspace-shell[data-workspace=agent] .chat-connection-setup{padding:0 0 12px;margin:0 0 4px;text-align:left;min-height:0;flex-shrink:0}
+.workspace-shell[data-workspace=agent] .chat-connection-summary{display:flex;align-items:center;gap:12px}
+.workspace-shell[data-workspace=agent] .chat-connection-heading{flex:1;min-width:0}
+.workspace-shell[data-workspace=agent] .chat-connection-heading h3{font-size:14px;font-weight:500;line-height:20px;margin:0 0 4px;color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-connection-heading p,.workspace-shell[data-workspace=agent] .chat-connection-note{font-size:12px;font-weight:400;line-height:16px;color:var(--text-3);margin:0;overflow-wrap:anywhere}
+.workspace-shell[data-workspace=agent] .chat-connection-summary>.button{flex:none;min-height:40px;height:40px;font-size:14px;font-weight:500;line-height:20px;gap:8px;padding-inline:12px;border-radius:8px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-connection-summary>.button:not(:disabled):hover{background:var(--surface-2);color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-connection-toggle>svg{transition:transform 160ms ease-out}
+.workspace-shell[data-workspace=agent] .chat-connection-toggle[aria-expanded=true]>svg{transform:rotate(180deg)}
+.workspace-shell[data-workspace=agent] .chat-connection-options{padding:12px 0 0}
+.workspace-shell[data-workspace=agent] .chat-connection-setup form{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:0}
+.workspace-shell[data-workspace=agent] .chat-connection-setup form label{display:flex;flex:1 1 0;min-width:0;flex-direction:column;gap:8px;font-size:14px;font-weight:500;line-height:20px;color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-connection-setup form label select{width:100%;min-width:0;height:40px;padding:0 12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font-size:16px;font-weight:400;line-height:24px}
+.workspace-shell[data-workspace=agent] .chat-connection-setup form>.button{height:40px;font-size:14px;line-height:20px;font-weight:500;border-radius:8px;padding-inline:16px}
+.workspace-shell[data-workspace=agent] .chat-connection-note{margin-top:8px}
+.workspace-shell[data-workspace=agent] .chat-connection-manage.button{font-size:14px;font-weight:500;line-height:20px;margin-top:8px;padding-left:0;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-connection-error{font-size:14px;font-weight:400;line-height:20px;color:var(--danger);margin:8px 0 0;overflow-wrap:anywhere}
+.workspace-shell[data-workspace=agent] .chat-connection-setup :is(button,select):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.workspace-shell[data-workspace=agent] .chat-connection-setup :is(button,select):disabled{opacity:.5;cursor:not-allowed}
+@container(max-width:640px){
+ .workspace-shell[data-workspace=agent] .chat-connection-summary{align-items:flex-start;flex-wrap:wrap;gap:8px}
+ .workspace-shell[data-workspace=agent] .chat-connection-summary>.chat-connection-heading{flex-basis:100%}
+ .workspace-shell[data-workspace=agent] .chat-connection-summary>.button{padding-left:0}
+ .workspace-shell[data-workspace=agent] .chat-connection-setup.is-expanded{max-height:48cqh;overflow-y:auto;overscroll-behavior:contain}
+ .workspace-shell[data-workspace=agent] .chat-connection-setup form label{flex-basis:100%}
+ .workspace-shell[data-workspace=agent] .chat-connection-setup form>.button{width:100%}
+}
+@media(min-width:768px) and (pointer:fine){.workspace-shell[data-workspace=agent] .chat-connection-summary>.button{min-height:32px;height:32px}}
+@media(pointer:coarse){.workspace-shell[data-workspace=agent] .chat-connection-setup :is(button,select){min-height:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.workspace-shell[data-workspace=agent] .chat-connection-toggle>svg{transition:none}}

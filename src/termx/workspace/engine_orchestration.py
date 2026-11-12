@@ -43,37 +43,34 @@ class EngineCoordination:
         return result
 
     def capabilities(self, engine, *, adopted=False):
-        if engine=='internal':return {'time_budget':'shared-host','tool_steps':'shared-host','tokens':'unmeasured','cost':'unmeasured'}
+        if engine=='internal':return {'time_budget':'unlimited','tool_steps':'unlimited','tokens':'unmeasured','cost':'unmeasured'}
         try:caps=self.workspace.state.engines.adapter(engine).capabilities()
         except KeyError:
-            return {'time_budget':'host-monitoring','tool_steps':'unmeasured','tokens':'unmeasured','cost':'unmeasured',
+            return {'time_budget':'unlimited','tool_steps':'unmeasured','tokens':'unmeasured','cost':'unmeasured',
                 'steer':'unavailable','resume':'unavailable','approvals':'unavailable','tools_filter':'unavailable',
-                'elapsed_deadline_seconds':86400,'filesystem_boundary':'unverified'}
-        return {'time_budget':'host-monitoring' if adopted else 'shared-host',
-            'tool_steps':'native-max-turns' if engine=='claude' else 'unmeasured',
+                'elapsed_deadline_seconds':None,'filesystem_boundary':'unverified'}
+        return {'time_budget':'unlimited',
+            'tool_steps':'unmeasured',
             'tokens':'unmeasured','cost':'unmeasured','steer':caps.steer,
             'resume':caps.resume,'approvals':caps.approvals,'tools_filter':caps.tools_filter,
-            'elapsed_deadline_seconds':86400,
+            'elapsed_deadline_seconds':None,
             'filesystem_boundary':'native-policy' if engine=='codex' else 'tool-gateway' if engine=='claude' else 'advisory'}
 
     def admission(self, principal, parent_id):
         parent=self.agents.get_task(parent_id)
         if not parent:raise KeyError(parent_id)
-        limits=resolve_limits(parent.get('limits'))
+        stored = self.agents.stored_task_limits(parent_id) if hasattr(self.agents, 'stored_task_limits') else parent.get('limits') or {}
+        limits=resolve_limits(stored)
         active={task['id'] for task in self.agents.children(parent_id) if task['status'] in ACTIVE_STATUSES}
         for relation in self.store.list('delegated_session',principal.id):
             if relation['parent_session_id']!=(self.orchestrator.binding(principal.id) or {}).get('conversation_id'):
                 continue
             if relation.get('origin')=='adopted' and relation['control_owner']=='user':continue
             active.update(task['id'] for task in self.workspace.active(relation['id']))
-        if len(active)>=limits['max_parallel_subagents']:
-            raise Conflict('The main agent has reached its active worker allowance; wait or stop an existing worker')
         bound_sessions={(self.store.get('task',task['id']) or {}).get('conversation_id') for task in self.agents.children(parent_id)}
         pending=[row for row in self.store.list('orchestrator_command',principal.id)
             if row.get('parent_task_id')==parent_id and row.get('operation')=='spawn_engine_agent'
             and row.get('result') is None and row.get('session_id') not in bound_sessions]
-        if len(self.agents.children(parent_id))+len(pending)>=limits['max_subagents_total']:
-            raise Conflict('The main turn has reached its total delegation allowance')
         budget=self.workspace.state.agent.tree_budget.snapshot(parent_id)
         if budget['reason']:raise Conflict('The shared main-agent execution budget is exhausted; review it before delegating')
         return limits
@@ -184,8 +181,7 @@ class EngineCoordination:
                 for scope in ('agent-run','agent-control'):
                     self.workspace.require(principal,scope,project_id,source['path'])
             limits=self.admission(principal,parent_id)
-            child_limits=resolve_limits({'max_steps':min(24,limits['max_steps']),
-                'max_seconds':min(900,limits['max_seconds']), 'shell_timeout_s':limits['shell_timeout_s']})
+            child_limits=resolve_limits(limits)
             self.receipt(principal,parent_id,call,create=True)
             worktree=None;isolation=None;snapshot_path=None
             if source and mode=='agent':
@@ -372,8 +368,6 @@ class EngineCoordination:
                 elif shared and not waiting and not metered:manager.tree_budget.start(task_id);metered=True
                 reason=None
                 if live_parent_id and (not parent or parent['status'] in {'cancelled','cancelling'}):reason='Main agent stopped'
-                elif elapsed>=min(900,resolve_limits(task.get('limits'))['max_seconds']):reason='Native child host time allowance exhausted'
-                elif time()-float(meta.get('native_monitor_started_at') or meta.get('created_at') or time())>=86400:reason='Native child elapsed-time safety ceiling reached'
                 elif shared and manager.tree_budget.snapshot(task_id)['reason']:reason='Shared main-agent execution allowance exhausted'
                 try:
                     self.workspace.validate_task_execution(task_id)

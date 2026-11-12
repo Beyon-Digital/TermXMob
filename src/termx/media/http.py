@@ -10,10 +10,16 @@ import tempfile
 from itertools import islice
 from zipfile import ZipFile, BadZipFile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from termx.auth import extract_passcode
 from termx.media.service import ArtifactService, MediaProvider, LIMIT
+from termx.media.studio_subjects import mount_studio_subjects
+from termx.media.studio_pricing import mount_studio_pricing
+from termx.media.studio import StudioInput, StudioService
+from termx.media.studio_music import MusicInput
+from termx.media.studio_settings import StudioSettingsInput
+from termx.media.studio_projects import mount_studio_projects, studio_project_id, project_mutation
 
 
 class ArtifactInput(BaseModel):
@@ -120,15 +126,30 @@ def input_context(service, owner, identifier):
 def mount_media(app,state):
     state.artifacts = ArtifactService(state.delivery.directory.parent/'workspace-artifacts')
     state.media = MediaProvider(state,state.artifacts)
+    state.studio = StudioService(state, state.artifacts.root, state.artifacts)
     router = APIRouter(prefix='/api/media')
+    mount_studio_projects(router, state)
 
-    def actor(request, project=None, scope='agent-view'):
+    def actor(request: Request, project: str | None = None, scope: str = 'agent-view') -> str:
         raw = extract_passcode(request.headers.get('x-termx-passcode'),request.headers.get('authorization'))
         current = state.identity.resolve(raw)
         if not current:
             raise HTTPException(401,'Managed sign-in required')
-        state.authorization.require(raw,scope,project_id=project)
+        if studio_project_id(project):
+            item = state.studio_projects.owned(current.principal.id, project)
+            state.authorization.require(raw, scope, resource_kind='studio_project', resource_id=project)
+            if scope in {'agent-run', 'files-write'} and item['archived']:
+                raise HTTPException(409, 'Restore this Studio project before making changes or generating media')
+        else:
+            state.authorization.require(raw,scope,project_id=project)
         return current.principal.id
+
+    mount_studio_subjects(router, state, actor)
+    state.studio_pricing = mount_studio_pricing(router, state, actor)
+
+    def same_actor(request: Request, owner: str, project: str | None, scope: str = 'agent-view') -> None:
+        if actor(request, project, scope) != owner:
+            raise HTTPException(403, 'Managed identity changed; sign in again before continuing')
 
     def owned(request, identifier, scope='agent-view'):
         raw = extract_passcode(request.headers.get('x-termx-passcode'),request.headers.get('authorization'))
@@ -136,8 +157,77 @@ def mount_media(app,state):
         if not current:
             raise HTTPException(401,'Managed sign-in required')
         item = state.artifacts.get(current.principal.id,identifier)
-        state.authorization.require(raw,scope,project_id=item['project'])
+        actor(request, item['project'], scope)
         return current.principal.id,item
+
+    @router.get('/studio/catalog')
+    async def studio_catalog(request: Request, project_id: str | None = None):
+        project = project_id or None
+        owner = actor(request, project)
+        result = await state.studio.catalog()
+        same_actor(request, owner, project)
+        return state.studio.catalog_for_owner(result, owner)
+
+    @router.get('/studio/settings')
+    async def studio_settings(request: Request, response: Response):
+        response.headers['Cache-Control'] = 'no-store'
+        owner = actor(request, None, 'ai-settings')
+        return await state.studio.settings(owner,
+            before_read=lambda: same_actor(request, owner, None, 'ai-settings'))
+
+    @router.put('/studio/settings')
+    async def studio_update_settings(body: StudioSettingsInput, request: Request, response: Response):
+        response.headers['Cache-Control'] = 'no-store'
+        owner = actor(request, None, 'ai-settings')
+        return await state.studio.update_settings(owner, body.model_dump(),
+            before_write=lambda: same_actor(request, owner, None, 'ai-settings'))
+
+    @router.get('/studio/jobs')
+    def studio_jobs(request: Request, project_id: str | None = None):
+        project = project_id or None
+        return state.studio.list(actor(request, project), project)
+
+    @router.get('/studio/history')
+    def studio_history(request: Request, project_id: str | None = Query(default=None, max_length=128),
+                       limit: int = Query(default=40, ge=1, le=100),
+                       cursor: str | None = Query(default=None, min_length=1, max_length=1024),
+                       kind: str | None = Query(default=None, pattern='^(image|video|audio)$'),
+                       status: str | None = Query(default=None, pattern='^(submitting|queued|running|completed|failed|unknown|active|attention)$'),
+                       q: str | None = Query(default=None, max_length=200)):
+        project = project_id or None
+        return state.studio.history(actor(request, project), project, limit=limit, cursor=cursor, kind=kind, status=status, q=q)
+
+    @router.post('/studio/jobs')
+    async def studio_create(body: StudioInput, request: Request):
+        project = body.project_id
+        owner = actor(request, project, 'agent-run')
+
+        def authorize_submission() -> None:
+            same_actor(request, owner, project, 'agent-run')
+
+        return await state.studio.create(owner, project, body.model_dump(), before_submit=authorize_submission)
+
+    @router.post('/studio/music/jobs')
+    async def studio_music_create(body: MusicInput, request: Request):
+        project = body.project_id
+        owner = actor(request, project, 'agent-run')
+        return await state.studio.create_music(owner, project, body.model_dump(),
+            before_submit=lambda: same_actor(request, owner, project, 'agent-run'))
+
+    @router.post('/studio/jobs/{identifier}/refresh')
+    async def studio_refresh(identifier: str, request: Request):
+        # Resolve owner first so a guessed ID never discloses another person's
+        # job. Then re-check the stored job's project on every status request.
+        raw = extract_passcode(request.headers.get('x-termx-passcode'), request.headers.get('authorization'))
+        current = state.identity.resolve(raw)
+        if not current:
+            raise HTTPException(401, 'Managed sign-in required')
+        job = state.studio.get(current.principal.id, identifier)
+        actor(request, job['project_id'], 'agent-view')
+        owner = current.principal.id
+        result = await state.studio.refresh(owner, identifier)
+        same_actor(request, owner, job['project_id'])
+        return result
 
     @router.get('/artifacts')
     def artifacts(request: Request, project_id: str | None=None):
@@ -149,7 +239,9 @@ def mount_media(app,state):
 
     @router.post('/artifacts')
     def create(body: ArtifactInput,request: Request):
-        return state.artifacts.create(actor(request,body.project_id,'agent-run'),body.project_id,body.kind,body.title,body.content)
+        owner = actor(request, body.project_id, 'agent-run')
+        with project_mutation(state, owner, body.project_id):
+            return state.artifacts.create(owner,body.project_id,body.kind,body.title,body.content)
 
     @router.get('/artifacts/{identifier}')
     def read(identifier: str,request: Request,version: int | None=None):
@@ -158,8 +250,9 @@ def mount_media(app,state):
 
     @router.put('/artifacts/{identifier}')
     def revise(identifier: str,body: ReviseInput,request: Request):
-        owner,_=owned(request,identifier,'agent-run')
-        return state.artifacts.revise(owner,identifier,body.version,content=body.content)
+        owner,item=owned(request,identifier,'agent-run')
+        with project_mutation(state, owner, item['project']):
+            return state.artifacts.revise(owner,identifier,body.version,content=body.content)
 
     @router.get('/artifacts/{identifier}/versions')
     def versions(identifier: str,request: Request):
@@ -193,7 +286,9 @@ def mount_media(app,state):
                 image=Image.open(io.BytesIO(blob));image.verify()
             except Exception as exc:
                 raise HTTPException(400,'Invalid image input') from exc
-        return state.artifacts.create(owner,project_id,'input',name,blob=blob,mime=mime)
+        actor(request, project_id, 'agent-run')
+        with project_mutation(state, owner, project_id):
+            return state.artifacts.create(owner,project_id,'input',name,blob=blob,mime=mime)
 
     @router.post('/inputs/{identifier}/context')
     async def context(identifier: str,request: Request):

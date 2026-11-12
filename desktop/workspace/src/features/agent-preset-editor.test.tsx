@@ -5,13 +5,13 @@ import { AgentPresetEditor } from './AgentPresetEditor';
 vi.mock('../lib/api',()=>({request:vi.fn(async()=>({data:{mcp_connections:[]}})),json:(method:string,value:unknown)=>({method,body:JSON.stringify(value)})}));
 afterEach(cleanup);
 const preset={id:'agent.review',name:'Review',instructions:'Inspect',engine:'internal',tools_mode:'explicit',tools:['read_file'],toolsets:['files'],deny_tools:['run_shell'],file_revision:'rev-3',limits:{max_steps:12},approval_mode:'standard',sandbox_profile:'agent',enabled:true};
-it('saves explicit tool and budget edits against the inspected revision without run identifiers', async()=>{
+it('saves explicit tool edits and clears legacy task quotas against the inspected revision without run identifiers', async()=>{
  const save=vi.fn().mockResolvedValue({});render(<AgentPresetEditor preset={preset} onSave={save} onCancel={vi.fn()}/>);
  fireEvent.change(screen.getByLabelText('Allowed tool IDs (one per line)'),{target:{value:'read_file\nsearch_files\nread_file'}});
- fireEvent.change(screen.getByLabelText('Maximum steps'),{target:{value:'9'}});
+ expect(screen.queryByText('Run budget')).not.toBeInTheDocument();expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
  expect(save).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Save preset changes'}));
  await waitFor(()=>expect(save).toHaveBeenCalledOnce());
- expect(save.mock.calls[0][0]).toMatchObject({revision:'rev-3',tools:['read_file','search_files'],tools_mode:'explicit',limits:{max_steps:9},deny_tools:['run_shell']});
+ expect(save.mock.calls[0][0]).toMatchObject({revision:'rev-3',tools:['read_file','search_files'],tools_mode:'explicit',limits:{},deny_tools:['run_shell']});
  expect(save.mock.calls[0][0]).not.toHaveProperty('task_id');expect(save.mock.calls[0][0]).not.toHaveProperty('session_id');
 });
 it('keeps tools as a list that the checkboxes and the exact-name field both edit', async()=>{
@@ -30,17 +30,15 @@ it('changes inherited mode deliberately without attaching an explicit list', asy
  fireEvent.click(screen.getByLabelText('Inherit all host-authorized tools'));fireEvent.click(screen.getByRole('button',{name:'Save preset changes'}));
  await waitFor(()=>expect(save).toHaveBeenCalledOnce());expect(save.mock.calls[0][0]).toMatchObject({tools_mode:'all',revision:'rev-3'});expect(save.mock.calls[0][0]).not.toHaveProperty('tools');
 });
-it('sends numeric budgets as numbers and explains an invalid one beside its field', async()=>{
- const save=vi.fn().mockResolvedValue({});render(<AgentPresetEditor preset={preset} onSave={save}/>);
- const parallel=screen.getByLabelText('Parallel subagents');
- fireEvent.change(parallel,{target:{value:'9'}});
- expect(parallel).toHaveAttribute('aria-invalid','true');expect(parallel).toHaveAccessibleDescription('Enter a whole number from 1 to 8.');
- fireEvent.change(parallel,{target:{value:''}});expect(parallel).toHaveAccessibleDescription('Enter a whole number from 1 to 8.');
- fireEvent.click(screen.getByRole('button',{name:'Save preset changes'}));expect(save).not.toHaveBeenCalled();
- fireEvent.change(parallel,{target:{value:'4'}});expect(parallel).not.toHaveAttribute('aria-invalid');
- fireEvent.click(screen.getByRole('button',{name:'Save preset changes'}));
+it('creates a preset without serializing application task quota defaults', async()=>{
+ const save=vi.fn().mockResolvedValue({});render(<AgentPresetEditor onSave={save}/>);
+ fireEvent.change(screen.getByLabelText(/^Name/),{target:{value:'Unbounded reviewer'}});
+ expect(screen.queryByText('Run budget')).not.toBeInTheDocument();
+ expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Save preset'}));
  await waitFor(()=>expect(save).toHaveBeenCalledOnce());
- expect(save.mock.calls[0][0].limits).toEqual({max_steps:12,max_seconds:14400,shell_timeout_s:120,max_parallel_subagents:4,max_subagents_total:8});
+ expect(save.mock.calls[0][0]).toMatchObject({name:'Unbounded reviewer',limits:{},approval_mode:'standard',sandbox_profile:'agent'});
+ expect(save.mock.calls[0][0].limits).toEqual({});
 });
 it('requires a name and labels each field once', async()=>{
  const save=vi.fn();const {container}=render(<AgentPresetEditor onSave={save}/>);

@@ -58,7 +58,6 @@ export default function Media({
     [model, setModel] = useState(''),
     [prompt, setPrompt] = useState(''),
     [operation, setOperation] = useState('image-generate'),
-    [billing, setBilling] = useState(false),
     [title, setTitle] = useState(''),
     [kind, setKind] = useState('document'),
     [voice, setVoice] = useState('alloy'),
@@ -165,7 +164,6 @@ export default function Media({
         previewUrl.current = '';
         setPreview('');
       }
-      setBilling(false);
     };
     window.addEventListener('termx-locked', locked);
     return () => window.removeEventListener('termx-locked', locked);
@@ -292,7 +290,7 @@ export default function Media({
       prompt,
       voice,
       input_id: selected?.id,
-      acknowledge_billing: billing,
+      acknowledge_billing: true,
     };
     const intent = await mediaIntent(ownerId, projectId, args);
     try {
@@ -886,13 +884,7 @@ export default function Media({
               }}
             />
           </label>
-          <label className="billing-consent">
-            <span>
-              <input type="checkbox" checked={billing} onChange={event => setBilling(event.target.checked)} /> Use this
-              configured account; provider charges may apply.
-            </span>
-          </label>
-          <Button type="submit" disabled={busy || !billing || !provider || !model}>
+          <Button type="submit" disabled={busy || !provider || !model}>
             {busy ? 'Creating…' : 'Run selected capability'}
           </Button>
           {!providers.length && <p>Configure an account with image or audio capability in Models & engines.</p>}

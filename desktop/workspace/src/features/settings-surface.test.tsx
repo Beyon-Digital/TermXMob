@@ -37,7 +37,7 @@ it('lists every category once as links with the current page marked, and no dupl
  expect(within(nav()).queryByRole('combobox')).toBeNull();
  expect(within(nav()).getByRole('link',{name:'Tools & connections'})).toHaveAttribute('aria-current','page');
  expect(within(nav()).getAllByRole('link').filter(link=>link.hasAttribute('aria-current'))).toHaveLength(1);
- expect(within(nav()).getByRole('link',{name:'Preferences'})).toHaveAttribute('href','/manage/preferences');
+ expect(within(nav()).getByRole('link',{name:'General'})).toHaveAttribute('href','/manage/preferences');
 });
 
 it('selects a category on a plain click and leaves modified clicks to the browser',()=>{
@@ -239,4 +239,47 @@ it('preserves the caller context slot and resets scroll only after an accepted c
 it('has no accessibility violations with unsaved changes showing',async()=>{
  render(<Harness/>);edit('first');
  await expectNoAxeViolations(screen.getByRole('dialog',{name:'Settings'}));
+});
+
+
+it('uses the same guarded category selection from the narrow-screen picker',()=>{
+ const select=vi.fn();render(<SettingsSurface category="memory" onSelect={select} onClose={vi.fn()}><Draft name="first"/></SettingsSurface>);
+ const picker=screen.getByRole('combobox',{name:'Settings category'});
+ expect(picker).toHaveValue('memory');
+ expect(within(picker).getAllByRole('option')).toHaveLength(settingsCategories.length);
+ edit('first','Keep my settings draft');
+ fireEvent.change(picker,{target:{value:'hooks'}});
+ expect(select).not.toHaveBeenCalled();
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Discard unsaved changes?'})).getByRole('button',{name:'Keep editing'}));
+ expect(screen.getByRole('textbox',{name:'first'})).toHaveValue('Keep my settings draft');
+ expect(picker).toHaveValue('memory');
+ fireEvent.change(picker,{target:{value:'hooks'}});
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Discard unsaved changes?'})).getByRole('button',{name:'Discard changes'}));
+ expect(select).toHaveBeenCalledWith('hooks');
+});
+
+
+it('filters settings categories and keeps route selection through the existing navigation action',()=>{
+ const select=vi.fn();render(<SettingsNavigation category="memory" onSelect={select}/>);
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search settings categories'}),{target:{value:' MODELS '}});
+ expect(within(nav()).getAllByRole('link')).toHaveLength(1);
+ fireEvent.click(within(nav()).getByRole('link',{name:'Models & engines'}));
+ expect(select).toHaveBeenCalledWith('models');
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search settings categories'}),{target:{value:''}});
+ expect(within(nav()).getAllByRole('link')).toHaveLength(settingsCategories.length);
+});
+
+it('reports no matching categories truthfully and preserves a dirty draft while searching',()=>{
+ const select=vi.fn();render(<SettingsSurface category="memory" onSelect={select} onClose={vi.fn()}><Draft name="first"/></SettingsSurface>);
+ edit('first','Keep this settings draft');
+ const search=screen.getByRole('searchbox',{name:'Search settings categories'});
+ fireEvent.change(search,{target:{value:'no-such-setting'}});
+ expect(within(nav()).getByRole('status')).toHaveTextContent('No settings categories match your search.');
+ expect(within(nav()).queryByRole('link')).toBeNull();
+ expect(select).not.toHaveBeenCalled();
+ fireEvent.change(search,{target:{value:'hooks'}});
+ fireEvent.click(within(nav()).getByRole('link',{name:'Hooks'}));
+ expect(select).not.toHaveBeenCalled();
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Discard unsaved changes?'})).getByRole('button',{name:'Keep editing'}));
+ expect(screen.getByRole('textbox',{name:'first'})).toHaveValue('Keep this settings draft');
 });

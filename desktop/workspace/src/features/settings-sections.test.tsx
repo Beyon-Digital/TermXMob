@@ -96,7 +96,7 @@ it('creates an agent preset with numeric budgets and passes axe',async()=>{
  fireEvent.click(form.getByRole('button',{name:'Save preset'}));
  await waitFor(()=>expect(calls().some(call=>call.body.query?.includes('create_custom_agent'))).toBe(true));
  const input=calls().find(call=>call.body.query?.includes('create_custom_agent'))!.body.variables!.input as {limits:Record<string,unknown>};
- expect(input.limits.max_steps).toBe(256);expect(typeof input.limits.max_steps).toBe('number');
+ expect(input.limits).toEqual({});expect(form.queryByRole('spinbutton')).not.toBeInTheDocument();
 });
 
 it('renders the access page for a member without administrator sections and passes axe',async()=>{

@@ -48,14 +48,16 @@ it('reports a refused switch and returns to the task state',async()=>{
 });
 it('explains why Auto is off when the conversation has no worktree',()=>{
  const row=session({worktree_id:null});host(row);render(<Chat session={row} {...props}/>);openPicker();
- expect(screen.getByRole('switch',{name:'Auto'})).toBeDisabled();expect(screen.getByText(/Project actions, Session checkout/)).toBeInTheDocument();
+ expect(screen.getByRole('switch',{name:'Auto'})).toBeDisabled();expect(screen.getByText(/Auto requires a verified isolated Git checkout\. No ready checkout has been reported\./)).toBeInTheDocument();
 });
-it('shows context and usage for the latest task, with Unknown where the host has no value',async()=>{
+it('reveals latest-task context and usage in Session options, with Unknown where the host has no value',async()=>{
  const row=session({},true);host(row);
  vi.mocked(gql).mockImplementation((async(query:string)=>query.includes('agent_task(')?{agent_task:{...meter,usage:{tokens:2000,cost_usd:null}}}:{engine_models:[]}) as never);
  const {container}=render(<Chat session={row} {...props}/>);
- expect(await screen.findByText('Context 1.5K of 128K')).toBeInTheDocument();expect(screen.getByText('2K tokens · Unknown')).toBeInTheDocument();
- openPicker();await expectNoAxeViolations(container);
+ expect(screen.queryByText('Context 1.5K of 128K')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Session options'}));
+ expect(await screen.findByText('Context 1.5K of 128K')).toBeVisible();expect(screen.getByText('2K tokens · Unknown')).toBeVisible();
+ await expectNoAxeViolations(container);
 });
 // jsdom has no layout, so the virtualized transcript needs measurable rows to render the plan card.
 function measureRows(){Object.defineProperty(HTMLElement.prototype,'getBoundingClientRect',{configurable:true,value(){return {width:800,height:this.classList?.contains('message-row')?140:600,top:0,left:0,right:800,bottom:600}}});Object.defineProperty(HTMLElement.prototype,'offsetHeight',{configurable:true,get(){return this.classList?.contains('message-row')?140:600}});Object.defineProperty(HTMLElement.prototype,'offsetWidth',{configurable:true,get(){return 800}});Object.defineProperty(HTMLElement.prototype,'clientHeight',{configurable:true,get(){return 600}});vi.stubGlobal('ResizeObserver',class{constructor(private callback:ResizeObserverCallback){}observe(target:Element){queueMicrotask(()=>{if(this.active)this.callback([{target,contentRect:target.getBoundingClientRect(),borderBoxSize:[{inlineSize:800,blockSize:target.getBoundingClientRect().height}]}] as unknown as ResizeObserverEntry[],this as unknown as ResizeObserver)})}active=true;unobserve(){}disconnect(){this.active=false}})}

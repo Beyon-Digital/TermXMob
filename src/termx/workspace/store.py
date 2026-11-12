@@ -29,6 +29,8 @@ class WorkspaceStore:
             owner TEXT NOT NULL, key TEXT NOT NULL, digest TEXT NOT NULL,
             state TEXT NOT NULL, result TEXT, created REAL NOT NULL,
             PRIMARY KEY(owner,key));
+          CREATE TABLE IF NOT EXISTS conversation_dispatch (
+            conversation TEXT PRIMARY KEY, owner TEXT NOT NULL, request_key TEXT NOT NULL, created REAL NOT NULL);
           CREATE TABLE IF NOT EXISTS audit (
             seq INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL,
             kind TEXT NOT NULL, resource TEXT NOT NULL, event TEXT NOT NULL,
@@ -82,11 +84,70 @@ class WorkspaceStore:
                 raise Conflict('Resource changed; reload before saving')
             clean = {k: v for k, v in body.items() if k not in {'id', 'owner', 'project_id', 'revision', 'created_at', 'updated_at'}}
             if kind == 'conversation':
-                clean = {k:v for k,v in clean.items() if k in {'engine','cwd','draft_text','draft_context','scroll','scroll_anchor','linked_from','transfer','extension_ids','workflow','group_id','scratch','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','custom_agent_id','custom_agent_revision','reasoning_config'}}
-            self.db.execute('UPDATE records SET body=?,revision=revision+1,updated=? WHERE kind=? AND id=?',
-                            (json.dumps(clean), time(), kind, identifier))
+                clean = {k:v for k,v in clean.items() if k in {'engine','cwd','draft_text','draft_context','scroll','scroll_anchor','linked_from','transfer','extension_ids','workflow','group_id','scratch','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','custom_agent_id','custom_agent_revision','reasoning_config','title_origin','auto_title','checkout_policy','checkout_state','checkout_notice','source_cwd','source_dirty','worktree_base_ref','worktree_intent'}}
+            changed = self.db.execute('UPDATE records SET body=?,revision=revision+1,updated=? WHERE kind=? AND id=? AND revision=?',
+                            (json.dumps(clean), time(), kind, identifier, current['revision']))
+            if changed.rowcount != 1:
+                self.db.rollback()
+                raise Conflict('Resource changed; reload before saving')
             self.db.commit()
             return self.get(kind, identifier)
+
+    def conversation_dispatch_pending(self, identifier):
+        with self.lock:
+            return self.db.execute('SELECT 1 FROM conversation_dispatch WHERE conversation=?', (identifier,)).fetchone() is not None
+
+    def reserve_conversation_dispatch(self, owner, identifier, key, digest, active):
+        """A durable preparing claim serializes independent daemon services."""
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                previous = self.db.execute('SELECT * FROM requests WHERE owner=? AND key=?', (owner,key)).fetchone()
+                if previous:
+                    self.db.commit()
+                    return dict(previous)
+                if self.db.execute('SELECT 1 FROM conversation_dispatch WHERE conversation=?', (identifier,)).fetchone():
+                    raise Conflict('Conversation dispatch is already preparing or requires reconciliation; inspect its existing request before sending again')
+                if active():
+                    raise Conflict('Conversation already has an active turn; steer it or queue after completion')
+                self.db.execute('INSERT INTO conversation_dispatch VALUES(?,?,?,?)', (identifier,owner,key,time()))
+                self.db.execute('INSERT INTO requests VALUES(?,?,?,?,?,?)', (owner,key,digest,'preparing',None,time()))
+                self.db.commit()
+                return None
+            except BaseException:
+                self.db.rollback()
+                raise
+
+    def release_conversation_dispatch(self, owner, identifier, key):
+        with self.lock:
+            self.db.execute('DELETE FROM conversation_dispatch WHERE conversation=? AND owner=? AND request_key=?', (identifier,owner,key))
+            self.db.commit()
+
+    def abort_conversation_dispatch(self, owner, identifier, key):
+        with self.lock:
+            self.db.execute('DELETE FROM conversation_dispatch WHERE conversation=? AND owner=? AND request_key=? AND NOT EXISTS (SELECT 1 FROM requests WHERE owner=? AND key=? AND result IS NOT NULL)', (identifier,owner,key,owner,key))
+            self.db.execute('DELETE FROM requests WHERE owner=? AND key=? AND result IS NULL', (owner,key))
+            self.db.commit()
+
+    def reserve_session_worktree_intent(self, identifier, intent):
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                current = self.get('conversation', identifier)
+                if not current:
+                    raise KeyError(identifier)
+                if current.get('worktree_intent'):
+                    self.db.commit()
+                    return current['worktree_intent']
+                clean = {k:v for k,v in current.items() if k not in {'id','owner','project_id','revision','created_at','updated_at'}}
+                clean['worktree_intent'] = intent
+                self.db.execute("UPDATE records SET body=?,revision=revision+1,updated=? WHERE kind='conversation' AND id=?",
+                    (json.dumps(clean), time(), identifier))
+                self.db.commit()
+                return intent
+            except BaseException:
+                self.db.rollback()
+                raise
 
     def reserve_schedule_run(self, schedule, now, next_due, *, manual=False):
         """Atomically claim one due occurrence and its shared goal/grant budget."""

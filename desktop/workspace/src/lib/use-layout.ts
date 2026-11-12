@@ -20,7 +20,7 @@ type Action = {[K in keyof LayoutState]: {key: K; value: SetStateAction<LayoutSt
 
 const initial = (): LayoutState => ({
   layout: 'chat', dock: layouts.chat, dockGeometry: defaultGeometry, left: innerWidth > 850, right: true, bottom: true,
-  sidebarWidth: 244, rightWidth: 380, sidebarHover: false,
+  sidebarWidth: 240, rightWidth: 380, sidebarHover: false,
 });
 
 function reducer(state: LayoutState, action: Action): LayoutState {

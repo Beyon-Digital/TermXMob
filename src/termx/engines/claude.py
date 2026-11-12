@@ -61,6 +61,7 @@ class ClaudeEngine:
         self._bindings: dict[str, EngineSessionBinding] = {}
         self._pending_decisions: dict[str, tuple[asyncio.Future[Any], str, dict]] = {}
         self.browser_service = None  # AppState supplies the trusted host broker.
+        self.workflow_tools = None
 
     def descriptor(self) -> EngineDescriptor:
         if self._executable is None:
@@ -100,7 +101,9 @@ class ClaudeEngine:
             skills_native="supported",
             mcp_native="supported",   # options.mcp_servers incl. in-process SDK
             models=[],
-            notes={"auth": "Anthropic API key only — no claude.ai subscription reuse", "browser": "Dedicated browser workflow removes built-in tools and settings, exposes only the host-controlled in-process MCP broker"},
+            notes={"auth": "Anthropic API key only — no claude.ai subscription reuse", "browser": "Dedicated browser workflow removes built-in tools and settings, exposes only the host-controlled in-process MCP broker",
+                   "workflow_tools": "Task-scoped in-process SDK MCP on managed coding conversations, with live policy and exact host approval; excluded from browser-only workflows.",
+                   "workflow_child_delegation": "disabled"},
         )
 
     # ------------------------------------------------------------- sessions
@@ -133,11 +136,28 @@ class ClaudeEngine:
         tools = cfg.tools or {}
         allowed = tools.get("allowed") or []
         denied = tools.get("denied") or []
+        workflow_child = bool(self.workflow_tools and self.workflow_tools.is_workflow_child(tools.get("managed_task_id")))
+        binding.extensions_snapshot["workflow_child_delegation_disabled"] = workflow_child
+        if workflow_child:
+            denied = sorted(set(denied) | {"Agent", "Task", "Workflow"})
         if allowed:
             opts_kwargs["allowed_tools"] = list(allowed)
         if denied:
             opts_kwargs["disallowed_tools"] = list(denied)
         mcp = self._mcp_servers(cfg)
+        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"),
+            review_read_only=cfg.mode == "ask" or cfg.sandbox_profile == "read-only")
+        schemas = self.workflow_tools.schemas(cfg.tools.get("managed_task_id"),
+            read_only=cfg.mode == "ask" or cfg.sandbox_profile == "read-only", workflow=cfg.workflow,
+            allowed=allowed, denied=denied, tools_mode=tools.get("tools_mode")) if self.workflow_tools else []
+        binding.extensions_snapshot["workflow_tool_names"] = [schema["name"] for schema in schemas]
+        if schemas:
+            from termx.workspace.workflow_mcp import controlled_server
+            mcp["termx-workflows"] = controlled_server(self.workflow_tools, self, binding, cfg.tools["managed_task_id"], schemas)
+            # These callbacks enforce the actual host ToolRegistry policy and
+            # exact-action approval themselves. Preserve other native tools.
+            if allowed:
+                opts_kwargs["allowed_tools"] = list(allowed) + ["mcp__termx-workflows__" + schema["name"] for schema in schemas]
         if mcp:
             opts_kwargs["mcp_servers"] = mcp
         if cfg.workflow=='browser':
@@ -156,10 +176,13 @@ class ClaudeEngine:
             opts_kwargs['can_use_tool']=browser_gate
         elif self.browser_service and cfg.tools.get('managed_task_id'):
             opts_kwargs['hooks']=self._coding_review_hooks(cfg,binding)
-        limits = cfg.tools.get("limits") or {}
-        if limits.get("max_steps"):
-            opts_kwargs["max_turns"] = int(limits["max_steps"])
+        # Task step counts do not impose a native SDK turn quota. Explicit
+        # provider constraints, when configured, belong to provider settings.
         return ClaudeAgentOptions(**{k: v for k, v in opts_kwargs.items() if v is not None})
+
+    def workflow_capabilities(self):
+        return {"supported": True, "available": self.workflow_tools is not None,
+                "transport": "claude-sdk-mcp", "new_sessions_only": False}
 
     def _coding_review_hooks(self,cfg,binding):
         from claude_agent_sdk import HookMatcher
@@ -170,6 +193,12 @@ class ClaudeEngine:
             identity=service.records.get('agent-task-authority',task_id)
             if not identity:return {} # Legacy callers retain native human gates.
             name=data.get('tool_name','');input=data.get('tool_input') or {}
+            if binding.extensions_snapshot.get('workflow_child_delegation_disabled') and name in {'Agent','Task','Workflow'}:
+                return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny','permissionDecisionReason':'The workflow script coordinates all agents; nested native delegation is disabled'}}
+            if name.startswith('mcp__termx-workflows__'):
+                # Host-owned workflow callbacks authorize after live binding
+                # and ToolRegistry policy checks, at the actual effect edge.
+                return {}
             # Map only native typed file effects to eligible smaller-model
             # review. Arbitrary Bash/MCP/process effects remain exact human asks.
             tool={'Write':'write_file','Edit':'write_file','Read':'read_file'}.get(name,'native.'+name)
@@ -235,6 +264,13 @@ class ClaudeEngine:
 
         async def gate(tool_name: str, tool_input: dict[str, Any], context: Any) -> Any:
             from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+            if binding.extensions_snapshot.get("workflow_child_delegation_disabled") and tool_name in {"Agent", "Task", "Workflow"}:
+                return PermissionResultDeny(message="The workflow script coordinates all agents; nested native delegation is disabled")
+            if tool_name.startswith("mcp__termx-workflows__"):
+                name = tool_name.removeprefix("mcp__termx-workflows__")
+                if engine.workflow_tools and name in binding.extensions_snapshot.get("workflow_tool_names", ()):
+                    return PermissionResultAllow(updated_input=tool_input)
+                return PermissionResultDeny(message="Workflow tool is unavailable for this task")
             if engine._approval_sink is None:
                 return PermissionResultAllow(updated_input=tool_input)
             token = f"claudereq_{uuid.uuid4().hex[:16]}"
@@ -538,6 +574,10 @@ class ClaudeEngine:
             raise KeyError(f"no pending engine request {request_id}")
         fut, _method, _params = entry
         if _method=='browser.review':
+            if _params.get('binding_id'):
+                from termx.engines.action_review import respond_review
+                respond_review(self, binding, entry, decision in ('approve', 'approve_always'))
+                return
             reviewed=self.browser_service.records.get('review',_params['review_id'])
             if decision in ('approve','approve_always') and (not reviewed or reviewed['status']!='needs_user' or reviewed['expires_at']<=time.time()):
                 if not fut.done():fut.set_result('deny')

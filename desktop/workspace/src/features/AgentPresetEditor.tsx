@@ -8,23 +8,14 @@ import McpPresetBindings,{type McpBinding} from './McpPresetBindings';
 import type {AgentPreset,AgentPresetInput} from '../lib/host-types';
 import {useDirtyForm} from './settings-forms';
 
-const budgets = [
-  ['max_steps', 'Maximum steps', 256, 100000],
-  ['max_seconds', 'Maximum run seconds', 14400, 604800],
-  ['shell_timeout_s', 'Shell timeout seconds', 120, 86400],
-  ['max_parallel_subagents', 'Parallel subagents', 3, 8],
-  ['max_subagents_total', 'Total subagents', 8, 32],
-] as const;
-type BudgetKey = typeof budgets[number][0];
 const toolChoices = [['read_file','Read project files'],['search_files','Search project files'],['write_file','Write project files'],['run_shell','Run shell commands'],['mcp_catalog','Inspect connected tools'],['mcp_call','Use connected tools']] as const;
 /** Lists are held as raw lines while typing, so a trailing newline survives; `clean` normalises them on save. */
 interface PresetDraft {
   name: string; description: string; instructions: string; engine: string; model: string;
-  tools: string[]; toolsets: string[]; deny_tools: string[]; limits: Record<BudgetKey, number | null>;
+  tools: string[]; toolsets: string[]; deny_tools: string[];
   approval_mode: string; sandbox_profile: string; enabled: boolean; mcp_connections: McpBinding[]; allTools: boolean;
 }
 const clean = (lines: string[]) => [...new Set(lines.map(item => item.trim()).filter(Boolean))];
-const budgetError = (value: number | null, max: number) => value !== null && Number.isInteger(value) && value >= 1 && value <= max ? '' : `Enter a whole number from 1 to ${max.toLocaleString('en-US')}.`;
 
 function TextField({label, value, onChange, error, multiline = false, required = false, disabled}: {label: string; value: string; onChange: (value: string) => void; error?: string; multiline?: boolean; required?: boolean; disabled: boolean}) {
   return <FormField label={label} error={error}>{control => multiline
@@ -46,15 +37,12 @@ export function AgentPresetEditor({ preset, onSave, onCancel, engines=[] }: {
     tools: [...(preset?.tools || [])], toolsets: [...(preset?.toolsets || [])], deny_tools: [...(preset?.deny_tools || [])],
     approval_mode: preset?.approval_mode || 'standard', sandbox_profile: preset?.sandbox_profile || 'agent', enabled: preset?.enabled ?? true,
     mcp_connections: structuredClone(preset?.mcp_connections || []) as McpBinding[], allTools: preset ? preset.tools_mode === 'all' : false,
-    limits: Object.fromEntries(budgets.map(([key,,fallback]) => [key, preset?.limits?.[key] ?? fallback])) as Record<BudgetKey, number | null>,
   }));
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [attempted, setAttempted] = useState(false), [touched, setTouched] = useState<ReadonlySet<BudgetKey>>(new Set());
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [attempted, setAttempted] = useState(false);
   const pending = useRef(false);
   const change = <K extends keyof PresetDraft>(key: K, value: PresetDraft[K]) => setDraft(prior => ({...prior, [key]: value}));
-  const setLimit = (key: BudgetKey, value: number | null) => { setDraft(prior => ({...prior, limits: {...prior.limits, [key]: value}})); setTouched(prior => new Set(prior).add(key)) };
   const nameError = draft.name.trim() ? '' : 'Enter a name for this preset.';
-  const limitErrors = Object.fromEntries(budgets.map(([key,,,max]) => [key, budgetError(draft.limits[key], max)])) as Record<BudgetKey, string>;
-  const valid = !nameError && budgets.every(([key]) => !limitErrors[key]);
+  const valid = !nameError;
   async function save(event: React.FormEvent) {
     event.preventDefault(); setAttempted(true);
     if (pending.current || !valid) return;
@@ -63,7 +51,7 @@ export function AgentPresetEditor({ preset, onSave, onCancel, engines=[] }: {
       const input: AgentPresetInput = {name: draft.name.trim(), description: draft.description, instructions: draft.instructions,
         engine: draft.engine.trim() || 'inherit', model: draft.model.trim(),
         mcp_connections: draft.mcp_connections, toolsets: clean(draft.toolsets), deny_tools: clean(draft.deny_tools),
-        limits: Object.fromEntries(budgets.map(([key]) => [key, draft.limits[key] as number])),
+        limits: {},
         approval_mode: draft.approval_mode, sandbox_profile: draft.sandbox_profile, enabled: draft.enabled};
       if (!draft.allTools) input.tools = clean(draft.tools);
       if (original) {
@@ -91,7 +79,6 @@ export function AgentPresetEditor({ preset, onSave, onCancel, engines=[] }: {
       <details><summary>Advanced · exact tool names and toolsets</summary>{!draft.allTools && <ListField label="Allowed tool IDs (one per line)" value={draft.tools} disabled={busy} onChange={value => change('tools', value)}/>}<ListField label="Toolset IDs (one per line)" value={draft.toolsets} disabled={busy} onChange={value => change('toolsets', value)}/><ListField label="Denied tool IDs (one per line)" value={draft.deny_tools} disabled={busy} onChange={value => change('deny_tools', value)}/></details>
     </fieldset>
     <McpPresetBindings value={draft.mcp_connections} disabled={busy} onChange={bindings => { change('mcp_connections', bindings); if (bindings.length && !draft.allTools) change('tools', clean([...draft.tools, 'mcp_catalog', 'mcp_call'])) }}/>
-    <fieldset className="provider-capabilities"><legend>Run budget</legend>{budgets.map(([key, label,, max]) => <FormField key={key} label={label} error={(attempted || touched.has(key)) ? limitErrors[key] : ''}>{control => <Input {...control} type="number" inputMode="numeric" step={1} aria-required="true" disabled={busy} value={draft.limits[key] ?? ''} onChange={event => setLimit(key, event.target.value === '' ? null : Number(event.target.value))}/>}</FormField>)}</fieldset>
     <FormField label="Approval preference">{control => <Select {...control} disabled={busy} value={draft.approval_mode} onChange={event => change('approval_mode', event.target.value)}><option value="standard">Ask when required</option><option value="remember">Use remembered consent</option><option value="autonomous">Autonomous within host policy</option></Select>}</FormField>
     <FormField label="Sandbox preference">{control => <Select {...control} disabled={busy} value={draft.sandbox_profile} onChange={event => change('sandbox_profile', event.target.value)}><option value="agent">Agent</option><option value="workspace">Workspace</option><option value="host">Host</option></Select>}</FormField>
     <label className="manager-choice"><input type="checkbox" checked={draft.enabled} disabled={busy} onChange={event => change('enabled', event.target.checked)}/>Available for future sessions</label>

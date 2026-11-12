@@ -41,11 +41,6 @@ async def assemble(workspace, principal, task_id, *, request_id, members):
             raise ValueError('Choose one to eight workers with unique non-empty names')
         if any(not m['task'].strip() for m in members):
             raise ValueError('Every worker needs a task')
-        handles = manager._subagent_handles(task_id)
-        limits = task['limits']
-        active = sum(not h.done.is_set() for h in handles.values())
-        if active + len(members) > limits['max_parallel_subagents'] or len(handles) + len(members) > limits['max_subagents_total']:
-            raise Conflict('The team exceeds the coordinator’s remaining parallel or total worker allowance')
         cancel = manager._cancel.get(task_id) or asyncio.Event()
         if cancel.is_set():
             raise Conflict('The coordinator is not running on this host; recover it before creating a team')

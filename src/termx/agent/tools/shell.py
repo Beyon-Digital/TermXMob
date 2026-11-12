@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -53,7 +54,7 @@ async def _streamed_process(
     ctx: ToolContext,
     command: str,
     *,
-    timeout_s: float,
+    timeout_s: float | None,
 ) -> tuple[Any, int]:
     """Run ``command`` emitting process.* events as output arrives."""
     started = time.monotonic()
@@ -125,14 +126,20 @@ async def _streamed_process(
     return result, duration_ms
 
 
-def _shell_timeout(call: "ProviderCall", ctx: ToolContext, default: float) -> float:
-    limit = float(ctx.task["limits"]["shell_timeout_s"])
+def _shell_timeout(call: "ProviderCall", ctx: ToolContext, default: float | None = None) -> float | None:
+    """Use only an explicit command timeout, never a legacy task default."""
     requested = call.arguments.get("timeout_s")
+    if requested is None:
+        return None
+    if isinstance(requested, bool):
+        raise ValueError("timeout_s must be a positive number")
     try:
-        requested = float(requested) if requested is not None else default
+        timeout = float(requested)
     except (TypeError, ValueError):
-        requested = default
-    return min(limit, max(1.0, requested))
+        raise ValueError("timeout_s must be a positive number") from None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout_s must be a positive number")
+    return timeout
 
 
 async def _run_shell(call: "ProviderCall", ctx: ToolContext) -> ToolOutcome:
@@ -145,7 +152,7 @@ async def _run_shell(call: "ProviderCall", ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(
             {"ok": False, "exit_code": None, "output": _ASK_REFUSAL, "refused": True}
         )
-    timeout = _shell_timeout(call, ctx, float(ctx.task["limits"]["shell_timeout_s"]))
+    timeout = _shell_timeout(call, ctx)
     result, duration_ms = await _streamed_process(call, ctx, command, timeout_s=timeout)
     public = result.public()
     public["duration_ms"] = duration_ms
@@ -163,7 +170,7 @@ async def _run_check(call: "ProviderCall", ctx: ToolContext) -> ToolOutcome:
         return ToolOutcome(
             {"ok": False, "exit_code": None, "output": _ASK_REFUSAL, "refused": True, "kind": kind}
         )
-    timeout = _shell_timeout(call, ctx, 300.0)
+    timeout = _shell_timeout(call, ctx)
     result, duration_ms = await _streamed_process(call, ctx, command, timeout_s=timeout)
     output = result.public()["output"]
     artifact: dict[str, Any] | None = None
@@ -224,7 +231,8 @@ def register(registry: ToolRegistry) -> None:
                 "properties": {
                     "command": {"type": "string"},
                     "purpose": {"type": "string"},
-                    "timeout_s": {"type": "number", "minimum": 1, "maximum": 600},
+                    "timeout_s": {"type": "number", "exclusiveMinimum": 0,
+                                  "description": "Optional explicit timeout for this command in seconds; omitted commands have no deadline."},
                 },
                 "required": ["command", "purpose"],
                 "additionalProperties": False,
@@ -253,7 +261,8 @@ def register(registry: ToolRegistry) -> None:
                 "properties": {
                     "kind": {"type": "string", "enum": ["test", "lint", "typecheck", "build", "other"]},
                     "command": {"type": "string"},
-                    "timeout_s": {"type": "number", "minimum": 1, "maximum": 600},
+                    "timeout_s": {"type": "number", "exclusiveMinimum": 0,
+                                  "description": "Optional explicit timeout for this command in seconds; omitted commands have no deadline."},
                 },
                 "required": ["kind", "command"],
                 "additionalProperties": False,

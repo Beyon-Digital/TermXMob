@@ -98,7 +98,7 @@ def test_turn_posts_chat_completions_and_returns_calls_and_usage() -> None:
         assert "input" not in body and "instructions" not in body and "store" not in body
         names = {tool["function"]["name"] for tool in body["tools"]}
         assert "run_shell" in names and "exit_plan" not in names
-        assert body["max_tokens"] == 2200
+        assert "max_tokens" not in body and "max_completion_tokens" not in body
         assert turn.response_id == "chatcmpl-1"
         assert [(c.name, c.call_id, c.arguments["command"]) for c in turn.calls] == [("run_shell", "call_1", "printf hi")]
         assert turn.usage["input_tokens"] == 50 and turn.usage["output_tokens"] == 10

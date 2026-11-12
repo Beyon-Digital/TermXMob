@@ -4,7 +4,7 @@ import type {Task} from '../lib/api';
 import {usePolling} from '../lib/use-polling';
 
 /**
- * Context, usage and Auto allowance for the newest task. Polls while the task is live and reads once
+ * Context, usage and Auto status for the newest task. Polls while the task is live and reads once
  * for a finished one. Native engines do not report these, so they are skipped.
  */
 export function useTaskMeter(task: Task | undefined, live: boolean, visible = true) {

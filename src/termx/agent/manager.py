@@ -37,6 +37,7 @@ from termx.agent.policy import (
     is_sensitive_path,
     redact,
 )
+from termx.agent.provider_limits import clean_provider_limits
 from termx.agent.providers import (
     OpenAIChatAdapter,
     OpenAIResponsesAdapter,
@@ -49,10 +50,9 @@ from termx.agent.recovery import public_checkpoint, recovery_decision
 from termx.agent.runtime import ProviderHttpRuntime
 from termx.agent.scheduler import CallScheduler
 from termx.agent.secrets import CredentialStore
-from termx.agent.tree_budget import TreeTimeExceeded
 from termx.config import parse_routing
 from termx.agent.store import ACTIVE_STATUSES, AgentStore, configured_models
-from termx.agent.limits import DEFAULT_LIMITS, auto_summary, auto_usage, resolve_auto_ceilings, resolve_limits
+from termx.agent.limits import auto_summary, resolve_auto_ceilings, resolve_limits
 from termx.agent.tools import ToolContext, ToolOutcome, default_registry
 from termx.agent.tools.registry import DESKTOP_TOOLS, expand_tools
 from termx.agent import worktrees
@@ -63,10 +63,6 @@ T = TypeVar("T")
 # submits a plan with `exit_plan`; approval flips it to Agent mode.
 READ_ONLY_MODES = frozenset({"ask", "plan"})
 _AUTO_NEEDS_WORKTREE = "Auto mode needs an isolated worktree. Start the task with worktree execution."
-_AUTO_PAUSE_TEXT = {
-    "title": "Auto mode reached a limit. Continue?",
-    "consequence": "Starts a fresh Auto allowance for this task; Auto mode keeps approving low-risk calls",
-}
 AdapterFactory = Callable[[dict[str, Any], str], ProviderAdapter]
 
 
@@ -375,6 +371,7 @@ class AgentManager:
         api_key: str | None = None,
         model_meta: dict[str, Any] | None = None,
         wire: str | None = None,
+        limits: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         current = self.store.get_provider(provider_id)
         if provider_id.startswith("chatgpt-") or (current and current["kind"] == "chatgpt"):
@@ -386,17 +383,18 @@ class AgentManager:
         if wire is not None and wire not in {"responses", "chat"}:
             raise ValueError("provider wire must be 'responses' or 'chat'")
         overrides = clean_overrides(model_meta) if model_meta is not None else None
+        provider_limits = clean_provider_limits(limits) if limits is not None else None
         # These are account declarations, not a probe of model entitlement or
         # permission to invoke a billed operation. Preserve declarations on
         # credential rotation when the caller omits this optional field.
         declared = capabilities if capabilities is not None else (
             current.get("capabilities", ["shell"]) if current else ["shell"]
         )
-        supported = {"shell", "functions", "computer", "image", "audio", "realtime"}
+        supported = {"shell", "functions", "computer", "image", "video", "audio", "realtime"}
         if not isinstance(declared, list) or len(declared) > len(supported) or any(
             not isinstance(item, str) or item not in supported for item in declared
         ):
-            raise ValueError("provider capabilities must declare shell, functions, computer, image, audio or realtime")
+            raise ValueError("provider capabilities must declare shell, functions, computer, image, video, audio or realtime")
         allowed = list(dict.fromkeys(declared)) or ["shell"]
         api_key = api_key.strip() if api_key else api_key
         if api_key and (not api_key.isprintable() or any(ch.isspace() for ch in api_key)):
@@ -424,6 +422,7 @@ class AgentManager:
             secret_configured=configured,
             model_overrides=overrides,
             wire=wire,
+            limits=provider_limits,
         )
         if current and current["base_url"] != provider["base_url"]:
             # The old catalog describes a different server.
@@ -451,9 +450,12 @@ class AgentManager:
             fetched_at = time()
             models = await self.chatgpt.models(provider["id"])
             return {m["slug"]: model_info("chatgpt", fetched_at) for m in models}
-        timeout = float(self._settings().provider_timeout_s) if self._settings else 15.0
+        # Catalogue discovery is a short metadata request, separate from a
+        # task's provider turns. A retired global task timeout may be null.
+        timeout = (provider.get("limits") or {}).get("request_timeout_s")
         return await discover_models(
-            provider, self.credentials.get(provider["id"]) or "", timeout_s=min(timeout, 15.0)
+            provider, self.credentials.get(provider["id"]) or "",
+            timeout_s=min(float(timeout), 15.0) if timeout is not None else 15.0,
         )
 
     # Model routing -------------------------------------------------
@@ -817,8 +819,6 @@ class AgentManager:
             approval = self.store.create_approval(task_id, "plan", {"title": "Approve this plan", "plan": plan, "consequence": "Starts work on the paired host"})
             self._emit(task_id, "approval.requested", {"approval": approval})
             self._emit(task_id, "task.status", {"status": "awaiting_approval"})
-        except TreeTimeExceeded:
-            self._pause_budget(task_id, seed, 0, monotonic(), "shared_max_seconds")
         except asyncio.CancelledError:
             self._mark_cancelled(task_id)
         except Exception as exc:
@@ -885,6 +885,8 @@ class AgentManager:
         if decision == "revise" and (approval["kind"] != "plan" or task.get("mode") != "plan"):
             raise ValueError("revise is only available for plans made in plan mode")
         if decision == "approved" and approval["kind"] == "plan" and task.get("mode") == "plan":
+            if orchestrator:
+                orchestrator.workspace.validate_plan_execution(task_id)
             provider = self._provider(task["provider_id"])
             model = str(task.get("model") or _resolve_model(provider, None))
             if not self.tools_supported(provider, model):
@@ -934,28 +936,11 @@ class AgentManager:
             if not reviewed or reviewed['status']!='needs_user' or reviewed['expires_at']<=time():
                 raise ValueError('Browser page, control or approval expired; take over and request a fresh observation')
         next_limits = None
-        renew_shared = True
         if approval["kind"] == "budget" and decision == "approved":
-            step = int((task.get("runtime") or {}).get("step") or 0)
-            suggested = approval["payload"]["suggested_limits"]
-            shared=approval['payload'].get('tree_budget')
-            if shared:
-                current=self.tree_budget.snapshot(task_id)
-                if approval['payload'].get('reuse_grant') and not current['reason']:
-                    renew_shared=False
-                    suggested={'max_steps':current['max_steps'],'max_seconds':current['max_execution_seconds']}
-                elif current['version']!=shared['version']:
-                    # Another task already received the explicit tree grant.
-                    # This decision resumes within that existing allowance; it
-                    # cannot extend it or reset the shared time meter again.
-                    if current['reason']:raise ValueError('The shared allowance is exhausted again; inspect the newest tree budget request')
-                    renew_shared=False
-                    suggested={'max_steps':current['max_steps'],'max_seconds':current['max_execution_seconds']}
-            next_limits = resolve_limits(limits if renew_shared else None, {**task["limits"], **suggested})
-            if shared and next_limits['max_steps']<=current['used_steps']:
-                raise ValueError('The total tree step ceiling must exceed the already reserved calls')
-            if next_limits["max_steps"] <= step:
-                raise ValueError("max_steps must exceed the completed tool count")
+            # Explicit Continue releases an old usage pause. It never rebuilds
+            # a missing private tool request or bypasses its approval binding.
+            next_limits = resolve_limits(limits)
+            current = self.tree_budget.snapshot(task_id)
         if (
             decision != "denied"
             and approval["kind"] == "tool"
@@ -971,7 +956,7 @@ class AgentManager:
             if expected and expected != current or current.get('unbound'):
                 raise PermissionError('Task authority changed; request fresh consent')
         if approval["kind"] == "budget" and decision == "approved" and approval['payload'].get('tree_budget') and not escalation:
-            approval = self.tree_budget.approve(task_id, approval_id, next_limits, version=current['version'] if not renew_shared else shared['version'], renew=renew_shared)
+            approval = self.tree_budget.approve(task_id, approval_id, next_limits, version=current['version'], renew=False)
         else:
             approval = self.store.resolve_approval(approval_id, "revised" if decision == "revise" else decision)
         metrics = self._metrics.get(task_id)
@@ -1010,10 +995,6 @@ class AgentManager:
             runtime = dict(task.get("runtime") or {})
             runtime["started_at"] = None
             runtime.pop("tree_budget_resume", None)
-            if str(approval["payload"].get("reason") or "").startswith("auto_") and runtime.get("auto"):
-                # A renewed allowance counts from now, not from when Auto was enabled.
-                runtime["auto"] = {**runtime["auto"], "base_step": int(runtime.get("step") or 0), "turns": 0,
-                                   "calls": 0, "tokens": 0, "cost_usd": 0.0, "since": time()}
             self.store.update_task(task_id, limits=next_limits, runtime=runtime)
             self._emit(task_id, "task.budget.extended", {"limits": next_limits})
             self._launch(task_id, self._resume_planning(task_id) if runtime.get("tree_phase") == "planning" else self._drive(task_id))
@@ -1319,7 +1300,7 @@ class AgentManager:
     ) -> Callable[[list[dict[str, Any]]], Awaitable[dict[str, Any]]] | None:
         """A model-backed summariser when the ``summariser`` role is configured, else None.
 
-        Its turns count toward the task's usage, the tree budget and the Auto allowance like any other turn.
+        Its turns count toward task and tree usage like any other turn.
         """
         if not self.routing().get("summariser"):
             return None
@@ -1461,19 +1442,8 @@ class AgentManager:
             while True:
                 self._check_execution_authority(task_id)
                 task = self._task(task_id)
-                limits = task["limits"]
                 if cancel.is_set():
                     await self._cancelled(task_id)
-                    return
-                shared = self.tree_budget.snapshot(task_id)
-                reason = (shared['reason'] or ("max_steps" if step >= limits["max_steps"] else
-                          "max_seconds" if monotonic() - started_at >= limits["max_seconds"] else None))
-                if reason:
-                    self._pause_budget(task_id, history, step, started_at, reason)
-                    return
-                breach = self._auto_breach(task, step)
-                if breach:
-                    self._pause_auto(task_id, history, step, started_at, breach)
                     return
                 parked=(task.get('runtime') or {}).get('tree_pending_calls')
                 if parked:
@@ -1598,7 +1568,7 @@ class AgentManager:
                         cancel,
                     ))
                 except Exception as failure:
-                    if isinstance(failure, TreeTimeExceeded) or cancel.is_set() or first_token:
+                    if cancel.is_set() or first_token:
                         raise
                     # Same-provider retries are exhausted. Try each configured
                     # fallback once, for this turn only.
@@ -1622,7 +1592,7 @@ class AgentManager:
                             ))
                             break
                         except Exception as next_failure:
-                            if isinstance(next_failure, TreeTimeExceeded) or cancel.is_set() or first_token:
+                            if cancel.is_set() or first_token:
                                 raise
                             failure = next_failure
                     else:
@@ -1692,8 +1662,6 @@ class AgentManager:
                            **self._carry_runtime(self._task(task_id).get("runtime")),
                            "context_used": engine.context_used(history)}
                 self.store.update_task(task_id, runtime=runtime)
-        except TreeTimeExceeded:
-            self._pause_budget(task_id,history,step,started_at,'shared_max_seconds')
         except asyncio.CancelledError:
             await self._cancelled(task_id)
         except Exception as exc:
@@ -1839,33 +1807,8 @@ class AgentManager:
 
     @staticmethod
     def _auto_breach(task: dict[str, Any], step: int) -> tuple[str, int | float, int | float] | None:
-        """(ceiling, limit, used) for the first Auto ceiling reached, else None.
-
-        The cost ceiling only sees turns with a known price, so an unpriced
-        model never trips it; the token ceiling still counts its tokens.
-        """
-        auto = (task.get("runtime") or {}).get("auto") or {}
-        if not auto.get("enabled"):
-            return None
-        ceilings = auto.get("ceilings") or {}
-        for name, value in auto_usage(auto, step).items():
-            limit = ceilings.get(name) or 0
-            if limit and value >= limit:
-                return name, limit, value
+        """Compatibility hook: Auto usage never interrupts a running task."""
         return None
-
-    def _park_calls(self, task_id: str, calls: list[ProviderCall], index: int, approved_first: bool) -> None:
-        """Keep the calls not yet run so a budget approval resumes them."""
-        runtime = {**(self._task(task_id).get("runtime") or {}),
-                   "tree_pending_calls": [self._call_payload(call) for call in calls[index:]],
-                   "tree_approved_first": approved_first}
-        self.store.update_task(task_id, runtime=runtime)
-
-    def _pause_auto(self, task_id: str, history: list[dict[str, Any]], step: int,
-                    started_at: float, breach: tuple[str, int | float, int | float]) -> None:
-        ceiling, limit, used = breach
-        self._emit(task_id, "auto.ceiling", {"ceiling": ceiling, "limit": limit, "used": used})
-        self._pause_budget(task_id, history, step, started_at, f"auto_{ceiling}", {"ceiling": ceiling, "limit": limit, "used": used})
 
     def _auto_note_call(self, task_id: str) -> None:
         """Count one auto-approved tool call, where its auto.decision event is emitted, in the persisted task runtime."""
@@ -1875,7 +1818,7 @@ class AgentManager:
             self.store.update_task(task_id, runtime={**runtime, "auto": {**auto, "calls": int(auto.get("calls") or 0) + 1}})
 
     def _auto_note_turn(self, task_id: str, tokens: int = 0, cost_usd: float | None = None) -> None:
-        """Count a provider turn against the Auto allowance. An unknown price adds tokens but no cost."""
+        """Record Auto usage. An unknown price adds tokens but no cost."""
         runtime = self._task(task_id).get("runtime") or {}
         auto = runtime.get("auto")
         if auto and auto.get("enabled"):
@@ -1902,7 +1845,7 @@ class AgentManager:
             )
         resolved = resolve_auto_ceilings(ceilings, (previous or {}).get("ceilings"))
         if previous and (previous.get("enabled") or not enabled):
-            # Counters keep running when only the ceilings change or Auto goes off.
+            # Changing the permission switch preserves usage counters.
             runtime["auto"] = {**previous, "enabled": enabled, "ceilings": resolved}
         else:
             runtime["auto"] = self._auto_state(enabled, resolved, int(runtime.get("step") or 0))
@@ -1914,19 +1857,15 @@ class AgentManager:
         runtime = {**(task.get("runtime") or {}), "history": history,
                    "step": step, "started_at": started_at}
         self.store.update_task(task_id, status="awaiting_approval", runtime=runtime)
-        chunk = self._limits(None)["max_steps"]
-        shared=self.tree_budget.snapshot(task_id) if reason.startswith('shared_') else None
-        suggested = {"max_steps": min(100000, max((shared['used_steps'] if shared else step) + chunk, (shared['max_steps'] if shared else task["limits"]["max_steps"])))}
-        if shared:suggested['max_seconds']=shared['max_execution_seconds']
+        # Only recovery uses this compatibility gate. Resuming an interrupted
+        # approved boundary still needs an explicit user decision.
         approval = self.store.create_approval(task_id, "budget", {
-            "title": _AUTO_PAUSE_TEXT["title"] if reason.startswith("auto_") else "Continue the task tree with a shared execution budget" if shared else "Continue this task with a renewed run budget",
-            **({'tree_budget':shared,'reuse_grant':reason=='shared_resume' and not shared['reason']} if shared else {}),
-            "reason": reason, "completed_steps": step, "limits": task["limits"],
-            **({"auto_ceiling": auto_ceiling} if auto_ceiling else {}),
-            "suggested_limits": suggested,
-            "consequence": _AUTO_PAUSE_TEXT["consequence"] if reason.startswith("auto_") else "Continues within the already approved shared allowance without resetting time or reserved calls" if reason == "shared_resume" and shared and not shared['reason'] else "Renews the shared sum of active parent/child execution seconds and the total tool-call ceiling; reserved calls and completed effects remain." if shared else "Continues from saved tool results; grants a fresh time budget",
+            "title": "Continue this task?",
+            "reason": reason, "completed_steps": step, "limits": resolve_limits(),
+            "tree_budget": self.tree_budget.snapshot(task_id),
+            "suggested_limits": resolve_limits(),
+            "consequence": "Continues from saved tool results after the interrupted host run.",
         })
-        self._emit(task_id, "task.budget.exhausted", approval["payload"])
         self._emit(task_id, "approval.requested", {"approval": approval})
         self._emit(task_id, "task.status", {"status": "awaiting_approval"})
 
@@ -1949,11 +1888,6 @@ class AgentManager:
         index = 0
         for group in groups:
             self._check_execution_authority(task_id)
-            breach = None if approved_first and index == 0 else self._auto_breach(self._task(task_id), step)
-            if breach:
-                self._park_calls(task_id, calls, index, False)
-                self._pause_auto(task_id, history, step, started_at, breach)
-                return True, history, step
             preset=self.store.task_agent(task)
             if preset and preset.get('tools'):
                 for entry in group:
@@ -1979,11 +1913,7 @@ class AgentManager:
                     if item.call.type!='function' or item.call.name not in broker_tools:
                         raise PermissionError('Restricted browser task cannot run process or desktop tools; take over all granted tabs before resuming coding execution')
             positions=[str(step+offset)+':'+hashlib.sha256(json.dumps(self._call_payload(entry.call),sort_keys=True).encode()).hexdigest() for offset,entry in enumerate(group)]
-            shared_reason=self.tree_budget.reserve(task_id,positions)
-            if shared_reason:
-                self._park_calls(task_id, calls, index, approved_first and index == 0)
-                self._pause_budget(task_id,history,step,started_at,shared_reason)
-                return True,history,step
+            self.tree_budget.reserve(task_id, positions)
             if len(group) > 1:
                 # A parallel-safe batch: registered read tools that never need
                 # approval, run concurrently. Output order stays call order.
@@ -2531,10 +2461,7 @@ class AgentManager:
             # to one anyway is refused here, whatever approval or Auto says.
             return ToolOutcome({"refused": True, "error": f"{call.name} is not available in a read-only mode. Switch to Agent mode."})
         started = monotonic()
-        try:
-            outcome = await self._budget_await(ctx.task_id,entry.spec.execute(call,ctx))
-        except TreeTimeExceeded as exc:
-            raise RuntimeError('Shared execution time exhausted during a tool. Its result may be partial; inspect the checkpoint and actual state before explicitly retrying.') from exc
+        outcome = await self._budget_await(ctx.task_id, entry.spec.execute(call, ctx))
         metrics = ctx.metrics
         if metrics is not None:
             metrics.record_tool(call.name or call.type, int((monotonic() - started) * 1000))
@@ -2822,13 +2749,6 @@ class AgentManager:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
         self._subscribers[handle.child_id].add(queue)
         handle.queue = queue
-        child_limits = child.get("limits") or {}
-        try:
-            max_seconds = float(child_limits.get("max_seconds") or _SUBAGENT_MAX_SECONDS)
-        except (TypeError, ValueError):
-            max_seconds = float(_SUBAGENT_MAX_SECONDS)
-        elapsed = max(0.0, time() - float(child.get("created_at") or time()))
-        handle.deadline = monotonic() + max(30.0, min(max_seconds, _SUBAGENT_MAX_SECONDS) - elapsed)
         if handle.parent_cancel is None:
             handle.parent_cancel = self._cancel.get(parent_id) or asyncio.Event()
         handle.watcher = asyncio.create_task(
@@ -2844,8 +2764,11 @@ class AgentManager:
         *, verified_target: dict[str, Any] | None = None,
         target_authorize: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
-        # Isolation preparation yields to other calls. Reserve admission through
-        # child registration so concurrent callers cannot exceed the same cap.
+        workflow_tools = getattr(self, 'workflow_tools', None)
+        if workflow_tools is not None:
+            workflow_tools.validate_delegation(task_id)
+        # Serialize isolation preparation and durable child registration so
+        # concurrent retries cannot duplicate the same delegation.
         async with self._spawn_locks[task_id]:
             return await self._spawn_subagent_locked(task_id, task, call, cancel,
                 **({'verified_target':verified_target,'target_authorize':target_authorize} if verified_target else {}))
@@ -2924,22 +2847,7 @@ class AgentManager:
             )
             if instructions:
                 child_prompt = f'You are the "{agent}" sub-agent.\n\n{child_prompt}'
-        parent_limits = task["limits"]
         handles = self._subagent_handles(task_id)
-        running = sum(1 for handle in handles.values() if not handle.done.is_set())
-        max_parallel = int(parent_limits.get("max_parallel_subagents") or DEFAULT_LIMITS["max_parallel_subagents"])
-        if running >= max_parallel:
-            return {
-                "ok": False,
-                "error": f"sub-agent parallel limit reached ({running}/{max_parallel} running)",
-                "hint": "call await_subagents to free a slot, or raise max_parallel_subagents",
-            }
-        max_total = int(parent_limits.get("max_subagents_total") or DEFAULT_LIMITS["max_subagents_total"])
-        if len(handles) >= max_total:
-            return {
-                "ok": False,
-                "error": f"sub-agent total limit reached ({len(handles)}/{max_total} spawned)",
-            }
 
         created_ids = []
         def attach(child_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
@@ -2962,7 +2870,6 @@ class AgentManager:
             self._emit(child_id, 'task.isolation', isolation)
             handle = _SubagentHandle(parent_id=task_id, child_id=child_id, call_id=call.call_id,
                                      agent=agent, queue=queue, parent_cancel=cancel)
-            handle.deadline = monotonic() + min(float(parent_limits['max_seconds']), _SUBAGENT_MAX_SECONDS)
             handles[child_id] = handle
             # Enroll and supervise the worker before provider planning yields.
             # The desktop can inspect/cancel it even while creation is pending.
@@ -3009,11 +2916,7 @@ class AgentManager:
             prompt=child_prompt,
             cwd=child_cwd,
             provider_id=child_route.provider_id,
-            limits={
-                "max_steps": min(24, parent_limits["max_steps"]),
-                "max_seconds": min(900, parent_limits["max_seconds"]),
-                "shell_timeout_s": parent_limits["shell_timeout_s"],
-            },
+            limits=None,
             mode=child_mode,
             execution_mode=child_execution,
             model=child_route.model,
@@ -3072,8 +2975,6 @@ class AgentManager:
                 parent = self.store.get_task(parent_id)
                 if (handle.parent_cancel is not None and handle.parent_cancel.is_set()) or (parent and parent['status'] in {'cancelling', 'cancelled'}):
                     self.cancel(child_id)
-                waiting_for_user = self._task(child_id)['status'] == 'awaiting_approval'
-                wait_started = monotonic()
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=0.4)
                 except asyncio.TimeoutError:
@@ -3082,14 +2983,7 @@ class AgentManager:
                         status = current["status"]
                         result = str(current.get("result") or current.get("error") or "")
                         break
-                    if current['status'] != 'awaiting_approval' and monotonic() >= handle.deadline:
-                        self.cancel(child_id)
                     continue
-                finally:
-                    # The watchdog must not cancel a child while the same
-                    # explicit human wait is paused by the shared meter.
-                    if waiting_for_user:
-                        handle.deadline += monotonic() - wait_started
                 event_type = event["type"]
                 payload = event.get("payload") or {}
                 if event_type == "approval.requested":
@@ -3389,17 +3283,9 @@ class AgentManager:
                     pass
         return event
 
-    async def _budget_await(self,task_id,operation):
-        pending=asyncio.ensure_future(operation)
-        try:
-            while not pending.done():
-                shared=await asyncio.to_thread(self.tree_budget.snapshot,task_id)
-                if shared['reason']=='shared_max_seconds':raise TreeTimeExceeded('Shared active execution seconds exhausted')
-                await asyncio.wait({pending},timeout=.1)
-            return await pending
-        finally:
-            if not pending.done():
-                pending.cancel();await asyncio.gather(pending,return_exceptions=True)
+    async def _budget_await(self, task_id, operation):
+        """Await execution without a usage deadline; worker leases still record time."""
+        return await operation
 
     async def _meter_worker(self,task_id,operation):
         self.tree_budget.start(task_id)
@@ -3410,6 +3296,9 @@ class AgentManager:
         current = self._workers.get(task_id)
         if current is not None and not current.done():
             raise ValueError("task is already running")
+        # Register cancellation before scheduling: shutdown may run before the
+        # coroutine gets its first turn and must still stop an unbounded task.
+        self._cancel.setdefault(task_id, asyncio.Event())
         worker = asyncio.create_task(self._meter_worker(task_id,coroutine), name=f"termx-agent-{task_id[:8]}")
         self._workers[task_id] = worker
         def finished(done: asyncio.Task[None]) -> None:
@@ -3428,7 +3317,7 @@ class AgentManager:
             from termx.agent.providers import ChatGPTResponsesAdapter
             return ChatGPTResponsesAdapter(accounts=self.chatgpt, account_id=provider["id"],
                                            model=provider["model"],
-                                           timeout_s=self._settings().provider_timeout_s if self._settings else 300)
+                                           timeout_s=(provider.get("limits") or {}).get("request_timeout_s"))
         key = self.credentials.get(provider["id"]) or ""
         provider = {**provider, "meta": self.model_meta(provider, provider["model"])}
         return self._adapter_factory(provider, key)
@@ -3443,8 +3332,8 @@ class AgentManager:
             model=provider["model"],
             api_key=key,
             capabilities=capabilities,
-            timeout_s=self._settings().provider_timeout_s if self._settings else 300,
-            max_output_tokens=_output_cap(provider.get("meta")),
+            timeout_s=(provider.get("limits") or {}).get("request_timeout_s"),
+            max_output_tokens=_output_cap(provider.get("meta"), provider.get("limits")),
         )
         adapter.client = self._http.client_for(
             provider["id"],
@@ -3457,9 +3346,9 @@ class AgentManager:
         task = self.store.get_task(task_id)
         if task is None:
             raise KeyError(task_id)
-        return task
+        return {**task, "limits": resolve_limits(task.get("limits"))}
 
-    def _limits(self, value: dict[str, Any] | None) -> dict[str, int]:
+    def _limits(self, value: dict[str, Any] | None) -> dict[str, None]:
         return resolve_limits(value, self._settings().limits if self._settings else None)
 
     @staticmethod
@@ -3642,7 +3531,6 @@ def _snapshot_event(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _SHARE_MAX_BYTES = 16 * 1024 * 1024
-_SUBAGENT_MAX_SECONDS = 1800
 
 
 @dataclass
@@ -3661,7 +3549,6 @@ class _SubagentHandle:
     queue: asyncio.Queue[dict[str, Any]] | None = None
     watcher: asyncio.Task | None = None
     parent_cancel: asyncio.Event | None = None
-    deadline: float = 0.0
     status: str = "running"
     result: str = ""
     changed_files: list[str] | None = None  # filled on the first report after the child finishes
@@ -3702,17 +3589,16 @@ def _slim_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return slim
 
 
-MAX_DISCOVERED_OUTPUT = 32_000
-
-
-def _output_cap(meta: dict[str, Any] | None) -> int | None:
-    """Per-request output limit. A user override is used as set; a discovered value is untrusted and bounded."""
+def _output_cap(meta: dict[str, Any] | None, limits: dict[str, Any] | None = None) -> int | None:
+    """Only explicit account or model settings constrain request output."""
     meta = meta or {}
-    limit = meta.get("max_output")
-    if not limit or "max_output" in (meta.get("overridden") or []):
-        return limit
-    window = meta.get("context_window")
-    return min(limit, MAX_DISCOVERED_OUTPUT, window // 2 if window else MAX_DISCOVERED_OUTPUT)
+    caps = []
+    configured = (limits or {}).get("max_output_tokens")
+    if configured is not None:
+        caps.append(configured)
+    if "max_output" in (meta.get("overridden") or []) and meta.get("max_output") is not None:
+        caps.append(meta["max_output"])
+    return min(caps) if caps else None
 
 
 def _origin(url: str) -> tuple[str, str, int | None]:

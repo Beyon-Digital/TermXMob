@@ -89,6 +89,7 @@ class CodexEngine:
         self._models: list[str] = []
         self._model_rows: list[dict[str,Any]] = []
         self.browser_service = None
+        self.workflow_tools = None  # WorkspaceService supplies a task-scoped host dispatcher.
         self._review_items = {}
         # Partial text is followed by complete agentMessage snapshots. Track
         # each item independently so a fallback snapshot cannot duplicate it.
@@ -174,6 +175,8 @@ class CodexEngine:
                 "tools_filter": "tool-name filtering is advisory only; enforcement via approvalPolicy + sandboxPolicy",
                 "auto_review": "managed tasks: command/file/permission approval requests use durable host broker; native sandbox fast paths remain native policy, not per-tool host hooks",
                 "restricted_browser": "refused: no verified mechanism removes every alternate native tool",
+                "workflow_tools": "Task-scoped dynamic tools on newly created managed coding threads (verified with Codex 0.165.0). Legacy resumed threads cannot add tools; start a new conversation. This does not enable per-session MCP.",
+                "workflow_child_delegation": "disabled",
             },
         )
 
@@ -236,6 +239,7 @@ class CodexEngine:
                             "title": "TermX",
                             "version": TERMX_VERSION,
                         },
+                        "capabilities": {"experimentalApi": True},
                     },
                     timeout=20,
                 )
@@ -291,6 +295,16 @@ class CodexEngine:
         if cfg.tools.get('managed_task_id') and self.browser_service:
             params['approvalsReviewer'] = 'user'
             params['approvalPolicy'] = 'untrusted'
+        workflow_child = bool(self.workflow_tools and self.workflow_tools.is_workflow_child(cfg.tools.get("managed_task_id")))
+        if workflow_child:
+            # Installed 0.165.0 accepts these per-thread config overrides. The
+            # explicit agents switch also overrides model-selected v1/v2.
+            params["config"] = {"features.multi_agent": False, "features.multi_agent_v2": False,
+                                "features.multi_agent_v2_dynamic_tools": False, "agents.enabled": False}
+        schemas = self._workflow_schemas(cfg)
+        if schemas:
+            params["dynamicTools"] = [{"type": "function", "name": schema["name"],
+                "description": schema["description"], "inputSchema": schema["parameters"]} for schema in schemas]
         result = await self._conn.request(
             "thread/start", {k: v for k, v in params.items() if v is not None}, timeout=30
         )
@@ -306,14 +320,28 @@ class CodexEngine:
             account_scope=self._auth_detail(),
             extensions_snapshot={
                 "skills": [s.get("id") for s in cfg.skills],
-                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask",
+                "managed_task_id": cfg.tools.get("managed_task_id"), "review_read_only": cfg.mode == "ask" or cfg.sandbox_profile == "read-only",
                 "turn_configuration":turn_configuration,
+                "workflow_tool_names": [schema["name"] for schema in schemas],
+                "workflow_child_delegation_disabled": workflow_child,
                 "mcp": [m.get("connection_id") for m in cfg.mcp_bindings],
             },
         )
         self._threads[thread_id] = binding.binding_id
         self._bindings[binding.binding_id] = binding
         return binding
+
+    def _workflow_schemas(self, cfg):
+        if self.workflow_tools is None:
+            return []
+        return self.workflow_tools.schemas(cfg.tools.get("managed_task_id"),
+            read_only=cfg.mode == "ask" or cfg.sandbox_profile == "read-only", workflow=cfg.workflow,
+            allowed=cfg.tools.get("allowed"), denied=cfg.tools.get("denied"), tools_mode=cfg.tools.get("tools_mode"))
+
+    def workflow_capabilities(self):
+        return {"supported": True, "available": self.workflow_tools is not None,
+                "transport": "codex-dynamic-tools", "new_sessions_only": True,
+                "reason": "Legacy resumed threads cannot add dynamic tools; create a new coding conversation."}
 
     async def attach(self, binding: EngineSessionBinding, *, cfg=None) -> EngineSessionBinding:
         """Re-attach to a persisted thread after host restart (native resume)."""
@@ -334,7 +362,7 @@ class CodexEngine:
 
     async def configure_session(self, binding, cfg):
         if binding.status=="active":raise ValueError("Native turn is still running")
-        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask",turn_configuration=self._turn_configuration(cfg))
+        binding.extensions_snapshot.update(managed_task_id=cfg.tools.get("managed_task_id"), review_read_only=cfg.mode == "ask" or cfg.sandbox_profile == "read-only",turn_configuration=self._turn_configuration(cfg))
 
     async def send(self, binding: EngineSessionBinding, prompt: str,
                    attachments: list[dict[str, Any]] | None = None) -> str | None:
@@ -446,7 +474,7 @@ class CodexEngine:
                 else (requested if approved else {}),
                 "scope": "session" if remember else "turn",
             }
-        else:  # elicitation / requestUserInput / dynamic tool call
+        else:  # elicitation / requestUserInput; dynamic tools dispatch separately.
             wire = {
                 "action": "accept" if approved else ("cancel" if decision == "cancel" else "decline"),
                 "content": content if approved else None,
@@ -693,12 +721,23 @@ class CodexEngine:
 
     async def _on_server_request(self, method: str, params: dict[str, Any]) -> Any:
         binding = self._binding_for(params)
+        if method == "item/tool/call":
+            result = {"ok": False, "refused": True, "error": {"code": "workflow_refused",
+                "message": "Workflow tool is unavailable for this native task or turn."}}
+            turn_id = self._wire_turn_id(params)
+            if (binding is not None and self.workflow_tools is not None and turn_id
+                    and binding.status == "active" and not self._stale_turn(binding, turn_id)
+                    and (binding.native_turn_id == turn_id or self._proven_turn(binding, turn_id))
+                    and params.get("namespace") is None and isinstance(params.get("callId"), str)):
+                result = await self.workflow_tools.native_execute(self, binding,
+                    params.get("tool"), params.get("arguments"), params["callId"])
+            return {"contentItems": [{"type": "inputText", "text": json.dumps(result, ensure_ascii=False)}],
+                    "success": result.get("ok") is not False}
         kind = {
             "item/commandExecution/requestApproval": "tool",
             "item/fileChange/requestApproval": "tool",
             "item/permissions/requestApproval": "capability",
             "item/tool/requestUserInput": "elicitation",
-            "item/tool/call": "tool",
             "mcpServer/elicitation/request": "elicitation",
         }.get(method)
         if kind is None:

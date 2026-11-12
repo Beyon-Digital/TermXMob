@@ -27,6 +27,7 @@ from termx.identity import Principal
 from termx.workspace.store import Conflict, WorkspaceStore
 from termx.workspace.presets import resolve_preset,available_presets
 from termx.workspace.public_events import public_task_events, public_task_approvals
+from termx.workspace import session_lifecycle
 
 
 def _require_plan_capable(mode, engine, runner_id):
@@ -42,12 +43,22 @@ class WorkspaceService:
         self.project_check = project_check
         self.hook_runner = hook_runner
         self._send_locks: dict[str, asyncio.Lock] = {}
+        self._checkout_preparing: set[str] = set()
         self._workers: set[asyncio.Task] = set()
         self._closed = False
         from termx.workspace.orchestrator import OrchestratorService
         self.orchestrator = OrchestratorService(self)
         from termx.workspace.bots import BotService
         self.bots = BotService(self)
+        from termx.workspace.workflows.service import WorkflowService
+        from termx.workspace.workflow_tools import WorkflowToolService
+        self.workflows = WorkflowService(self)
+        self.workflow_tools = WorkflowToolService(self)
+        state.agent.workflow_service = self.workflows
+        state.agent.workflow_tools = self.workflow_tools
+        gateway = getattr(state, 'engines', None)
+        if callable(getattr(gateway, 'set_workflow_tools', None)):
+            gateway.set_workflow_tools(self.workflow_tools)
         state.agent.orchestrator = self.orchestrator
         state.agent._listeners.add(self._on_event)
         state.agent.execution_authority = self.validate_task_execution
@@ -77,7 +88,7 @@ class WorkspaceService:
                     raise PermissionError('Enrolled worktree identity changed; renew the session target')
                 tracked=self.agents.task_worktree(resource_id) if resource_kind=='task' and resource_id else None
                 delegated = self.delegated_boundary(principal, resource_kind, resource_id, cwd, scope)
-                if not inside and not delegated and not (selected and Path(cwd).resolve().is_relative_to(Path(selected['path']))) and not (tracked and tracked.get('status') in {'active','kept'} and Path(tracked['base_repo']).resolve()==Path(project['path']).resolve() and Path(tracked['worktree_path']).resolve()==Path(cwd).resolve()):
+                if not inside and not delegated and not (selected and Path(cwd).resolve().is_relative_to(Path(selected['path'])) and Path(cwd).resolve().is_relative_to(Path(bound['cwd']).resolve())) and not (tracked and tracked.get('status') in {'active','kept'} and Path(tracked['base_repo']).resolve()==Path(project['path']).resolve() and Path(tracked['worktree_path']).resolve()==Path(cwd).resolve()):
                     raise PermissionError('Folder is outside the authorized project or tracked task worktree')
             if authz:
                 return
@@ -100,6 +111,8 @@ class WorkspaceService:
         Revalidate both its original parent resource and immutable task checkout;
         neither a client path nor a stale removed worktree establishes access.
         """
+        if self.workflows.delegated_boundary(principal, kind, identifier, cwd, scope):
+            return True
         if kind == 'task' and identifier:
             metadata=self.store.get('task',identifier)
             if metadata and metadata['owner']==principal.id:
@@ -227,14 +240,23 @@ class WorkspaceService:
         elif runner['configuration'].get('network','none')!='none':
             raise PermissionError('Reviewed cloud agents require the isolated runner network policy')
 
-    def create_session(self, principal, *, title='', project_id=None, cwd=None,
-                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None,custom_agent_id=None,reasoning_config=None):
-        self.require(principal, 'agent-control', project_id, None if worktree_id else cwd)
+    def create_session(self, principal, *, title='', title_auto=None, project_id=None, cwd=None,
+                       engine='internal', provider_id=None, model=None, mode='ask', workflow=None,runner_id=None,runner_credential_ref=None,run_limits=None,worktree_id=None,custom_agent_id=None,reasoning_config=None,_workflow_parent_id=None):
+        creation_context = self.workflows.child_creation_context(principal, _workflow_parent_id, project_id, cwd) if _workflow_parent_id is not None else {}
+        self.require(principal, 'agent-control', project_id, None if worktree_id else cwd, **creation_context)
         target=self.worktree_target(project_id,worktree_id) if worktree_id else None
         if target:
             if cwd and Path(cwd).resolve()!=Path(target['path']):
                 raise ValueError('Selected worktree supplies the execution folder')
             cwd=target['path']
+        if project_id and not cwd and getattr(self.state, 'projects', None):
+            cwd = self.state.projects.project(project_id)['path']
+            self.require(principal, 'agent-control', project_id, cwd)
+        if not isinstance(title, str):
+            raise ValueError('Session title must be text')
+        if title_auto is not None and not isinstance(title_auto, bool):
+            raise ValueError('Automatic title selection must be a boolean')
+        title = title.strip()
         profile=resolve_preset(self,principal,custom_agent_id,engine=engine,project_id=project_id,runner_id=runner_id,workflow=workflow)
         if profile:
             provider_id=provider_id or profile.get('provider_id')
@@ -250,8 +272,8 @@ class WorkspaceService:
         if workflow not in {None, 'browser'} or (workflow == 'browser' and engine != 'claude'):
             raise ValueError('Browser workflow requires a dedicated Claude conversation')
         self.validate_runner(principal,{'engine':engine,'workflow':workflow,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'provider_id':provider_id,'model':model,'project_id':project_id,'worktree_id':worktree_id})
-        scratch=not project_id and not cwd
-        if scratch:
+        scratch=not project_id and (not cwd or _workflow_parent_id is not None)
+        if scratch and not cwd:
             folder=self.scratch_root(principal.id)/uuid4().hex
             folder.mkdir(parents=True,mode=0o700)
             folder.parent.chmod(0o700)
@@ -262,6 +284,7 @@ class WorkspaceService:
                                                       cwd=cwd, provider_id=provider_id, model=model, mode=mode,custom_agent_id=custom_agent_id)
         row = self.store.create('conversation', principal.id,
                                {'engine': engine, 'cwd': cwd, 'draft_text': '', 'scroll': 0, 'reasoning_config':reasoning_config,
+                                'title_origin':'manual' if title_auto is False else 'pending' if title_auto is True else session_lifecycle.title_origin(title), 'checkout_policy':'selected' if worktree_id else 'auto' if project_id and getattr(self.state,'projects',None) else 'direct',
                                 'custom_agent_id':custom_agent_id,'custom_agent_revision':profile['workspace_revision'] if profile else None,'linked_from': None, 'transfer': None, 'extension_ids': [], 'workflow': workflow, 'group_id': project_id, 'scratch':scratch,'runner_id':runner_id,'runner_credential_ref':runner_credential_ref,'worktree_id':worktree_id,'worktree_digest':target['digest'] if target else None,'run_limits':resolve_limits(run_limits)}, project_id, conversation['id'])
         if getattr(self.state, 'authorization', None):
             self.state.authorization.claim_principal(principal, 'conversation', row['id'], project_id=project_id)
@@ -287,20 +310,45 @@ class WorkspaceService:
                         task['events'] = public_task_events(self, principal, self.agents.events(task['id'],tail_limit=200))
                         task['approvals'] = public_task_approvals(self, principal, self.agents.approvals(task['id']))
                 turn['task'] = task
+        if turns:
+            visible_tasks = []
+            for turn in conversation.get('turns', []):
+                task = turn.get('task')
+                if not task:
+                    continue
+                task['artifacts'] = []
+                task['artifacts_truncated'] = False
+                try:
+                    source = self.record(principal, 'task', task['id'])
+                    if source.get('conversation_id') == identifier:
+                        visible_tasks.append(task['id'])
+                except (KeyError, PermissionError):
+                    continue
+                except HTTPException as exc:
+                    if exc.status_code not in {403, 404}:
+                        raise
+            artifacts = self.agents.workspace_artifacts_snapshot(visible_tasks)
+            for task_id in visible_tasks:
+                self.record(principal, 'task', task_id)
+            self.record(principal, 'conversation', identifier)
+            for turn in conversation.get('turns', []):
+                task = turn.get('task')
+                if task and task['id'] in artifacts:
+                    task.update(artifacts[task['id']])
         if row.get('worktree_id'):
             try:
                 row['worktree_branch']=self.worktree_target(row['project_id'],row['worktree_id'])['branch']
                 row['worktree_unavailable']=None
-            except (PermissionError,OSError,ValueError):
+            except (PermissionError,OSError,ValueError,HTTPException):
                 row['worktree_branch']=None
                 row['worktree_unavailable']='Selected worktree is unavailable; choose an enrolled checkout before running or editing'
         last_task=self.agents.workspace_latest_execution_task(identifier)
         relation = self.orchestrator.relation(identifier)
-        return {**row, **conversation, 'revision': row['revision'],'latest_status':(last_task or {}).get('status'),
+        return session_lifecycle.metadata({**row, **conversation, **({'cwd':row['cwd']} if row.get('worktree_id') else {}), 'revision': row['revision'],'latest_status':(last_task or {}).get('status'),
                 'orchestrator_role':'primary' if self.orchestrator.is_primary(principal.id,identifier) else 'child' if relation else None,
                 'parent_session_id':relation['parent_session_id'] if relation else None,
                 'control_owner':relation['control_owner'] if relation else None,
-                'updated_at': max(row['updated_at'], conversation['updated_at'],(last_task or {}).get('updated_at',0))}
+                'updated_at': max(row['updated_at'], conversation['updated_at'],(last_task or {}).get('updated_at',0))})
 
     def sessions(self, principal, *, query='', archived=False, project_id=None, limit=500):
         self.require(principal, 'agent-view', project_id)
@@ -334,7 +382,7 @@ class WorkspaceService:
                         if meta['project_id'] not in enrolled_by_project:
                             enrolled_by_project[meta['project_id']]={item['id']:item for item in delivery.worktrees(meta['project_id'])} if delivery else {}
                         enrolled=enrolled_by_project[meta['project_id']].get(meta['worktree_id'])
-                        if enrolled and (Path(enrolled['root']).resolve()!=root or Path(enrolled['path']).resolve()!=Path(meta['cwd']).resolve()):continue
+                        if enrolled and (Path(enrolled['root']).resolve()!=root or not Path(meta['cwd']).resolve().is_relative_to(Path(enrolled['path']).resolve())):continue
                         if not enrolled:
                             # Historical host-owned metadata stays discoverable
                             # after removal; all execution/file access still
@@ -355,9 +403,9 @@ class WorkspaceService:
             for meta in selected:
                 conversation=canonical.get(meta['id'])
                 if not conversation:continue
-                if conversation.get('project_id')!=meta.get('project_id') or conversation.get('cwd')!=meta.get('cwd'):
+                if conversation.get('project_id')!=meta.get('project_id') or (conversation.get('cwd')!=meta.get('cwd') and not meta.get('worktree_id')):
                     continue
-                row={**meta,**conversation,'revision':meta['revision'],'updated_at':max(meta['updated_at'],conversation['updated_at'],conversation['latest_task_updated'])}
+                row=session_lifecycle.metadata({**meta,**conversation,**({'cwd':meta['cwd']} if meta.get('worktree_id') else {}),'revision':meta['revision'],'updated_at':max(meta['updated_at'],conversation['updated_at'],conversation['latest_task_updated'])})
                 row.pop('latest_task_updated',None)
                 if bool(row['archived'])!=archived or query.casefold() not in row['title'].casefold():continue
                 rows.append(row)
@@ -373,6 +421,21 @@ class WorkspaceService:
                 rows.append(row)
         rows.sort(key=lambda r: (not r['pinned'], -r['updated_at']))
         return rows[:max(1,min(limit,500))]
+
+    def prepare_session_checkout(self, principal, identifier):
+        """Bind queued/scheduled consent to its actual coding checkout."""
+        row = self.session(principal, identifier, turns=False)
+        if row.get('worktree_id') or row.get('checkout_state') != 'pending':
+            return row
+        with self.store.lock:
+            if identifier in self._checkout_preparing or self.store.conversation_dispatch_pending(identifier) or self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked()):
+                raise Conflict('Wait for the active turn before preparing the coding checkout')
+            self._checkout_preparing.add(identifier)
+        try:
+            return session_lifecycle.ensure_checkout(self, principal, row)
+        finally:
+            with self.store.lock:
+                self._checkout_preparing.discard(identifier)
 
     def active(self, identifier):
         return self.agents.active_conversation_tasks(identifier)
@@ -413,6 +476,13 @@ class WorkspaceService:
             target=self.worktree_target(row['project_id'],changes['worktree_id']) if changes['worktree_id'] else None
             changes['cwd']=target['path'] if target else self.state.projects.project(row['project_id'])['path']
             changes['worktree_digest']=target['digest'] if target else None
+            changes['checkout_policy']='selected' if target else 'auto'
+            changes['worktree_intent']=None
+            changes['checkout_notice']=None
+            changes['checkout_state']=None
+            changes['source_cwd']=None
+            changes['source_dirty']=None
+            changes['worktree_base_ref']=None
         if 'run_limits' in changes:
             changes['run_limits']=resolve_limits(changes['run_limits'])
         if 'group_id' in changes:
@@ -453,14 +523,17 @@ class WorkspaceService:
                 raise ValueError('Session setting exceeds its size limit')
         if changes.get('engine', row['engine']) != row['engine']:
             raise Conflict('Change engines using a reviewed linked fork')
-        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','custom_agent_revision','reasoning_config'} and (self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
+        if changes.keys() & {'model','provider_id','mode','engine','extension_ids','workflow','runner_id','runner_credential_ref','run_limits','worktree_id','custom_agent_id','custom_agent_revision','reasoning_config'} and (identifier in self._checkout_preparing or self.store.conversation_dispatch_pending(identifier) or self.active(identifier) or (self._send_locks.get(identifier) and self._send_locks[identifier].locked())):
             raise Conflict('Wait for the active turn before changing session settings')
         if 'mode' in changes and changes['mode'] not in {'ask','agent','plan'}:
             raise ValueError('Unknown mode')
         with self.store.lock:
             if row['revision'] != revision:
                 raise Conflict('Session changed; reload before saving')
-            for key in ('draft_text','draft_context','scroll','scroll_anchor','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd','custom_agent_id','custom_agent_revision','reasoning_config'):
+            if 'title' in changes:
+                row['title_origin'] = 'manual'
+                row['auto_title'] = None
+            for key in ('draft_text','draft_context','scroll','scroll_anchor','extension_ids','workflow','group_id','runner_id','runner_credential_ref','run_limits','worktree_id','worktree_digest','cwd','custom_agent_id','custom_agent_revision','reasoning_config','checkout_policy','worktree_intent','checkout_notice','checkout_state','source_cwd','source_dirty','worktree_base_ref'):
                 if key in changes:
                     row[key] = changes[key]
             meta = self.store.update('conversation', identifier, row, revision)
@@ -544,6 +617,20 @@ class WorkspaceService:
         if len(json.dumps(context,allow_nan=False).encode())>256_000:
             raise ValueError('Selected browser context exceeds the 256 KB context budget')
 
+    def _existing_dispatch(self, principal, identifier, previous, digest, turn_prompt):
+        if previous['digest'] != digest:
+            raise Conflict('Idempotency key was reused with different content')
+        if not previous['result']:
+            raise Conflict('Previous dispatch outcome requires reconciliation; it will not be replayed')
+        existing = self.agents.get_task(previous['result'])
+        if not existing:
+            raise Conflict('Dispatched task is unavailable; reconcile it before creating another turn')
+        self.agents.add_conversation_turn(identifier, prompt=turn_prompt, task_id=existing['id'],
+            mode=existing.get('mode'), provider_id=existing.get('provider_id'), model=existing.get('model'))
+        session_lifecycle.apply_title(self, identifier, turn_prompt)
+        self.store.release_conversation_dispatch(principal.id, identifier, previous['key'])
+        return existing
+
     async def send(self, principal, identifier, *, prompt, request_id, limits=None, attachments=None, context=None,managed_session_id=None,delegation_id=None,dispatch_guard=None,preserve_draft=False,_coordinator_task_id=None,auto=None):
         context=[] if context is None else context
         self.validate_context(context)
@@ -585,24 +672,12 @@ class WorkspaceService:
         lock = self._send_locks.setdefault(identifier, asyncio.Lock())
         async with lock:
             current=self.session(principal,identifier,turns=False)
-            if self.execution_target(current)!=self.execution_target(row):
-                raise Conflict('Session execution settings changed while preparing; review and send again')
             with self.store.lock:
                 previous = self.store.db.execute('SELECT * FROM requests WHERE owner=? AND key=?',(principal.id,request_id)).fetchone()
                 if previous:
-                    if previous['digest'] != digest:
-                        raise Conflict('Idempotency key was reused with different content')
-                    if previous['result']:
-                        existing=self.agents.get_task(previous['result'])
-                        if not existing:
-                            raise Conflict('Dispatched task is unavailable; reconcile it before creating another turn')
-                        # A process can stop between the request receipt and
-                        # canonical turn commits. Heal only that linkage from
-                        # this exact digest-bound intent; never restart a worker.
-                        self.agents.add_conversation_turn(identifier,prompt=turn_prompt,task_id=existing['id'],
-                            mode=existing.get('mode'),provider_id=existing.get('provider_id'),model=existing.get('model'))
-                        return existing
-                    raise Conflict('Previous dispatch outcome requires reconciliation; it will not be replayed')
+                    return self._existing_dispatch(principal, identifier, previous, digest, turn_prompt)
+                if self.execution_target(current)!=self.execution_target(row):
+                    raise Conflict('Session execution settings changed while preparing; review and send again')
                 if self.active(identifier):
                     raise Conflict('Conversation already has an active turn; steer it or queue after completion')
                 relation = self.orchestrator.relation(identifier)
@@ -612,11 +687,13 @@ class WorkspaceService:
                         raise Conflict('The user is directly controlling this child')
                 elif relation:
                     self.orchestrator.claim_user(principal,identifier)
-                self.store.db.execute('INSERT INTO requests VALUES(?,?,?,?,?,?)',
-                                     (principal.id,request_id,digest,'preparing',None,time()))
-                self.store.db.commit()
+                previous = self.store.reserve_conversation_dispatch(principal.id, identifier, request_id, digest, lambda:self.active(identifier))
+                if previous:
+                    return self._existing_dispatch(principal, identifier, previous, digest, turn_prompt)
             attempted_native = False
             try:
+                row = await asyncio.to_thread(session_lifecycle.ensure_checkout, self, principal, current, delegated=bool(delegation_id))
+                if dispatch_guard:dispatch_guard(row)
                 if row.get('runner_id') and any(hook.get('enabled') and hook.get('project_id') in {None,row.get('project_id')} for hook in self.store.list('hook',principal.id)):
                     raise ValueError('Cloud sessions cannot run host hooks; disable scoped hooks or select local execution')
                 await self.run_hooks(principal, row.get('project_id'), 'before_turn', row['cwd'],resource_id=identifier)
@@ -694,9 +771,7 @@ class WorkspaceService:
                 if not attempted_native:
                     if getattr(self.state,'extensions',None):
                         self.state.extensions.abort_dispatch(principal,request_id)
-                    with self.store.lock:
-                        self.store.db.execute('DELETE FROM requests WHERE owner=? AND key=? AND result IS NULL', (principal.id,request_id))
-                        self.store.db.commit()
+                    self.store.abort_conversation_dispatch(principal.id, identifier, request_id)
                 raise
 
     def validate_delegation(self,principal,row,identifier):
@@ -730,8 +805,27 @@ class WorkspaceService:
             task_id = (self.agents.get_task(task_id) or {}).get('parent_id')
         return False
 
+    def validate_plan_execution(self, task_id):
+        metadata = self.store.get('task', task_id)
+        if not metadata:
+            return
+        principal = self.state.identity.principal_by_id(metadata['owner'])
+        if not principal:
+            raise PermissionError('Plan owner is no longer active')
+        self.record(principal, 'task', task_id, scope='agent-run')
+        conversation = self.session(principal, metadata['conversation_id'], turns=False)
+        if not conversation.get('project_id') or metadata.get('worktree_id'):
+            return
+        # Do not move a plan already reviewed against the original dirty folder
+        # to a different HEAD snapshot at approval time.
+        from termx import git_ops
+        result = git_ops._git(conversation['cwd'], '--no-optional-locks', '-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel')
+        if result.returncode == 0 or 'not a git repository' not in result.stderr.lower() or any((folder/'.git').exists() for folder in [Path(conversation['cwd']), *Path(conversation['cwd']).parents]):
+            raise Conflict('This plan was prepared in the original project folder. Cancel this plan and start a new Plan conversation to review it in an automatic worktree before execution.')
+
     def validate_task_execution(self, task_id):
         """Check unattended authority at execution boundaries, including recovery."""
+        self.workflows.validate_task_execution(task_id)
         row = self.store.get('task', task_id)
         task = self.agents.get_task(task_id)
         if task and task.get('parent_id'):
@@ -777,6 +871,8 @@ class WorkspaceService:
             self.store.db.commit()
         if turn_prompt is not None:
             self.agents.add_conversation_turn(row['id'],prompt=turn_prompt,task_id=tid,mode=row['mode'],provider_id=row.get('provider_id'),model=row.get('model'))
+            session_lifecycle.apply_title(self, row['id'], turn_prompt)
+            self.store.release_conversation_dispatch(principal.id, row['id'], key)
         if managed_session_id and getattr(self.state,'browser',None):
             live=self.state.identity.session_by_id(managed_session_id)
             if not live or live.principal.id!=principal.id:
@@ -1157,6 +1253,7 @@ class WorkspaceService:
     async def close(self):
         self._closed=True
         self.state.agent._listeners.discard(self._on_event)
+        await self.workflows.close()
         await self.orchestrator.native.close()
         await self.orchestrator.graph.close()
         for worker in list(self._workers):

@@ -32,6 +32,25 @@ it('keeps loading and approval prompts out of live regions so the conversation a
   expect(document.querySelector('[aria-live]')).toBeNull();
 });
 
+it('keeps pending feedback compact and replaces it in place as the assistant streams', () => {
+  const props = callbacks();
+  const view = render(<ConversationMessage role="assistant" text="" task={task({status: 'running', events: []})} {...props}/>);
+  expect(screen.getByText('Preparing a response')).toBeVisible();
+  expect(document.querySelector('.response-skeleton')).toBeNull();
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  view.rerender(<ConversationMessage role="assistant" text="The first finding is ready." task={task({status: 'running', events: []})} {...props}/>);
+  const answer = screen.getByText('The first finding is ready.').closest('.message-response');
+  expect(answer).toBeVisible();
+  expect(screen.queryByText('Preparing a response')).not.toBeInTheDocument();
+  view.rerender(<ConversationMessage role="assistant" text="The first finding is ready. More detail follows." task={task({status: 'running', events: []})} {...props}/>);
+  expect(screen.getByText('The first finding is ready. More detail follows.').closest('.message-response')).toBe(answer);
+  view.rerender(<ConversationMessage role="assistant" text="The first finding is ready. More detail follows." task={task({status: 'completed', events: []})} {...props}/>);
+  expect(screen.getByText('The first finding is ready. More detail follows.')).toBeVisible();
+  expect(document.querySelector('.response-skeleton')).toBeNull();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
+
 it('correlates ACP camel-case tool updates and recognizes the reported completion state', () => {
   const events = [event(1, 'engine.tool.started', {toolCallId: 'acp-one', title: 'Inspect files', status: 'pending', rawInput: {path: 'src'}}), event(2, 'engine.tool.progress', {toolCallId: 'acp-one', status: 'in_progress'}), event(3, 'engine.tool.progress', {toolCallId: 'acp-one', status: 'completed', content: [{type: 'content', content: {type: 'text', text: 'Three files'}}]})];
   expect(toolActivities(events)).toMatchObject([{key: 'call:acp-one', title: 'Inspect files', phase: 'completed'}]);
@@ -177,3 +196,34 @@ it('presents a user-stopped task neutrally while preserving its cancellation rea
 it('retains failure treatment for an actual failed task even when its diagnostic mentions cancellation',()=>{const props=callbacks();const failed=task({id:'failed-task',status:'failed',error:'Cancellation cleanup failed: permission denied.',result:'Partial output preserved'});const {container}=render(<ConversationMessage role="assistant" text={failed.result!} task={failed} {...props}/>);expect(screen.getByRole('alert')).toHaveTextContent('The task stopped with an error');expect(screen.getByRole('alert')).toHaveTextContent(failed.error!);expect(screen.getByText(failed.result!)).toBeVisible();expect(container.querySelector('.response-cancellation')).toBeNull();expect(screen.queryByText('Task stopped',{exact:true})).toBeNull()});
 
 it('keeps cancellation without a diagnostic as a stopped state without inventing a reason',()=>{const {container}=render(<ConversationMessage role="assistant" text="" task={task({status:'cancelled',result:'',error:undefined})} {...callbacks()}/>);expect(screen.getByText('This task was stopped')).toBeVisible();expect(screen.queryByRole('alert')).toBeNull();expect(container.querySelector('.response-error')).toBeNull();expect(container.querySelector('.response-cancellation')).toBeNull()});
+
+it('offers a review CTA only for actual host change metadata and never dispatches actions from response text',()=>{
+ const review=vi.fn(),props=callbacks();const view=render(<ConversationMessage role="assistant" text="Changes are ready." task={task({events:[]})} onReviewChanges={review} changedFiles={2} {...props}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Review 2 changed files'}));expect(review).toHaveBeenCalledOnce();expect(mocked).not.toHaveBeenCalled();
+ view.rerender(<ConversationMessage role="assistant" text="Run this command or approve this operation." task={task({events:[]})} onReviewChanges={review} {...props}/>);
+ expect(screen.queryByRole('button',{name:/Review .* changed|Run this command|Approve/})).toBeNull();expect(mocked).not.toHaveBeenCalled();
+});
+it('keeps recovery review tied to the actual paused task',()=>{
+ const props=callbacks();render(<ConversationMessage role="assistant" text="Partial work" task={task({status:'recovery_confirmation_required',events:[]})} {...props}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Review recovery'}));expect(props.onSupervise).toHaveBeenCalledWith('task-one');expect(mocked).not.toHaveBeenCalled();
+});
+
+it('derives a custom Open file response action from a completed tool result without running an operation',()=>{
+ const open=vi.fn();const value=task({events:[event(1,'tool.finished',{call:{name:'write_file',call_id:'write-one'},result:{ok:true,path:'src/created.ts',size:20}})]});
+ render(<ConversationMessage role="assistant" text="Created the file." task={value} onOpenFile={open} {...callbacks()}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Open created.ts'}));expect(open).toHaveBeenCalledWith('src/created.ts',undefined);expect(mocked).not.toHaveBeenCalled();
+});
+
+it('reveals historical response CTAs only after explicit activity loading and clears them on resume or account changes',async()=>{
+ const open=vi.fn(),props=callbacks(),finished=task({result:'Saved answer'});
+ mocked.mockResolvedValueOnce({...finished,events:[event(1,'tool.finished',{call:{name:'write_file',call_id:'saved-write'},result:{ok:true,path:'src/saved.ts'}})]});
+ const view=render(<ConversationMessage role="assistant" text="Saved answer" task={finished} contentOwner="owner-a" onOpenFile={open} {...props}/>);
+ expect(mocked).not.toHaveBeenCalled();expect(screen.queryByRole('button',{name:'Open saved.ts'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:/View activity/}));fireEvent.click(await screen.findByRole('button',{name:'Open saved.ts'}));expect(open).toHaveBeenCalledWith('src/saved.ts',undefined);expect(mocked).toHaveBeenCalledOnce();
+ view.rerender(<ConversationMessage role="assistant" text="Resuming" task={{...finished,status:'running',events:[]}} contentOwner="owner-a" onOpenFile={open} {...props}/>);expect(screen.queryByRole('button',{name:'Open saved.ts'})).toBeNull();
+ view.rerender(<ConversationMessage role="assistant" text="Saved answer" task={finished} contentOwner="owner-b" onOpenFile={open} {...props}/>);expect(screen.queryByRole('button',{name:'Open saved.ts'})).toBeNull();expect(mocked).toHaveBeenCalledOnce();
+});
+
+it('reads the exact selected response only after its custom action and exposes Stop reading',()=>{
+ const read=vi.fn(),stop=vi.fn(),props=callbacks(),value=task({events:[]});const view=render(<ConversationMessage role="assistant" text="This exact earlier response." task={value} onReadAloud={read} onStopReading={stop} {...props}/>);expect(read).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'Read aloud'}).textContent).toBe('');expect(screen.getByRole('button',{name:'Read aloud'}).closest('[aria-label="Response actions"]')).not.toBeNull();fireEvent.click(screen.getByRole('button',{name:'Read aloud'}));expect(read).toHaveBeenCalledExactlyOnceWith({id:'task-one',text:'This exact earlier response.'});view.rerender(<ConversationMessage role="assistant" text="This exact earlier response." task={value} onReadAloud={read} onStopReading={stop} readingTaskId="task-one" {...props}/>);expect(screen.getByRole('button',{name:'Stop reading'}).textContent).toBe('');fireEvent.click(screen.getByRole('button',{name:'Stop reading'}));expect(stop).toHaveBeenCalledOnce();expect(read).toHaveBeenCalledOnce();
+});

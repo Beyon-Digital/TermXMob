@@ -221,6 +221,50 @@ class DeliveryService:
         with self.db() as db:
             return [dict(row) for row in db.execute("SELECT * FROM worktrees WHERE project=?", (project,))]
 
+    def _add_worktree(self, root, identifier, branch, base):
+        git_ops._require_ok(git_ops._git(root, "check-ref-format", "--branch", branch))
+        path = self.directory / "worktrees" / identifier
+        path.parent.mkdir(parents=True, exist_ok=True)
+        git_ops._require_ok(git_ops._git(root, "worktree", "add", "-b", branch, str(path), base))
+        return {"id": identifier, "path": str(path), "branch": branch}
+
+    def session_worktree(self, project, root, session_id, base):
+        """Create or reconcile one durable checkout for a host-owned session.
+
+        The SQLite write transaction serializes independent service instances.
+        If Git succeeded before a crash, verify its deterministic checkout and
+        enroll it; never create a replacement branch or delete user changes.
+        """
+        root = str(Path(root).resolve(strict=True))
+        key = hashlib.sha256(json.dumps([project, root, session_id]).encode()).hexdigest()[:32]
+        branch = 'termx/session-' + key[:20]
+        path = (self.directory / 'worktrees' / key).resolve()
+        with self.lock, self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            existing = db.execute('SELECT * FROM worktrees WHERE id=?', (key,)).fetchone()
+            if existing:
+                if (existing['project'] != project or Path(existing['root']).resolve() != Path(root) or
+                        Path(existing['path']).resolve() != path or existing['branch'] != branch):
+                    raise HTTPException(409, 'Automatic checkout enrollment changed; inspect its session target')
+                return dict(existing)
+            listed = git_ops._require_ok(git_ops._git(root, 'worktree', 'list', '--porcelain'))
+            live = {Path(line[9:]).resolve() for line in listed.splitlines() if line.startswith('worktree ')}
+            if path in live:
+                current = git_ops._require_ok(git_ops._git(str(path), 'symbolic-ref', '--short', 'HEAD')).strip()
+                def common(folder):
+                    value = git_ops._require_ok(git_ops._git(str(folder), 'rev-parse', '--git-common-dir')).strip()
+                    return (Path(folder) / value).resolve(strict=True)
+                if current != branch or common(path) != common(root):
+                    raise HTTPException(409, 'Automatic checkout identity changed; reconcile it before retrying')
+                result = {'id': key, 'path': str(path), 'branch': branch}
+            else:
+                if path.exists() or path.is_symlink():
+                    raise HTTPException(409, 'Automatic checkout path already exists; inspect it before retrying')
+                result = self._add_worktree(root, key, branch, base)
+            db.execute('INSERT INTO worktrees VALUES (?, ?, ?, ?, ?)',
+                (key, project, root, result['path'], branch))
+            return result
+
     def target(self, project, root, identifier=None):
         if identifier is None:
             return root
@@ -261,14 +305,11 @@ class DeliveryService:
             branch, base = args["branch"], args.get("base", "HEAD")
             if not isinstance(base, str) or base.startswith("-"):
                 raise HTTPException(400, "Invalid base ref")
-            git_ops._require_ok(git_ops._git(root, "check-ref-format", "--branch", branch))
             identifier = uuid.uuid4().hex
-            path = self.directory / "worktrees" / identifier
-            path.parent.mkdir(parents=True, exist_ok=True)
-            git_ops._require_ok(git_ops._git(root, "worktree", "add", "-b", branch, str(path), base))
+            result = self._add_worktree(root, identifier, branch, base)
             with self.lock, self.db() as db:
-                db.execute("INSERT INTO worktrees VALUES (?, ?, ?, ?, ?)", (identifier, project, root, str(path), branch))
-            return {"id": identifier, "path": str(path), "branch": branch}
+                db.execute("INSERT INTO worktrees VALUES (?, ?, ?, ?, ?)", (identifier, project, root, result['path'], branch))
+            return result
         if operation == "worktree-remove":
             if not args.get("worktree_id") or git_ops.status(target)["files"]:
                 raise HTTPException(409, "Dirty worktree retained; commit or preserve changes before removal")

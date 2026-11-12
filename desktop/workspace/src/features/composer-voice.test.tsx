@@ -63,6 +63,7 @@ class FakeRecorder {
 type Reply = {id: string; text: string} | null;
 function Harness(props: {
   reply?: Reply;
+  manualActions?:boolean;ownerId?:string;captureRead?:(read:(value:{id:string;text:string})=>void)=>void;
   sessionId?: string;
   enabled?: boolean;
   speechSuspended?: boolean;
@@ -70,7 +71,7 @@ function Harness(props: {
   onOpenSettings?: () => void;
 }) {
   const voice = useComposerVoice({
-    ownerId: 'owner',
+    ownerId: props.ownerId??'owner',manualActions:props.manualActions,
     sessionId: props.sessionId ?? 'chat-a',
     enabled: props.enabled ?? true,
     speechSuspended: props.speechSuspended,
@@ -78,10 +79,13 @@ function Harness(props: {
     onTranscript: props.onTranscript,
     onOpenSettings: props.onOpenSettings,
   });
+  props.captureRead?.(voice.readReply);
   return (
     <div>
       {voice.mic}
       {voice.row}
+      <button onClick={()=>voice.readReply({id:'selected',text:'This exact selected response.'})}>Read selected response</button>
+      <button onClick={voice.stopReading}>Stop selected response</button>
     </div>
   );
 }
@@ -186,7 +190,7 @@ it('drops the live-voice notice once live voice has ended', async () => {
   expect(await screen.findByRole('status')).toHaveTextContent(/dictation stopped because live voice started/i);
   act(() => (claim as unknown as {release: () => void}).release());
   view.rerender(<Harness onTranscript={onTranscript} />);
-  await waitFor(() => expect(screen.getByRole('status')).toBeEmptyDOMElement());
+  await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
 });
 
 it('refuses to start dictation while live voice holds the microphone, then works again once it is released', async () => {
@@ -361,15 +365,14 @@ it('shows the Woof credit with a link while it speaks and removes it afterwards'
   await waitFor(() => expect(screen.queryByRole('link', {name: 'Voice by Underdog Woof'})).not.toBeInTheDocument());
 });
 
-it('saves the two toggles for the owner', async () => {
-  save.mockResolvedValue(status({auto_speak: true}));
-  render(<Harness onTranscript={onTranscript} />);
-  await ready();
-  fireEvent.click(screen.getByRole('checkbox', {name: 'Read replies aloud'}));
-  await waitFor(() => expect(save).toHaveBeenCalledWith({auto_speak: true}));
-  expect(screen.getByRole('checkbox', {name: 'Read replies aloud'})).toBeChecked();
-  fireEvent.click(screen.getByRole('checkbox', {name: 'Send after dictation'}));
-  await waitFor(() => expect(save).toHaveBeenCalledWith({auto_send: true}));
+it('removes composer checkboxes without changing saved voice preferences',async()=>{
+ load.mockResolvedValue(status({auto_send:true,auto_speak:true}));render(<Harness manualActions onTranscript={onTranscript}/>);await ready();expect(screen.queryByRole('checkbox')).toBeNull();expect(save).not.toHaveBeenCalled();
+});
+it('stages dictation and never automatically speaks when manual actions are enabled',async()=>{
+ load.mockResolvedValue(status({auto_send:true,auto_speak:true}));const view=render(<Harness manualActions reply={{id:'old',text:'History'}} onTranscript={onTranscript}/>);fireEvent.click(await ready());fireEvent.click(await screen.findByRole('button',{name:'Stop dictation'}));await waitFor(()=>expect(onTranscript).toHaveBeenCalledWith('hello world',false));view.rerender(<Harness manualActions reply={{id:'new',text:'A new response.'}} onTranscript={onTranscript}/>);await act(async()=>{});expect(spoken).toEqual([]);expect(save).not.toHaveBeenCalled();
+});
+it('reads only the explicitly selected response and blocks suspended, hidden, locked, or switched contexts',async()=>{
+ load.mockResolvedValue(status({auto_speak:true}));const view=render(<Harness manualActions onTranscript={onTranscript}/>);await ready();fireEvent.click(screen.getByRole('button',{name:'Read selected response'}));await waitFor(()=>expect(spoken).toEqual(['This exact selected response.']));view.rerender(<Harness manualActions speechSuspended onTranscript={onTranscript}/>);fireEvent.click(screen.getByRole('button',{name:'Read selected response'}));expect(spoken).toHaveLength(1);view.rerender(<Harness manualActions enabled={false} onTranscript={onTranscript}/>);fireEvent.click(screen.getByRole('button',{name:'Read selected response'}));expect(spoken).toHaveLength(1);view.rerender(<Harness manualActions onTranscript={onTranscript}/>);act(()=>window.dispatchEvent(new Event('termx-locked')));fireEvent.click(screen.getByRole('button',{name:'Read selected response'}));expect(spoken).toHaveLength(1);expect(save).not.toHaveBeenCalled();
 });
 
 it('stops reading and releases the microphone when the workspace locks', async () => {
@@ -382,4 +385,9 @@ it('stops reading and releases the microphone when the workspace locks', async (
   await waitFor(() => expect(screen.getByRole('button', {name: 'Start dictation'})).toBeInTheDocument());
   expect(stop).toHaveBeenCalled();
   expect(upload).not.toHaveBeenCalled();
+});
+
+it('stops manual playback and rejects an old response callback after session or owner changes',async()=>{
+ let oldRead!:(value:{id:string;text:string})=>void;vi.stubGlobal('speechSynthesis',{speak:(utterance:{text:string})=>spoken.push(utterance.text),cancel:vi.fn()});
+ const view=render(<Harness manualActions captureRead={read=>oldRead=read} onTranscript={onTranscript}/>);await ready();const stale=oldRead;fireEvent.click(screen.getByRole('button',{name:'Read selected response'}));await waitFor(()=>expect(spoken).toHaveLength(1));fireEvent.click(screen.getByRole('button',{name:'Stop selected response'}));expect(speechSynthesis.cancel).toHaveBeenCalled();view.rerender(<Harness manualActions sessionId="chat-b" onTranscript={onTranscript}/>);act(()=>stale({id:'stale',text:'Never replay this old response.'}));expect(spoken).toHaveLength(1);view.rerender(<Harness manualActions ownerId="other-owner" sessionId="chat-b" onTranscript={onTranscript}/>);act(()=>stale({id:'stale',text:'Never read across accounts.'}));expect(spoken).toHaveLength(1);expect(save).not.toHaveBeenCalled();
 });

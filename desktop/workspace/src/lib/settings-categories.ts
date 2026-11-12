@@ -1,7 +1,7 @@
 /** One registry for legacy routes, grouped settings navigation and the compact top strip. */
 export const settingsGroups=['Preferences','Workers','Host'] as const;
 export const settingsCategories = [
- {id:'preferences',label:'Preferences',group:'Preferences',description:'Your account, appearance and keyboard shortcuts.'},
+ {id:'preferences',label:'General',group:'Preferences',description:'Your account, appearance and keyboard shortcuts.'},
  {id:'characters',label:'Characters',group:'Preferences',description:'Choose your agent’s character.'},
  {id:'models',label:'Models & engines',group:'Workers',description:'Connect providers, choose which model each role uses and manage engines.'},
  {id:'voice',label:'Voice',group:'Workers',description:'Dictate to your agents and hear their replies.'},
@@ -15,7 +15,7 @@ export const settingsCategories = [
  {id:'automations',label:'Automations',group:'Host',description:'Schedule work on this host.'},
  {id:'runners',label:'Runners',group:'Host',description:'Choose where your agents run.'},
  {id:'access',label:'Access & sessions',group:'Host',description:'Manage access to this host.'},
- {id:'safety',label:'Safety & Auto Review',group:'Host',description:'Control approvals and agent permissions.'},
+ {id:'safety',label:'Safety & auto review',group:'Host',description:'Control approvals and agent permissions.'},
 ] as const;
 const aliases:Record<string,string>={general:'preferences',appearance:'preferences',shortcuts:'preferences',plugins:'extensions',skills:'extensions',engines:'models',schedules:'automations',goals:'automations',sessions:'access',mcp:'connections'};
 export function canonicalSettingsCategory(value:string){return aliases[value]||value||'preferences'}

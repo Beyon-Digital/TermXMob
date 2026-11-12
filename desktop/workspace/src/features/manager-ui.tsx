@@ -40,7 +40,7 @@ export function ManagerStatus({error, notice, onRetry}: {error: string; notice: 
 }
 
 export function ManagerSearch({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
-  return <Input className="manager-search" placeholder={`Search ${label.toLowerCase()}…`} aria-label="Search settings" data-settings-filter value={value} onChange={event => onChange(event.target.value)}/>;
+  return <label className="manager-search-field"><span>Search {label.toLowerCase()}</span><Input className="manager-search" placeholder="Search…" aria-label="Search settings" data-settings-filter value={value} onChange={event => onChange(event.target.value)}/></label>;
 }
 
 export interface ManagerPageLoad { data: unknown; loading: boolean; busy: boolean; error: string; notice: string; reload: () => void }
@@ -55,7 +55,7 @@ export function ManagerPage({section, projectId, disabled, onRefresh, load, sear
   const title = settingsCategories.find(row => row.id === section)?.label || 'Workspace settings';
   const description = projectId ? 'Settings for this project and your account.' : isSettingsCategory(section) ? settingsCategoryDescription(section) : 'Manage capabilities, permissions and continuity.';
   return <div className="manager-main">
-    <header className="manager-heading"><div><h2>{title}</h2><p>{description}</p></div><Button variant="secondary" disabled={load ? load.loading || load.busy : disabled} onClick={load ? load.reload : onRefresh}>Refresh</Button></header>
+    <header className="manager-heading"><div><h2>{title}</h2><p>{description}</p></div><Button variant="ghost" size="sm" disabled={load ? load.loading || load.busy : disabled} onClick={load ? load.reload : onRefresh}>Refresh</Button></header>
     {search && (search.value || search.count >= 8) && <ManagerSearch label={search.label} value={search.value} onChange={search.onChange}/>}
     {load && <ManagerStatus error={load.error} notice={load.notice} onRetry={load.reload}/>}
     {load && load.loading && !load.data ? <Empty>Loading current settings…</Empty> : children}

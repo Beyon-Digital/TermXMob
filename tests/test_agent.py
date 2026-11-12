@@ -706,7 +706,7 @@ def test_subagent_status_and_cancel(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
-def test_subagent_parallel_limit_blocks_spawn(tmp_path: Path) -> None:
+def test_legacy_subagent_parallel_quota_does_not_block_spawn(tmp_path: Path) -> None:
     async def run() -> None:
         adapter = _FanOutAdapter(
             {
@@ -735,18 +735,18 @@ def test_subagent_parallel_limit_blocks_spawn(tmp_path: Path) -> None:
         await wait_for_status(store, parent["id"], "completed")
         events = store.events(parent["id"])
         second = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "s2")
-        assert second["payload"]["result"]["ok"] is False
-        assert "parallel limit" in second["payload"]["result"]["error"]
+        assert second["payload"]["result"]["ok"] is True
         children = [t for t in store.list_tasks() if t.get("parent_id") == parent["id"]]
-        assert len(children) == 1
-        manager.cancel(children[0]["id"])
+        assert len(children) == 2
+        for child in children:
+            manager.cancel(child["id"])
         await manager.close()
         store.close()
 
     asyncio.run(run())
 
 
-def test_subagent_total_limit_blocks_spawn(tmp_path: Path) -> None:
+def test_legacy_subagent_total_quota_does_not_block_spawn(tmp_path: Path) -> None:
     async def run() -> None:
         adapter = _FanOutAdapter(
             {
@@ -775,8 +775,8 @@ def test_subagent_total_limit_blocks_spawn(tmp_path: Path) -> None:
         await wait_for_status(store, parent["id"], "completed")
         events = store.events(parent["id"])
         second = next(e for e in events if e["type"] == "tool.finished" and e["payload"]["call_id"] == "s2")
-        assert second["payload"]["result"]["ok"] is False
-        assert "total limit" in second["payload"]["result"]["error"]
+        assert second["payload"]["result"]["ok"] is True
+        assert len(store.children(parent["id"])) == 2
         await manager.close()
         store.close()
 
@@ -2814,7 +2814,7 @@ def test_provider_tools_hide_subagents_for_children() -> None:
 
 
 
-def test_task_uses_custom_agent_instructions_and_limits(tmp_path: Path) -> None:
+def test_task_uses_custom_agent_instructions_and_ignores_legacy_usage_limits(tmp_path: Path) -> None:
     adapter = FakeAdapter()
     manager, store = build_manager(tmp_path, adapter)
     agent = store.create_custom_agent(
@@ -2838,7 +2838,7 @@ def test_task_uses_custom_agent_instructions_and_limits(tmp_path: Path) -> None:
     task = asyncio.run(_run())
     assert "Prefer read-only inspection." in task["prompt"]
     assert "check the readme" in task["prompt"]
-    assert task["limits"]["max_steps"] == 5
+    assert task["limits"]["max_steps"] is None
 
 
 def test_task_seeds_conversation_context(tmp_path: Path) -> None:

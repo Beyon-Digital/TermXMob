@@ -1,14 +1,14 @@
 """Durable tool reservations and summed active-worker seconds for a task tree.
 
-One host coordinator owns execution leases. On coordinator startup, uncertain
-leases exhaust the time allowance rather than silently granting replay time.
-Human approval waits have no lease. Reservations survive cancellation and renewal.
+One host coordinator owns execution leases. Human approval waits have no lease.
+Recorded usage and call reservations survive cancellation and host restarts.
+Legacy quota columns remain intact; public quotas are always null.
 
 Provider tokens and cost are recorded per turn for the tree total. Cost is only
 summed from turns with a known price: an unknown price stays unknown and never
 counts as zero, so ``used_cost_usd`` is None until a priced turn arrives and
 ``unpriced_tokens`` shows how much usage it does not cover. Tokens and cost are
-reported here, not enforced (Auto-mode ceilings enforce them).
+reported here and do not interrupt execution.
 """
 from __future__ import annotations
 
@@ -38,7 +38,8 @@ class TreeBudget:
                     store._db.execute(ddl)
             store._db.commit()
             with self._transaction():
-                store._db.execute('UPDATE agent_tree_budget SET seconds=max(seconds,max_seconds) WHERE root IN (SELECT root FROM agent_tree_lease)')
+                # Keep recorded usage. A crashed worker has no continuing lease,
+                # and its uncertain interval cannot establish usage or exhaustion.
                 store._db.execute('DELETE FROM agent_tree_lease')
 
     @contextmanager
@@ -75,7 +76,7 @@ class TreeBudget:
             else:
                 raise ValueError('Task ancestry exceeds the supported depth')
             with self._transaction():
-                self.store._db.execute('INSERT OR IGNORE INTO agent_tree_budget(root,max_steps,max_seconds) VALUES(?,?,?)', (root, task['limits']['max_steps'], task['limits']['max_seconds']))
+                self.store._db.execute('INSERT OR IGNORE INTO agent_tree_budget(root,max_steps,max_seconds) VALUES(?,?,?)', (root, 0, 0))
                 self.store._db.executemany('INSERT OR IGNORE INTO agent_tree_member VALUES(?,?)', [(identifier, root) for identifier in chain])
             return root
 
@@ -91,11 +92,9 @@ class TreeBudget:
 
     @staticmethod
     def _public(row, active):
-        reason = ('shared_max_seconds' if row['seconds'] >= row['max_seconds'] else
-                  'shared_max_steps' if row['steps'] >= row['max_steps'] else None)
-        return {'root_task_id': row['root'], 'max_steps': row['max_steps'], 'used_steps': row['steps'],
-                'max_execution_seconds': int(row['max_seconds']), 'used_execution_seconds': round(row['seconds'], 3),
-                'active_workers': active, 'version': row['version'], 'reason': reason,
+        return {'root_task_id': row['root'], 'max_steps': None, 'used_steps': row['steps'],
+                'max_execution_seconds': None, 'used_execution_seconds': round(row['seconds'], 3),
+                'active_workers': active, 'version': row['version'], 'reason': None,
                 'used_tokens': row['tokens'], 'used_cost_usd': row['cost_usd'], 'unpriced_tokens': row['unpriced_tokens']}
 
     def snapshot(self, task_id):
@@ -142,19 +141,14 @@ class TreeBudget:
             with self._transaction():
                 row = self._settle(root)
                 new = [position for position in positions if not self.store._db.execute('SELECT 1 FROM agent_tree_step WHERE task=? AND position=?', (task_id, position)).fetchone()]
-                reason = ('shared_max_seconds' if row['seconds'] >= row['max_seconds'] else
-                          'shared_max_steps' if row['steps'] + len(new) > row['max_steps'] else None)
-                if not reason:
-                    self.store._db.executemany('INSERT INTO agent_tree_step VALUES(?,?)', [(task_id, position) for position in new])
-                    self.store._db.execute('UPDATE agent_tree_budget SET steps=steps+? WHERE root=?', (len(new), root))
-            return reason
+                self.store._db.executemany('INSERT INTO agent_tree_step VALUES(?,?)', [(task_id, position) for position in new])
+                self.store._db.execute('UPDATE agent_tree_budget SET steps=steps+? WHERE root=?', (len(new), root))
+            return None
 
     def _renew(self, root, row, limits, version):
         if row['version'] != version:
             raise ValueError('The shared tree budget changed; inspect its current allowance')
-        if limits['max_steps'] <= row['steps']:
-            raise ValueError('The shared step ceiling must exceed the total reserved calls')
-        self.store._db.execute('UPDATE agent_tree_budget SET max_steps=?,max_seconds=?,seconds=0,version=version+1 WHERE root=?', (limits['max_steps'], limits['max_seconds'], root))
+        self.store._db.execute('UPDATE agent_tree_budget SET version=version+1 WHERE root=?', (root,))
         self.store._db.execute('UPDATE agent_tree_lease SET touched=? WHERE root=?', (self.clock(), root))
 
     def renew(self, task_id, limits, *, version):
@@ -185,7 +179,7 @@ class TreeBudget:
                 row = self._settle(root)
                 if renew:
                     self._renew(root, row, limits, version)
-                elif row['version'] != version or self._public(row, 0)['reason']:
+                elif row['version'] != version:
                     raise ValueError('The shared allowance changed; inspect its current budget request')
                 task = self.store.get_task(task_id)
                 runtime = {**(task.get('runtime') or {}), 'started_at': None,

@@ -130,13 +130,13 @@ class PromptQueue:
                 if metadata.get('conversation_id')!=conversation:raise PermissionError('Interrupt targets a different conversation')
                 task=self.workspace.agents.get_task(interrupt_task_id)
                 if not task or task['status'] not in ACTIVE_STATUSES:raise Conflict('The named current task has already finished; queue without interrupting it')
+            self.workspace.prepare_session_checkout(actor, conversation)
             target=self.binding(actor,conversation)
             if not target.get('model') or (target.get('engine')=='internal' and not target.get('provider_id')):raise ValueError('Choose an explicit session account and model before queueing; background work cannot choose a billing default')
             pending=[row for row in self.store.list('prompt_queue',actor.id) if row['status'] in PENDING]
             if len(pending)>=MAX_PENDING:raise Conflict('Keep at most ten pending follow-ups per account')
             if sum(len(json.dumps(item.get('attachments',[])))+len(json.dumps(item.get('context',[]))) for item in pending)+len(json.dumps(attachments))+len(json.dumps(context))>24_000_000:raise Conflict('Pending follow-up context exceeds the 24 MB account queue limit')
             resolved=resolve_limits(limits,target.get('run_limits'))
-            if target.get('run_limits') and any(resolved[key]>target['run_limits'][key] for key in resolved):raise ValueError('Queue budget cannot exceed the selected session budget')
             identifier=uuid4().hex
             row=self.store.create('prompt_queue',actor.id,{**submitted,'limits':resolved,'request_id':request_id,'submitted_digest':request_digest,
                 'dispatch_key':'queue-'+identifier,'conversation_id':conversation,'status':'queued','reason':None,'target':target,'target_digest':digest(target),
@@ -165,7 +165,6 @@ class PromptQueue:
             target=self.binding(actor,row['conversation_id'])
             if not target.get('model') or (target.get('engine')=='internal' and not target.get('provider_id')):raise ValueError('Choose an explicit session account and model before renewing queue consent')
             if digest(target)!=target_digest:raise Conflict('Execution settings changed again; review the current target')
-            if target.get('run_limits') and any(row['limits'][key]>target['run_limits'][key] for key in row['limits']):raise Conflict('The original queued budget exceeds the new session limit; cancel and queue with a smaller budget')
             self.store.log(actor.id,'prompt_queue',identifier,'renewed',{'target_digest':target_digest})
             return self.public(self.store.update('prompt_queue',identifier,{**row,'status':'queued','reason':None,'sid':sid,'policy_version':actor.policy_version,
                 'scopes':sorted(actor.scopes),'target':target,'target_digest':target_digest,'expires_at':min(origin.expires_at,self.clock()+MAX_WAIT)},revision))

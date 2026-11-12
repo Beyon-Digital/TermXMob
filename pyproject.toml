@@ -26,6 +26,11 @@ dependencies = [
     "tzdata>=2026.2; sys_platform == 'win32'",
     "boto3>=1.40,<2",
     "numpy>=2.3",
+    "quickjs-ng==0.18.0.1",
+    "sqlalchemy==2.1.8",
+    "sqlglot==30.31.0",
+    "psycopg[binary]==3.3.8",
+    "pymysql==1.2.4",
 ]
 
 [project.optional-dependencies]

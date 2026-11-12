@@ -1,17 +1,10 @@
-import {gql, type Task} from './api';
+import {gql, type Task, type Session} from './api';
 import {eventObject} from './tool-activity';
 
-/** Mirrors DEFAULT_AUTO_CEILINGS in termx/agent/limits.py. The host validates and clamps what is sent. */
-export const AUTO_CEILING_DEFAULTS = {tool_calls: 100, steps: 50, seconds: 1800, tokens: 500000, cost_usd: 5};
-export type AutoCeilings = typeof AUTO_CEILING_DEFAULTS;
+/** Legacy Auto quota keys remain in the wire shape; app task quotas are unset. */
+export type AutoCeilings = {tool_calls:number|null;steps:number|null;seconds:number|null;tokens:number|null;cost_usd:number|null};
 export type AutoCeilingKey = keyof AutoCeilings;
-export const AUTO_CEILING_FIELDS: {key: AutoCeilingKey; label: string; hint: string; step: number}[] = [
-  {key: 'tool_calls', label: 'Tool calls', hint: 'Calls run without asking', step: 1},
-  {key: 'steps', label: 'Steps', hint: 'Model turns', step: 1},
-  {key: 'seconds', label: 'Seconds', hint: 'Time in Auto', step: 1},
-  {key: 'tokens', label: 'Tokens', hint: 'Input plus output', step: 1000},
-  {key: 'cost_usd', label: 'Cost in USD', hint: 'Only counts models with a known price', step: 0.5},
-];
+export const AUTO_CEILING_DEFAULTS:AutoCeilings = {tool_calls:null,steps:null,seconds:null,tokens:null,cost_usd:null};
 
 export interface AutoSetting {enabled: boolean; ceilings: AutoCeilings}
 export const AUTO_OFF: AutoSetting = {enabled: false, ceilings: AUTO_CEILING_DEFAULTS};
@@ -32,7 +25,7 @@ export async function loadTaskMeter(taskId: string, signal?: AbortSignal): Promi
 
 const AUTO_MUTATION = 'mutation($id:String!,$input:AutoModeInput!){set_task_auto(task_id:$id,input:$input){id}}';
 export async function setTaskAuto(taskId: string, auto: AutoSetting) {
-  await gql(AUTO_MUTATION, {id: taskId, input: {enabled: auto.enabled, ceilings: auto.ceilings}});
+  await gql(AUTO_MUTATION, {id: taskId, input: {enabled: auto.enabled, ceilings: {...AUTO_CEILING_DEFAULTS}}});
 }
 
 const RESOLVE_MUTATION = 'mutation($task:String!,$approval:String!,$input:AgentApprovalInput!){resolve_agent_approval(task_id:$task,approval_id:$approval,input:$input)}';
@@ -56,16 +49,21 @@ export function usageLabel(usage: TaskMeter['usage']) {
 }
 
 export function autoLabel(auto: NonNullable<TaskMeter['auto']>) {
-  const limit = auto.ceilings?.tool_calls, used = auto.used?.tool_calls;
-  return auto.enabled ? `Auto ${used ?? 0} of ${limit ?? UNKNOWN} calls` : 'Auto off';
+  return auto.enabled ? 'Auto' : 'Auto off';
 }
 
-/** Worktree isolation is the host's condition for Auto. The reason says what to do, not just that it is off. */
-export function autoBlockedReason(session: {engine?: string; worktree_id?: string | null; runner_id?: string | null} | null) {
+/** Auto is enabled only after the host reports a ready local Git worktree. */
+export function autoBlockedReason(session: Partial<Pick<Session,'engine'|'worktree_id'|'runner_id'|'mode'|'checkout_state'|'checkout_policy'|'project_id'>> | null) {
   if (!session) return 'Open a conversation to use Auto.';
-  if (session.runner_id) return 'Auto runs only on this host. Choose the local host in Session options.';
+  if (session.runner_id || session.checkout_state === 'remote') return 'Auto runs only on this host. Choose the local host in Session options.';
   if (session.engine && session.engine !== 'internal') return 'Auto runs only with the built-in agent. Switch the engine in Session options.';
-  if (!session.worktree_id) return 'Auto needs an isolated worktree. Create one in Delivery under Branches & parallel worktrees, then choose it in Files & code, Project actions, Session checkout.';
+  if (session.mode && session.mode !== 'agent' || session.checkout_state === 'read-only') return 'Choose Agent coding mode to use Auto with an isolated Git checkout.';
+  if (session.checkout_state === 'unavailable') return 'Auto is unavailable because the isolated checkout could not be verified. Review the workspace checkout details.';
+  if (session.checkout_state === 'pending' && session.checkout_policy === 'auto') return 'An isolated Git worktree is created automatically on your first planning or coding turn. Auto becomes available when the checkout is ready.';
+  if (session.checkout_state === 'not-git') return 'Auto requires an isolated Git checkout. This project is not a Git repository.';
+  if (session.checkout_state === 'scratch') return 'Auto requires a Git project with an isolated checkout. This chat uses a scratch folder.';
+  if (session.checkout_state === 'browser') return 'Auto requires a local Agent coding checkout. This conversation uses browser tools.';
+  if (!session.worktree_id || session.checkout_state === 'pending') return 'Auto requires a verified isolated Git checkout. No ready checkout has been reported.';
   return '';
 }
 
@@ -100,7 +98,7 @@ export function agentNotes(events: TaskEvent[] = []): AgentNote[] {
       notes.push({key: 'revised-' + event.sequence, text: shown ? `You asked for changes: ${shown}` : 'You asked for changes to the plan'});
     } else if (event.type === 'auto.ceiling') {
       const name = String(payload.ceiling || '');
-      notes.push({key: 'ceiling-' + event.sequence, text: `Auto paused at its ${ceilingNames[name] || 'run'} limit (${payload.used ?? '?'} of ${payload.limit ?? '?'}). Approve more budget in the request below to continue.`});
+      notes.push({key: 'ceiling-' + event.sequence, text: `Auto paused at a previous ${ceilingNames[name] || 'run'} limit (${payload.used ?? '?'} of ${payload.limit ?? '?'}).`});
     }
   }
   flush();

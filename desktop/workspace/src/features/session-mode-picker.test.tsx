@@ -77,7 +77,7 @@ describe('Plan and Auto',()=>{
   render(<SessionModePicker session={{...session,engine:'claude'} as Session} running={false} onPatch={vi.fn()}/>);open();
   expect(screen.getByRole('radio',{name:/Plan/})).toBeDisabled();expect(screen.getByText(/plans on its own/)).toBeInTheDocument();
  });
- it('shows the Auto switch only in Agent mode and reports changes with the default limits',()=>{
+ it('shows the Auto switch only in Agent mode and reports changes without run quotas',()=>{
   const onAuto=vi.fn();const view=render(<SessionModePicker session={session} running={false} onPatch={vi.fn()} auto={AUTO_OFF} onAutoChange={onAuto}/>);open();
   expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   view.rerender(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={AUTO_OFF} onAutoChange={onAuto}/>);
@@ -91,42 +91,12 @@ describe('Plan and Auto',()=>{
  it('disables Auto with the reason when the task is not in a worktree',()=>{
   render(<SessionModePicker session={{...agent,worktree_id:null} as Session} running={false} onPatch={vi.fn()} auto={AUTO_OFF} onAutoChange={vi.fn()}/>);open();
   const toggle=screen.getByRole('switch',{name:'Auto'});expect(toggle).toBeDisabled();
-  expect(toggle).toHaveAccessibleDescription(/Project actions, Session checkout/);
+  expect(toggle).toHaveAccessibleDescription(/No ready checkout has been reported/);
  });
- it('edits the five limits, prefilled with host defaults, and reports them',async()=>{
-  const onAuto=vi.fn();const {container}=render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();
-  const limits=screen.getByRole('button',{name:'Auto limits'});expect(limits).toHaveAttribute('aria-expanded','false');fireEvent.click(limits);
-  expect(screen.getAllByRole('spinbutton').map(input=>(input as HTMLInputElement).value)).toEqual(['100','50','1800','500000','5']);
-  const calls=screen.getByRole('spinbutton',{name:'Tool calls'});
-  fireEvent.change(calls,{target:{value:'2'}});fireEvent.change(calls,{target:{value:'20'}});expect(onAuto).not.toHaveBeenCalled();
-  fireEvent.blur(calls);expect(onAuto).toHaveBeenCalledOnce();
-  expect(onAuto).toHaveBeenLastCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,tool_calls:20}});
-  await expectNoAxeViolations(container);
- });
- it('rejects an empty or non-positive limit without sending it',()=>{
-  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
-  const steps=screen.getByRole('spinbutton',{name:'Steps'});fireEvent.change(steps,{target:{value:''}});
-  fireEvent.blur(steps);
-  expect(onAuto).not.toHaveBeenCalled();expect(steps).toHaveAttribute('aria-invalid','true');expect(screen.getByText('Enter a whole number above zero.')).toBeInTheDocument();
-  fireEvent.change(steps,{target:{value:'0'}});fireEvent.keyDown(steps,{key:'Enter'});expect(onAuto).not.toHaveBeenCalled();
- });
- it('commits a limit on Enter and shows the held value again once it is sent',()=>{
-  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
-  const steps=screen.getByRole('spinbutton',{name:'Steps'});fireEvent.change(steps,{target:{value:'10'}});fireEvent.keyDown(steps,{key:'Enter'});
-  expect(onAuto).toHaveBeenCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,steps:10}});expect(steps).toHaveValue(50);
- });
- it.each([['Escape',()=>fireEvent.keyDown(document,{key:'Escape'})],['a click outside',()=>fireEvent.pointerDown(document.body)]])('sends a typed limit that is still a draft when the popover closes with %s',(_name,close)=>{
-  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
-  fireEvent.change(screen.getByRole('spinbutton',{name:'Tool calls'}),{target:{value:'200'}});expect(onAuto).not.toHaveBeenCalled();
-  close();expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-  expect(onAuto).toHaveBeenCalledOnce();expect(onAuto).toHaveBeenCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,tool_calls:200}});
- });
- it('does not send an invalid draft or the same limit twice when the popover closes',()=>{
-  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={onAuto}/>);open();fireEvent.click(screen.getByRole('button',{name:'Auto limits'}));
-  fireEvent.change(screen.getByRole('spinbutton',{name:'Steps'}),{target:{value:'0'}});
-  const calls=screen.getByRole('spinbutton',{name:'Tool calls'});fireEvent.change(calls,{target:{value:'30'}});fireEvent.blur(calls);
-  fireEvent.keyDown(document,{key:'Escape'});
-  expect(onAuto).toHaveBeenCalledOnce();expect(onAuto).toHaveBeenCalledWith({enabled:true,ceilings:{...AUTO_CEILING_DEFAULTS,tool_calls:30}});
+ it('keeps Auto approval behavior without quota fields or inherited numeric ceilings',()=>{
+  const onAuto=vi.fn();render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{enabled:true,ceilings:{tool_calls:1,steps:1,seconds:1,tokens:1,cost_usd:1}}} onAutoChange={onAuto}/>);open();
+  expect(screen.queryByRole('button',{name:'Auto limits'})).not.toBeInTheDocument();expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('switch',{name:'Auto'}));expect(onAuto).toHaveBeenCalledWith({enabled:false,ceilings:AUTO_CEILING_DEFAULTS});
  });
  it('does not name Auto on the chip when the conversation cannot run it',()=>{
   render(<SessionModePicker session={{...agent,worktree_id:null} as Session} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={vi.fn()}/>);
@@ -136,4 +106,22 @@ describe('Plan and Auto',()=>{
   const {container}=render(<SessionModePicker session={agent} running={false} onPatch={vi.fn()} auto={{...AUTO_OFF,enabled:true}} onAutoChange={vi.fn()}/>);open();
   await expectNoAxeViolations(container);fireEvent.keyDown(document,{key:'Escape'});expect(screen.getByRole('button',{name:'Session mode'})).toHaveFocus();
  });
+});
+
+it('suspends its portal without moving focus or changing approval mode while Agent is hidden',()=>{
+ const agent={id:'conversation',mode:'agent',engine:'internal',worktree_id:'wt'} as Session;
+ const onPatch=vi.fn(),onAutoChange=vi.fn(),auto={...AUTO_OFF,enabled:true};
+ const surface=(visible:boolean)=><><button>Studio action</button><SessionModePicker session={agent} running={false} onPatch={onPatch} auto={auto} onAutoChange={onAutoChange} visible={visible}/></>;
+ const view=render(surface(true));fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ const toggle=screen.getByRole('switch',{name:'Auto'}),popup=toggle.closest('.mode-popover')!;toggle.focus();
+ view.rerender(surface(false));expect(popup).toHaveAttribute('hidden');expect(popup).toHaveAttribute('inert');expect(popup.contains(document.activeElement)).toBe(false);
+ const studio=screen.getByRole('button',{name:'Studio action'});studio.focus();fireEvent.keyDown(document,{key:'Escape'});fireEvent.pointerDown(studio);
+ expect(studio).toHaveFocus();expect(onAutoChange).not.toHaveBeenCalled();expect(onPatch).not.toHaveBeenCalled();
+ view.rerender(surface(true));expect(screen.getByRole('switch',{name:'Auto'})).toBe(toggle);expect(toggle).toBeChecked();expect(onAutoChange).not.toHaveBeenCalled();
+});
+
+it('keeps Auto disabled while an automatic checkout is pending and explains that no manual checkout step is needed',()=>{
+ const session={id:'pending',mode:'agent',engine:'internal',project_id:'project',checkout_policy:'auto',checkout_state:'pending',worktree_id:null} as Session;
+ render(<SessionModePicker session={session} running={false} onPatch={vi.fn()} auto={AUTO_OFF} onAutoChange={vi.fn()}/>);fireEvent.click(screen.getByRole('button',{name:'Session mode'}));
+ const toggle=screen.getByRole('switch',{name:'Auto'});expect(toggle).toBeDisabled();expect(toggle).toHaveAccessibleDescription(/created automatically.*planning or coding turn.*checkout is ready/);
 });

@@ -41,10 +41,6 @@
 .response-status.phase-failed{color:var(--destructive)}
 .response-loader{margin:14px 0 8px;color:var(--secondary)}
 .response-loader-label{display:flex;align-items:center;gap:9px;font-size:13px}
-.response-skeleton{display:flex;flex-direction:column;gap:10px;margin-top:20px;max-width:430px;padding-bottom:6px}
-.response-skeleton span{display:block;height:8px;border-radius:5px;width:92%;background:linear-gradient(90deg,var(--muted) 20%,var(--border) 50%,var(--muted) 80%);background-size:220% 100%;animation:response-shimmer 2.1s linear infinite;opacity:.65}
-.response-skeleton span:nth-child(2){width:76%;animation-delay:.12s}.response-skeleton span:nth-child(3){width:42%;animation-delay:.24s}
-@keyframes response-shimmer{to{background-position:-220% 0}}
 .response-error{display:flex;align-items:flex-start;gap:10px;padding:13px 15px;margin:18px 0 10px;border:1px solid color-mix(in srgb,var(--destructive) 40%,var(--border));background:color-mix(in srgb,var(--destructive) 5%,var(--background));border-radius:12px;color:var(--destructive);font-size:12px;line-height:1.6}
 .response-error>svg{flex:none;margin-top:3px}.response-error strong{font-weight:600}.response-error p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.response-error .button{color:inherit;padding-left:0}
 .response-recovery{font-size:13px;line-height:1.6;color:var(--secondary);margin-top:12px}
@@ -90,7 +86,7 @@
 .agent-activity-content>.button{font-size:11px;color:var(--secondary);margin-top:6px;padding-left:0}
 .delegated-agents.nested{margin-top:10px!important}
 @media(max-width:600px){.chat-region .message{padding-bottom:24px}.chat-region .message-assistant .message-content{font-size:14px}.chat-region .message-user .message-content{max-width:94%;padding:10px 15px}.message-response h1{font-size:22px}.message-response h2{font-size:19px}.message-response h3{font-size:17px}.run-activity-trigger{font-size:11px;gap:7px}.run-activity-count{font-size:11px}.run-activity-body{padding-inline:9px}.agent-activity-status>span{display:none}.tool-action-status>span{max-width:58px;overflow:hidden;text-overflow:ellipsis}.response-actions .button{min-height:36px}.response-author{margin-bottom:12px}.agent-activity-content{padding-left:10px}}
-@media(prefers-reduced-motion:reduce){.response-skeleton span,.response-loader .spin,.run-activity .spin,.response-actions .spin{animation:none}.disclosure-chevron{transition:none}}
+@media(prefers-reduced-motion:reduce){.response-loader .spin,.run-activity .spin,.response-actions .spin{animation:none}.disclosure-chevron{transition:none}}
 
 .coordination-report-source{display:flex;align-items:center;gap:9px;margin:0 0 15px;padding:0 0 11px;border-bottom:1px solid var(--border);font-size:12px;color:var(--secondary)}
 .coordination-report-source>svg{flex-shrink:0}.coordination-report-source>span:first-of-type{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
@@ -101,3 +97,77 @@
 
 .response-cancellation{display:flex;align-items:flex-start;gap:10px;padding:13px 15px;margin:18px 0 10px;border:1px solid var(--border);background:var(--surface);border-radius:12px;color:var(--secondary);font-size:12px;line-height:1.6}
 .response-cancellation>svg{flex:none;margin-top:3px}.response-cancellation strong{font-weight:550;color:var(--foreground)}.response-cancellation p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.response-cancellation .button{color:inherit;padding-left:0}
+
+/* Agent activity is one quiet line until explicitly inspected. */
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity{margin:4px 0 12px;border:0;border-radius:8px;background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-trigger{min-height:32px;padding:4px 0;gap:8px;border-radius:8px;font-size:14px;line-height:20px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-trigger:hover{background:var(--surface-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-summary{color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.run-activity-count,.run-activity-failed){font-size:12px;line-height:16px;margin-left:4px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-failed{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-body{margin-left:8px;padding:4px 0 4px 16px;border-left:1px solid var(--border);border-top:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.run-inspect,.activity-loading,.activity-load-error,.tool-detail-empty,.activity-overflow,.agent-notes){font-size:12px;line-height:16px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .activity-load-error{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-action-trigger{min-height:40px;padding:8px 0;gap:8px;border-radius:8px;font-size:14px;line-height:20px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-action-trigger:hover{background:var(--surface-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-timeline-item{gap:8px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-timeline-icon{height:40px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-action-status{font-size:12px;line-height:16px;gap:4px;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .phase-failed .tool-action-status{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-action-content{padding:0 0 16px;font-size:12px;line-height:16px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .tool-value h4{font-size:12px;font-weight:500;margin:8px 0;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.tool-value pre,.tool-event-details pre){padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px;line-height:16px;color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.tool-call-id,.tool-event-details summary){font-size:12px;line-height:16px;color:var(--text-3);opacity:1}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.desktop-facts,.desktop-note){font-size:14px;line-height:20px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-team{margin:8px 0 16px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-team>h3{gap:8px;font-size:12px;line-height:16px;margin:8px 0;font-weight:500;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .delegated-agents{border:0;border-radius:0;background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-activity-trigger{min-height:40px;padding:8px 0;gap:8px;border-radius:8px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-activity-trigger:hover{background:var(--surface-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-avatar{width:24px;height:24px;border-radius:8px;background:transparent;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-activity-label strong{font-size:14px;line-height:20px;font-weight:500}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.agent-activity-label>span,.agent-activity-status){font-size:12px;line-height:16px;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-activity-status.phase-failed{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-activity-content{padding:8px 0 16px 16px;border-top:0;border-left:1px solid var(--border);margin-left:8px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-task-prompt{font-size:14px;line-height:20px;margin:8px 0;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .agent-result{padding:8px 0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.response-error,.response-cancellation){padding:12px 16px;gap:12px;margin:16px 0 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:14px;line-height:20px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-error{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-cancellation{color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.response-error,.response-cancellation) strong{font-weight:500}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-loader{margin:8px 0;color:var(--text-2);min-height:24px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-loader-label{gap:8px;font-size:14px;line-height:24px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-streaming-caret{display:inline-block;width:4px;height:16px;background:currentColor;vertical-align:text-bottom;flex-shrink:0;animation:response-caret 1s ease-out infinite}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response.is-streaming>:last-child::after{content:'';display:inline-block;width:4px;height:16px;margin-left:4px;background:var(--text-3);vertical-align:text-bottom;animation:response-caret 1s ease-out infinite}
+@keyframes response-caret{0%,60%{opacity:.6}100%{opacity:0}}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response strong{font-weight:600}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response blockquote{margin:16px 0;padding:0 0 0 16px;border-left:1px solid var(--border-strong);color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=inline-code]{font-size:14px;line-height:20px;padding:0 4px;border-radius:8px;background:var(--surface-2);color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=code-block]{margin:16px 0;border-radius:8px;border-color:var(--border);background:var(--surface);font-size:12px;line-height:16px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=code-block-header]{padding:8px 12px;gap:12px;font-size:12px;line-height:16px;background:var(--surface-2);color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=code-block-body]{padding:16px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=code-block] code{font-size:12px;line-height:16px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=code-block] button{min-width:32px;min-height:32px;border-radius:8px;gap:4px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=table-wrapper]{margin:16px 0;border:0;border-radius:0}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=table-wrapper] table{font-size:14px;line-height:20px;font-variant-numeric:tabular-nums}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=table-wrapper] :is(th,td){height:40px;padding:8px 12px;border:0;border-bottom:1px solid var(--border);background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=table-wrapper] th{font-weight:500}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .coordination-report-source{gap:8px;margin:0 0 16px;padding:0 0 12px;font-size:14px;line-height:20px;color:var(--text-2)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .coordination-report-source strong{font-weight:500;color:var(--text)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.coordination-report-source small,.coordination-report-status){font-size:12px;line-height:16px;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .coordination-report-status.failed{color:var(--danger)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .coordination-report-status.attention{color:var(--text)}
+@media(pointer:coarse){
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session :is(.run-activity-trigger,.tool-action-trigger,.agent-activity-trigger){min-height:44px}
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response [data-streamdown=code-block] button{min-width:44px;min-height:44px}
+}
+@media(prefers-reduced-motion:reduce){
+ .workspace-shell[data-workspace=agent] .chat-region.coding-session .response-streaming-caret,.workspace-shell[data-workspace=agent] .chat-region.coding-session .message-response.is-streaming>:last-child::after{animation:none;opacity:.6}
+}
+/* The native reference leaves assistant text on the page and gives activity one divider. */
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity{border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent;margin:0 0 16px;padding:0 0 4px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-trigger{font-weight:400;color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-summary{color:var(--text-3)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-body{border-left:0;margin-left:0;padding:8px 0 4px}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-actions .button{background:transparent}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session .response-actions .button:not(:disabled):hover{background:var(--surface-2)}

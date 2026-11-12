@@ -89,3 +89,99 @@
   .manager-item-actions{justify-content:flex-start;max-width:none}
   .manager-heading{flex-wrap:wrap;gap:12px}
 }
+
+/* Agent manager pages share the native settings column and grouped row surfaces. */
+html[data-app-workspace="agent"] .manager-main { width: 100%; max-width: 824px; margin-inline: auto; padding: 48px 48px 64px; }
+html[data-app-workspace="agent"] .managers-embedded .manager-main { padding: 48px 48px 64px; }
+html[data-app-workspace="agent"] .manager-heading { gap: 24px; align-items: flex-start; margin-bottom: 40px; }
+html[data-app-workspace="agent"] .manager-main .manager-heading h2 { margin: 0 0 12px; color: var(--text); font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -.02em; }
+html[data-app-workspace="agent"] .manager-heading p { max-width: 68ch; color: var(--text-3); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .manager-heading > .button { margin-top: 4px; border-radius: 8px; }
+html[data-app-workspace="agent"] .manager-help { max-width: 68ch; margin: 8px 0 16px; color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .manager-main > :is(h2, h3),
+html[data-app-workspace="agent"] .manager-main > section > h2 { margin: 40px 0 16px; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: 0; }
+html[data-app-workspace="agent"] .manager-heading + h3 { margin-top: 0; }
+html[data-app-workspace="agent"] .manager-search-field { display: grid; gap: 8px; max-width: 100%; margin: 0 0 24px; color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .manager-search-field .manager-search { margin: 0; }
+html[data-app-workspace="agent"] .manager-item { min-height: 72px; padding: 16px 0; gap: 24px; }
+html[data-app-workspace="agent"] .manager-item :is(h3, h4) { margin: 0 0 4px; color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .manager-item p { color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .manager-item-actions { gap: 8px; }
+html[data-app-workspace="agent"] .manager-item-actions button { min-height: 32px; padding-inline: 12px; border-radius: 8px; font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .manager-main > .manager-item { padding: 16px 20px; border: 1px solid var(--border); border-radius: 0; background: var(--settings-group-surface, var(--surface)); }
+html[data-app-workspace="agent"] .manager-main > .manager-item + .manager-item { border-top: 0; }
+html[data-app-workspace="agent"] .manager-main > .manager-item:not(.manager-item + .manager-item) { border-radius: 16px 16px 0 0; }
+html[data-app-workspace="agent"] .manager-main > .manager-item:not(:has(+ .manager-item)) { border-radius: 0 0 16px 16px; }
+html[data-app-workspace="agent"] .manager-main > .manager-item:not(.manager-item + .manager-item):not(:has(+ .manager-item)) { border-radius: 16px; }
+html[data-app-workspace="agent"] .manager-main details { padding: 16px 0; }
+html[data-app-workspace="agent"] .manager-main details details { padding-inline: 0; }
+html[data-app-workspace="agent"] .manager-main summary { min-height: 40px; padding-block: 8px; color: var(--text); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .manager-main > details { margin-top: 16px; padding: 0 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--settings-group-surface, var(--surface)); }
+html[data-app-workspace="agent"] .manager-main > details > summary { min-height: 56px; padding-block: 16px; }
+html[data-app-workspace="agent"] .manager-main > details > :last-child:not(summary) { margin-bottom: 20px; }
+html[data-app-workspace="agent"] .manager-disclosure-body { gap: 16px; padding-top: 16px; }
+html[data-app-workspace="agent"] .manager-form { max-width: 728px; gap: 20px; padding-top: 8px; }
+html[data-app-workspace="agent"] :is(.manager-form > label, .manager-field) { gap: 8px; margin-block: 0; font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] :is(.manager-form label:has(> input[type="checkbox"]), .manager-choice) { gap: 12px; font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .manager-main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { min-height: 40px; padding: 8px 12px; border-color: var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .manager-main textarea { min-height: 96px; }
+html[data-app-workspace="agent"] .manager-main fieldset { padding: 0; border: 0; border-radius: 0; }
+html[data-app-workspace="agent"] .manager-main :is(button, a, summary, input, select, textarea):focus-visible { outline-offset: 2px; }
+html[data-app-workspace="agent"] .manager-preview { margin: 24px 0; padding: 20px; border-color: var(--border); border-radius: 16px; box-shadow: none; }
+html[data-app-workspace="agent"] .manager-preview h3 { font-size: 16px; line-height: 24px; font-weight: 500; }
+html[data-app-workspace="agent"] .manager-preview p { font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .manager-memory { padding: 16px 0; }
+html[data-app-workspace="agent"] .manager-memory p { font-size: 14px; line-height: 24px; }
+html[data-app-workspace="agent"] .manager-empty { padding: 24px 0; color: var(--text-3); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .manager-json { color: var(--text-2); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .manager-recovery { padding: 16px; font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] :is(.manager-error, .manager-notice) { margin: 16px 0; padding: 12px 0; border-radius: 0; background: transparent; font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .manager-error { color: var(--danger); gap: 16px; flex-wrap: wrap; }
+html[data-app-workspace="agent"] .manager-notice { color: var(--text-2); }
+html[data-app-workspace="agent"] .manager-notice:empty { margin: 0; padding: 0; }
+html[data-app-workspace="agent"] .provider-capabilities legend { font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .settings-tool-choices label { font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .provider-models { gap: 12px; }
+html[data-app-workspace="agent"] .provider-models-header h4 { font-size: 14px; line-height: 20px; font-weight: 500; }
+html[data-app-workspace="agent"] .model-rows { border-inline: 0; border-radius: 0; }
+html[data-app-workspace="agent"] .model-row { padding: 12px 0; }
+html[data-app-workspace="agent"] .model-row-include { gap: 12px; font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .model-row-meta { margin-left: 32px; color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .model-row-override { margin-left: 32px; }
+html[data-app-workspace="agent"] .model-row-override fieldset { gap: 12px; padding-block: 8px; }
+html[data-app-workspace="agent"] .model-row-override label { gap: 8px; font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .provider-test-dialog dl { gap: 8px 16px; font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .provider-test-dialog dt { color: var(--text-3); }
+html[data-app-workspace="agent"] .extension-manager > h2 { display: none; }
+html[data-app-workspace="agent"] .form-field { gap: 8px; }
+html[data-app-workspace="agent"] .form-field .form-field-label { font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] :is(.form-field-hint, .form-field-error) { font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .model-routing { margin-block: 40px; }
+html[data-app-workspace="agent"] .model-routing .settings-row { gap: 16px; }
+html[data-app-workspace="agent"] .model-routing-field { gap: 8px; font-size: 12px; line-height: 18px; font-weight: 400; }
+html[data-app-workspace="agent"] .model-routing .settings-row-control .select { width: 100%; border: 1px solid var(--border); background: var(--surface); }
+
+@media (max-width: 1024px) and (min-width: 769px) {
+  html[data-app-workspace="agent"] :is(.manager-main, .managers-embedded .manager-main) { padding: 48px 32px 64px; }
+}
+@media (max-width: 768px) {
+  html[data-app-workspace="agent"] :is(.manager-main, .managers-embedded .manager-main) { padding: 32px 20px 48px; }
+  html[data-app-workspace="agent"] .manager-heading { gap: 12px; margin-bottom: 32px; flex-wrap: wrap; }
+  html[data-app-workspace="agent"] .manager-main .manager-heading h2 { font-size: 24px; line-height: 32px; }
+  html[data-app-workspace="agent"] .manager-item { flex-direction: column; align-items: flex-start; gap: 16px; }
+  html[data-app-workspace="agent"] .manager-main > .manager-item { padding: 16px; }
+  html[data-app-workspace="agent"] .manager-main > details { padding-inline: 16px; }
+  html[data-app-workspace="agent"] .manager-item-actions { max-width: 100%; justify-content: flex-start; }
+  html[data-app-workspace="agent"] .manager-item-actions > .manager-help { text-align: left; }
+  html[data-app-workspace="agent"] .manager-main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { font-size: 16px; }
+  html[data-app-workspace="agent"] .model-routing-controls { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  html[data-app-workspace="agent"] .manager-main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, button, summary) { min-height: 44px; }
+}
+
+.provider-limit-fields { display: grid; gap: 16px; }
+html[data-app-workspace="agent"] .provider-limits :is(summary, input):focus-visible {
+  outline: var(--control-focus-ring, 2px solid var(--accent));
+  outline-offset: var(--control-focus-offset, -2px);
+}

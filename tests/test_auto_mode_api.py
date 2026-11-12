@@ -32,7 +32,7 @@ def _input(repo: Path, **overrides):
     return {"prompt": "Clean up", "cwd": str(repo), "provider_id": "fake", **overrides}
 
 
-def test_graphql_create_with_auto_exposes_state_and_set_task_auto_toggles(tmp_path, monkeypatch):
+def test_graphql_legacy_auto_ceilings_are_ignored_and_toggle_state_persists(tmp_path, monkeypatch):
     state, _adapter, client = _client(tmp_path, monkeypatch, [("", [_shell("c1", "rm -rf build")])])
     repo = _repo(tmp_path)
     with client:
@@ -41,10 +41,11 @@ def test_graphql_create_with_auto_exposes_state_and_set_task_auto_toggles(tmp_pa
             auto={"enabled": True, "ceilings": {"tool_calls": 7}},
         )}, HEADERS)
         assert created["auto"]["enabled"] is True
-        assert created["auto"]["ceilings"]["tool_calls"] == 7
+        assert all(value is None for value in created["auto"]["ceilings"].values())
         assert created["auto"]["used"]["tool_calls"] == 0
         task_id = created["id"]
-        # Plan approval first, then the model's rm -rf is auto-approved.
+        # The legacy ceiling is accepted without restoring a quota. Normal
+        # plan approval still precedes execution and the live Auto toggle.
         _task, plan = client.portal.call(wait_for_pending_approval, state.agent_store, task_id, "plan")
         data(client, _RESOLVE, "resolve_agent_approval", {
             "task": task_id, "approval": plan["id"], "input": {"decision": "approved"},
@@ -52,9 +53,10 @@ def test_graphql_create_with_auto_exposes_state_and_set_task_auto_toggles(tmp_pa
 
         off = data(client, _SET, "set_task_auto", {"id": task_id, "input": {"enabled": False}}, HEADERS)
         assert off["auto"]["enabled"] is False
-        assert off["auto"]["ceilings"]["tool_calls"] == 7
+        assert all(value is None for value in off["auto"]["ceilings"].values())
         again = data(client, _TASK, "agent_task", {"id": task_id}, HEADERS)
         assert again["auto"]["enabled"] is False
+        assert again["auto"]["ceilings"] == off["auto"]["ceilings"]
 
 
 def test_graphql_auto_needs_agent_control_as_well_as_agent_run(tmp_path, monkeypatch):

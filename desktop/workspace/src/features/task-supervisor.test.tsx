@@ -8,18 +8,20 @@ const props={taskId:'root',onClose:vi.fn(),onError:vi.fn()};
 beforeEach(()=>{vi.mocked(request).mockResolvedValue(root)});
 afterEach(()=>{cleanup();vi.resetAllMocks();vi.useRealTimers()});
 async function builder(){render(<TaskSupervisor {...props}/>);fireEvent.click(await screen.findByRole('button',{name:'Build agent team'}));}
+function receipt(init?:RequestInit){const body=JSON.parse(String(init?.body));return {ok:true,members:body.members.map((member:{agent:string},index:number)=>({agent:member.agent,ok:true,task_id:body.request_id+':worker'+index}))}}
+function tenMembers(){for(let count=2;count<10;count++)fireEvent.click(screen.getByRole('button',{name:'Add worker'}));for(let index=1;index<=10;index++)fireEvent.change(screen.getByLabelText('Worker '+index+' task'),{target:{value:'Independent task '+index}})}
 it('validates unique names and tasks, defaults to read-only and submits explicitly isolated editors',async()=>{
  await builder();const create=screen.getByRole('button',{name:'Create team'});expect(create).toBeDisabled();
  for(const index of [1,2]){expect(screen.getByLabelText('Worker '+index+' access')).toHaveValue('ask');fireEvent.change(screen.getByLabelText('Worker '+index+' task'),{target:{value:' Investigate '+index+' '}})}
  fireEvent.change(screen.getByLabelText('Worker 2 name'),{target:{value:' researcher '}});expect(create).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Worker 2 name'),{target:{value:' Editor '}});fireEvent.change(screen.getByLabelText('Worker 2 access'),{target:{value:'agent'}});expect(create).toBeEnabled();
- vi.mocked(request).mockResolvedValueOnce({ok:true,members:[]});fireEvent.click(create);await screen.findByText('Team created. Select a worker to inspect or steer it.');
+ vi.mocked(request).mockImplementationOnce(async(_path,init)=>receipt(init));fireEvent.click(create);await screen.findByText('Team created. Select a worker to inspect or steer it.');
  const call=vi.mocked(request).mock.calls.find(([path])=>path.endsWith('/swarm'))!;const body=JSON.parse(call[1]!.body as string);expect(body.request_id).toEqual(expect.any(String));expect(body.members.map((member:any)=>[member.agent,member.task,member.mode])).toEqual([['Researcher','Investigate 1','ask'],['Editor','Investigate 2','agent']]);
 });
 it('retains idempotency after HTTP failure and changes it only after editing team input',async()=>{
  await builder();for(const index of [1,2])fireEvent.change(screen.getByLabelText('Worker '+index+' task'),{target:{value:'Investigate '+index}});
  vi.mocked(request).mockImplementation(async(path)=>{if(path.endsWith('/swarm'))throw new Error('Connection interrupted');return root});
- for(const count of [1,2]){fireEvent.click(screen.getByRole('button',{name:'Create team'}));await waitFor(()=>expect(props.onError).toHaveBeenCalledTimes(count))}
+ for(const count of [1,2]){fireEvent.click(screen.getByRole('button',{name:count===1?'Create team':'Retry pending batch'}));await waitFor(()=>expect(props.onError).toHaveBeenCalledTimes(count))}
  fireEvent.change(screen.getByLabelText('Worker 1 task'),{target:{value:'Updated task'}});fireEvent.click(screen.getByRole('button',{name:'Create team'}));await waitFor(()=>expect(props.onError).toHaveBeenCalledTimes(3));
  const ids=vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/swarm')).map(([,init])=>JSON.parse(init!.body as string).request_id);expect(ids[0]).toBe(ids[1]);expect(ids[2]).not.toBe(ids[1]);
 });
@@ -62,9 +64,87 @@ it('keeps enrolled workers cancellable while team creation is still pending and 
  expect(request).toHaveBeenCalledWith('/api/workspace/tasks/planning-child/cancel',expect.objectContaining({method:'POST'}));expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/swarm'))).toHaveLength(1);
  await act(async()=>{settle({ok:false,members:[{agent:'Researcher',ok:false,error:'Cancelled during planning'}]});await pending});
 });
-it('opens a single-member builder when exactly one worker slot remains',async()=>{
- vi.mocked(request).mockResolvedValue({...root,limits:{...root.limits,max_parallel_subagents:1}});await builder();expect(screen.getByLabelText('Worker 1 name')).toHaveValue('Researcher');expect(screen.queryByLabelText('Worker 2 name')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Add worker'})).toBeDisabled();fireEvent.change(screen.getByLabelText('Worker 1 task'),{target:{value:'Inspect independently'}});expect(screen.getByRole('button',{name:'Create team'})).toBeEnabled();
+it('ignores legacy task quotas and lets the user assemble more than eight workers',async()=>{
+ vi.mocked(request).mockResolvedValue({...root,limits:{max_parallel_subagents:1,max_subagents_total:1},tree_budget:{root_task_id:'root',max_steps:1,used_steps:1,max_execution_seconds:1,used_execution_seconds:1,active_workers:1},children:[{...root,id:'existing',parent_id:'root',prompt:'Existing worker',children:[]}]});
+ await builder();
+ expect(screen.getByLabelText('Worker 2 name')).toHaveValue('Reviewer');
+ expect(screen.queryByText(/available slots|parallel \/|Individual task ceiling|Shared parent and child allowance/)).not.toBeInTheDocument();
+ for(let count=2;count<10;count++)fireEvent.click(screen.getByRole('button',{name:'Add worker'}));
+ for(let index=1;index<=10;index++)fireEvent.change(screen.getByLabelText('Worker '+index+' task'),{target:{value:'Independent task '+index}});
+ expect(screen.getByRole('button',{name:'Add worker'})).toBeEnabled();expect(screen.getByRole('button',{name:'Create team'})).toBeEnabled();
+ vi.mocked(request).mockImplementation(async(path,init)=>path.endsWith('/swarm')?receipt(init):root);fireEvent.click(screen.getByRole('button',{name:'Create team'}));
+ await screen.findByText('Team created. Select a worker to inspect or steer it.');
+ const calls=vi.mocked(request).mock.calls.filter(([address])=>address.endsWith('/swarm')).map(([,init])=>JSON.parse(String(init?.body)));
+ expect(calls.map(call=>call.members.length)).toEqual([8,2]);expect(calls[0].request_id).toMatch(/:0$/);expect(calls[1].request_id).toBe(calls[0].request_id.replace(/:0$/,':1'));
+ expect(screen.getAllByRole('button',{name:'Inspect worker'})).toHaveLength(10);
 });
-it('disables team assembly when no worker slots remain',async()=>{
- vi.mocked(request).mockResolvedValue({...root,limits:{...root.limits,max_parallel_subagents:1},children:[{...root,id:'child',parent_id:'root',prompt:'Occupied worker',children:[]}]});render(<TaskSupervisor {...props}/>);expect(await screen.findByRole('button',{name:'Build agent team'})).toBeDisabled();
+
+it('pauses hidden task polling and restores unsent steering and team forms on return',async()=>{
+ vi.useFakeTimers();
+ const view=render(<TaskSupervisor {...props} visible={false}/>);
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+ await act(async()=>{await vi.advanceTimersByTimeAsync(10000)});expect(request).not.toHaveBeenCalled();
+ view.rerender(<TaskSupervisor {...props} visible/>);await act(async()=>{});
+ expect(request).toHaveBeenCalledOnce();
+ fireEvent.change(screen.getByLabelText('Steer selected task'),{target:{value:'Keep this instruction'}});
+ fireEvent.click(screen.getByRole('button',{name:'Build agent team'}));
+ fireEvent.change(screen.getByLabelText('Worker 1 task'),{target:{value:'Inspect keyboard navigation'}});
+ fireEvent.change(screen.getByLabelText('Worker 2 name'),{target:{value:'Accessibility reviewer'}});
+ const signal=vi.mocked(request).mock.calls[0][1]!.signal!;
+ view.rerender(<TaskSupervisor {...props} visible={false}/>);
+ expect(signal.aborted).toBe(true);expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+ await act(async()=>{await vi.advanceTimersByTimeAsync(15000)});expect(request).toHaveBeenCalledOnce();
+ view.rerender(<TaskSupervisor {...props} visible/>);await act(async()=>{});
+ expect(request).toHaveBeenCalledTimes(2);
+ expect(screen.getByLabelText('Steer selected task')).toHaveValue('Keep this instruction');
+ expect(screen.getByLabelText('Worker 1 task')).toHaveValue('Inspect keyboard navigation');
+ expect(screen.getByLabelText('Worker 2 name')).toHaveValue('Accessibility reviewer');
+ expect(props.onClose).not.toHaveBeenCalled();expect(vi.mocked(request).mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
+});
+
+
+it('stops after a partial batch receipt and shows the workers already created without replay',async()=>{
+ await builder();tenMembers();
+ vi.mocked(request).mockImplementation(async(path,init)=>{if(!path.endsWith('/swarm'))return root;const result=receipt(init);return {...result,ok:false,members:result.members.map((member:any,index:number)=>index===7?{agent:member.agent,ok:false,error:'Could not start'}:member)}});
+ fireEvent.click(screen.getByRole('button',{name:'Create team'}));
+ await screen.findByText('Some workers could not start. Inspect the created workers before trying again.');
+ expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/swarm'))).toHaveLength(1);
+ expect(screen.getAllByRole('button',{name:'Inspect worker'})).toHaveLength(7);
+ expect(screen.queryByRole('button',{name:'Retry pending batch'})).not.toBeInTheDocument();
+ fireEvent.submit(screen.getByRole('button',{name:'Create team'}).closest('form')!);
+ await act(async()=>{});expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/swarm'))).toHaveLength(1);
+});
+
+it('retries only an explicitly selected unknown batch with its stable ID and retains earlier receipts',async()=>{
+ await builder();tenMembers();let attempts=0;
+ vi.mocked(request).mockImplementation(async(path,init)=>{if(!path.endsWith('/swarm'))return root;attempts++;if(attempts===2)throw new Error('Second batch response lost');return receipt(init)});
+ fireEvent.click(screen.getByRole('button',{name:'Create team'}));
+ await screen.findByText('Latest batch unconfirmed. Review the workers before retrying.');
+ expect(screen.getAllByRole('button',{name:'Inspect worker'})).toHaveLength(8);
+ expect(attempts).toBe(2);expect(screen.getByRole('button',{name:'Create team'})).toBeDisabled();
+ await act(async()=>{});expect(attempts).toBe(2);
+ fireEvent.click(screen.getByRole('button',{name:'Retry pending batch'}));
+ await screen.findByText('Team created. Select a worker to inspect or steer it.');
+ const calls=vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/swarm')).map(([,init])=>JSON.parse(String(init?.body)));
+ expect(calls.map(call=>call.members.length)).toEqual([8,2,2]);expect(calls[2]).toEqual(calls[1]);expect(calls[1].request_id).not.toBe(calls[0].request_id);
+ expect(screen.getAllByRole('button',{name:'Inspect worker'})).toHaveLength(10);
+});
+
+it('does not dispatch a later batch after changing tasks',async()=>{
+ let release!:(value:unknown)=>void,first:RequestInit|undefined;
+ vi.mocked(request).mockImplementation(async(path,init)=>path.endsWith('/swarm')?new Promise(resolve=>{release=resolve;first=init}):{...root,id:path.endsWith('/other')?'other':'root'});
+ const view=render(<TaskSupervisor {...props}/>);fireEvent.click(await screen.findByRole('button',{name:'Build agent team'}));tenMembers();fireEvent.click(screen.getByRole('button',{name:'Create team'}));
+ view.rerender(<TaskSupervisor {...props} taskId="other"/>);await screen.findByLabelText('Steer selected task');
+ await act(async()=>release(receipt(first)));
+ expect(vi.mocked(request).mock.calls.filter(([path])=>path.endsWith('/swarm'))).toHaveLength(1);
+ expect(screen.queryByText('Team created. Select a worker to inspect or steer it.')).not.toBeInTheDocument();
+});
+
+it('pauses between batches while hidden and continues only after an explicit action',async()=>{
+ let release!:(value:unknown)=>void,first:RequestInit|undefined,calls=0;
+ vi.mocked(request).mockImplementation(async(path,init)=>{if(!path.endsWith('/swarm'))return root;calls++;if(calls===1)return new Promise(resolve=>{release=resolve;first=init});return receipt(init)});
+ const view=render(<TaskSupervisor {...props}/>);fireEvent.click(await screen.findByRole('button',{name:'Build agent team'}));tenMembers();fireEvent.click(screen.getByRole('button',{name:'Create team'}));
+ view.rerender(<TaskSupervisor {...props} visible={false}/>);await act(async()=>release(receipt(first)));expect(calls).toBe(1);
+ view.rerender(<TaskSupervisor {...props}/>);expect(await screen.findByText('Team creation paused.')).toBeInTheDocument();expect(calls).toBe(1);
+ fireEvent.click(screen.getByRole('button',{name:'Continue team creation'}));await screen.findByText('Team created. Select a worker to inspect or steer it.');expect(calls).toBe(2);
 });

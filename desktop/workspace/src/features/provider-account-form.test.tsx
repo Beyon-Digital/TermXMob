@@ -98,7 +98,7 @@ it('saves the included models and overrides, shows Unknown for missing values, a
  expect(within(rows[0]).getByRole('checkbox',{name:'big-model'})).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Replace API key'),{target:{value:'synthetic-replacement'}});
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
- await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',wire:'responses',model_meta:{'mystery-model':{context_window:32000}}}));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith({id:'existing',name:'Existing',kind:'openai-compatible',base_url:'https://custom.example/v1',model:'big-model',capabilities:['image'],api_key:'synthetic-replacement',wire:'responses',limits:{max_output_tokens:null,request_timeout_s:null},model_meta:{'mystery-model':{context_window:32000}}}));
 });
 
 it('saves an empty model list while every discovered model stays included, and omits overrides nobody set',async()=>{
@@ -203,4 +203,55 @@ it('still asks for at least one capability when the only stored one is cleared',
  fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
  expect(await screen.findByText('Declare at least one capability.')).toBeInTheDocument();
  expect(save).not.toHaveBeenCalled();
+});
+
+it('declares media capabilities for dynamic OpenRouter and dedicated media accounts without dispatching generation',async()=>{
+ const save=vi.fn().mockResolvedValue({});
+ render(<ProviderAccountForm busy={false} onSave={save}/>);
+ const provider=screen.getByRole('combobox',{name:'Provider'});
+ fireEvent.change(provider,{target:{value:'openrouter'}});
+ fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'Studio routing'}});
+ fireEvent.submit(screen.getByRole('form'));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({base_url:'https://openrouter.ai/api/v1',capabilities:['shell','functions','image','video'],api_key:null})));
+ fireEvent.change(provider,{target:{value:'kie'}});
+ fireEvent.change(screen.getByLabelText('Display name'),{target:{value:'Lip sync routing'}});
+ fireEvent.submit(screen.getByRole('form'));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({base_url:'https://api.kie.ai',capabilities:['image','video'],api_key:null})));
+});
+
+
+it('leaves provider limits unset until entered, then can clear either limit',async()=>{
+ const save=vi.fn().mockResolvedValue({});
+ const view=render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
+ const disclosure=screen.getByText('Limits').closest('details');
+ expect(disclosure).not.toHaveAttribute('open');
+ fireEvent.click(screen.getByText('Limits'));
+ const output=screen.getByLabelText('Maximum output tokens'),timeout=screen.getByLabelText('Request timeout (seconds)');
+ expect(output).toHaveValue(null);expect(timeout).toHaveValue(null);
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({limits:{max_output_tokens:null,request_timeout_s:null}})));
+ fireEvent.change(output,{target:{value:'50000'}});fireEvent.change(timeout,{target:{value:'1200'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ await waitFor(()=>expect(save).toHaveBeenLastCalledWith(expect.objectContaining({limits:{max_output_tokens:50000,request_timeout_s:1200}})));
+ view.unmount();
+ render(<ProviderAccountForm busy={false} account={{...saved,limits:{max_output_tokens:50000,request_timeout_s:1200}}} onSave={save}/>);
+ fireEvent.click(screen.getByText('Limits'));
+ expect(screen.getByLabelText('Maximum output tokens')).toHaveValue(50000);
+ expect(screen.getByLabelText('Request timeout (seconds)')).toHaveValue(1200);
+ fireEvent.change(screen.getByLabelText('Request timeout (seconds)'),{target:{value:''}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ await waitFor(()=>expect(save).toHaveBeenLastCalledWith(expect.objectContaining({limits:{max_output_tokens:50000,request_timeout_s:null}})));
+});
+
+it('validates optional provider limits beside the fields and keeps the draft for correction',async()=>{
+ const save=vi.fn();const {container}=render(<ProviderAccountForm busy={false} account={saved} onSave={save}/>);
+ fireEvent.click(screen.getByText('Limits'));
+ const output=screen.getByLabelText('Maximum output tokens'),timeout=screen.getByLabelText('Request timeout (seconds)');
+ fireEvent.change(output,{target:{value:'1.5'}});fireEvent.change(timeout,{target:{value:'0'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save account changes'}));
+ expect(save).not.toHaveBeenCalled();
+ expect(output).toHaveValue(1.5);expect(timeout).toHaveValue(0);
+ expect(output).toHaveAccessibleDescription('Enter a positive whole number or leave blank.');
+ expect(timeout).toHaveAccessibleDescription('Enter a positive number or leave blank.');
+ await expectNoAxeViolations(container);
 });

@@ -35,6 +35,8 @@ rotation across workspace windows, stores refresh secrets in the OS credential
 store, and uses HttpOnly access cookies for authenticated sockets. Detaching a
 window opens a credential-free session/panel URL against the same backend.
 
+The [visual media studio](../docs/media-studio.md) adapts the vloop preview/composer layout with dynamically selected OpenRouter media models, owned generation history and the existing artifact editor.
+
 ## Layout
 
 The workspace has focused Chat and Code views, compact editor controls, and pinned,

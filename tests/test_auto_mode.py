@@ -1,4 +1,4 @@
-"""Auto mode: task-level autonomous approval inside a worktree, with run ceilings."""
+"""Auto mode: task-level autonomous approval inside a worktree, with usage accounting."""
 from __future__ import annotations
 
 import asyncio
@@ -138,22 +138,20 @@ def test_auto_approves_through_the_action_review_gate(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
-def test_auto_ceiling_still_counts_through_the_action_review_gate(tmp_path, monkeypatch):
-    async def run() -> None:
-        script = [
-            ("", [_shell("c1", "echo one")]),
-            ("", [_shell("c2", "echo two")]),
-            ("All done.", []),
-        ]
-        manager, store_, _adapter, task = await _start(
-            tmp_path, monkeypatch, script, auto={"enabled": True, "ceilings": {"tool_calls": 1}}, reviewed=True
-        )
-        await _approve_plan(manager, store_, task["id"])
-        _paused, approval = await wait_for_pending_approval(store_, task["id"], "budget")
-        assert approval["payload"]["reason"] == "auto_tool_calls"
-        await manager.close()
-        store_.close()
-
+def test_legacy_auto_ceiling_does_not_interrupt_the_action_review_gate(tmp_path, monkeypatch):
+    async def run():
+        script = [("", [_shell("c1", "echo one")]), ("", [_shell("c2", "echo two")]), ("All done.", [])]
+        manager, store_, _, task = await _start(tmp_path, monkeypatch, script,
+            auto={"enabled": True, "ceilings": {"tool_calls": 1}}, reviewed=True)
+        try:
+            await _approve_plan(manager, store_, task["id"])
+            await wait_for_status(store_, task["id"], "completed")
+            assert _auto(store_, task["id"])["used"]["tool_calls"] == 2
+            assert not _events(store_, task["id"], "auto.ceiling")
+            assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "budget"]
+        finally:
+            await manager.close()
+            store_.close()
     asyncio.run(run())
 
 
@@ -285,73 +283,58 @@ def test_disabled_flag_does_not_auto_approve(store, tmp_path):  # noqa: F811
     assert _shell_decision(engine, "pnpm test", ctx).approval_required is True
 
 
-def test_call_ceiling_pauses_with_budget_approval_then_resumes(tmp_path, monkeypatch):
-    async def run() -> None:
-        script = [
-            ("", [_shell("c1", "rm -rf build-one")]),
-            ("", [_shell("c2", "rm -rf build-two")]),
-            ("All done.", []),
-        ]
-        manager, store_, _adapter, task = await _start(
-            tmp_path, monkeypatch, script, auto={"enabled": True, "ceilings": {"tool_calls": 1}}
-        )
-        await _approve_plan(manager, store_, task["id"])
-        paused, approval = await wait_for_pending_approval(store_, task["id"], "budget")
-        assert approval["payload"]["reason"] == "auto_tool_calls"
-        assert approval["payload"]["auto_ceiling"] == {"ceiling": "tool_calls", "limit": 1, "used": 1}
-        ceiling = _events(store_, task["id"], "auto.ceiling")
-        assert len(ceiling) == 1
-        assert ceiling[0]["payload"]["ceiling"] == "tool_calls"
-        assert ceiling[0]["payload"]["limit"] == 1
-        assert paused["status"] == "awaiting_approval"
-        await manager.resolve_approval(task["id"], approval["id"], "approved")
-        # The renewed allowance is one call too, so the second call exhausts it again.
-        _task, again = await wait_for_pending_approval(store_, task["id"], "budget")
-        assert again["id"] != approval["id"]
-        await manager.resolve_approval(task["id"], again["id"], "approved")
-        done = await wait_for_status(store_, task["id"], "completed")
-        assert len(_events(store_, task["id"], "auto.decision")) == 2
-        assert len(_events(store_, task["id"], "auto.ceiling")) == 2
-        assert done["runtime"]["auto"]["enabled"] is True
-        await manager.close()
-        store_.close()
-
+def test_legacy_auto_usage_ceilings_do_not_interrupt_a_running_task(tmp_path, monkeypatch):
+    async def run():
+        script = [("", [_shell("c1", "rm -rf build-one")]),
+                  ("", [_shell("c2", "rm -rf build-two")]), ("All done.", [])]
+        manager, store_, _, task = await _start(tmp_path, monkeypatch, script, auto={"enabled": True})
+        runtime = store_.get_task(task["id"])["runtime"]
+        runtime["auto"].update(ceilings={"tool_calls": 100, "steps": 50, "seconds": 1800,
+            "tokens": 500000, "cost_usd": 5.0}, calls=150, turns=100, tokens=1_000_000,
+            cost_usd=25.0, since=__import__("time").time() - 18_000)
+        store_.update_task(task["id"], runtime=runtime)
+        try:
+            await _approve_plan(manager, store_, task["id"])
+            done = await wait_for_status(store_, task["id"], "completed")
+            assert len(_events(store_, task["id"], "auto.decision")) == 2
+            assert done["runtime"]["auto"]["calls"] == 152
+            assert not _events(store_, task["id"], "auto.ceiling")
+            assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "budget"]
+        finally:
+            await manager.close()
+            store_.close()
     asyncio.run(run())
 
 
-def test_ceiling_inside_one_turn_parks_the_remaining_calls(tmp_path, monkeypatch):
-    async def run() -> None:
-        script = [
-            ("", [_shell("c1", "rm -rf build-one"), _shell("c2", "rm -rf build-two")]),
-            ("All done.", []),
-        ]
-        manager, store_, _adapter, task = await _start(
-            tmp_path, monkeypatch, script, auto={"enabled": True, "ceilings": {"tool_calls": 1}}
-        )
-        await _approve_plan(manager, store_, task["id"])
-        _task, approval = await wait_for_pending_approval(store_, task["id"], "budget")
-        assert len(_events(store_, task["id"], "auto.decision")) == 1
-        await manager.resolve_approval(task["id"], approval["id"], "approved")
-        await wait_for_status(store_, task["id"], "completed")
-        assert len(_events(store_, task["id"], "auto.decision")) == 2
-        await manager.close()
-        store_.close()
-
+def test_legacy_auto_call_ceiling_does_not_park_remaining_calls(tmp_path, monkeypatch):
+    async def run():
+        script = [("", [_shell("c1", "rm -rf build-one"), _shell("c2", "rm -rf build-two")]), ("All done.", [])]
+        manager, store_, _, task = await _start(tmp_path, monkeypatch, script,
+            auto={"enabled": True, "ceilings": {"tool_calls": 1}})
+        try:
+            await _approve_plan(manager, store_, task["id"])
+            await wait_for_status(store_, task["id"], "completed")
+            assert len(_events(store_, task["id"], "auto.decision")) == 2
+            assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "budget"]
+        finally:
+            await manager.close()
+            store_.close()
     asyncio.run(run())
 
 
-def test_turn_ceiling_pauses(tmp_path, monkeypatch):
-    async def run() -> None:
-        script = [("", [_shell("c1", "rm -rf build-one")]), ("All done.", [])]
-        manager, store_, _adapter, task = await _start(
-            tmp_path, monkeypatch, script, auto={"enabled": True, "ceilings": {"steps": 1}}
-        )
-        await _approve_plan(manager, store_, task["id"])
-        _task, approval = await wait_for_pending_approval(store_, task["id"], "budget")
-        assert approval["payload"]["reason"] == "auto_steps"
-        await manager.close()
-        store_.close()
-
+def test_legacy_auto_turn_ceiling_does_not_pause(tmp_path, monkeypatch):
+    async def run():
+        manager, store_, _, task = await _start(tmp_path, monkeypatch,
+            [("", [_shell("c1", "rm -rf build-one")]), ("All done.", [])],
+            auto={"enabled": True, "ceilings": {"steps": 1}})
+        try:
+            await _approve_plan(manager, store_, task["id"])
+            await wait_for_status(store_, task["id"], "completed")
+            assert _auto(store_, task["id"])["used"]["steps"] == 2
+            assert not _events(store_, task["id"], "auto.ceiling")
+        finally:
+            await manager.close()
+            store_.close()
     asyncio.run(run())
 
 
@@ -468,8 +451,8 @@ def test_token_and_cost_ceilings_ignore_turns_that_report_no_usage(tmp_path, mon
             auto={"enabled": True, "ceilings": {"tokens": 1, "cost_usd": 0.01}},
         )
         stored = _auto(store_, task["id"])
-        assert stored["ceilings"]["tokens"] == 1
-        assert stored["ceilings"]["cost_usd"] == 0.01
+        assert stored["ceilings"]["tokens"] is None
+        assert stored["ceilings"]["cost_usd"] is None
         await _approve_plan(manager, store_, task["id"])
         await wait_for_status(store_, task["id"], "completed")
         assert not _events(store_, task["id"], "auto.ceiling")
@@ -480,8 +463,8 @@ def test_token_and_cost_ceilings_ignore_turns_that_report_no_usage(tmp_path, mon
 
 
 def test_ceilings_are_validated():
-    assert resolve_auto_ceilings(None)["tool_calls"] == 100
-    assert resolve_auto_ceilings({"seconds": 60})["seconds"] == 60
+    assert resolve_auto_ceilings(None)["tool_calls"] is None
+    assert resolve_auto_ceilings({"seconds": 60})["seconds"] is None
     for bad in ({"tool_calls": 0}, {"seconds": "x"}, {"bogus": 1}, {"cost_usd": -1}, {"steps": True}):
         with pytest.raises(ValueError):
             resolve_auto_ceilings(bad)
@@ -501,7 +484,7 @@ def test_isolated_session_worktree_counts_as_isolation_for_auto(tmp_path, monkey
             auto={"enabled": True, "ceilings": {"tool_calls": 7}},
         )
         summary = _auto(store_, task["id"])
-        assert summary["enabled"] is True and summary["ceilings"]["tool_calls"] == 7
+        assert summary["enabled"] is True and summary["ceilings"]["tool_calls"] is None
         assert store_.get_task(task["id"])["runtime"]["isolated"] is True
         # Switching it off and on again mid-task keeps working because the flag survives.
         manager.set_task_auto(task["id"], enabled=False)

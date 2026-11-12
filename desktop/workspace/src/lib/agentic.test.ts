@@ -11,16 +11,20 @@ describe('agent meters',()=>{
   expect(meterContextLabel({used:null,window:null,limit:120000,window_known:false})).toBe('Context Unknown of an unknown window (120K assumed)');
  });
  it('summarises Auto use',()=>{
-  expect(autoLabel({enabled:true,ceilings:{tool_calls:100},used:{tool_calls:7}})).toBe('Auto 7 of 100 calls');
+  expect(autoLabel({enabled:true,ceilings:{tool_calls:100},used:{tool_calls:7}})).toBe('Auto');
   expect(autoLabel({enabled:false,ceilings:null,used:{}})).toBe('Auto off');
  });
 });
 describe('mode availability',()=>{
  it('explains what to do when Auto or Plan cannot be used',()=>{
   expect(autoBlockedReason({engine:'internal',worktree_id:'wt'})).toBe('');
-  expect(autoBlockedReason({engine:'internal',worktree_id:null})).toMatch(/Delivery under Branches & parallel worktrees.*Project actions, Session checkout/);
+  expect(autoBlockedReason({engine:'internal',worktree_id:null})).toMatch(/No ready checkout has been reported/);
   expect(autoBlockedReason({engine:'claude',worktree_id:'wt'})).toMatch(/built-in agent/);
   expect(autoBlockedReason({engine:'internal',worktree_id:'wt',runner_id:'runner-1'})).toMatch(/local host in Session options/);
+  expect(autoBlockedReason({engine:'internal',mode:'agent',project_id:'project',checkout_policy:'auto',checkout_state:'pending'})).toMatch(/created automatically.*first planning or coding turn.*when the checkout is ready/);
+  expect(autoBlockedReason({engine:'internal',worktree_id:'wt',checkout_state:'isolated'})).toBe('');
+  expect(autoBlockedReason({engine:'internal',worktree_id:'wt',checkout_state:'unavailable'})).toMatch(/could not be verified/);
+  expect(autoBlockedReason({engine:'internal',checkout_state:'not-git'})).toMatch(/not a Git repository/);
   expect(planBlockedReason({engine:'claude'})).toMatch(/plans on its own/);expect(planBlockedReason({engine:'internal'})).toBe('');
  });
 });
@@ -28,7 +32,7 @@ describe('agentNotes',()=>{
  const event=(sequence:number,type:string,payload:Record<string,unknown>={})=>({sequence,type,payload});
  it('collapses a run of auto decisions and reports revisions and ceilings',()=>{
   const notes=agentNotes([event(1,'auto.decision',{tool:'read_file'}),event(2,'auto.decision',{tool:'read_file'}),event(3,'auto.decision',{tool:'edit_file'}),event(4,'plan.revised',{feedback:'Skip the migration'}),event(5,'auto.decision',{tool:'run_check'}),event(6,'auto.ceiling',{ceiling:'tool_calls',limit:100,used:100}),event(7,'tool.started')]);
-  expect(notes.map(note=>note.text)).toEqual(['Auto approved 3 calls: read_file, edit_file','You asked for changes: Skip the migration','Auto approved 1 call: run_check','Auto paused at its tool-call limit (100 of 100). Approve more budget in the request below to continue.']);
+  expect(notes.map(note=>note.text)).toEqual(['Auto approved 3 calls: read_file, edit_file','You asked for changes: Skip the migration','Auto approved 1 call: run_check','Auto paused at a previous tool-call limit (100 of 100).']);
   expect(new Set(notes.map(note=>note.key)).size).toBe(4);
  });
  it('returns nothing for ordinary events',()=>{expect(agentNotes([event(1,'tool.started')])).toEqual([]);expect(agentNotes()).toEqual([])});

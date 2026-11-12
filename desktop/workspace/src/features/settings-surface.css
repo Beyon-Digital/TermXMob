@@ -68,3 +68,125 @@
  .settings-block .keybinding-row{gap:10px;flex-wrap:wrap}.settings-block .keybinding-row input{max-width:100%}
 }
 @media(prefers-reduced-motion:reduce){.settings-surface *{scroll-behavior:auto}}
+
+/* Agent settings open as a workspace sheet; Studio retains its own surface. */
+html[data-app-workspace="agent"] .dialog-overlay:has(+ .settings-surface) {
+  left: var(--agent-rail-width, 52px);
+  background: var(--bg);
+}
+html[data-app-workspace="agent"] .dialog-content.settings-surface {
+  --settings-rail: 240px;
+  --settings-group-surface: var(--surface);
+  top: 0;
+  bottom: 0;
+  left: var(--agent-rail-width, 52px);
+  width: calc(100vw - var(--agent-rail-width, 52px));
+  max-width: none;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  transform: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: none;
+}
+html[data-app-workspace="agent"] .settings-title {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 112px;
+  padding: 40px 24px 24px;
+  border: 0;
+  background: var(--sidebar);
+}
+html[data-app-workspace="agent"] .settings-title h2 { margin: 0; color: var(--text); font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -.01em; }
+html[data-app-workspace="agent"] .settings-active-context { max-width: 100%; color: var(--text-3); font-size: 12px; line-height: 16px; white-space: normal; }
+html[data-app-workspace="agent"] .settings-title .settings-scope { display: grid; gap: 8px; max-width: 100%; width: 100%; }
+html[data-app-workspace="agent"] .settings-scope select { width: 100%; padding: 8px 12px; border-color: var(--border); border-radius: 10px; font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .settings-categories { grid-row: 2 / 4; padding: 0 12px 24px; border: 0; background: var(--sidebar); }
+html[data-app-workspace="agent"] .settings-nav-group + .settings-nav-group { margin-top: 24px; }
+html[data-app-workspace="agent"] .settings-nav-heading { margin: 4px 12px 8px; color: var(--text-3); font-size: 12px; line-height: 16px; font-weight: 400; }
+html[data-app-workspace="agent"] .settings-categories a { min-height: 40px; gap: 12px; padding: 8px 12px; border-radius: 8px; color: var(--text-2); font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .settings-categories a:hover { color: var(--text); background: var(--surface-2); }
+html[data-app-workspace="agent"] .settings-categories a[aria-current="page"] { color: var(--text); background: var(--surface-2); font-weight: 500; }
+html[data-app-workspace="agent"] .settings-categories a > svg { display: block; width: 18px; height: 18px; color: currentColor; }
+html[data-app-workspace="agent"] .settings-categories a:focus-visible { outline-offset: -2px; }
+html[data-app-workspace="agent"] .settings-nav-count { min-width: 24px; padding: 0 8px; border: 0; background: var(--surface); color: var(--text-2); font-size: 12px; line-height: 20px; }
+.settings-mobile-category, .settings-category-search { display: none; }
+html[data-app-workspace="agent"] .settings-category-search { display: block; margin: 0 0 24px; padding-inline: 4px; }
+html[data-app-workspace="agent"] .settings-category-search input { width: 100%; height: 36px; min-height: 36px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .settings-category-empty { margin: 0; padding: 12px; color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .settings-content { grid-column: 2; grid-row: 1 / 3; background: var(--bg); }
+html[data-app-workspace="agent"] .settings-general { gap: 48px; width: 100%; max-width: 824px; margin-inline: auto; padding: 48px 48px 64px; }
+html[data-app-workspace="agent"] .settings-general .settings-page-heading h2 { margin: 0 0 12px; color: var(--text); font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -.02em; }
+html[data-app-workspace="agent"] :is(.settings-page-heading p, .settings-block-help) { max-width: 68ch; margin: 0; color: var(--text-3); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] :is(.settings-block h3, .settings-section-header :is(h2, h3)) { margin: 0 0 12px; color: var(--text); font-size: 16px; line-height: 24px; font-weight: 500; }
+html[data-app-workspace="agent"] .settings-section { gap: 12px; }
+html[data-app-workspace="agent"] .settings-section-header p { color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .settings-rows { border: 1px solid var(--border); border-radius: 16px; background: var(--settings-group-surface, var(--surface)); overflow: hidden; }
+html[data-app-workspace="agent"] .settings-row { min-height: 72px; padding: 16px 20px; gap: 24px; }
+html[data-app-workspace="agent"] .settings-row-text { gap: 4px; }
+html[data-app-workspace="agent"] .settings-row .settings-row-label { color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .settings-row-description { color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .settings-row-control .select { width: 176px; min-height: 36px; border-color: transparent; border-radius: 8px; background-color: transparent; color: var(--text); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .settings-row-control .select:hover:not(:disabled) { background-color: var(--surface-2); }
+html[data-app-workspace="agent"] .settings-block > div:not(.theme-choices) { border: 1px solid var(--border); border-radius: 16px; background: var(--settings-group-surface); overflow: hidden; }
+html[data-app-workspace="agent"] .settings-block > div > p { margin: 0; padding: 16px 20px; color: var(--text-3); font-size: 12px; line-height: 18px; }
+html[data-app-workspace="agent"] .settings-block .keybinding-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; min-height: 64px; gap: 24px; margin: 0; padding: 12px 20px; border-top: 1px solid var(--border); border-bottom: 0; font-size: 14px; line-height: 20px; font-weight: 400; }
+html[data-app-workspace="agent"] .settings-block .keybinding-row input { width: 176px; min-height: 36px; height: 36px; border-color: var(--border); border-radius: 8px; background: transparent; text-align: right; font-size: 14px; }
+html[data-app-workspace="agent"] .settings-block > div > .button { margin: 16px 20px; }
+html[data-app-workspace="agent"] .settings-form-section { padding-bottom: 24px; }
+html[data-app-workspace="agent"] .settings-draft-status { color: var(--text-2); font-size: 14px; line-height: 20px; }
+html[data-app-workspace="agent"] .settings-footer { grid-column: 2; padding: 0 32px; }
+html[data-app-workspace="agent"] .settings-footer[data-dirty="true"] { min-height: 72px; padding: 16px 32px; background: var(--bg); }
+html[data-app-workspace="agent"] .settings-surface > .dialog-close { top: 24px; right: 24px; }
+
+@media (max-width: 1024px) and (min-width: 769px) {
+  html[data-app-workspace="agent"] .dialog-content.settings-surface { --settings-rail: 224px; }
+  html[data-app-workspace="agent"] .settings-general { padding: 48px 32px 64px; }
+}
+@media (max-width: 768px) {
+  html[data-app-workspace="agent"] .dialog-overlay:has(+ .settings-surface) { left: 0; }
+  html[data-app-workspace="agent"] .dialog-content.settings-surface {
+    top: var(--settings-viewport-top, auto);
+    bottom: var(--settings-viewport-bottom, 0);
+    left: 0;
+    width: 100%;
+    height: calc(var(--settings-viewport-height, 100dvh) - max(16px, env(safe-area-inset-top)));
+    max-height: calc(var(--settings-viewport-height, 100dvh) - max(16px, env(safe-area-inset-top)));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    border: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  html[data-app-workspace="agent"] .settings-title { min-height: 72px; padding: 24px 64px 16px 20px; gap: 8px; background: var(--bg); }
+  html[data-app-workspace="agent"] .settings-title .settings-scope { width: 100%; }
+  html[data-app-workspace="agent"] .settings-categories { display: none; }
+  html[data-app-workspace="agent"] .settings-mobile-category { grid-column: 1; grid-row: 2; display: grid; gap: 8px; margin: 0; padding: 0 20px 20px; border-bottom: 1px solid var(--border); color: var(--text-3); font-size: 12px; line-height: 16px; }
+  html[data-app-workspace="agent"] .settings-mobile-category select { width: 100%; min-height: 44px; font-size: 16px; }
+  html[data-app-workspace="agent"] .settings-content { grid-column: 1; grid-row: 3; }
+  html[data-app-workspace="agent"] .settings-general { gap: 32px; padding: 32px 20px 48px; }
+  html[data-app-workspace="agent"] .settings-general .settings-page-heading h2 { font-size: 24px; line-height: 32px; }
+  html[data-app-workspace="agent"] .settings-row { flex-direction: row; align-items: center; min-height: 72px; padding: 16px; gap: 16px; }
+  html[data-app-workspace="agent"] .settings-row-control { flex-shrink: 1; min-width: 0; }
+  html[data-app-workspace="agent"] .settings-row-control .select { width: 128px; min-height: 44px; }
+  html[data-app-workspace="agent"] .settings-block .keybinding-row { gap: 12px; padding: 12px 16px; flex-wrap: wrap; }
+  html[data-app-workspace="agent"] .settings-block .keybinding-row input { width: 144px; max-width: 100%; min-height: 44px; text-align: left; }
+  html[data-app-workspace="agent"] .settings-block > div > p { padding: 16px; }
+  html[data-app-workspace="agent"] .settings-block > div > .button { margin: 16px; white-space: normal; }
+  html[data-app-workspace="agent"] .settings-footer { grid-column: 1; grid-row: 4; padding-inline: 20px; }
+  html[data-app-workspace="agent"] .settings-footer[data-dirty="true"] { padding: 12px 20px; }
+  html[data-app-workspace="agent"] .settings-content :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, button, [role="button"]) { min-height: 44px; scroll-margin-block: 24px; }
+  html[data-app-workspace="agent"] .settings-content summary { min-height: 44px; padding-block: 12px; }
+  html[data-app-workspace="agent"] .settings-surface > .dialog-close { top: 20px; right: 20px; }
+}
+@media (pointer: coarse) {
+  html[data-app-workspace="agent"] :is(.settings-categories a, .settings-scope select) { min-height: 44px; }
+}

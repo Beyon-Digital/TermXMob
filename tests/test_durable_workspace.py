@@ -277,7 +277,7 @@ async def test_schedule_closed_ui_restart_idempotency_budgets_and_approval_wait(
     runs=service.store.list('schedule_run',owner.id)
     assert len(runs)==1 and runs[0]['status']=='running'
     tid=runs[0]['task_id']
-    assert service.agents.get_task(tid)['limits']['max_steps']==3
+    assert service.agents.get_task(tid)['limits']['max_steps'] is None
     service.agents.update_task(tid,status='awaiting_approval')
     clock[0]+=61;await automation.tick()
     assert service.agents.get_task(tid)['status']=='awaiting_approval'
@@ -595,13 +595,13 @@ async def test_schedule_grant_refuses_changed_execution_target(workspace):
     assert not current['enabled'] and 'execution target changed' in current['reason'] and service.state.agent.calls==0
 
 @pytest.mark.anyio
-async def test_saved_session_budgets_apply_to_dispatch_and_invalid_limits_do_not_persist(workspace):
+async def test_legacy_session_budgets_are_ignored_and_invalid_limits_do_not_persist(workspace):
     service,owner,path=workspace;row=session(workspace)
     settings=service.update_session(owner,row['id'],revision=1,changes={'run_limits':{'max_steps':3,'max_parallel_subagents':1}})
-    assert settings['run_limits']['max_steps']==3
-    with pytest.raises(ValueError):service.update_session(owner,row['id'],revision=2,changes={'run_limits':{'max_parallel_subagents':99}})
+    assert all(value is None for value in settings['run_limits'].values())
+    with pytest.raises(ValueError):service.update_session(owner,row['id'],revision=2,changes={'run_limits':{'max_parallel_subagents':False}})
     task=await service.send(owner,row['id'],prompt='Bounded run',request_id='session-saved-budget')
-    assert task['limits']['max_steps']==3 and task['limits']['max_parallel_subagents']==1
+    assert all(value is None for value in task['limits'].values())
     with pytest.raises(Conflict):service.update_session(owner,row['id'],revision=3,changes={'run_limits':{'max_steps':4}})
 
 @pytest.mark.anyio

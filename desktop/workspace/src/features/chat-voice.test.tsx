@@ -83,15 +83,14 @@ it('puts the transcript in the message box for review without sending it', async
   expect(vi.mocked(request).mock.calls.some(([path]) => String(path).endsWith('/turns'))).toBe(false);
 });
 
-it('sends the transcript only when the owner chose send after dictation', async () => {
+it('stages the transcript even when saved send-after-dictation is enabled', async () => {
   vi.mocked(gql).mockResolvedValue(voiceStatus(true) as never);
   render(<Chat session={session} {...props} />);
   await dictate();
-  await waitFor(() => {
-    const call = vi.mocked(request).mock.calls.find(([path]) => String(path).endsWith('/turns'));
-    expect(call).toBeTruthy();
-    expect(JSON.parse(String(call![1]?.body)).prompt).toBe('check the build');
-  });
+  await waitFor(()=>expect(screen.getByLabelText('Message')).toHaveValue('check the build'));
+  expect(vi.mocked(request).mock.calls.some(([path])=>String(path).endsWith('/turns'))).toBe(false);
+  expect(screen.queryByRole('checkbox',{name:'Send after dictation'})).toBeNull();
+  expect(vi.mocked(gql).mock.calls.some(([query])=>String(query).includes('save_voice_settings'))).toBe(false);
 });
 
 it('keeps the composer quiet when voice is not set up', async () => {
@@ -100,4 +99,13 @@ it('keeps the composer quiet when voice is not set up', async () => {
   const start = await screen.findByRole('button', {name: 'Start dictation'});
   await waitFor(() => expect(start).toBeEnabled());
   expect(screen.queryByRole('checkbox', {name: 'Send after dictation'})).not.toBeInTheDocument();
+});
+
+it('never automatically reads a new Chat reply when saved auto-speak is enabled',async()=>{
+ const configured=voiceStatus(true);configured.voice_status.settings.auto_speak=true;vi.mocked(gql).mockResolvedValue(configured as never);
+ const speak=vi.fn();vi.stubGlobal('speechSynthesis',{speak,cancel:vi.fn()});vi.stubGlobal('SpeechSynthesisUtterance',class{constructor(public text:string){}});
+ const old={...session,turns:[{id:'old',sequence:1,prompt:'Before',task:{id:'old-task',status:'completed',prompt:'Before',result:'Earlier reply.'}}]};
+ const view=render(<Chat session={old} {...props}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Start dictation'})).toBeEnabled());
+ view.rerender(<Chat session={{...session,turns:[{id:'new',sequence:2,prompt:'Next',task:{id:'new-task',status:'completed',prompt:'Next',result:'New reply must stay silent.'}}]}} {...props}/>);
+ await new Promise(resolve=>setTimeout(resolve,20));expect(speak).not.toHaveBeenCalled();expect(vi.mocked(gql).mock.calls.some(([query])=>String(query).includes('save_voice_settings'))).toBe(false);expect(screen.queryByRole('checkbox',{name:'Read replies aloud'})).toBeNull();
 });

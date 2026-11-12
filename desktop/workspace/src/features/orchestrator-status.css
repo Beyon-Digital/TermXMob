@@ -12,13 +12,18 @@
 .orchestrator-child-link strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .orchestrator-children>li>small{font-size:11px;color:var(--secondary)}
 .orchestrator-engine-label{display:block;margin:3px 0 0;color:var(--secondary)}
-.orchestrator-engine-details{margin-top:7px;font-size:11px;line-height:1.5}
-.orchestrator-engine-details summary{cursor:pointer;color:var(--foreground);padding:3px 0;min-height:26px}
-.orchestrator-engine-details p{margin:5px 0;max-width:75ch}
-.orchestrator-engine-details dl{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:4px 12px;margin:6px 0 3px}
-.orchestrator-engine-details dl>div{display:contents}
-.orchestrator-engine-details dt{color:var(--secondary)}.orchestrator-engine-details dd{margin:0;color:var(--foreground);overflow-wrap:anywhere}
-.orchestrator-child-banner>.orchestrator-engine-details{width:100%;margin-top:0}
+html[data-app-workspace=agent] .orchestrator-engine-trigger.button{min-height:32px}
+.orchestrator-engine-dialog.dialog-content{display:flex;flex-direction:column;gap:16px;width:640px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:hidden;padding:24px;border-radius:12px;background:var(--surface);color:var(--text,var(--foreground));box-shadow:var(--shadow-overlay)}
+.orchestrator-engine-dialog.dialog-content h2{flex:none;margin:0;padding-right:48px;color:var(--text,var(--foreground));font-size:20px;line-height:28px;letter-spacing:0}
+.orchestrator-engine-dialog.dialog-content>p{flex:none;margin:0;padding-right:32px;color:var(--text-2,var(--secondary));font-size:14px;line-height:20px;overflow-wrap:anywhere}
+html[data-app-workspace=agent] .orchestrator-engine-dialog.dialog-content>.dialog-close{top:16px;right:16px;width:44px;height:44px;border-radius:8px}
+.orchestrator-engine-specs{padding:8px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px 24px;min-height:0;margin:0;overflow:auto;overscroll-behavior:contain;font-size:14px;line-height:20px}
+.orchestrator-engine-specs>div{display:contents}
+.orchestrator-engine-specs dt{color:var(--text-2,var(--secondary))}.orchestrator-engine-specs dd{min-width:0;margin:0;color:var(--text,var(--foreground));overflow-wrap:anywhere}
+.orchestrator-child-engine{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
+.orchestrator-child-engine>.orchestrator-engine-label{flex:1;min-width:0;margin:0;font-size:12px;line-height:16px;overflow-wrap:anywhere}
+@media(max-width:640px){.orchestrator-engine-dialog.dialog-content{padding:24px 16px}html[data-app-workspace=agent] .orchestrator-engine-dialog.dialog-content>.dialog-close{right:8px}.orchestrator-engine-specs{grid-template-columns:minmax(0,1fr);gap:4px}.orchestrator-engine-specs dd{margin-bottom:12px}.orchestrator-engine-specs>dd:last-child,.orchestrator-engine-specs>div:last-child>dd{margin-bottom:0}html[data-app-workspace=agent] .orchestrator-engine-trigger.button{min-height:44px}}
+@media(pointer:coarse){html[data-app-workspace=agent] .orchestrator-engine-trigger.button{min-height:44px}}
 .orchestrator-children>li>p{margin:5px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .orchestrator-state{font-size:11px;white-space:nowrap;color:var(--secondary)}
 .orchestrator-state.attention,.orchestrator-child-error{color:var(--foreground)}
@@ -30,10 +35,14 @@
 .orchestrator-activity time{font-size:11px;flex:none;color:var(--secondary)}
 .orchestrator-activity li>span{flex:1;overflow-wrap:anywhere}.orchestrator-activity button{background:none;border:0;text-decoration:underline;font:inherit;color:var(--foreground);cursor:pointer;flex:none}
 .orchestrator-child-banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 16px}
-.orchestrator-child-banner>span{flex:1;color:var(--foreground);font-size:11px}.orchestrator-child-banner>p{width:100%;font-size:11px;line-height:1.45;margin:0;padding-left:3px;max-width:90ch}
+.orchestrator-child-banner>span{flex:1;color:var(--foreground);font-size:11px}
 .orchestrator-error{display:flex;align-items:center;gap:10px;padding:7px 18px;line-height:1.4;color:var(--foreground);background:var(--surface)}
 .orchestrator-error>span{flex:1;overflow-wrap:anywhere}.orchestrator-error>.button{flex:none}
 .orchestrator-status button:focus-visible,.orchestrator-status summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* On a short screen the board scrolls inside a smaller panel so the composer and status bar stay on screen. */
 @media(max-height:700px){.orchestrator-status .orchestrator-detail{max-height:min(24vh,170px)}}
 @media(max-width:600px){.orchestrator-summary{padding:5px 8px}.orchestrator-detail{padding:0 12px 12px;max-height:34vh}.orchestrator-child-banner{padding:7px 10px;gap:6px}.orchestrator-child-banner>span{min-width:120px}.orchestrator-disclosure small{font-size:11px;margin-left:0}.orchestrator-error{padding:7px 10px;flex-wrap:wrap}.orchestrator-error>span{flex-basis:100%}.orchestrator-activity li{flex-wrap:wrap;gap:4px 8px}.orchestrator-activity li>span{flex-basis:75%}}
+
+/* Empty coordination stays subscribed without occupying the conversation. */
+.orchestrator-summary[hidden]{display:none}
+.orchestrator-status[data-idle=true]{border-bottom:0}
