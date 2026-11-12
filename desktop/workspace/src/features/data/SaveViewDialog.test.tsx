@@ -5,7 +5,7 @@ import {useState} from 'react';
 import SaveViewDialog from './SaveViewDialog';
 import ConflictBanner from './ConflictBanner';
 import {ApiError} from '../../lib/api';
-import conflict from '../../lib/view-contract-fixtures/view-conflict.json';
+import conflict from '../../test-utils/ui-fixtures/view-conflict.json';
 import {viewError} from '../../lib/data-views';
 import {expectNoAxeViolations} from '../../test-axe';
 

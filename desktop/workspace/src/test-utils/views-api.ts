@@ -1,9 +1,9 @@
 import {vi} from 'vitest';
 import {request} from '../lib/api';
-import compile from '../lib/view-contract-fixtures/compile-pivot.json';
-import drillCell from '../lib/view-contract-fixtures/drill-pivot-cell.json';
-import createPivot from '../lib/view-contract-fixtures/view-create-pivot.json';
-import createSegment from '../lib/view-contract-fixtures/view-create-segment.json';
+import compile from './ui-fixtures/compile-pivot.json';
+import drillCell from './ui-fixtures/drill-pivot-cell.json';
+import createPivot from './ui-fixtures/view-create-pivot.json';
+import createSegment from './ui-fixtures/view-create-segment.json';
 import type {QuerySpec, SchemaTable} from '../lib/query-spec';
 import type {ViewDetail} from '../lib/data-views';
 import type {SourceController} from '../features/data/use-source';

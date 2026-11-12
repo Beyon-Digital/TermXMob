@@ -1,0 +1,28 @@
+{
+  "request": {
+    "limit": 50
+  },
+  "response": {
+    "view_id": "<id:view>",
+    "runs": [
+      {
+        "job_id": "<id:job>",
+        "actor": {
+          "id": "<id:person2>",
+          "name": "Bob"
+        },
+        "mine": false,
+        "view_revision": 3,
+        "mode": "rows",
+        "status": "completed",
+        "started_at": "<time>",
+        "finished_at": "<time>",
+        "duration_ms": 312,
+        "row_count": 4,
+        "truncated": false,
+        "error": null
+      }
+    ],
+    "next_cursor": null
+  }
+}

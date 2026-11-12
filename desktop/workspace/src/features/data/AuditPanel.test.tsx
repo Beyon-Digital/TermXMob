@@ -3,8 +3,8 @@ import {cleanup, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AuditPanel from './AuditPanel';
 import {ApiError, request} from '../../lib/api';
-import history from '../../lib/view-contract-fixtures/history.json';
-import runs from '../../lib/view-contract-fixtures/runs.json';
+import history from '../../test-utils/ui-fixtures/history.json';
+import runs from '../../test-utils/ui-fixtures/runs.json';
 import {expectNoAxeViolations} from '../../test-axe';
 
 vi.mock('../../lib/api', () => ({request: vi.fn(), ApiError: class ApiError extends Error {constructor(public status: number, message: string) {super(message);}}}));

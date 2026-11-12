@@ -62,8 +62,8 @@ it('writes a definition as plain lines with group headings', () => {
 
 it('turns every recorded change into a sentence', () => {
   const sentences = (history.response.revisions[0].changes as Change[]).map(change => describeChange(change, names));
-  expect(sentences).toEqual(['Added filter: Amount is at least 5000', 'Removed filter: Amount is at least 1000']);
-  expect(describeChange(history.response.revisions[1].changes[0] as Change)).toBe('Renamed from "Large orders" to "Big sales"');
+  expect(sentences).toEqual(['Added filter: Amount is greater than 200', 'Removed filter: Amount is greater than 100']);
+  expect(describeChange({field: 'name', op: 'changed', before: 'Large orders', after: 'Big sales'})).toBe('Renamed from "Large orders" to "Big sales"');
   const check = (change: Change) => describeChange(change, names);
   expect(check({field: 'filters.match', op: 'changed', before: 'and', after: 'or'})).toBe('Now matches any of the filters');
   expect(check({field: 'filters', op: 'added', after: {segment: 's1', negate: true}})).toBe('Added filter: Not in segment Big spenders');

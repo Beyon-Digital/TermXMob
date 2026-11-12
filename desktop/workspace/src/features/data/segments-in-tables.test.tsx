@@ -5,7 +5,7 @@ import TableTab from './TableTab';
 import FilterChips from './FilterChips';
 import {ApiError} from '../../lib/api';
 import {humanize} from '../../lib/query-builder';
-import segmentMissing from '../../lib/view-contract-fixtures/compile-segment-missing.json';
+import segmentMissing from '../../test-utils/ui-fixtures/compile-segment-missing.json';
 import {controller, detail, installViewApi, newBehaviour, type Behaviour} from '../../test-utils/views-api';
 import {sizeGridScrollers} from '../../test-utils/virtual';
 import {expectNoAxeViolations} from '../../test-axe';

@@ -1,0 +1,76 @@
+{
+  "request": {
+    "limit": 50
+  },
+  "response": {
+    "view_id": "<id:view>",
+    "revisions": [
+      {
+        "revision": 3,
+        "action": "updated",
+        "at": "<time>",
+        "actor": {
+          "id": "<id:person2>",
+          "name": "Bob"
+        },
+        "name": "Big sales",
+        "changes": [
+          {
+            "field": "filters",
+            "op": "added",
+            "after": {
+              "field": {
+                "table_alias": "sales",
+                "column": "amount"
+              },
+              "op": "gte",
+              "value": 5000
+            }
+          },
+          {
+            "field": "filters",
+            "op": "removed",
+            "before": {
+              "field": {
+                "table_alias": "sales",
+                "column": "amount"
+              },
+              "op": "gte",
+              "value": 1000
+            }
+          }
+        ]
+      },
+      {
+        "revision": 2,
+        "action": "updated",
+        "at": "<time>",
+        "actor": {
+          "id": "<id:person>",
+          "name": "Alice"
+        },
+        "name": "Big sales",
+        "changes": [
+          {
+            "field": "name",
+            "op": "changed",
+            "before": "Large orders",
+            "after": "Big sales"
+          }
+        ]
+      },
+      {
+        "revision": 1,
+        "action": "created",
+        "at": "<time>",
+        "actor": {
+          "id": "<id:person>",
+          "name": "Alice"
+        },
+        "name": "Large orders",
+        "changes": []
+      }
+    ],
+    "next_before": null
+  }
+}

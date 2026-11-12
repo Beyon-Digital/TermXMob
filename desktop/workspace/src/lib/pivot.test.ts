@@ -8,7 +8,7 @@ import createPivot from './view-contract-fixtures/view-create-pivot.json';
 import type {OutputColumn, QuerySpec} from './query-spec';
 
 const label = (ref: {column: string}) => humanize(ref.column);
-const pivotSpec = createPivot.request.spec as unknown as QuerySpec;
+const pivotSpec = createPivot.request.body.spec as unknown as QuerySpec;
 const columns = compile.response.columns as unknown as OutputColumn[];
 
 it('reads a pivot as a sentence', () => {
@@ -54,16 +54,16 @@ it('turns bucket labels into half-open date ranges', () => {
   expect(bucketRange('month', 'January')).toBeNull();
 });
 it('builds the same drill filters the server returns for a cell', () => {
-  const local = drillSpec(pivotSpec, drillCell.request.coordinates)!;
+  const local = drillSpec(pivotSpec, drillCell.request.body.coordinates)!;
   expect(local.filters.items).toEqual(drillCell.response.spec.filters.items);
   expect(local.pivot).toBeUndefined();
   expect(local.limit).toBe(200);
-  expect(drillSpec(pivotSpec, drillTotal.request.coordinates)!.filters.items).toEqual(drillTotal.response.spec.filters.items);
+  expect(drillSpec(pivotSpec, drillTotal.request.body.coordinates)!.filters.items).toEqual(drillTotal.response.spec.filters.items);
 });
 it('drills empty values as "is empty" and keeps the original filters', () => {
   const filters = {op: 'and' as const, items: [{field: {table_alias: 'sales', column: 'amount'}, op: 'gt' as const, value: 5}]};
   const spec = drillSpec({...pivotSpec, filters}, {rows: [null], column: {value: null, empty: true}})!;
-  expect(spec.filters.items).toEqual([filters.items[0], {field: {table_alias: 'sales', column: 'region'}, op: 'is_null'}, {field: {table_alias: 'sales', column: 'day'}, op: 'is_null'}]);
+  expect(spec.filters.items).toEqual([filters.items[0], {field: {table_alias: 's', column: 'region'}, op: 'is_null'}, {field: {table_alias: 's', column: 'day'}, op: 'is_null'}]);
 });
 it('refuses coordinates that do not fit the pivot', () => {
   expect(drillSpec(pivotSpec, {rows: ['East', 'extra'], column: null})).toBeNull();
@@ -71,17 +71,17 @@ it('refuses coordinates that do not fit the pivot', () => {
   expect(drillSpec(emptySpec('c', 't'), {rows: []})).toBeNull();
 });
 it('finds the coordinates of a clicked cell from the output metadata', () => {
-  const row = ['East', 10, 20, 30, 60];
-  expect(cellCoordinates(columns, row, 2)).toEqual({rows: ['East'], column: {value: '2026-02', empty: false}});
-  expect(cellCoordinates(columns, row, 4)).toEqual({rows: ['East'], column: null});
-  expect(cellTitle(columns, row, 1)).toBe('East · 2026-01');
-  expect(cellTitle(columns, [null, 1, 2, 3, 6], 4)).toBe('(empty) · Total amount');
+  const row = ['East', 10, 20, 30, 40, 50, 60, 210];
+  expect(cellCoordinates(columns, row, 4)).toEqual({rows: ['East'], column: {value: '2026-02', empty: false}});
+  expect(cellCoordinates(columns, row, 7)).toEqual({rows: ['East'], column: null});
+  expect(cellTitle(columns, row, 3)).toBe('East · 2026-01');
+  expect(cellTitle(columns, [null, 1, 2, 3, 4, 5, 6, 21], 7)).toBe('(empty) · Total amount');
   const empty = [...columns]; empty[1] = {...empty[1], column_empty: true, column_value: null, label: '(empty)'};
   expect(cellCoordinates(empty, row, 1)).toEqual({rows: ['East'], column: {value: null, empty: true}});
 });
 it('separates row labels, cells and the total', () => {
   const layout = pivotLayout(columns);
-  expect([layout.rows.length, layout.cells.length, layout.total?.label]).toEqual([1, 3, 'Total amount']);
+  expect([layout.rows.length, layout.cells.length, layout.total?.label]).toEqual([1, 6, 'Total amount']);
 });
 it('formats numbers and empty row labels', () => {
   expect(formatPivotNumber(1234)).toBe('1,234');

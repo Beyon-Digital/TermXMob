@@ -1,0 +1,59 @@
+{
+  "request": {
+    "revision": 3,
+    "name": "Large sales"
+  },
+  "response": {
+    "id": "<id:view>",
+    "kind": "segment",
+    "name": "Large sales",
+    "description": "",
+    "connection_id": "<id:connection>",
+    "base_table": "sales",
+    "revision": 4,
+    "created_by": {
+      "id": "<id:person>",
+      "name": "Alice"
+    },
+    "updated_by": {
+      "id": "<id:person>",
+      "name": "Alice"
+    },
+    "created_at": "<time>",
+    "updated_at": "<time>",
+    "used_by_count": 0,
+    "can_edit": true,
+    "can_run": true,
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "sales",
+              "column": "amount"
+            },
+            "op": "gte",
+            "value": 5000
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    },
+    "references": [],
+    "used_by": [],
+    "affected_views": 2
+  }
+}

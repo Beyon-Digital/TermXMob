@@ -2,7 +2,7 @@ import {afterEach, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PivotTable from './PivotTable';
-import compile from '../../lib/view-contract-fixtures/compile-pivot.json';
+import compile from '../../test-utils/ui-fixtures/compile-pivot.json';
 import {expectNoAxeViolations} from '../../test-axe';
 import type {OutputColumn} from '../../lib/query-spec';
 

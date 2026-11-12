@@ -1,0 +1,23 @@
+{
+  "request": {
+    "request_id": "<request-id>",
+    "mode": "rows",
+    "offset": 0
+  },
+  "response": {
+    "id": "<id:job>",
+    "status": "queued",
+    "connection_id": "<id:connection>",
+    "created_at": "<time>",
+    "updated_at": "<time>",
+    "preview_limit": 1000,
+    "cancel_requested": false,
+    "view_id": "<id:view>",
+    "view_revision": 3,
+    "mode": "rows",
+    "output": {
+      "columns": [],
+      "warnings": []
+    }
+  }
+}

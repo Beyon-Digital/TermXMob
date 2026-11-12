@@ -11,19 +11,19 @@ import type {QuerySpec} from './query-spec';
 
 vi.mock('./api', () => ({request: vi.fn(), ApiError: class ApiError extends Error {constructor(public status: number, message: string) {super(message);}}}));
 const api = vi.mocked(request);
-const spec = createPivot.request.spec as unknown as QuerySpec;
+const spec = createPivot.request.body.spec as unknown as QuerySpec;
 beforeEach(() => {vi.clearAllMocks(); api.mockResolvedValue({});});
 afterEach(() => vi.useRealTimers());
 
 it('reads a coded error out of the JSON text the API layer keeps in the message', () => {
   const error = viewError(new ApiError(409, JSON.stringify(conflict.response.detail)));
-  expect(error).toMatchObject({status: 409, code: 'revision_conflict', current_revision: 5, updated_by: {name: 'Bob'}});
-  expect(error.message).toContain('Bob changed this view');
+  expect(error).toMatchObject({status: 409, code: 'revision_conflict', current_revision: 2, updated_by: {name: 'alice'}});
+  expect(error.message).toContain('alice changed this view');
 });
 it('lists who uses a segment that cannot be deleted', () => {
   const error = viewError(new ApiError(409, JSON.stringify(inUse.response.detail)));
   expect(error.code).toBe('segment_in_use');
-  expect(error.used_by?.map(row => row.name)).toEqual(['Sales by region and month', 'Orders east']);
+  expect(error.used_by?.map(row => row.name)).toEqual(['Sales by region and month']);
 });
 it('keeps the compiler errors of an invalid spec', () => {
   const error = viewError(new ApiError(422, JSON.stringify({code: 'invalid_spec', message: 'Fix the pivot.', errors: tooMany.response.errors})));
@@ -59,8 +59,8 @@ it('builds the view routes', async () => {
   expect(api.mock.calls[5][0]).toBe('/api/data/workspaces/w1/views/v1/history?limit=20&before=4');
   await fetchRuns('w1', 'v1', {before: 'a|b'});
   expect(api.mock.calls[6][0]).toBe('/api/data/workspaces/w1/views/v1/runs?limit=20&before=a%7Cb');
-  await drillView('w1', 'v1', drillCell.request.coordinates);
-  expect(JSON.parse(String(api.mock.calls[7][1]?.body))).toEqual({coordinates: drillCell.request.coordinates});
+  await drillView('w1', 'v1', drillCell.request.body.coordinates);
+  expect(JSON.parse(String(api.mock.calls[7][1]?.body))).toEqual({coordinates: drillCell.request.body.coordinates});
   expect(viewExportPath('w1', 'v1', 'j1')).toBe('/api/data/workspaces/w1/views/v1/runs/j1/export.csv');
 });
 it('sends one request id per run and only the options that were chosen', async () => {
