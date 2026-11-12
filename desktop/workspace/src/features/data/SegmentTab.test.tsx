@@ -28,7 +28,7 @@ beforeEach(() => {
 afterEach(() => {cleanup(); vi.unstubAllGlobals();});
 function view(props: Partial<React.ComponentProps<typeof SegmentTab>> = {}) {
   const handlers = {onClose: vi.fn(), onArchived: vi.fn(), onDrill: vi.fn(), onOpenView: vi.fn(), onUseForPivot: vi.fn()}, store = views();
-  const result = render(<SegmentTab workspaceId="w1" connectionId="c1" tab={tab} label="Segment" controller={controller()} views={store} canEdit {...handlers} {...props}/>);
+  const result = render(<SegmentTab workspaceId="w1" connectionId="c1" tab={tab} label="Segment" controller={controller()} views={store} canEdit {...handlers} {...props}/>, {wrapper: ({children}: {children: React.ReactNode}) => <div className="data-tab-panel">{children}</div>});
   return {...result, ...handlers, store};
 }
 const calls = (suffix: string, method?: string) => behaviour.calls.filter(call => call.path.split('?')[0].endsWith(suffix) && (!method || call.method === method));
@@ -112,13 +112,14 @@ it('shows the conflict banner on a stale save and reloads the latest revision', 
   await user.click(within(dialog).getByRole('button', {name: 'Apply'}));
   behaviour.fail['PATCH /views/v1'] = new ApiError(409, JSON.stringify(conflict.response.detail));
   await user.click(await screen.findByRole('button', {name: 'Save changes'}));
-  expect(await screen.findByRole('heading', {name: /Bob changed this view/})).toHaveFocus();
+  expect(await screen.findByRole('alert')).toHaveFocus();
   behaviour.fail = {};
   behaviour.views.v1 = {...behaviour.views.v1, revision: 5};
   await user.click(screen.getByRole('button', {name: 'Reload latest'}));
   expect(await screen.findByText('Segment on Sales · revision 5')).toBeInTheDocument();
   expect(screen.getByText('Amount is at least 5000')).toBeInTheDocument();
-  expect(screen.queryByRole('heading', {name: /Bob changed this view/})).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+  await waitFor(() => expect(document.querySelector('.data-tab-panel')!.contains(document.activeElement) && document.activeElement !== document.body).toBe(true));
 });
 it('links to a segment this one uses', async () => {
   const user = userEvent.setup(), spec = detail('segment').spec;

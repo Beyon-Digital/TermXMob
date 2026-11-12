@@ -18,7 +18,7 @@ import SaveViewDialog from './SaveViewDialog';
 import type {ViewsController} from './use-views';
 import SummarizePanel from './SummarizePanel';
 import {useSpecRun} from './use-spec-run';
-import type {SourceController} from './use-source';
+import {useAutoSchema, type SourceController} from './use-source';
 
 type Props = {
   workspaceId: string; connectionId: string; name: string; label: string; controller: SourceController; engineCanLoad: boolean; onClose: () => void;
@@ -37,7 +37,9 @@ const retry = (controller: SourceController) => controller.needsTest
 export default function TableTab(props: Props) {
   const {name, label, controller, engineCanLoad, onClose} = props, status = controller.schemaStatus;
   const table: SchemaTable | undefined = controller.schema?.tables.find(row => tableKey(row) === name);
-  if (status === 'idle') return <div className="data-empty-inline data-gate"><p>Load the schema to open {label}.</p><Button onClick={controller.loadSchema} disabled={!engineCanLoad}>Load schema</Button></div>;
+  useAutoSchema(controller, engineCanLoad);
+  if (status === 'idle' && engineCanLoad) return <SkeletonList label={'Loading ' + label}/>;
+  if (status === 'idle') return <div className="data-empty-inline data-gate"><p>Load the tables to open {label}.</p><Button onClick={controller.loadSchema} disabled={!engineCanLoad}>Load tables</Button></div>;
   if (status === 'loading') return <SkeletonList label={'Loading ' + label}/>;
   if (status === 'error') return <div className="data-inline-error data-gate"><p role="alert">{controller.schemaError}</p>{retry(controller)}</div>;
   if (!table) return <div className="data-empty-inline data-gate"><p>{label} is no longer in this source.</p><Button variant="secondary" onClick={onClose}>Close tab</Button></div>;

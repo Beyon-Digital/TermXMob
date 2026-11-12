@@ -103,7 +103,7 @@ export default function PivotBuilder({pivot, onChange, options, buckets, columnK
           <Select id={id + '-sort'} value={sortValue} disabled={disabled} onChange={event => {const [by, direction] = event.target.value.split(':'); onChange({...pivot, sort: {by: by as 'rows' | 'total', direction: direction as 'asc' | 'desc'}});}}>
             {SORTS.map(row => <option key={row.value} value={row.value}>{row.label}</option>)}</Select></div>
         <label className="data-check" title={hasColumns ? undefined : 'Without columns, the total is the only number.'}>
-          <input type="checkbox" checked={pivot.totals || !hasColumns} disabled={disabled || !hasColumns} onChange={event => onChange({...pivot, totals: event.target.checked})}/>Show totals</label>
+          <input type="checkbox" checked={pivot.totals || !hasColumns} disabled={disabled || !hasColumns} onChange={event => onChange({...pivot, totals: event.target.checked})}/>Show a total column</label>
         {!hasColumns && <span className="data-muted">Without columns, the total is the only number.</span>}
       </div>
     </div>

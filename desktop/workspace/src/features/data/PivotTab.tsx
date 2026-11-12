@@ -22,7 +22,7 @@ import {tableKey} from './DataNavigation';
 import {useSpecColumns} from './use-spec-columns';
 import {useSpecRun, type CompiledOk} from './use-spec-run';
 import {useViewRun} from './use-view-run';
-import type {SourceController} from './use-source';
+import {useAutoSchema, type SourceController} from './use-source';
 import type {ViewsController} from './use-views';
 
 type Props = {
@@ -74,13 +74,15 @@ export default function PivotTab(props: Props) {
   }, [workspaceId, tab.viewId]);
 
   const readOnly = !canEdit || (!!detail && !detail.can_edit);
+  useAutoSchema(controller, !readOnly && load.phase === 'ready' && props.engineCanLoad);
   if (load.phase === 'loading') return <Skeleton label={'Loading ' + label}/>;
   if (load.phase === 'error') return <div className="data-inline-error data-gate"><p role="alert">{load.error}</p><Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button><Button variant="ghost" size="sm" onClick={onClose}>Close tab</Button></div>;
   if (tab.viewId && !detail) return <Skeleton label={'Loading ' + label}/>;
   const tableName = detail ? detail.spec.from.table : tab.table || '';
   if (readOnly) return <><p className="visually-hidden" role="status">{announce}</p><PivotWorkspace key={generation + ':' + (detail?.revision ?? 0)} {...props} detail={detail} tables={[]} table={undefined} readOnly reload={reload} reloading={reloading} seed={null}/></>;
   const status = controller.schemaStatus, table = controller.schema?.tables.find(row => detail ? row.name === tableName : tableKey(row) === (tab.schema ? tab.schema + '.' : '') + tableName);
-  if (status === 'idle') return <div className="data-empty-inline data-gate"><p>Load the schema to open {label}.</p><Button onClick={controller.loadSchema} disabled={!props.engineCanLoad}>Load schema</Button></div>;
+  if (status === 'idle' && props.engineCanLoad) return <Skeleton label={'Loading ' + label}/>;
+  if (status === 'idle') return <div className="data-empty-inline data-gate"><p>Load the tables to open {label}.</p><Button onClick={controller.loadSchema} disabled={!props.engineCanLoad}>Load tables</Button></div>;
   if (status === 'loading') return <Skeleton label={'Loading ' + label}/>;
   if (status === 'error') return <div className="data-inline-error data-gate"><p role="alert">{controller.schemaError}</p>{controller.needsTest ? <Button variant="secondary" size="sm" onClick={controller.testConnection} disabled={controller.testing}>{controller.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="secondary" size="sm" onClick={controller.loadSchema}>Try again</Button>}</div>;
   if (!table) return <div className="data-empty-inline data-gate"><p>{humanize(tableName)} is no longer in this source.</p><Button variant="secondary" onClick={onClose}>Close tab</Button></div>;

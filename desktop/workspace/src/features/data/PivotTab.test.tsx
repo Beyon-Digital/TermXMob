@@ -29,7 +29,7 @@ afterEach(() => {cleanup(); vi.unstubAllGlobals();});
 
 function view(tab: DataTab = draftTab, props: Partial<React.ComponentProps<typeof PivotTab>> = {}) {
   const handlers = {onClose: vi.fn(), onSaved: vi.fn(), onArchived: vi.fn(), onDrill: vi.fn(), onOpenAdvanced: vi.fn()}, store = views();
-  const result = render(<PivotTab workspaceId="w1" connectionId="c1" tab={tab} label="Pivot" controller={controller()} engineCanLoad views={store} canEdit {...handlers} {...props}/>);
+  const result = render(<PivotTab workspaceId="w1" connectionId="c1" tab={tab} label="Pivot" controller={controller()} engineCanLoad views={store} canEdit {...handlers} {...props}/>, {wrapper: ({children}: {children: React.ReactNode}) => <div className="data-tab-panel">{children}</div>});
   return {...result, ...handlers, store};
 }
 const calls = (suffix: string, method?: string) => behaviour.calls.filter(call => call.path.split('?')[0].endsWith(suffix) && (!method || call.method === method));
@@ -105,15 +105,19 @@ it('shows the conflict banner on a stale save and reloads the latest revision', 
   await user.selectOptions(screen.getByLabelText('Show'), 'count');
   behaviour.fail['PATCH /views/v1'] = new ApiError(409, JSON.stringify(conflict.response.detail));
   await user.click(await screen.findByRole('button', {name: 'Save changes'}));
-  const banner = await screen.findByRole('heading', {name: /Bob changed this view/});
+  const banner = await screen.findByRole('alert');
+  expect(banner).toHaveTextContent(/Bob changed this view/);
   expect(banner).toHaveFocus();
-  expect(screen.getByRole('alert')).toHaveTextContent('Your edits have not been saved.');
+  expect(screen.queryByRole('heading', {name: /Bob changed this view/})).toBeNull();   // the message is text, not a heading
+  expect(primaryButtons().map(button => button.textContent)).toEqual(['Save changes']);   // one primary action while the conflict is open
+  expect(banner).toHaveTextContent('Your edits have not been saved.');
   expect(screen.getByRole('button', {name: 'Save as a new view'})).toBeInTheDocument();
   behaviour.fail = {};
   behaviour.views.v1 = {...behaviour.views.v1, revision: 5, name: 'Changed by Bob'};
   await user.click(screen.getByRole('button', {name: 'Reload latest'}));
   expect(await screen.findByRole('heading', {level: 1, name: 'Changed by Bob'})).toBeInTheDocument();
-  await waitFor(() => expect(screen.queryByRole('heading', {name: /Bob changed this view/})).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  await waitFor(() => expect(document.querySelector('.data-tab-panel')!.contains(document.activeElement) && document.activeElement !== document.body).toBe(true));   // focus stays in the panel
   expect(screen.getByText('Reloaded revision 5.')).toBeInTheDocument();
   expect(screen.getByLabelText('Show')).toHaveValue('sum');
   expect(primaryButtons()).toHaveLength(0);

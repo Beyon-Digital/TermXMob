@@ -78,7 +78,7 @@ it('starts a pivot from the plus next to Pivots, choosing a table by keyboard', 
   const user = userEvent.setup();
   render(<DataStudio ownerId="owner" visible/>);
   await ready();
-  await user.click(within(sidebar()).getByRole('button', {name: 'Load schema'}));
+  await user.click(within(sidebar()).getByRole('button', {name: 'Load tables'}));
   await within(sidebar()).findByRole('button', {name: 'orders'});
   await user.click(screen.getByRole('button', {name: 'New pivot'}));
   const popover = await screen.findByRole('dialog', {name: 'New pivot'});
@@ -102,7 +102,7 @@ it('offers Pivot this table in the overview menu', async () => {
   const user = userEvent.setup();
   render(<DataStudio ownerId="owner" visible/>);
   await ready();
-  await user.click(screen.getAllByRole('button', {name: 'Load schema'}).find(button => !sidebar().contains(button))!);
+  await user.click(screen.getAllByRole('button', {name: 'Load tables'}).find(button => !sidebar().contains(button))!);
   await user.click(await screen.findByRole('button', {name: 'More actions for customers'}));
   await user.click(await screen.findByRole('menuitem', {name: 'Pivot this table'}));
   expect(await screen.findByRole('tab', {name: 'New pivot on customers', selected: true})).toBeInTheDocument();
@@ -162,7 +162,7 @@ it('clears the connection notice when the person opens another tab', async () =>
   const user = userEvent.setup();
   render(<DataStudio ownerId="owner" visible/>);
   await ready();
-  await user.click(within(sidebar()).getByRole('button', {name: 'Load schema'}));
+  await user.click(within(sidebar()).getByRole('button', {name: 'Load tables'}));
   await user.click(await within(sidebar()).findByRole('button', {name: 'orders'}));
   await screen.findByRole('tab', {name: 'orders', selected: true});
   await user.click(screen.getByRole('tab', {name: 'Overview'}));

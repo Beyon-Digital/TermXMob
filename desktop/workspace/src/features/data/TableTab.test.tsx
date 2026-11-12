@@ -278,9 +278,14 @@ it('offers Advanced SQL when the engine is not supported by the table builder', 
 });
 it('guards the schema states', () => {
   const onClose = vi.fn();
-  const first = view({schemaStatus: 'idle', schema: null});
-  expect(screen.getByRole('button', {name: 'Load schema'})).toBeInTheDocument();
+  const loadSchema = vi.fn();
+  const first = view({schemaStatus: 'idle', schema: null, loadSchema});
+  expect(screen.getByRole('status', {name: 'Loading orders'})).toBeInTheDocument();   // opening a table loads its tables without a second click
+  expect(loadSchema).toHaveBeenCalledTimes(1);
   first.unmount();
+  const idle = view({schemaStatus: 'idle', schema: null}, {engineCanLoad: false});
+  expect(screen.getByRole('button', {name: 'Load tables'})).toBeDisabled();
+  idle.unmount();
   const second = view({schemaStatus: 'loading', schema: null});
   expect(screen.getByRole('status', {name: 'Loading orders'})).toBeInTheDocument();
   second.unmount();

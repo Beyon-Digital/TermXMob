@@ -68,7 +68,7 @@ export default function DataNavigation(props: Props) {
         <h2 className="data-nav-heading">Tables</h2>
         {!writable ? <p className="data-nav-note">Ask an editor to share a table with you.</p> : <>
           <button type="button" className="data-nav-row" aria-current={current('overview')} onClick={props.onOpenOverview}>All tables</button>
-          {source.schemaStatus === 'idle' && <Button variant="ghost" className="data-nav-row data-nav-action" onClick={source.loadSchema}>Load schema</Button>}
+          {source.schemaStatus === 'idle' && <Button variant="ghost" className="data-nav-row data-nav-action" onClick={source.loadSchema}>Load tables</Button>}
           {source.schemaStatus === 'loading' && <div className="data-skeleton-list" role="status" aria-label="Loading tables">{[0, 1, 2, 3].map(index => <span className="data-skeleton-row" key={index}/>)}</div>}
           {source.schemaStatus === 'error' && <div className="data-nav-note"><p role="alert">{source.schemaError}</p>{source.needsTest ? <Button variant="ghost" size="sm" onClick={source.testConnection} disabled={source.testing}>{source.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="ghost" size="sm" onClick={source.loadSchema}>Try again</Button>}</div>}
           {source.schemaStatus === 'ready' && (!source.schema?.tables.length ? <p className="data-nav-note">No visible tables.</p> : !tables.length ? <p className="data-nav-note">No tables match.</p> : <>
@@ -131,7 +131,7 @@ function NewPivot({tables, status, onLoad, onPick}: {tables: SchemaTable[]; stat
     <PopoverContent className="data-filter-popover" aria-label="New pivot" onKeyDown={keys}>
       <div className="data-filter-form">
         <h3 className="data-popover-title">New pivot</h3>
-        {status === 'idle' && <><p className="data-muted">Load the schema to choose a table.</p><Button variant="secondary" size="sm" onClick={onLoad}>Load schema</Button></>}
+        {status === 'idle' && <><p className="data-muted">Load the tables to choose a table.</p><Button variant="secondary" size="sm" onClick={onLoad}>Load tables</Button></>}
         {status === 'loading' && <p className="data-muted" role="status">Loading tables…</p>}
         {status === 'error' && <><p className="data-muted">The tables could not be loaded.</p><Button variant="secondary" size="sm" onClick={onLoad}>Try again</Button></>}
         {status === 'ready' && <>

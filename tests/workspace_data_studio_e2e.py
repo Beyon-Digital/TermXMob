@@ -386,6 +386,22 @@ def viewer_views_checks(viewer_page,member_api,prefix,segment,pivot,big,out,repo
     capture(viewer_page,out,report,'viewer-segment-read-only',theme,width)
     report['checks'].append({'check':'viewer-views-read-only','theme':theme,'width':width,'denials':denials,'own_runs':len(mine)})
 
+def failed_run_check(page,data,path,out,report,theme,width):
+    """The source file goes away: the saved pivot says so inline with a way to retry, and recovers once the file is back."""
+    tab_named(data,PIVOT).click()
+    saved=data.get_by_role('region',name='Pivot '+PIVOT,exact=True);expect(saved).to_be_visible()
+    away=Path(str(path)+'.away');Path(path).rename(away)
+    try:
+        saved.get_by_role('button',name='Refresh',exact=True).click()
+        results=saved.get_by_role('region',name='Results',exact=True);expect(results.get_by_role('alert')).to_be_visible()
+        expect(results.get_by_role('button',name='Try again',exact=True)).to_be_visible()
+        capture(page,out,report,'pivot-run-failed',theme,width,expect_alert=True)
+    finally:away.rename(path)
+    results.get_by_role('button',name='Try again',exact=True).click()
+    expect(saved.get_by_role('grid',name=PIVOT,exact=True)).to_be_visible();expect(results.get_by_role('alert')).to_have_count(0)
+    report['checks'].append({'check':'pivot-failed-run-inline-error-and-retry','theme':theme,'width':width})
+
+
 def conflict_journey(page,data,api,member_api,prefix,segment,out,report,theme,width):
     """The owner holds a stale revision while an editor saves; the owner's save is refused with a banner and nothing is overwritten."""
     segment_button(page).click();hide_side(page)
@@ -399,13 +415,15 @@ def conflict_journey(page,data,api,member_api,prefix,segment,out,report,theme,wi
     with page.expect_response(lambda r:r.request.method=='PATCH'and urlsplit(r.url).path==prefix+f'/views/{segment["id"]}')as stale:seg.get_by_role('button',name='Save changes',exact=True).click()
     assert stale.value.status==409,stale.value.text()
     detail=stale.value.json()['detail'];assert detail['code']=='revision_conflict'and detail['current_revision']==held+1 and detail['updated_by']['name']==SECOND,detail
-    banner=seg.get_by_role('alert');expect(banner.get_by_role('heading')).to_contain_text(SECOND+' changed this view')
-    expect(banner.get_by_role('heading')).to_be_focused()
+    banner=seg.get_by_role('alert');expect(banner).to_contain_text(SECOND+' changed this view')
+    expect(banner).to_be_focused();expect(banner.get_by_role('heading')).to_have_count(0)
+    assert seg.locator('.button-primary:visible').all_inner_texts()==['Save changes'],seg.locator('.button-primary:visible').all_inner_texts()   # one primary action while the conflict is open
     capture(page,out,report,'segment-conflict-banner',theme,width,expect_alert=True)
     assert request(api,'GET',prefix+'/views/'+segment['id'])['revision']==held+1,'The stale save changed the view'
     banner.get_by_role('button',name='Reload latest',exact=True).click()
     expect(seg.get_by_text(f'Segment on Sales · revision {held+1}',exact=True)).to_be_visible()
     expect(seg.get_by_role('alert')).to_have_count(0)
+    p.wait(lambda:page.evaluate("()=>{const a=document.activeElement;return !!a&&a!==document.body&&!!a.closest('.data-tab-panel')}"),page=page,seconds=10)   # focus did not drop to the page
     revisions=seg.get_by_role('region',name='Audit',exact=True).get_by_role('list',name='Revisions',exact=True)
     expect(revisions.locator(':scope > li').first).to_contain_text(f'Revision {held+1} · {SECOND}')
     final=request(api,'GET',prefix+'/views/'+segment['id']);assert final['revision']==held+1 and len(final['spec']['filters']['items'])==1,final
@@ -674,7 +692,7 @@ def exercise(browser,out,report,ui_dist,width,theme):
             assert connection['config']['path']==str(path)and not connection['shared_read']
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+f'/connections/{cid}/test')as tested:data.get_by_role('button',name='Test connection',exact=True).click()
             assert tested.value.json()['ok']
-            data.get_by_role('button',name='Load schema',exact=True).first.click()
+            data.get_by_role('button',name='Load tables',exact=True).first.click()
             overview=data.get_by_role('region',name='Tables overview',exact=True)
             for table in('customers','regions','sales'):expect(overview).to_contain_text(table)
             capture(page,out,report,'tables-overview',theme,width)
@@ -682,6 +700,7 @@ def exercise(browser,out,report,ui_dist,width,theme):
             expect(overview.get_by_text(f'{ROWS:,}',exact=True)).to_be_visible()
             visual_journey(page,data,path,out,report,theme,width)
             pivot=pivot_journey(page,data,api,path,prefix,cid,out,report,theme,width)
+            failed_run_check(page,data,path,out,report,theme,width)
             segment,big=segment_journey(page,data,api,path,prefix,cid,out,report,theme,width)
             views_state={'pivot':pivot,'segment':segment,'big':big}
             panel=open_advanced(page)

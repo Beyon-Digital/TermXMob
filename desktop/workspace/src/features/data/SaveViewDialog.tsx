@@ -3,6 +3,7 @@ import {Button} from '../../components/ui/button';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
 import {Input} from '../../components/ui/input';
 import {viewError, type ViewError} from '../../lib/data-views';
+import {rescueFocusSoon} from './focus';
 
 type Props = {
   open: boolean; title: string; description?: string; submitLabel: string; initialName?: string; helper?: string;
@@ -14,7 +15,7 @@ type Props = {
 /** One dialog for naming a view: save a pivot, save a segment, rename. Focus returns to the button that opened it. */
 export default function SaveViewDialog({open, title, description, submitLabel, initialName = '', helper, onSubmit, onFail, onClose}: Props) {
   return <Dialog open={open} onOpenChange={next => {if (!next) onClose();}}>
-    <DialogContent className="data-dialog">
+    <DialogContent className="data-dialog" onCloseAutoFocus={rescueFocusSoon}>
       <DialogTitle>{title}</DialogTitle>
       <DialogDescription>{description || helper || 'Choose a name people will recognise.'}</DialogDescription>
       <NameForm submitLabel={submitLabel} initialName={initialName} onSubmit={onSubmit} onFail={onFail} onClose={onClose}/>

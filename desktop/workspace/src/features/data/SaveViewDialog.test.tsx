@@ -94,7 +94,9 @@ it('names who changed the view and offers reload, save as new and dismiss', asyn
   const alert = screen.getByRole('alert');
   expect(alert).toHaveTextContent('Bob changed this view at');
   expect(alert).toHaveTextContent('Your edits have not been saved.');
-  expect(screen.getByRole('heading')).toHaveFocus();
+  expect(alert).toHaveFocus();
+  expect(screen.queryByRole('heading')).toBeNull();
+  expect(container.querySelector('.button-primary')).toBeNull();
   await expectNoAxeViolations(container);
   await user.click(screen.getByRole('button', {name: 'Reload latest'}));
   await user.click(screen.getByRole('button', {name: 'Save as a new view'}));

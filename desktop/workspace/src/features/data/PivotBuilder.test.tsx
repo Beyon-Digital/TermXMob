@@ -78,7 +78,7 @@ it('removes the columns again and keeps the totals on', async () => {
 });
 it('keeps the total switched on without columns, with the reason shown', () => {
   view();
-  const box = screen.getByRole('checkbox', {name: 'Show totals'});
+  const box = screen.getByRole('checkbox', {name: 'Show a total column'});
   expect(box).toBeChecked();
   expect(box).toBeDisabled();
   expect(screen.getByText('Without columns, the total is the only number.')).toBeVisible();

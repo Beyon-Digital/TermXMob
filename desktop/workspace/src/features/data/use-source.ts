@@ -61,3 +61,9 @@ export function useDataSource(workspaceId: string, source: DataConnection | unde
   }, [onRefresh, path, scope, sourceId]);
   return {schema, schemaStatus, schemaError, needsTest, testing, testMessage, testError, loadSchema, testConnection};
 }
+
+/** Opening a saved view or a table is the person asking for it, so load its tables without a second click. Stays idle when the source cannot be read yet. */
+export function useAutoSchema(controller: Pick<SourceController, 'schemaStatus' | 'loadSchema'>, enabled: boolean) {
+  const {schemaStatus, loadSchema} = controller;
+  useEffect(() => {if (enabled && schemaStatus === 'idle') loadSchema();}, [enabled, schemaStatus, loadSchema]);
+}

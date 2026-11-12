@@ -6,7 +6,7 @@ Open **Data** in the app rail, or use `/?workspace=data`. The Data sidebar lists
 
 1. Create a Data workspace. It does not need an Agent project or folder.
 2. Choose **Connect database**. SQLite uses the host filesystem chooser. Network profiles accept an explicit server, database, account and password.
-3. Press **Test connection**, choose **Load schema** to list the tables (Overview offers a list or tile layout), then open **New query** in the sidebar, enter a read query and press **Run**. Save reusable queries by name. Parameters are JSON values bound by the adapter.
+3. Press **Test connection**, choose **Load tables** to list them (opening a table or a saved view loads them for you) (Overview offers a list or tile layout), then open **New query** in the sidebar, enter a read query and press **Run**. Save reusable queries by name. Parameters are JSON values bound by the adapter.
 4. Open Reports, create a report from a saved query, choose a visual and run it. Save changes before running a changed definition. Publish a version for viewers or add the report to a dashboard.
 5. In Team > Members, add an existing host username as editor or viewer. Sources require their creator to enable shared read access. Viewers run published reports; they cannot run arbitrary SQL or see unpublished edits.
 6. Open Copilot and choose an existing account/model in its settings. Account sharing is explicit. Schema and Results context are optional. Query/report proposals require **Open query** or **Save report**; they do not silently publish.

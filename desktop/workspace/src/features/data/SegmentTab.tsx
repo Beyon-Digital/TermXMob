@@ -16,7 +16,7 @@ import ConflictBanner from './ConflictBanner';
 import FilterChips from './FilterChips';
 import SaveViewDialog from './SaveViewDialog';
 import {useSpecColumns} from './use-spec-columns';
-import type {SourceController} from './use-source';
+import {useAutoSchema, type SourceController} from './use-source';
 import type {ViewsController} from './use-views';
 
 type Props = {
@@ -67,6 +67,7 @@ function SegmentView({workspaceId, connectionId, controller, views, canEdit, onA
   const [count, setCount] = useState<{phase: 'idle' | 'running' | 'done' | 'error'; value?: number; revision?: number; error?: string}>({phase: 'idle'});
   const pending = useRef<'rename' | 'delete' | null>(null), [exporting, setExporting] = useState(false), [opening, setOpening] = useState(false), [runs, setRuns] = useState(0);
   const spec = saved.spec, table = controller.schema?.tables;
+  useAutoSchema(controller, editing && editable);
   const { labelFor, kindFor, options } = useSpecColumns(spec.from, spec.joins, table || []);
   const dirty = JSON.stringify(compactFilters(filters)) !== baseline;
   const names = views.nameOf;
@@ -173,7 +174,8 @@ function SegmentView({workspaceId, connectionId, controller, views, canEdit, onA
         {line.segmentId && names(line.segmentId) ? <button type="button" className="data-link" onClick={() => onOpenView({id: line.segmentId!, kind: 'segment'})}>{line.text}</button> : line.text}</li>)}</ul>
         : <p className="data-muted">This segment has no filters, so every row is a member.</p>}
       {editing && editable && (schemaReady ? <FilterChips filters={filters} context={{label: labelFor, kind: kindFor}} options={options} onChange={setFilters} segments={segments}/>
-        : <div className="data-empty-inline data-gate"><p>Load the schema to edit the filters.</p><Button variant="secondary" onClick={controller.schemaStatus === 'error' && controller.needsTest ? controller.testConnection : controller.loadSchema} disabled={controller.schemaStatus === 'loading'}>{controller.schemaStatus === 'error' ? 'Try again' : 'Load schema'}</Button></div>)}
+        : controller.schemaStatus === 'idle' || controller.schemaStatus === 'loading' ? <Skeleton label="Loading the tables"/>
+        : <div className="data-empty-inline data-gate"><p>Load the tables to edit the filters.</p><Button variant="secondary" onClick={controller.schemaStatus === 'error' && controller.needsTest ? controller.testConnection : controller.loadSchema}>{controller.schemaStatus === 'error' ? 'Try again' : 'Load tables'}</Button></div>)}
       {saved.references.some(row => row.state === 'missing') && <p className="data-field-error" role="alert">A segment this one uses was deleted. Edit the filters to remove it.</p>}
     </section>
 

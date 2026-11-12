@@ -101,10 +101,10 @@ export default function TablesOverview({workspaceId, ownerId, role, hasConnectio
       </div>}
     </div>
     {!writable && <p className="data-muted">Your viewer role can open published reports in Reports.</p>}
-    {writable && status === 'idle' && <div className="data-empty-inline"><p>Load the schema to see the tables in this source.</p><Button onClick={controller.loadSchema} disabled={!engine?.ready || !engine.capabilities.schema}>Load schema</Button></div>}
+    {writable && status === 'idle' && <div className="data-empty-inline"><p>Load the tables to see what is in this source.</p><Button onClick={controller.loadSchema} disabled={!engine?.ready || !engine.capabilities.schema}>Load tables</Button></div>}
     {writable && status === 'loading' && <div className={mode === 'grid' ? 'data-tiles' : 'data-list'} role="status" aria-label="Loading tables">{[0, 1, 2, 3, 4, 5].map(index => <span className={mode === 'grid' ? 'data-skeleton-tile' : 'data-skeleton-row'} key={index}/>)}</div>}
     {writable && status === 'error' && <div className="data-inline-error"><p role="alert">{controller.schemaError}</p>{controller.needsTest ? <Button variant="secondary" size="sm" onClick={controller.testConnection} disabled={controller.testing}>{controller.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="secondary" size="sm" onClick={controller.loadSchema}>Try again</Button>}</div>}
-    {writable && status === 'ready' && !tables.length && <div className="data-empty-inline"><p>This source has no visible tables.</p><Button variant="secondary" onClick={controller.loadSchema}>Load schema</Button></div>}
+    {writable && status === 'ready' && !tables.length && <div className="data-empty-inline"><p>This source has no visible tables.</p><Button variant="secondary" onClick={controller.loadSchema}>Load tables</Button></div>}
     {writable && status === 'ready' && tables.length > 0 && (mode === 'list'
       ? <div className="data-table-scroll"><table className="data-table-list">
         <thead><tr><th scope="col">Table</th><th scope="col" className="data-number">Columns</th><th scope="col" className="data-number">Rows</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
