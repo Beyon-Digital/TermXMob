@@ -586,7 +586,9 @@ def test_real_process_boundary_denies_external_file_and_network():
 try:
     open(sys.argv[1]).read()
     denied = False
-except PermissionError:
+except OSError:
+    # Seatbelt answers EPERM; bwrap's private /tmp answers ENOENT. Either way
+    # the file's contents are unreachable.
     denied = True
 connection = socket.socket()
 connection.settimeout(1)

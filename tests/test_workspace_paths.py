@@ -101,7 +101,10 @@ def test_host_picker_requires_unlocked_live_host_creation_authority_before_io(pa
     reads = []
     original = Path.iterdir
     def counted(path):
-        reads.append(str(path))
+        # The sandbox env sweeper is a process-wide daemon thread that earlier
+        # tests may have started; only the picker's own reads matter here.
+        if threading.current_thread().name != 'termx-env-sweep':
+            reads.append(str(path))
         return original(path)
     monkeypatch.setattr(Path, 'iterdir', counted)
     assert paths.get(None).status_code == 401
