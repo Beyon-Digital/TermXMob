@@ -83,7 +83,7 @@ def build_data_router(state):
                 'capabilities': {'team_workspaces': True, 'roles': ['owner', 'editor', 'viewer'],
                                  'source_writes': False, 'optimistic_revisions': True,
                                  'report_publication': True, 'copilot': True,
-                                 'visual_query': True}}
+                                 'visual_query': True, 'views': True, 'pivot': True, 'segments': True}}
 
     @router.post('/workspaces', status_code=201)
     def create_workspace(body: WorkspaceInput, request: Request):
@@ -137,10 +137,12 @@ def mount_data(app, state):
     from termx.data.bi import build_bi_router
     from termx.data.copilot import build_copilot_router
     from termx.data.query_http import build_query_router
+    from termx.data.view_http import build_view_router
     actor = managed_actor(state)
     app.include_router(build_data_router(state))
     app.include_router(build_runtime_router(service, actor))
     app.include_router(build_query_router(service, actor))
+    app.include_router(build_view_router(service, actor))
     app.include_router(build_bi_router(service, actor))
     app.include_router(build_copilot_router(service, actor))
     return service

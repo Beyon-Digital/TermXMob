@@ -11,8 +11,11 @@ from fastapi import HTTPException
 from termx.data.connectors import validate_read
 from termx.data.dialects import dialect_or_none, get_dialect, unsupported_capabilities
 from termx.data.dialects.base import Dialect
-from termx.data.query_spec import QuerySpec, SchemaIndex, SpecErrors, compile_spec
+from termx.data.pivot import pivot_values_from_rows
+from termx.data.query_spec import (PIVOT_MAX_COLUMNS, PIVOT_PROBE_ROWS, QuerySpec, SchemaIndex, SpecErrors, compile_pivot_probe,
+                                   compile_spec)
 from termx.data.relations import suggest_relations
+from termx.data.segments import references_of
 
 log = logging.getLogger(__name__)
 SCHEMA_TTL_SECONDS = 60.0
@@ -55,6 +58,15 @@ class QueryService:
     def runtime(self):
         return self.service.runtime
 
+    @staticmethod
+    def _key(wid: str, connection: dict) -> tuple:
+        return (wid, connection['id'], connection.get('revision'), connection.get('source_generation'),
+                connection.get('credential_generation'))
+
+    def cached_index(self, wid: str, connection: dict):
+        """The cached schema index for this exact connection state, or None. Never reads the source."""
+        return self.cache.get(self._key(wid, connection))
+
     # Every call re-checks role, workspace, share state, engine and file authority. The cache
     # only skips the source round trip, never an authorisation check.
     def _authorize_connection(self, actor, wid: str, cid: str) -> dict:
@@ -69,14 +81,24 @@ class QueryService:
 
     async def schema_index(self, actor, wid: str, cid: str):
         connection, dialect = self._authorize(actor, wid, cid)
-        key = (wid, cid, connection.get('revision'), connection.get('source_generation'),
-               connection.get('credential_generation'))
+        key = self._key(wid, connection)
         cached = self.cache.get(key)
         if cached is None:
             raw = await self.runtime.schema(actor, wid, cid)
             cached = SchemaIndex.from_schema(raw, dialect)
             self.cache.put(key, cached)
         return connection, cached, dialect
+
+    async def view_index(self, actor, wid: str, view_id: str, connection: dict):
+        """The schema index for running a view. Viewers reach it here without ever receiving the schema."""
+        dialect = get_dialect(connection['engine'])
+        key = self._key(wid, connection)
+        cached = self.cache.get(key)
+        if cached is None:
+            raw = await self.runtime.schema_for_authorized(connection, wid, lambda: self.service.views.authorize_run(actor, wid, view_id))
+            cached = SchemaIndex.from_schema(raw, dialect)
+            self.cache.put(key, cached)
+        return cached, dialect
 
     @staticmethod
     def _safety_net(connection: dict, compiled) -> None:
@@ -89,15 +111,37 @@ class QueryService:
 
     async def compile(self, actor, wid: str, spec: QuerySpec) -> dict:
         connection, index, dialect = await self.schema_index(actor, wid, spec.source)
+        return await self._compile(actor, wid, connection, index, dialect, spec, None)
+
+    async def compile_for_view(self, actor, wid: str, spec: QuerySpec, view_id: str, connection: dict) -> dict:
+        index, dialect = await self.view_index(actor, wid, view_id, connection)
+        return await self._compile(actor, wid, connection, index, dialect, spec, view_id)
+
+    async def _compile(self, actor, wid: str, connection: dict, index, dialect: Dialect, spec: QuerySpec, view_id: str | None) -> dict:
+        segments = self.service.views.load_segments(wid, references_of(spec.filters))
+        extra: dict = {}
         try:
-            compiled = compile_spec(spec, index, dialect)
+            values = None
+            if spec.pivot is not None and spec.pivot.columns is not None:
+                # Validate first, so nothing is read for a pivot that cannot compile. The one bounded probe then
+                # runs under the same authority, deadline and verified-source rule as any run.
+                compile_spec(spec, index, dialect, segments=segments)
+                probe = compile_pivot_probe(spec, index, dialect, segments=segments)
+                self.runtime.require_verified_read(connection)
+                kind = probe.columns[0]['value_kind']
+                found = await self.runtime.execute_read(
+                    actor, wid, {'connection_id': connection['id'], 'sql': probe.sql, 'parameters': probe.parameters,
+                                 'column_kinds': [kind]}, max_rows=PIVOT_PROBE_ROWS, view_id=view_id)
+                values = pivot_values_from_rows(found['rows'], kind, probe.columns[0]['name'])
+                extra['pivot'] = {'probed': True, 'column_count': len(values), 'limit': PIVOT_MAX_COLUMNS}
+            compiled = compile_spec(spec, index, dialect, segments=segments, pivot_values=values)
         except SpecErrors as error:
             return {'ok': False, 'errors': [item.as_dict() for item in error.errors]}
         self._safety_net(connection, compiled)
         return {'ok': True, 'dialect': dialect.engine, 'sql': compiled.sql, 'parameters': compiled.parameters,
                 'columns': compiled.columns, 'limit': compiled.limit, 'offset': compiled.offset,
                 'fetch_limit': compiled.fetch_limit, 'joins': compiled.joins, 'warnings': compiled.warnings,
-                'schema_hash': compiled.schema_hash}
+                'schema_hash': compiled.schema_hash, **extra}
 
     async def run(self, actor, wid: str, spec: QuerySpec, request_id: str) -> dict:
         connection, _ = self._authorize(actor, wid, spec.source)
@@ -108,7 +152,8 @@ class QueryService:
             raise HTTPException(422, result['errors'][0]['message'])
         return await self.runtime.run(actor, wid, {'connection_id': spec.source, 'sql': result['sql'],
                                                     'parameters': result['parameters'],
-                                                    'column_kinds': [c['value_kind'] for c in result['columns']]}, request_id)
+                                                    'column_kinds': [c['value_kind'] for c in result['columns']]}, request_id,
+                                      extra={'output': {'columns': result['columns'], 'warnings': result['warnings']}})
 
     async def relations(self, actor, wid: str, cid: str, table: str | None) -> dict:
         _, index, dialect = await self.schema_index(actor, wid, cid)

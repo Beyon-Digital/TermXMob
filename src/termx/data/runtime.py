@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -279,11 +280,24 @@ class DataRuntime:
         self.store.audit(actor.id, wid, 'connection.archived', cid)
         return self.service.public(result)
 
-    def _source(self, actor, wid, definition, from_report=False):
-        self.service.require(actor, wid, write=not from_report)
+    def _source(self, actor, wid, definition, from_report=False, view_id=None):
+        self.service.require(actor, wid, write=not (from_report or view_id))
         if not isinstance(definition, dict):
             raise HTTPException(422, 'Query definition must be an object.')
         context = definition.get('report_context')
+        if view_id:
+            # A saved view is a third authority path: the person may run it when the view's own checks pass
+            # (live membership, the view still exists, its connection is usable by them), whatever their role.
+            if from_report:
+                raise HTTPException(422, 'A query cannot be both a report read and a view read.')
+            connection = self.service.views.authorize_run(actor, wid, view_id)
+            if definition.get('connection_id') != connection['id']:
+                raise HTTPException(403, 'This view runs on a different connection.')
+            engine_spec(connection['engine'])
+            self.assert_connection_source(connection, wid)
+            if context is not None:
+                raise HTTPException(422, 'Report authority is server managed.')
+            return connection
         if from_report:
             if not isinstance(context, dict) or not context.get('report_id'):
                 raise HTTPException(403, 'A live authorized report is required for a report read.')
@@ -333,15 +347,27 @@ class DataRuntime:
     async def schema(self, actor, wid: str, cid: str) -> dict:
         self.service.require(actor, wid, write=True)
         connection = self.service.require_connection(actor, wid, cid)
+
+        def recheck():
+            current = self.service.require_connection(actor, wid, cid)
+            self.service.require(actor, wid, write=True)
+            return current
+        return await self.schema_for_authorized(connection, wid, recheck)
+
+    async def schema_for_authorized(self, connection, wid: str, recheck) -> dict:
+        """Introspect a connection the caller has already authorised. `recheck()` repeats that authorisation
+        after the read and returns the current connection record. Editors reach it through `schema`; the viewer
+        of a view reaches it through the view service, and never receives the schema itself: only the compiler
+        sees it."""
         self.assert_connection_source(connection, wid)
+        cid = connection['id']
         try:
             result = await asyncio.to_thread(self._connector(connection).schema)
         except Exception as error:
             if isinstance(error, HTTPException):
                 raise
             raise HTTPException(422, _safe_error(error)) from None
-        current = self.service.require_connection(actor, wid, cid)
-        self.service.require(actor, wid, write=True)
+        current = recheck()
         self.assert_connection_source(current, wid)
         if self.fingerprint(current) != self.fingerprint(connection):
             raise HTTPException(409, 'The connection changed while reading its schema.')
@@ -386,16 +412,16 @@ class DataRuntime:
                 **({'report_context': definition['report_context']} if definition.get('report_context') else {})}
 
     async def execute_read(self, actor, wid: str, definition: dict, *, from_report=False,
-                           max_rows=PREVIEW_ROWS, cancel_event=None, _active=None) -> dict:
+                           max_rows=PREVIEW_ROWS, cancel_event=None, _active=None, view_id=None) -> dict:
         if isinstance(max_rows, bool) or not isinstance(max_rows, int) or not 0 <= max_rows <= PREVIEW_ROWS:
             raise HTTPException(422, 'The result preview bound is invalid.')
-        connection = self._source(actor, wid, definition, from_report)
+        connection = self._source(actor, wid, definition, from_report, view_id)
         query = self._read_definition(definition, connection)
         connector = self._connector(connection, cancel_event, _active)
         extra = {'kinds': query['column_kinds']} if query.get('column_kinds') else {}
         result = await asyncio.get_running_loop().run_in_executor(
             self._reads, functools.partial(connector.execute, query['sql'], query['parameters'], max_rows, **extra))
-        current = self._source(actor, wid, definition, from_report)
+        current = self._source(actor, wid, definition, from_report, view_id)
         if self.fingerprint(current) != self.fingerprint(connection):
             raise HTTPException(409, 'Source authority or credentials changed while the query was running. Its result was discarded.')
         if cancel_event is not None and cancel_event.is_set():
@@ -404,7 +430,8 @@ class DataRuntime:
 
     def _public_job(self, record):
         keys = ('id', 'status', 'connection_id', 'result', 'error', 'created_at', 'updated_at',
-                'report_context', 'cancel_requested', 'cancellation', 'preview_limit')
+                'report_context', 'cancel_requested', 'cancellation', 'preview_limit',
+                'view_id', 'view_revision', 'mode', 'output', 'duration_ms')
         # Result column/cell names are user data; do not recursively remove a
         # legitimate column named "password" from an explicitly authorized read.
         return {key: record[key] for key in keys if key in record}
@@ -413,12 +440,15 @@ class DataRuntime:
         self.service.require(actor, wid)
         if not job or job['workspace_id'] != wid or job.get('actor_id') != actor.id:
             raise HTTPException(404, 'Query job not found.')
-        self._source(actor, wid, job['_definition'], job.get('_from_report', False))
-        current = self.service.require_connection(actor, wid, job['connection_id'], report=job.get('_from_report', False))
+        view_id = job.get('_view_id')
+        self._source(actor, wid, job['_definition'], job.get('_from_report', False), view_id)
+        current = self.service.require_connection(actor, wid, job['connection_id'],
+                                                  report=bool(job.get('_from_report', False) or view_id))
         if self.fingerprint(current) != job.get('_source_fingerprint'):
             raise HTTPException(409, 'This job belongs to an older source or credential policy. Run it again.')
 
-    async def run(self, actor, wid: str, definition: dict, request_id: str, *, from_report=False) -> dict:
+    async def run(self, actor, wid: str, definition: dict, request_id: str, *, from_report=False,
+                  view_id=None, extra=None) -> dict:
         if self._closed:
             raise HTTPException(503, 'The query runtime is shutting down.')
         if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 200:
@@ -427,9 +457,12 @@ class DataRuntime:
             request_id.encode('utf-8')
         except UnicodeEncodeError:
             raise HTTPException(422, 'The request_id must be valid Unicode text.') from None
-        connection = self._source(actor, wid, definition, from_report)
+        connection = self._source(actor, wid, definition, from_report, view_id)
         query = self._read_definition(definition, connection)
+        extra = dict(extra or {})
         payload = {'definition': query, 'from_report': bool(from_report)}
+        if view_id:   # the same request_id for another view, revision or mode is a different request
+            payload['view'] = {'id': view_id, 'revision': extra.get('view_revision'), 'mode': extra.get('mode')}
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
         jid = identifier_for('query-run', wid, actor.id, request_id)
         with self._job_lock:
@@ -444,6 +477,9 @@ class DataRuntime:
                     'cancel_requested': False, 'preview_limit': PREVIEW_ROWS, '_definition': query, '_from_report': bool(from_report),
                     '_source_fingerprint': self.fingerprint(connection), '_request_digest': digest,
                     '_boot_id': self.boot_id}
+            body.update({k: v for k, v in extra.items() if k in ('view_revision', 'mode', 'output', 'actor_name')})
+            if view_id:
+                body.update({'_view_id': view_id, 'view_id': view_id})
             if query.get('report_context'):
                 body['report_context'] = query['report_context']
             try:
@@ -480,6 +516,7 @@ class DataRuntime:
                 return self.store.update('job', jid, changes, record['revision'])
 
     async def _worker(self, actor, wid, jid, cancel):
+        started = time.monotonic()
         try:
             job = self.store.get('job', jid)
             self._authorize_job(actor, wid, job)
@@ -487,16 +524,18 @@ class DataRuntime:
                 raise InterruptedError('Query cancelled before dispatch.')
             self._update_job(jid, {'status': 'running'})
             result = await self.execute_read(actor, wid, job['_definition'], from_report=job['_from_report'],
-                cancel_event=cancel, _active=lambda db: self._set_active(jid, db))
+                cancel_event=cancel, _active=lambda db: self._set_active(jid, db), view_id=job.get('_view_id'))
+            duration = int((time.monotonic() - started) * 1000)
             self._authorize_job(actor, wid, self.store.get('job', jid))
             if cancel.is_set():
                 raise InterruptedError('Query cancelled.')
-            self._update_job(jid, {'status': 'completed', 'result': result})
+            self._update_job(jid, {'status': 'completed', 'result': result, 'duration_ms': duration})
             self.store.audit(actor.id, wid, 'query.completed', jid, {'rows': result['row_count'], 'truncated': result['truncated']})
         except BaseException as error:
             cancelled = cancel.is_set() or isinstance(error, (InterruptedError, asyncio.CancelledError))
             self._update_job(jid, {'status': 'cancelled' if cancelled else 'failed',
-                                   'error': None if cancelled else _safe_error(error), 'result': None})
+                                   'error': None if cancelled else _safe_error(error), 'result': None,
+                                   'duration_ms': int((time.monotonic() - started) * 1000)})
         finally:
             self._active.pop(jid, None)
             self._cancel.pop(jid, None)
@@ -552,7 +591,11 @@ class DataRuntime:
             if isinstance(cell, str) and cell.lstrip(' \t\r\n').startswith(('=', '+', '-', '@')):
                 return "'" + cell
             return cell
-        writer.writerow([safe(column['name']) for column in result['columns']])
+        labels = [c.get('label') for c in ((job.get('output') or {}).get('columns') or [])]
+        # A view run names its columns in its output metadata; the SQL aliases of a pivot are neutral (pv_c1).
+        headers = labels if len(labels) == len(result['columns']) and all(isinstance(l, str) for l in labels) \
+            else [column['name'] for column in result['columns']]
+        writer.writerow([safe(header) for header in headers])
         writer.writerows([[safe(cell) for cell in row] for row in result['rows']])
         # Recheck after creating the export as well as before reading the result.
         self._authorize_job(actor, wid, self.store.get('job', jid))

@@ -215,7 +215,9 @@ def test_run_returns_the_same_job_shape_as_query_runs_and_pages_with_a_probe_row
     cid = env.source['id']
     job = post(env, '/query-specs/run', {'request_id': 'page-1', 'spec': spec(cid)}).json()
     legacy = post(env, '/query-runs', {'request_id': 'legacy-1', 'connection_id': cid, 'sql': 'SELECT 1'}).json()
-    assert set(job) == set(legacy) == {'id', 'status', 'connection_id', 'created_at', 'updated_at', 'cancel_requested', 'preview_limit'}
+    base = {'id', 'status', 'connection_id', 'created_at', 'updated_at', 'cancel_requested', 'preview_limit'}
+    assert set(legacy) == base and set(job) == base | {'output'}      # a spec run also carries its column metadata
+    assert [c['label'] for c in job['output']['columns']] == ['id', 'status'] and job['output']['warnings'] == []
     assert job['connection_id'] == cid and job['preview_limit'] == 1000
     done = wait(env, job)
     assert done['status'] == 'completed'
