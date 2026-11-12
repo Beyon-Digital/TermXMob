@@ -28,7 +28,7 @@ describe('desktop projects workspace', () => {
   it('routes project work and configuration to the existing callbacks', async () => {
     const callbacks = props(); render(<ControlPlane {...callbacks}/>);
     await screen.findByRole('button', {name:'Inspect Fix routing'});
-    fireEvent.click(screen.getByRole('button', {name:'Agent presets'}));
+    fireEvent.click(screen.getByRole('button', {name:'Agents'}));
     expect(callbacks.onManage).toHaveBeenCalledWith('agents');
     fireEvent.click(screen.getByRole('button', {name:/App \/projects\/app/}));
     expect(callbacks.onProject).toHaveBeenCalledWith(callbacks.projects[0]);
