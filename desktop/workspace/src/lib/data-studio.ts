@@ -1,6 +1,7 @@
 import {useEffect, useRef} from 'react';
 import {request} from './api';
 import {transfer} from './transfers';
+import type {OutputColumn, SpecWarning} from './query-spec';
 
 export type DataRole = 'owner' | 'editor' | 'viewer';
 export type DataRecord = {id:string; revision:number; created_at?:string|number; updated_at?:string|number; workspace_id?:string};
@@ -11,7 +12,8 @@ export type DataEngine = {id:string; label:string; family?:string; language?:str
 export type DataConnection = DataRecord & {name:string; engine:string; config:Record<string,string|number|boolean|null>; shared_read?:boolean; created_by?:string; credential_configured?:boolean; password_configured?:boolean; read_policy?:{verified?:boolean}};
 export type DataQuery = DataRecord & {name:string; connection_id:string; sql:string; parameters?:Record<string,unknown>};
 export type DataResult = {columns:{name:string; type?:string}[]; rows:unknown[][]; row_count:number; truncated:boolean; notice?:string};
-export type DataJob = DataRecord & {status:'queued'|'running'|'completed'|'failed'|'cancelled'|'unknown'; connection_id:string; result?:DataResult; error?:string};
+export type DataJob = DataRecord & {status:'queued'|'running'|'completed'|'failed'|'cancelled'|'unknown'; connection_id:string; result?:DataResult; error?:string;
+  view_id?:string; view_revision?:number; mode?:'rows'|'count'; output?:{columns:OutputColumn[]; warnings:SpecWarning[]}; duration_ms?:number|null};
 export type DataSnapshot = {workspace:DataWorkspace; members:DataMember[]; connections:DataConnection[]; queries:DataQuery[]; reports:unknown[]; dashboards:unknown[]; activity:unknown[]};
 export type DataBootstrap = {workspaces:DataWorkspace[]; engines:DataEngine[]; capabilities:Record<string,unknown>};
 export type DataView = 'database'|'bi'|'team';
@@ -35,10 +37,10 @@ export function useDataScope(){
  useEffect(()=>{state.current.alive=true;return()=>{state.current.alive=false;state.current.controllers.forEach(controller=>controller.abort());state.current.controllers.clear();};},[]);
  return {current:()=>state.current.alive,controller:()=>{const controller=new AbortController();state.current.controllers.add(controller);return controller;},release:(controller:AbortController)=>state.current.controllers.delete(controller)};
 }
-export async function dataDownload(workspaceId:string,jobId:string,signal:AbortSignal,current:()=>boolean){
- const blob=await transfer(dataPath(workspaceId,'/jobs/'+encodeURIComponent(jobId)+'/export.csv'),{signal});
+export async function dataDownload(workspaceId:string,jobId:string,signal:AbortSignal,current:()=>boolean,options:{path?:string;filename?:string}={}){
+ const blob=await transfer(options.path||dataPath(workspaceId,'/jobs/'+encodeURIComponent(jobId)+'/export.csv'),{signal});
  if(!current()||signal.aborted)return;
- const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download='query-results.csv';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=options.filename||'query-results.csv';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 const selectionKey=(ownerId?:string)=>'termx.data.selection.'+(ownerId||'managed');
 export function readDataSelection(ownerId?:string):{workspaceId:string;view:DataView;connectionId:string}{

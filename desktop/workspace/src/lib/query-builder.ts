@@ -1,4 +1,5 @@
 /** Pure helpers for the visual query builder: aliases, plain-language sentences and filter-tree edits. No SQL words in anything shown to people. */
+import {isFilterLeaf} from './query-spec';
 import type {Aggregate, AggregateFn, ColumnRef, DateBucket, FilterGroup, FilterLeaf, FilterNode, GroupBy, Join, LeafOp, QuerySpec, Scalar, SchemaColumn, SortKey, ValueKind} from './query-spec';
 
 export const MAX_JOINS = 4;
@@ -112,7 +113,7 @@ export function summaryFields(summary: Summary, label: (ref: ColumnRef) => strin
 
 // Filter tree. The interface offers one level of nesting; a path is a list of group indexes from the root.
 export type GroupPath = number[];
-export const isFilterGroup = (node: FilterNode): node is FilterGroup => node.op === 'and' || node.op === 'or';
+export const isFilterGroup = (node: FilterNode): node is FilterGroup => 'op' in node && 'items' in node && (node.op === 'and' || node.op === 'or');
 function editGroup(group: FilterGroup, path: GroupPath, change: (group: FilterGroup) => FilterGroup): FilterGroup {
   if (!path.length) return change(group);
   const [head, ...rest] = path, target = group.items[head];
@@ -130,7 +131,7 @@ function pruneFilters(group: FilterGroup, drop: (ref: ColumnRef) => boolean): Fi
   const items: FilterNode[] = [];
   for (const item of group.items) {
     if (isFilterGroup(item)) {const next = pruneFilters(item, drop); if (next.items.length) items.push(next);}
-    else if (!drop(item.field)) items.push(item);
+    else if (!isFilterLeaf(item) || !drop(item.field)) items.push(item);
   }
   return {...group, items};
 }
@@ -163,3 +164,10 @@ export function nextSort(sort: SortKey[], column: ColumnRef | {output: string}, 
   if (!direction) return base;
   return [...base, {...column, direction} as SortKey].slice(-4);
 }
+
+/** Drop groups that hold nothing, so an empty "Match any" group does not reach the server. */
+export const compactFilters = (group: FilterGroup): FilterGroup => ({...group, items: group.items.flatMap((item): FilterNode[] => {
+  if (!isFilterGroup(item)) return [item];
+  const next = compactFilters(item);
+  return next.items.length ? [next] : [];
+})});

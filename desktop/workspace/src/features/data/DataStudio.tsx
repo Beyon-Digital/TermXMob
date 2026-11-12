@@ -6,16 +6,20 @@ import {DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMen
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
 import {Input} from '../../components/ui/input';
 import {dataBody, dataError, dataPath, dataRequest, readDataSelection, rememberDataSelection, useDataScope, type DataBootstrap, type DataConnection, type DataQuery, type DataQueryDraft, type DataSnapshot, type DataWorkspace} from '../../lib/data-studio';
-import {closeTab, initialTabs, openTab, pruneTabs, queryTabId, readTabs, rememberTabs, selectTab, tableTabId, type DataTab, type DataTabsState} from '../../lib/data-tabs';
-import type {SchemaTable} from '../../lib/query-spec';
+import {closeTab, drillTabId, initialTabs, openTab, pivotDraftTabId, pivotViewTabId, pruneTabs, queryTabId, readTabs, rememberTabs, segmentTabId, selectTab, tableTabId, type DataTab, type DataTabsState} from '../../lib/data-tabs';
+import type {ViewDetail, ViewSummary, ViewUse} from '../../lib/data-views';
+import type {QuerySpec, SchemaTable} from '../../lib/query-spec';
 import DatabaseStudio from './DatabaseStudio';
 import TeamSettings from './TeamSettings';
 import BIStudio from './BIStudio';
 import DataCopilot from './DataCopilot';
-import DataNavigation, {tableLabel, type NamedRecord} from './DataNavigation';
+import DataNavigation, {tableKey, tableLabel, type NamedRecord} from './DataNavigation';
 import DataTabs from './DataTabs';
 import TablesOverview from './TablesOverview';
 import TableTab from './TableTab';
+import PivotTab from './PivotTab';
+import SegmentTab from './SegmentTab';
+import {useViews} from './use-views';
 import {ADVANCED_TRIGGER_ID} from './AdvancedSql';
 import SourceDialog from './SourceDialog';
 import ArchiveSourceDialog from './ArchiveSourceDialog';
@@ -46,6 +50,7 @@ export default function DataStudio({ownerId, visible, observing = true, locked =
     onRetain={(key, draft) => setRetained(previous => ({ownerId, drafts: {...(previous && previous.ownerId === ownerId ? previous.drafts : {}), [key]: draft}}))}/>;
 }
 
+export const NOTICE_MS = 8000;
 const viewTitle: Record<'bi' | 'team', string> = {bi: 'Reports', team: 'Team'};
 /** Whether the person last left the SQL editor open. A boolean only; SQL text is never stored. */
 export const advancedKey = (ownerId?: string) => 'termx.data.advanced.' + (ownerId || 'managed');
@@ -66,8 +71,11 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   const source = snapshot?.connections.find(row => row.id === connectionId), engines = bootstrap?.engines || [], engine = engines.find(row => row.id === source?.engine);
   const requestRefresh = useCallback(() => setRefresh(value => value + 1), []);
   const controller = useDataSource(workspaceId, source, requestRefresh);
+  const viewsEnabled = bootstrap?.capabilities?.views === true, views = useViews(workspaceId, viewsEnabled), draftCounter = useRef(0);
 
   useEffect(() => {rememberDataSelection(ownerId, selection);}, [ownerId, selection]);
+  // A notice is short-lived: it clears itself after a few seconds and whenever the person moves somewhere else. It is never stored.
+  useEffect(() => {if (!notice) return; const timer = setTimeout(() => setNotice(''), NOTICE_MS); return () => clearTimeout(timer);}, [notice]);
   useEffect(() => {const pop = () => setSelection(readDataSelection(ownerId)); window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop);}, [ownerId]);
   useEffect(() => {
     const abort = scope.controller(); setLoading(true); setError('');
@@ -107,21 +115,33 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   }, [ownerId, workspaceId]);
   useEffect(() => {
     if (!snapshot || snapshot.workspace.id !== workspaceId) return;
-    updateTabs(state => pruneTabs(state, tab => tab.kind === 'table' ? snapshot.connections.some(row => row.id === tab.connectionId) : !tab.queryId || snapshot.queries.some(row => row.id === tab.queryId)));
+    updateTabs(state => pruneTabs(state, tab => tab.kind === 'table' || tab.kind === 'drill' || tab.kind === 'pivot' && !tab.viewId ? snapshot.connections.some(row => row.id === tab.connectionId) : tab.kind === 'pivot' || tab.kind === 'segment' ? true : !tab.queryId || snapshot.queries.some(row => row.id === tab.queryId)));
   }, [snapshot, workspaceId, updateTabs]);
+  // A view someone else deleted disappears from the list; its open tab goes with it.
+  useEffect(() => {
+    if (views.status !== 'ready') return;
+    const gone = (tab: DataTab) => (tab.kind === 'pivot' || tab.kind === 'segment') && !!tab.viewId && !views.byId(tab.viewId);
+    const current = tabsByWorkspace[workspaceId] || (workspaceId ? readTabs(ownerId, workspaceId) : null);
+    if (!current?.tabs.some(gone)) return;
+    updateTabs(state => pruneTabs(state, tab => !gone(tab)));
+    setNotice('A view you had open was deleted.');
+  }, [views.status, views.views]); // eslint-disable-line react-hooks/exhaustive-deps
   const queries = snapshot?.queries || [];
   const shownTabs = useMemo<DataTabsState>(() => {
-    const tabs = stored.tabs.filter(tab => tab.kind === 'overview' || tab.kind === 'table' && tab.connectionId === connectionId || tab.kind === 'query' && (!tab.queryId || queries.find(row => row.id === tab.queryId)?.connection_id === connectionId || !snapshot));
+    const viewHere = (tab: DataTab) => {const row = tab.viewId ? views.byId(tab.viewId) : undefined; return row ? row.connection_id === connectionId : views.status !== 'ready';};
+    const tabs = stored.tabs.filter(tab => tab.kind === 'overview' || (tab.kind === 'table' || tab.kind === 'drill') && tab.connectionId === connectionId || tab.kind === 'pivot' && (tab.viewId ? viewHere(tab) : tab.connectionId === connectionId) || tab.kind === 'segment' && viewHere(tab)
+      || tab.kind === 'query' && (!tab.queryId || queries.find(row => row.id === tab.queryId)?.connection_id === connectionId || !snapshot));
     return {tabs, activeId: tabs.some(tab => tab.id === stored.activeId) ? stored.activeId : 'overview'};
-  }, [stored, connectionId, queries, snapshot]);
-  const tabTitle = (tab: DataTab) => tab.kind === 'overview' ? 'Overview' : tab.kind === 'table' ? tableLabel({name: tab.table!, schema: tab.schema}) : tab.queryId ? queries.find(row => row.id === tab.queryId)?.name || 'Saved query' : 'New query';
+  }, [stored, connectionId, queries, snapshot, views.status, views.views]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tabTitle = (tab: DataTab) => tab.kind === 'overview' ? 'Overview' : tab.kind === 'drill' ? tab.title || 'Rows' : tab.kind === 'pivot' ? (tab.viewId ? views.nameOf(tab.viewId) || 'Pivot' : 'New pivot on ' + tableLabel({name: tab.table!, schema: tab.schema})) : tab.kind === 'segment' ? (tab.viewId && views.nameOf(tab.viewId)) || 'Segment' : tab.kind === 'table' ? tableLabel({name: tab.table!, schema: tab.schema}) : tab.queryId ? queries.find(row => row.id === tab.queryId)?.name || 'Saved query' : 'New query';
   const showDatabase = (tab?: DataTab) => {
+    setNotice('');
     if (tab) updateTabs(state => openTab(state, tab));
     setSelection(previous => ({...previous, view: 'database'}));
     onNavigate?.();
   };
 
-  function selectWorkspace(id: string) {setError(''); setSnapshot(null); setSelection(value => ({...value, workspaceId: id, connectionId: ''})); setQueryDraft(null); setActiveQueryId(''); setCopilot(false);}
+  function selectWorkspace(id: string) {setNotice(''); setError(''); setSnapshot(null); setSelection(value => ({...value, workspaceId: id, connectionId: ''})); setQueryDraft(null); setActiveQueryId(''); setCopilot(false);}
   function openDialog(value: 'create' | 'rename' | 'archive') {setName(value === 'create' ? '' : currentWorkspace?.name || ''); setDialogError(''); setDialog(value);}
   async function saveWorkspace() {
     if (flight.current) return;
@@ -169,6 +189,29 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     setFocusRequest(previous => ({tabId: target!, n: previous.n + 1}));
   }
   const activeKind = shownTabs.tabs.find(tab => tab.id === shownTabs.activeId)?.kind, advancedShown = writable && advancedOn && activeKind === 'query' && selection.view === 'database';
+  function openPivotDraft(table: SchemaTable, segmentId?: string) {
+    draftCounter.current += 1;
+    showDatabase({id: pivotDraftTabId(connectionId, tableKey(table), draftCounter.current), kind: 'pivot', connectionId, table: table.name, ...(table.schema ? {schema: table.schema} : {}), ...(segmentId ? {segmentId} : {})});
+  }
+  const openPivot = (row: ViewSummary) => showDatabase({id: pivotViewTabId(row.id), kind: 'pivot', viewId: row.id, connectionId: row.connection_id});
+  const openSegment = (row: Pick<ViewSummary, 'id'>) => showDatabase({id: segmentTabId(row.id), kind: 'segment', viewId: row.id});
+  const openUse = (use: ViewUse | Pick<ViewSummary, 'id' | 'kind'>) => {if (use.kind === 'pivot') showDatabase({id: pivotViewTabId(use.id), kind: 'pivot', viewId: use.id}); else if (use.kind === 'segment') openSegment(use);};
+  function useForPivot(segment: ViewDetail) {
+    draftCounter.current += 1;
+    showDatabase({id: pivotDraftTabId(segment.connection_id, segment.spec.from.table, draftCounter.current), kind: 'pivot', connectionId: segment.connection_id, table: segment.spec.from.table, segmentId: segment.id});
+  }
+  function openDrill(spec: QuerySpec, title: string, note?: string) {
+    draftCounter.current += 1;
+    showDatabase({id: drillTabId(draftCounter.current), kind: 'drill', connectionId, table: spec.from.table, spec, title, ...(note ? {note} : {})});
+  }
+  function pivotSaved(detail: ViewDetail, fromTabId: string) {
+    updateTabs(state => openTab(fromTabId.startsWith('pivot:new:') ? closeTab(state, fromTabId) : state, {id: pivotViewTabId(detail.id), kind: 'pivot', viewId: detail.id, connectionId: detail.connection_id}));
+    setNotice('Saved pivot ' + detail.name + '.');
+  }
+  function viewArchived(id: string, kind: 'pivot' | 'segment') {
+    updateTabs(state => closeTab(state, kind === 'pivot' ? pivotViewTabId(id) : segmentTabId(id)));
+    setNotice(kind === 'pivot' ? 'Pivot deleted.' : 'Segment deleted.');
+  }
   function openTable(table: SchemaTable) {showDatabase({id: tableTabId(connectionId, table.name, table.schema), kind: 'table', connectionId, table: table.name, ...(table.schema ? {schema: table.schema} : {})});}
   function combineTable(table: SchemaTable) {
     openTable(table);
@@ -177,9 +220,9 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
 
   const reports = useMemo(() => named(snapshot?.reports || []), [snapshot]), dashboards = useMemo(() => named(snapshot?.dashboards || []), [snapshot]);
   const nav = <DataNavigation loading={loading} workspaces={bootstrap?.workspaces || []} workspaceId={workspaceId} workspaceBusy={busy} onWorkspace={selectWorkspace} onCreateWorkspace={() => openDialog('create')}
-    role={role} connections={snapshot?.connections || []} connectionId={connectionId} onConnection={id => {setSelection(previous => ({...previous, connectionId: id})); onNavigate?.();}} onConnect={() => setSourceDialog({open: true})}
+    role={role} connections={snapshot?.connections || []} connectionId={connectionId} onConnection={id => {setNotice(''); setSelection(previous => ({...previous, connectionId: id})); onNavigate?.();}} onConnect={() => setSourceDialog({open: true})}
     source={controller} queries={queries} reports={reports} dashboards={dashboards} view={selection.view} activeTabId={shownTabs.activeId}
-    onOpenOverview={() => {updateTabs(state => selectTab(state, 'overview')); showDatabase();}} onOpenTable={openTable} onOpenQuery={openSavedQuery}
+    onOpenOverview={() => {updateTabs(state => selectTab(state, 'overview')); showDatabase();}} onOpenTable={openTable} onOpenQuery={openSavedQuery} views={viewsEnabled ? views : undefined} onOpenPivot={openPivot} onOpenSegment={openSegment} onNewPivot={table => openPivotDraft(table)}
     onNewQuery={() => {if (writable) setAdvanced(true); showDatabase({id: queryTabId(), kind: 'query'});}} onOpenView={view => {setSelection(previous => ({...previous, view})); onNavigate?.();}}/>;
   const navigation = navigationHost === undefined ? <nav className="data-navigation-inline" aria-label="Data navigation">{nav}</nav> : navigationHost ? createPortal(nav, navigationHost) : null;
 
@@ -202,8 +245,16 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   function panel(tab: DataTab, active: boolean) {
     if (!snapshot) return null;
     if (tab.kind === 'overview') return <TablesOverview workspaceId={workspaceId} ownerId={ownerId} role={role} hasConnections={snapshot.connections.length > 0} source={source} engine={engine} controller={controller}
-      canEditSource={writable && (!source?.created_by || source.created_by === ownerId)} onConnect={() => setSourceDialog({open: true})} onEditSource={() => setSourceDialog({open: true, record: source})} onArchiveSource={() => setArchiveSource(source)} onOpenTable={openTable} onCombineTable={writable ? combineTable : undefined}/>;
-    if (tab.kind === 'table') return <TableTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))} onOpenAdvanced={writable ? openAdvanced : undefined} combineRequest={combineRequest.tabId === tab.id ? combineRequest.n : 0}/>;
+      canEditSource={writable && (!source?.created_by || source.created_by === ownerId)} onConnect={() => setSourceDialog({open: true})} onEditSource={() => setSourceDialog({open: true, record: source})} onArchiveSource={() => setArchiveSource(source)} onOpenTable={openTable} onCombineTable={writable ? combineTable : undefined} onPivotTable={writable && viewsEnabled ? table => openPivotDraft(table) : undefined}/>;
+    const engineCanLoad = !!engine?.ready && !!engine.capabilities.schema, closeThis = () => updateTabs(state => closeTab(state, tab.id));
+    if (tab.kind === 'table') return <TableTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={engineCanLoad} onClose={closeThis} onOpenAdvanced={writable ? openAdvanced : undefined} combineRequest={combineRequest.tabId === tab.id ? combineRequest.n : 0}
+      views={viewsEnabled ? views : undefined} canSave={writable && viewsEnabled}/>;
+    if (tab.kind === 'drill') return <TableTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={engineCanLoad} onClose={closeThis}
+      views={viewsEnabled ? views : undefined} seed={tab.spec} subtitle={tab.note || 'The rows behind this number. Changes here do not change the original.'}/>;
+    if (tab.kind === 'pivot') return <PivotTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} tab={tab} label={tabTitle(tab)} controller={controller} engineCanLoad={engineCanLoad} views={views} canEdit={writable}
+      onClose={closeThis} onOpenAdvanced={writable ? openAdvanced : undefined} onSaved={pivotSaved} onArchived={id => viewArchived(id, 'pivot')} onDrill={openDrill}/>;
+    if (tab.kind === 'segment') return <SegmentTab key={tab.id} workspaceId={workspaceId} connectionId={connectionId} tab={tab} label={tabTitle(tab)} controller={controller} views={views} canEdit={writable}
+      onClose={closeThis} onArchived={id => viewArchived(id, 'segment')} onDrill={openDrill} onOpenView={openUse} onUseForPivot={useForPivot}/>;
     const retainedKey = workspaceId + ':' + tab.id;
     return <DatabaseStudio key={tab.id} ownerId={ownerId} workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} engines={engines} role={role} connectionId={connectionId}
       onConnectionChange={id => setSelection(previous => ({...previous, connectionId: id}))} onRefresh={requestRefresh} draft={queryDraft?.tabId === tab.id ? queryDraft.draft : null} onDraftConsumed={() => setQueryDraft(null)}
@@ -216,7 +267,7 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   else if (!workspaceId) content = <>{plainHeader('Data')}{banner}<div className="data-empty"><h2>Your data, together</h2><p>Create a workspace to connect a database and build reports with your team.</p><Button onClick={() => openDialog('create')}>Create workspace</Button></div></>;
   else if (!snapshot) content = <>{plainHeader('Data')}{banner}{error ? null : <p className="data-loading" role="status">Opening workspace…</p>}</>;
   else if (selection.view === 'database') content = <DataTabs state={shownTabs} title={tabTitle} actions={actions} banner={banner}
-    onSelect={id => updateTabs(state => selectTab(state, id))} onClose={id => updateTabs(state => closeTab(state, id))} panel={panel}/>;
+    onSelect={id => {setNotice(''); updateTabs(state => selectTab(state, id));}} onClose={id => {setNotice(''); updateTabs(state => closeTab(state, id));}} panel={panel}/>;
   else content = <>{plainHeader(viewTitle[selection.view as 'bi' | 'team'])}{banner}<div className="data-content" key={workspaceId}>
     {selection.view === 'bi' && <BIStudio workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} role={role} active onOpenQuery={openQuery} onRefresh={requestRefresh}/>}
     {selection.view === 'team' && <TeamSettings workspaceId={workspaceId} members={snapshot.members} role={role} ownerId={ownerId} onRefresh={requestRefresh}/>}

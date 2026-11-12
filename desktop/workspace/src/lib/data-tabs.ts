@@ -1,14 +1,21 @@
+import type {QuerySpec} from './query-spec';
 /** Canvas tab model for Data Studio. Only identifiers are ever persisted: filters, SQL and results stay in memory. */
-export type DataTabKind = 'overview' | 'table' | 'query';
-export type DataTab = {id: string; kind: DataTabKind; connectionId?: string; table?: string; schema?: string; queryId?: string};
+export type DataTabKind = 'overview' | 'table' | 'query' | 'pivot' | 'segment' | 'drill';
+/** `viewId` is persisted. `title`, `spec` and `segmentId` live in memory only: drill specs, filters and labels never reach storage. */
+export type DataTab = {id: string; kind: DataTabKind; connectionId?: string; table?: string; schema?: string; queryId?: string; viewId?: string; title?: string; note?: string; spec?: QuerySpec; segmentId?: string};
 export type DataTabsState = {tabs: DataTab[]; activeId: string};
 
 export const OVERVIEW_TAB: DataTab = {id: 'overview', kind: 'overview'};
 export const MAX_DATA_TABS = 24;
-const PERSISTED_KEYS = ['id', 'kind', 'connectionId', 'table', 'schema', 'queryId'] as const;
+const PERSISTED_KEYS = ['id', 'kind', 'connectionId', 'table', 'schema', 'queryId', 'viewId'] as const;
 
 export const tableTabId = (connectionId: string, table: string, schema?: string) => 'table:' + connectionId + ':' + (schema ? schema + '.' : '') + table;
 export const queryTabId = (queryId?: string) => 'query:' + (queryId || 'new');
+export const pivotViewTabId = (viewId: string) => 'pivot:view:' + viewId;
+export const segmentTabId = (viewId: string) => 'segment:view:' + viewId;
+export const pivotDraftTabId = (connectionId: string, tableKey: string, n: number) => 'pivot:new:' + connectionId + ':' + tableKey + ':' + n;
+export const drillTabId = (n: number) => 'drill:' + n;
+const DRAFT_ID = /^pivot:new:[^:]+:.+:\d+$/;
 export const initialTabs = (): DataTabsState => ({tabs: [{...OVERVIEW_TAB}], activeId: OVERVIEW_TAB.id});
 
 export function openTab(state: DataTabsState, tab: DataTab): DataTabsState {
@@ -53,6 +60,13 @@ function sanitize(value: unknown): DataTab | null {
     const queryId = typeof row.queryId === 'string' && row.queryId ? row.queryId : undefined;
     return id === queryTabId(queryId) ? (queryId ? {id, kind, queryId} : {id, kind}) : null;
   }
+  if ((kind === 'pivot' || kind === 'segment') && typeof row.viewId === 'string' && row.viewId && row.viewId.length < 200) {
+    return id === (kind === 'pivot' ? pivotViewTabId(row.viewId) : segmentTabId(row.viewId)) ? {id, kind, viewId: row.viewId} : null;
+  }
+  if (kind === 'pivot' && typeof row.connectionId === 'string' && typeof row.table === 'string' && row.table && DRAFT_ID.test(id) && id.startsWith('pivot:new:' + row.connectionId + ':')) {
+    const schema = typeof row.schema === 'string' && row.schema ? row.schema : undefined;
+    return {id, kind, connectionId: row.connectionId, table: row.table, ...(schema ? {schema} : {})};
+  }
   return null;
 }
 export function readTabs(ownerId: string | undefined, workspaceId: string): DataTabsState {
@@ -68,6 +82,7 @@ export function readTabs(ownerId: string | undefined, workspaceId: string): Data
   return {tabs, activeId: typeof activeId === 'string' && seen.has(activeId) ? activeId : OVERVIEW_TAB.id};
 }
 export function rememberTabs(ownerId: string | undefined, workspaceId: string, state: DataTabsState) {
-  const tabs = state.tabs.map(tab => Object.fromEntries(PERSISTED_KEYS.filter(key => tab[key] !== undefined).map(key => [key, tab[key]])));
-  try {localStorage.setItem(dataTabsKey(ownerId, workspaceId), JSON.stringify({tabs, activeId: state.activeId}));} catch {/* storage may be blocked */}
+  const tabs = state.tabs.filter(tab => tab.kind !== 'drill').map(tab => Object.fromEntries(PERSISTED_KEYS.filter(key => tab[key] !== undefined).map(key => [key, tab[key]])));
+  const activeId = state.tabs.find(tab => tab.id === state.activeId)?.kind === 'drill' ? OVERVIEW_TAB.id : state.activeId;
+  try {localStorage.setItem(dataTabsKey(ownerId, workspaceId), JSON.stringify({tabs, activeId}));} catch {/* storage may be blocked */}
 }
