@@ -1,0 +1,767 @@
+"""QuerySpec models and the pure compiler that turns a spec into one parameterised SELECT.
+
+The compiler does no I/O. It is given the introspected schema and a dialect, validates every
+name against that schema (exact match, no folding), renders identifiers through the dialect's
+quoting and binds every user value as `:pN`. Only `limit` and `offset` are rendered into the
+statement text, as validated integers. The caller still runs `validate_read` on the result.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import json
+import re
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal, Union
+
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+
+from termx.data.dialects.base import DATE_RE, MAX_FILTERS, Dialect
+
+MAX_PARAMETERS = 1000
+MAX_NESTING = 4
+
+ALIAS_PATTERN = r'^[A-Za-z_][A-Za-z0-9_]{0,31}$'
+Alias = Annotated[str, Field(pattern=ALIAS_PATTERN)]
+Name = Annotated[str, Field(min_length=1, max_length=128)]
+Label = Annotated[str, Field(min_length=1, max_length=60)]
+Scalar = Union[
+    Annotated[bool, Field(strict=True)],
+    Annotated[int, Field(strict=True)],
+    Annotated[float, Field(strict=True, allow_inf_nan=False)],
+    Annotated[str, Field(strict=True, max_length=500)]]
+Bucket = Literal['day', 'week', 'month', 'quarter', 'year']
+LeafOp = Literal['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'not_in',
+                 'contains', 'starts_with', 'is_null', 'not_null']
+
+
+class Spec(BaseModel):
+    model_config = ConfigDict(extra='forbid', frozen=True, populate_by_name=True)
+
+
+class TableRef(Spec):
+    table: Name
+    alias: Alias
+
+
+class ColumnRef(Spec):
+    table_alias: Alias
+    column: Name
+
+
+class JoinOn(Spec):
+    left: ColumnRef
+    right: ColumnRef
+
+
+class Join(Spec):
+    kind: Literal['inner', 'left']
+    table: Name
+    alias: Alias
+    on: list[JoinOn] = Field(min_length=1, max_length=4)
+
+
+class SelectColumn(Spec):
+    table_alias: Alias
+    column: Name
+    label: Label | None = None
+
+
+class FilterLeaf(Spec):
+    field: ColumnRef
+    op: LeafOp
+    value: Scalar | None = None
+    values: list[Scalar] | None = Field(default=None, max_length=200)
+
+    @model_validator(mode='after')
+    def _shape(self):
+        op, value, values = self.op, self.value, self.values
+        if op in ('eq', 'ne', 'gt', 'gte', 'lt', 'lte'):
+            ok = value is not None and values is None
+        elif op in ('contains', 'starts_with'):
+            ok = isinstance(value, str) and values is None
+        elif op in ('in', 'not_in'):
+            ok = value is None and values is not None and 1 <= len(values) <= 200
+        elif op == 'between':
+            ok = value is None and values is not None and len(values) == 2
+        else:
+            ok = value is None and values is None
+        if not ok:
+            raise ValueError(f"The '{op}' filter does not accept these values.")
+        return self
+
+
+def _filter_tag(value: Any) -> str:
+    op = value.get('op') if isinstance(value, dict) else getattr(value, 'op', None)
+    return 'group' if op in ('and', 'or') else 'leaf'
+
+
+class FilterGroup(Spec):
+    op: Literal['and', 'or']
+    items: list['FilterNode'] = Field(max_length=MAX_FILTERS)
+
+
+FilterNode = Annotated[Union[Annotated[FilterLeaf, Tag('leaf')], Annotated[FilterGroup, Tag('group')]],
+                       Discriminator(_filter_tag)]
+FilterGroup.model_rebuild()
+
+
+class GroupBy(Spec):
+    table_alias: Alias
+    column: Name
+    bucket: Bucket | None = None
+    label: Label | None = None
+
+
+class Aggregate(Spec):
+    fn: Literal['count', 'count_distinct', 'sum', 'avg', 'min', 'max']
+    table_alias: Alias | None = None
+    column: Name | None = None
+    label: Label | None = None
+
+    @model_validator(mode='after')
+    def _shape(self):
+        if (self.table_alias is None) != (self.column is None):
+            raise ValueError('Give both table_alias and column, or neither.')
+        if self.fn != 'count' and self.column is None:
+            raise ValueError(f"The '{self.fn}' aggregate needs a column.")
+        return self
+
+
+class ColumnSort(Spec):
+    table_alias: Alias
+    column: Name
+    direction: Literal['asc', 'desc'] = 'asc'
+
+
+class OutputSort(Spec):
+    output: Label
+    direction: Literal['asc', 'desc'] = 'asc'
+
+
+def _empty_filters() -> FilterGroup:
+    return FilterGroup(op='and', items=[])
+
+
+class QuerySpec(Spec):
+    version: Literal[1] = 1
+    source: str = Field(min_length=1, max_length=200)
+    from_: TableRef = Field(alias='from')
+    joins: list[Join] = Field(default_factory=list, max_length=4)
+    select: list[SelectColumn] = Field(default_factory=list, max_length=200)
+    filters: FilterGroup = Field(default_factory=_empty_filters)
+    group_by: list[GroupBy] = Field(default_factory=list, max_length=6)
+    aggregates: list[Aggregate] = Field(default_factory=list, max_length=12)
+    sort: list[Union[ColumnSort, OutputSort]] = Field(default_factory=list, max_length=4)
+    limit: int = Field(default=200, ge=1, le=1000, strict=True)
+    offset: int = Field(default=0, ge=0, le=1_000_000, strict=True)
+
+    @model_validator(mode='after')
+    def _filter_limits(self):
+        leaves = 0
+
+        def walk(group: FilterGroup, depth: int):
+            nonlocal leaves
+            if depth > MAX_NESTING:
+                raise ValueError(f'Filter groups can be nested at most {MAX_NESTING} levels deep.')
+            for item in group.items:
+                if isinstance(item, FilterGroup):
+                    if not item.items:
+                        raise ValueError('A nested filter group needs at least one filter.')
+                    walk(item, depth + 1)
+                else:
+                    leaves += 1
+                    if leaves > MAX_FILTERS:
+                        raise ValueError(f'At most {MAX_FILTERS} filters are allowed.')
+        walk(self.filters, 1)
+        return self
+
+
+# --- schema index ------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ColumnInfo:
+    name: str
+    kind: str
+    declared: str = ''
+    primary_key: bool = False
+
+
+@dataclass(frozen=True)
+class TableInfo:
+    name: str
+    schema: str | None
+    kind: str
+    columns: dict[str, ColumnInfo]
+    primary_key: tuple[str, ...]
+    foreign_keys: tuple[dict, ...] = ()
+    row_estimate: int | None = None
+    readable: bool = True
+
+
+class SchemaIndex:
+    """Case-sensitive lookup over the introspected tables of one source."""
+
+    def __init__(self, tables: dict[str, TableInfo]):
+        self.tables = tables
+
+    @classmethod
+    def from_schema(cls, schema: dict, dialect: Dialect) -> 'SchemaIndex':
+        tables: dict[str, TableInfo] = {}
+        for raw in schema.get('tables', []):
+            columns: dict[str, ColumnInfo] = {}
+            for column in raw.get('columns', []):
+                kind = column.get('value_kind') or dialect.classify_type(column.get('type') or '')
+                columns[column['name']] = ColumnInfo(column['name'], kind, str(column.get('type') or ''),
+                                                     bool(column.get('primary_key')))
+            tables[raw['name']] = TableInfo(
+                raw['name'], raw.get('schema'), raw.get('kind') or 'table', columns,
+                tuple(name for name, info in columns.items() if info.primary_key),
+                tuple(raw.get('foreign_keys') or ()), raw.get('row_estimate'), raw.get('readable', True) is not False)
+        return cls(tables)
+
+
+# --- compiler output ---------------------------------------------------------------------
+@dataclass(frozen=True)
+class SpecError:
+    code: str
+    path: str
+    message: str
+
+    def as_dict(self) -> dict:
+        return {'code': self.code, 'path': self.path, 'message': self.message}
+
+
+_SECTIONS = ('from', 'joins', 'select', 'filters', 'group_by', 'aggregates', 'sort')
+
+
+def _section(error: SpecError) -> int:
+    head = re.split(r'[.\[]', error.path, maxsplit=1)[0]
+    return _SECTIONS.index(head) if head in _SECTIONS else len(_SECTIONS)
+
+
+class SpecErrors(Exception):
+    """Every problem found, ordered like the spec (stable within a section)."""
+    def __init__(self, errors: list[SpecError]):
+        self.errors = sorted(errors, key=_section)
+        super().__init__(self.errors[0].message if self.errors else 'Invalid query.')
+
+
+@dataclass(frozen=True)
+class CompiledQuery:
+    sql: str
+    parameters: dict[str, object]
+    columns: list[dict]
+    limit: int
+    offset: int
+    fetch_limit: int
+    joins: list[dict]
+    warnings: list[dict]
+    schema_hash: str
+
+
+_FAN_OUT_MESSAGE = 'Each {left} row can match many {table} rows, so counts and totals may repeat.'
+_NO_PK_MESSAGE = '{table} has no primary key, so matching rows cannot be guaranteed to be unique.'
+_AGGREGATE_LABELS = {'count': 'Number of {}', 'count_distinct': 'Unique {}', 'sum': 'Total {}',
+                     'avg': 'Average {}', 'min': 'Smallest {}', 'max': 'Largest {}'}
+_NUMERIC = {'integer', 'number'}
+_OPAQUE = {'json', 'binary'}   # no equality or ordering on every engine
+
+
+def _bad_name(name: str) -> bool:
+    return not isinstance(name, str) or ':' in name or any(ord(c) < 32 or ord(c) == 127 for c in name)
+
+
+def _compatible(dialect: Dialect, a: str, b: str) -> bool:
+    if a in _OPAQUE or b in _OPAQUE:
+        return False
+    if dialect.loose_typing and 'other' in (a, b):
+        return True   # SQLite columns without a declared type hold any storage class
+    groups = [{'integer', 'number'}, {'date', 'datetime'}]
+    if a == b:
+        return True
+    return any(a in g and b in g for g in groups)
+
+
+@dataclass
+class _Out:
+    label: str
+    expr: str
+    kind: str
+    role: str
+    table_alias: str | None = None
+    column: str | None = None
+    fn: str | None = None
+    bucket: str | None = None
+    label_path: str = 'select'
+    explicit: bool = False
+
+    def public(self) -> dict:
+        body: dict = {'label': self.label, 'value_kind': self.kind, 'role': self.role}
+        for key in ('table_alias', 'column', 'fn', 'bucket'):
+            if getattr(self, key) is not None:
+                body[key] = getattr(self, key)
+        return body
+
+
+class _Compiler:
+    def __init__(self, spec: QuerySpec, index: SchemaIndex, dialect: Dialect):
+        self.spec, self.index, self.d = spec, index, dialect
+        self.errors: list[SpecError] = []
+        self.params: dict[str, object] = {}
+        self.aliases: dict[str, TableInfo] = {}     # exact alias -> table
+        self.order: list[str] = []                  # aliases in FROM/JOIN order
+        self.used: dict[str, dict[str, str]] = {}   # table -> column -> kind, for the schema hash
+        self.warnings: list[dict] = []
+        self._too_many = False
+
+    # --- helpers -------------------------------------------------------------------------
+    def err(self, code: str, path: str, message: str) -> None:
+        self.errors.append(SpecError(code, path, message))
+
+    def use(self, table: TableInfo, column: ColumnInfo | None = None) -> None:
+        entry = self.used.setdefault(table.name, {})
+        if column is not None:
+            entry[column.name] = column.kind
+
+    def bind(self, value: object) -> str:
+        name = f'p{len(self.params) + 1}'
+        if len(self.params) >= MAX_PARAMETERS:
+            if not self._too_many:
+                self._too_many = True
+                self.err('too_many_values', 'filters', f'A query can bind at most {MAX_PARAMETERS} values.')
+            return self.d.param('p1')
+        self.params[name] = value
+        return self.d.param(name)
+
+    def resolve_table(self, name: str, path: str) -> TableInfo | None:
+        table = self.index.tables.get(name)
+        if table is None:
+            self.err('unknown_table', path, f"Table '{name}' does not exist in this source.")
+            return None
+        if not table.readable:
+            self.err('unknown_table', path, f"Table '{name}' cannot be read under the read-only policy.")
+            return None
+        if _bad_name(name):
+            self.err('unsupported_name', path, f"Table '{name}' has a name the query builder cannot use. Use Advanced SQL.")
+            return None
+        return table
+
+    def resolve_column(self, ref_alias: str, column: str, path: str, alias_path: str | None = None):
+        """Return (alias, table, column) or None after recording an error."""
+        table = self.aliases.get(ref_alias)
+        if table is None:
+            self.err('unknown_alias', alias_path or path.rsplit('.', 1)[0] + '.table_alias',
+                     f"No table is combined as '{ref_alias}'.")
+            return None
+        info = table.columns.get(column)
+        if info is None:
+            self.err('unknown_column', path, f"Column '{column}' does not exist in table '{table.name}'.")
+            return None
+        if _bad_name(column):
+            self.err('unsupported_name', path, f"Column '{column}' has a name the query builder cannot use. Use Advanced SQL.")
+            return None
+        self.use(table, info)
+        return ref_alias, table, info
+
+    def col_sql(self, alias: str, column: str) -> str:
+        return f'{self.d.quote(alias)}.{self.d.quote(column)}'
+
+    # --- phase 1: tables and joins ------------------------------------------------------
+    def tables_and_joins(self) -> tuple[list[str], list[dict]]:
+        spec, lines, infos = self.spec, [], []
+        seen: set[str] = set()
+
+        def claim(alias: str, path: str) -> bool:
+            if alias.lower() in seen:
+                self.err('duplicate_alias', path, f"The name '{alias}' is used for more than one table.")
+                return False
+            seen.add(alias.lower())
+            return True
+
+        base = self.resolve_table(spec.from_.table, 'from.table')
+        base_ok = claim(spec.from_.alias, 'from.alias')
+        if base is not None and base_ok:
+            self.aliases[spec.from_.alias] = base
+            self.order.append(spec.from_.alias)
+            self.use(base)
+            lines.append('FROM ' + self.d.table_ref(base.schema, base.name, spec.from_.alias))
+        for i, join in enumerate(spec.joins):
+            path = f'joins[{i}]'
+            table = self.resolve_table(join.table, path + '.table')
+            claimed = claim(join.alias, path + '.alias')
+            earlier = list(self.order)
+            if table is not None and claimed:
+                self.aliases[join.alias] = table
+                self.order.append(join.alias)
+                self.use(table)
+            conditions, right_columns, left_table = [], set(), None
+            for j, pair in enumerate(join.on):
+                p = f'{path}.on[{j}]'
+                if pair.right.table_alias != join.alias:
+                    self.err('bad_join', p + '.right.table_alias', f"The right side of a match must be a column of '{join.alias}'.")
+                    continue
+                if pair.left.table_alias not in earlier:
+                    self.err('bad_join', p + '.left.table_alias',
+                             'The left side of a match must be a column of the base table or a table combined before this one.')
+                    continue
+                left = self.resolve_column(pair.left.table_alias, pair.left.column, p + '.left.column', p + '.left.table_alias')
+                right = self.resolve_column(pair.right.table_alias, pair.right.column, p + '.right.column', p + '.right.table_alias') \
+                    if table is not None and claimed else None
+                if left is None or right is None:
+                    continue
+                if not _compatible(self.d, left[2].kind, right[2].kind):
+                    self.err('join_type_mismatch', p, f"'{left[1].name}.{left[2].name}' ({left[2].kind}) cannot be matched "
+                             f"with '{right[1].name}.{right[2].name}' ({right[2].kind}).")
+                    continue
+                conditions.append(f'{self.col_sql(*(pair.left.table_alias, pair.left.column))} = '
+                                  f'{self.col_sql(pair.right.table_alias, pair.right.column)}')
+                right_columns.add(pair.right.column)
+                left_table = left_table or left[1].name
+            if table is None or not claimed or len(conditions) != len(join.on):
+                continue
+            keyword = 'INNER JOIN' if join.kind == 'inner' else 'LEFT JOIN'
+            lines.append(f'{keyword} {self.d.table_ref(table.schema, table.name, join.alias)} ON ' + ' AND '.join(conditions))
+            if table.primary_key and set(table.primary_key) <= right_columns:
+                info = {'alias': join.alias, 'fan_out': 'none', 'message': None}
+            elif not table.primary_key:
+                info = {'alias': join.alias, 'fan_out': 'unknown', 'message': _NO_PK_MESSAGE.format(table=table.name)}
+            else:
+                info = {'alias': join.alias, 'fan_out': 'many',
+                        'message': _FAN_OUT_MESSAGE.format(left=left_table, table=table.name)}
+            infos.append(info)
+            for key in table.primary_key:
+                self.use(table, table.columns[key])
+        return lines, infos
+
+    # --- phase 2: outputs ----------------------------------------------------------------
+    def label_ok(self, label: str, path: str) -> bool:
+        if _bad_name(label):
+            self.err('unsupported_name', path, 'A result name cannot contain a colon or control characters.')
+            return False
+        return True
+
+    def outputs(self) -> tuple[list[_Out], bool]:
+        spec = self.spec
+        summary = bool(spec.group_by or spec.aggregates)
+        outs: list[_Out] = []
+        if summary:
+            if spec.select:
+                self.err('summary_conflict', 'select', 'Choose either columns to show or a summary, not both.')
+            for i, group in enumerate(spec.group_by):
+                path = f'group_by[{i}]'
+                found = self.resolve_column(group.table_alias, group.column, path + '.column', path + '.table_alias')
+                if found is None:
+                    continue
+                alias, table, info = found
+                expr = self.col_sql(alias, info.name)
+                kind = info.kind
+                if group.bucket:
+                    if info.kind not in self.d.bucketable_kinds:
+                        self.err('bucket_requires_date', path + '.bucket',
+                                 f"'{info.name}' is not a date column, so it cannot be grouped by {group.bucket}.")
+                        continue
+                    if info.kind in ('text', 'other'):
+                        self.warnings.append({'code': 'text_date', 'message':
+                            f"'{info.name}' holds text, so dates are read from that text. Values that are not ISO dates appear empty."})
+                    expr = self.d.date_bucket(expr, info.kind, group.bucket)
+                    kind = 'text'
+                elif info.kind == 'json':
+                    self.err('bad_type', path + '.column', f"'{info.name}' holds JSON, which cannot be grouped.")
+                    continue
+                default = f'{info.name} by {group.bucket}' if group.bucket else info.name
+                outs.append(_Out(group.label or default, expr, kind, 'group', alias, info.name, bucket=group.bucket,
+                                 label_path=path + '.label', explicit=bool(group.label)))
+            for i, agg in enumerate(spec.aggregates):
+                out = self.aggregate(i, agg)
+                if out is not None:
+                    outs.append(out)
+        else:
+            columns = [(f'select[{i}]', c) for i, c in enumerate(spec.select)]
+            if columns:
+                for path, c in columns:
+                    found = self.resolve_column(c.table_alias, c.column, path + '.column', path + '.table_alias')
+                    if found is None:
+                        continue
+                    alias, table, info = found
+                    outs.append(_Out(c.label or info.name, self.col_sql(alias, info.name), info.kind, 'column',
+                                     alias, info.name, label_path=path + '.label', explicit=bool(c.label)))
+            elif self.order:
+                for alias in self.order:
+                    table = self.aliases[alias]
+                    for info in table.columns.values():
+                        if _bad_name(info.name):
+                            continue   # only reported when the spec names the column
+                        self.use(table, info)
+                        outs.append(_Out(info.name, self.col_sql(alias, info.name), info.kind, 'column', alias, info.name))
+                if not outs:
+                    self.err('unknown_column', 'select', 'There are no readable columns to show.')
+        self.finish_labels(outs)
+        return outs, summary
+
+    def aggregate(self, i: int, agg: Aggregate) -> _Out | None:
+        path = f'aggregates[{i}]'
+        expr_col, info, alias = None, None, None
+        if agg.column is not None:
+            found = self.resolve_column(agg.table_alias, agg.column, path + '.column', path + '.table_alias')
+            if found is None:
+                return None
+            alias, _, info = found
+            expr_col = self.col_sql(alias, info.name)
+            if agg.fn in ('sum', 'avg') and info.kind not in _NUMERIC:
+                self.err('bad_type', path + '.column', f"'{info.name}' is not a number column, so it cannot be "
+                         f"{'totalled' if agg.fn == 'sum' else 'averaged'}.")
+                return None
+            if agg.fn in ('min', 'max') and info.kind not in self.d.orderable_kinds:
+                self.err('bad_type', path + '.column', f"'{info.name}' cannot be used for the {'smallest' if agg.fn == 'min' else 'largest'} value.")
+                return None
+            if agg.fn == 'count_distinct' and info.kind == 'json':
+                self.err('bad_type', path + '.column', f"'{info.name}' holds JSON, which has no unique values.")
+                return None
+        if agg.fn == 'count':
+            expr = f'COUNT({expr_col or "*"})'
+        elif agg.fn == 'count_distinct':
+            expr = self.d.count_distinct(expr_col)
+        else:
+            expr = f'{agg.fn.upper()}({expr_col})'
+        kind = {'count': 'integer', 'count_distinct': 'integer', 'avg': 'number'}.get(agg.fn) \
+            or (info.kind if agg.fn in ('min', 'max') else ('integer' if info.kind == 'integer' else 'number'))
+        if agg.label:
+            label = agg.label
+        elif info is None:
+            label = 'Number of rows'
+        else:
+            label = _AGGREGATE_LABELS[agg.fn].format(info.name)
+        return _Out(label, expr, kind, 'aggregate', alias, info.name if info else None, fn=agg.fn,
+                    label_path=path + '.label', explicit=bool(agg.label))
+
+    def finish_labels(self, outs: list[_Out]) -> None:
+        # A default label that collides with another default becomes "alias.column".
+        counts: dict[str, int] = {}
+        for out in outs:
+            counts[out.label.lower()] = counts.get(out.label.lower(), 0) + 1
+        for out in outs:
+            if not out.explicit and counts[out.label.lower()] > 1 and out.table_alias and out.column and out.role == 'column':
+                out.label = f'{out.table_alias}.{out.column}'
+        seen: dict[str, _Out] = {}
+        for out in outs:
+            path = out.label_path
+            if not self.label_ok(out.label, path):
+                continue
+            key = out.label.lower()
+            if key in seen:
+                self.err('duplicate_label', path, f"Two results are named '{out.label}'. Give one a different name.")
+            seen[key] = out
+
+    # --- phase 3: filters ----------------------------------------------------------------
+    def filters(self) -> str | None:
+        def group(node: FilterGroup, path: str, root: bool) -> str | None:
+            parts = []
+            for i, item in enumerate(node.items):
+                sub = f'{path}.items[{i}]'
+                text = group(item, sub, False) if isinstance(item, FilterGroup) else self.leaf(item, sub)
+                if text:
+                    parts.append(text)
+            if not parts:
+                return None
+            joined = f' {node.op.upper()} '.join(parts)
+            if len(parts) > 1 and not (root and node.op == 'and'):
+                return f'({joined})'
+            return joined
+        return group(self.spec.filters, 'filters', True)
+
+    def leaf(self, node: FilterLeaf, path: str) -> str | None:
+        ref = node.field
+        found = self.resolve_column(ref.table_alias, ref.column, path + '.field.column', path + '.field.table_alias')
+        if found is None:
+            return None
+        alias, _, info = found
+        x, kind, op, d = self.col_sql(alias, info.name), info.kind, node.op, self.d
+        name = info.name
+        if op == 'is_null':
+            return f'{x} IS NULL'
+        if op == 'not_null':
+            return f'{x} IS NOT NULL'
+        if op in ('contains', 'starts_with'):
+            try:
+                text = d.coerce_param(node.value, 'text')
+            except ValueError as error:
+                return self.bad_value(path + '.value', name, error, node.value)
+            return d.text_match(x, kind, op, self.bind(d.like_pattern(text, op)))
+        if kind in _OPAQUE:
+            self.err('bad_operator', path + '.op', f"'{name}' holds {'JSON' if kind == 'json' else 'binary data'}. "
+                     'Filter it by whether it is empty, or by text it contains.')
+            return None
+        if op in ('gt', 'gte', 'lt', 'lte', 'between') and kind not in d.orderable_kinds:
+            self.err('bad_operator', path + '.op', f"'{name}' is a {kind} column, which has no before or after.")
+            return None
+        raw = list(node.values) if node.values is not None else [node.value]
+        values, failed = [], False
+        for k, item in enumerate(raw):
+            where = path + (f'.values[{k}]' if node.values is not None else '.value')
+            try:
+                values.append(d.coerce_param(item, kind))
+            except ValueError as error:
+                self.bad_value(where, name, error, item)
+                failed = True
+        if failed:
+            return None
+        day_only = kind == 'datetime'
+        if op in ('in', 'not_in'):
+            if day_only and any(isinstance(v, str) and DATE_RE.match(v) for v in values):
+                return self.day_list(x, name, values, op == 'not_in', path)
+            return d.in_list(x, [self.bind(v) for v in values], op == 'not_in')
+        if op == 'between':
+            low, high = values
+            high_whole_day = day_only and isinstance(high, str) and bool(DATE_RE.match(high))
+            if high_whole_day:
+                high = self.next_day(high, path + '.values[1]', name)
+                if high is None:
+                    return None
+            return d.between(x, self.bind(low), self.bind(high), high_exclusive=high_whole_day)
+        value = values[0]
+        whole_day = day_only and isinstance(value, str) and bool(DATE_RE.match(value))
+        if whole_day:
+            nxt = self.next_day(value, path + '.value', name)
+            if nxt is None:
+                return None
+            if op == 'eq':
+                return f'({x} >= {self.bind(value)} AND {x} < {self.bind(nxt)})'
+            if op == 'ne':
+                return f'({x} < {self.bind(value)} OR {x} >= {self.bind(nxt)} OR {x} IS NULL)'
+            if op == 'gt':
+                return f'{x} >= {self.bind(nxt)}'
+            if op == 'gte':
+                return f'{x} >= {self.bind(value)}'
+            if op == 'lt':
+                return f'{x} < {self.bind(value)}'
+            return f'{x} < {self.bind(nxt)}'   # lte
+        if op == 'eq':
+            return f'{x} = {self.bind(value)}'
+        if op == 'ne':
+            return f'({x} <> {self.bind(value)} OR {x} IS NULL)'
+        symbol = {'gt': '>', 'gte': '>=', 'lt': '<', 'lte': '<='}[op]
+        return f'{x} {symbol} {self.bind(value)}'
+
+    def day_list(self, x: str, name: str, values: list, negate: bool, path: str) -> str | None:
+        parts = []
+        for v in values:
+            if isinstance(v, str) and DATE_RE.match(v):
+                nxt = self.next_day(v, path + '.values', name)
+                if nxt is None:
+                    return None
+                parts.append(f'({x} >= {self.bind(v)} AND {x} < {self.bind(nxt)})')
+            else:
+                parts.append(f'{x} = {self.bind(v)}')
+        joined = ' OR '.join(parts)
+        return f'(NOT ({joined}) OR {x} IS NULL)' if negate else (f'({joined})' if len(parts) > 1 else joined)
+
+    def next_day(self, value: str, path: str, name: str) -> str | None:
+        try:
+            return (dt.date.fromisoformat(value) + dt.timedelta(days=1)).isoformat()
+        except (ValueError, OverflowError):
+            self.err('bad_value', path, f"'{name}': that date has no following day.")
+            return None
+
+    def bad_value(self, path: str, name: str, error: Exception, value: object) -> None:
+        shown = str(value)
+        shown = shown if len(shown) <= 40 else shown[:37] + '...'
+        self.err('bad_value', path, f"{name}: {error} ('{shown}')")
+
+    # --- phase 4: sort -------------------------------------------------------------------
+    def sorting(self, outs: list[_Out], summary: bool) -> list[tuple[str, str]]:
+        items: list[tuple[str, str]] = []   # (expr, direction)
+        by_label = {o.label: o for o in outs}
+        for i, key in enumerate(self.spec.sort):
+            path = f'sort[{i}]'
+            if isinstance(key, OutputSort):
+                out = by_label.get(key.output)
+                if out is None:
+                    self.err('bad_sort', path + '.output', f"'{key.output}' is not one of the results, so it cannot be sorted.")
+                    continue
+                if out.kind in _OPAQUE:
+                    self.err('bad_sort', path + '.output', f"'{key.output}' cannot be sorted.")
+                    continue
+                items.append((out.expr, key.direction))
+                continue
+            found = self.resolve_column(key.table_alias, key.column, path + '.column', path + '.table_alias')
+            if found is None:
+                continue
+            alias, _, info = found
+            if info.kind in _OPAQUE:
+                self.err('bad_sort', path + '.column', f"'{info.name}' cannot be sorted.")
+                continue
+            if summary:
+                match = next((o for o in outs if o.role == 'group' and (o.table_alias, o.column) == (alias, info.name)), None)
+                if match is None:
+                    self.err('bad_sort', path + '.column', 'A summary can be sorted by a column it groups by, or by one of its results.')
+                    continue
+                items.append((match.expr, key.direction))
+            else:
+                items.append((self.col_sql(alias, info.name), key.direction))
+        return items
+
+    def tie_breakers(self, outs: list[_Out], summary: bool, joins: list[dict]) -> list[str]:
+        if summary:
+            return [o.expr for o in outs if o.role == 'group']
+        base = self.aliases.get(self.spec.from_.alias)
+        if base is None:
+            return []
+        exprs = []
+        if base.primary_key:
+            exprs += [self.col_sql(self.spec.from_.alias, c) for c in base.primary_key]
+        else:
+            exprs += [o.expr for o in outs if o.kind not in _OPAQUE]
+        for join in joins:
+            if join['fan_out'] == 'none':
+                continue
+            table = self.aliases.get(join['alias'])
+            if table is not None and table.primary_key:
+                exprs += [self.col_sql(join['alias'], c) for c in table.primary_key]
+            elif table is not None:
+                exprs += [o.expr for o in outs if o.kind not in _OPAQUE and o.table_alias == join['alias']]
+        return exprs
+
+    # --- assembly ------------------------------------------------------------------------
+    def build(self) -> CompiledQuery:
+        spec, d = self.spec, self.d
+        from_lines, join_infos = self.tables_and_joins()
+        outs, summary = self.outputs()
+        where = self.filters()
+        order_items = self.sorting(outs, summary)
+        if self.errors:
+            raise SpecErrors(self.errors)
+        # fan-out warnings only matter when something is being counted or totalled
+        if spec.aggregates:
+            for info in join_infos:
+                if info['fan_out'] == 'many':
+                    self.warnings.append({'code': 'fan_out', 'message': info['message'], 'join_alias': info['alias']})
+        select = ', '.join(f'{o.expr} AS {d.quote(o.label)}' for o in outs)
+        lines = ['SELECT ' + select, *from_lines]
+        if where:
+            lines.append('WHERE ' + where)
+        if summary and spec.group_by:
+            lines.append('GROUP BY ' + ', '.join(o.expr for o in outs if o.role == 'group'))
+        ordering, seen = [], set()
+        for expr, direction in order_items:
+            if expr not in seen:
+                seen.add(expr)
+                ordering.append(d.order_item(expr, direction))
+        for expr in self.tie_breakers(outs, summary, join_infos):
+            if expr not in seen:
+                seen.add(expr)
+                ordering.append(d.order_item(expr, 'asc'))
+        if ordering:
+            lines.append('ORDER BY ' + ', '.join(ordering))
+        fetch_limit = spec.limit + 1
+        lines.append(d.limit_offset(fetch_limit, spec.offset))
+        if self.errors:
+            raise SpecErrors(self.errors)
+        digest = hashlib.sha256(json.dumps(
+            {t: dict(sorted(c.items())) for t, c in sorted(self.used.items())}, sort_keys=True).encode()).hexdigest()[:16]
+        return CompiledQuery('\n'.join(lines), dict(self.params), [o.public() for o in outs], spec.limit, spec.offset,
+                             fetch_limit, join_infos, self.warnings, digest)
+
+
+def compile_spec(spec: QuerySpec, schema: SchemaIndex, dialect: Dialect) -> CompiledQuery:
+    """Pure: no I/O, no clock. Raises SpecErrors listing every problem found."""
+    return _Compiler(spec, schema, dialect).build()

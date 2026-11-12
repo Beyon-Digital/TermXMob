@@ -1,0 +1,66 @@
+{
+  "request": {
+    "spec": {
+      "version": 1,
+      "source": "conn_01",
+      "from": {
+        "table": "orders",
+        "alias": "o"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "o",
+              "column": "id"
+            },
+            "op": "eq",
+            "value": 1
+          },
+          {
+            "field": {
+              "table_alias": "o",
+              "column": "amout"
+            },
+            "op": "gt",
+            "value": 100
+          }
+        ]
+      },
+      "group_by": [
+        {
+          "table_alias": "o",
+          "column": "status",
+          "bucket": "month"
+        },
+        {
+          "table_alias": "o",
+          "column": "id",
+          "bucket": "day"
+        }
+      ],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    }
+  },
+  "response": {
+    "ok": false,
+    "errors": [
+      {
+        "code": "unknown_column",
+        "path": "filters.items[1].field.column",
+        "message": "Column 'amout' does not exist in table 'orders'."
+      },
+      {
+        "code": "bucket_requires_date",
+        "path": "group_by[1].bucket",
+        "message": "'id' is not a date column, so it cannot be grouped by day."
+      }
+    ]
+  }
+}

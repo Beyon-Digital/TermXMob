@@ -1,0 +1,111 @@
+{
+  "request": {
+    "spec": {
+      "version": 1,
+      "source": "conn_01",
+      "from": {
+        "table": "orders",
+        "alias": "o"
+      },
+      "joins": [
+        {
+          "kind": "left",
+          "table": "order_items",
+          "alias": "i",
+          "on": [
+            {
+              "left": {
+                "table_alias": "o",
+                "column": "id"
+              },
+              "right": {
+                "table_alias": "i",
+                "column": "order_id"
+              }
+            }
+          ]
+        }
+      ],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": []
+      },
+      "group_by": [
+        {
+          "table_alias": "o",
+          "column": "ordered_at",
+          "bucket": "month",
+          "label": "Month"
+        }
+      ],
+      "aggregates": [
+        {
+          "fn": "sum",
+          "table_alias": "o",
+          "column": "amount",
+          "label": "Total amount"
+        },
+        {
+          "fn": "count"
+        }
+      ],
+      "sort": [
+        {
+          "output": "Month",
+          "direction": "asc"
+        }
+      ],
+      "limit": 24,
+      "offset": 0
+    }
+  },
+  "response": {
+    "ok": true,
+    "dialect": "sqlite",
+    "sql": "SELECT strftime('%Y-%m', \"o\".\"ordered_at\") AS \"Month\", SUM(\"o\".\"amount\") AS \"Total amount\", COUNT(*) AS \"Number of rows\"\nFROM \"orders\" AS \"o\"\nLEFT JOIN \"order_items\" AS \"i\" ON \"o\".\"id\" = \"i\".\"order_id\"\nGROUP BY strftime('%Y-%m', \"o\".\"ordered_at\")\nORDER BY strftime('%Y-%m', \"o\".\"ordered_at\") ASC NULLS LAST\nLIMIT 25 OFFSET 0",
+    "parameters": {},
+    "columns": [
+      {
+        "label": "Month",
+        "value_kind": "text",
+        "role": "group",
+        "table_alias": "o",
+        "column": "ordered_at",
+        "bucket": "month"
+      },
+      {
+        "label": "Total amount",
+        "value_kind": "number",
+        "role": "aggregate",
+        "table_alias": "o",
+        "column": "amount",
+        "fn": "sum"
+      },
+      {
+        "label": "Number of rows",
+        "value_kind": "integer",
+        "role": "aggregate",
+        "fn": "count"
+      }
+    ],
+    "limit": 24,
+    "offset": 0,
+    "fetch_limit": 25,
+    "joins": [
+      {
+        "alias": "i",
+        "fan_out": "many",
+        "message": "Each orders row can match many order_items rows, so counts and totals may repeat."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "fan_out",
+        "message": "Each orders row can match many order_items rows, so counts and totals may repeat.",
+        "join_alias": "i"
+      }
+    ],
+    "schema_hash": "871e6ef10902bd24"
+  }
+}

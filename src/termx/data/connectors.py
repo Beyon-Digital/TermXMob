@@ -38,7 +38,10 @@ json_extract json_extract_scalar json_value json_query json_type json_valid
 hex unhex quote unicode char typeof octet_length format printf
 power pow sqrt sign exp ln log log10 mod stddev stddev_pop stddev_samp variance
 var_pop var_samp bool_and bool_or every any_value percentile_cont percentile_disc
-filter array_size array_length cardinality'''.split())
+filter array_size array_length cardinality
+date_format quarter time_to_str ts_or_ds_to_timestamp and or'''.split())
+# `and`/`or` are how sqlglot names connectors; `time_to_str` and `ts_or_ds_to_timestamp`
+# are its canonical nodes for strftime/to_char/date_format. `xor` is deliberately absent.
 
 
 def dependency_installed(name: str) -> bool:
@@ -270,7 +273,7 @@ class SQLiteConnector:
                 return sqlite3.SQLITE_OK
             if action == sqlite3.SQLITE_FUNCTION and str(arg2 or arg1).lower() in SAFE_FUNCTIONS:
                 return sqlite3.SQLITE_OK
-            if schema and action == sqlite3.SQLITE_PRAGMA and arg1 == 'table_xinfo':
+            if schema and action == sqlite3.SQLITE_PRAGMA and arg1 in {'table_xinfo', 'foreign_key_list'}:
                 return sqlite3.SQLITE_OK
             return sqlite3.SQLITE_DENY
         return authorize
@@ -293,11 +296,34 @@ class SQLiteConnector:
                     if kind != 'view':
                         raise
                     tables.append({'name': name, 'schema': 'main', 'kind': kind, 'columns': [], 'readable': False,
-                                   'reason': 'This source view cannot be inspected under the read-only policy.'})
+                                   'reason': 'This source view cannot be inspected under the read-only policy.',
+                                   'foreign_keys': [], 'row_estimate': None})
                     continue
-                tables.append({'name': name, 'schema': 'main', 'kind': kind,
-                               'columns': [{'name': c[1], 'type': c[2] or 'unknown', 'nullable': not bool(c[3]), 'primary_key': bool(c[5])} for c in columns if c[6] != 1]})
+                tables.append({'name': name, 'schema': 'main', 'kind': kind, 'row_estimate': None,
+                               'columns': [{'name': c[1], 'type': c[2] or 'unknown', 'nullable': not bool(c[3]), 'primary_key': bool(c[5])} for c in columns if c[6] != 1],
+                               'foreign_keys': self._foreign_keys(db, name)})
+        self._resolve_implicit_keys(tables)
         return {'tables': tables, 'engine': 'sqlite'}
+
+    @staticmethod
+    def _foreign_keys(db, table: str) -> list[dict]:
+        grouped: dict[int, list] = {}
+        for row in db.execute('PRAGMA foreign_key_list(' + quote_identifier('sqlite', table) + ')').fetchall():
+            grouped.setdefault(row[0], []).append(row)   # id, seq, table, from, to, ...
+        return [{'columns': [r[3] for r in sorted(rows, key=lambda r: r[1])], 'referred_table': rows[0][2],
+                 'referred_columns': [r[4] for r in sorted(rows, key=lambda r: r[1])]}
+                for _, rows in sorted(grouped.items())]
+
+    @staticmethod
+    def _resolve_implicit_keys(tables: list[dict]) -> None:
+        # `REFERENCES parent` without columns means the parent's primary key.
+        by_name = {t['name']: t for t in tables}
+        for table in tables:
+            for key in table['foreign_keys']:
+                if any(column is None for column in key['referred_columns']):
+                    parent = by_name.get(key['referred_table'])
+                    primary = [c['name'] for c in (parent or {}).get('columns', []) if c['primary_key']]
+                    key['referred_columns'] = primary if len(primary) == len(key['columns']) else []
 
     def execute(self, sql: str, parameters: dict, max_rows: int) -> dict:
         with self.connection() as db:
@@ -399,17 +425,38 @@ class NetworkSQLConnector:
                 'read_available': True, 'protection': 'Read-only transaction; live privilege proof; SQL/function allowlist; base tables only', 'qualified': False}
 
     def schema(self) -> dict:
-        from sqlalchemy import inspect
         with self.connection() as conn:
-            metadata = inspect(conn)
-            schema = self.config.get('schema') or ('public' if self.engine == 'postgresql' else self.config['database'])
-            tables = []
-            for name in metadata.get_table_names(schema=schema):
-                primary = set(metadata.get_pk_constraint(name, schema=schema).get('constrained_columns') or [])
-                columns = metadata.get_columns(name, schema=schema)
-                tables.append({'name': name, 'schema': schema, 'kind': 'table', 'columns': [
-                    {'name': c['name'], 'type': str(c['type']), 'nullable': bool(c.get('nullable', True)), 'primary_key': c['name'] in primary} for c in columns]})
+            return self.schema_from(conn)
+
+    def schema_from(self, conn) -> dict:
+        """Introspect through an already verified read-only connection."""
+        from sqlalchemy import inspect, text
+        metadata = inspect(conn)
+        schema = self.config.get('schema') or ('public' if self.engine == 'postgresql' else self.config['database'])
+        estimates = self._row_estimates(conn, schema, text)
+        tables = []
+        for name in metadata.get_table_names(schema=schema):
+            primary = set(metadata.get_pk_constraint(name, schema=schema).get('constrained_columns') or [])
+            columns = metadata.get_columns(name, schema=schema)
+            keys = [{'columns': list(k['constrained_columns']), 'referred_table': k['referred_table'],
+                     'referred_columns': list(k['referred_columns'])}
+                    for k in metadata.get_foreign_keys(name, schema=schema)
+                    if k.get('referred_schema') in (None, schema) and k.get('referred_table')]
+            tables.append({'name': name, 'schema': schema, 'kind': 'table', 'row_estimate': estimates.get(name), 'columns': [
+                {'name': c['name'], 'type': str(c['type']), 'nullable': bool(c.get('nullable', True)), 'primary_key': c['name'] in primary} for c in columns],
+                'foreign_keys': keys})
         return {'tables': tables, 'engine': self.engine, 'limitations': 'Base tables only; source views and routines are excluded.'}
+
+    def _row_estimates(self, conn, schema: str, text) -> dict:
+        """Planner statistics, never a table scan. Negative or missing values become None."""
+        if self.engine == 'postgresql':
+            rows = conn.execute(text(
+                "SELECT c.relname, c.reltuples FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+                "WHERE n.nspname=:schema AND c.relkind IN ('r','p')"), {'schema': schema}).all()
+        else:
+            rows = conn.execute(text(
+                'SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA=:schema'), {'schema': schema}).all()
+        return {str(name): int(count) for name, count in rows if count is not None and float(count) >= 0}
 
     def execute(self, sql: str, parameters: dict, max_rows: int) -> dict:
         import sqlglot

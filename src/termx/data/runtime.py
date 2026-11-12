@@ -334,17 +334,38 @@ class DataRuntime:
         self.assert_connection_source(current, wid)
         if self.fingerprint(current) != self.fingerprint(connection):
             raise HTTPException(409, 'The connection changed while reading its schema.')
+        self._annotate_kinds(result, connection['engine'])
         return result
+
+    @staticmethod
+    def _annotate_kinds(result: dict, engine: str) -> None:
+        """Add `value_kind` to each column when the engine has a query-builder dialect."""
+        from termx.data.dialects import dialect_or_none
+        adapter = dialect_or_none(engine)
+        if adapter is None:
+            return
+        for table in result.get('tables', []):
+            for column in table.get('columns', []):
+                column['value_kind'] = adapter.classify_type(column.get('type') or '')
+
+    @staticmethod
+    def read_verified(connection) -> bool:
+        """Whether a network source has a current verified read-only role and session."""
+        if connection['engine'] == 'sqlite':
+            return True
+        policy = connection.get('read_policy') or {}
+        return bool(policy.get('verified') and policy.get('source_generation') == connection.get('source_generation')
+                    and policy.get('credential_generation') == connection.get('credential_generation'))
+
+    def require_verified_read(self, connection) -> None:
+        if not self.read_verified(connection):
+            raise HTTPException(409, 'Test this source first to verify its current read-only role and session.')
 
     def _read_definition(self, definition, connection):
         if not isinstance(definition, dict) or set(definition) - {'connection_id', 'sql', 'parameters', 'report_context'}:
             raise HTTPException(422, 'Invalid query definition.')
         sql, parameters = validate_read(definition.get('sql'), connection['engine'], definition.get('parameters'))
-        policy = connection.get('read_policy') or {}
-        if connection['engine'] != 'sqlite' and (not policy.get('verified')
-            or policy.get('source_generation') != connection.get('source_generation')
-            or policy.get('credential_generation') != connection.get('credential_generation')):
-            raise HTTPException(409, 'Test this source first to verify its current read-only role and session.')
+        self.require_verified_read(connection)
         return {'connection_id': connection['id'], 'sql': sql, 'parameters': parameters,
                 **({'report_context': definition['report_context']} if definition.get('report_context') else {})}
 
@@ -397,7 +418,7 @@ class DataRuntime:
                     raise HTTPException(409, 'This request_id was already used with a different query.')
                 return self.get_job(actor, wid, jid)
             body = {'actor_id': actor.id, 'connection_id': connection['id'], 'status': 'queued',
-                    'preview_limit': PREVIEW_ROWS, '_definition': query, '_from_report': bool(from_report),
+                    'cancel_requested': False, 'preview_limit': PREVIEW_ROWS, '_definition': query, '_from_report': bool(from_report),
                     '_source_fingerprint': self.fingerprint(connection), '_request_digest': digest,
                     '_boot_id': self.boot_id}
             if query.get('report_context'):
