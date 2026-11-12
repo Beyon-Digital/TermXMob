@@ -1,0 +1,14 @@
+{
+  "request": null,
+  "response": {
+    "connection_id": "conn_01",
+    "engine": "sqlserver",
+    "label": "SQL Server / Azure SQL",
+    "supported": false,
+    "reason": "The visual query builder supports SQLite, PostgreSQL, MySQL and MariaDB sources. SQL Server / Azure SQL sources can still use Advanced SQL.",
+    "qualified": false,
+    "requires_source_test": false,
+    "source_tested": false,
+    "dialect": null
+  }
+}

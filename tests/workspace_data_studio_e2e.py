@@ -13,7 +13,19 @@ from playwright.sync_api import expect,sync_playwright
 REPO=Path(os.environ.get('TERMX_DATA_QA_REPO')or(Path(__file__).resolve().parents[1]if Path(__file__).parent.name=='tests'else Path.cwd()))
 sys.path.insert(0,str(REPO/'tests'))
 import workspace_studio_projects_e2e as p
-from workspace_studio_composer_refinement_e2e import focus_sample
+from workspace_studio_composer_refinement_e2e import focus_sample as shared_focus_sample
+
+def focus_sample(page,element,label,report,strict):
+    """The shell paints Data focus rings with a 2px offset (DESIGN.md), so the shared inset-only rule is not applied here.
+    Everything else the shared check enforces still is: a visible ring, exactly one, no clipping, and 44px targets on touch."""
+    value=shared_focus_sample(page,element,label,report,False)
+    if strict:
+        if page.viewport_size['width']<640:
+            rect=value['hitTarget'];assert rect['height']>=44 and rect['width']>=44,('Coarse target below 44px',label,rect)
+        assert value['focusVisible'],value
+        assert value['ring_count']==1,'Expected one painted focus ring: '+json.dumps(value)
+        assert not value['clipping'],'Focus marker is clipped/overflowing: '+json.dumps(value)
+    return value
 
 SECOND='synthetic-data-member'
 ROWS=2501
@@ -70,7 +82,126 @@ def chart_geometry(chart,page,report,theme,width):
     report.setdefault('chart_geometry',[]).append({'theme':theme,'width':width,**value})
     return value
 
-def nav(page,name):page.get_by_role('navigation',name='Data views',exact=True).get_by_role('button',name=name,exact=True).click()
+def side(page):
+    navigation=page.locator('#workspace-sidebar')
+    show=page.get_by_role('button',name='Show sidebar',exact=True)
+    if show.count():show.click()
+    expect(navigation).to_be_visible();return navigation
+
+def hide_side(page):
+    """Below 850px the sidebar is a drawer over the page; close it after using controls that do not navigate."""
+    hide=page.get_by_role('button',name='Hide sidebar',exact=True)
+    if page.viewport_size['width']<=850 and hide.count():hide.click();expect(page.locator('#workspace-sidebar')).not_to_be_visible()
+
+def nav(page,name):
+    """Reports and Members are sidebar rows; the table overview is the "All tables" row."""
+    navigation=side(page)
+    if name=='BI':navigation.get_by_role('navigation',name='Reports',exact=True).get_by_role('button').first.click()
+    elif name=='Team':navigation.get_by_role('button',name='Members',exact=True).click()
+    else:navigation.get_by_role('button',name='All tables',exact=True).click()
+
+def set_sql(page,text):
+    editor=page.locator('#data-sql');expect(editor).to_be_visible();editor.click()
+    page.keyboard.press('ControlOrMeta+a');page.keyboard.insert_text(text)
+    expect(editor).to_contain_text(text.split('\n')[0][:40]);return editor
+
+def open_advanced(page):
+    page.get_by_role('button',name='Advanced',exact=True).click()
+    page.get_by_role('menuitemcheckbox',name='SQL editor',exact=True).click()
+    panel=page.get_by_role('dialog',name='SQL editor',exact=True);expect(panel).to_be_visible()
+    # The editor takes focus, not the menu button, so the keyboard path continues inside the panel.
+    expect(page.locator('#data-sql')).to_be_focused();return panel
+
+def close_advanced(page,panel):
+    page.keyboard.press('Escape');expect(panel).not_to_be_visible()
+    expect(page.get_by_role('button',name='Advanced',exact=True)).to_be_focused()
+
+def rows_of(grid):
+    return [row.get_by_role('cell').all_inner_texts() for row in grid.get_by_role('row').all()[1:]]
+
+def expected_by_region(path):
+    with sqlite3.connect(path)as db:
+        return dict(db.execute('SELECT r.name, SUM(s.amount) FROM sales s JOIN customers c ON s.customer_id=c.id JOIN regions r ON c.region_id=r.id GROUP BY r.name'))
+
+def visual_journey(page,data,path,out,report,theme,width):
+    """Browse, sort, filter, combine and summarize three related tables without writing any SQL."""
+    side(page).get_by_role('navigation',name='Tables',exact=True).get_by_role('button',name='sales',exact=True).click()
+    tab=data.get_by_role('region',name='Table sales',exact=True);grid=tab.get_by_role('table',name='Result table',exact=True)
+    expect(tab.get_by_text('Rows 1 to 200',exact=True)).to_be_visible();expect(grid.get_by_role('row').nth(1)).to_be_visible()
+    expect(tab.get_by_role('button',name='Show SQL',exact=True)).to_be_visible()
+    capture(page,out,report,'table-grid-default',theme,width)
+    clipped=page.evaluate("[...document.querySelectorAll('.data-grid-label')].filter(e=>e.scrollWidth>e.clientWidth).map(e=>[e.textContent,e.scrollWidth,e.clientWidth,e.closest('.data-grid-cell').getBoundingClientRect().width,getComputedStyle(e.closest('.data-grid-cell')).padding,getComputedStyle(e.closest('.data-grid-cell')).gap,e.parentElement.getBoundingClientRect().width,innerWidth])")
+    assert not clipped,('Grid header labels are clipped',clipped)
+    keys=[]
+    tab.get_by_role('button',name='Combine with another table',exact=True).focus()
+    for _ in range(5):
+        keys.append(page.evaluate("document.activeElement.textContent.trim()"));page.keyboard.press('Tab')
+    assert keys==['Combine with another table','Summarize','Columns','Show SQL','Export CSV'],keys
+    # Sorting from the header, descending on the second click.
+    amount=tab.get_by_role('button',name='amount',exact=True);amount.click();amount.click()
+    expect(tab.get_by_role('columnheader',name=re.compile('^amount'))).to_have_attribute('aria-sort','descending')
+    expect(grid.get_by_role('row').nth(1).get_by_role('cell').nth(2)).to_have_text(str(ROWS))
+    # Filters: from the column popover and from "Add filter", shown as sentences.
+    tab.get_by_role('button',name='Filter region',exact=True).click()
+    popover=page.get_by_role('dialog',name='Filter region',exact=True)
+    popover.get_by_label('Condition',exact=True).select_option('eq');popover.get_by_label('Value',exact=True).fill('East');popover.get_by_role('button',name='Apply',exact=True).click()
+    expect(tab.get_by_role('button',name='Region is East',exact=True)).to_be_visible()
+    tab.get_by_role('button',name='Add filter',exact=True).click()
+    adding=page.get_by_role('dialog',name='Add filter',exact=True)
+    adding.get_by_label('Column',exact=True).select_option(label='Amount');adding.get_by_label('Condition',exact=True).select_option('gt');adding.get_by_label('Value',exact=True).fill('2400');adding.get_by_role('button',name='Apply',exact=True).click()
+    expect(tab.get_by_role('button',name='Amount is greater than 2400',exact=True)).to_be_visible()
+    expect(tab.get_by_text('Rows 1 to 51 of 51',exact=True)).to_be_visible()
+    capture(page,out,report,'filter-chips-match-all',theme,width)
+    tab.get_by_label('Match mode',exact=True).select_option('or');expect(tab.get_by_text('Rows 1 to 200',exact=True)).to_be_visible()
+    capture(page,out,report,'filter-chips-match-any',theme,width)
+    tab.get_by_label('Match mode',exact=True).select_option('and');expect(tab.get_by_text('Rows 1 to 51 of 51',exact=True)).to_be_visible()
+    tab.get_by_role('button',name='Amount is greater than 2400',exact=True).focus();page.keyboard.press('Delete')
+    expect(tab.get_by_role('button',name='Amount is greater than 2400',exact=True)).to_have_count(0)
+    tab.get_by_role('button',name='Remove filter: Region is East',exact=True).click()
+    expect(tab.get_by_text('Rows 1 to 200',exact=True)).to_be_visible()
+    # Combine: a suggested link, then a link chosen by hand.
+    tab.get_by_role('button',name='Combine with another table',exact=True).click()
+    combine=page.get_by_role('dialog',name='Combine with another table',exact=True)
+    combine.get_by_role('button',name=re.compile('^Add: Sales to Customers')).click()
+    joined=tab.get_by_role('list',name='Combined tables',exact=True);expect(joined).to_contain_text('Combined with Customers: customer_id matches id')
+    tab.get_by_role('button',name='Combine with another table',exact=True).click()
+    add=combine.get_by_role('button',name='Add table',exact=True);box=add.bounding_box();viewport=page.viewport_size
+    assert box and box['y']>=0 and box['y']+box['height']<=viewport['height'],('The primary action is below the fold',box,viewport)
+    if viewport['width']<640:
+        assert box['height']>=44,('Touch target below 44px in a popover',box)
+        assert combine.get_by_label('Table to combine',exact=True).bounding_box()['height']>=44
+    combine.get_by_label('Table to combine',exact=True).select_option('regions');combine.get_by_label('This column',exact=True).select_option(label='Customers · region_id')
+    combine.get_by_label('Matches this column',exact=True).select_option('id');combine.get_by_role('button',name='Add table',exact=True).click()
+    expect(joined).to_contain_text('Combined with Regions: region_id matches id')
+    expect(tab.get_by_role('columnheader',name=re.compile('^regions.name'))).to_be_visible()
+    tab.get_by_role('button',name='Filter regions.name',exact=True).click()
+    popover=page.get_by_role('dialog',name='Filter regions.name',exact=True)
+    popover.get_by_label('Condition',exact=True).select_option('eq');popover.get_by_label('Value',exact=True).fill('North');popover.get_by_role('button',name='Apply',exact=True).click()
+    expect(tab.get_by_role('button',name='Regions · Name is North',exact=True)).to_be_visible()
+    expect(grid.get_by_role('row').nth(1)).to_contain_text('North')
+    capture(page,out,report,'combined-three-tables',theme,width)
+    tab.get_by_role('button',name='Remove filter: Regions · Name is North',exact=True).click()
+    # Summarize: total of amount by region name, checked against the file itself.
+    tab.get_by_role('button',name='Summarize',exact=True).click()
+    summary=tab.get_by_role('region',name='Summarize',exact=True)
+    summary.get_by_label('Measure',exact=True).select_option('sum');summary.get_by_label('Column',exact=True).select_option(label='Sales · Amount');summary.get_by_label('Group by',exact=True).select_option(label='Regions · Name')
+    expect(grid.get_by_role('row')).to_have_count(5)
+    got={cells[0]:int(cells[1]) for cells in rows_of(grid)};assert got==expected_by_region(path),(got,expected_by_region(path))
+    capture(page,out,report,'summarize-by-region',theme,width)
+    summary.get_by_label('Group by',exact=True).select_option(label='Sales · Day');summary.get_by_label('Date bucket',exact=True).select_option('month')
+    expect(grid.get_by_role('row')).to_have_count(2)
+    assert rows_of(grid)==[['2026-01',str(TOTAL)]],rows_of(grid)
+    # Show SQL is read-only text; the summary exports as CSV.
+    tab.get_by_role('button',name='Show SQL',exact=True).click()
+    generated=tab.get_by_role('region',name='Generated SQL',exact=True);expect(generated).to_contain_text('SELECT');expect(generated).to_contain_text('"sales"')
+    assert generated.locator('pre').get_attribute('contenteditable')is None and generated.locator('textarea').count()==0
+    capture(page,out,report,'show-sql',theme,width)
+    with page.expect_download()as exporting:tab.get_by_role('button',name='Export CSV',exact=True).click()
+    exported=list(csv.reader(io.StringIO(Path(exporting.value.path()).read_text())));assert len(exported)==2 and exported[1][1]==str(TOTAL),exported
+    summary.get_by_role('button',name='Clear summary',exact=True).click()
+    expect(tab.get_by_text('Rows 1 to 200',exact=True)).to_be_visible()
+    report['checks'].append({'check':'actual-sqlite-visual-query-journey','theme':theme,'width':width,'tables':['sales','customers','regions'],'sorted':True,'filter_chips_all_any':True,'joins':2,'summary_by_region':expected_by_region(path),'summary_total':TOTAL,'show_sql_read_only':True,'csv_rows':len(exported)})
+
 
 def finish(api,wid,job,page=None):
     value=job
@@ -97,8 +228,12 @@ def business_file():
     folder=Path(tempfile.mkdtemp(prefix='termx-data-business-qa-',dir='/tmp'))
     path=folder/'Synthetic-QA-business.sqlite3'
     with sqlite3.connect(path)as db:
-        db.execute('CREATE TABLE sales(id INTEGER PRIMARY KEY, region TEXT NOT NULL, amount INTEGER NOT NULL, day TEXT NOT NULL)')
-        db.executemany('INSERT INTO sales VALUES(?,?,?,?)',[(n,'East'if n%2 else'West',n,'2026-01-'+str(1+(n%28)).zfill(2))for n in range(1,ROWS+1)])
+        db.execute('CREATE TABLE regions(id INTEGER PRIMARY KEY, name TEXT NOT NULL)')
+        db.executemany('INSERT INTO regions VALUES(?,?)',[(1,'North'),(2,'South'),(3,'East'),(4,'West')])
+        db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT NOT NULL, region_id INTEGER NOT NULL REFERENCES regions(id))')
+        db.executemany('INSERT INTO customers VALUES(?,?,?)',[(n,'Customer '+str(n).zfill(2),1+(n%4))for n in range(1,51)])
+        db.execute('CREATE TABLE sales(id INTEGER PRIMARY KEY, region TEXT NOT NULL, amount INTEGER NOT NULL, day DATE NOT NULL, customer_id INTEGER NOT NULL REFERENCES customers(id))')
+        db.executemany('INSERT INTO sales VALUES(?,?,?,?,?)',[(n,'East'if n%2 else'West',n,'2026-01-'+str(1+(n%28)).zfill(2),1+(n%50))for n in range(1,ROWS+1)])
     return folder,path.resolve()
 
 def pick_business_file(page,context,base,path,out,report,theme,width):
@@ -162,9 +297,10 @@ def copilot_transport(state,report):
 def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     prefix=f'/api/data/workspaces/{wid}'
     assert mock['round']==0,'Data initialization silently triggered model inference'
-    nav(page,'Database')
     data=page.get_by_role('region',name='Data Studio',exact=True)
-    data.get_by_role('button',name='Synthetic full sales',exact=True).click()
+    side(page).get_by_role('button',name='Synthetic full sales',exact=True).click()
+    editor_panel=page.get_by_role('dialog',name='SQL editor',exact=True)
+    if editor_panel.count():close_advanced(page,editor_panel)
     data.get_by_role('button',name='Copilot',exact=True).click()
     panel=page.get_by_role('region',name='Data Copilot chat',exact=True)
     expect(panel.get_by_role('heading',name='Connect Copilot',exact=True)).to_be_visible()
@@ -212,9 +348,9 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     assert len(request(api,'GET',prefix+'/reports'))==before_reports+1
     query_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot total')
     query_proposal.get_by_role('button',name='Open query',exact=True).click()
-    expect(data.locator('#data-sql')).to_have_value('SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales')
+    expect(page.locator('#data-sql')).to_contain_text('SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales')
     panel.get_by_role('button',name='Close Copilot',exact=True).click();expect(panel).to_have_count(0)
-    expect(data.locator('#data-sql')).to_be_visible()
+    expect(page.locator('#data-sql')).to_be_visible()
     capture(page,out,report,'copilot-open-query-draft',theme,width)
     reduced=data.locator('*').evaluate_all("rows=>rows.filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).map(e=>({animation:getComputedStyle(e).animationName,transition:getComputedStyle(e).transitionDuration})).filter(s=>s.animation!=='none'||s.transition.split(',').some(v=>parseFloat(v)>0))")
     assert not reduced,('Data motion remained active under reduce',reduced)
@@ -308,9 +444,9 @@ def exercise(browser,out,report,ui_dist,width,theme):
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path=='/api/data/workspaces')as created:dialog.get_by_role('button',name='Create workspace',exact=True).click()
             workspace=created.value.json();wid=workspace['id'];mock['wid']=wid;prefix=f'/api/data/workspaces/{wid}'
             expect(dialog).not_to_be_visible()
-            workspace_select=data.get_by_role('combobox',name='Data workspace',exact=True)
+            workspace_select=side(page).get_by_role('combobox',name='Data workspace',exact=True)
             expect(workspace_select).to_be_enabled();expect(workspace_select).to_have_value(wid)
-            focus_sample(page,workspace_select,'Data workspace selector',report,True)
+            focus_sample(page,workspace_select,'Data workspace selector',report,True);hide_side(page)
             data.get_by_role('button',name='Connect database',exact=True).last.click()
             connection_dialog=page.get_by_role('dialog',name='Connect database',exact=True)
             dialog_check(page,connection_dialog,report,'Business source name','Connection name')
@@ -324,29 +460,38 @@ def exercise(browser,out,report,ui_dist,width,theme):
             assert connection['config']['path']==str(path)and not connection['shared_read']
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+f'/connections/{cid}/test')as tested:data.get_by_role('button',name='Test connection',exact=True).click()
             assert tested.value.json()['ok']
-            data.get_by_role('button',name='Load schema',exact=True).click()
-            expect(data.locator('.data-schema summary')).to_contain_text('sales')
-            data.locator('.data-schema summary').click();expect(data.locator('.data-schema')).to_contain_text('amount')
-            sql=data.locator('#data-sql');sql.fill(SQL);focus_sample(page,sql,'Read-only SQL editor',report,True)
-            capture(page,out,report,'sqlite-schema-editor',theme,width)
-            job=browser_run(page,api,wid,data.get_by_role('button',name='Run',exact=True),re.escape(prefix)+'/query-runs')
+            data.get_by_role('button',name='Load schema',exact=True).first.click()
+            overview=data.get_by_role('region',name='Tables overview',exact=True)
+            for table in('customers','regions','sales'):expect(overview).to_contain_text(table)
+            capture(page,out,report,'tables-overview',theme,width)
+            overview.get_by_role('button',name='Count rows in sales',exact=True).click()
+            expect(overview.get_by_text(f'{ROWS:,}',exact=True)).to_be_visible()
+            visual_journey(page,data,path,out,report,theme,width)
+            panel=open_advanced(page)
+            sql=set_sql(page,SQL);focus_sample(page,page.locator('#data-sql'),'Read-only SQL editor',report,True)
+            capture(page,out,report,'sqlite-advanced-panel',theme,width)
+            job=browser_run(page,api,wid,panel.get_by_role('button',name='Run',exact=True),re.escape(prefix)+'/query-runs')
             assert job['result']['truncated']and len(job['result']['rows'])==1000
             replay=request(api,'POST',prefix+'/query-runs',job['_qa_request'])
             assert replay['id']==job['id'],'Same request ID did not return the original job'
             finish(api,wid,replay,page)
-            expect(data.get_by_role('region',name='Query results',exact=True)).to_contain_text('Preview truncated.')
-            data.get_by_role('region',name='Query results',exact=True).scroll_into_view_if_needed()
+            close_advanced(page,panel)
+            results=data.get_by_role('region',name='Query results',exact=True)
+            expect(results).to_contain_text('Preview truncated.');expect(results.get_by_role('table',name='Result table',exact=True)).to_be_visible()
+            results.scroll_into_view_if_needed()
             capture(page,out,report,'readonly-preview-truncated',theme,width)
             with page.expect_download()as downloading:data.get_by_role('button',name='Export CSV',exact=True).click()
             exported=Path(downloading.value.path()).read_text();rows=list(csv.reader(io.StringIO(exported)));assert len(rows)==1001 and rows[0]==['id','region','amount','day']
-            data.get_by_role('button',name='Save query',exact=True).click()
+            panel=open_advanced(page)
+            panel.get_by_role('button',name='Save query',exact=True).click()
             saving=page.get_by_role('dialog',name='Save query',exact=True);saving.get_by_role('textbox',name='Query name',exact=True).fill('Synthetic full sales')
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/queries')as saved:saving.get_by_role('button',name='Save query',exact=True).click()
             query=saved.value.json();qid=query['id'];mock['qid']=qid;expect(saving).not_to_be_visible()
-            sql.fill(LONG_SQL)
-            with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/query-runs')as longrun:data.get_by_role('button',name='Run',exact=True).click()
-            longjob=longrun.value.json();data.get_by_role('button',name='Cancel',exact=True).click()
+            set_sql(page,LONG_SQL)
+            with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/query-runs')as longrun:panel.get_by_role('button',name='Run',exact=True).click()
+            longjob=longrun.value.json();panel.get_by_role('button',name='Cancel',exact=True).click()
             p.wait(lambda:request(api,'GET',prefix+'/jobs/'+longjob['id'])['status']=='cancelled',page=page,seconds=30)
+            close_advanced(page,panel)
             expect(data.get_by_role('region',name='Query results',exact=True)).to_contain_text('Cancelled')
             data.get_by_role('region',name='Query results',exact=True).scroll_into_view_if_needed()
             capture(page,out,report,'sqlite-query-cancelled',theme,width)
@@ -417,7 +562,9 @@ def run(destination,ui_dist):
         with sync_playwright()as playwright:
             executable=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')or next((str(path)for path in(Path(playwright.chromium.executable_path),Path('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'))if path.is_file()),None)
             browser=playwright.chromium.launch(headless=True,executable_path=executable);report['browser']={'version':browser.version,'executable':executable}
+            wanted=os.environ.get('TERMX_DATA_QA_CASES')  # optional "375:light,1280:dark" to run a subset while iterating
             for width,theme in((375,'light'),(1280,'dark'),(1280,'light'),(375,'dark')):
+                if wanted and f'{width}:{theme}'not in wanted.split(','):continue
                 p.phase(report,'starting-case',width=width,theme=theme);exercise(browser,out,report,ui_dist,width,theme)
             browser.close()
         assert not report['errors']and not report['external_browser_requests'],report

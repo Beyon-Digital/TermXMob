@@ -1,0 +1,137 @@
+{
+  "request": {
+    "spec": {
+      "version": 1,
+      "source": "conn_01",
+      "from": {
+        "table": "orders",
+        "alias": "o"
+      },
+      "joins": [
+        {
+          "kind": "left",
+          "table": "customers",
+          "alias": "c",
+          "on": [
+            {
+              "left": {
+                "table_alias": "o",
+                "column": "customer_id"
+              },
+              "right": {
+                "table_alias": "c",
+                "column": "id"
+              }
+            }
+          ]
+        }
+      ],
+      "select": [
+        {
+          "table_alias": "o",
+          "column": "id"
+        },
+        {
+          "table_alias": "o",
+          "column": "status"
+        },
+        {
+          "table_alias": "o",
+          "column": "amount"
+        },
+        {
+          "table_alias": "c",
+          "column": "name",
+          "label": "Customer"
+        }
+      ],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "o",
+              "column": "status"
+            },
+            "op": "in",
+            "values": [
+              "open",
+              "paid"
+            ]
+          },
+          {
+            "field": {
+              "table_alias": "o",
+              "column": "amount"
+            },
+            "op": "gt",
+            "value": 100
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [
+        {
+          "table_alias": "o",
+          "column": "amount",
+          "direction": "desc"
+        }
+      ],
+      "limit": 200,
+      "offset": 0
+    }
+  },
+  "response": {
+    "ok": true,
+    "dialect": "sqlite",
+    "sql": "SELECT \"o\".\"id\" AS \"id\", \"o\".\"status\" AS \"status\", \"o\".\"amount\" AS \"amount\", \"c\".\"name\" AS \"Customer\"\nFROM \"orders\" AS \"o\"\nLEFT JOIN \"customers\" AS \"c\" ON \"o\".\"customer_id\" = \"c\".\"id\"\nWHERE \"o\".\"status\" IN (:p1, :p2) AND \"o\".\"amount\" > :p3\nORDER BY \"o\".\"amount\" DESC NULLS LAST, \"o\".\"id\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+    "parameters": {
+      "p1": "open",
+      "p2": "paid",
+      "p3": 100
+    },
+    "columns": [
+      {
+        "label": "id",
+        "value_kind": "integer",
+        "role": "column",
+        "table_alias": "o",
+        "column": "id"
+      },
+      {
+        "label": "status",
+        "value_kind": "text",
+        "role": "column",
+        "table_alias": "o",
+        "column": "status"
+      },
+      {
+        "label": "amount",
+        "value_kind": "number",
+        "role": "column",
+        "table_alias": "o",
+        "column": "amount"
+      },
+      {
+        "label": "Customer",
+        "value_kind": "text",
+        "role": "column",
+        "table_alias": "c",
+        "column": "name"
+      }
+    ],
+    "limit": 200,
+    "offset": 0,
+    "fetch_limit": 201,
+    "joins": [
+      {
+        "alias": "c",
+        "fan_out": "none",
+        "message": null
+      }
+    ],
+    "warnings": [],
+    "schema_hash": "0763053cbc634063"
+  }
+}

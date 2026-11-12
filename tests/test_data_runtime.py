@@ -235,10 +235,10 @@ def test_live_membership_source_acl_role_and_result_revocation(fixture):
 def test_revoke_during_execution_discards_result(fixture, monkeypatch):
     started, release = threading.Event(), threading.Event()
     execute = SQLiteConnector.execute
-    def blocked(self, *args):
+    def blocked(self, *args, **kwargs):
         started.set()
         assert release.wait(5), 'Fixture did not release source worker'
-        return execute(self, *args)
+        return execute(self, *args, **kwargs)
     monkeypatch.setattr(SQLiteConnector, 'execute', blocked)
     async def scenario():
         a, b = fixture.actors['alice'], fixture.actors['bob']

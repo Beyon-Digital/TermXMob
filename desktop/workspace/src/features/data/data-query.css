@@ -1,0 +1,101 @@
+/* Query grid, filter chips, combine, summarize, Show SQL and the floating SQL editor. Shared tokens only. */
+.data-popover-title{margin:0;font-size:16px;line-height:24px;font-weight:600}
+.data-popover-subtitle{margin:0;font-size:14px;line-height:20px;font-weight:500;color:var(--text-2)}
+.data-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.data-field>label{font-size:14px;line-height:20px;font-weight:500}
+.data-field-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.data-field-error{margin:0;font-size:14px;line-height:20px;color:var(--danger)}
+.data-popover-actions{display:flex;justify-content:flex-end;gap:8px}
+
+/* Grid */
+.data-table-toolbar{gap:4px}
+.data-results-body{min-width:0;transition:opacity 160ms ease-out}
+.data-results-body[data-stale]{opacity:.6}
+.data-grid-scroll{position:relative;max-width:100%;max-height:min(60dvh,560px);overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.data-grid{position:relative;width:max(100%,var(--grid-width));font-size:14px;line-height:20px;font-variant-numeric:tabular-nums}
+.data-grid-head{position:sticky;top:0;z-index:1;background:var(--surface)}
+.data-grid-row{display:grid;grid-template-columns:var(--grid-columns);min-height:40px;border-bottom:1px solid var(--border)}
+.data-grid-body{position:relative}
+.data-grid-body>.data-grid-row{position:absolute;top:0;left:0;width:100%;height:40px}
+.data-grid-cell{display:flex;align-items:center;gap:4px;min-width:0;padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.data-grid-cell[data-align=end]{justify-content:flex-end;text-align:right}
+.data-grid-cell[data-empty]{color:var(--text-3)}
+.data-grid-header{font-weight:500;color:var(--text-2)}
+.data-grid-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.data-grid-sort{display:inline-flex;align-items:center;gap:4px;min-width:0;min-height:32px;padding:0 4px;margin:0 -4px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.data-grid-sort:hover{background:var(--surface-2);color:var(--text)}
+.data-grid-sort svg,.data-grid-filter svg{flex-shrink:0}
+.data-grid-filter.button-icon{width:32px;min-width:32px;height:32px;min-height:32px}
+.data-grid-filter[data-active]{color:var(--accent)}
+.data-skeleton-text{display:block;width:60%;height:12px;border-radius:8px;background:var(--surface-2)}
+.data-grid-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:8px}
+.data-grid-scroll:focus-visible,.data-sql-preview:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
+
+/* Filter chips */
+.data-filters{display:flex;flex-direction:column;gap:8px}
+.data-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.data-chip-list{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0}
+.data-chip{display:inline-flex;align-items:center;min-height:32px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);max-width:100%}
+.data-chip-text{min-width:0;min-height:30px;padding:0 4px 0 12px;border:0;border-radius:8px 0 0 8px;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.data-chip-text:hover:not(:disabled){background:var(--surface-2)}
+.data-chip-text:disabled{cursor:default}
+.data-chip-remove{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:0 8px 8px 0;background:transparent;color:var(--text-3);cursor:pointer}
+.data-chip-remove:hover{background:var(--surface-2);color:var(--text)}
+.data-chip-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-basis:100%}
+.data-filter-nested{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px}
+.data-match-select.select{width:auto;min-width:192px}
+:is(.data-chip-text,.data-chip-remove,.data-grid-sort):focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
+
+/* Popovers */
+.data-filter-popover{width:min(320px,calc(100vw - 16px))}
+.data-filter-form{display:flex;flex-direction:column;gap:12px}
+.data-join-popover{display:flex;flex-direction:column;gap:12px;width:min(480px,calc(100vw - 16px));max-height:min(var(--radix-popover-content-available-height,80dvh),560px);overflow:hidden}
+.data-join-body{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto}
+.data-join-footer{flex:none;padding-top:12px;border-top:1px solid var(--border)}
+.data-join-suggestions,.data-join-manual{display:flex;flex-direction:column;gap:8px}
+.data-suggestion-list{list-style:none;margin:0;padding:0}
+.data-suggestion-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;border-bottom:1px solid var(--border)}
+.data-column-popover{display:flex;flex-direction:column;gap:12px;width:min(280px,calc(100vw - 16px));max-height:min(var(--radix-popover-content-available-height,70dvh),400px);overflow:auto}
+.data-column-group{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;border:0}
+.data-column-group legend{padding:0 0 4px;font-size:12px;line-height:16px;color:var(--text-3)}
+.data-column-group .data-check{min-height:32px;overflow-wrap:anywhere}
+
+/* Combined tables, summarize, Show SQL */
+.data-join-list{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
+.data-join-list li{display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:var(--text-2)}
+.data-join-list li>span:first-child{flex:1;min-width:0}
+.data-hint{flex-basis:100%;color:var(--text-2)}
+.data-summarize{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--border);border-radius:8px}
+.data-summarize-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(192px,1fr));gap:12px}
+.data-summarize-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.data-show-sql{display:flex;flex-direction:column;gap:8px}
+.data-show-sql ul{margin:0;padding-left:16px}
+.data-sql-preview{margin:0;padding:12px;max-height:240px;overflow:auto;border-radius:8px;background:var(--surface-2);color:var(--text);font-family:var(--font-mono);font-size:14px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.data-sql-values{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-family:var(--font-mono);font-size:12px;line-height:16px}
+.data-sql-values>div{display:contents}
+.data-sql-values dt{color:var(--text-3)}
+.data-sql-values dd{margin:0;overflow-wrap:anywhere}
+
+/* Floating SQL editor: a non-modal panel over the workbench. */
+.data-advanced-panel{display:flex;flex-direction:column;gap:12px;width:min(720px,calc(100vw - 32px));max-height:min(var(--radix-popover-content-available-height,60dvh),480px);overflow:auto;padding:16px}
+.data-advanced-anchor{height:0;margin-top:-16px}
+.data-advanced-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.data-advanced-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.data-sql-editor{min-width:0}
+.data-skeleton-editor{height:160px;border-radius:8px;background:var(--surface-2)}
+
+@media(max-width:767px){.data-field-pair{grid-template-columns:1fr}.data-grid-footer{flex-wrap:wrap}}
+@media(pointer:coarse){
+ .data-grid-sort{min-height:44px;min-width:44px}
+ .data-grid-filter.button-icon{width:44px;min-width:44px;height:44px;min-height:44px}
+ .data-chip-text,.data-chip-remove{min-height:44px}
+ .data-chip-remove{width:44px;height:44px}
+ .data-chip{min-height:44px}
+ .data-column-group .data-check{min-height:44px}
+ /* Radix portals render under <body>, outside .data-studio, so popovers and the floating editor need their own touch sizes. */
+ :root[data-app-workspace=data] .ui-popover :is(.input,.select){height:44px;min-height:44px;font-size:16px;line-height:24px}
+ :root[data-app-workspace=data] .ui-popover :is(.button,.dialog-close){min-height:44px;min-width:44px}
+ :root[data-app-workspace=data] .ui-popover .button-icon{width:44px;height:44px}
+ :root[data-app-workspace=data] .data-advanced-panel summary{display:flex;align-items:center;min-height:44px}
+}
+@media(prefers-reduced-motion:reduce){.data-results-body{transition:none}}
