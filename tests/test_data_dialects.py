@@ -221,13 +221,15 @@ def test_iso_dates_roundtrip_through_python_dates(dialect):
 
 
 # --- date buckets: golden SQL ----------------------------------------------------------
+# SQLite reads only text that starts with a real ISO date, bucketing the date part as written.
+ISO_GUARD = "CASE WHEN X GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(X,1,10)) = substr(X,1,10) THEN "
 GOLDEN = {
-    'sqlite': {
-        'day': "strftime('%Y-%m-%d', X)",
-        'week': "strftime('%Y', date(X,'-3 days','weekday 4')) || printf('-W%02d', (CAST(strftime('%j', date(X,'-3 days','weekday 4')) AS INTEGER) - 1) / 7 + 1)",
-        'month': "strftime('%Y-%m', X)",
-        'quarter': "strftime('%Y', X) || '-Q' || ((CAST(strftime('%m', X) AS INTEGER) + 2) / 3)",
-        'year': "strftime('%Y', X)"},
+    'sqlite': {bucket: ISO_GUARD + inner + ' END' for bucket, inner in {
+        'day': "strftime('%Y-%m-%d', @@)",
+        'week': "strftime('%Y', date(@@,'-3 days','weekday 4')) || printf('-W%02d', (CAST(strftime('%j', date(@@,'-3 days','weekday 4')) AS INTEGER) - 1) / 7 + 1)",
+        'month': "strftime('%Y-%m', @@)",
+        'quarter': "strftime('%Y', @@) || '-Q' || ((CAST(strftime('%m', @@) AS INTEGER) + 2) / 3)",
+        'year': "strftime('%Y', @@)"}.items()},
     'postgresql': {
         'day': "to_char(X,'YYYY-MM-DD')", 'week': "to_char(X,'IYYY-\"W\"IW')", 'month': "to_char(X,'YYYY-MM')",
         'quarter': "to_char(X,'YYYY-\"Q\"Q')", 'year': "to_char(X,'YYYY')"},
@@ -242,7 +244,7 @@ GOLDEN['mariadb'] = GOLDEN['mysql']
 def test_date_bucket_golden_sql(engine):
     d = get_dialect(engine)
     for bucket, sql in GOLDEN[engine].items():
-        assert d.date_bucket('X', 'datetime', bucket) == sql
+        assert d.date_bucket('X', 'datetime', bucket) == (sql.replace('@@', 'substr(X,1,10)') if engine == 'sqlite' else sql)
 
 
 def test_date_bucket_kinds_and_unknown_bucket(dialect):

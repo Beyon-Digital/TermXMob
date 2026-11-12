@@ -608,6 +608,8 @@ class _Compiler:
             expr_col = self.col_sql(alias, info.name)
             if agg.fn == 'count_distinct' and info.kind == 'text':
                 expr_col = self.d.text_operand(expr_col, info.charset)
+            if agg.fn in ('min', 'max') and info.kind == 'text':
+                expr_col = self.d.text_order_operand(expr_col, info.charset)
             if agg.fn in ('sum', 'avg') and info.kind not in _NUMERIC:
                 self.err(bad, path + '.column', f"'{info.name}' is not a number column, so it cannot be "
                          f"{'totalled' if agg.fn == 'sum' else 'averaged'}.")

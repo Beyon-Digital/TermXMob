@@ -288,14 +288,15 @@ def test_dialect_specific_fragments(shop):
     body = CORPUS['text_by_month']
     pg, my, ma, lite = (compile_for(shop, e, body, values_for(body)).sql for e in ('postgresql', 'mysql', 'mariadb', 'sqlite'))
     assert "to_char(\"s\".\"day\",'YYYY-MM') = :p1" in pg and "strftime('%Y-%m'" in lite and "date_format(`s`.`day`,'%Y-%m') = :p1" in my
-    assert '`s`.`region` COLLATE utf8mb4_bin' in my and 'COLLATE' not in pg and 'COLLATE' not in lite
-    assert 'GROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)' in my
-    assert 'GROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, ' in ma
+    assert '`s`.`region` COLLATE utf8mb4_0900_bin' in my and 'COLLATE "C"' in pg and 'COLLATE' not in lite
+    assert 'COLLATE' not in pg.replace('COLLATE "C"', '')
+    assert 'GROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)' in my
+    assert 'GROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, ' in ma
     assert 'NULLS LAST' in pg and 'NULLS LAST' in lite and 'NULLS LAST' not in my
     avg = CORPUS['avg']
     assert 'CAST(AVG(CASE WHEN' in compile_for(shop, 'postgresql', avg, values_for(avg)).sql
     assert 'AS DOUBLE PRECISION)' in compile_for(shop, 'postgresql', avg, values_for(avg)).sql
-    assert 'AS DOUBLE)' in compile_for(shop, 'mysql', avg, values_for(avg)).sql
+    assert '+ 0e0)' in compile_for(shop, 'mysql', avg, values_for(avg)).sql
     assert 'AVG(CASE WHEN' in compile_for(shop, 'sqlite', avg, values_for(avg)).sql and 'CAST' not in compile_for(shop, 'sqlite', avg, values_for(avg)).sql
 
 
@@ -308,8 +309,8 @@ def test_a_latin1_text_column_is_converted_before_the_exact_comparison(shop):
     index = index_for(raw, 'mysql')
     body = S(P(['region'], 'tag'))
     compiled = compile_spec(spec_of(body), index, get_dialect('mysql'), pivot_values=[PivotColumnValue('x')])
-    assert 'CONVERT(`s`.`tag` USING utf8mb4) COLLATE utf8mb4_bin = :p1' in compiled.sql
-    assert 'CONVERT(`s`.`region` USING utf8mb4) COLLATE utf8mb4_bin AS `pv_r1`' in compiled.sql
+    assert 'CONVERT(`s`.`tag` USING utf8mb4) COLLATE utf8mb4_0900_bin = :p1' in compiled.sql
+    assert 'CONVERT(`s`.`region` USING utf8mb4) COLLATE utf8mb4_0900_bin AS `pv_r1`' in compiled.sql
 
 
 def test_validate_mode_has_no_cell_columns(shop):
@@ -521,8 +522,10 @@ def test_hostile_column_values_never_enter_the_statement_text(shop, tmp_path):
     assert set(hostile) <= set(compiled.parameters.values())
     assert [c['alias'] for c in compiled.columns][1:] == [f'pv_c{i}' for i in range(1, len(values) + 1)] + ['pv_total']
     labels = [c['label'] for c in compiled.columns if c['role'] == 'pivot_cell']
-    assert '(blank)' in labels and '(empty)' in labels and labels.count('(empty)') == 2     # the text and the real empty column
-    flags = [(c['column_value'], c['column_empty']) for c in compiled.columns if c['role'] == 'pivot_cell' and c['label'] == '(empty)']
+    # the stored text '(empty)' keeps its label; the real empty column is renamed so no two columns share a label
+    assert '(blank)' in labels and '(empty)' in labels and '(no value)' in labels and len(set(labels)) == len(labels)
+    flags = [(c['column_value'], c['column_empty']) for c in compiled.columns if c['role'] == 'pivot_cell'
+             and c['label'] in ('(empty)', '(no value)')]
     assert ('(empty)', False) in flags and (None, True) in flags
     _, oracle = oracle_pivot(shop.sales, [by('month')], lambda r: r['tag'], 'count')
     compare(compiled, rows, values, *oracle_pivot(shop.sales, [by('month')], lambda r: r['tag'], 'count'), 1)
@@ -564,7 +567,7 @@ def test_conditional_aggregate_routes_avg_through_avg_expr(engine):
     if engine == 'postgresql':
         assert 'DOUBLE PRECISION' in text
     elif engine in ('mysql', 'mariadb'):
-        assert text.startswith('CAST(AVG(') and text.endswith('AS DOUBLE)')
+        assert text.startswith('AVG((') and text.endswith(' + 0e0)')
     else:
         assert text.startswith('AVG(')
 

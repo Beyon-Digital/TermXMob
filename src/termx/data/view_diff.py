@@ -2,7 +2,7 @@
 
 A snapshot is `{view_kind, name, description, spec}` with the spec in its stored (canonical) form. The result is
 a list of `{field, op, before?, after?}`. The server never writes sentences; the client words each change.
-Fields: name, description, from, joins, filters, filters.match, select, group_by, aggregates, sort, limit,
+Fields: name, description, source, from, joins, filters, filters.match, select, group_by, aggregates, sort, limit,
 pivot.rows, pivot.columns, pivot.value, pivot.totals, pivot.sort.
 """
 from __future__ import annotations
@@ -73,6 +73,7 @@ def diff(old: dict, new: dict) -> list[dict]:
         if old.get(field, '') != new.get(field, ''):
             changes.append({'field': field, 'op': 'changed', 'before': old.get(field, ''), 'after': new.get(field, '')})
     a, b = old.get('spec') or {}, new.get('spec') or {}
+    changes += _value_change('source', a.get('source'), b.get('source'))
     changes += _value_change('from', a.get('from'), b.get('from'))
     for field in ('joins',):
         changes += _list_changes(field, a.get(field, []), b.get(field, []))

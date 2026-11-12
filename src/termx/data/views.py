@@ -18,7 +18,8 @@ from pydantic import ValidationError
 from termx.data.dialects import get_dialect
 from termx.data.drill import DrillError, drill_spec
 from termx.data.query_spec import Aggregate, QuerySpec, SpecError, SpecErrors, compile_spec
-from termx.data.segments import ResolvedSegment, check_references, references_of, resolve_record
+from termx.data.segments import (ResolvedSegment, check_references, exceeds_limits, references_of, references_of_all,
+                                 resolve_record)
 from termx.data.store import timestamp
 from termx.data.view_diff import diff
 
@@ -239,6 +240,42 @@ class ViewService:
         segments = self.load_segments(wid, direct, db)
         return check_references(view_id, spec.source, spec.from_.table, direct, segments.get)
 
+    def _breaks_referrers(self, db, wid: str, vid: str, new_spec: QuerySpec, name: str, revision: int) -> list[tuple[dict, str]]:
+        """Views, near or far, that use this segment and would hit a compile-time size limit (nesting depth, total
+        segments, total filters) once it has `new_spec`. `check_references` only walks downward from the segment
+        being saved, so this walks upward through every view that uses it."""
+        found, seen, todo = [], {vid}, [vid]
+        while todo and len(seen) <= MAX_VIEWS:
+            for referrer in self._referrers(wid, todo.pop(), db):
+                if referrer['id'] not in seen:
+                    seen.add(referrer['id'])
+                    todo.append(referrer['id'])
+                    found.append(referrer)
+        override = ResolvedSegment(vid, name, revision, new_spec.source, new_spec)
+        broken = []
+        for referrer in found:
+            try:
+                rspec = QuerySpec.model_validate(referrer['spec'])
+            except ValidationError:
+                continue
+            segments = self.load_segments(wid, references_of(rspec.filters) + references_of(new_spec.filters), db)
+            segments[vid] = override
+            reason = exceeds_limits(references_of_all(rspec.filters), segments.get)
+            if reason:
+                broken.append((referrer, reason))
+        return broken
+
+    @staticmethod
+    def _check_move(actor, record: dict, connection: dict | None) -> None:
+        """A view may move to another source only when the people who can see it today can still use it there:
+        the new source is shared, or the person moving it created both."""
+        if connection is None or connection['id'] == record['connection_id']:
+            return
+        mine = record.get('created_by') == actor.id and connection.get('created_by') == actor.id
+        if not (connection.get('shared_read') or mine):
+            raise coded(403, 'source_not_shared', 'That source is private to its owner, so the people who use this view could no longer '
+                        'open it. Ask the owner to share the source first, or save this as a new view.')
+
     # --- writes ------------------------------------------------------------------------------------------
     async def create(self, actor, wid: str, kind: str, name: str, description: str, spec: QuerySpec) -> dict:
         role = self.service.require(actor, wid, write=True)['role']
@@ -300,6 +337,7 @@ class ViewService:
         connection, references, stored = None, None, None
         if spec is not None:
             spec, connection, references = await self._prepare(actor, wid, record['view_kind'], spec, vid)
+            self._check_move(self.service.live_actor(actor), record, connection)
             stored = canonical_spec(spec)
             if len(str(stored).encode()) > MAX_SPEC_BYTES:
                 raise coded(422, 'invalid_view', 'This view is too large to save.')
@@ -321,6 +359,11 @@ class ViewService:
             old = {'view_kind': kind, 'name': record['name'], 'description': record.get('description', ''), 'spec': record['spec']}
             new = {'view_kind': kind, 'name': new_name, 'description': new_description, 'spec': new_spec}
             changes = diff(old, new)
+            moved = connection is not None and connection['id'] != record['connection_id']
+            if moved:
+                self._check_move(actor, record, self.store._get(db, 'connection', connection['id']))
+                if not any(c['field'] == 'source' for c in changes):
+                    changes.append({'field': 'source', 'op': 'changed', 'before': record['connection_id'], 'after': connection['id']})
             if not changes:
                 return {**self._detail(record, role), **({'affected_views': len(self._referrers(wid, vid, db))} if kind == 'segment' else {})}
             if new_name != record['name']:
@@ -334,6 +377,13 @@ class ViewService:
                     raise coded(409, 'segment_in_use', f'{len(referrers)} view{"s use" if len(referrers) != 1 else " uses"} this segment, '
                                 'so its table and combined tables cannot change. Remove it from them first.',
                                 used_by=[{'id': r['id'], 'kind': r['view_kind'], 'name': r['name']} for r in referrers])
+                if referrers and spec is not None:
+                    broken = self._breaks_referrers(db, wid, vid, spec, new_name, revision + 1)
+                    if broken:
+                        count = len(broken)
+                        raise coded(409, 'segment_in_use', f'{count} view{"s use" if count != 1 else " uses"} this segment in a way this change '
+                                    f'would break: {broken[0][1]}. Simplify the segment, or the views that use it, first.',
+                                    used_by=[{'id': r['id'], 'kind': r['view_kind'], 'name': r['name']} for r, _ in broken])
             updates: dict[str, Any] = {'name': new_name, 'name_key': new_name.casefold(), 'description': new_description,
                                        'updated_by': actor.id, 'updated_by_name': actor.display_name}
             if spec is not None:
@@ -345,6 +395,8 @@ class ViewService:
             self.store._revision_insert(db, view_id=vid, revision=updated['revision'], workspace_id=wid, actor_id=actor.id,
                                         actor_name=actor.display_name, action='updated', name=new_name, snapshot=new, changes=changes)
             self.store._audit(db, actor.id, wid, 'view.updated', vid, {'revision': updated['revision']})
+            if moved:
+                self.store._audit(db, actor.id, wid, 'view.source_changed', vid, {'from': record['connection_id'], 'to': connection['id']})
         result = self._detail(updated, role)
         if affected is not None:
             result['affected_views'] = affected

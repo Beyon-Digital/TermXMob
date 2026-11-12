@@ -42,6 +42,30 @@ class _Dim:
     derived: bool
     label: str
     path: str
+    order: str = ''        # what ORDER BY sorts on; text sorts by code point on every engine
+
+
+def unique_labels(items: list[PivotColumnValue]) -> list[str]:
+    """Display labels for the pivot columns, one per column. A stored '(empty)', a stored '' next to '(blank)',
+    or text that differs only by surrounding spaces would otherwise share a label with another column."""
+    labels = [column_label(i.value, i.empty) for i in items]
+    keys = [label.strip() for label in labels]
+    for key in {k for k in keys if keys.count(k) > 1}:
+        for n, item in enumerate(items):
+            if keys[n] != key:
+                continue
+            if item.empty:
+                labels[n] = '(no value)'
+            elif item.value == '':
+                labels[n] = '(empty text)'
+            elif isinstance(item.value, str) and item.value != item.value.strip():
+                labels[n] = '"' + item.value + '"'
+    seen: dict[str, int] = {}
+    for n, label in enumerate(labels):    # last resort, so no two columns ever share a label
+        seen[label] = seen.get(label, 0) + 1
+        if seen[label] > 1:
+            labels[n] = f'{label} ({seen[label]})'
+    return labels
 
 
 def column_label(value: object, empty: bool) -> str:
@@ -86,7 +110,8 @@ def _dimension(c: _Compiler, dim: PivotDim, path: str, *, column: bool) -> _Dim 
     if info.kind == 'text' and not dim.bucket:
         expr = c.d.text_operand(bare, info.charset)
     default = f'{info.name} by {dim.bucket}' if dim.bucket else info.name
-    return _Dim(dim, alias, info.name, info.kind, out_kind, expr, bare, expr != bare, dim.label or default, path)
+    order = c.d.text_order_operand(bare, info.charset) if info.kind == 'text' and not dim.bucket else expr
+    return _Dim(dim, alias, info.name, info.kind, out_kind, expr, bare, expr != bare, dim.label or default, path, order)
 
 
 def _dimensions(c: _Compiler) -> tuple[list[_Dim], _Dim | None]:
@@ -141,11 +166,12 @@ def build_pivot(c: _Compiler) -> CompiledQuery:
         outs.append(_Out(dim.label, dim.expr, dim.out_kind, 'pivot_row', dim.alias, dim.column, bucket=dim.spec.bucket,
                          alias=f'pv_r{i}', derived=dim.derived))
     if value is not None and column is not None and values:
+        names = unique_labels(values)
         for i, item in enumerate(values, 1):
             predicate = f'{column.expr} IS NULL' if item.empty else \
                 f'{column.expr} = {c.bind(d.pivot_cell_value(column.kind, item.value))}'
             expr = d.conditional_aggregate(pivot.value.fn, value.value_column, predicate)
-            outs.append(_Out(column_label(item.value, item.empty), expr, value.kind, 'pivot_cell', fn=pivot.value.fn,
+            outs.append(_Out(names[i - 1], expr, value.kind, 'pivot_cell', fn=pivot.value.fn,
                              alias=f'pv_c{i}', column_value=item.value, column_empty=item.empty))
     if value is not None and (pivot.totals or column is None):
         outs.append(_Out(value.label, value.expr, value.kind, 'pivot_total', fn=pivot.value.fn, alias='pv_total'))
@@ -179,7 +205,7 @@ def build_pivot(c: _Compiler) -> CompiledQuery:
     lines.append('GROUP BY ' + ', '.join(grouping))
     direction = pivot.sort.direction
     keys = ([(value.expr, direction)] if pivot.sort.by == 'total' and value is not None else []) + \
-        [(dim.expr, direction if pivot.sort.by == 'rows' else 'asc') for dim in rows]
+        [(dim.order, direction if pivot.sort.by == 'rows' else 'asc') for dim in rows]
     ordering, seen = [], set()
     for expr, way in keys:
         if expr not in seen:

@@ -14,7 +14,7 @@ from typing import Callable
 
 from pydantic import ValidationError
 
-from termx.data.query_spec import (SEGMENT_MAX_DEPTH, FilterGroup, FilterSegment, Join, QuerySpec, SpecError, TableRef)
+from termx.data.query_spec import (SEGMENT_MAX_DEPTH, SEGMENT_MAX_EXPANSIONS, SEGMENT_MAX_LEAVES, FilterGroup, FilterSegment, Join, QuerySpec, SpecError, TableRef)
 
 
 @dataclass(frozen=True)
@@ -153,3 +153,44 @@ def check_references(root_id: str | None, root_source: str, root_base_table: str
 
     walk(direct, (), ())
     return errors
+
+
+def _plain_leaves(group: FilterGroup) -> int:
+    return sum(_plain_leaves(i) if isinstance(i, FilterGroup) else 0 if isinstance(i, FilterSegment) else 1 for i in group.items)
+
+
+def exceeds_limits(direct: list[str], lookup: Callable[[str], ResolvedSegment | None]) -> str | None:
+    """Whether a query that uses these segments directly would hit a compile-time size limit: the nesting depth,
+    the number of segment expansions (each use expands again) or the filters those expansions add up to.
+    Returns a short reason, or None. Missing segments and loops are other checks' business and are skipped."""
+    count = {'expansions': 0, 'leaves': 0}
+
+    def walk(ids: list[str], stack: tuple[str, ...]) -> str | None:
+        for sid in ids:
+            segment = lookup(sid)
+            if segment is None or sid in stack:
+                continue
+            if len(stack) + 1 > SEGMENT_MAX_DEPTH:
+                return f'segments are nested more than {SEGMENT_MAX_DEPTH} levels deep'
+            count['expansions'] += 1
+            if count['expansions'] > SEGMENT_MAX_EXPANSIONS:
+                return f'it would use more than {SEGMENT_MAX_EXPANSIONS} segments in total'
+            count['leaves'] += _plain_leaves(segment.filters)
+            if count['leaves'] > SEGMENT_MAX_LEAVES:
+                return f'the segments add up to more than {SEGMENT_MAX_LEAVES} filters'
+            found = walk(references_of_all(segment.filters), (*stack, sid))
+            if found:
+                return found
+        return None
+    return walk(direct, ())
+
+
+def references_of_all(group: FilterGroup) -> list[str]:
+    """Every segment reference in a filter tree, repeats included (the compiler expands each one)."""
+    found: list[str] = []
+    for item in group.items:
+        if isinstance(item, FilterGroup):
+            found += references_of_all(item)
+        elif isinstance(item, FilterSegment):
+            found.append(item.segment)
+    return found

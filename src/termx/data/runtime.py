@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import csv
 import functools
 from dataclasses import replace
@@ -508,6 +509,24 @@ class DataRuntime:
         if busy >= MAX_RUNS_PER_CONNECTION:
             raise HTTPException(429, 'This connection is busy with other queries. Try again in a moment.',
                                 headers={'Retry-After': '2'})
+
+    @contextlib.asynccontextmanager
+    async def read_slot(self, actor, cid: str):
+        """A short-lived in-flight slot for a source read that is not a job (the pivot column probe). It counts
+        against the same per-person and per-connection caps as a run and yields a cancel event that `close` sets."""
+        if self._closed:
+            raise HTTPException(503, 'The query runtime is shutting down.')
+        token = 'probe-' + uuid.uuid4().hex
+        with self._job_lock:
+            self._check_capacity(actor, cid)
+            cancel = self._cancel[token] = threading.Event()
+            self._inflight[token] = (actor.id, cid)
+        try:
+            yield cancel
+        finally:
+            with self._job_lock:
+                self._cancel.pop(token, None)
+                self._inflight.pop(token, None)
 
     def _update_job(self, jid, changes):
         with self._job_lock:

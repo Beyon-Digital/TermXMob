@@ -131,6 +131,11 @@ class Dialect(ABC):
         Engines whose column collation folds case or accents override this."""
         return expr
 
+    def text_order_operand(self, expr: str, charset: str | None = None) -> str:
+        """A text value as it must be ordered, or compared by MIN and MAX: by code point on every engine. Engines
+        whose default collation orders by locale or case override this."""
+        return expr
+
     def avg_expr(self, expr: str) -> str:
         """AVG as a double on every engine, so the scale of the result does not depend on the server."""
         return f'AVG({expr})'

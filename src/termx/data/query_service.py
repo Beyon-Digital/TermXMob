@@ -129,9 +129,11 @@ class QueryService:
                 probe = compile_pivot_probe(spec, index, dialect, segments=segments)
                 self.runtime.require_verified_read(connection)
                 kind = probe.columns[0]['value_kind']
-                found = await self.runtime.execute_read(
-                    actor, wid, {'connection_id': connection['id'], 'sql': probe.sql, 'parameters': probe.parameters,
-                                 'column_kinds': [kind]}, max_rows=PIVOT_PROBE_ROWS, view_id=view_id)
+                # The probe counts against the same per-person and per-connection caps as a run (429 when full).
+                async with self.runtime.read_slot(actor, connection['id']) as cancel:
+                    found = await self.runtime.execute_read(
+                        actor, wid, {'connection_id': connection['id'], 'sql': probe.sql, 'parameters': probe.parameters,
+                                     'column_kinds': [kind]}, max_rows=PIVOT_PROBE_ROWS, view_id=view_id, cancel_event=cancel)
                 values = pivot_values_from_rows(found['rows'], kind, probe.columns[0]['name'])
                 extra['pivot'] = {'probed': True, 'column_count': len(values), 'limit': PIVOT_MAX_COLUMNS}
             compiled = compile_spec(spec, index, dialect, segments=segments, pivot_values=values)

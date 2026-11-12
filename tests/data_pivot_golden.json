@@ -22,8 +22,8 @@
    ]
   },
   "text_by_month": {
-   "probe": "SELECT strftime('%Y-%m', \"s\".\"day\") AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY strftime('%Y-%m', \"s\".\"day\")\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN strftime('%Y-%m', \"s\".\"day\") = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN strftime('%Y-%m', \"s\".\"day\") = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN strftime('%Y-%m', \"s\".\"day\") IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (strftime('%Y-%m', \"s\".\"day\") IN (:p3, :p4) OR strftime('%Y-%m', \"s\".\"day\") IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "probe": "SELECT CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p3, :p4) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -76,8 +76,8 @@
    ]
   },
   "two_row_dims": {
-   "probe": "SELECT strftime('%Y-%m', \"s\".\"day\") AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY strftime('%Y-%m', \"s\".\"day\")\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", \"s\".\"flag\" AS \"pv_r2\", SUM(CASE WHEN strftime('%Y-%m', \"s\".\"day\") = :p1 THEN \"s\".\"qty\" END) AS \"pv_c1\", SUM(CASE WHEN strftime('%Y-%m', \"s\".\"day\") = :p2 THEN \"s\".\"qty\" END) AS \"pv_c2\", SUM(CASE WHEN strftime('%Y-%m', \"s\".\"day\") IS NULL THEN \"s\".\"qty\" END) AS \"pv_c3\", SUM(\"s\".\"qty\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (strftime('%Y-%m', \"s\".\"day\") IN (:p3, :p4) OR strftime('%Y-%m', \"s\".\"day\") IS NULL)\nGROUP BY \"s\".\"region\", \"s\".\"flag\"\nORDER BY \"s\".\"region\" ASC NULLS LAST, \"s\".\"flag\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "probe": "SELECT CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", \"s\".\"flag\" AS \"pv_r2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN \"s\".\"qty\" END) AS \"pv_c1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN \"s\".\"qty\" END) AS \"pv_c2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN \"s\".\"qty\" END) AS \"pv_c3\", SUM(\"s\".\"qty\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p3, :p4) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"s\".\"region\", \"s\".\"flag\"\nORDER BY \"s\".\"region\" ASC NULLS LAST, \"s\".\"flag\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -354,8 +354,8 @@
    ]
   },
   "with_join": {
-   "probe": "SELECT strftime('%Y-%m', \"s\".\"day\") AS \"v\"\nFROM \"sales\" AS \"s\"\nLEFT JOIN \"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nGROUP BY strftime('%Y-%m', \"s\".\"day\")\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"c\".\"segment\" AS \"pv_r1\", COUNT(CASE WHEN strftime('%Y-%m', \"s\".\"day\") = :p1 THEN 1 END) AS \"pv_c1\", COUNT(CASE WHEN strftime('%Y-%m', \"s\".\"day\") = :p2 THEN 1 END) AS \"pv_c2\", COUNT(CASE WHEN strftime('%Y-%m', \"s\".\"day\") IS NULL THEN 1 END) AS \"pv_c3\", COUNT(*) AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nLEFT JOIN \"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nWHERE (strftime('%Y-%m', \"s\".\"day\") IN (:p3, :p4) OR strftime('%Y-%m', \"s\".\"day\") IS NULL)\nGROUP BY \"c\".\"segment\"\nORDER BY \"c\".\"segment\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "probe": "SELECT CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END AS \"v\"\nFROM \"sales\" AS \"s\"\nLEFT JOIN \"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nGROUP BY CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"c\".\"segment\" AS \"pv_r1\", COUNT(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN 1 END) AS \"pv_c1\", COUNT(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN 1 END) AS \"pv_c2\", COUNT(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN 1 END) AS \"pv_c3\", COUNT(*) AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nLEFT JOIN \"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p3, :p4) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"c\".\"segment\"\nORDER BY \"c\".\"segment\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -410,7 +410,7 @@
  },
  "postgresql": {
   "rows_only": {
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(*) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(*) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {},
    "columns": [
     {
@@ -432,7 +432,7 @@
   },
   "text_by_month": {
    "probe": "SELECT to_char(\"s\".\"day\",'YYYY-MM') AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY to_char(\"s\".\"day\",'YYYY-MM')\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -486,7 +486,7 @@
   },
   "two_row_dims": {
    "probe": "SELECT to_char(\"s\".\"day\",'YYYY-MM') AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY to_char(\"s\".\"day\",'YYYY-MM')\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", \"s\".\"flag\" AS \"pv_r2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN \"s\".\"qty\" END) AS \"pv_c1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN \"s\".\"qty\" END) AS \"pv_c2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN \"s\".\"qty\" END) AS \"pv_c3\", SUM(\"s\".\"qty\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"s\".\"region\", \"s\".\"flag\"\nORDER BY \"s\".\"region\" ASC NULLS LAST, \"s\".\"flag\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", \"s\".\"flag\" AS \"pv_r2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN \"s\".\"qty\" END) AS \"pv_c1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN \"s\".\"qty\" END) AS \"pv_c2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN \"s\".\"qty\" END) AS \"pv_c3\", SUM(\"s\".\"qty\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"s\".\"region\", \"s\".\"flag\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST, \"s\".\"flag\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -548,7 +548,7 @@
   },
   "boolean_columns": {
    "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", COUNT(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", COUNT(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", COUNT(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", COUNT(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", COUNT(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", COUNT(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -602,7 +602,7 @@
   },
   "avg": {
    "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", CAST(AVG(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c1\", CAST(AVG(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c2\", CAST(AVG(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c3\", CAST(AVG(\"s\".\"amount\") AS DOUBLE PRECISION) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", CAST(AVG(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c1\", CAST(AVG(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c2\", CAST(AVG(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c3\", CAST(AVG(\"s\".\"amount\") AS DOUBLE PRECISION) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -656,7 +656,7 @@
   },
   "count_distinct": {
    "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"customer_id\" END) AS \"pv_c1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"customer_id\" END) AS \"pv_c2\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"customer_id\" END) AS \"pv_c3\", COUNT(DISTINCT \"s\".\"customer_id\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"customer_id\" END) AS \"pv_c1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"customer_id\" END) AS \"pv_c2\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"customer_id\" END) AS \"pv_c3\", COUNT(DISTINCT \"s\".\"customer_id\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -710,7 +710,7 @@
   },
   "sorted_by_total": {
    "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY SUM(\"s\".\"amount\") DESC NULLS LAST, \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY SUM(\"s\".\"amount\") DESC NULLS LAST, \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -764,7 +764,7 @@
   },
   "with_join": {
    "probe": "SELECT to_char(\"s\".\"day\",'YYYY-MM') AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nLEFT JOIN \"public\".\"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nGROUP BY to_char(\"s\".\"day\",'YYYY-MM')\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT \"c\".\"segment\" AS \"pv_r1\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN 1 END) AS \"pv_c1\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN 1 END) AS \"pv_c2\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN 1 END) AS \"pv_c3\", COUNT(*) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nLEFT JOIN \"public\".\"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"c\".\"segment\"\nORDER BY \"c\".\"segment\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT \"c\".\"segment\" AS \"pv_r1\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN 1 END) AS \"pv_c1\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN 1 END) AS \"pv_c2\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN 1 END) AS \"pv_c3\", COUNT(*) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nLEFT JOIN \"public\".\"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"c\".\"segment\"\nORDER BY \"c\".\"segment\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -819,7 +819,7 @@
  },
  "mysql": {
   "rows_only": {
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {},
    "columns": [
     {
@@ -841,7 +841,7 @@
   },
   "text_by_month": {
    "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -895,7 +895,7 @@
   },
   "two_row_dims": {
    "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, `s`.`flag` AS `pv_r2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`qty` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`qty` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`qty` END) AS `pv_c3`, SUM(`s`.`qty`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`flag`\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC, (`s`.`flag` IS NULL), `s`.`flag` ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, `s`.`flag` AS `pv_r2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`qty` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`qty` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`qty` END) AS `pv_c3`, SUM(`s`.`qty`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`flag`\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC, (`s`.`flag` IS NULL), `s`.`flag` ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -957,7 +957,7 @@
   },
   "boolean_columns": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, COUNT(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, COUNT(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, COUNT(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, COUNT(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, COUNT(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, COUNT(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1011,7 +1011,7 @@
   },
   "avg": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, CAST(AVG(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS DOUBLE) AS `pv_c1`, CAST(AVG(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS DOUBLE) AS `pv_c2`, CAST(AVG(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS DOUBLE) AS `pv_c3`, CAST(AVG(`s`.`amount`) AS DOUBLE) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, AVG((CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) + 0e0) AS `pv_c1`, AVG((CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) + 0e0) AS `pv_c2`, AVG((CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) + 0e0) AS `pv_c3`, AVG((`s`.`amount`) + 0e0) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1065,7 +1065,7 @@
   },
   "count_distinct": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p1 THEN `s`.`customer_id` END) AS `pv_c1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p2 THEN `s`.`customer_id` END) AS `pv_c2`, COUNT(DISTINCT CASE WHEN `s`.`flag` IS NULL THEN `s`.`customer_id` END) AS `pv_c3`, COUNT(DISTINCT `s`.`customer_id`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p1 THEN `s`.`customer_id` END) AS `pv_c1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p2 THEN `s`.`customer_id` END) AS `pv_c2`, COUNT(DISTINCT CASE WHEN `s`.`flag` IS NULL THEN `s`.`customer_id` END) AS `pv_c3`, COUNT(DISTINCT `s`.`customer_id`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1119,7 +1119,7 @@
   },
   "sorted_by_total": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, SUM(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (SUM(`s`.`amount`) IS NULL), SUM(`s`.`amount`) DESC, (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, SUM(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (SUM(`s`.`amount`) IS NULL), SUM(`s`.`amount`) DESC, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1173,7 +1173,7 @@
   },
   "with_join": {
    "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `c`.`segment` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN 1 END) AS `pv_c1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN 1 END) AS `pv_c2`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN 1 END) AS `pv_c3`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `c`.`segment` COLLATE utf8mb4_bin, (`c`.`segment` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`c`.`segment` COLLATE utf8mb4_bin IS NULL), `c`.`segment` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `c`.`segment` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN 1 END) AS `pv_c1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN 1 END) AS `pv_c2`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN 1 END) AS `pv_c3`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `c`.`segment` COLLATE utf8mb4_0900_bin, (`c`.`segment` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`c`.`segment` COLLATE utf8mb4_0900_bin IS NULL), `c`.`segment` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -1228,7 +1228,7 @@
  },
  "mariadb": {
   "rows_only": {
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {},
    "columns": [
     {
@@ -1250,7 +1250,7 @@
   },
   "text_by_month": {
    "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -1304,7 +1304,7 @@
   },
   "two_row_dims": {
    "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, `s`.`flag` AS `pv_r2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`qty` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`qty` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`qty` END) AS `pv_c3`, SUM(`s`.`qty`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`flag`\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC, (`s`.`flag` IS NULL), `s`.`flag` ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, `s`.`flag` AS `pv_r2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`qty` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`qty` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`qty` END) AS `pv_c3`, SUM(`s`.`qty`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`flag`\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC, (`s`.`flag` IS NULL), `s`.`flag` ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",
@@ -1366,7 +1366,7 @@
   },
   "boolean_columns": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, COUNT(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, COUNT(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, COUNT(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, COUNT(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, COUNT(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, COUNT(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1420,7 +1420,7 @@
   },
   "avg": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, CAST(AVG(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS DOUBLE) AS `pv_c1`, CAST(AVG(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS DOUBLE) AS `pv_c2`, CAST(AVG(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS DOUBLE) AS `pv_c3`, CAST(AVG(`s`.`amount`) AS DOUBLE) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, AVG((CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) + 0e0) AS `pv_c1`, AVG((CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) + 0e0) AS `pv_c2`, AVG((CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) + 0e0) AS `pv_c3`, AVG((`s`.`amount`) + 0e0) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1474,7 +1474,7 @@
   },
   "count_distinct": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p1 THEN `s`.`customer_id` END) AS `pv_c1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p2 THEN `s`.`customer_id` END) AS `pv_c2`, COUNT(DISTINCT CASE WHEN `s`.`flag` IS NULL THEN `s`.`customer_id` END) AS `pv_c3`, COUNT(DISTINCT `s`.`customer_id`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p1 THEN `s`.`customer_id` END) AS `pv_c1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p2 THEN `s`.`customer_id` END) AS `pv_c2`, COUNT(DISTINCT CASE WHEN `s`.`flag` IS NULL THEN `s`.`customer_id` END) AS `pv_c3`, COUNT(DISTINCT `s`.`customer_id`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1528,7 +1528,7 @@
   },
   "sorted_by_total": {
    "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `s`.`region` COLLATE utf8mb4_bin AS `pv_r1`, SUM(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_bin IS NULL)\nORDER BY (SUM(`s`.`amount`) IS NULL), SUM(`s`.`amount`) DESC, (`s`.`region` COLLATE utf8mb4_bin IS NULL), `s`.`region` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, SUM(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (SUM(`s`.`amount`) IS NULL), SUM(`s`.`amount`) DESC, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": false,
     "p2": true,
@@ -1582,7 +1582,7 @@
   },
   "with_join": {
    "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
-   "sql": "SELECT `c`.`segment` COLLATE utf8mb4_bin AS `pv_r1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN 1 END) AS `pv_c1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN 1 END) AS `pv_c2`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN 1 END) AS `pv_c3`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `c`.`segment` COLLATE utf8mb4_bin, `c`.`segment`, (`c`.`segment` COLLATE utf8mb4_bin IS NULL)\nORDER BY (`c`.`segment` COLLATE utf8mb4_bin IS NULL), `c`.`segment` COLLATE utf8mb4_bin ASC\nLIMIT 201 OFFSET 0",
+   "sql": "SELECT `c`.`segment` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN 1 END) AS `pv_c1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN 1 END) AS `pv_c2`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN 1 END) AS `pv_c3`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `c`.`segment` COLLATE utf8mb4_nopad_bin, `c`.`segment`, (`c`.`segment` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`c`.`segment` COLLATE utf8mb4_nopad_bin IS NULL), `c`.`segment` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
    "parameters": {
     "p1": "2026-01",
     "p2": "2026-02",

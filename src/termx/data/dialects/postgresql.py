@@ -50,6 +50,9 @@ class PostgreSQLDialect(Dialect):
     def coerce_param(self, value: object, kind: str) -> object:
         return self._coerce_base(value, kind)
 
+    def text_order_operand(self, expr: str, charset: str | None = None) -> str:
+        return f'{expr} COLLATE "C"'   # the default collation orders by locale; "C" is by code point like the others
+
     def avg_expr(self, expr: str) -> str:
         return f'CAST(AVG({expr}) AS DOUBLE PRECISION)'
 

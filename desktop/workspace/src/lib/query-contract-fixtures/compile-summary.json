@@ -63,7 +63,7 @@
   "response": {
     "ok": true,
     "dialect": "sqlite",
-    "sql": "SELECT strftime('%Y-%m', \"o\".\"ordered_at\") AS \"Month\", SUM(\"o\".\"amount\") AS \"Total amount\", COUNT(*) AS \"Number of rows\"\nFROM \"orders\" AS \"o\"\nLEFT JOIN \"order_items\" AS \"i\" ON \"o\".\"id\" = \"i\".\"order_id\"\nGROUP BY strftime('%Y-%m', \"o\".\"ordered_at\")\nORDER BY strftime('%Y-%m', \"o\".\"ordered_at\") ASC NULLS LAST\nLIMIT 25 OFFSET 0",
+    "sql": "SELECT CASE WHEN \"o\".\"ordered_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"o\".\"ordered_at\",1,10)) = substr(\"o\".\"ordered_at\",1,10) THEN strftime('%Y-%m', substr(\"o\".\"ordered_at\",1,10)) END AS \"Month\", SUM(\"o\".\"amount\") AS \"Total amount\", COUNT(*) AS \"Number of rows\"\nFROM \"orders\" AS \"o\"\nLEFT JOIN \"order_items\" AS \"i\" ON \"o\".\"id\" = \"i\".\"order_id\"\nGROUP BY CASE WHEN \"o\".\"ordered_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"o\".\"ordered_at\",1,10)) = substr(\"o\".\"ordered_at\",1,10) THEN strftime('%Y-%m', substr(\"o\".\"ordered_at\",1,10)) END\nORDER BY CASE WHEN \"o\".\"ordered_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"o\".\"ordered_at\",1,10)) = substr(\"o\".\"ordered_at\",1,10) THEN strftime('%Y-%m', substr(\"o\".\"ordered_at\",1,10)) END ASC NULLS LAST\nLIMIT 25 OFFSET 0",
     "parameters": {},
     "columns": [
       {
