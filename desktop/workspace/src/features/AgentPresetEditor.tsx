@@ -26,16 +26,20 @@ function ListField({label, value, onChange, disabled}: {label: string; value: st
   return <TextField multiline label={label} value={value.join('\n')} disabled={disabled} onChange={text => onChange(text.split('\n'))}/>;
 }
 
-export function AgentPresetEditor({ preset, onSave, onCancel, engines=[] }: {
+/** Fields a described draft pre-fills on a new preset. Nothing here is saved until the person submits the form. */
+export type AgentPresetSeed = Partial<Pick<PresetDraft, 'name' | 'description' | 'instructions' | 'tools' | 'approval_mode' | 'sandbox_profile'>>;
+
+export function AgentPresetEditor({ preset, initial, onSave, onCancel, engines=[] }: {
   engines?: {id: string; label: string}[];
+  initial?: AgentPresetSeed;
   preset?: AgentPreset; onSave: (input: AgentPresetInput) => Promise<unknown>; onCancel?: () => void;
 }) {
   const {formProps, markClean} = useDirtyForm('agent-preset');
   const [original] = useState(preset);
   const [draft, setDraft] = useState<PresetDraft>(() => ({
-    name: preset?.name || '', description: preset?.description || '', instructions: preset?.instructions || '', engine: preset?.engine || 'inherit', model: preset?.model || '',
-    tools: [...(preset?.tools || [])], toolsets: [...(preset?.toolsets || [])], deny_tools: [...(preset?.deny_tools || [])],
-    approval_mode: preset?.approval_mode || 'standard', sandbox_profile: preset?.sandbox_profile || 'agent', enabled: preset?.enabled ?? true,
+    name: preset?.name || initial?.name || '', description: preset?.description || initial?.description || '', instructions: preset?.instructions || initial?.instructions || '', engine: preset?.engine || 'inherit', model: preset?.model || '',
+    tools: [...(preset?.tools || initial?.tools || [])], toolsets: [...(preset?.toolsets || [])], deny_tools: [...(preset?.deny_tools || [])],
+    approval_mode: preset?.approval_mode || initial?.approval_mode || 'standard', sandbox_profile: preset?.sandbox_profile || initial?.sandbox_profile || 'agent', enabled: preset?.enabled ?? true,
     mcp_connections: structuredClone(preset?.mcp_connections || []) as McpBinding[], allTools: preset ? preset.tools_mode === 'all' : false,
   }));
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [attempted, setAttempted] = useState(false);

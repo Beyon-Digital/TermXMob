@@ -58,7 +58,7 @@ export function Managers({section: incoming, projectId, sessionId, onSection, on
     {!ready?<div className="manager-main"><Empty>Loading current settings…</Empty></div>
     :section==='models'?<ModelsSection key={scope} admin={admin} me={me} projectId={projectId} onCapabilitiesChanged={onCapabilitiesChanged}/>
     :section==='voice'?<VoiceSection key={scope} admin={admin} projectId={projectId}/>
-    :section==='agents'?<AgentsSection key={scope} admin={admin} me={me} projectId={projectId}/>
+    :section==='agents'?<AgentsSection key={scope} admin={admin} me={me} projectId={projectId} onSection={onSection}/>
     :section==='bots'?<BotsSection key={scope} admin={admin} me={me} projectId={projectId} onSection={onSection}/>
     :section==='memory'?<MemorySection key={scope+':'+(agentId??'')} me={me} projectId={projectId} agentId={agentId}/>
     :section==='access'?<AccessSection key={scope} admin={admin} me={me} projectId={projectId}/>

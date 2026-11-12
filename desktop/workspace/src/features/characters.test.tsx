@@ -116,10 +116,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Create a character starts with a description; these tests go straight to the manual form. */
+async function chooseManual() {
+  fireEvent.click(await screen.findByRole('button', {name: 'Fill in manually'}));
+}
+
 async function openCreateDialog() {
   render(<Characters ownerId="owner" sessions={chats} />);
   await screen.findByRole('button', {name: /Sprout/});
   fireEvent.click(screen.getByRole('button', {name: 'Create a character'}));
+  await chooseManual();
   await screen.findByRole('option', {name: 'Image API'});
 }
 
@@ -283,12 +289,32 @@ it('keeps the create form open with an inline error when generation fails, and d
   expect(within(dialog).getByLabelText(/Character description/)).toHaveValue('A round silver robot with blue ears');
 });
 
+it('drafts a name and description only, and leaves the image account, model and billing agreement to the person', async () => {
+  const original = api.getMockImplementation();
+  api.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/graphql') return {data: {draft_definition: {status: 'drafted', reply: 'Drafted it.', draft: {name: 'Moss', prompt: 'A round moss-green sprite.', acknowledge_billing: true}, warnings: [], provider_id: 'p', model: 'm'}}};
+    return original?.(path, init);
+  });
+  render(<Characters ownerId="owner" sessions={chats} />);
+  await screen.findByRole('button', {name: /Sprout/});
+  fireEvent.click(screen.getByRole('button', {name: 'Create a character'}));
+  fireEvent.change(await screen.findByLabelText('Describe the character'), {target: {value: 'A mossy companion'}});
+  fireEvent.click(screen.getByRole('button', {name: 'Send description'}));
+  fireEvent.click(await screen.findByRole('button', {name: 'Review and create'}));
+  expect(await screen.findByLabelText(/Character name/)).toHaveValue('Moss');
+  expect(screen.getByLabelText(/Character description/)).toHaveValue('A round moss-green sprite.');
+  expect(screen.getByLabelText(/I agree to charges/)).not.toBeChecked();
+  expect(screen.getByRole('button', {name: 'Generate reference'})).toBeDisabled();
+  expect(api.mock.calls.some(([path]) => String(path).includes('/api/characters/generate'))).toBe(false);
+});
+
 it('keeps the create draft when the dialog is closed and reopened', async () => {
   await openCreateDialog();
   fireEvent.change(screen.getByLabelText(/Character name/), {target: {value: 'Mochi'}});
   fireEvent.keyDown(screen.getByRole('dialog'), {key: 'Escape'});
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', {name: 'Create a character'}));
+  await chooseManual();
   expect(await screen.findByLabelText(/Character name/)).toHaveValue('Mochi');
 });
 
@@ -320,6 +346,7 @@ it('does not dispatch a generation intent after its settings have unmounted', as
   const view = render(<Characters ownerId="owner" sessions={chats} />);
   await screen.findByRole('button', {name: /Sprout/});
   fireEvent.click(screen.getByRole('button', {name: 'Create a character'}));
+  await chooseManual();
   await screen.findByRole('option', {name: 'Image API'});
   fillCreateForm();
   let finish!: (value: ArrayBuffer) => void;
@@ -539,6 +566,7 @@ it('selects the finished reference in the create form when its operation complet
   await act(async () => vi.advanceTimersByTimeAsync(2600));
   expect(await screen.findByText(/Reference ready/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name: 'Create a character'}));
+  await chooseManual();
   expect(await screen.findByLabelText('Character reference')).toHaveValue('ref-art');
   expect(await screen.findByAltText('Canonical character reference')).toBeInTheDocument();
 });
@@ -548,6 +576,9 @@ it('has no accessibility violations in the studio or its dialogs', async () => {
   await screen.findByRole('button', {name: /Sprout/});
   await expectNoAxeViolations(view.container);
   fireEvent.click(screen.getByRole('button', {name: 'Create a character'}));
+  await expectNoAxeViolations(await screen.findByRole('dialog'));
+  await chooseManual();
+  await screen.findByLabelText(/Character name/);
   await expectNoAxeViolations(await screen.findByRole('dialog'));
   fireEvent.keyDown(screen.getByRole('dialog'), {key: 'Escape'});
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
