@@ -1,11 +1,16 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
-import {cleanup, fireEvent, render, screen, within} from '@testing-library/react';
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import TablesOverview, {overviewModeKey} from './TablesOverview';
 import {expectNoAxeViolations} from '../../test-axe';
 import type {SourceController} from './use-source';
 import type {DataConnection, DataEngine} from '../../lib/data-studio';
+import {runSpecToCompletion} from '../../lib/data-query';
 
-beforeEach(() => localStorage.clear());
+vi.mock('../../lib/data-query', () => ({runSpecToCompletion: vi.fn()}));
+const count = vi.mocked(runSpecToCompletion);
+
+beforeEach(() => {localStorage.clear(); count.mockReset();});
 afterEach(cleanup);
 const engine: DataEngine = {id: 'sqlite', label: 'SQLite', status: 'qualified', ready: true, capabilities: {read: true, schema: true}};
 const source: DataConnection = {id: 'source', revision: 1, name: 'Orders source', engine: 'sqlite', config: {}, created_by: 'owner'};
@@ -15,7 +20,7 @@ const loaded: SourceController = {...idle, schemaStatus: 'ready', schema: {table
   {name: 'customers', columns: [{name: 'id'}], row_estimate: 1200},
   {name: 'audit_view', columns: [], readable: false, reason: 'Views are not readable.'}]}};
 function props(over: Partial<React.ComponentProps<typeof TablesOverview>> = {}): React.ComponentProps<typeof TablesOverview> {
-  return {ownerId: 'owner', role: 'owner', hasConnections: true, source, engine, controller: idle, canEditSource: true, onConnect: vi.fn(), onEditSource: vi.fn(), onArchiveSource: vi.fn(), onOpenTable: vi.fn(), ...over};
+  return {workspaceId: 'w', ownerId: 'owner', role: 'owner', hasConnections: true, source, engine, controller: idle, canEditSource: true, onConnect: vi.fn(), onEditSource: vi.fn(), onArchiveSource: vi.fn(), onOpenTable: vi.fn(), ...over};
 }
 
 it('has one sentence and one action when no source is connected', () => {
@@ -56,7 +61,7 @@ it('lists tables with column counts and estimates, right-aligning numbers', asyn
   const {container} = render(<TablesOverview {...props({controller: loaded})}/>);
   const row = screen.getByRole('row', {name: /orders/});
   expect(within(row).getAllByRole('cell')[0]).toHaveClass('data-number');
-  expect(within(row).getByText('Not estimated')).toBeInTheDocument();
+  expect(within(row).getByRole('button', {name: 'Count rows in orders'})).toBeInTheDocument();
   expect(within(screen.getByRole('row', {name: /customers/})).getByText('1,200')).toBeInTheDocument();
   await expectNoAxeViolations(container);
 });
@@ -74,7 +79,7 @@ it('toggles to tiles, keeps the choice per owner and never touches other storage
   expect(screen.getByRole('button', {name: 'Grid view'})).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getAllByRole('listitem')).toHaveLength(3);
   expect(screen.getByText('2 columns')).toBeInTheDocument();
-  expect(screen.getByText('Row count not estimated')).toBeInTheDocument();
+  expect(screen.getByRole('button', {name: 'Count rows in orders'})).toBeInTheDocument();
   expect(screen.getByText('About 1,200 rows')).toBeInTheDocument();
   expect(localStorage.getItem(overviewModeKey('owner'))).toBe('grid');
   view.unmount();
@@ -123,4 +128,75 @@ it('shows source actions to editors only, honouring ownership', () => {
 it('reports a connection test result in place', () => {
   render(<TablesOverview {...props({controller: {...idle, testMessage: 'Connection succeeded.'}})}/>);
   expect(screen.getByRole('status')).toHaveTextContent('Connection succeeded.');
+});
+
+const job = (over: object) => ({id: 'j', status: 'completed', connection_id: 'source', result: {columns: [], rows: [[1305]], row_count: 1, truncated: false}, ...over}) as never;
+
+it('counts the rows of a table without an estimate and announces the number politely', async () => {
+  count.mockResolvedValue(job({}));
+  render(<TablesOverview {...props({controller: loaded})}/>);
+  const row = screen.getByRole('row', {name: /orders/});
+  await userEvent.click(within(row).getByRole('button', {name: 'Count rows in orders'}));
+  expect(await within(row).findByText('1,305')).toBeInTheDocument();
+  expect(within(row).getByText('1,305').closest('[aria-live]')).toHaveAttribute('aria-live', 'polite');
+  const [, spec] = count.mock.calls[0];
+  expect(count.mock.calls[0][0]).toBe('w');
+  expect(spec).toMatchObject({source: 'source', from: {table: 'orders'}, aggregates: [{fn: 'count'}], select: [], limit: 1});
+  expect(within(row).queryByRole('button', {name: /Count rows/})).not.toBeInTheDocument();
+});
+
+it('shows Counting while the count runs and disables the button', async () => {
+  count.mockReturnValue(new Promise(() => undefined));
+  render(<TablesOverview {...props({controller: loaded})}/>);
+  await userEvent.click(screen.getByRole('button', {name: 'Count rows in orders'}));
+  expect(screen.getByRole('button', {name: 'Count rows in orders'})).toBeDisabled();
+  expect(screen.getByRole('button', {name: 'Count rows in orders'})).toHaveTextContent('Counting…');
+});
+
+it('says why a count failed and offers to try again, including the source-test 409', async () => {
+  count.mockRejectedValueOnce(new Error('Test this source first to verify its current read-only role and session.'));
+  count.mockResolvedValueOnce(job({}));
+  render(<TablesOverview {...props({controller: loaded})}/>);
+  await userEvent.click(screen.getByRole('button', {name: 'Count rows in orders'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Test this source first');
+  await userEvent.click(screen.getByRole('button', {name: 'Try again'}));
+  expect(await screen.findByText('1,305')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('reports a count job that failed on the server', async () => {
+  count.mockResolvedValue(job({status: 'failed', error: 'The query ran longer than 30 seconds and was stopped.', result: null}));
+  render(<TablesOverview {...props({controller: loaded})}/>);
+  await userEvent.click(screen.getByRole('button', {name: 'Count rows in orders'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('stopped');
+});
+
+it('does not offer Count rows where the source gave an estimate or the table cannot be read', () => {
+  render(<TablesOverview {...props({controller: loaded})}/>);
+  expect(screen.getAllByRole('button', {name: /Count rows/})).toHaveLength(1);
+  expect(within(screen.getByRole('row', {name: /customers/})).getByText('1,200')).toBeInTheDocument();
+});
+
+it('offers Combine from the More menu of a row and a tile', async () => {
+  const onCombineTable = vi.fn(), user = userEvent.setup();
+  render(<TablesOverview {...props({controller: loaded, onCombineTable})}/>);
+  await user.click(screen.getByRole('button', {name: 'More actions for orders'}));
+  await user.click(await screen.findByRole('menuitem', {name: 'Combine with another table'}));
+  expect(onCombineTable).toHaveBeenCalledWith(expect.objectContaining({name: 'orders'}));
+  expect(screen.getByRole('button', {name: 'More actions for audit_view'})).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', {name: 'Grid view'}));
+  await user.click(screen.getByRole('button', {name: 'More actions for customers'}));
+  await user.click(await screen.findByRole('menuitem', {name: 'Combine with another table'}));
+  expect(onCombineTable).toHaveBeenLastCalledWith(expect.objectContaining({name: 'customers'}));
+});
+
+it('has no More menu when combining is not available, for example for a viewer', () => {
+  render(<TablesOverview {...props({controller: loaded})}/>);
+  expect(screen.queryByRole('button', {name: /More actions/})).not.toBeInTheDocument();
+});
+
+it('has no accessibility violations with the Count rows and More actions controls', async () => {
+  const {container} = render(<TablesOverview {...props({controller: loaded, onCombineTable: vi.fn()})}/>);
+  await expectNoAxeViolations(container);
+  await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
 });

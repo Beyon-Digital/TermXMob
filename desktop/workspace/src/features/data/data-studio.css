@@ -84,11 +84,12 @@
 .data-table-list tbody th small{display:block;color:var(--text-3)}
 .data-table-list .data-number,.data-results .data-number{text-align:right;font-variant-numeric:tabular-nums}
 .data-table-name{display:block;max-width:40ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.data-row-action{width:1%;text-align:right}
+.data-row-action{width:1%;text-align:right;white-space:nowrap}
 .data-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(224px,1fr));gap:16px;list-style:none;margin:0;padding:0}
 .data-tile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
 .data-tile h3{max-width:100%;margin:0 0 4px;font-size:14px;line-height:20px;font-weight:500;overflow-wrap:anywhere}
-.data-tile .button{margin-top:12px}
+.data-tile-actions{display:flex;align-items:center;gap:8px;margin-top:12px}
+.data-row-count{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* SQL workbench. */
 .data-editor-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}

@@ -1,4 +1,4 @@
-import {useEffect, useId, useState} from 'react';
+import {useEffect, useId, useRef, useState} from 'react';
 import {Link2, Plus, X} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Popover, PopoverContent, PopoverTrigger} from '../../components/ui/popover';
@@ -10,6 +10,7 @@ import type {Join, JoinInfo, QuerySpec, Relation, SchemaTable} from '../../lib/q
 
 type Props = {
   workspaceId: string; connectionId: string; spec: QuerySpec; tables: SchemaTable[]; onAdd: (join: Join) => void;
+  /** Grows each time something outside asks for this panel (the overview's Combine action). */ openRequest?: number;
 };
 const LIMIT_REASON = 'At most 4 tables can be combined.';
 const tableName = (table: SchemaTable) => table.name;
@@ -24,8 +25,9 @@ export function joinFromRelation(spec: QuerySpec, relation: Relation): Join | nu
 }
 
 /** "Combine with another table": suggested links as sentences, then a manual builder. */
-export default function JoinPanel({workspaceId, connectionId, spec, tables, onAdd}: Props) {
-  const id = useId(), [open, setOpen] = useState(false), [tick, setTick] = useState(0);
+export default function JoinPanel({workspaceId, connectionId, spec, tables, onAdd, openRequest = 0}: Props) {
+  const id = useId(), [open, setOpen] = useState(false), [tick, setTick] = useState(0), asked = useRef(0);
+  useEffect(() => {if (openRequest > asked.current) {asked.current = openRequest; setOpen(true);}}, [openRequest]);
   const [relations, setRelations] = useState<{status: 'loading' | 'ready' | 'error'; rows: Relation[]; error: string}>({status: 'loading', rows: [], error: ''});
   const full = spec.joins.length >= MAX_JOINS, aliases = specAliases(spec);
   const named = (alias: string) => alias === spec.from.alias ? spec.from.table : spec.joins.find(join => join.alias === alias)?.table || alias;
@@ -53,6 +55,7 @@ export default function JoinPanel({workspaceId, connectionId, spec, tables, onAd
     <PopoverTrigger asChild><Button variant="ghost" size="sm"><Link2 size={16} strokeWidth={1.5}/>Combine with another table</Button></PopoverTrigger>
     <PopoverContent className="data-join-popover" aria-label="Combine with another table">
       <h2 className="data-popover-title">Combine with another table</h2>
+      <div className="data-join-body">
       {full && <p className="data-muted" role="status">{LIMIT_REASON}</p>}
       <section aria-label="Suggested links" className="data-join-suggestions">
         <h3 className="data-popover-subtitle">Suggested</h3>
@@ -77,8 +80,10 @@ export default function JoinPanel({workspaceId, connectionId, spec, tables, onAd
         <div className="data-field"><label htmlFor={id + '-kind'}>Rows to keep</label>
           <Select id={id + '-kind'} value={kind} disabled={full} onChange={event => setKind(event.target.value as 'left' | 'inner')}>
             <option value="left">Keep all {humanize(spec.from.table).toLowerCase()} rows</option><option value="inner">Only rows that match</option></Select></div>
-        <div className="data-popover-actions"><Button variant="secondary" size="sm" disabled={!ready} onClick={addManual}>Add table</Button></div>
       </section>
+      </div>
+      {/* Outside the scrolling body, so the primary action is always in view. */}
+      <footer className="data-join-footer data-popover-actions"><Button size="sm" disabled={!ready} onClick={addManual}>Add table</Button></footer>
     </PopoverContent>
   </Popover>;
 }

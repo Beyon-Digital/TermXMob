@@ -26,9 +26,9 @@ export default function QueryGrid({columns, rows, loading = false, onSort, rende
         {columns.map((column, index) => <div className="data-grid-cell data-grid-header" role="columnheader" key={column.key + index} data-align={alignFor(column.kind)}
           aria-sort={column.sort ? (column.sort === 'asc' ? 'ascending' : 'descending') : column.sortable ? 'none' : undefined}>
           {column.sortable && onSort
-            ? <button type="button" className="data-grid-sort" onClick={event => onSort(index, event.shiftKey)}><span className="data-grid-label">{column.label}</span>
+            ? <button type="button" className="data-grid-sort" title={column.label} onClick={event => onSort(index, event.shiftKey)}><span className="data-grid-label">{column.label}</span>
               {column.sort === 'asc' ? <ArrowUp size={16} strokeWidth={1.5} aria-hidden="true"/> : column.sort === 'desc' ? <ArrowDown size={16} strokeWidth={1.5} aria-hidden="true"/> : <ChevronsUpDown size={16} strokeWidth={1.5} aria-hidden="true"/>}</button>
-            : <span className="data-grid-label">{column.label}</span>}
+            : <span className="data-grid-label" title={column.label}>{column.label}</span>}
           {renderFilter?.(index, column)}
         </div>)}
       </div></div>

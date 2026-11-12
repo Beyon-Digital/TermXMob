@@ -39,3 +39,19 @@ Jobs and Copilot receipts persist in the host's separate Data store. Interrupted
 Existing account secrets stay in the host credential service. No provider calls run on initialization. The integration was tested with synthetic databases and mocked inference, without paid requests or real-source access.
 
 [Verification and screenshots](implementation-status.md#verification) · [Canonical plan and remaining scope](implementation-status.md#data-studio)
+
+## Visual query behavior across engines
+
+SQLite, PostgreSQL, MySQL and MariaDB each have their own adapter (`src/termx/data/dialects`). The same table view returns the same rows and the same JSON types on all four.
+
+- **Run limits.** Every source read has a server-side deadline: 30 seconds by default, set with `TERMX_DATA_STATEMENT_TIMEOUT_SECONDS` (0.1 to 600). SQLite uses a progress handler, PostgreSQL `statement_timeout`, MySQL `MAX_EXECUTION_TIME` and MariaDB `max_statement_time`. A run that hits it ends as failed with a plain message. One person can have 4 runs in flight and one connection 8; more get a 429. Source reads use their own pool of 16 threads.
+- **Text is compared exactly.** MySQL and MariaDB columns are case- and often accent-insensitive by default. Equality, "is any of", "contains", Group by, unique counts and matches between tables use a binary collation there, so `Alice` and `alice` are different values on every engine.
+- **Result types.** Whole-number results are integers, decimal and average results are numbers, yes/no columns are true or false, and datetimes read `YYYY-MM-DDTHH:MM:SS`.
+- **Names.** PostgreSQL keeps 63 bytes of a result name. A longer name you type is refused; a longer default name is shortened.
+- **Values.** UUID columns need a valid UUID. List columns can only be filtered by empty or by text they contain. A whole number past 64 bits is compared as a decimal number.
+- **Combining tables.** The builder warns when neither side of a match is a key, and when a match can repeat rows.
+
+## Decisions
+
+- The sidebar Tables group shows 200 tables at a time with "Show more tables", not a virtualized list. Search filters the whole list, and virtualization is deferred until a source needs it.
+- The shared theme tokens keep the repository's monochrome accent. Moving Data to the DESIGN.md accent is a decision for the design owner, because Agent and Studio share the same tokens.

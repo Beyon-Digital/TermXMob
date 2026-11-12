@@ -49,7 +49,9 @@
 /* Popovers */
 .data-filter-popover{width:min(320px,calc(100vw - 16px))}
 .data-filter-form{display:flex;flex-direction:column;gap:12px}
-.data-join-popover{display:flex;flex-direction:column;gap:12px;width:min(480px,calc(100vw - 16px));max-height:min(var(--radix-popover-content-available-height,80dvh),560px);overflow:auto}
+.data-join-popover{display:flex;flex-direction:column;gap:12px;width:min(480px,calc(100vw - 16px));max-height:min(var(--radix-popover-content-available-height,80dvh),560px);overflow:hidden}
+.data-join-body{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto}
+.data-join-footer{flex:none;padding-top:12px;border-top:1px solid var(--border)}
 .data-join-suggestions,.data-join-manual{display:flex;flex-direction:column;gap:8px}
 .data-suggestion-list{list-style:none;margin:0;padding:0}
 .data-suggestion-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;border-bottom:1px solid var(--border)}
@@ -90,5 +92,10 @@
  .data-chip-remove{width:44px;height:44px}
  .data-chip{min-height:44px}
  .data-column-group .data-check{min-height:44px}
+ /* Radix portals render under <body>, outside .data-studio, so popovers and the floating editor need their own touch sizes. */
+ :root[data-app-workspace=data] .ui-popover :is(.input,.select){height:44px;min-height:44px;font-size:16px;line-height:24px}
+ :root[data-app-workspace=data] .ui-popover :is(.button,.dialog-close){min-height:44px;min-width:44px}
+ :root[data-app-workspace=data] .ui-popover .button-icon{width:44px;height:44px}
+ :root[data-app-workspace=data] .data-advanced-panel summary{display:flex;align-items:center;min-height:44px}
 }
 @media(prefers-reduced-motion:reduce){.data-results-body{transition:none}}

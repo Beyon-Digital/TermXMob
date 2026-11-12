@@ -14,11 +14,12 @@ afterEach(cleanup);
 
 // Spec "Experience": "Filters, sorts ... are kept in memory per tab" (plan 5.3). TableTab keeps its filters in component state,
 // and Radix TabsContent unmounts inactive panels unless forceMount is set (DataTabs only sets it for query tabs).
+// A stateful panel. Defined at module level: a component type created inside Harness would be new on every render and remount by itself.
+const Panel = ({tab}: {tab: DataTab}) => { const [text, setText] = useState(''); return <input aria-label={'Filter in ' + tab.id} value={text} onChange={event => setText(event.target.value)}/>; };
 it('keeps a table tab working state when the person switches to another tab and back', async () => {
   const orders: DataTab = {id: tableTabId('src', 'orders'), kind: 'table', connectionId: 'src', table: 'orders'};
   function Harness() {
     const [state, setState] = useState(openTab(initialTabs(), orders));
-    const Panel = ({tab}: {tab: DataTab}) => { const [text, setText] = useState(''); return <input aria-label={'Filter in ' + tab.id} value={text} onChange={event => setText(event.target.value)}/>; };
     return <DataTabs state={state} title={tab => tab.kind === 'overview' ? 'Overview' : tab.table!} onSelect={id => setState(previous => ({...previous, activeId: id}))} onClose={vi.fn()} panel={tab => <Panel tab={tab}/>}/>;
   }
   const user = userEvent.setup();
@@ -32,7 +33,7 @@ it('keeps a table tab working state when the person switches to another tab and 
 const engine: DataEngine = {id: 'sqlite', label: 'SQLite', status: 'qualified', ready: true, capabilities: {read: true, schema: true}};
 const source: DataConnection = {id: 'source', revision: 1, name: 'Orders source', engine: 'sqlite', config: {}, created_by: 'owner'};
 const controller: SourceController = {schema: {tables: [{name: 'orders', columns: [{name: 'id'}], row_estimate: null}]}, schemaStatus: 'ready', schemaError: '', needsTest: false, testing: false, testMessage: '', testError: '', loadSchema: vi.fn(), testConnection: vi.fn()};
-const overview = () => <TablesOverview ownerId="owner" role="owner" hasConnections source={source} engine={engine} controller={controller} canEditSource onConnect={vi.fn()} onEditSource={vi.fn()} onArchiveSource={vi.fn()} onOpenTable={vi.fn()}/>;
+const overview = () => <TablesOverview workspaceId="w" ownerId="owner" role="owner" hasConnections source={source} engine={engine} controller={controller} canEditSource onConnect={vi.fn()} onEditSource={vi.fn()} onArchiveSource={vi.fn()} onOpenTable={vi.fn()} onCombineTable={vi.fn()}/>;
 
 // Plan 5.4: SQLite reports no row estimate, so each table offers "Count rows", which issues a count spec.
 it('offers Count rows for a table without a row estimate', () => {

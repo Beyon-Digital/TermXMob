@@ -108,10 +108,13 @@ def set_sql(page,text):
 def open_advanced(page):
     page.get_by_role('button',name='Advanced',exact=True).click()
     page.get_by_role('menuitemcheckbox',name='SQL editor',exact=True).click()
-    panel=page.get_by_role('dialog',name='SQL editor',exact=True);expect(panel).to_be_visible();return panel
+    panel=page.get_by_role('dialog',name='SQL editor',exact=True);expect(panel).to_be_visible()
+    # The editor takes focus, not the menu button, so the keyboard path continues inside the panel.
+    expect(page.locator('#data-sql')).to_be_focused();return panel
 
 def close_advanced(page,panel):
     page.keyboard.press('Escape');expect(panel).not_to_be_visible()
+    expect(page.get_by_role('button',name='Advanced',exact=True)).to_be_focused()
 
 def rows_of(grid):
     return [row.get_by_role('cell').all_inner_texts() for row in grid.get_by_role('row').all()[1:]]
@@ -127,6 +130,8 @@ def visual_journey(page,data,path,out,report,theme,width):
     expect(tab.get_by_text('Rows 1 to 200',exact=True)).to_be_visible();expect(grid.get_by_role('row').nth(1)).to_be_visible()
     expect(tab.get_by_role('button',name='Show SQL',exact=True)).to_be_visible()
     capture(page,out,report,'table-grid-default',theme,width)
+    clipped=page.evaluate("[...document.querySelectorAll('.data-grid-label')].filter(e=>e.scrollWidth>e.clientWidth).map(e=>[e.textContent,e.scrollWidth,e.clientWidth,e.closest('.data-grid-cell').getBoundingClientRect().width,getComputedStyle(e.closest('.data-grid-cell')).padding,getComputedStyle(e.closest('.data-grid-cell')).gap,e.parentElement.getBoundingClientRect().width,innerWidth])")
+    assert not clipped,('Grid header labels are clipped',clipped)
     keys=[]
     tab.get_by_role('button',name='Combine with another table',exact=True).focus()
     for _ in range(5):
@@ -160,6 +165,11 @@ def visual_journey(page,data,path,out,report,theme,width):
     combine.get_by_role('button',name=re.compile('^Add: Sales to Customers')).click()
     joined=tab.get_by_role('list',name='Combined tables',exact=True);expect(joined).to_contain_text('Combined with Customers: customer_id matches id')
     tab.get_by_role('button',name='Combine with another table',exact=True).click()
+    add=combine.get_by_role('button',name='Add table',exact=True);box=add.bounding_box();viewport=page.viewport_size
+    assert box and box['y']>=0 and box['y']+box['height']<=viewport['height'],('The primary action is below the fold',box,viewport)
+    if viewport['width']<640:
+        assert box['height']>=44,('Touch target below 44px in a popover',box)
+        assert combine.get_by_label('Table to combine',exact=True).bounding_box()['height']>=44
     combine.get_by_label('Table to combine',exact=True).select_option('regions');combine.get_by_label('This column',exact=True).select_option(label='Customers · region_id')
     combine.get_by_label('Matches this column',exact=True).select_option('id');combine.get_by_role('button',name='Add table',exact=True).click()
     expect(joined).to_contain_text('Combined with Regions: region_id matches id')
@@ -454,6 +464,8 @@ def exercise(browser,out,report,ui_dist,width,theme):
             overview=data.get_by_role('region',name='Tables overview',exact=True)
             for table in('customers','regions','sales'):expect(overview).to_contain_text(table)
             capture(page,out,report,'tables-overview',theme,width)
+            overview.get_by_role('button',name='Count rows in sales',exact=True).click()
+            expect(overview.get_by_text(f'{ROWS:,}',exact=True)).to_be_visible()
             visual_journey(page,data,path,out,report,theme,width)
             panel=open_advanced(page)
             sql=set_sql(page,SQL);focus_sample(page,page.locator('#data-sql'),'Read-only SQL editor',report,True)

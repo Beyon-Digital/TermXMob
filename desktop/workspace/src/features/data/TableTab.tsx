@@ -19,6 +19,7 @@ import type {SourceController} from './use-source';
 type Props = {
   workspaceId: string; connectionId: string; name: string; label: string; controller: SourceController; engineCanLoad: boolean; onClose: () => void;
   /** Opens the Advanced SQL panel, offered when the visual builder does not support the engine. */ onOpenAdvanced?: () => void;
+  /** Grows when the person picked Combine from the overview, so the Combine panel opens. */ combineRequest?: number;
 };
 const SkeletonList = ({label}: {label: string}) => <div className="data-list" role="status" aria-label={label}>{[0, 1, 2, 3, 4].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
 const retry = (controller: SourceController) => controller.needsTest
@@ -44,7 +45,7 @@ const compact = (group: FilterGroup): FilterGroup => ({...group, items: group.it
   return next.items.length ? [next] : [];
 })});
 
-function TableWorkspace({workspaceId, connectionId, label, controller, table, tables, onOpenAdvanced}: Props & {table: SchemaTable; tables: SchemaTable[]}) {
+function TableWorkspace({workspaceId, connectionId, label, controller, table, tables, onOpenAdvanced, combineRequest}: Props & {table: SchemaTable; tables: SchemaTable[]}) {
   const scope = useDataScope();
   const base = useMemo(() => emptySpec(connectionId, table.name), [connectionId, table.name]);
   const [view, setView] = useState<View>({joins: [], filters: base.filters, sort: [], offset: 0, visible: null, summary: null});
@@ -150,9 +151,9 @@ function TableWorkspace({workspaceId, connectionId, label, controller, table, ta
   return <section className="data-table-tab" aria-label={'Table ' + label}>
     <header><h1>{label}</h1><p className="data-muted">{table.columns.length.toLocaleString()} {table.columns.length === 1 ? 'column' : 'columns'}{meta}</p></header>
     <div className="data-toolbar data-table-toolbar" role="toolbar" aria-label="Table tools">
-      <JoinPanel workspaceId={workspaceId} connectionId={connectionId} spec={spec} tables={tables} onAdd={join => change({joins: addJoin({...base, joins: view.joins}, join).joins})}/>
+      <JoinPanel workspaceId={workspaceId} connectionId={connectionId} spec={spec} tables={tables} openRequest={combineRequest} onAdd={join => change({joins: addJoin({...base, joins: view.joins}, join).joins})}/>
       <Button variant="ghost" size="sm" aria-expanded={panel.summarize} onClick={toggleSummary}><Sigma size={16} strokeWidth={1.5}/>Summarize</Button>
-      <ColumnPicker tables={tableColumns} visible={visible?.length ? visible : null} onChange={next => change({visible: next})} disabled={!!view.summary}/>
+      <ColumnPicker tables={tableColumns} visible={visible?.length ? visible : null} onChange={next => change({visible: next})} disabled={!!view.summary} disabledReason="The summary chooses the columns."/>
       <Button variant="ghost" size="sm" aria-expanded={panel.sql} onClick={() => setPanel(previous => ({...previous, sql: !previous.sql}))}><Code2 size={16} strokeWidth={1.5}/>Show SQL</Button>
       <Button variant="ghost" size="sm" onClick={() => void exportCsv()} disabled={!shown || exporting || loading}><Download size={16} strokeWidth={1.5}/>{exporting ? 'Exporting…' : 'Export CSV'}</Button>
     </div>
@@ -161,8 +162,7 @@ function TableWorkspace({workspaceId, connectionId, label, controller, table, ta
     {panel.summarize && view.summary && <SummarizePanel options={options} summary={view.summary} label={labelFor} buckets={buckets} onChange={summary => change({summary, sort: []})} onClear={() => {setPanel(previous => ({...previous, summarize: false})); change({summary: null, sort: []});}}/>}
     <FilterChips filters={view.filters} context={{label: labelFor, kind: kindFor}} options={options} allowedOps={allowedOps} onChange={filters => change({filters})}/>
     {panel.sql && <ShowSql compile={state.compile} errors={state.errors}/>}
-    {state.compile?.warnings.filter(warning => warning.code === 'text_date').map((warning, index) => <p className="data-hint" role="status" key={index}>{warning.message}</p>)}
-    {view.summary && <p className="data-muted" role="status">Summary mode: the grid shows the summary, not individual rows.</p>}
+    {state.compile?.warnings.filter(warning => warning.code === 'text_date' || warning.code === 'many_to_many').map((warning, index) => <p className="data-hint" role="status" key={index}>{warning.message}</p>)}
     <section className="data-results" aria-label="Results" aria-busy={loading}>
       {shown?.job.result?.truncated && <p className="data-muted">Preview truncated. CSV contains the available preview.</p>}
       <div className="data-results-body" data-stale={loading && shown ? true : undefined}>{results}</div>

@@ -53,13 +53,13 @@ it('closes the focused closable tab with Delete and by the close button', () => 
   expect(props.onClose).toHaveBeenLastCalledWith(orders.id);
 });
 
-it('keeps a query tab mounted but hidden so its draft survives a tab switch', () => {
+it('keeps every tab mounted but hidden so its draft, filters and joins survive a tab switch', () => {
   const state = {...openTab(openTab(initialTabs(), orders), draft), activeId: 'overview'};
   view(state, {panel: tab => <p>{'Panel ' + title(tab)}</p>});
   expect(screen.getByText('Panel Overview')).toBeVisible();
-  expect(screen.queryByText('Panel orders')).not.toBeInTheDocument();
-  const hidden = screen.getByText('Panel New query', {selector: 'p'});
-  expect(hidden.closest('[role=tabpanel]')).toHaveAttribute('hidden');
+  for (const name of ['Panel orders', 'Panel New query']) {
+    expect(screen.getByText(name, {selector: 'p'}).closest('[role=tabpanel]')).toHaveAttribute('hidden');
+  }
 });
 
 it('renders actions and banner around the panels', () => {

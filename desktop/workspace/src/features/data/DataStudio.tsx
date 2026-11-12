@@ -16,6 +16,7 @@ import DataNavigation, {tableLabel, type NamedRecord} from './DataNavigation';
 import DataTabs from './DataTabs';
 import TablesOverview from './TablesOverview';
 import TableTab from './TableTab';
+import {ADVANCED_TRIGGER_ID} from './AdvancedSql';
 import SourceDialog from './SourceDialog';
 import ArchiveSourceDialog from './ArchiveSourceDialog';
 import {useDataSource} from './use-source';
@@ -58,7 +59,7 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   const [copilot, setCopilot] = useState(false), [queryDraft, setQueryDraft] = useState<{tabId: string; draft: DataQueryDraft} | null>(null), [activeQueryId, setActiveQueryId] = useState(''), [manageDialog, setManageDialog] = useState(false);
   const [sourceDialog, setSourceDialog] = useState<{open: boolean; record?: DataConnection}>({open: false}), [archiveSource, setArchiveSource] = useState<DataConnection | undefined>(), [notice, setNotice] = useState('');
   const [tabsByWorkspace, setTabsByWorkspace] = useState<Record<string, DataTabsState>>({});
-  const [advancedOn, setAdvancedOn] = useState(() => readAdvanced(ownerId));
+  const [advancedOn, setAdvancedOn] = useState(() => readAdvanced(ownerId)), openedFromMenu = useRef(false), [focusRequest, setFocusRequest] = useState({tabId: '', n: 0}), [combineRequest, setCombineRequest] = useState({tabId: '', n: 0});
   const setAdvanced = useCallback((open: boolean) => {setAdvancedOn(open); rememberAdvanced(ownerId, open);}, [ownerId]);
   const scope = useDataScope(), snapshotTicket = useRef(0), flight = useRef(false), workspaceId = selection.workspaceId, connectionId = selection.connectionId;
   const currentWorkspace = bootstrap?.workspaces.find(row => row.id === workspaceId), role = snapshot?.workspace.role || currentWorkspace?.role || 'viewer', writable = role !== 'viewer';
@@ -160,10 +161,19 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   function openAdvanced() {
     if (!writable) return;
     setAdvanced(true);
-    if (shownTabs.tabs.find(tab => tab.id === shownTabs.activeId)?.kind !== 'query' || selection.view !== 'database') showDatabase({id: queryTabId(), kind: 'query'});
+    let target = shownTabs.tabs.find(tab => tab.id === shownTabs.activeId && tab.kind === 'query')?.id;
+    if (!target || selection.view !== 'database') {
+      target = queryTabId();
+      showDatabase({id: target, kind: 'query'});
+    }
+    setFocusRequest(previous => ({tabId: target!, n: previous.n + 1}));
   }
   const activeKind = shownTabs.tabs.find(tab => tab.id === shownTabs.activeId)?.kind, advancedShown = writable && advancedOn && activeKind === 'query' && selection.view === 'database';
   function openTable(table: SchemaTable) {showDatabase({id: tableTabId(connectionId, table.name, table.schema), kind: 'table', connectionId, table: table.name, ...(table.schema ? {schema: table.schema} : {})});}
+  function combineTable(table: SchemaTable) {
+    openTable(table);
+    setCombineRequest(previous => ({tabId: tableTabId(connectionId, table.name, table.schema), n: previous.n + 1}));
+  }
 
   const reports = useMemo(() => named(snapshot?.reports || []), [snapshot]), dashboards = useMemo(() => named(snapshot?.dashboards || []), [snapshot]);
   const nav = <DataNavigation loading={loading} workspaces={bootstrap?.workspaces || []} workspaceId={workspaceId} workspaceBusy={busy} onWorkspace={selectWorkspace} onCreateWorkspace={() => openDialog('create')}
@@ -175,9 +185,9 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
 
   const actions = <>
     {workspaceId && writable && <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button variant="ghost" aria-label="Advanced"><Wrench size={20} strokeWidth={1.5}/><span className="data-action-label">Advanced</span></Button></DropdownMenuTrigger>
-      <DropdownMenuContent aria-label="Advanced">
-        <DropdownMenuCheckboxItem checked={advancedShown} onCheckedChange={checked => {if (checked) openAdvanced(); else setAdvanced(false);}}>SQL editor</DropdownMenuCheckboxItem>
+      <DropdownMenuTrigger asChild><Button variant="ghost" id={ADVANCED_TRIGGER_ID} aria-label="Advanced"><Wrench size={20} strokeWidth={1.5}/><span className="data-action-label">Advanced</span></Button></DropdownMenuTrigger>
+      <DropdownMenuContent aria-label="Advanced" onCloseAutoFocus={event => {if (openedFromMenu.current) {event.preventDefault(); openedFromMenu.current = false;}}}>
+        <DropdownMenuCheckboxItem checked={advancedShown} onCheckedChange={checked => {if (checked) {openedFromMenu.current = true; openAdvanced();} else setAdvanced(false);}}>SQL editor</DropdownMenuCheckboxItem>
       </DropdownMenuContent>
     </DropdownMenu>}
     {workspaceId && role === 'owner' && <Button variant="ghost" size="icon" aria-label="Workspace settings" title="Workspace settings" onClick={() => setManageDialog(true)}><Settings2 size={20}/></Button>}
@@ -191,14 +201,14 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
 
   function panel(tab: DataTab, active: boolean) {
     if (!snapshot) return null;
-    if (tab.kind === 'overview') return <TablesOverview ownerId={ownerId} role={role} hasConnections={snapshot.connections.length > 0} source={source} engine={engine} controller={controller}
-      canEditSource={writable && (!source?.created_by || source.created_by === ownerId)} onConnect={() => setSourceDialog({open: true})} onEditSource={() => setSourceDialog({open: true, record: source})} onArchiveSource={() => setArchiveSource(source)} onOpenTable={openTable}/>;
-    if (tab.kind === 'table') return <TableTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))} onOpenAdvanced={writable ? openAdvanced : undefined}/>;
+    if (tab.kind === 'overview') return <TablesOverview workspaceId={workspaceId} ownerId={ownerId} role={role} hasConnections={snapshot.connections.length > 0} source={source} engine={engine} controller={controller}
+      canEditSource={writable && (!source?.created_by || source.created_by === ownerId)} onConnect={() => setSourceDialog({open: true})} onEditSource={() => setSourceDialog({open: true, record: source})} onArchiveSource={() => setArchiveSource(source)} onOpenTable={openTable} onCombineTable={writable ? combineTable : undefined}/>;
+    if (tab.kind === 'table') return <TableTab key={tab.id} workspaceId={workspaceId} connectionId={tab.connectionId || connectionId} name={(tab.schema ? tab.schema + '.' : '') + tab.table} label={tabTitle(tab)} controller={controller} engineCanLoad={!!engine?.ready && !!engine.capabilities.schema} onClose={() => updateTabs(state => closeTab(state, tab.id))} onOpenAdvanced={writable ? openAdvanced : undefined} combineRequest={combineRequest.tabId === tab.id ? combineRequest.n : 0}/>;
     const retainedKey = workspaceId + ':' + tab.id;
     return <DatabaseStudio key={tab.id} ownerId={ownerId} workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} engines={engines} role={role} connectionId={connectionId}
       onConnectionChange={id => setSelection(previous => ({...previous, connectionId: id}))} onRefresh={requestRefresh} draft={queryDraft?.tabId === tab.id ? queryDraft.draft : null} onDraftConsumed={() => setQueryDraft(null)}
       initialQueryId={tab.queryId} initialDraft={retainedDrafts[retainedKey] || null} onDraftSnapshot={draft => onRetain(retainedKey, draft)}
-      active={active && selection.view === 'database'} panelOpen={writable && advancedOn} onPanelOpen={writable ? openAdvanced : undefined} onPanelClose={() => setAdvanced(false)} onQueryChange={query => setActiveQueryId(query.id || '')} onQueryArchived={id => updateTabs(state => closeTab(state, queryTabId(id)))}/>;
+      active={active && selection.view === 'database'} panelOpen={writable && advancedOn} onPanelOpen={writable ? openAdvanced : undefined} onPanelClose={() => setAdvanced(false)} panelFocus={focusRequest.tabId === tab.id ? focusRequest.n : 0} onQueryChange={query => setActiveQueryId(query.id || '')} onQueryArchived={id => updateTabs(state => closeTab(state, queryTabId(id)))}/>;
   }
 
   let content;

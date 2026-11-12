@@ -10,7 +10,7 @@ export function kindGroup(kind?: ValueKind): KindGroup {
   if (kind === 'integer' || kind === 'number') return 'number';
   if (kind === 'date' || kind === 'datetime') return 'date';
   if (kind === 'boolean') return 'boolean';
-  if (kind === 'text') return 'text';
+  if (kind === 'text' || kind === 'uuid') return 'text';
   return 'other';
 }
 /** Lowercase, non-alphanumeric to underscore, `_2` on collision, 32 characters at most. Never shown outside Show SQL. */

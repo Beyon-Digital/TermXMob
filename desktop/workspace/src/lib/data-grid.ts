@@ -30,8 +30,8 @@ export function formatCell(value: unknown, kind?: ValueKind): CellText {
   return {text: String(value), empty: false};
 }
 
-/** Width in px from the kind and the header text. Columns are not user-resizable. */
+/** Width in px from the kind and the header text. The 96px covers cell padding, the sort button's padding, the sort icon, two gaps and the 32px filter button (measured in Chrome: 'amount' needs 142px). Columns are not user-resizable. */
 export function columnWidth(label: string, kind?: ValueKind): number {
   const base = kind === 'boolean' ? 96 : kind && NUMERIC.includes(kind) ? 128 : kind === 'date' || kind === 'datetime' ? 176 : 208;
-  return Math.min(320, Math.max(base, label.length * 8 + 72));
+  return Math.min(320, Math.max(base, Math.ceil(label.length * 8.4) + 96));
 }

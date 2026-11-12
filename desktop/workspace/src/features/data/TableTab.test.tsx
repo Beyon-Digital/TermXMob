@@ -61,7 +61,7 @@ beforeEach(() => {
     throw new Error('Unexpected request: ' + path);
   });
 });
-afterEach(() => {cleanup(); vi.restoreAllMocks();});
+afterEach(() => {cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals();});
 
 const view = (extra: Partial<SourceController> = {}, props: Partial<React.ComponentProps<typeof TableTab>> = {}) => render(<TableTab workspaceId="w1" connectionId="c1" name="orders" label="orders" controller={controller(extra)} engineCanLoad onClose={vi.fn()} {...props}/>);
 const lastSpec = () => specs[specs.length - 1], lastRun = () => runs[runs.length - 1];
@@ -193,7 +193,8 @@ it('shows the generated SQL read-only with its values, and a copy action', async
 it('exports the finished result as CSV and reports a failed export', async () => {
   const user = userEvent.setup();
   vi.mocked(transfer).mockResolvedValue(new Blob(['id\n1']));
-  vi.stubGlobal('URL', class extends URL {static createObjectURL = vi.fn(() => 'blob:csv'); static revokeObjectURL = vi.fn();});
+  const revoke = vi.fn();
+  vi.stubGlobal('URL', class extends URL {static createObjectURL = vi.fn(() => 'blob:csv'); static revokeObjectURL = revoke;});
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
   view();
   await screen.findByRole('cell', {name: '120.5'});
@@ -202,6 +203,8 @@ it('exports the finished result as CSV and reports a failed export', async () =>
   vi.mocked(transfer).mockRejectedValue(new Error('Export is unavailable.'));
   await user.click(screen.getByRole('button', {name: 'Export CSV'}));
   expect(await screen.findByText('Export is unavailable.')).toBeInTheDocument();
+  // The download revokes its object URL after a second; wait for it so the timer cannot fire in a later test.
+  await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:csv'), {timeout: 3000});
   vi.unstubAllGlobals();
 });
 it('pages with Next and Previous and reports a truncated preview', async () => {
@@ -313,4 +316,38 @@ it('has a keyboard path through the toolbar, headers and the results region', as
   expect(order).toContain('Add filter');
   expect(order).toContain('Result table');
   expect(order.some(label => label.startsWith('Filter '))).toBe(true);
+});
+
+it('opens the Combine panel when the overview asked for it', async () => {
+  view({}, {combineRequest: 1});
+  expect(await screen.findByRole('dialog', {name: 'Combine with another table'})).toBeInTheDocument();
+  expect(await screen.findByText(/Orders to Customers/)).toBeInTheDocument();
+});
+it('keeps the Combine panel closed without a request', async () => {
+  view({}, {combineRequest: 0});
+  await screen.findByRole('cell', {name: '120.5'});
+  expect(screen.queryByRole('dialog', {name: 'Combine with another table'})).not.toBeInTheDocument();
+});
+it('keeps the primary Add table action outside the scrolling fields of the Combine panel', async () => {
+  view({}, {combineRequest: 1});
+  const dialog = await screen.findByRole('dialog', {name: 'Combine with another table'});
+  const add = within(dialog).getByRole('button', {name: 'Add table'});
+  expect(add.closest('.data-join-body')).toBeNull();
+  expect(add.closest('footer')).toHaveClass('data-join-footer');
+  expect(add).toBeDisabled();
+});
+it('explains a disabled Columns button while a summary is on instead of printing a banner', async () => {
+  const user = userEvent.setup();
+  view();
+  await screen.findByRole('cell', {name: '120.5'});
+  await user.click(screen.getByRole('button', {name: 'Summarize'}));
+  const columns = await screen.findByRole('button', {name: 'Columns'});
+  expect(columns).toBeDisabled();
+  expect(columns).toHaveAccessibleDescription('The summary chooses the columns.');
+  expect(screen.queryByText(/Summary mode/)).not.toBeInTheDocument();
+});
+it('titles a header with its full name so a long column is readable on hover', async () => {
+  view();
+  await screen.findByRole('cell', {name: '120.5'});
+  expect(screen.getByRole('button', {name: 'customer_id'})).toHaveAttribute('title', 'customer_id');
 });

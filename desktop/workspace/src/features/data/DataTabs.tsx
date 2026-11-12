@@ -12,7 +12,7 @@ type Props = {
   banner?: ReactNode;
   panel: (tab: DataTab, active: boolean) => ReactNode;
 };
-/** Closable canvas tabs. Query tabs stay mounted while hidden so unsaved SQL survives a tab switch. */
+/** Closable canvas tabs. Every tab stays mounted while hidden, so unsaved SQL, filters, joins and sorts survive a tab switch (memory only, never stored). */
 export default function DataTabs({state, title, onSelect, onClose, actions, banner, panel}: Props) {
   const activeTab = state.tabs.find(tab => tab.id === state.activeId), list = useRef<HTMLDivElement>(null);
   // A narrow strip scrolls sideways, so keep the selected tab in view.
@@ -35,6 +35,6 @@ export default function DataTabs({state, title, onSelect, onClose, actions, bann
       </div>
     </header>
     {banner}
-    {state.tabs.map(tab => <TabsContent key={tab.id} value={tab.id} className="data-tab-panel" {...(tab.kind === 'query' ? {forceMount: true as const, hidden: tab.id !== state.activeId} : {})}>{panel(tab, tab.id === state.activeId)}</TabsContent>)}
+    {state.tabs.map(tab => <TabsContent key={tab.id} value={tab.id} className="data-tab-panel" forceMount hidden={tab.id !== state.activeId}>{panel(tab, tab.id === state.activeId)}</TabsContent>)}
   </Tabs>;
 }

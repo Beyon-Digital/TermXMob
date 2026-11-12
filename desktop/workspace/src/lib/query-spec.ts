@@ -1,5 +1,5 @@
 /** Contract types for the visual query builder. Mirrors section 4.6 of the Data Studio foundation plan. */
-export type ValueKind = 'text'|'integer'|'number'|'boolean'|'date'|'datetime'|'time'|'json'|'binary'|'other';
+export type ValueKind = 'text'|'integer'|'number'|'boolean'|'date'|'datetime'|'time'|'json'|'binary'|'uuid'|'array'|'other';
 export type DateBucket = 'day'|'week'|'month'|'quarter'|'year';
 export type Scalar = string|number|boolean;
 export type ColumnRef = {table_alias:string; column:string};
@@ -20,7 +20,7 @@ export type QuerySpec = {version:1; source:string; from:TableRef; joins:Join[]; 
 
 export type OutputColumn = {label:string; value_kind:ValueKind; role:'column'|'group'|'aggregate'; table_alias?:string; column?:string; fn?:AggregateFn; bucket?:DateBucket};
 export type SpecError = {code:string; path:string; message:string};
-export type SpecWarning = {code:'fan_out'|'text_date'; message:string; join_alias?:string};
+export type SpecWarning = {code:'fan_out'|'text_date'|'many_to_many'|'row_multiplication'; message:string; join_alias?:string};
 export type JoinInfo = {alias:string; fan_out:'none'|'many'|'unknown'; message:string|null};
 export type CompileResult =
   | {ok:true; dialect:string; sql:string; parameters:Record<string,Scalar>; columns:OutputColumn[]; limit:number; offset:number; fetch_limit:number; joins:JoinInfo[]; warnings:SpecWarning[]; schema_hash:string}

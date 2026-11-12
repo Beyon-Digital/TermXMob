@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {addFilterNode, addJoin, countFilters, describeFilter, describeSummary, emptySpec, humanize, humanOp, nextSort, operatorsFor, removeFilterNode, removeJoin, replaceFilterNode, setGroupMode, summaryFields, uniqueAlias} from './query-builder';
+import {addFilterNode, addJoin, countFilters, describeFilter, describeSummary, emptySpec, humanize, kindGroup, humanOp, nextSort, operatorsFor, removeFilterNode, removeJoin, replaceFilterNode, setGroupMode, summaryFields, uniqueAlias} from './query-builder';
 import type {FilterLeaf, QuerySpec} from './query-spec';
 
 const ctx = {label: (ref: {column: string}) => humanize(ref.column), kind: (ref: {column: string}) => ref.column === 'ordered_at' ? 'datetime' as const : ref.column === 'amount' ? 'number' as const : ref.column === 'paid' ? 'boolean' as const : 'text' as const};
@@ -94,5 +94,13 @@ describe('joins and sort', () => {
     expect(nextSort(one, other, true)).toHaveLength(2);
     expect(nextSort(one, other, false)).toEqual([{...other, direction: 'asc'}]);
     expect(nextSort([], {output: 'Total'}, false)).toEqual([{output: 'Total', direction: 'asc'}]);
+  });
+});
+
+describe('uuid and list columns', () => {
+  it('treats a uuid column like text and a list column as emptiness-only', () => {
+    expect(kindGroup('uuid')).toBe('text');
+    expect(operatorsFor('uuid')).toContain('eq');
+    expect(operatorsFor('array')).toEqual(['is_null', 'not_null']);
   });
 });

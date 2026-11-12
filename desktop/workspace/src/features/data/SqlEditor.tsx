@@ -6,7 +6,7 @@ import {HighlightStyle, syntaxHighlighting} from '@codemirror/language';
 import {sql} from '@codemirror/lang-sql';
 import {tags} from '@lezer/highlight';
 
-type Props = {value: string; onChange: (value: string) => void; onRun?: () => void; disabled?: boolean; placeholder?: string};
+type Props = {value: string; onChange: (value: string) => void; onRun?: () => void; disabled?: boolean; placeholder?: string; /** Moves focus into the editor each time this number changes to a positive value. */ focusTick?: number};
 
 // Colours come from the shared tokens, so the editor follows light and dark without a second palette.
 const theme = EditorView.theme({
@@ -27,7 +27,7 @@ const highlight = syntaxHighlighting(HighlightStyle.define([
 ]));
 
 /** CodeMirror 6 SQL editor. Loaded lazily, so the main bundle does not carry it. */
-export default function SqlEditor({value, onChange, onRun, disabled = false, placeholder = 'SELECT …'}: Props) {
+export default function SqlEditor({value, onChange, onRun, disabled = false, placeholder = 'SELECT …', focusTick = 0}: Props) {
   const host = useRef<HTMLDivElement>(null), view = useRef<EditorView | null>(null), lock = useRef(new Compartment());
   const latest = useRef({onChange, onRun});
   latest.current = {onChange, onRun};
@@ -48,6 +48,7 @@ export default function SqlEditor({value, onChange, onRun, disabled = false, pla
     // The editor is created once; later value and disabled changes are applied below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {if (focusTick > 0) view.current?.focus();}, [focusTick]);
   useEffect(() => {
     const editor = view.current;
     if (editor && editor.state.doc.toString() !== value) editor.dispatch({changes: {from: 0, to: editor.state.doc.length, insert: value}});
