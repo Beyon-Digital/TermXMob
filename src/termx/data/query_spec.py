@@ -381,8 +381,9 @@ class _Out:
 
 class _Compiler:
     def __init__(self, spec: QuerySpec, index: SchemaIndex, dialect: Dialect, segments: dict | None = None,
-                 pivot_values: list | None = None):
+                 pivot_values: list | None = None, dataset: bool = False):
         self.spec, self.index, self.d = spec, index, dialect
+        self.dataset = dataset   # a derived table for a report: all rows, no ordering or paging of its own
         self.segments: dict = segments or {}
         self.pivot_values = pivot_values
         self.expansions = 0
@@ -949,10 +950,11 @@ class _Compiler:
             if expr not in seen:
                 seen.add(expr)
                 ordering.append(d.order_item(expr, 'asc'))
-        if ordering:
+        if ordering and not self.dataset:
             lines.append('ORDER BY ' + ', '.join(ordering))
         fetch_limit = spec.limit + 1
-        lines.append(d.limit_offset(fetch_limit, spec.offset))
+        if not self.dataset:
+            lines.append(d.limit_offset(fetch_limit, spec.offset))
         if self.errors:
             raise SpecErrors(self.errors)
         digest = hashlib.sha256(json.dumps(
@@ -962,13 +964,16 @@ class _Compiler:
 
 
 def compile_spec(spec: QuerySpec, schema: SchemaIndex, dialect: Dialect, *, segments: dict | None = None,
-                 pivot_values: list | None = None) -> CompiledQuery:
+                 pivot_values: list | None = None, dataset: bool = False) -> CompiledQuery:
     """Pure: no I/O, no clock. Raises SpecErrors listing every problem found.
+
+    With `dataset` the statement has no ORDER BY and no LIMIT, so a report can wrap it as a derived table
+    and aggregate every row.
 
     `segments` is the transitive closure of the segments the spec uses (id -> ResolvedSegment) and
     `pivot_values` the distinct column values a pivot found with `compile_pivot_probe`. With `pivot_values`
     None a pivot is only validated: its statement has row and total columns but no cell columns."""
-    return _Compiler(spec, schema, dialect, segments, pivot_values).build()
+    return _Compiler(spec, schema, dialect, segments, pivot_values, dataset).build()
 
 
 def compile_pivot_probe(spec: QuerySpec, schema: SchemaIndex, dialect: Dialect, *, segments: dict | None = None) -> CompiledQuery:

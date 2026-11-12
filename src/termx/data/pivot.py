@@ -211,8 +211,9 @@ def build_pivot(c: _Compiler) -> CompiledQuery:
         if expr not in seen:
             seen.add(expr)
             ordering.append(d.order_item(expr, way))
-    lines.append('ORDER BY ' + ', '.join(ordering))
-    lines.append(d.limit_offset(spec.limit + 1, spec.offset))
+    if not c.dataset:
+        lines.append('ORDER BY ' + ', '.join(ordering))
+        lines.append(d.limit_offset(spec.limit + 1, spec.offset))
     return CompiledQuery('\n'.join(lines), dict(c.params), [o.public() for o in outs], spec.limit, spec.offset,
                          spec.limit + 1, join_infos, c.warnings, _fingerprint(c))
 

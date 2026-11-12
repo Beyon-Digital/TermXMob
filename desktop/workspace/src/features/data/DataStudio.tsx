@@ -280,7 +280,7 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
     return <DatabaseStudio key={tab.id} ownerId={ownerId} workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} engines={engines} role={role} connectionId={connectionId}
       onConnectionChange={id => setSelection(previous => ({...previous, connectionId: id}))} onRefresh={requestRefresh} draft={queryDraft?.tabId === tab.id ? queryDraft.draft : null} onDraftConsumed={() => setQueryDraft(null)}
       initialQueryId={tab.queryId} initialDraft={retainedDrafts[retainedKey] || null} onDraftSnapshot={draft => onRetain(retainedKey, draft)}
-      active={active && selection.view === 'database'} panelOpen={writable && advancedOn} onPanelOpen={writable ? openAdvanced : undefined} onPanelClose={() => setAdvanced(false)} panelFocus={focusRequest.tabId === tab.id ? focusRequest.n : 0} onQueryChange={query => setActiveQueryId(query.id || '')} onQueryArchived={id => updateTabs(state => closeTab(state, queryTabId(id)))}/>;
+      active={active && selection.view === 'database'} panelOpen={writable && advancedOn} onPanelOpen={writable ? openAdvanced : undefined} onPanelClose={() => setAdvanced(false)} panelFocus={focusRequest.tabId === tab.id ? focusRequest.n : 0} onQueryChange={query => setActiveQueryId(query.id || '')} onOpenSavedQuery={id => {const row = snapshot.queries.find(item => item.id === id); if (row) openSavedQuery(row);}} onQueryArchived={id => updateTabs(state => closeTab(state, queryTabId(id)))}/>;
   }
 
   let content;

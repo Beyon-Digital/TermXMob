@@ -29,7 +29,7 @@
 .data-grid-filter[data-active]{color:var(--accent)}
 .data-skeleton-text{display:block;width:60%;height:12px;border-radius:8px;background:var(--surface-2)}
 .data-grid-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:8px}
-.data-grid-scroll:focus-visible,.data-sql-preview:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
+.data-grid-scroll:focus-visible,.data-sql-preview:focus-visible,.data-grid-body .data-grid-cell:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
 
 /* Filter chips */
 .data-filters{display:flex;flex-direction:column;gap:8px}
@@ -77,7 +77,7 @@
 .data-sql-values dd{margin:0;overflow-wrap:anywhere}
 
 /* Floating SQL editor: a non-modal panel over the workbench. */
-.data-advanced-panel{display:flex;flex-direction:column;gap:12px;width:min(720px,calc(100vw - 32px));max-height:min(var(--radix-popover-content-available-height,60dvh),480px);overflow:auto;padding:16px}
+.data-advanced-panel{resize:both;min-width:320px;min-height:240px;display:flex;flex-direction:column;gap:12px;width:min(720px,calc(100vw - 32px));max-height:min(var(--radix-popover-content-available-height,60dvh),480px);overflow:auto;padding:16px}
 .data-advanced-anchor{height:0;margin-top:-16px}
 .data-advanced-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .data-advanced-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
@@ -181,3 +181,12 @@
 .data-gate{max-width:1120px;margin:0 auto;padding:24px 16px}
 @media(min-width:768px){.data-gate{padding-inline:24px}}
 @media(min-width:1024px){.data-gate{padding-inline:32px}}
+
+.data-advanced-header{display:flex;align-items:center;gap:4px}
+.data-advanced-header .data-popover-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.data-advanced-move{cursor:grab;touch-action:none}
+.data-advanced-error{margin:0;padding:8px 12px;border:1px solid var(--danger);border-radius:8px;color:var(--danger)}
+.data-saved-query-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:160px;overflow:auto}
+.data-saved-query-list .data-nav-row[aria-current=true]{background:var(--surface-2);font-weight:500}
+.data-run-hint{margin-right:auto;align-self:center}
+@media (max-width:639px){.data-advanced-panel{resize:none;min-width:0}}
