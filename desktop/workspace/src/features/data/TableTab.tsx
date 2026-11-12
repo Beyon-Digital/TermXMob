@@ -28,7 +28,7 @@ type Props = {
   /** Whether this person may save segments. */ canSave?: boolean; onViewSaved?: (view: ViewDetail) => void;
   /** Opens the tab on a ready-made query, used by drill-down. The rows behind a number. */ seed?: QuerySpec; subtitle?: string;
 };
-const SkeletonList = ({label}: {label: string}) => <div className="data-list" role="status" aria-label={label}>{[0, 1, 2, 3, 4].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
+const SkeletonList = ({label}: {label: string}) => <div className="data-list data-gate" role="status" aria-label={label}>{[0, 1, 2, 3, 4].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
 const retry = (controller: SourceController) => controller.needsTest
   ? <Button variant="secondary" size="sm" onClick={controller.testConnection} disabled={controller.testing}>{controller.testing ? 'Testing…' : 'Test connection'}</Button>
   : <Button variant="secondary" size="sm" onClick={controller.loadSchema}>Try again</Button>;
@@ -37,10 +37,10 @@ const retry = (controller: SourceController) => controller.needsTest
 export default function TableTab(props: Props) {
   const {name, label, controller, engineCanLoad, onClose} = props, status = controller.schemaStatus;
   const table: SchemaTable | undefined = controller.schema?.tables.find(row => tableKey(row) === name);
-  if (status === 'idle') return <div className="data-empty-inline"><p>Load the schema to open {label}.</p><Button onClick={controller.loadSchema} disabled={!engineCanLoad}>Load schema</Button></div>;
+  if (status === 'idle') return <div className="data-empty-inline data-gate"><p>Load the schema to open {label}.</p><Button onClick={controller.loadSchema} disabled={!engineCanLoad}>Load schema</Button></div>;
   if (status === 'loading') return <SkeletonList label={'Loading ' + label}/>;
-  if (status === 'error') return <div className="data-inline-error"><p role="alert">{controller.schemaError}</p>{retry(controller)}</div>;
-  if (!table) return <div className="data-empty-inline"><p>{label} is no longer in this source.</p><Button variant="secondary" onClick={onClose}>Close tab</Button></div>;
+  if (status === 'error') return <div className="data-inline-error data-gate"><p role="alert">{controller.schemaError}</p>{retry(controller)}</div>;
+  if (!table) return <div className="data-empty-inline data-gate"><p>{label} is no longer in this source.</p><Button variant="secondary" onClick={onClose}>Close tab</Button></div>;
   if (table.readable === false) return <section className="data-table-tab" aria-label={'Table ' + label}><header><h1>{label}</h1></header><p className="data-muted">{table.reason || 'This table cannot be read.'}</p></section>;
   return <TableWorkspace {...props} table={table} tables={controller.schema?.tables || []}/>;
 }

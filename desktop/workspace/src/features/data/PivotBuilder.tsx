@@ -61,7 +61,7 @@ export default function PivotBuilder({pivot, onChange, options, buckets, columnK
       <Select id={id + '-rowby' + at} value={current.bucket || ''} disabled={disabled} onChange={event => onChange({...pivot, rows: pivot.rows.map((row, index) => index === at ? withBucket(row, event.target.value, false) : row)})}>{bucketOptions(false)}</Select></div>}
     {at === 1 && <Button variant="ghost" size="icon" aria-label="Remove second row" title="Remove second row" disabled={disabled} onClick={() => setRow(1, undefined)}><X size={16} strokeWidth={1.5}/></Button>}
   </div>;
-  return <section className="data-pivot-builder" aria-label="Pivot setup">
+  return <section className="data-pivot-builder" id="pivot-setup" aria-label="Pivot setup">
     <div className="data-pivot-group" role="group" aria-labelledby={id + '-rows'}>
       <h2 className="data-pivot-heading" id={id + '-rows'}>Rows</h2>
       {dimRow(pivot.rows[0], 0, 'row0')}

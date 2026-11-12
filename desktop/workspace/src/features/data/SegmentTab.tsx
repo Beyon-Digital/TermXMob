@@ -26,7 +26,7 @@ type Props = {
   /** Opens another view's tab (a segment this one uses, or a view that uses this one). */ onOpenView: (use: {id: string; kind: ViewUse['kind']}) => void;
   /** Opens an unsaved pivot on the segment's table with the segment already applied. */ onUseForPivot: (segment: ViewDetail) => void;
 };
-const Skeleton = ({label}: {label: string}) => <div className="data-list" role="status" aria-label={label}>{[0, 1, 2, 3].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
+const Skeleton = ({label}: {label: string}) => <div className="data-list data-gate" role="status" aria-label={label}>{[0, 1, 2, 3].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
 const slug = (name: string) => (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'segment').slice(0, 60);
 
 /** Segment tab: loads the saved segment, then shows its definition, members, actions and audit trail. */
@@ -54,7 +54,7 @@ export default function SegmentTab(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, tab.viewId]);
   if (load.phase === 'loading' && !detail) return <Skeleton label={'Loading ' + label}/>;
-  if (load.phase === 'error' && !detail) return <div className="data-inline-error"><p role="alert">{load.error}</p><Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button><Button variant="ghost" size="sm" onClick={onClose}>Close tab</Button></div>;
+  if (load.phase === 'error' && !detail) return <div className="data-inline-error data-gate"><p role="alert">{load.error}</p><Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button><Button variant="ghost" size="sm" onClick={onClose}>Close tab</Button></div>;
   if (!detail) return <Skeleton label={'Loading ' + label}/>;
   return <><p className="visually-hidden" role="status">{announce}</p><SegmentView key={generation + ':' + detail.id} {...props} detail={detail} reload={reload} reloading={reloading}/></>;
 }
@@ -173,7 +173,7 @@ function SegmentView({workspaceId, connectionId, controller, views, canEdit, onA
         {line.segmentId && names(line.segmentId) ? <button type="button" className="data-link" onClick={() => onOpenView({id: line.segmentId!, kind: 'segment'})}>{line.text}</button> : line.text}</li>)}</ul>
         : <p className="data-muted">This segment has no filters, so every row is a member.</p>}
       {editing && editable && (schemaReady ? <FilterChips filters={filters} context={{label: labelFor, kind: kindFor}} options={options} onChange={setFilters} segments={segments}/>
-        : <div className="data-empty-inline"><p>Load the schema to edit the filters.</p><Button variant="secondary" onClick={controller.schemaStatus === 'error' && controller.needsTest ? controller.testConnection : controller.loadSchema} disabled={controller.schemaStatus === 'loading'}>{controller.schemaStatus === 'error' ? 'Try again' : 'Load schema'}</Button></div>)}
+        : <div className="data-empty-inline data-gate"><p>Load the schema to edit the filters.</p><Button variant="secondary" onClick={controller.schemaStatus === 'error' && controller.needsTest ? controller.testConnection : controller.loadSchema} disabled={controller.schemaStatus === 'loading'}>{controller.schemaStatus === 'error' ? 'Try again' : 'Load schema'}</Button></div>)}
       {saved.references.some(row => row.state === 'missing') && <p className="data-field-error" role="alert">A segment this one uses was deleted. Edit the filters to remove it.</p>}
     </section>
 

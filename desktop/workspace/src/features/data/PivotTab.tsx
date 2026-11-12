@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Code2, Download, EllipsisVertical, Pencil, RefreshCw, RotateCcw, Save, Trash2} from 'lucide-react';
+import {Code2, Download, EllipsisVertical, Pencil, RefreshCw, RotateCcw, Save, SlidersHorizontal, Trash2} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger} from '../../components/ui/dropdown-menu';
@@ -33,7 +33,7 @@ type Props = {
   onArchived: (id: string) => void;
   /** Opens the rows behind a number in a new tab. */ onDrill: (spec: QuerySpec, title: string, note?: string) => void;
 };
-const Skeleton = ({label}: {label: string}) => <div className="data-list" role="status" aria-label={label}>{[0, 1, 2, 3, 4].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
+const Skeleton = ({label}: {label: string}) => <div className="data-list data-gate" role="status" aria-label={label}>{[0, 1, 2, 3, 4].map(index => <span className="data-skeleton-row" key={index}/>)}</div>;
 const slug = (name: string) => (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'pivot').slice(0, 60);
 
 /** Pivot tab: loads the saved view (if any), the segment it starts from (if any) and the schema, then hands over to the workspace. */
@@ -75,15 +75,15 @@ export default function PivotTab(props: Props) {
 
   const readOnly = !canEdit || (!!detail && !detail.can_edit);
   if (load.phase === 'loading') return <Skeleton label={'Loading ' + label}/>;
-  if (load.phase === 'error') return <div className="data-inline-error"><p role="alert">{load.error}</p><Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button><Button variant="ghost" size="sm" onClick={onClose}>Close tab</Button></div>;
+  if (load.phase === 'error') return <div className="data-inline-error data-gate"><p role="alert">{load.error}</p><Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button><Button variant="ghost" size="sm" onClick={onClose}>Close tab</Button></div>;
   if (tab.viewId && !detail) return <Skeleton label={'Loading ' + label}/>;
   const tableName = detail ? detail.spec.from.table : tab.table || '';
   if (readOnly) return <><p className="visually-hidden" role="status">{announce}</p><PivotWorkspace key={generation + ':' + (detail?.revision ?? 0)} {...props} detail={detail} tables={[]} table={undefined} readOnly reload={reload} reloading={reloading} seed={null}/></>;
   const status = controller.schemaStatus, table = controller.schema?.tables.find(row => detail ? row.name === tableName : tableKey(row) === (tab.schema ? tab.schema + '.' : '') + tableName);
-  if (status === 'idle') return <div className="data-empty-inline"><p>Load the schema to open {label}.</p><Button onClick={controller.loadSchema} disabled={!props.engineCanLoad}>Load schema</Button></div>;
+  if (status === 'idle') return <div className="data-empty-inline data-gate"><p>Load the schema to open {label}.</p><Button onClick={controller.loadSchema} disabled={!props.engineCanLoad}>Load schema</Button></div>;
   if (status === 'loading') return <Skeleton label={'Loading ' + label}/>;
-  if (status === 'error') return <div className="data-inline-error"><p role="alert">{controller.schemaError}</p>{controller.needsTest ? <Button variant="secondary" size="sm" onClick={controller.testConnection} disabled={controller.testing}>{controller.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="secondary" size="sm" onClick={controller.loadSchema}>Try again</Button>}</div>;
-  if (!table) return <div className="data-empty-inline"><p>{humanize(tableName)} is no longer in this source.</p><Button variant="secondary" onClick={onClose}>Close tab</Button></div>;
+  if (status === 'error') return <div className="data-inline-error data-gate"><p role="alert">{controller.schemaError}</p>{controller.needsTest ? <Button variant="secondary" size="sm" onClick={controller.testConnection} disabled={controller.testing}>{controller.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="secondary" size="sm" onClick={controller.loadSchema}>Try again</Button>}</div>;
+  if (!table) return <div className="data-empty-inline data-gate"><p>{humanize(tableName)} is no longer in this source.</p><Button variant="secondary" onClick={onClose}>Close tab</Button></div>;
   return <><p className="visually-hidden" role="status">{announce}</p><PivotWorkspace key={generation + ':' + (detail?.revision ?? 0)} {...props} detail={detail} table={table} tables={controller.schema?.tables || []} readOnly={false} reload={reload} reloading={reloading} seed={seed}/></>;
 }
 
@@ -103,6 +103,8 @@ function PivotWorkspace({workspaceId, connectionId, tab, controller, views, onOp
   const [filters, setFilters] = useState<FilterGroup>(() => detail ? detail.spec.filters : seed?.filters || base.filters);
   const [pivot, setPivot] = useState<PivotSpec>(() => detail ? detail.spec.pivot || emptyPivot() : table ? defaultPivot(table, base.from.alias) : emptyPivot());
   const [offset, setOffset] = useState(0), [sql, setSql] = useState(false), [busy, setBusy] = useState(false);
+  // On a narrow screen a saved pivot opens on its numbers; the setup is one tap away.
+  const [setup, setSetup] = useState(() => !detail || !window.matchMedia?.('(max-width: 767px)').matches);
   const [dialog, setDialog] = useState<'save' | 'copy' | 'rename' | 'delete' | null>(null), [conflict, setConflict] = useState<ViewError | null>(null);
   const [message, setMessage] = useState(''), [problem, setProblem] = useState(''), [exporting, setExporting] = useState(false), [capabilities, setCapabilities] = useState<CapabilitiesResult | null>(null);
   const pending = useRef<'rename' | 'delete' | null>(null);
@@ -264,6 +266,7 @@ function PivotWorkspace({workspaceId, connectionId, tab, controller, views, onOp
     <div className="data-toolbar data-table-toolbar" role="toolbar" aria-label="Pivot tools">
       {primary}
       {canEdit && <JoinPanel workspaceId={workspaceId} connectionId={connectionId} spec={{...base, joins}} tables={tables} onAdd={join => change({joins: [...joins, join]})}/>}
+      {canEdit && <Button variant="ghost" size="sm" aria-expanded={setup} aria-controls="pivot-setup" onClick={() => setSetup(value => !value)}><SlidersHorizontal size={16} strokeWidth={1.5}/>{setup ? 'Hide setup' : 'Show setup'}</Button>}
       <Button variant="ghost" size="sm" aria-expanded={sql} onClick={() => setSql(value => !value)} disabled={readOnly}><Code2 size={16} strokeWidth={1.5}/>Show SQL</Button>
       <Button variant="ghost" size="sm" onClick={() => void exportCsv()} disabled={!shown || exporting || loading}><Download size={16} strokeWidth={1.5}/>{exporting ? 'Exporting…' : 'Export CSV'}</Button>
       {clean && <Button variant="ghost" size="sm" onClick={reloadRun} disabled={loading}><RefreshCw size={16} strokeWidth={1.5}/>Refresh</Button>}
@@ -277,8 +280,8 @@ function PivotWorkspace({workspaceId, connectionId, tab, controller, views, onOp
       </DropdownMenu>}
     </div>
     {canEdit && <>
-      <PivotBuilder pivot={pivot} onChange={next => change({pivot: next})} options={options} buckets={capabilities?.dialect?.date_bucket.buckets}
-        columnKinds={capabilities?.dialect && capabilities.dialect.pivot ? capabilities.dialect.pivot.column_kinds : undefined}/>
+      {setup && <PivotBuilder pivot={pivot} onChange={next => change({pivot: next})} options={options} buckets={capabilities?.dialect?.date_bucket.buckets}
+        columnKinds={capabilities?.dialect && capabilities.dialect.pivot ? capabilities.dialect.pivot.column_kinds : undefined}/>}
       <JoinList spec={{...base, joins}} infos={live.state.compile?.joins || []} onRemove={alias => change({joins: joins.filter(join => join.alias !== alias)})}/>
       <FilterChips filters={filters} context={{label: labelFor, kind: kindFor}} options={options} allowedOps={capabilities?.dialect?.filter_ops} onChange={next => change({filters: next})}
         segments={{items: segmentItems, baseTable: base.from.table, names: views.nameOf, onAdd: (id, negate) => void addSegment(id, negate)}}/>

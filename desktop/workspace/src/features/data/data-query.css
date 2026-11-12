@@ -2,7 +2,7 @@
 .data-popover-title{margin:0;font-size:16px;line-height:24px;font-weight:600}
 .data-popover-subtitle{margin:0;font-size:14px;line-height:20px;font-weight:500;color:var(--text-2)}
 .data-field{display:flex;flex-direction:column;gap:4px;min-width:0}
-.data-field>label{font-size:14px;line-height:20px;font-weight:500}
+.data-field>label{margin:0;font-size:14px;line-height:20px;font-weight:500}
 .data-field-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .data-field-error{margin:0;font-size:14px;line-height:20px;color:var(--danger)}
 .data-popover-actions{display:flex;justify-content:flex-end;gap:8px}
@@ -108,11 +108,11 @@
 .data-table-list tbody th{max-width:40ch}
 
 /* Pivots */
-.data-pivot-builder{display:grid;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));gap:16px;padding:16px;border:1px solid var(--border);border-radius:8px}
+.data-pivot-builder{display:grid;grid-template-columns:repeat(auto-fit,minmax(192px,1fr));gap:16px;padding:16px;border:1px solid var(--border);border-radius:8px}
 .data-pivot-group{display:flex;flex-direction:column;gap:8px;min-width:0}
-.data-pivot-heading{margin:0;font-size:14px;line-height:20px;font-weight:600}
+:root[data-app-workspace=data] .data-pivot-heading{margin:0;font-size:14px;line-height:20px;font-weight:600}
 .data-pivot-dim{display:flex;flex-direction:column;gap:8px;min-width:0}
-.data-pivot-dim .button-icon{align-self:flex-start}
+.data-pivot-dim .button-icon,.data-pivot-group>.button{align-self:flex-start}
 .data-pivot-scroll{position:relative;max-width:100%;max-height:min(60dvh,560px);overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
 .data-pivot-scroll:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
 .data-pivot{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums}
@@ -136,10 +136,10 @@
 
 /* Conflicts, segments and audit */
 .data-conflict{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--danger);border-radius:8px;background:var(--surface)}
-.data-conflict-title{margin:0;font-size:16px;line-height:24px;font-weight:600;color:var(--text)}
+:root[data-app-workspace=data] .data-conflict-title{margin:0;font-size:16px;line-height:24px;font-weight:600;color:var(--text)}
 .data-conflict-title:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:2px}
 .data-segment-section{display:flex;flex-direction:column;gap:12px}
-.data-section-title{margin:0;font-size:18px;line-height:28px;font-weight:500}
+:root[data-app-workspace=data] .data-section-title{margin:0;font-size:18px;line-height:28px;font-weight:500}
 .data-definition{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;overflow-wrap:anywhere}
 .data-link{padding:0;border:0;background:transparent;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;cursor:pointer}
 .data-link:hover{color:var(--accent-hover)}
@@ -157,7 +157,7 @@
 .data-chip[data-missing] .data-chip-text{padding-left:8px;color:var(--text-2)}
 .data-nav-meta{margin-left:auto;color:var(--text-3);font-size:12px;line-height:16px;white-space:nowrap}
 .data-audit{display:flex;flex-direction:column;gap:12px}
-.data-audit-title{margin:0;font-size:18px;line-height:28px;font-weight:500}
+:root[data-app-workspace=data] .data-audit-title{margin:0;font-size:18px;line-height:28px;font-weight:500}
 .data-audit-panel{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding-top:12px}
 .data-audit-panel>*{max-width:100%}
 .data-audit-list{display:flex;flex-direction:column;gap:12px;margin:0;padding:0;list-style:none;width:100%}
@@ -169,7 +169,12 @@
 .data-audit-panel .data-table-scroll{width:100%}
 
 @media(pointer:coarse){
- .data-pivot-cell{height:44px}
+ .data-pivot :is(th,td){height:44px}
  .data-segment-option{min-height:44px}
 }
 @media(max-width:767px){.data-pivot-builder{grid-template-columns:1fr}}
+
+/* Full-tab states (load schema, loading, load failed) sit inside the page gutter. */
+.data-gate{max-width:1120px;margin:0 auto;padding:24px 16px}
+@media(min-width:768px){.data-gate{padding-inline:24px}}
+@media(min-width:1024px){.data-gate{padding-inline:32px}}
