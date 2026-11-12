@@ -39,7 +39,9 @@ export default function PivotBuilder({pivot, onChange, options, buckets, columnK
   };
   function setFn(fn: AggregateFn) {
     const next = MEASURES.find(row => row.fn === fn)!, pool = options.filter(option => valueColumnAllowed(fn, option.kind)), current = pivot.value;
-    const keep = current.table_alias && current.column && pool.some(option => refKey(option.ref) === refKey({table_alias: current.table_alias!, column: current.column!})) ? {table_alias: current.table_alias, column: current.column} : pool[0] && {table_alias: pool[0].ref.table_alias, column: pool[0].ref.column};
+    // A measure of an identifier is rarely what people want, so an id column is the last choice.
+    const first = pool.find(option => !/(^|_)id$/i.test(option.ref.column)) ?? pool[0];
+    const keep = current.table_alias && current.column && pool.some(option => refKey(option.ref) === refKey({table_alias: current.table_alias!, column: current.column!})) ? {table_alias: current.table_alias, column: current.column} : first && {table_alias: first.ref.table_alias, column: first.ref.column};
     onChange({...pivot, value: next.needsColumn ? {fn, ...keep} : {fn}});
   }
   const columnIssue = (option: ColumnOption) => {

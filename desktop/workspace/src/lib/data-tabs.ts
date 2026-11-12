@@ -83,5 +83,6 @@ export function readTabs(ownerId: string | undefined, workspaceId: string): Data
 }
 export function rememberTabs(ownerId: string | undefined, workspaceId: string, state: DataTabsState) {
   const tabs = state.tabs.filter(tab => tab.kind !== 'drill').map(tab => Object.fromEntries(PERSISTED_KEYS.filter(key => tab[key] !== undefined).map(key => [key, tab[key]])));
-  try {localStorage.setItem(dataTabsKey(ownerId, workspaceId), JSON.stringify({tabs, activeId: state.activeId}));} catch {/* storage may be blocked */}
+  const activeId = state.tabs.find(tab => tab.id === state.activeId)?.kind === 'drill' ? OVERVIEW_TAB.id : state.activeId;
+  try {localStorage.setItem(dataTabsKey(ownerId, workspaceId), JSON.stringify({tabs, activeId}));} catch {/* storage may be blocked */}
 }

@@ -105,6 +105,7 @@ function PivotWorkspace({workspaceId, connectionId, tab, controller, views, onOp
   const [offset, setOffset] = useState(0), [sql, setSql] = useState(false), [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<'save' | 'copy' | 'rename' | 'delete' | null>(null), [conflict, setConflict] = useState<ViewError | null>(null);
   const [message, setMessage] = useState(''), [problem, setProblem] = useState(''), [exporting, setExporting] = useState(false), [capabilities, setCapabilities] = useState<CapabilitiesResult | null>(null);
+  const pending = useRef<'rename' | 'delete' | null>(null);
   const [sqlCompile, setSqlCompile] = useState<CompiledOk | undefined>(), [dropError, setDropError] = useState('');
   const { labelFor, kindFor, options } = useSpecColumns(base.from, joins, tables);
   useEffect(() => {
@@ -269,9 +270,9 @@ function PivotWorkspace({workspaceId, connectionId, tab, controller, views, onOp
       {canEdit && saved && dirty && <Button variant="ghost" size="sm" onClick={resetPivot}><RotateCcw size={16} strokeWidth={1.5}/>Reset</Button>}
       {canEdit && saved && <DropdownMenu>
         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="More actions for this pivot"><EllipsisVertical size={16} strokeWidth={1.5}/></Button></DropdownMenuTrigger>
-        <DropdownMenuContent aria-label="Pivot actions">
-          <DropdownMenuItem onSelect={() => setDialog('rename')}><Pencil size={16} strokeWidth={1.5}/>Rename</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setDialog('delete')}><Trash2 size={16} strokeWidth={1.5}/>Delete</DropdownMenuItem>
+        <DropdownMenuContent aria-label="Pivot actions" onCloseAutoFocus={() => {if (pending.current) {setDialog(pending.current); pending.current = null;}}}>
+          <DropdownMenuItem onSelect={() => {pending.current = 'rename';}}><Pencil size={16} strokeWidth={1.5}/>Rename</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {pending.current = 'delete';}}><Trash2 size={16} strokeWidth={1.5}/>Delete</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>}
     </div>

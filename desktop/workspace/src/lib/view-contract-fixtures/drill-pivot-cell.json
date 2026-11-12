@@ -1,0 +1,62 @@
+{
+  "request": {
+    "coordinates": {
+      "rows": [
+        "East"
+      ],
+      "column": {
+        "value": "2026-01",
+        "empty": false
+      }
+    }
+  },
+  "response": {
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "sales",
+              "column": "region"
+            },
+            "op": "eq",
+            "value": "East"
+          },
+          {
+            "field": {
+              "table_alias": "sales",
+              "column": "day"
+            },
+            "op": "gte",
+            "value": "2026-01-01"
+          },
+          {
+            "field": {
+              "table_alias": "sales",
+              "column": "day"
+            },
+            "op": "lt",
+            "value": "2026-02-01"
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    },
+    "exact": true,
+    "notes": [],
+    "job": null
+  }
+}

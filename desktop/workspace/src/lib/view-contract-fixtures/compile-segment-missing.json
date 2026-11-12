@@ -1,0 +1,33 @@
+{
+  "request": {
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": []
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    }
+  },
+  "response": {
+    "ok": false,
+    "errors": [
+      {
+        "code": "segment_missing",
+        "path": "filters.items[0]",
+        "message": "The segment this filter uses was deleted. Remove the filter or pick another segment."
+      }
+    ]
+  }
+}

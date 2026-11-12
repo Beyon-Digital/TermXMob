@@ -7,7 +7,8 @@ import type {ViewSummary} from './data-views';
 export const segmentCompatible = (view: Pick<ViewSummary, 'kind' | 'base_table' | 'connection_id'>, baseTable: string, connectionId?: string) =>
   view.kind === 'segment' && view.base_table === baseTable && (!connectionId || view.connection_id === connectionId);
 
-const sameOn = (a: Join, b: Join, map: Map<string, string>) => a.on.length === b.on.length && a.on.every(pair => b.on.some(other => {
+const sameOn = (a: Join, b: Join, known: Map<string, string>) => a.on.length === b.on.length && a.on.every(pair => b.on.some(other => {
+  const map = new Map(known).set(a.alias, b.alias);
   const left = map.get(pair.left.table_alias) ?? pair.left.table_alias, right = map.get(pair.right.table_alias) ?? pair.right.table_alias;
   return left === other.left.table_alias && right === other.right.table_alias && pair.left.column === other.left.column && pair.right.column === other.right.column;
 }));

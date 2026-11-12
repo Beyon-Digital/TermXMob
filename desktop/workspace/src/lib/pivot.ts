@@ -68,7 +68,7 @@ export function cellCoordinates(columns: OutputColumn[], row: unknown[], columnI
 export function cellTitle(columns: OutputColumn[], row: unknown[], columnIndex: number): string {
   const rows = columns.flatMap((column, at) => column.role === 'pivot_row' ? [String(row[at] ?? '(empty)')] : []);
   const target = columns[columnIndex];
-  return [...rows, ...(target?.role === 'pivot_cell' ? [target.label] : [])].join(' · ');
+  return [...rows, ...(target && (target.role === 'pivot_cell' || target.role === 'pivot_total') ? [target.label] : [])].join(' · ');
 }
 
 // Drill-down: the same rule the server applies, used for pivots that are not saved yet.

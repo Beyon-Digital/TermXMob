@@ -1,0 +1,24 @@
+{
+  "request": {
+    "revision": 3
+  },
+  "status": 409,
+  "response": {
+    "detail": {
+      "code": "segment_in_use",
+      "message": "2 views use this segment. Remove it from them first.",
+      "used_by": [
+        {
+          "id": "<id:view2>",
+          "kind": "pivot",
+          "name": "Sales by region and month"
+        },
+        {
+          "id": "<id:view3>",
+          "kind": "table",
+          "name": "Orders east"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "request": {
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": []
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0,
+      "pivot": {
+        "rows": [
+          {
+            "table_alias": "sales",
+            "column": "region"
+          }
+        ],
+        "columns": {
+          "table_alias": "sales",
+          "column": "day",
+          "bucket": "month"
+        },
+        "value": {
+          "fn": "sum",
+          "table_alias": "sales",
+          "column": "amount",
+          "label": "Total amount"
+        },
+        "totals": true,
+        "sort": {
+          "by": "rows",
+          "direction": "asc"
+        }
+      }
+    }
+  },
+  "response": {
+    "ok": true,
+    "dialect": "sqlite",
+    "sql": "SELECT 1",
+    "parameters": {
+      "p1": "2026-01",
+      "p2": "2026-02",
+      "p3": "2026-03"
+    },
+    "columns": [
+      {
+        "label": "Region",
+        "alias": "pv_r1",
+        "value_kind": "text",
+        "role": "pivot_row",
+        "table_alias": "sales",
+        "column": "region"
+      },
+      {
+        "label": "2026-01",
+        "alias": "pv_c1",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "fn": "sum",
+        "column_value": "2026-01",
+        "column_empty": false
+      },
+      {
+        "label": "2026-02",
+        "alias": "pv_c2",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "fn": "sum",
+        "column_value": "2026-02",
+        "column_empty": false
+      },
+      {
+        "label": "2026-03",
+        "alias": "pv_c3",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "fn": "sum",
+        "column_value": "2026-03",
+        "column_empty": false
+      },
+      {
+        "label": "Total amount",
+        "alias": "pv_total",
+        "value_kind": "integer",
+        "role": "pivot_total",
+        "fn": "sum"
+      }
+    ],
+    "limit": 200,
+    "offset": 0,
+    "fetch_limit": 201,
+    "joins": [],
+    "warnings": [],
+    "schema_hash": "9c1d5a7e3b2f4a60",
+    "pivot": {
+      "probed": true,
+      "column_count": 3,
+      "limit": 12
+    }
+  }
+}

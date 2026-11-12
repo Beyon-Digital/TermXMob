@@ -1,0 +1,19 @@
+{
+  "request": {
+    "revision": 3,
+    "name": "Large sales"
+  },
+  "status": 409,
+  "response": {
+    "detail": {
+      "code": "revision_conflict",
+      "message": "Bob changed this view at 10:14. Reload to see the latest version.",
+      "current_revision": 5,
+      "updated_by": {
+        "id": "<id:person2>",
+        "name": "Bob"
+      },
+      "updated_at": "<time>"
+    }
+  }
+}

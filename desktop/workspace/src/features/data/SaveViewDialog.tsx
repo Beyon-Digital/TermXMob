@@ -14,10 +14,15 @@ type Props = {
 /** One dialog for naming a view: save a pivot, save a segment, rename. Focus returns to the button that opened it. */
 export default function SaveViewDialog({open, title, description, submitLabel, initialName = '', helper, onSubmit, onFail, onClose}: Props) {
   return <Dialog open={open} onOpenChange={next => {if (!next) onClose();}}>
-    {open && <Body title={title} description={description} submitLabel={submitLabel} initialName={initialName} helper={helper} onSubmit={onSubmit} onFail={onFail} onClose={onClose}/>}
+    <DialogContent className="data-dialog">
+      <DialogTitle>{title}</DialogTitle>
+      <DialogDescription>{description || helper || 'Choose a name people will recognise.'}</DialogDescription>
+      <NameForm submitLabel={submitLabel} initialName={initialName} onSubmit={onSubmit} onFail={onFail} onClose={onClose}/>
+    </DialogContent>
   </Dialog>;
 }
-function Body({title, description, submitLabel, initialName, helper, onSubmit, onFail, onClose}: Omit<Props, 'open'> & {initialName: string}) {
+/** Holds the typed name. It unmounts with the dialog, so a reopened dialog starts clean. */
+function NameForm({submitLabel, initialName, onSubmit, onFail, onClose}: Pick<Props, 'submitLabel' | 'onSubmit' | 'onFail' | 'onClose'> & {initialName: string}) {
   const [name, setName] = useState(initialName), [busy, setBusy] = useState(false), [taken, setTaken] = useState(''), [failure, setFailure] = useState(''), flight = useRef(false);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -36,16 +41,15 @@ function Body({title, description, submitLabel, initialName, helper, onSubmit, o
       flight.current = false; setBusy(false);
     }
   }
-  return <DialogContent className="data-dialog" closeDisabled={busy}>
-    <DialogTitle>{title}</DialogTitle>
-    <DialogDescription>{description || helper || 'Choose a name people will recognise.'}</DialogDescription>
+  // Focus stays on the control that has it while saving (read-only, not disabled), so it can return to the opener when the dialog closes.
+  return <>
     <form onSubmit={event => void submit(event)} noValidate>
       <div className="data-field"><label htmlFor="save-view-name">Name</label>
-        <Input id="save-view-name" autoFocus value={name} maxLength={200} onChange={event => {setName(event.target.value); setTaken('');}} disabled={busy} aria-invalid={!!taken} aria-describedby={taken ? 'save-view-error' : undefined}/>
+        <Input id="save-view-name" value={name} maxLength={200} onChange={event => {setName(event.target.value); setTaken('');}} readOnly={busy} aria-invalid={!!taken} aria-describedby={taken ? 'save-view-error' : undefined}/>
         {taken && <p className="data-field-error" id="save-view-error" role="alert">{taken}</p>}
       </div>
       {failure && <p className="data-field-error" role="alert">{failure}</p>}
-      <div className="data-dialog-actions"><Button variant="ghost" type="button" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || !name.trim()}>{busy ? 'Saving…' : submitLabel}</Button></div>
+      <div className="data-dialog-actions"><Button variant="ghost" type="button" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim()} aria-disabled={busy || undefined}>{busy ? 'Saving…' : submitLabel}</Button></div>
     </form>
-  </DialogContent>;
+  </>;
 }

@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Download, EllipsisVertical, Eye, Pencil, Save, Table2, Trash2} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
@@ -65,7 +65,7 @@ function SegmentView({workspaceId, connectionId, controller, views, canEdit, onA
   const [editing, setEditing] = useState(false), [busy, setBusy] = useState(false), [conflict, setConflict] = useState<ViewError | null>(null), [problem, setProblem] = useState(''), [message, setMessage] = useState('');
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null), [dropError, setDropError] = useState(''), [inUse, setInUse] = useState<ViewUse[]>([]);
   const [count, setCount] = useState<{phase: 'idle' | 'running' | 'done' | 'error'; value?: number; revision?: number; error?: string}>({phase: 'idle'});
-  const [exporting, setExporting] = useState(false), [opening, setOpening] = useState(false), [runs, setRuns] = useState(0);
+  const pending = useRef<'rename' | 'delete' | null>(null), [exporting, setExporting] = useState(false), [opening, setOpening] = useState(false), [runs, setRuns] = useState(0);
   const spec = saved.spec, table = controller.schema?.tables;
   const { labelFor, kindFor, options } = useSpecColumns(spec.from, spec.joins, table || []);
   const dirty = JSON.stringify(compactFilters(filters)) !== baseline;
@@ -157,9 +157,9 @@ function SegmentView({workspaceId, connectionId, controller, views, canEdit, onA
       <Button variant="ghost" size="sm" onClick={() => void exportCsv()} disabled={exporting || dirty}><Download size={16} strokeWidth={1.5}/>{exporting ? 'Exporting…' : 'Export CSV'}</Button>
       {editable && <DropdownMenu>
         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="More actions for this segment"><EllipsisVertical size={16} strokeWidth={1.5}/></Button></DropdownMenuTrigger>
-        <DropdownMenuContent aria-label="Segment actions">
-          <DropdownMenuItem onSelect={() => setDialog('rename')}><Pencil size={16} strokeWidth={1.5}/>Rename</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => {setDropError(''); setInUse([]); setDialog('delete');}}><Trash2 size={16} strokeWidth={1.5}/>Delete</DropdownMenuItem>
+        <DropdownMenuContent aria-label="Segment actions" onCloseAutoFocus={() => {if (pending.current) {setDialog(pending.current); pending.current = null;}}}>
+          <DropdownMenuItem onSelect={() => {pending.current = 'rename';}}><Pencil size={16} strokeWidth={1.5}/>Rename</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {setDropError(''); setInUse([]); pending.current = 'delete';}}><Trash2 size={16} strokeWidth={1.5}/>Delete</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>}
     </div>
