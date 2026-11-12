@@ -90,6 +90,8 @@ it('creates an agent preset with numeric budgets and passes axe',async()=>{
   return {data:{engines:[{id:'internal',label:'TermX agent',installed:true}],custom_agents:[]}};
  });
  const {container}=render(<Managers embedded section="agents" projectId={null} sessionId={null}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'New agent'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Fill in manually'}));
  const form=within(await screen.findByRole('form',{name:'Create agent preset'}));
  fireEvent.change(form.getByLabelText(/^Name/),{target:{value:'Reviewer'}});
  await expectNoAxeViolations(container);
@@ -97,6 +99,49 @@ it('creates an agent preset with numeric budgets and passes axe',async()=>{
  await waitFor(()=>expect(calls().some(call=>call.body.query?.includes('create_custom_agent'))).toBe(true));
  const input=calls().find(call=>call.body.query?.includes('create_custom_agent'))!.body.variables!.input as {limits:Record<string,unknown>};
  expect(input.limits).toEqual({});expect(form.queryByRole('spinbutton')).not.toBeInTheDocument();
+});
+
+it('drafts an agent from a description, pre-fills the form at least-privilege defaults and creates only after review',async()=>{
+ const draft={name:'Security reviewer',description:'Reviews diffs.',instructions:'Read the diff and list risks.',tools:['read_file','git_diff'],approval_mode:'autonomous',sandbox_profile:'host'};
+ serve(['host-admin'],(path,body)=>{
+  if(body.query?.includes('draft_definition'))return {data:{draft_definition:{status:'drafted',reply:'Drafted it.',draft,warnings:[],provider_id:'p',model:'m'}}};
+  if(body.query?.includes('create_custom_agent'))return {data:{create_custom_agent:{id:'new'}}};
+  return {data:{engines:[{id:'internal',label:'TermX agent',installed:true}],custom_agents:[]}};
+ });
+ const {container}=render(<Managers embedded section="agents" projectId={null} sessionId={null}/>);
+ expect(await screen.findByText(/No agent presets yet/)).toBeInTheDocument();
+ expect(screen.queryByRole('form',{name:'Create agent preset'})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'New agent'}));
+ fireEvent.change(await screen.findByLabelText('Describe the agent'),{target:{value:'Review pull requests for security problems'}});
+ fireEvent.click(screen.getByRole('button',{name:'Send description'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Review and create'}));
+ const form=within(await screen.findByRole('form',{name:'Create agent preset'}));
+ expect(form.getByLabelText(/^Name/)).toHaveValue('Security reviewer');
+ expect(form.getByLabelText('Instructions')).toHaveValue('Read the diff and list risks.');
+ expect(form.getByLabelText('Approval preference')).toHaveValue('standard');
+ expect(form.getByLabelText('Sandbox preference')).toHaveValue('agent');
+ expect(calls().some(call=>call.body.query?.includes('create_custom_agent'))).toBe(false);
+ await expectNoAxeViolations(container);
+ fireEvent.click(form.getByRole('button',{name:'Save preset'}));
+ await waitFor(()=>expect(calls().some(call=>call.body.query?.includes('create_custom_agent'))).toBe(true));
+ const input=calls().find(call=>call.body.query?.includes('create_custom_agent'))!.body.variables!.input as Record<string,unknown>;
+ expect(input).toMatchObject({name:'Security reviewer',tools:['read_file','git_diff'],approval_mode:'standard',sandbox_profile:'agent'});
+ await waitFor(()=>expect(screen.queryByRole('form',{name:'Create agent preset'})).not.toBeInTheDocument());
+});
+
+it('offers a model provider setup action from the agent draft when none is configured',async()=>{
+ serve(['host-admin'],(path,body)=>{
+  if(body.query?.includes('draft_definition'))return {data:{draft_definition:{status:'no_provider',reply:'',draft:null,warnings:[],provider_id:null,model:null}}};
+  return {data:{engines:[],custom_agents:[]}};
+ });
+ const onSection=vi.fn();
+ render(<Managers embedded section="agents" projectId={null} sessionId={null} onSection={onSection}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'New agent'}));
+ fireEvent.change(await screen.findByLabelText('Describe the agent'),{target:{value:'Review code'}});
+ fireEvent.click(screen.getByRole('button',{name:'Send description'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Set up a model provider'}));
+ expect(onSection).toHaveBeenCalledWith('models');
+ await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 });
 
 it('renders the access page for a member without administrator sections and passes axe',async()=>{

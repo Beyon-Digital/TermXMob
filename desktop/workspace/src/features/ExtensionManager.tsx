@@ -4,6 +4,7 @@ import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
 import SkillImport,{ImportSummary} from './SkillImport';
+import {DescribeToDraft} from './authoring/DescribeToDraft';
 
 type Row=Record<string,any>;
 const send=(value:unknown,method='POST'):RequestInit=>({method,headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
@@ -25,7 +26,7 @@ export default function ExtensionManager({data,projectId,onChanged,search=''}:{d
  const [scope,setScope]=useState(projectId?'project':'user'),[name,setName]=useState(''),[markdown,setMarkdown]=useState(''),[digest,setDigest]=useState<string|null>(null),[loaded,setLoaded]=useState(false),[versions,setVersions]=useState<Row[]>([]),[conflict,setConflict]=useState<Row|null>(null);
  const [preview,setPreview]=useState<Row|null>(null),[packages,setPackages]=useState<Row[]>([]),[registryId,setRegistryId]=useState(''),[registryName,setRegistryName]=useState(''),[kind,setKind]=useState('public_https'),[location,setLocation]=useState(''),[credential,setCredential]=useState(''),[rotating,setRotating]=useState<Row|null>(null),[rotatingCredential,setRotatingCredential]=useState('');
  const [bundle,setBundle]=useState(''),[format,setFormat]=useState('termx-bundle/v1'),[version,setVersion]=useState('1'),[rollback,setRollback]=useState<Row|null>(null),[rollbackDigest,setRollbackDigest]=useState('');
- const [sourceOpen,setSourceOpen]=useState(false),[inventoryState,setInventoryState]=useState<'loading'|'ready'|'failed'>('loading'),[inventoryProject,setInventoryProject]=useState(projectId);
+ const [describing,setDescribing]=useState(false),[sourceOpen,setSourceOpen]=useState(false),[inventoryState,setInventoryState]=useState<'loading'|'ready'|'failed'>('loading'),[inventoryProject,setInventoryProject]=useState(projectId);
  const epoch=useRef(0),context=useRef(projectId),flight=useRef<object|null>(null);
  if(context.current!==projectId){context.current=projectId;epoch.current++}
  async function refresh(){const generation=epoch.current;setInventoryState('loading');const q=projectId?'?project_id='+encodeURIComponent(projectId):'';try{const [source,legacy]=await Promise.all([request<Row>('/api/workspace/skill-sources'+q),request<Row>('/api/workspace/skill-sources/compatibility'+q)]);if(generation===epoch.current){setSources(source);setCompat(legacy.sources);setInventoryProject(projectId);setInventoryState('ready')}}catch(error){if(generation===epoch.current)setInventoryState('failed');throw error}}
@@ -38,13 +39,21 @@ export default function ExtensionManager({data,projectId,onChanged,search=''}:{d
  const rootFor=(value:string)=>(inventory.roots||[]).find((root:Row)=>root.scope===value&&(value!=='project'||root.project_id===projectId));
  const sourceScope=projectId?scope:'user',selectedRoot=rootFor(sourceScope),editable=ready&&selectedRoot?.editable===true;
  const canEditSources=ready&&(inventory.roots||[]).some((root:Row)=>rootFor(root.scope)===root&&root.editable===true);
+ // A described skill only fills in the add-a-skill form. Nothing is written until the person saves it.
+ const draftProject=projectId&&rootFor('project')?.editable===true?projectId:null;
+ const applyDraft=(draft:Row)=>{
+  const folder=String(draft.name||''),target=draftProject?'project':'user';
+  setScope(target);setName(folder);setMarkdown(String(draft.markdown||''));setDigest(null);setLoaded(false);setVersions([]);setConflict(null);setError('');
+  setNotice((inventory.sources||[]).some((row:Row)=>row.folder===folder&&row.scope===target)?`A skill named ${folder} already exists. Choose another folder name before saving.`:'Draft ready. Review the skill, then save the source.');
+  setDescribing(false);setSourceOpen(true);
+ };
  const sourceBody=()=>({scope:sourceScope,name,markdown,expected_digest:digest,project_id:sourceScope==='project'?projectId:null});
  const filtered=(rows:Row[])=>rows.filter(row=>matchesExtensionMetadata(row,search));
  const visibleSources=filtered(inventory.sources||[]),visibleCompatibility=filtered(inventoryProject===projectId?compat:[]),visibleBundles=filtered(data.extensions||[]),visibleRegistries=filtered(data.registries||[]),visiblePackages=filtered(packages);
  return <div className="extension-manager">
  <h2>Plugins &amp; skills</h2>{error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
  {search.trim()&&<p role="status">Search matches: {visibleSources.length} skill sources, {visibleCompatibility.length} compatibility sources, {visibleBundles.length} bundles, {visibleRegistries.length} registries and {visiblePackages.length} loaded packages. Current drafts and reviews stay open.</p>}
- <details open><summary>Skill sources</summary><p className="manager-help">Edit native SKILL.md files. Publishing creates an immutable permission review; saving a source does not enable a plugin.</p><Button size="sm" variant="outline" disabled={busy||inventoryState==='loading'} onClick={()=>void act(()=>refresh(),'Skill sources refreshed')}>Refresh sources</Button>{projectId&&<p>{inventory.precedence}</p>}
+ <details open><summary>Skill sources</summary><p className="manager-help">Edit native SKILL.md files. Publishing creates an immutable permission review; saving a source does not enable a plugin.</p><Button size="sm" variant="outline" disabled={busy||inventoryState==='loading'} onClick={()=>void act(()=>refresh(),'Skill sources refreshed')}>Refresh sources</Button>{canEditSources&&<Button size="sm" disabled={busy} onClick={()=>setDescribing(true)}>New skill</Button>}{projectId&&<p>{inventory.precedence}</p>}
  {inventoryState==='loading'&&<p role="status">Loading source locations…</p>}
  {!!inventory.roots?.length&&<details><summary>Source locations</summary>{inventory.roots.map((root:Row)=><p key={root.scope}><strong>{root.scope==='user'?'Host skills':'Project skills'}</strong> <code>{root.path}</code> · {root.editable===true?'Editable':root.read_only_reason||'Read-only with your current access'}</p>)}</details>}
  {ready&&!canEditSources&&<p className="manager-help">Skill sources are read-only with your current access. You can inspect available files; this host has not advertised an editable source location.</p>}
@@ -72,5 +81,6 @@ export default function ExtensionManager({data,projectId,onChanged,search=''}:{d
  {rotating&&<form className="manager-form" onSubmit={e=>{e.preventDefault();void act(async()=>{const secret=rotatingCredential;setRotatingCredential('');const result=await request('/api/workspace/registries/'+rotating.id+'/credential',send({credential:secret,revision:rotating.revision},'PATCH'));setRotating(null);return result},'Credential rotated; previous package reviews invalidated',true)}}><label>New registry credential<Input type="password" value={rotatingCredential} onChange={e=>setRotatingCredential(e.target.value)} autoComplete="off" required/></label><Button disabled={busy} type="submit">Save registry credential</Button></form>}
  {visiblePackages.map(row=><article className="manager-item" key={row.filename}><div><h3>{row.id} · {row.version}</h3><p>{(row.permissions||[]).join(', ')}</p></div><Button disabled={busy} onClick={()=>void act(async()=>setPreview(await request('/api/workspace/registries/'+registryId+'/preview',send({filename:row.filename}))),'Downloaded package ready for review')}>Review package</Button></article>)}</details>
  {preview&&<article className="manager-preview"><h3>Review {preview.bundle.id} · {preview.bundle.version}</h3><p>Added permissions: {preview.permission_diff.added.join(', ')||'none'}</p><p>Removed permissions: {preview.permission_diff.removed.join(', ')||'none'}</p>{(preview.bundle.permissions||[]).includes('desktop-control')&&<p>{preview.bundle.computer?.apps?.length?'Controls this computer, limited to: '+preview.bundle.computer.apps.join(', ')+'.':'Controls this computer with no application list, so it can act in any application you have allowed it to control.'}</p>}<ImportSummary preview={preview}/>{(preview.dependencies||[]).map((dep:Row)=><p key={dep.id}>{dep.id} · {dep.version} · {dep.satisfied?'Exact version installed':'Required version missing'}</p>)}<details><summary>Exact provenance, digests &amp; files</summary><Exact label="Reviewed extension provenance and files" value={{provenance:preview.provenance,digest:preview.digest,bundle:preview.bundle,dependencies:preview.dependencies}}/></details><Button disabled={busy||(preview.dependencies||[]).some((row:Row)=>!row.satisfied)} onClick={()=>void act(async()=>{const installed=await request('/api/workspace/extension-previews/'+preview.id+'/install',send({digest:preview.digest}));setPreview(null);return installed},'Reviewed immutable version installed',true)}>Install reviewed version</Button></article>}
+ <DescribeToDraft kind="skill" open={describing} projectId={draftProject} onClose={()=>setDescribing(false)} onManual={()=>{setDescribing(false);setSourceOpen(true)}} onReview={applyDraft}/>
  </div>
 }

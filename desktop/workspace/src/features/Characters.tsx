@@ -2,6 +2,8 @@ import {useEffect, useRef, useState} from 'react';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../components/ui/dialog';
 import type {Session} from '../lib/api';
 import {assignmentRows, isRunning} from '../lib/characters';
+import {DescribeToDraft} from './authoring/DescribeToDraft';
+import {asText} from './authoring/kinds';
 import {Assignments} from './characters/Assignments';
 import {BuildForm, emptyBuildDraft, type BuildDraft} from './characters/BuildForm';
 import {CreateForm, emptyCreateDraft, type CreateDraft} from './characters/CreateForm';
@@ -12,7 +14,7 @@ import {ErrorAlert} from './characters/use-action';
 import {useCharacterLibrary} from './characters/use-character-library';
 import './characters.css';
 
-type DialogName = 'create' | 'build';
+type DialogName = 'describe' | 'create' | 'build';
 
 export default function Characters({sessions, ownerId}: {sessions: Session[]; ownerId: string}) {
   const characters = useCharacterLibrary();
@@ -72,7 +74,7 @@ export default function Characters({sessions, ownerId}: {sessions: Session[]; ow
             selectedId={pack?.id ?? ''}
             operations={library.operations}
             onSelect={setSelectedId}
-            onCreate={() => setDialog('create')}
+            onCreate={() => setDialog('describe')}
             onBuild={() => setDialog('build')}
             onImported={imported => setSelectedId(imported.id)}
             onCancelled={id => setWatched(current => (current === id ? '' : current))}
@@ -81,6 +83,17 @@ export default function Characters({sessions, ownerId}: {sessions: Session[]; ow
           />
           {pack && <PackEditor key={pack.id} pack={pack} reducedMotion={library.preferences.reduced_motion} notify={setNotice} reload={() => reload()} />}
           <Assignments rows={assignmentRows(sessions, pets, library.preferences)} packs={library.packs} preferences={library.preferences} save={characters.savePreferences} />
+          <DescribeToDraft
+            kind="character"
+            open={dialog === 'describe'}
+            onClose={() => setDialog(null)}
+            onManual={() => setDialog('create')}
+            // A draft only fills the name and description. The image account, model and billing agreement stay the person's to choose.
+            onReview={draft => {
+              setCreateDraft(current => ({...current, name: asText(draft.name), prompt: asText(draft.prompt), billing: false}));
+              setDialog('create');
+            }}
+          />
           <Dialog open={dialog === 'create'} onOpenChange={open => setDialog(open ? 'create' : null)}>
             <DialogContent className="character-dialog">
               <DialogTitle>Create a character</DialogTitle>

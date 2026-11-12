@@ -12,6 +12,8 @@ import {scopeProjects} from '../lib/project-labels';
 import {usePolling} from '../lib/use-polling';
 import {NEEDS_YOU_FIELDS,type NeedsYouItem} from '../lib/bot-schedules';
 import BotDetail,{botTabIds} from './BotDetail';
+import {DescribeToDraft} from './authoring/DescribeToDraft';
+import {asList,asText} from './authoring/kinds';
 import NeedsYouInbox,{type BotTab} from './NeedsYouInbox';
 import {ActionButton,Empty,ManagerPage,date,rowMatcher} from './manager-ui';
 import {gql,useManagerLoad,useManagerMutation} from './use-manager';
@@ -54,11 +56,15 @@ function writeTab(tab: string) {
 type BotTabId = Parameters<NonNullable<React.ComponentProps<typeof BotDetail>['onTabChange']>>[0];
 const CUSTOM = 'custom';
 
-function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,failure,onCreate}:{
+/** What an accepted draft fills in. The host only ever drafts read-only tools and re-checks them when the bot is created. */
+interface BotSeed { name:string; description:string; instructions:string; tools:string[] }
+const seedFrom=(draft:Record<string,unknown>):BotSeed=>({name:asText(draft.name),description:asText(draft.description),instructions:asText(draft.instructions),tools:asList(draft.tools)});
+
+function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,failure,onCreate,initial}:{
   open:boolean;onClose:()=>void;templates:BotTemplate[];projects:ProjectChoice[];defaultProject:string|null;busy:boolean;failure:string;
-  onCreate:(input:Record<string,unknown>)=>Promise<unknown>;
+  onCreate:(input:Record<string,unknown>)=>Promise<unknown>;initial?:BotSeed;
 }){
-  const [choice,setChoice]=useState(templates[0]?.id||CUSTOM),[name,setName]=useState(''),[instructions,setInstructions]=useState(''),[project,setProject]=useState(defaultProject||''),[tried,setTried]=useState(false),[shown,setShown]=useState(''),nameBox=useRef<HTMLInputElement>(null);
+  const [choice,setChoice]=useState(initial?CUSTOM:templates[0]?.id||CUSTOM),[name,setName]=useState(initial?.name||''),[instructions,setInstructions]=useState(initial?.instructions||''),[description,setDescription]=useState(initial?.description||''),[project,setProject]=useState(defaultProject||''),[tried,setTried]=useState(false),[shown,setShown]=useState(''),nameBox=useRef<HTMLInputElement>(null);
   // A refusal from the host (such as a name already in use) belongs next to the name, not on the page behind the dialog.
   useEffect(()=>{if(failure){setShown(failure);nameBox.current?.focus()}},[failure]);
   const template=templates.find(row=>row.id===choice)||null;
@@ -68,7 +74,9 @@ function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,failu
   async function submit(){
     setTried(true);
     if(!name.trim()||(template?.requires_project&&!project)||(!template&&!instructions.trim()))return;
-    const result=await onCreate({name:name.trim(),template:template?.id??null,instructions:template?null:instructions.trim(),project_id:project||null});
+    // Description and tools are sent only for a custom bot, so a bot made from a template is requested exactly as before.
+    const result=await onCreate({name:name.trim(),template:template?.id??null,instructions:template?null:instructions.trim(),project_id:project||null,
+      ...(!template&&description.trim()?{description:description.trim()}:{}),...(!template&&initial?.tools.length?{tools:initial.tools}:{})});
     if(result!==null)onClose();
   }
   return <Dialog open={open} onOpenChange={next=>{if(!next)onClose()}}>
@@ -90,8 +98,10 @@ function NewBotDialog({open,onClose,templates,projects,defaultProject,busy,failu
             <option value="">No project (scratch folder)</option>
             {scopeProjects(projects,project).map(row=><option key={row.id} value={row.id}>{row.name}</option>)}
           </Select>}</FormField>
+        {!template&&<FormField label="Description" hint="Optional. One line that says what the bot is for.">{control=><Input {...control} value={description} maxLength={300} onChange={event=>setDescription(event.target.value)}/>}</FormField>}
         {template?<p className="manager-help">Can use: {template.tools.map(toolLabel).join(', ')}.</p>
           :<FormField label="Instructions" required hint="You can change these later. Tools stay read-only until you allow more." error={instructionsError}>{control=><Textarea {...control} value={instructions} onChange={event=>setInstructions(event.target.value)}/>}</FormField>}
+        {!template&&!!initial?.tools.length&&<p className="manager-help">Can use: {initial.tools.map(toolLabel).join(', ')}.</p>}
         <div className="bot-dialog-actions">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <ActionButton busy={busy} primary type="submit">Create bot</ActionButton>
@@ -107,7 +117,7 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
   const {data,loading,error:loadError,reload}=useManagerLoad(()=>gql<BotsData>(listQuery));
   const mutation=useManagerMutation(reload);
   const {busy,error,notice,mutate}=mutation;
-  const [selected,select]=useBotParam(),[creating,setCreating]=useState(false),[createFailure,setCreateFailure]=useState(''),[search,setSearch]=useState('');
+  const [selected,select]=useBotParam(),[describing,setDescribing]=useState(false),[seed,setSeed]=useState<BotSeed|undefined>(undefined),[creating,setCreating]=useState(false),[createFailure,setCreateFailure]=useState(''),[search,setSearch]=useState('');
   const [fresh,setFresh]=useState<{bots:Bot[];needs_you?:NeedsYouItem[]}|null>(null),[target,setTarget]=useState<{id:string|null;tab:BotTabId}>({id:null,tab:'overview'});
   useEffect(()=>setFresh(null),[data]);
   // Counts like "needs you" change while the screen is open, so the list refreshes itself quietly.
@@ -142,8 +152,10 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
     if(result===null){setCreateFailure(reason||'The bot could not be created. Try again.');mutation.clearError()}
     return result;
   };
-  const closeDialog=()=>{setCreating(false);setCreateFailure('');mutation.clearError()};
-  const header=<div className="bot-toolbar"><Button ref={newBot} onClick={()=>setCreating(true)}>New bot</Button></div>;
+  const closeDialog=()=>{setCreating(false);setSeed(undefined);setCreateFailure('');mutation.clearError()};
+  // New bots start from a description; the form is the "edit details" step, pre-filled when a draft was accepted.
+  const openForm=(next?:BotSeed)=>{setSeed(next);setDescribing(false);setCreating(true)};
+  const header=<div className="bot-toolbar"><Button ref={newBot} onClick={()=>setDescribing(true)}>New bot</Button></div>;
   return <ManagerPage section="bots" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={current?undefined:{label:'Bots',value:search,onChange:setSearch,count:bots.length}}>
     <>
       {current?<BotDetail key={current.id+tab} bot={current} bots={bots} mutation={mutation} projects={projects} me={me} onSection={onSection} inbox={inbox.filter(item=>item.bot_id===current.id)} initialTab={tab} onTabChange={writeTab} onBack={()=>open(null)} onGone={()=>open(null)}/>
@@ -166,7 +178,8 @@ export default function BotsSection({me,projectId,onSection}:{admin?:boolean;me:
         </ul>}
         {search&&bots.length>0&&!bots.some(matches)&&<Empty>No bot matches “{search}”. Clear the search to see all bots.</Empty>}
       </>}
-      <NewBotDialog key={String(creating)} open={creating} onClose={closeDialog} failure={createFailure} templates={templates} projects={projects} defaultProject={projectId} busy={busy} onCreate={create}/>
+      <DescribeToDraft kind="bot" open={describing} onClose={()=>setDescribing(false)} onManual={()=>openForm()} onReview={draft=>openForm(seedFrom(draft))} onSetupProvider={onSection?()=>onSection('models'):undefined}/>
+      <NewBotDialog key={String(creating)+(seed?.name??'')} open={creating} onClose={closeDialog} failure={createFailure} templates={templates} projects={projects} defaultProject={projectId} busy={busy} onCreate={create} initial={seed}/>
     </>
   </ManagerPage>;
 }
