@@ -139,12 +139,12 @@ def visual_journey(page,data,path,out,report,theme,width):
         keys.append(page.evaluate("document.activeElement.textContent.trim()"));page.keyboard.press('Tab')
     assert keys==['Combine with another table','Summarize','Columns','Show SQL','Export CSV'],keys
     # Sorting from the header, descending on the second click.
-    amount=tab.get_by_role('button',name='amount',exact=True);amount.click();amount.click()
-    expect(tab.get_by_role('columnheader',name=re.compile('^amount'))).to_have_attribute('aria-sort','descending')
+    amount=tab.get_by_role('button',name='Amount',exact=True);amount.click();amount.click()
+    expect(tab.get_by_role('columnheader',name=re.compile('^Amount'))).to_have_attribute('aria-sort','descending')
     expect(grid.get_by_role('row').nth(1).get_by_role('cell').nth(2)).to_have_text(str(ROWS))
     # Filters: from the column popover and from "Add filter", shown as sentences.
-    tab.get_by_role('button',name='Filter region',exact=True).click()
-    popover=page.get_by_role('dialog',name='Filter region',exact=True)
+    tab.get_by_role('button',name='Filter Region',exact=True).click()
+    popover=page.get_by_role('dialog',name='Filter Region',exact=True)
     popover.get_by_label('Condition',exact=True).select_option('eq');popover.get_by_label('Value',exact=True).fill('East');popover.get_by_role('button',name='Apply',exact=True).click()
     expect(tab.get_by_role('button',name='Region is East',exact=True)).to_be_visible()
     tab.get_by_role('button',name='Add filter',exact=True).click()
@@ -174,9 +174,9 @@ def visual_journey(page,data,path,out,report,theme,width):
     combine.get_by_label('Table to combine',exact=True).select_option('regions');combine.get_by_label('This column',exact=True).select_option(label='Customers · region_id')
     combine.get_by_label('Matches this column',exact=True).select_option('id');combine.get_by_role('button',name='Add table',exact=True).click()
     expect(joined).to_contain_text('Combined with Regions: region_id matches id')
-    expect(tab.get_by_role('columnheader',name=re.compile('^regions.name'))).to_be_visible()
-    tab.get_by_role('button',name='Filter regions.name',exact=True).click()
-    popover=page.get_by_role('dialog',name='Filter regions.name',exact=True)
+    expect(tab.get_by_role('columnheader',name=re.compile('^Regions · Name'))).to_be_visible()
+    tab.get_by_role('button',name='Filter Regions · Name',exact=True).click()
+    popover=page.get_by_role('dialog',name='Filter Regions · Name',exact=True)
     popover.get_by_label('Condition',exact=True).select_option('eq');popover.get_by_label('Value',exact=True).fill('North');popover.get_by_role('button',name='Apply',exact=True).click()
     expect(tab.get_by_role('button',name='Regions · Name is North',exact=True)).to_be_visible()
     expect(grid.get_by_role('row').nth(1)).to_contain_text('North')
@@ -499,7 +499,7 @@ def copilot_transport(state,report):
         names={t.get('name',t.get('function',{}).get('name'))for t in body.get('tools',[])}
         assert not(names&{'run_shell','computer','write_file'}),'Native tools entered Data model payload'
         report['inference_mock_requests'].append({'round':n,'path':req.url.path,'tool_names':sorted(names),'payload_bytes':len(req.content),'external':False})
-        tools={1:('read_schema',{'connection_id':fixture['cid']}),2:('read_query',{'connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),3:('propose_query',{'name':'Synthetic Copilot total','connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),4:('propose_report',{'name':'Synthetic Copilot report proposal','query_id':fixture['qid'],'visual':{'kind':'metric','y':'amount','aggregate':'sum'},'filters':[]})}
+        tools={1:('read_schema',{'connection_id':fixture['cid']}),2:('read_query',{'connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),3:('propose_query',{'name':'Synthetic Copilot total','connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),4:('propose_report',{'name':'Synthetic Copilot report proposal','query_id':fixture['qid'],'visual':{'kind':'metric','y':'amount','aggregate':'sum'},'filters':[]}),5:('propose_pivot',{'name':'Synthetic Copilot pivot','spec':{'version':1,'source':fixture['cid'],'from':{'table':'sales','alias':'s'},'joins':[],'select':[],'filters':{'op':'and','items':[]},'group_by':[],'aggregates':[],'sort':[],'limit':200,'offset':0,'pivot':{'rows':[{'table_alias':'s','column':'region'}],'columns':None,'value':{'fn':'count'},'totals':True,'sort':{'by':'rows','direction':'asc'}}}})}
         if n in tools:
             name,args=tools[n]
             output=[{'type':'function_call','call_id':'synthetic-data-tool-'+str(n),'name':name,'arguments':json.dumps(args)}]
@@ -522,6 +522,53 @@ def copilot_transport(state,report):
     state.agent._adapter=adapter
     return fixture,clients
 
+def view_report_journey(page,api,wid,prefix,path,segment,pivot,big,out,report,theme,width):
+    """Build reports on a saved pivot and on a segment from the browser, without writing SQL, and check them against the file."""
+    bi=page.get_by_role('region',name='BI workspace',exact=True)
+    bi.get_by_role('navigation',name='BI views',exact=True).get_by_role('button',name='Reports',exact=True).click()
+    bi.get_by_role('button',name='New report',exact=True).click()
+    creating=page.get_by_role('dialog',name='Create report',exact=True)
+    creating.get_by_role('textbox',name='Name',exact=True).fill('Synthetic report on a pivot')
+    creating.get_by_role('combobox',name='Data',exact=True).select_option('view:'+pivot['id'])
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as made:creating.get_by_role('button',name='Create',exact=True).click()
+    sent=made.value.request.post_data_json;assert sent['view_id']==pivot['id']and'query_id'not in sent,sent
+    expect(creating).not_to_be_visible()
+    # The fields of the view are offered before anything has run.
+    bi.get_by_role('combobox',name='Visual',exact=True).select_option('bar')
+    bi.get_by_role('combobox',name='Category',exact=True).select_option('pv_r1')
+    bi.get_by_role('combobox',name='Value',exact=True).select_option('pv_total')
+    bi.get_by_role('combobox',name='Aggregate',exact=True).select_option('sum')
+    bi.get_by_role('button',name='Save changes',exact=True).click();expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    pattern=re.escape(prefix)+r'/reports/[^/]+/run'
+    ran=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    direct=finish(api,wid,request(api,'POST',prefix+f"/views/{pivot['id']}/run",{'request_id':'e2e-view-report-'+uuid.uuid4().hex}),page)
+    expected={r[0]:r[-1]for r in direct['result']['rows']}
+    assert expected and {r[0]:r[1]for r in ran['result']['rows']}==expected,(ran['result']['rows'],expected)
+    assert ran['report_context']['dataset_view_id']==pivot['id']
+    # "Is any of" with a comma separated list, chosen before running.
+    bi.get_by_role('button',name='Add filter',exact=True).click()
+    bi.get_by_role('combobox',name='Filter field',exact=True).select_option('pv_r1')
+    bi.get_by_role('combobox',name='Condition',exact=True).select_option('in')
+    bi.get_by_label('Values',exact=True).fill('East, West')
+    bi.get_by_role('button',name='Save changes',exact=True).click();expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    filtered=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    assert {r[0]:r[1]for r in filtered['result']['rows']}=={k:v for k,v in expected.items()if k in('East','West')},filtered['result']['rows']
+    bi.get_by_role('img',name='Synthetic report on a pivot — bar chart',exact=True).scroll_into_view_if_needed()
+    capture(page,out,report,'report-on-pivot-view',theme,width)
+    bi.get_by_role('button',name='New report',exact=True).click()
+    creating=page.get_by_role('dialog',name='Create report',exact=True)
+    creating.get_by_role('textbox',name='Name',exact=True).fill('Synthetic report on a segment')
+    creating.get_by_role('combobox',name='Data',exact=True).select_option('view:'+segment['id'])
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as made:creating.get_by_role('button',name='Create',exact=True).click()
+    expect(creating).not_to_be_visible()
+    bi.get_by_role('combobox',name='Visual',exact=True).select_option('metric')
+    bi.get_by_role('combobox',name='Aggregate',exact=True).select_option('count')
+    bi.get_by_role('button',name='Save changes',exact=True).click();expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    counted=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    assert counted['result']['rows']==[[big]]and big==oracle_count(path,'amount>2450'),(counted['result']['rows'],big)
+    capture(page,out,report,'report-on-segment-view',theme,width)
+    report['checks'].append({'check':'reports-on-saved-views-through-ui','theme':theme,'width':width,'pivot_regions':sorted(expected),'segment_members':big,'in_filter_regions':sorted(r[0]for r in filtered['result']['rows']),'sql_written':False})
+
 def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     prefix=f'/api/data/workspaces/{wid}'
     assert mock['round']==0,'Data initialization silently triggered model inference'
@@ -543,9 +590,9 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     expect(setup.get_by_role('button',name='Off',exact=True)).to_have_attribute('aria-pressed','false')
     capture(page,out,report,'copilot-explicit-account-setup',theme,width)
     setup.get_by_role('button',name='Save',exact=True).click();expect(setup).not_to_be_visible()
-    schema=panel.get_by_role('button',name='Schema',exact=True);results=panel.get_by_role('button',name='Results',exact=True)
+    schema=panel.get_by_role('switch',name='Table and column names',exact=True);results=panel.get_by_role('switch',name='Rows from the open query',exact=True)
     expect(schema).to_be_enabled();expect(results).to_be_enabled()
-    expect(schema).to_have_attribute('aria-pressed','false');expect(results).to_have_attribute('aria-pressed','false')
+    expect(schema).to_have_attribute('aria-checked','false');expect(results).to_have_attribute('aria-checked','false')
     expect(panel.get_by_role('checkbox')).to_have_count(0)
     assert mock['round']==0,'Copilot setup silently triggered inference'
     schema.click();results.click()
@@ -561,12 +608,12 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
         nonlocal final
         final=request(api,'GET',prefix+'/copilot/runs/'+run['id']);return final['status']not in('queued','running')
     p.wait(done,page=page,seconds=30)
-    assert final['status']=='completed'and str(TOTAL)in final['answer']and len(final['proposals'])==2,final
-    assert mock['round']==5,mock
+    assert final['status']=='completed'and str(TOTAL)in final['answer']and len(final['proposals'])==3,final
+    assert mock['round']==6,mock
     replay=request(api,'POST',prefix+'/copilot/messages',body)
-    assert replay['id']==run['id']and mock['round']==5,'Copilot replay repeated inference'
+    assert replay['id']==run['id']and mock['round']==6,'Copilot replay repeated inference'
     assert len(request(api,'GET',prefix+'/queries'))==before_queries and len(request(api,'GET',prefix+'/reports'))==before_reports,'Proposal silently persisted a query/report'
-    expect(panel.locator('.copilot-answer')).to_contain_text(str(TOTAL))
+    expect(panel.get_by_role('log',name='Conversation',exact=True)).to_contain_text(str(TOTAL))
     activity=panel.get_by_role('button',name=re.compile('^View activity'))
     expect(activity).to_have_attribute('data-state','closed')
     capture(page,out,report,'copilot-actual-sql-tool-proposals',theme,width)
@@ -574,6 +621,15 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as saved:report_proposal.get_by_role('button',name='Save report',exact=True).click()
     assert saved.value.ok,saved.value.text()
     assert len(request(api,'GET',prefix+'/reports'))==before_reports+1
+    # A structured pivot proposal is checked by the server, shown as a card, and opens as an unsaved pivot tab on request only.
+    pivot_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot pivot')
+    expect(pivot_proposal).to_be_visible()
+    views_before=len(request(api,'GET',prefix+'/views')['views'])
+    pivot_proposal.get_by_role('button',name='Open as pivot',exact=True).click()
+    expect(data.get_by_role('grid',name=re.compile('^New pivot on Sales'))).to_be_visible()
+    assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Pivot proposal silently saved a view'
+    capture(page,out,report,'copilot-pivot-proposal-opened',theme,width)
+    panel.get_by_role('button',name=re.compile('^Advanced')).click()  # written SQL proposals sit under Advanced
     query_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot total')
     query_proposal.get_by_role('button',name='Open query',exact=True).click()
     expect(page.locator('#data-sql')).to_contain_text('SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales')
@@ -582,7 +638,7 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     capture(page,out,report,'copilot-open-query-draft',theme,width)
     reduced=data.locator('*').evaluate_all("rows=>rows.filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).map(e=>({animation:getComputedStyle(e).animationName,transition:getComputedStyle(e).transitionDuration})).filter(s=>s.animation!=='none'||s.transition.split(',').some(v=>parseFloat(v)>0))")
     assert not reduced,('Data motion remained active under reduce',reduced)
-    report['checks'].append({'check':'real-adapter-mock-inference-actual-sqlite-tools-through-ui','theme':theme,'width':width,'inference_requests':5,'tools':[e['title']for e in final['events']if e['kind']=='tool.completed'],'total_observed':TOTAL,'typed_proposals':2,'proposal_auto_saves':0,'explicit_report_save':True,'explicit_query_draft_open':True,'replayed_run_no_inference':True,'context_opted_in':{'schema':True,'results':True},'team_account_share':False,'visible_motion_under_reduce':reduced})
+    report['checks'].append({'check':'real-adapter-mock-inference-actual-sqlite-tools-through-ui','theme':theme,'width':width,'inference_requests':6,'tools':[e['title']for e in final['events']if e['kind']=='tool.completed'],'total_observed':TOTAL,'typed_proposals':3,'proposal_auto_saves':0,'explicit_report_save':True,'explicit_query_draft_open':True,'replayed_run_no_inference':True,'context_opted_in':{'schema':True,'results':True},'team_account_share':False,'visible_motion_under_reduce':reduced})
 
 
 def policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,ownerjob,views_state,out,report,theme,width):
@@ -677,7 +733,7 @@ def exercise(browser,out,report,ui_dist,width,theme):
             workspace=created.value.json();wid=workspace['id'];mock['wid']=wid;prefix=f'/api/data/workspaces/{wid}'
             expect(dialog).not_to_be_visible()
             workspace_select=side(page).get_by_role('combobox',name='Data workspace',exact=True)
-            expect(workspace_select).to_be_enabled();expect(workspace_select).to_have_value(wid)
+            expect(workspace_select).to_be_enabled();expect(workspace_select).to_have_text('Synthetic QA team')
             focus_sample(page,workspace_select,'Data workspace selector',report,True);hide_side(page)
             data.get_by_role('button',name='Connect database',exact=True).last.click()
             connection_dialog=page.get_by_role('dialog',name='Connect database',exact=True)
@@ -736,7 +792,7 @@ def exercise(browser,out,report,ui_dist,width,theme):
             bi.get_by_role('button',name='New report',exact=True).click()
             creating=page.get_by_role('dialog',name='Create report',exact=True);dialog_check(page,creating,report,'New report name','Name')
             creating.get_by_role('textbox',name='Name',exact=True).fill('Synthetic regional revenue')
-            creating.get_by_role('combobox',name='Saved query',exact=True).select_option(qid)
+            creating.get_by_role('combobox',name='Data',exact=True).select_option('query:'+qid)
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as made:creating.get_by_role('button',name='Create',exact=True).click()
             rid=made.value.json()['id'];expect(creating).not_to_be_visible()
             tablejob=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),re.escape(prefix)+r'/reports/[^/]+/run')
@@ -773,11 +829,12 @@ def exercise(browser,out,report,ui_dist,width,theme):
             expect(bi.get_by_role('img',name='Synthetic regional revenue — bar chart',exact=True)).to_be_visible()
             bi.get_by_role('img',name='Synthetic regional revenue — bar chart',exact=True).scroll_into_view_if_needed()
             capture(page,out,report,'published-dashboard',theme,width)
+            view_report_journey(page,api,wid,prefix,path,views_state['segment'],views_state['pivot'],views_state['big'],out,report,theme,width)
             copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width)
             policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,job,views_state,out,report,theme,width)
             report['checks'].append({'check':'actual-sqlite-browser-query-bi-journey','theme':theme,'width':width,'synthetic_business_rows':ROWS,'source_sha256':before,'preview_rows':1000,'preview_truncated':True,'csv_scope':'actual1000-row preview with header','full_source_aggregate':EXPECTED,'full_total':TOTAL,'readonly_delete_rejected':True,'long_recursive_query_cancelled':True,'chart_svg_downloaded':True,'published_dashboard':True,'actual_filesystem_chooser':True})
             assert hashlib.sha256(path.read_bytes()).hexdigest()==before,'Read-only source bytes changed'
-            assert mock['round']==5,'Unexpected inference beyond the explicit Copilot tool loop'
+            assert mock['round']==6,'Unexpected inference beyond the explicit Copilot tool loop'
         except BaseException:
             page.screenshot(path=str(out/f'failure-{theme}-{width}.png'),full_page=True)
             page.locator('input[type=password]').evaluate_all('rows=>rows.forEach(e=>e.value="")')

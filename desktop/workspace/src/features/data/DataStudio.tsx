@@ -197,6 +197,8 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   const openPivot = (row: ViewSummary) => showDatabase({id: pivotViewTabId(row.id), kind: 'pivot', viewId: row.id, connectionId: row.connection_id});
   const openSegment = (row: Pick<ViewSummary, 'id'>) => showDatabase({id: segmentTabId(row.id), kind: 'segment', viewId: row.id});
   const openUse = (use: ViewUse | Pick<ViewSummary, 'id' | 'kind'>) => {if (use.kind === 'pivot') showDatabase({id: pivotViewTabId(use.id), kind: 'pivot', viewId: use.id}); else if (use.kind === 'segment') openSegment(use);};
+  // Reports can start from a table, so the source's tables are loaded when the Reports view opens.
+  useEffect(() => {if (selection.view === 'bi' && viewsEnabled && writable && connectionId && controller.schemaStatus === 'idle') controller.loadSchema();}, [selection.view, viewsEnabled, writable, connectionId, controller.schemaStatus]);
   const schemaPart = (table: string) => {const schema = schemaFor(controller.schema?.tables, table); return schema ? {schema} : {};};
   function useForPivot(segment: ViewDetail) {
     draftCounter.current += 1;
@@ -290,7 +292,7 @@ function DataSession({ownerId, navigationHost, onNavigate, retainedDrafts, onRet
   else if (selection.view === 'database') content = <DataTabs state={shownTabs} title={tabTitle} actions={actions} banner={banner}
     onSelect={id => {setNotice(''); updateTabs(state => selectTab(state, id));}} onClose={id => {setNotice(''); updateTabs(state => closeTab(state, id));}} panel={panel}/>;
   else content = <>{plainHeader(viewTitle[selection.view as 'bi' | 'team'])}{banner}<div className="data-content" key={workspaceId}>
-    {selection.view === 'bi' && <BIStudio workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} role={role} active onOpenQuery={openQuery} onRefresh={requestRefresh}/>}
+    {selection.view === 'bi' && <BIStudio workspaceId={workspaceId} connections={snapshot.connections} queries={snapshot.queries} role={role} active onOpenQuery={openQuery} onRefresh={requestRefresh} views={viewsEnabled ? views.views : []} tables={viewsEnabled && connectionId ? controller.schema?.tables || [] : []} connectionId={connectionId || undefined} onViewCreated={views.upsert}/>}
     {selection.view === 'team' && <TeamSettings workspaceId={workspaceId} members={snapshot.members} role={role} ownerId={ownerId} onRefresh={requestRefresh}/>}
   </div></>;
 

@@ -55,3 +55,25 @@ it('has a focusable scroll region and no axe violations', async () => {
   expect(region).toHaveFocus();
   await expectNoAxeViolations(container);
 });
+
+it('moves between cells with arrows, Home and End, and opens the column filter with Enter', () => {
+  const opened = vi.fn();
+  render(<QueryGrid columns={columns} rows={rows} renderFilter={index => <button type="button" aria-label={'Filter ' + index} onClick={() => opened(index)}>f</button>}/>);
+  const cell = (row: number, col: number) => document.querySelector<HTMLElement>('[data-r="' + row + '"][data-c="' + col + '"]')!;
+  expect(cell(0, 0)).toHaveAttribute('tabindex', '0');
+  expect(cell(0, 1)).toHaveAttribute('tabindex', '-1');
+  cell(0, 0).focus();
+  fireEvent.keyDown(cell(0, 0), {key: 'ArrowRight'});
+  expect(cell(0, 1)).toHaveFocus();
+  fireEvent.keyDown(cell(0, 1), {key: 'ArrowDown'});
+  expect(cell(1, 1)).toHaveFocus();
+  fireEvent.keyDown(cell(1, 1), {key: 'End'});
+  expect(cell(1, 3)).toHaveFocus();
+  fireEvent.keyDown(cell(1, 3), {key: 'Home'});
+  expect(cell(1, 0)).toHaveFocus();
+  fireEvent.keyDown(cell(1, 0), {key: 'ArrowUp'});
+  expect(cell(0, 0)).toHaveFocus();
+  fireEvent.keyDown(cell(0, 0), {key: 'ArrowRight'});
+  fireEvent.keyDown(cell(0, 1), {key: 'Enter'});
+  expect(opened).toHaveBeenCalledWith(1);
+});
