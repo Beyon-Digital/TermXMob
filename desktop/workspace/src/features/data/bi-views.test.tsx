@@ -1,8 +1,10 @@
+import {createRef} from 'react';
+import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {dataRequest} from '../../lib/data-studio';
-import {biDefinition, biListText, biListValue} from '../../lib/data-bi';
-import BIStudio from './BIStudio';
+import {biDefinition, biListText, biListValue, biSvg} from '../../lib/data-bi';
+import BIStudio, {ReportResult} from './BIStudio';
 import type {ViewSummary} from '../../lib/data-views';
 
 vi.mock('../../lib/data-studio', async original => ({...await original<typeof import('../../lib/data-studio')>(), dataRequest: vi.fn(), dataDownload: vi.fn()}));
@@ -28,7 +30,7 @@ it('creates a report on a view without writing SQL', async () => {
   await screen.findByText('No reports yet');
   fireEvent.click(screen.getByRole('button', {name: 'Create report'}));
   fireEvent.change(screen.getByLabelText('Name'), {target: {value: 'Regional'}});
-  expect(screen.getByLabelText('Data')).toHaveValue('view:v1');
+  expect(screen.getByLabelText('Data')).toHaveTextContent('Sales by region');
   request.mockImplementation(async (path, init) => {
     if (path.endsWith('/reports') && init?.method === 'POST') return {...report, name: 'Regional'};
     if (path.endsWith('/report-datasets/views/v1/fields')) return {view_id: 'v1', fields};
@@ -77,7 +79,7 @@ it('turns a chosen table into a plain table view for the report', async () => {
   await screen.findByText('No reports yet');
   fireEvent.click(screen.getByRole('button', {name: 'Create report'}));
   fireEvent.change(screen.getByLabelText('Name'), {target: {value: 'Orders report'}});
-  expect(screen.getByLabelText('Data')).toHaveValue('table:orders');
+  expect(screen.getByLabelText('Data')).toHaveTextContent('orders');
   const created = {...view, id: 'v9', kind: 'table', name: 'Report data: orders', base_table: 'orders'};
   const onViewCreated = vi.fn();
   cleanup();
@@ -119,4 +121,84 @@ it('shows the names people read instead of the view\'s SQL names in the result',
   const chart = await screen.findByRole('img', {name: /bar chart/});
   expect(chart.textContent).not.toContain('pv_r1');
   expect(chart.textContent).toContain('Region');
+});
+
+it('edits the dataset through the grouped picker and saves the selected identity', async () => {
+  const user = userEvent.setup(), query = {id: 'q1', revision: 1, name: 'Saved sales', connection_id: 'c', sql: 'select 1'};
+  api([report]);
+  render(<BIStudio {...props} queries={[query]}/>);
+  await screen.findByRole('heading', {name: 'On a view'});
+  await user.click(screen.getByLabelText('Data'));
+  await user.click(screen.getByRole('menuitemradio', {name: 'Saved sales'}));
+  expect(screen.getByLabelText('Data')).toHaveTextContent('Saved sales');
+  request.mockResolvedValue({...report, query_id: 'q1', view_id: undefined, revision: 2});
+  await user.click(screen.getByRole('button', {name: 'Save changes'}));
+  await waitFor(() => expect(request.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(true));
+  const saved = JSON.parse(String(request.mock.calls.find(([, init]) => init?.method === 'PATCH')![1]?.body));
+  expect(saved).toMatchObject({query_id: 'q1', visual: {kind: 'table', aggregate: 'none'}, filters: []});
+  expect(saved).not.toHaveProperty('view_id');
+});
+
+it('allows New report for view data and excludes unreadable tables', async () => {
+  const user = userEvent.setup();
+  api([]);
+  render(<BIStudio {...props} tables={[{name: 'private_view', columns: [], readable: false} as never]}/>);
+  await screen.findByText('No reports yet');
+  expect(screen.getByRole('button', {name: 'New report'})).toBeEnabled();
+  await user.click(screen.getByRole('button', {name: 'New report'}));
+  await user.click(screen.getByLabelText('Data'));
+  expect(screen.getByRole('menuitemradio', {name: 'Sales by region'})).toBeInTheDocument();
+  expect(screen.queryByRole('group', {name: 'Tables'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('menuitemradio', {name: /private/})).not.toBeInTheDocument();
+  await user.keyboard('{Escape}{Escape}');
+});
+
+it('labels viewer and dashboard results from the job without fetching editor-only fields', async () => {
+  const user = userEvent.setup(), bar = {...report, published: true, visual: {kind: 'bar', x: 'pv_r1', y: 'pv_total', aggregate: 'none'}};
+  request.mockImplementation(async path => {
+    if (path.endsWith('/reports')) return [bar];
+    if (path.endsWith('/dashboards')) return [{id: 'd', revision: 1, name: 'Sales dashboard', report_ids: ['r']}];
+    if (path.endsWith('/reports/r/run')) return {id: 'j', revision: 1, status: 'completed', connection_id: 'c',
+      output: {columns: [{alias: 'pv_r1', label: 'Region', role: 'column', value_kind: 'text'}, {alias: 'pv_total', label: 'Sales total', role: 'column', value_kind: 'number'}], warnings: []},
+      result: {columns: [{name: 'pv_r1'}, {name: 'pv_total'}], rows: [['East', 5], ['West', 7]], row_count: 2, truncated: false}};
+    throw new Error('Unexpected ' + path);
+  });
+  render(<BIStudio {...props} role="viewer"/>);
+  await screen.findByRole('heading', {name: 'On a view'});
+  await user.click(screen.getByRole('button', {name: 'Run report'}));
+  expect((await screen.findByRole('img')).querySelector('desc')).toHaveTextContent('Region by Sales total');
+  await user.click(screen.getByRole('button', {name: 'View data table'}));
+  expect(screen.getByRole('columnheader', {name: 'Sales total'})).toBeInTheDocument();
+  await user.click(screen.getByRole('button', {name: 'Dashboards'}));
+  await user.click(screen.getByRole('button', {name: 'Run dashboard'}));
+  await waitFor(() => expect(screen.getByRole('img').querySelector('desc')).toHaveTextContent('Region by Sales total'));
+  expect(screen.getByRole('img').textContent).not.toMatch(/pv_r1|pv_total/);
+  expect(request.mock.calls.some(([path]) => path.includes('/fields'))).toBe(false);
+});
+
+it('keeps duplicate display labels separate by raw alias, including SVG export and table data', () => {
+  const svgRef = createRef<SVGSVGElement>(), bar = {...report, visual: {kind: 'bar' as const, x: 'pv_r1', y: 'pv_total', aggregate: 'none' as const}};
+  const job = {id: 'j', revision: 1, status: 'completed' as const, connection_id: 'c',
+    output: {columns: [{alias: 'pv_total', label: 'Sales', role: 'column' as const, value_kind: 'number' as const}, {alias: 'pv_r1', label: 'Sales', role: 'column' as const, value_kind: 'text' as const}], warnings: []},
+    result: {columns: [{name: 'pv_r1'}, {name: 'pv_total'}], rows: [['East', 5], ['West', 7]], row_count: 2, truncated: false}};
+  const {container} = render(<ReportResult report={bar} job={job} svgRef={svgRef}/>);
+  expect(screen.getByRole('img').querySelector('desc')).toHaveTextContent('Sales by Sales');
+  expect(container.querySelector('svg rect title')).toHaveTextContent('East: 5');
+  const exported = biSvg(svgRef.current!);
+  expect(exported).toContain('Sales by Sales');
+  expect(exported).not.toMatch(/pv_r1|pv_total/);
+  fireEvent.click(screen.getByRole('button', {name: 'View data table'}));
+  expect(screen.getAllByRole('columnheader', {name: 'Sales'})).toHaveLength(2);
+  expect(job.result.columns.map(column => column.name)).toEqual(['pv_r1', 'pv_total']);
+  expect(bar.visual).toMatchObject({x: 'pv_r1', y: 'pv_total'});
+});
+
+it('labels an aggregated KPI using its returned alias and backend visual', () => {
+  render(<ReportResult report={{...report, visual: {kind: 'metric', y: 'pv_total', aggregate: 'sum'}}}
+    job={{id: 'j', revision: 1, status: 'completed', connection_id: 'c',
+      report_context: {visual: {kind: 'metric', y: 'sum', aggregate: 'sum'}},
+      output: {columns: [{alias: 'sum', label: 'Sum of sales total', role: 'aggregate', value_kind: 'number'}], warnings: []},
+      result: {columns: [{name: 'sum'}], rows: [[12]], row_count: 1, truncated: false}}}/>);
+  expect(screen.getByText('Sum of sales total')).toBeInTheDocument();
+  expect(screen.getByText('12')).toBeInTheDocument();
 });
