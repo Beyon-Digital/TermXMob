@@ -16,7 +16,7 @@ from termx.project_files import ProjectFiles
 from termx.workspace.http import mount_workspace
 
 
-def setup(workspace, *, git_dir=None):
+def setup(workspace, *, git_dir=None, worktree_base=None):
     service,owner,path=workspace
     root=path/'project';root.mkdir()
     def git(*args):
@@ -27,7 +27,7 @@ def setup(workspace, *, git_dir=None):
     project={'id':'project-a','name':'Fixture','path':str(root)}
     service.state.projects=SimpleNamespace(project=lambda identifier:project if identifier=='project-a' else (_ for _ in ()).throw(KeyError(identifier)),projects=lambda:[project],lock=threading.RLock())
     service.state.authorization=AuthorizationService(service.state.identity)
-    service.state.delivery=DeliveryService(path/'delivery')
+    service.state.delivery=DeliveryService((worktree_base if worktree_base is not None else path)/'delivery')
     tree=service.state.delivery.effect('project-a',str(root),'worktree-create',{'branch':'codex/quick-file','base':'main'})
     (root/'main-only.txt').write_text('Main source')
     (Path(tree['path'])/'isolated-only.txt').write_text('Isolated source')

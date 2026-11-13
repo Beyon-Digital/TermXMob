@@ -90,7 +90,17 @@ def test_checkout_switch_accepts_long_enrolled_paths_without_relaxing_session_in
     # its .git/worktrees/<id> metadata short without changing Git configuration;
     # both real enrolled working folders still exceed the session text cap.
     git_dir = path.resolve() / 'git'
-    service, owner, root, tree, row, _, _ = setup((service, owner, deep), git_dir=git_dir)
+    # The child checkout also exports checkout/.git as GIT_DIR, which Git for
+    # Windows rejects above 220 characters before resolving the gitfile. Pad
+    # this working folder independently so it still exceeds the text cap.
+    worktree_base = path.resolve()
+    checkout_suffix = Path('delivery') / 'worktrees' / ('w' * 32)
+    while len(str(worktree_base / checkout_suffix)) <= 200:
+        remaining = 201 - len(str(worktree_base / checkout_suffix))
+        worktree_base /= 'w' * min(48, max(1, remaining - 1))
+    assert 200 < len(str(worktree_base / checkout_suffix)) <= 215
+    service, owner, root, tree, row, _, _ = setup(
+        (service, owner, deep), git_dir=git_dir, worktree_base=worktree_base)
     checkout = str(Path(tree['path']).resolve())
     assert len(str(root)) > 200 and len(checkout) > 200
     assert (root / '.git').is_file()
@@ -98,7 +108,8 @@ def test_checkout_switch_accepts_long_enrolled_paths_without_relaxing_session_in
                             check=True, capture_output=True, text=True).stdout.strip()
     assert (root / common).resolve() == git_dir
     assert len(str(git_dir / 'worktrees' / tree['id'])) < 248
-    assert len(checkout) < 248 and len(str(Path(checkout) / 'base.txt')) < 260
+    assert len(checkout) <= 215 and len(str(Path(checkout) / '.git')) <= 220
+    assert len(str(Path(checkout) / 'base.txt')) < 260
 
     project = service.update_session(owner, row['id'], revision=row['revision'], changes={'worktree_id': None})
     assert project['cwd'] == str(root) and project['worktree_id'] is None
