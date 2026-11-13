@@ -12,6 +12,7 @@ from test_agent import _git_repo, wait_for_pending_approval, wait_for_status
 from test_plan_mode import PlanAdapter, _call
 from test_policies import _engine, _rule, _shell_decision, store  # noqa: F401  (store is a fixture)
 from test_agent import build_manager
+from test_agent_runtime_config import _code_positions
 from termx.agent.limits import auto_summary, resolve_auto_ceilings
 from termx.agent.policies.fingerprint import fingerprint_command
 
@@ -38,6 +39,11 @@ async def _start(
     work.mkdir()
     adapter = PlanAdapter(script)
     manager, store_ = build_manager(work, adapter)
+    # These contracts exercise project files and shell actions. Advertising
+    # computer control would also wait for unrelated host desktop discovery.
+    manager.save_provider(provider_id="fake", kind="openai-compatible", name="Fake",
+                          base_url="http://127.0.0.1:9999/v1", model="fake-model",
+                          capabilities=["shell"])
     extra: dict[str, Any] = {}
     if reviewed:
         # The workspace puts every tool call through the action-review gate.
@@ -71,6 +77,86 @@ def _auto(store_, task_id: str) -> dict[str, Any] | None:
 
 def _events(store_, task_id: str, event_type: str) -> list[dict[str, Any]]:
     return [e for e in store_.events(task_id) if e["type"] == event_type]
+
+
+async def _reviewed_completion(manager, store_, task_id, *, timeout=15.0):
+    worker = manager._workers.get(task_id)
+
+    def observation(reason):
+        task = store_.get_task(task_id)
+        tail = store_.events(task_id, tail_limit=8)
+        return {"reason": reason, "status": task["status"], "error": task.get("error"),
+                "worker_done": worker is None or worker.done(),
+                "worker_cancelled": worker is not None and worker.cancelled(),
+                "positions": _code_positions(worker) if worker is not None else {},
+                "approvals": [{"kind": row["kind"], "status": row["status"]}
+                              for row in store_.approvals(task_id)],
+                "events": [{"type": row["type"], "sequence": row["sequence"],
+                            "call_id": row["payload"].get("call_id")} for row in tail]}
+
+    if worker is not None:
+        try:
+            await asyncio.wait_for(asyncio.shield(worker), timeout)
+        except TimeoutError as exc:
+            raise AssertionError(observation("worker_deadline")) from exc
+    done = store_.get_task(task_id, include_events=True)
+    assert done["status"] == "completed", observation("worker_stopped_without_completion")
+    return done
+
+
+@pytest.fixture(autouse=True)
+def auto_desktop_port(monkeypatch):
+    from termx.desktop import agent_desktop
+
+    probes = []
+
+    async def unexpected_readiness(*_args, **_kwargs):
+        probes.append("ensure_fresh")
+        raise AssertionError("File/shell auto review must not wait for desktop readiness")
+
+    port = SimpleNamespace(sweep=lambda: None, kill_task=lambda *_: None,
+                           cleanup_task=lambda *_: None, kill_all=lambda: None,
+                           ensure_fresh=unexpected_readiness)
+    monkeypatch.setattr(agent_desktop, "get_client", lambda: port)
+    yield probes
+    assert probes == []
+
+
+def test_review_completion_reports_pending_worker_before_cleanup(tmp_path, monkeypatch):
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = PlanAdapter
+
+        class GatedAdapter(original):
+            async def turn(self, **kwargs):
+                entered.set()
+                await release.wait()
+                return await super().turn(**kwargs)
+
+        monkeypatch.setitem(globals(), "PlanAdapter", GatedAdapter)
+        manager, store_, _adapter, task = await _start(
+            tmp_path, monkeypatch, [("Done.", [])], auto={"enabled": True}, reviewed=True)
+        worker = None
+        try:
+            await _approve_plan(manager, store_, task["id"])
+            worker = manager._workers[task["id"]]
+            await asyncio.wait_for(entered.wait(), 15)
+            with pytest.raises(AssertionError) as error:
+                await _reviewed_completion(manager, store_, task["id"], timeout=0)
+            snapshot = error.value.args[0]
+            assert snapshot["reason"] == "worker_deadline" and snapshot["status"] == "running"
+            assert not snapshot["worker_done"] and not snapshot["worker_cancelled"]
+            assert len(snapshot["events"]) <= 8
+            assert any(position["function"] == "turn" for task in snapshot["positions"]["tasks"]
+                       for position in task["chain"])
+            assert not worker.done() and not worker.cancelled()
+        finally:
+            release.set()
+            await manager.close()
+            assert worker is None or worker.done()
+            store_.close()
+
+    asyncio.run(run())
 
 
 def test_auto_approves_low_risk_calls_and_audits_each(tmp_path, monkeypatch):
@@ -117,7 +203,7 @@ def test_auto_counts_each_auto_approved_call_after_the_run_finishes(tmp_path, mo
     asyncio.run(run())
 
 
-def test_auto_approves_through_the_action_review_gate(tmp_path, monkeypatch):
+def test_auto_approves_through_the_action_review_gate(tmp_path, monkeypatch, auto_desktop_port):
     async def run() -> None:
         script = [
             ("", [_call("write_file", "c1", path="notes.txt", content="hi\n"), _shell("c2", "echo hi")]),
@@ -126,14 +212,18 @@ def test_auto_approves_through_the_action_review_gate(tmp_path, monkeypatch):
         manager, store_, _adapter, task = await _start(
             tmp_path, monkeypatch, script, auto={"enabled": True}, reviewed=True
         )
-        await _approve_plan(manager, store_, task["id"])
-        done = await wait_for_status(store_, task["id"], "completed")
-        decisions = _events(store_, task["id"], "auto.decision")
-        assert [d["payload"]["tool"] for d in decisions] == ["write_file", "run_shell"]
-        assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "tool"]
-        assert done["runtime"]["auto"]["enabled"] is True
-        await manager.close()
-        store_.close()
+        try:
+            await _approve_plan(manager, store_, task["id"])
+            done = await _reviewed_completion(manager, store_, task["id"])
+            decisions = _events(store_, task["id"], "auto.decision")
+            assert [d["payload"]["tool"] for d in decisions] == ["write_file", "run_shell"]
+            assert not [a for a in store_.approvals(task["id"]) if a["kind"] == "tool"]
+            assert done["runtime"]["auto"]["enabled"] is True
+            assert (Path(done["cwd"]) / "notes.txt").read_text() == "hi\n"
+            assert auto_desktop_port == []
+        finally:
+            await manager.close()
+            store_.close()
 
     asyncio.run(run())
 

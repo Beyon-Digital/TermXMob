@@ -261,12 +261,17 @@ def test_completion_wait_timeout_captures_progress_before_worker_cleanup(tmp_pat
     asyncio.run(run())
 
 
-def test_internal_task_survives_more_than_old_default_requests(tmp_path):
+def test_internal_task_survives_more_than_old_default_requests(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "sample.txt").write_text("sample")
     async def run():
         adapter = ManyReads(300)
-        manager, store = build_manager(tmp_path, adapter)
+        # This checks the request count, independently of disk commit latency.
+        # Restart persistence is exercised below with the default on-disk store.
+        manager, store = build_manager(tmp_path, adapter, store_path=Path(":memory:"))
         try:
+            assert next(row["file"] for row in store._db.execute("PRAGMA database_list")
+                        if row["name"] == "main") == ""
             task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
                                              provider_id="fake", mode="ask")
             with _runtime_method_timings(manager) as timings:
@@ -293,6 +298,8 @@ def test_legacy_budget_approval_resumes_without_numeric_limits_after_restart(tmp
     async def run():
         adapter = ManyReads(0)
         manager, store = build_manager(tmp_path, adapter)
+        assert store.path == tmp_path / "agent.sqlite3"
+        assert store.path.is_file()
         task = store.create_task(prompt="Inspect", cwd=str(tmp_path), provider_id="fake",
             model="fake-model", mode="ask", limits={"max_steps": 1, "max_seconds": 1})
         manager.tree_budget.reserve(task["id"], ["completed-read-1"])
@@ -308,6 +315,8 @@ def test_legacy_budget_approval_resumes_without_numeric_limits_after_restart(tmp
         store.close()
         manager, store = build_manager(tmp_path, adapter)
         try:
+            assert store.path == tmp_path / "agent.sqlite3"
+            assert store.path.is_file()
             assert store.get_task(task["id"])["status"] == "awaiting_approval"
             assert adapter.turns == 0
             await manager.resolve_approval(task["id"], approval["id"], "approved")
