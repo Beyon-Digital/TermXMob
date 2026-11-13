@@ -16,7 +16,15 @@ function snapshot(workspace=owner):DataSnapshot{return {workspace,members:[{id:'
 const api=vi.mocked(request);let workspaces:DataWorkspace[],snapshots:Record<string,DataSnapshot>;
 beforeEach(()=>{vi.clearAllMocks();sizeGridScrollers();localStorage.clear();window.history.replaceState({},'','/?workspace=data');workspaces=[{...owner},{...second}];snapshots={workspace:snapshot(),second:snapshot(second)};api.mockImplementation(async(path,init)=>{if(path==='/api/data/bootstrap')return {workspaces,engines:[engine],capabilities:{}} satisfies DataBootstrap;if(path==='/api/data/workspaces'&&init?.method==='POST'){const {name}=JSON.parse(init.body as string);const added={...owner,id:'new',name};workspaces=[...workspaces,added];snapshots.new={...snapshot(added),connections:[]};return added}const wid=path.split('/')[4];if(path==='/api/data/workspaces/'+wid&&snapshots[wid]){if(init?.method==='PATCH'){const body=JSON.parse(init.body as string);workspaces=workspaces.map(row=>row.id===wid?{...row,name:body.name,revision:row.revision+1}:row);snapshots[wid]={...snapshots[wid],workspace:workspaces.find(row=>row.id===wid)!};return snapshots[wid].workspace}if(init?.method==='DELETE'){workspaces=workspaces.filter(row=>row.id!==wid);return snapshots[wid].workspace}return structuredClone(snapshots[wid])}throw Error('Unexpected request: '+path)});});
 afterEach(()=>{cleanup();vi.restoreAllMocks()});
-async function pickWorkspace(name:string){fireEvent.click(await screen.findByRole('combobox',{name:'Data workspace'}));fireEvent.click(await screen.findByRole('option',{name}));}
+async function pickWorkspace(name: string) {
+  const picker = await screen.findByRole('combobox', {name: 'Data workspace'});
+  await waitFor(() => {
+    expect(picker).toBeEnabled();
+    expect(picker).not.toHaveTextContent('No workspaces');
+  });
+  fireEvent.click(picker);
+  fireEvent.click(await screen.findByRole('option', {name}));
+}
 async function ready(){await screen.findByRole('heading',{name:/source$/});}
 function openSql(){fireEvent.click(screen.getByRole('button',{name:'New query'}));return screen.findByLabelText('SQL query');}
 const tables=[{name:'orders',columns:[{name:'id',type:'INTEGER',primary_key:true},{name:'total',type:'REAL'}],row_estimate:null},{name:'customers',columns:[{name:'id',type:'INTEGER'}],row_estimate:1200}];
@@ -30,6 +38,51 @@ it('retains each workspace SQL draft in memory and stores only selection identif
 it('preserves SQL during an observation pause and clears it after lock',async()=>{const view=render(<DataStudio ownerId="owner" visible/>);await ready();await openSql();await typeSql('SQL query','SELECT sensitive_data');view.rerender(<DataStudio ownerId="owner" visible observing={false}/>);expect(screen.getByRole('status')).toHaveTextContent('paused');view.rerender(<DataStudio ownerId="owner" visible observing/>);await waitFor(async()=>expect(await sqlValue('SQL query')).toBe('SELECT sensitive_data'));act(()=>window.dispatchEvent(new Event('termx-session-locked')));expect(screen.getByRole('status')).toHaveTextContent('Unlock');expect(screen.queryByLabelText('SQL query')).not.toBeInTheDocument();act(()=>window.dispatchEvent(new Event('termx-session-unlocked')));await waitFor(async()=>expect(await sqlValue('SQL query')).toBe(''));});
 it('does not restore another owner draft after an identity change',async()=>{const view=render(<DataStudio ownerId="owner" visible/>);await ready();await openSql();await typeSql('SQL query','SELECT owner_private');view.rerender(<DataStudio ownerId="other-owner" visible/>);await ready();expect(screen.queryByLabelText('SQL query')).not.toBeInTheDocument();await openSql();expect(await sqlValue('SQL query')).toBe('');expect(screen.queryByDisplayValue('SELECT owner_private')).not.toBeInTheDocument();});
 it('aborts bootstrap while hidden and discards late authorized metadata',async()=>{let resolve!:(value:DataBootstrap)=>void;api.mockReturnValue(new Promise(done=>resolve=done));const view=render(<DataStudio ownerId="owner" visible/>);const signal=api.mock.calls[0][1]?.signal as AbortSignal;view.rerender(<DataStudio ownerId="owner" visible={false}/>);expect(signal.aborted).toBe(true);await act(async()=>resolve({workspaces:[owner],engines:[engine],capabilities:{}}));expect(screen.queryByRole('option',{name:'Analytics'})).not.toBeInTheDocument();});
+it('keeps an early disabled workspace click closed until bootstrap makes selection available', async () => {
+  let finishBootstrap!: (value: DataBootstrap) => void;
+  let finishSnapshot!: (value: DataSnapshot) => void;
+  const bootstrap = new Promise<DataBootstrap>(resolve => {finishBootstrap = resolve;});
+  const oldSnapshot = new Promise<DataSnapshot>(resolve => {finishSnapshot = resolve;});
+  const base = api.getMockImplementation()!;
+  api.mockImplementation((path, init, retry) => path === '/api/data/bootstrap' ? bootstrap
+    : path === '/api/data/workspaces/workspace' ? oldSnapshot : base(path, init, retry));
+
+  render(<DataStudio ownerId="owner" visible/>);
+  const picker = screen.getByRole('combobox', {name: 'Data workspace'});
+  const observe = () => ({
+    disabled: picker.hasAttribute('disabled'),
+    expanded: picker.getAttribute('aria-expanded'),
+    value: picker.textContent,
+    options: screen.queryAllByRole('option').map(option => option.textContent),
+  });
+  const initial = observe();
+  expect(picker).toBeDisabled();
+  fireEvent.click(picker);
+  const afterEarlyClick = observe();
+  expect(picker).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('listbox', {name: 'Data workspace'})).not.toBeInTheDocument();
+
+  await act(async () => {finishBootstrap({workspaces, engines: [engine], capabilities: {}});});
+  await waitFor(() => expect(picker).toBeEnabled());
+  const afterBootstrap = observe();
+  expect([initial, afterEarlyClick, afterBootstrap]).toEqual([
+    {disabled: true, expanded: 'false', value: 'No workspaces', options: []},
+    {disabled: true, expanded: 'false', value: 'No workspaces', options: []},
+    {disabled: false, expanded: 'false', value: 'Analytics', options: []},
+  ]);
+  expect(screen.getByText('Opening workspace…')).toBeInTheDocument();
+  const oldSignal = api.mock.calls.find(([path]) => path === '/api/data/workspaces/workspace')?.[1]?.signal;
+  expect(oldSignal).toBeInstanceOf(AbortSignal);
+  expect(oldSignal?.aborted).toBe(false);
+
+  fireEvent.click(picker);
+  fireEvent.click(await screen.findByRole('option', {name: 'Finance'}));
+  await screen.findByRole('heading', {name: 'Finance source'});
+  expect(oldSignal?.aborted).toBe(true);
+  await act(async () => {finishSnapshot(snapshot());});
+  expect(screen.queryByRole('heading', {name: 'Orders source'})).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Data workspace')).toHaveTextContent('Finance');
+});
 it('discards a stale workspace snapshot after switching workspaces',async()=>{let resolve!:(value:DataSnapshot)=>void;const base=api.getMockImplementation()!;api.mockImplementation((path,init,retry)=>path==='/api/data/workspaces/workspace'?new Promise(done=>resolve=done):base(path,init,retry));render(<DataStudio ownerId="owner" visible/>);await pickWorkspace('Finance');await screen.findByRole('heading',{name:'Finance source'});await act(async()=>resolve(snapshot()));expect(screen.queryByRole('heading',{name:'Orders source'})).not.toBeInTheDocument();expect(screen.getByLabelText('Data workspace')).toHaveTextContent('Finance');});
 it('opens and closes the real side-panel slot without changing workspace selection',async()=>{render(<DataStudio ownerId="owner" visible/>);await ready();fireEvent.click(screen.getByRole('button',{name:'Copilot'}));expect(screen.getByRole('complementary',{name:'Data Copilot'})).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Close Copilot'}));expect(screen.queryByRole('complementary',{name:'Data Copilot'})).not.toBeInTheDocument();expect(screen.getByLabelText('Data workspace')).toHaveTextContent('Analytics');});
 it('keeps a selected saved query available to Copilot after draft consumption and hide-return',async()=>{snapshots.workspace.queries=[{id:'saved-query',revision:1,name:'Saved customer count',connection_id:'source',sql:'SELECT count(*) FROM customers'}];const view=render(<DataStudio ownerId="owner" visible/>);await ready();fireEvent.click(screen.getByRole('button',{name:'Saved customer count'}));fireEvent.click(screen.getByRole('button',{name:'Copilot'}));await screen.findByText('Context query saved-query');view.rerender(<DataStudio ownerId="owner" visible={false}/>);view.rerender(<DataStudio ownerId="owner" visible/>);await screen.findByRole('heading',{level:1,name:'Saved customer count'});fireEvent.click(screen.getByRole('button',{name:'Copilot'}));await screen.findByText('Context query saved-query');});
