@@ -22,9 +22,10 @@ function draftsFor(node: FilterNode, path = ''): DraftLeaf[] {
 
 function parseValue(draft: DraftValue): Scalar | undefined {
   if (draft.type === 'boolean') return draft.raw === 'true' ? true : draft.raw === 'false' ? false : undefined;
+  if (draft.type === 'string') return draft.raw;
   if (!draft.raw.trim()) return undefined;
   if (draft.type === 'number') return Number.isFinite(Number(draft.raw)) ? Number(draft.raw) : undefined;
-  return draft.raw;
+  return undefined;
 }
 
 /** Edits literals only: fields, operators, match rules and primitive types are preserved. */

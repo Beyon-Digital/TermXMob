@@ -167,6 +167,18 @@ describe('Copilot proposal cards', () => {
     expect(onApplyTable.mock.calls[0][0]).toEqual(base);
     expect(screen.queryByRole('button', {name: 'Undo changes'})).not.toBeInTheDocument();
   });
+  it('preserves empty and whitespace text values when a numeric sibling in a group changes', async () => {
+    const user = userEvent.setup(), group = {op: 'and' as const, items: [{field: col('region'), op: 'eq' as const, value: ''}, {field: col('note'), op: 'eq' as const, value: '   '}, {field: col('amount'), op: 'gt' as const, value: 5}]};
+    const spec = {...base, filters: {op: 'and' as const, items: [group]}}, {onApplyTable} = open([proposal('table', spec)]);
+    await user.click(await screen.findByRole('button', {name: 'Edit All of 3 conditions'}));
+    const amount = within(screen.getByRole('group', {name: 'Amount is greater than 5'})).getByLabelText('Value');
+    await user.clear(amount);
+    await user.type(amount, '8');
+    await user.click(screen.getByRole('button', {name: 'Update suggestion'}));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Apply to table'}));
+    expect(onApplyTable.mock.calls[0][0].filters).toEqual({op: 'and', items: [{...group, items: [group.items[0], group.items[1], {...group.items[2], value: 8}]}]});
+  });
   it('has no accessibility violations in the value editor and its validation state', async () => {
     const user = userEvent.setup();
     open([proposal('table', base)]);
