@@ -197,6 +197,14 @@ class BIService:
         query = self._query(actor, wid, definition['query_id'], report=report)
         return {'kind': 'query', 'id': query['id'], 'connection_id': query['connection_id'], 'record': query}
 
+    def _authorize_existing_dataset(self, actor, wid, report):
+        """An archived view can still be replaced, or its report archived, by a source-authorized editor."""
+        view = self.store.get('view', report['view_id']) if report.get('view_id') else None
+        if view and view.get('workspace_id') == wid and view.get('archived'):
+            self.service.require_connection(actor, wid, view['connection_id'])
+        else:
+            self._dataset(actor, wid, report)
+
     @staticmethod
     def _snapshot(version, wid):
         """The dataset pinned by a publication, or None when it does not match the published definition."""
@@ -237,6 +245,36 @@ class BIService:
             raise HTTPException(404, 'Published report not found')
         return version
 
+    def _read_version(self, wid, report, role):
+        """Viewers read publications. Editors also use one after its own view is archived.
+
+        A draft that switched datasets must never silently run a publication of another dataset. The complete
+        published definition is used with its snapshot; draft bindings and filters cannot be mixed into it.
+        """
+        if role == 'viewer':
+            return self._published(wid, report)
+        view = self.store.get('view', report['view_id']) if report.get('view_id') else None
+        if view and view.get('workspace_id') == wid and view.get('archived') and report.get('published_version_id'):
+            version = self._published(wid, report)
+            if version['definition'].get('view_id') == report['view_id']:
+                return version
+        return None
+
+    def view_archive_blockers(self, wid, view, db):
+        """Active reports that cannot keep using their own publication after this view is archived."""
+        blockers = []
+        for report in self.store._list(db, 'report', wid):
+            if report.get('view_id') != view['id']:
+                continue
+            version = self.store._get(db, 'report_version', report.get('published_version_id', ''))
+            compatible = bool(version and version['workspace_id'] == wid and not version.get('archived')
+                              and version.get('report_id') == report['id'] and isinstance(version.get('definition'), dict)
+                              and version['definition'].get('view_id') == view['id'])
+            snapshot = self._snapshot(version, wid) if compatible else None
+            if snapshot is None or snapshot.get('connection_id') != view['connection_id']:
+                blockers.append(report)
+        return blockers
+
     def validate_definition(self, actor, wid, definition):
         """Validate a draft or Copilot proposal without executing or changing a source."""
         self.service.require(actor, wid, write=True)
@@ -246,8 +284,8 @@ class BIService:
 
     def _visible(self, actor, wid, report):
         workspace = self.service.require(actor, wid)
-        if workspace['role'] == 'viewer':
-            version = self._published(wid, report)
+        version = self._read_version(wid, report, workspace['role'])
+        if version is not None:
             snapshot = self._snapshot(version, wid)
             if snapshot is None:
                 raise HTTPException(404, 'Published report dependency not found')
@@ -257,6 +295,8 @@ class BIService:
             result.update(published=True, published_version_id=version['id'],
                           published_revision=version['report_revision'], published_at=version['created_at'],
                           updated_at=version['created_at'], version=version['version'])
+            if workspace['role'] != 'viewer':
+                result['using_published_version'] = True
             return result
         self._dataset(actor, wid, report)
         result = self.service.public(report)
@@ -306,32 +346,35 @@ class BIService:
         return sorted(versions, key=lambda version: version['version'], reverse=True)
 
     def create_report(self, actor, wid, definition):
-        normalized = self.validate_definition(actor, wid, definition)
-        report = self.store.create('report', wid, actor.id, normalized)
-        self.store.audit(actor.id, wid, 'report.create', report['id'])
+        # Serialize source validation with view archive's dependency check.
+        with self.store.transaction() as db:
+            normalized = self.validate_definition(actor, wid, definition)
+            report = self.store._create(db, 'report', wid, actor.id, normalized)
+            self.store._audit(db, actor.id, wid, 'report.create', report['id'])
         return self._visible(actor, wid, report)
 
     def update_report(self, actor, wid, rid, changes, revision):
-        self.service.require(actor, wid, write=True)
-        report = self._record('report', wid, rid)
-        self._dataset(actor, wid, report)
-        if set(changes) - {'name', 'query_id', 'view_id', 'visual', 'filters', 'description'}:
-            raise HTTPException(422, 'Unknown report field')
-        definition = {**_definition(report), **changes}
-        # Choosing one kind of dataset replaces the other.
-        if changes.get('view_id') and 'query_id' not in changes:
-            definition['query_id'] = None
-        elif changes.get('query_id') and 'view_id' not in changes:
-            definition['view_id'] = None
-        normalized = self.validate_definition(actor, wid, definition)
-        updated = self.store.update('report', rid, normalized, revision)
-        self.store.audit(actor.id, wid, 'report.update', rid)
+        with self.store.transaction() as db:
+            self.service.require(actor, wid, write=True)
+            report = self._record('report', wid, rid)
+            self._authorize_existing_dataset(actor, wid, report)
+            if set(changes) - {'name', 'query_id', 'view_id', 'visual', 'filters', 'description'}:
+                raise HTTPException(422, 'Unknown report field')
+            definition = {**_definition(report), **changes}
+            # Choosing one kind of dataset replaces the other.
+            if changes.get('view_id') and 'query_id' not in changes:
+                definition['query_id'] = None
+            elif changes.get('query_id') and 'view_id' not in changes:
+                definition['view_id'] = None
+            normalized = self.validate_definition(actor, wid, definition)
+            updated = self.store._update(db, 'report', rid, normalized, revision)
+            self.store._audit(db, actor.id, wid, 'report.update', rid)
         return self._visible(actor, wid, updated)
 
     def archive_report(self, actor, wid, rid, revision):
         self.service.require(actor, wid, write=True)
         report = self._record('report', wid, rid)
-        self._dataset(actor, wid, report)
+        self._authorize_existing_dataset(actor, wid, report)
         result = self.store.archive('report', rid, revision)
         self.store.audit(actor.id, wid, 'report.archive', rid)
         return self.service.public(result)
@@ -393,8 +436,8 @@ class BIService:
         workspace = self.service.require(actor, wid)
         report = self._record('report', wid, rid)
         pinned = None
-        if workspace['role'] == 'viewer':
-            version = self._published(wid, report)
+        version = self._read_version(wid, report, workspace['role'])
+        if version is not None:
             definition, pinned = deepcopy(version['definition']), self._snapshot(version, wid)
             if pinned is None:
                 raise HTTPException(404, 'Published report dependency not found')
@@ -447,10 +490,14 @@ class BIService:
             texts = {(c.get('alias') or c['label']) for c in compiled_view['columns'] if c['value_kind'] == 'text'}
             operand = lambda field: dialect.text_operand(quote(field)) if field in texts else quote(field)   # noqa: E731
         compiled = compile_visual(definition, source, columns['columns'], quote, parameters, operand)
+        extra = None
+        if dataset['kind'] == 'view':
+            extra = {'output': {'columns': visual_output_columns(definition['visual'], compiled_view['columns']),
+                                'warnings': compiled_view['warnings']}}
         self.authorize_runtime(actor, wid, context)
         return await self.service.runtime.run(actor, wid, {
             'connection_id': dataset['connection_id'], **compiled, 'report_context': context,
-        }, request_id, from_report=True)
+        }, request_id, from_report=True, extra=extra)
 
     async def dataset_fields(self, actor, wid, view_id):
         """The columns a report can use from a view, with the names people see."""
@@ -530,6 +577,26 @@ class BIService:
                 tiles.append({'report_id': rid, 'error': {'status': exc.status_code, 'detail': exc.detail}})
         self.dashboard(actor, wid, did)
         return {'dashboard_id': did, 'revision': dashboard['revision'], 'tiles': tiles}
+
+
+def visual_output_columns(visual, columns):
+    """Display metadata in the report projection's order; aliases remain the actual result identifiers."""
+    by_name = {column.get('alias') or column['label']: column for column in columns}
+
+    def field(name):
+        return {**deepcopy(by_name[name]), 'alias': name}
+
+    aggregate = visual.get('aggregate') or 'none'
+    x, y = visual.get('x'), visual.get('y')
+    if aggregate == 'none':
+        names = list(dict.fromkeys(name for name in (x, y) if name)) or list(by_name)
+        return [field(name) for name in names]
+    output = [field(x)] if x and visual['kind'] != 'metric' else []
+    alias = y or ('count_value' if x == 'count' and visual['kind'] != 'metric' else 'count')
+    value = {'alias': alias, 'label': by_name[y]['label'] if y else 'Count',
+             'value_kind': 'integer' if aggregate == 'count' else ('number' if aggregate == 'avg' else by_name[y]['value_kind']),
+             'role': 'aggregate', 'fn': aggregate}
+    return [*output, value]
 
 
 def compile_visual(definition, source, columns, quote, parameters, operand=None):

@@ -7,6 +7,7 @@ servers when TERMX_TEST_PG_URL, TERMX_TEST_MYSQL_URL and TERMX_TEST_MARIADB_URL 
 from __future__ import annotations
 
 import collections
+from copy import deepcopy
 
 import pytest
 from sqlalchemy import text
@@ -15,11 +16,12 @@ from data_pivot_fixture import build_sales, create_sales_sqlite
 from test_data_conformance import index_for, live_raw
 from test_data_pivot_live import sales_database
 from test_data_views import (AND, C, F, REF, auth, call, env, finished as view_finished, make_view, month, pivot_spec,  # noqa: F401
-                             segment, spec, table_view, wait)
+                             run_threads, segment, spec, table_view, wait)
 from termx.data.bi import compile_visual
 from termx.data.connectors import SQLiteConnector
 from termx.data.dialects import get_dialect
 from termx.data.query_spec import QuerySpec, compile_spec
+from termx.data.store import DataStore
 
 
 def report_body(view, **changes):
@@ -93,6 +95,57 @@ def test_pivot_view_dataset_uses_its_cells_and_totals(bi_env):
     done = run_report(env, chart['id'])
     expected = collections.Counter(r['region'] for r in env.sales_rows['sales'])
     assert {row[0]: row[1] for row in done['result']['rows']} == dict(expected)
+    assert [c['name'] for c in done['result']['columns']] == ['pv_r1', 'pv_total']
+    assert [(c['alias'], c['label']) for c in done['output']['columns']] == [
+        ('pv_r1', fields[0]['label']), ('pv_total', fields[-1]['label'])]
+    assert done['report_context']['visual']['x'] == 'pv_r1' and done['report_context']['visual']['y'] == 'pv_total'
+
+
+@pytest.mark.parametrize('visual,names,labels', [
+    ({'kind': 'table'}, ['pv_r1', 'pv_total'], ['Sales region', 'Revenue']),
+    ({'kind': 'scatter', 'x': 'pv_total', 'y': 'pv_r1'}, ['pv_total', 'pv_r1'], ['Revenue', 'Sales region']),
+    ({'kind': 'metric', 'y': 'pv_total', 'aggregate': 'sum'}, ['pv_total'], ['Revenue']),
+    ({'kind': 'bar', 'x': 'pv_r1', 'aggregate': 'count'}, ['pv_r1', 'count'], ['Sales region', 'Count']),
+])
+def test_report_output_labels_follow_the_visual_projection(bi_env, visual, names, labels):
+    env = bi_env
+    body = pivot_spec(env.cid, [{**C('s', 'region'), 'label': 'Sales region'}], fn='sum', measure='amount')
+    body['pivot']['value']['label'] = 'Revenue'
+    view = make_view(env, 'pivot', 'Friendly fields', body)
+    report = make_report(env, view, visual=visual)
+    done = run_report(env, report['id'])
+    assert [c['name'] for c in done['result']['columns']] == names
+    assert [c['alias'] for c in done['output']['columns']] == names
+    assert [c['label'] for c in done['output']['columns']] == labels
+    if visual.get('aggregate') == 'count':
+        assert done['output']['columns'][-1]['value_kind'] == 'integer'
+    if visual['kind'] == 'table':
+        exported = call(env, 'GET', f'/jobs/{done["id"]}/export.csv')
+        assert exported.status_code == 200, exported.text
+        assert exported.text.splitlines()[0] == 'Sales region,Revenue'
+
+
+def test_published_labels_remain_pinned_after_the_view_changes_and_is_archived(bi_env):
+    env = bi_env
+    body = pivot_spec(env.cid, [{**C('s', 'region'), 'label': 'Published region'}], fn='sum', measure='amount')
+    body['pivot']['value']['label'] = 'Published revenue'
+    view = make_view(env, 'pivot', 'Changing labels', body)
+    report = make_report(env, view, visual={'kind': 'bar', 'x': 'pv_r1', 'y': 'pv_total', 'aggregate': 'sum'})
+    published = call(env, 'POST', f'/reports/{report["id"]}/publish', body={'revision': report['revision']}).json()
+    body['pivot']['rows'][0]['label'] = 'Draft region'
+    body['pivot']['value']['label'] = 'Draft revenue'
+    changed = call(env, 'PATCH', f'/views/{view["id"]}', body={'revision': view['revision'], 'spec': body})
+    assert changed.status_code == 200, changed.text
+    live = run_report(env, report['id'])
+    assert [c['label'] for c in live['output']['columns']] == ['Draft region', 'Draft revenue']
+    for archived in (False, True):
+        if archived:
+            assert call(env, 'DELETE', f'/views/{view["id"]}?revision={changed.json()["revision"]}').status_code == 200
+        for who in (('alice', 'bob', 'vera') if archived else ('vera',)):
+            done = run_report(env, report['id'], who)
+            assert [c['alias'] for c in done['output']['columns']] == ['pv_r1', 'pv_total']
+            assert [c['label'] for c in done['output']['columns']] == ['Published region', 'Published revenue']
+            assert done['report_context']['report_version_id'] == published['published_version_id']
 
 
 def test_segment_view_dataset(bi_env):
@@ -122,6 +175,139 @@ def test_publishing_pins_the_view_and_its_segments_for_viewers(bi_env):
     assert run_report(env, report['id'], 'alice')['result']['rows'] == [[after]]
     shown = call(env, 'GET', f'/reports/{report["id"]}', 'vera').json()
     assert shown['published'] and shown['view_id'] == view['id'] and 'spec' not in shown
+
+
+def test_archived_view_publication_survives_for_every_role_and_dashboard(bi_env):
+    env = bi_env
+    seg = segment(env, 'Pinned segment', F('amount', 'gt', value=100))
+    view = table_view(env, 'Archived dataset', filters=AND(REF(seg['id'])))
+    report = make_report(env, view, name='Pinned count', visual={'kind': 'metric', 'aggregate': 'count'})
+    published = call(env, 'POST', f'/reports/{report["id"]}/publish', body={'revision': report['revision']}).json()
+    version = deepcopy(env.service.store.get('report_version', published['published_version_id']))
+    draft = call(env, 'PATCH', f'/reports/{report["id"]}', body={
+        'revision': published['revision'], 'name': 'Unpublished sum',
+        'visual': {'kind': 'metric', 'y': 'amount', 'aggregate': 'sum'},
+        'filters': [{'field': 'amount', 'operator': 'gt', 'value': 400}]}).json()
+    dashboard = call(env, 'POST', '/dashboards', body={'name': 'Pinned dashboard', 'report_ids': [report['id']]}).json()
+    assert call(env, 'DELETE', f'/views/{view["id"]}?revision={view["revision"]}').status_code == 200
+    assert call(env, 'DELETE', f'/views/{view["id"]}?revision={view["revision"]}').status_code == 404
+    assert call(env, 'DELETE', f'/views/{seg["id"]}?revision={seg["revision"]}').status_code == 200
+    assert call(env, 'GET', f'/views/{view["id"]}').status_code == 404
+
+    # Opening existing metadata repeatedly needs no migration or mutation of the archived view or publication.
+    DataStore(env.service.store.directory)
+    DataStore(env.service.store.directory)
+    expected = len([r for r in env.sales_rows['sales'] if r['amount'] is not None and r['amount'] > 100])
+    jobs = {}
+    for who in ('alice', 'bob', 'vera'):
+        shown = call(env, 'GET', f'/reports/{report["id"]}', who)
+        assert shown.status_code == 200, shown.text
+        assert shown.json()['name'] == 'Pinned count' and shown.json()['revision'] == draft['revision']
+        assert [r['id'] for r in call(env, 'GET', '/reports', who).json()] == [report['id']]
+        assert call(env, 'GET', '/dashboards', who).json()[0]['id'] == dashboard['id']
+        assert call(env, 'GET', f'/reports/{report["id"]}/versions', who).json()[0]['id'] == version['id']
+        done = jobs[who] = run_report(env, report['id'], who, request_id=f'archived-{who}')
+        assert done['result']['rows'] == [[expected]]
+        assert done['report_context']['report_version_id'] == version['id']
+        assert run_report(env, report['id'], who, request_id=f'archived-{who}')['id'] == done['id']
+        tiles = call(env, 'POST', f'/dashboards/{dashboard["id"]}/run', who, {'request_id': f'dash-{who}'}).json()['tiles']
+        assert 'error' not in tiles[0], tiles
+        assert wait(env, tiles[0]['job'], who)['result']['rows'] == [[expected]]
+    assert env.service.store.get('report_version', version['id']) == version
+    assert env.service.store.get('report', report['id'])['revision'] == draft['revision']
+    assert call(env, 'POST', f'/reports/{report["id"]}/publish', body={'revision': 1}).status_code == 409
+    assert call(env, 'POST', f'/reports/{report["id"]}/publish', body={'revision': draft['revision']}).status_code == 404
+    assert len(env.service.store.list('report_version', env.wid)) == 1
+
+    current = env.service.store.get('connection', env.cid)
+    env.runtime.update_connection(env.actors['alice'], env.wid, env.cid, {'revision': current['revision'], 'shared_read': False})
+    for who in ('bob', 'vera'):
+        assert call(env, 'GET', '/reports', who).json() == []
+        assert call(env, 'GET', '/dashboards', who).json() == []
+        assert call(env, 'POST', f'/reports/{report["id"]}/run', who, {'request_id': f'revoked-{who}'}).status_code == 403
+        assert call(env, 'GET', f'/jobs/{jobs[who]["id"]}', who).status_code == 403
+    assert run_report(env, report['id'], 'alice')['result']['rows'] == [[expected]]
+
+
+def test_archived_report_can_be_rebound_without_running_an_unrelated_publication(bi_env):
+    env = bi_env
+    first, second = table_view(env, 'First source'), table_view(env, 'Second source')
+    report = make_report(env, first)
+    published = call(env, 'POST', f'/reports/{report["id"]}/publish', body={'revision': report['revision']}).json()
+    draft = call(env, 'PATCH', f'/reports/{report["id"]}', body={'revision': published['revision'], 'view_id': second['id']}).json()
+    blocked = call(env, 'DELETE', f'/views/{second["id"]}?revision={second["revision"]}')
+    assert blocked.status_code == 409 and blocked.json()['detail']['code'] == 'view_in_use'
+    # A pre-upgrade archive can still be repaired; no rewrite or silent draft snapshot is needed on opening it.
+    env.service.store.archive('view', second['id'], second['revision'])
+    DataStore(env.service.store.directory)
+    assert call(env, 'POST', f'/reports/{report["id"]}/run', body={'request_id': 'unrelated-publication'}).status_code == 404
+    assert call(env, 'PATCH', f'/reports/{report["id"]}', body={'revision': 1, 'view_id': first['id']}).status_code == 409
+    repaired = call(env, 'PATCH', f'/reports/{report["id"]}', body={'revision': draft['revision'], 'view_id': first['id']})
+    assert repaired.status_code == 200, repaired.text
+    assert repaired.json()['revision'] == draft['revision'] + 1
+    assert run_report(env, report['id'])['report_context']['report_version_id'] is None
+    assert call(env, 'DELETE', f'/views/{first["id"]}?revision={first["revision"]}').status_code == 200
+    assert call(env, 'DELETE', f'/reports/{report["id"]}', body={'revision': 1}).status_code == 409
+    archived = call(env, 'DELETE', f'/reports/{report["id"]}', body={'revision': repaired.json()['revision']})
+    assert archived.status_code == 200 and archived.json()['archived']
+    assert call(env, 'GET', '/reports', 'vera').json() == []
+
+
+def test_unpublished_reports_block_view_archive_until_their_dependencies_are_pinned(bi_env):
+    env = bi_env
+    view = table_view(env, 'Report source')
+    published_report = make_report(env, view, name='Already published')
+    call(env, 'POST', f'/reports/{published_report["id"]}/publish', body={'revision': published_report['revision']})
+    draft = make_report(env, view, name='Needs publication')
+    for _ in range(2):
+        blocked = call(env, 'DELETE', f'/views/{view["id"]}?revision={view["revision"]}')
+        assert blocked.status_code == 409, blocked.text
+        detail = blocked.json()['detail']
+        assert detail['code'] == 'view_in_use' and 'Publish' in detail['message']
+        assert detail['used_by'] == [{'id': draft['id'], 'kind': 'report', 'name': 'Needs publication'}]
+        assert call(env, 'GET', f'/views/{view["id"]}').json()['revision'] == view['revision']
+        assert run_report(env, draft['id'])['report_context']['report_version_id'] is None
+    assert call(env, 'POST', f'/reports/{draft["id"]}/publish', body={'revision': draft['revision']}).status_code == 200
+    assert call(env, 'DELETE', f'/views/{view["id"]}?revision={view["revision"]}').status_code == 200
+    assert run_report(env, draft['id'])['report_context']['report_version_id'] is not None
+
+
+@pytest.mark.parametrize('invalid', ['snapshot', 'definition', 'report', 'workspace'])
+def test_archive_needs_a_publication_belonging_to_this_report_view_and_workspace(bi_env, invalid):
+    env = bi_env
+    view = table_view(env, 'Protected source')
+    report = make_report(env, view)
+    published = call(env, 'POST', f'/reports/{report["id"]}/publish', body={'revision': report['revision']}).json()
+    version = env.service.store.get('report_version', published['published_version_id'])
+    changes = {'snapshot': {'view_snapshot': {**version['view_snapshot'], 'id': 'another-view'}},
+               'definition': {'definition': {**version['definition'], 'view_id': 'another-view'}},
+               'report': {'report_id': 'another-report'},
+               'workspace': {'view_snapshot': {**version['view_snapshot'], 'workspace_id': env.other_wid}}}[invalid]
+    env.service.store.update('report_version', version['id'], changes, version['revision'])
+    blocked = call(env, 'DELETE', f'/views/{view["id"]}?revision={view["revision"]}')
+    assert blocked.status_code == 409 and blocked.json()['detail']['code'] == 'view_in_use'
+    assert env.service.store.get('view', view['id'])['revision'] == view['revision']
+
+
+@pytest.mark.parametrize('operation', ['create', 'update'])
+def test_view_archive_cannot_race_a_new_unpublished_report_dependency(bi_env, operation):
+    env = bi_env
+    for round_ in range(5):
+        view = table_view(env, f'Race {operation} {round_}')
+        if operation == 'create':
+            save = lambda: env.service.bi.create_report(env.actors['alice'], env.wid, report_body(view))
+        else:
+            original = table_view(env, f'Original {round_}')
+            report = make_report(env, original)
+            save = lambda: env.service.bi.update_report(env.actors['alice'], env.wid, report['id'],
+                                                        {'view_id': view['id']}, report['revision'])
+        results = run_threads([lambda: env.service.views.archive(env.actors['alice'], env.wid, view['id'], view['revision']), save])
+        assert sorted(kind for kind, _ in results) == ['error', 'ok'], results
+        error = next(value for kind, value in results if kind == 'error')
+        assert error.status_code in (404, 409)
+        archived = env.service.store.get('view', view['id']).get('archived')
+        references = [r for r in env.service.store.list('report', env.wid) if r.get('view_id') == view['id']]
+        assert not (archived and references)
 
 
 def test_only_editors_pick_views_and_private_sources_stay_private(bi_env):
