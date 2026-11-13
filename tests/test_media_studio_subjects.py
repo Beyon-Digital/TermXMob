@@ -117,7 +117,8 @@ def test_http_input_bounds_precede_metadata_persistence(workspace, change):
     ('image/jpeg', png(), 'input'), ('image/svg+xml', b'<svg/>', 'input'),
     ('image/png', b'not an image', 'input'), ('image/png', png(), 'audio'),
     ('image/png', b'', 'input'), ('image/png', b'x'*(8*1024*1024+1), 'input'),
-])
+], ids=['mime-content-mismatch', 'svg-content', 'invalid-image-bytes',
+        'non-image-artifact-kind', 'empty-payload', 'oversized-8mib-plus-one'])
 def test_saved_references_must_be_bounded_binary_images(workspace, mime, blob, kind):
     client, state, _, _ = workspace
     photo = image(state, mime=mime, blob=blob, kind=kind)
