@@ -213,20 +213,22 @@ def test_incomplete_pin_blocks_managed_use(tmp_path):
 
 
 def test_path_binary_is_hash_checked_then_adopted_by_copy(tmp_path):
-    desk = FakeDesktop(tmp_path, install=False)
+    # PATH lookup follows the real host's executable-name rules (including .exe on Windows).
+    desk = FakeDesktop(tmp_path, platform=ad.detect_platform().os, install=False)
     outside = tmp_path / "outside"
     outside.mkdir()
     outside.chmod(0o755)
     source = outside / desk.platform.binary_name
     shutil.copyfile(SHIM_SOURCE, source)
     source.chmod(0o755)
-    (outside / "agent-desktop-macos-helper").write_bytes(b"")
-    (outside / "agent-desktop-macos-helper").chmod(0o755)
-    pins = {"version": "1.2.0", "assets": {desk.platform.key: {"files": {source.name: sha(source), "agent-desktop-macos-helper": sha(outside / "agent-desktop-macos-helper")}}}}
+    files = {source.name: sha(source)}
+    if desk.platform.os == "macos":
+        helper = outside / "agent-desktop-macos-helper"
+        helper.write_bytes(b"")
+        helper.chmod(0o755)
+        files[helper.name] = sha(helper)
+    pins = {"version": ad.PINNED_VERSION, "assets": {desk.platform.key: {"files": files}}}
     client = desk.build_client(pins=pins, search_path=[str(outside)])
-    desk.bin_dir.mkdir(parents=True, exist_ok=True)
-    (desk.bin_dir / "scenario.json").write_text(json.dumps([{"match": {"command": "version"}, "respond": {"envelope": ok("version", {"os": "macos", "target": "aarch64", "version": "1.2.0"})}},
-                                                           {"match": {"command": "status"}, "respond": {"envelope": ok("status", status_data())}}]))
     status = run(client.status(refresh=True))
     assert status.ready and status.source == "path"
     assert status.path == str(desk.binary)  # the private copy runs, never the PATH file
@@ -235,7 +237,7 @@ def test_path_binary_is_hash_checked_then_adopted_by_copy(tmp_path):
 
 
 def test_unpinned_path_binary_is_never_executed(tmp_path):
-    desk = FakeDesktop(tmp_path, install=False)
+    desk = FakeDesktop(tmp_path, platform=ad.detect_platform().os, install=False)
     outside = tmp_path / "outside"
     outside.mkdir()
     source = outside / desk.platform.binary_name

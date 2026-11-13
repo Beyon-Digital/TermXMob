@@ -221,6 +221,24 @@ def test_auto_still_asks_for_commands_that_escape_the_worktree(store, tmp_path, 
     assert decision.auto_resolved is None, command
 
 
+@pytest.mark.parametrize("command", ["rm -rf /", "cat /etc/hosts", "cat /bin/termx-policy-fixture"])
+def test_auto_windows_root_relative_paths_still_require_approval(store, tmp_path, monkeypatch, command):  # noqa: F811
+    from termx.agent import policy
+
+    monkeypatch.setattr(policy, "_WINDOWS", True)
+    engine = _engine(store)
+    ctx = SimpleNamespace(
+        task_id="task-1",
+        cwd=str(tmp_path),
+        project_id="proj-1",
+        task={"runtime": {"auto": {"enabled": True}}},
+    )
+    decision = _shell_decision(engine, command, ctx)
+    assert decision.intent.risk_class == "outside_root", command
+    assert decision.approval_required is True, command
+    assert decision.auto_resolved is None, command
+
+
 @pytest.mark.parametrize("command", ["rm -rf build-one", "pnpm test", "git status", "rm -rf ./dist"])
 def test_auto_keeps_approving_contained_commands(store, tmp_path, command):  # noqa: F811
     engine = _engine(store)

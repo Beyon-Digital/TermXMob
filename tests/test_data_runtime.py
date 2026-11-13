@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 import csv
 import io
 import json
@@ -40,7 +41,8 @@ def fixture(tmp_path, monkeypatch):
     wid = service.create_workspace(alice, 'Business analysis')['id']
     member = service.add_member(alice, wid, username='bob', role='editor')
     path = tmp_path / 'business.sqlite3'
-    with sqlite3.connect(path) as db:
+    # SQLite's own context manager commits the transaction; closing owns the file handle.
+    with closing(sqlite3.connect(path)) as db, db:
         db.execute('CREATE TABLE sales(id INTEGER PRIMARY KEY,region TEXT NOT NULL,amount REAL,notes TEXT)')
         db.executemany('INSERT INTO sales VALUES(?,?,?,?)', [(i, 'East' if i % 2 else 'West', i * 2.5,
             '=SUM(A1:A2)' if i == 1 else 'ordinary') for i in range(1, 1306)])
@@ -49,7 +51,7 @@ def fixture(tmp_path, monkeypatch):
     source = runtime.create_connection(alice, wid, {'name': 'Business SQLite', 'engine': 'sqlite',
         'config': {'path': str(path)}, 'shared_read': True})
     return SimpleNamespace(root=tmp_path, host=host, identity=identity, service=service, runtime=runtime,
-        state=state, actors=actors, wid=wid, member=member, path=path, source=source)
+        state=state, actors=actors, wid=wid, member=member, path=path, source=source, seed_connection=db)
 
 
 def query(fixture, sql='SELECT * FROM sales ORDER BY id', parameters=None):
@@ -180,6 +182,9 @@ def test_protected_host_state_symlinks_hardlinks_and_changed_file(fixture):
     assert good['config']['path'] == str(fixture.path.resolve())
     signature = runtime.store.get('connection', good['id'])['_file_identity']
     renamed = fixture.root / 'original-business.db'
+    # Keep the seed connection strongly referenced so GC cannot hide a leaked handle on POSIX.
+    with pytest.raises(sqlite3.ProgrammingError, match='closed'):
+        fixture.seed_connection.execute('SELECT 1')
     fixture.path.rename(renamed)
     fixture.path.symlink_to(fixture.identity.path)
     denied(403, lambda: runtime.validate_path(str(fixture.path), signature))
