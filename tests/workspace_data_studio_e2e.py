@@ -4,7 +4,7 @@
 No real profile, production database, external inference, deployment or invitations.
 """
 from __future__ import annotations
-import asyncio,csv,hashlib,io,json,os,re,shutil,sqlite3,sys,tempfile,threading,uuid
+import asyncio,csv,hashlib,io,json,os,re,shutil,sqlite3,subprocess,sys,tempfile,threading,uuid
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -979,6 +979,8 @@ def exercise(browser,out,report,ui_dist,width,theme):
 def run(destination,ui_dist):
     out=Path(destination).resolve();out.mkdir(parents=True,exist_ok=False)
     report={'result':'running','mode':'after','output':str(out),'ui_dist':str(Path(ui_dist).resolve()),'states':[],'checks':[],'focus':[],'backend_requests':[],'inference_mock_requests':[],'external_browser_requests':[],'errors':[],'started_at_utc':datetime.now(timezone.utc).isoformat(),'runner_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'limitations':['Only explicit synthetic2501-row business SQLite files and scratch managed identities/stores are used. No real source/profile or remote database is connected.','Provider inference, when exercised, uses real adapter code over MockTransport; no paid model calls.','375px touch emulation and Chromium screenshots do not prove native/physical device behavior.','CSV exports contain the actual bounded query preview; aggregate reports execute against full source through the runtime.','Axe incomplete items remain in the report; automated checks do not establish screen-reader behavior.']}
+    report['source_commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
+    report['source_tracked_changes']=subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=REPO,text=True).splitlines()
     try:
         with sync_playwright()as playwright:
             executable=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')or next((str(path)for path in(Path(playwright.chromium.executable_path),Path('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'))if path.is_file()),None)
