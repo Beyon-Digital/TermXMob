@@ -109,7 +109,7 @@ def test_real_managed_write_checkpoint_and_exact_receipt_restart_boundary(tmp_pa
             if boundary == "prepared":
                 assert not (original_root / "once.txt").exists()
             else:
-                assert (original_root / "once.txt").read_text() == "One actual write\n"
+                assert (original_root / "once.txt").read_bytes() == b"One actual write\n"
             if boundary == "completed_uncommitted":
                 assert checkpoint["result"]["finished"]["result"]["ok"] is True
                 assert not [event for event in store.events(task["id"]) if event["type"] == "tool.finished"]
