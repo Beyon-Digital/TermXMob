@@ -1,0 +1,99 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/views/v_segment",
+    "as": "alice",
+    "body": {
+      "revision": 1,
+      "name": "Big sales",
+      "spec": {
+        "version": 1,
+        "source": "conn_01",
+        "from": {
+          "table": "sales",
+          "alias": "s"
+        },
+        "joins": [],
+        "select": [],
+        "filters": {
+          "op": "and",
+          "items": [
+            {
+              "field": {
+                "table_alias": "s",
+                "column": "amount"
+              },
+              "op": "gt",
+              "value": 200
+            }
+          ]
+        },
+        "group_by": [],
+        "aggregates": [],
+        "sort": [],
+        "limit": 200,
+        "offset": 0
+      }
+    }
+  },
+  "status": 200,
+  "response": {
+    "id": "v_segment",
+    "kind": "segment",
+    "name": "Big sales",
+    "description": "",
+    "connection_id": "conn_01",
+    "base_table": "sales",
+    "revision": 2,
+    "created_by": {
+      "id": "p_alice",
+      "name": "alice"
+    },
+    "updated_by": {
+      "id": "p_alice",
+      "name": "alice"
+    },
+    "created_at": "<time>",
+    "updated_at": "<time>",
+    "used_by_count": 1,
+    "can_edit": true,
+    "can_run": true,
+    "spec": {
+      "version": 1,
+      "source": "conn_01",
+      "from": {
+        "table": "sales",
+        "alias": "s"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "s",
+              "column": "amount"
+            },
+            "op": "gt",
+            "value": 200
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    },
+    "references": [],
+    "used_by": [
+      {
+        "id": "v_pivot",
+        "kind": "pivot",
+        "name": "Sales by region and month"
+      }
+    ],
+    "affected_views": 1
+  }
+}

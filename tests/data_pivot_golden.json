@@ -1,0 +1,1638 @@
+{
+ "sqlite": {
+  "rows_only": {
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(*) AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {},
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "text_by_month": {
+   "probe": "SELECT CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p3, :p4) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "two_row_dims": {
+   "probe": "SELECT CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", \"s\".\"flag\" AS \"pv_r2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN \"s\".\"qty\" END) AS \"pv_c1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN \"s\".\"qty\" END) AS \"pv_c2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN \"s\".\"qty\" END) AS \"pv_c3\", SUM(\"s\".\"qty\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p3, :p4) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"s\".\"region\", \"s\".\"flag\"\nORDER BY \"s\".\"region\" ASC NULLS LAST, \"s\".\"flag\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "flag",
+     "value_kind": "boolean",
+     "role": "pivot_row",
+     "alias": "pv_r2",
+     "table_alias": "s",
+     "column": "flag"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total qty",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "boolean_columns": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", COUNT(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", COUNT(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", COUNT(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": 0,
+    "p2": 1,
+    "p3": 0,
+    "p4": 1
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "avg": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", AVG(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", AVG(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", AVG(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", AVG(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": 0,
+    "p2": 1,
+    "p3": 0,
+    "p4": 1
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "avg",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "avg",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "avg",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Average amount",
+     "value_kind": "number",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "avg"
+    }
+   ]
+  },
+  "count_distinct": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"customer_id\" END) AS \"pv_c1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"customer_id\" END) AS \"pv_c2\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"customer_id\" END) AS \"pv_c3\", COUNT(DISTINCT \"s\".\"customer_id\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": 0,
+    "p2": 1,
+    "p3": 0,
+    "p4": 1
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count_distinct",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count_distinct",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count_distinct",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Unique customer_id",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count_distinct"
+    }
+   ]
+  },
+  "sorted_by_total": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY SUM(\"s\".\"amount\") DESC NULLS LAST, \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": 0,
+    "p2": 1,
+    "p3": 0,
+    "p4": 1
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "with_join": {
+   "probe": "SELECT CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END AS \"v\"\nFROM \"sales\" AS \"s\"\nLEFT JOIN \"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nGROUP BY CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"c\".\"segment\" AS \"pv_r1\", COUNT(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN 1 END) AS \"pv_c1\", COUNT(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN 1 END) AS \"pv_c2\", COUNT(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN 1 END) AS \"pv_c3\", COUNT(*) AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nLEFT JOIN \"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p3, :p4) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"c\".\"segment\"\nORDER BY \"c\".\"segment\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "segment",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "c",
+     "column": "segment"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  }
+ },
+ "postgresql": {
+  "rows_only": {
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(*) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {},
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "text_by_month": {
+   "probe": "SELECT to_char(\"s\".\"day\",'YYYY-MM') AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY to_char(\"s\".\"day\",'YYYY-MM')\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "two_row_dims": {
+   "probe": "SELECT to_char(\"s\".\"day\",'YYYY-MM') AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY to_char(\"s\".\"day\",'YYYY-MM')\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", \"s\".\"flag\" AS \"pv_r2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN \"s\".\"qty\" END) AS \"pv_c1\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN \"s\".\"qty\" END) AS \"pv_c2\", SUM(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN \"s\".\"qty\" END) AS \"pv_c3\", SUM(\"s\".\"qty\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"s\".\"region\", \"s\".\"flag\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST, \"s\".\"flag\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "flag",
+     "value_kind": "boolean",
+     "role": "pivot_row",
+     "alias": "pv_r2",
+     "table_alias": "s",
+     "column": "flag"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total qty",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "boolean_columns": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", COUNT(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", COUNT(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", COUNT(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "avg": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", CAST(AVG(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c1\", CAST(AVG(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c2\", CAST(AVG(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS DOUBLE PRECISION) AS \"pv_c3\", CAST(AVG(\"s\".\"amount\") AS DOUBLE PRECISION) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "avg",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "avg",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "avg",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Average amount",
+     "value_kind": "number",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "avg"
+    }
+   ]
+  },
+  "count_distinct": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"customer_id\" END) AS \"pv_c1\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"customer_id\" END) AS \"pv_c2\", COUNT(DISTINCT CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"customer_id\" END) AS \"pv_c3\", COUNT(DISTINCT \"s\".\"customer_id\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count_distinct",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count_distinct",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count_distinct",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Unique customer_id",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count_distinct"
+    }
+   ]
+  },
+  "sorted_by_total": {
+   "probe": "SELECT \"s\".\"flag\" AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nGROUP BY \"s\".\"flag\"\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN \"s\".\"flag\" = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN \"s\".\"flag\" = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN \"s\".\"flag\" IS NULL THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nWHERE (\"s\".\"flag\" IN (:p3, :p4) OR \"s\".\"flag\" IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY SUM(\"s\".\"amount\") DESC NULLS LAST, \"s\".\"region\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "with_join": {
+   "probe": "SELECT to_char(\"s\".\"day\",'YYYY-MM') AS \"v\"\nFROM \"public\".\"sales\" AS \"s\"\nLEFT JOIN \"public\".\"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nGROUP BY to_char(\"s\".\"day\",'YYYY-MM')\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT \"c\".\"segment\" AS \"pv_r1\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p1 THEN 1 END) AS \"pv_c1\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') = :p2 THEN 1 END) AS \"pv_c2\", COUNT(CASE WHEN to_char(\"s\".\"day\",'YYYY-MM') IS NULL THEN 1 END) AS \"pv_c3\", COUNT(*) AS \"pv_total\"\nFROM \"public\".\"sales\" AS \"s\"\nLEFT JOIN \"public\".\"customers\" AS \"c\" ON \"s\".\"customer_id\" = \"c\".\"id\"\nWHERE (to_char(\"s\".\"day\",'YYYY-MM') IN (:p3, :p4) OR to_char(\"s\".\"day\",'YYYY-MM') IS NULL)\nGROUP BY \"c\".\"segment\"\nORDER BY \"c\".\"segment\" COLLATE \"C\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "segment",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "c",
+     "column": "segment"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  }
+ },
+ "mysql": {
+  "rows_only": {
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {},
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "text_by_month": {
+   "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "two_row_dims": {
+   "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, `s`.`flag` AS `pv_r2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`qty` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`qty` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`qty` END) AS `pv_c3`, SUM(`s`.`qty`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`flag`\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC, (`s`.`flag` IS NULL), `s`.`flag` ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "flag",
+     "value_kind": "boolean",
+     "role": "pivot_row",
+     "alias": "pv_r2",
+     "table_alias": "s",
+     "column": "flag"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total qty",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "boolean_columns": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, COUNT(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, COUNT(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, COUNT(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "avg": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, AVG((CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) + 0e0) AS `pv_c1`, AVG((CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) + 0e0) AS `pv_c2`, AVG((CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) + 0e0) AS `pv_c3`, AVG((`s`.`amount`) + 0e0) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "avg",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "avg",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "avg",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Average amount",
+     "value_kind": "number",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "avg"
+    }
+   ]
+  },
+  "count_distinct": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p1 THEN `s`.`customer_id` END) AS `pv_c1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p2 THEN `s`.`customer_id` END) AS `pv_c2`, COUNT(DISTINCT CASE WHEN `s`.`flag` IS NULL THEN `s`.`customer_id` END) AS `pv_c3`, COUNT(DISTINCT `s`.`customer_id`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count_distinct",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count_distinct",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count_distinct",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Unique customer_id",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count_distinct"
+    }
+   ]
+  },
+  "sorted_by_total": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_0900_bin AS `pv_r1`, SUM(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_0900_bin, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (SUM(`s`.`amount`) IS NULL), SUM(`s`.`amount`) DESC, (`s`.`region` COLLATE utf8mb4_0900_bin IS NULL), `s`.`region` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "with_join": {
+   "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `c`.`segment` COLLATE utf8mb4_0900_bin AS `pv_r1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN 1 END) AS `pv_c1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN 1 END) AS `pv_c2`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN 1 END) AS `pv_c3`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `c`.`segment` COLLATE utf8mb4_0900_bin, (`c`.`segment` COLLATE utf8mb4_0900_bin IS NULL)\nORDER BY (`c`.`segment` COLLATE utf8mb4_0900_bin IS NULL), `c`.`segment` COLLATE utf8mb4_0900_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "segment",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "c",
+     "column": "segment"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  }
+ },
+ "mariadb": {
+  "rows_only": {
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {},
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "text_by_month": {
+   "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "two_row_dims": {
+   "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, `s`.`flag` AS `pv_r2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN `s`.`qty` END) AS `pv_c1`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN `s`.`qty` END) AS `pv_c2`, SUM(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN `s`.`qty` END) AS `pv_c3`, SUM(`s`.`qty`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`flag`\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC, (`s`.`flag` IS NULL), `s`.`flag` ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "flag",
+     "value_kind": "boolean",
+     "role": "pivot_row",
+     "alias": "pv_r2",
+     "table_alias": "s",
+     "column": "flag"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total qty",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "boolean_columns": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, COUNT(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, COUNT(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, COUNT(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  },
+  "avg": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, AVG((CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) + 0e0) AS `pv_c1`, AVG((CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) + 0e0) AS `pv_c2`, AVG((CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) + 0e0) AS `pv_c3`, AVG((`s`.`amount`) + 0e0) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "avg",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "avg",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "number",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "avg",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Average amount",
+     "value_kind": "number",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "avg"
+    }
+   ]
+  },
+  "count_distinct": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p1 THEN `s`.`customer_id` END) AS `pv_c1`, COUNT(DISTINCT CASE WHEN `s`.`flag` = :p2 THEN `s`.`customer_id` END) AS `pv_c2`, COUNT(DISTINCT CASE WHEN `s`.`flag` IS NULL THEN `s`.`customer_id` END) AS `pv_c3`, COUNT(DISTINCT `s`.`customer_id`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count_distinct",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count_distinct",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count_distinct",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Unique customer_id",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count_distinct"
+    }
+   ]
+  },
+  "sorted_by_total": {
+   "probe": "SELECT `s`.`flag` AS `v`\nFROM `shop`.`sales` AS `s`\nGROUP BY `s`.`flag`\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `s`.`region` COLLATE utf8mb4_nopad_bin AS `pv_r1`, SUM(CASE WHEN `s`.`flag` = :p1 THEN `s`.`amount` END) AS `pv_c1`, SUM(CASE WHEN `s`.`flag` = :p2 THEN `s`.`amount` END) AS `pv_c2`, SUM(CASE WHEN `s`.`flag` IS NULL THEN `s`.`amount` END) AS `pv_c3`, SUM(`s`.`amount`) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nWHERE (`s`.`flag` IN (:p3, :p4) OR `s`.`flag` IS NULL)\nGROUP BY `s`.`region` COLLATE utf8mb4_nopad_bin, `s`.`region`, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (SUM(`s`.`amount`) IS NULL), SUM(`s`.`amount`) DESC, (`s`.`region` COLLATE utf8mb4_nopad_bin IS NULL), `s`.`region` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": false,
+    "p2": true,
+    "p3": false,
+    "p4": true
+   },
+   "columns": [
+    {
+     "label": "region",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "s",
+     "column": "region"
+    },
+    {
+     "label": "No",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "sum",
+     "column_value": false,
+     "column_empty": false
+    },
+    {
+     "label": "Yes",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "sum",
+     "column_value": true,
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "sum",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Total amount",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "sum"
+    }
+   ]
+  },
+  "with_join": {
+   "probe": "SELECT date_format(`s`.`day`,'%Y-%m') AS `v`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nGROUP BY date_format(`s`.`day`,'%Y-%m'), (date_format(`s`.`day`,'%Y-%m') IS NULL)\nLIMIT 13 OFFSET 0",
+   "sql": "SELECT `c`.`segment` COLLATE utf8mb4_nopad_bin AS `pv_r1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p1 THEN 1 END) AS `pv_c1`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') = :p2 THEN 1 END) AS `pv_c2`, COUNT(CASE WHEN date_format(`s`.`day`,'%Y-%m') IS NULL THEN 1 END) AS `pv_c3`, COUNT(*) AS `pv_total`\nFROM `shop`.`sales` AS `s`\nLEFT JOIN `shop`.`customers` AS `c` ON `s`.`customer_id` = `c`.`id`\nWHERE (date_format(`s`.`day`,'%Y-%m') IN (:p3, :p4) OR date_format(`s`.`day`,'%Y-%m') IS NULL)\nGROUP BY `c`.`segment` COLLATE utf8mb4_nopad_bin, `c`.`segment`, (`c`.`segment` COLLATE utf8mb4_nopad_bin IS NULL)\nORDER BY (`c`.`segment` COLLATE utf8mb4_nopad_bin IS NULL), `c`.`segment` COLLATE utf8mb4_nopad_bin ASC\nLIMIT 201 OFFSET 0",
+   "parameters": {
+    "p1": "2026-01",
+    "p2": "2026-02",
+    "p3": "2026-01",
+    "p4": "2026-02"
+   },
+   "columns": [
+    {
+     "label": "segment",
+     "value_kind": "text",
+     "role": "pivot_row",
+     "alias": "pv_r1",
+     "table_alias": "c",
+     "column": "segment"
+    },
+    {
+     "label": "2026-01",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c1",
+     "fn": "count",
+     "column_value": "2026-01",
+     "column_empty": false
+    },
+    {
+     "label": "2026-02",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c2",
+     "fn": "count",
+     "column_value": "2026-02",
+     "column_empty": false
+    },
+    {
+     "label": "(empty)",
+     "value_kind": "integer",
+     "role": "pivot_cell",
+     "alias": "pv_c3",
+     "fn": "count",
+     "column_value": null,
+     "column_empty": true
+    },
+    {
+     "label": "Number of rows",
+     "value_kind": "integer",
+     "role": "pivot_total",
+     "alias": "pv_total",
+     "fn": "count"
+    }
+   ]
+  }
+ }
+}

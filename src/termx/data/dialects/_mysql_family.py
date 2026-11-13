@@ -25,6 +25,9 @@ class MySQLFamilyDialect(Dialect, ABC):
     bool_bind = 'boolean'
     max_alias_bytes = 255       # column alias limit is 256 characters
     timeout_error_code: int = 0
+    # A NO PAD binary collation: 'a' and 'a ' are different values, as on SQLite and PostgreSQL. The generic
+    # utf8mb4_bin pads with spaces and would merge them. Each server names its own.
+    exact_collation: str = ''
 
     def table_ref(self, schema: str | None, table: str, alias: str) -> str:
         # `schema` is the configured database; MySQL has no separate schema level.
@@ -64,11 +67,15 @@ class MySQLFamilyDialect(Dialect, ABC):
 
     def text_operand(self, expr: str, charset: str | None = None) -> str:
         if charset in (None, '', 'utf8mb4'):
-            return f'{expr} COLLATE utf8mb4_bin'
-        return f'CONVERT({expr} USING utf8mb4) COLLATE utf8mb4_bin'   # another character set cannot take that collation
+            return f'{expr} COLLATE {self.exact_collation}'
+        return f'CONVERT({expr} USING utf8mb4) COLLATE {self.exact_collation}'   # another character set cannot take that collation
+
+    def text_order_operand(self, expr: str, charset: str | None = None) -> str:
+        return self.text_operand(expr, charset)
 
     def avg_expr(self, expr: str) -> str:
-        return f'CAST(AVG({expr}) AS DOUBLE)'
+        # AVG over an integer or decimal is a DECIMAL here, cut at a few places. Average doubles instead.
+        return f'AVG(({expr}) + 0e0)'
 
     def bool_literal(self, value: bool) -> str:
         return 'TRUE' if value else 'FALSE'

@@ -52,7 +52,7 @@ async function overview(user: ReturnType<typeof userEvent.setup>) {
   render(<DataStudio ownerId="owner" visible/>);
   await screen.findByRole('heading', {name: /source$/});
   const region = screen.getByRole('region', {name: 'Tables overview'});
-  await user.click(within(region).getByRole('button', {name: 'Load schema'}));
+  await user.click(within(region).getByRole('button', {name: 'Load tables'}));
   await within(region).findByRole('table');
   return region;
 }

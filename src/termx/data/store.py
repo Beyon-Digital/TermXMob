@@ -18,6 +18,44 @@ _SECRET_KEYS = {'password', 'passwd', 'api_key', 'apikey', 'access_token', 'refr
                 'secret', 'client_secret', 'authorization', 'dsn', 'connection_string'}
 
 
+SCHEMA_VERSION = 2
+# Every statement is CREATE ... IF NOT EXISTS: opening a store is idempotent and never alters a row.
+SCHEMA = '''
+    CREATE TABLE IF NOT EXISTS data_records (
+        kind TEXT NOT NULL, id TEXT NOT NULL PRIMARY KEY,
+        workspace_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        body TEXT NOT NULL CHECK(json_valid(body))
+    );
+    CREATE INDEX IF NOT EXISTS data_workspace_records
+        ON data_records(kind, workspace_id, created_at);
+    CREATE TABLE IF NOT EXISTS data_audit (
+        id TEXT PRIMARY KEY, actor_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL, action TEXT NOT NULL,
+        resource_id TEXT NOT NULL, detail TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS data_workspace_audit
+        ON data_audit(workspace_id, created_at);
+    CREATE TABLE IF NOT EXISTS data_view_revisions (
+        view_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        workspace_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('created','updated','archived')),
+        created_at TEXT NOT NULL,
+        name TEXT NOT NULL,
+        snapshot TEXT NOT NULL CHECK(json_valid(snapshot)),
+        changes TEXT NOT NULL CHECK(json_valid(changes)),
+        PRIMARY KEY (view_id, revision)
+    );
+    CREATE INDEX IF NOT EXISTS data_view_revisions_ws
+        ON data_view_revisions(workspace_id, view_id, revision DESC);
+    CREATE INDEX IF NOT EXISTS data_job_view
+        ON data_records(json_extract(body,'$.view_id'), created_at)
+        WHERE kind='job' AND json_extract(body,'$.view_id') IS NOT NULL;
+    PRAGMA user_version=2;
+'''
+
+
 def timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -67,28 +105,40 @@ class DataStore:
         from termx.private_files import protect_private_path
         protect_private_path(self.directory, directory=True)
         protect_private_path(self.path)
+        self._backup_before_migration()
         with self.transaction() as db:
-            if db.execute('PRAGMA user_version').fetchone()[0] > 1:
+            if db.execute('PRAGMA user_version').fetchone()[0] > SCHEMA_VERSION:
                 raise HTTPException(409, 'This Data metadata schema requires a newer TermX version')
-            db.executescript('''
-                CREATE TABLE IF NOT EXISTS data_records (
-                    kind TEXT NOT NULL, id TEXT NOT NULL PRIMARY KEY,
-                    workspace_id TEXT NOT NULL, revision INTEGER NOT NULL,
-                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    body TEXT NOT NULL CHECK(json_valid(body))
-                );
-                CREATE INDEX IF NOT EXISTS data_workspace_records
-                    ON data_records(kind, workspace_id, created_at);
-                CREATE TABLE IF NOT EXISTS data_audit (
-                    id TEXT PRIMARY KEY, actor_id TEXT NOT NULL,
-                    workspace_id TEXT NOT NULL, action TEXT NOT NULL,
-                    resource_id TEXT NOT NULL, detail TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS data_workspace_audit
-                    ON data_audit(workspace_id, created_at);
-                PRAGMA user_version=1;
-            ''')
+            db.executescript(SCHEMA)
+
+    def _backup_before_migration(self) -> None:
+        """Copy a non-empty version 1 store aside once, before the additive version 2 objects are created.
+
+        The copy keeps the pre-views state recoverable: a build from before saved views refuses to open a
+        version 2 store, and restoring this file returns to that state (views made since are lost).
+        """
+        backup = self.path.with_name(self.path.name + '.pre-views-v1')
+        if backup.exists():
+            return
+        source = sqlite3.connect(self.path, timeout=15)
+        try:
+            if source.execute('PRAGMA user_version').fetchone()[0] != 1:
+                return
+            if source.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='data_records'").fetchone() is None:
+                return
+            if source.execute('SELECT 1 FROM data_records LIMIT 1').fetchone() is None:
+                return
+            fd = os.open(backup, os.O_CREAT | os.O_RDWR | os.O_EXCL, 0o600)
+            os.close(fd)
+            target = sqlite3.connect(backup)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+            from termx.private_files import protect_private_path
+            protect_private_path(backup)
+        finally:
+            source.close()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -196,3 +246,49 @@ class DataStore:
             rows = db.execute('''SELECT * FROM data_audit WHERE workspace_id=?
                 ORDER BY created_at DESC,id DESC LIMIT ?''', (wid, limit)).fetchall()
         return [{**dict(row), 'detail': json.loads(row['detail'])} for row in rows]
+
+    # --- saved views: revision history, references and run history ------------------------------
+    def _revision_insert(self, db, *, view_id: str, revision: int, workspace_id: str, actor_id: str, actor_name: str,
+                         action: str, name: str, snapshot: dict, changes: list) -> None:
+        """Append one history row. Callers pass the record's new revision and call this inside the same
+        transaction as the record write, so both commit or neither does."""
+        db.execute('INSERT INTO data_view_revisions VALUES (?,?,?,?,?,?,?,?,?,?)',
+                   (view_id, revision, workspace_id, actor_id, actor_name, action, timestamp(), name,
+                    _json(snapshot), _json(changes)))
+
+    def revisions(self, workspace_id: str, view_id: str, limit: int, before: int | None) -> list[dict[str, Any]]:
+        """Newest first; `before` is an exclusive revision bound. Returns up to `limit` + 1 rows."""
+        with self._read() as db:
+            rows = db.execute('''SELECT * FROM data_view_revisions WHERE workspace_id=? AND view_id=?
+                AND (? IS NULL OR revision < ?) ORDER BY revision DESC LIMIT ?''',
+                              (workspace_id, view_id, before, before, limit + 1)).fetchall()
+        return [{**dict(row), 'snapshot': json.loads(row['snapshot']), 'changes': json.loads(row['changes'])} for row in rows]
+
+    def _view_referrers(self, db, workspace_id: str, segment_id: str) -> list[dict[str, Any]]:
+        """Non-archived views whose spec directly uses this segment."""
+        rows = db.execute('''SELECT * FROM data_records r WHERE kind='view' AND workspace_id=?
+            AND COALESCE(json_extract(body,'$.archived'),0)=0
+            AND EXISTS (SELECT 1 FROM json_each(r.body,'$.references') WHERE value=?)
+            ORDER BY created_at,id''', (workspace_id, segment_id)).fetchall()
+        return [self._record(row) for row in rows]
+
+    def view_jobs(self, workspace_id: str, view_id: str, *, actor_id: str | None, limit: int,
+                  cursor: tuple[str, str] | None) -> list[dict[str, Any]]:
+        """Run history rows (no result cells) from the durable jobs of one view, newest first."""
+        sql = '''SELECT id, created_at, updated_at, json_extract(body,'$.actor_id') AS actor_id,
+                json_extract(body,'$.actor_name') AS actor_name, json_extract(body,'$.view_revision') AS view_revision,
+                json_extract(body,'$.mode') AS mode, json_extract(body,'$.status') AS status,
+                json_extract(body,'$.duration_ms') AS duration_ms, json_extract(body,'$.error') AS error,
+                json_extract(body,'$.result.row_count') AS row_count, json_extract(body,'$.result.truncated') AS truncated
+            FROM data_records INDEXED BY data_job_view WHERE kind='job' AND json_extract(body,'$.view_id')=? AND workspace_id=?'''
+        args: list[Any] = [view_id, workspace_id]
+        if actor_id is not None:
+            sql += " AND json_extract(body,'$.actor_id')=?"
+            args.append(actor_id)
+        if cursor is not None:
+            sql += ' AND (created_at < ? OR (created_at = ? AND id < ?))'
+            args += [cursor[0], cursor[0], cursor[1]]
+        sql += ' ORDER BY created_at DESC, id DESC LIMIT ?'
+        args.append(limit + 1)
+        with self._read() as db:
+            return [dict(row) for row in db.execute(sql, args).fetchall()]

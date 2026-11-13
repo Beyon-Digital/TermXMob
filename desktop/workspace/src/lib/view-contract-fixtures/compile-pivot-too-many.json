@@ -1,0 +1,59 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/query-specs/compile",
+    "as": "alice",
+    "body": {
+      "spec": {
+        "version": 1,
+        "source": "conn_01",
+        "from": {
+          "table": "sales",
+          "alias": "s"
+        },
+        "joins": [],
+        "select": [],
+        "filters": {
+          "op": "and",
+          "items": []
+        },
+        "group_by": [],
+        "aggregates": [],
+        "sort": [],
+        "limit": 200,
+        "offset": 0,
+        "pivot": {
+          "rows": [
+            {
+              "table_alias": "s",
+              "column": "region"
+            }
+          ],
+          "columns": {
+            "table_alias": "s",
+            "column": "tier"
+          },
+          "value": {
+            "fn": "count"
+          },
+          "totals": true,
+          "sort": {
+            "by": "rows",
+            "direction": "asc"
+          }
+        }
+      }
+    }
+  },
+  "status": 200,
+  "response": {
+    "ok": false,
+    "errors": [
+      {
+        "code": "pivot_too_many_columns",
+        "path": "pivot.columns",
+        "message": "Tier has more than 12 different values. Pivots show at most 12 columns. Group by a larger step, or filter first."
+      }
+    ]
+  }
+}

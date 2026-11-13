@@ -132,6 +132,40 @@
     "created_at": 1789200000.1,
     "updated_at": 1789200003.4,
     "cancel_requested": false,
-    "preview_limit": 1000
+    "preview_limit": 1000,
+    "output": {
+      "columns": [
+        {
+          "label": "id",
+          "value_kind": "integer",
+          "role": "column",
+          "table_alias": "o",
+          "column": "id"
+        },
+        {
+          "label": "status",
+          "value_kind": "text",
+          "role": "column",
+          "table_alias": "o",
+          "column": "status"
+        },
+        {
+          "label": "amount",
+          "value_kind": "number",
+          "role": "column",
+          "table_alias": "o",
+          "column": "amount"
+        },
+        {
+          "label": "Customer",
+          "value_kind": "text",
+          "role": "column",
+          "table_alias": "c",
+          "column": "name"
+        }
+      ],
+      "warnings": []
+    },
+    "duration_ms": 15
   }
 }

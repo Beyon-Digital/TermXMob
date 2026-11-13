@@ -16,18 +16,18 @@ from termx.project_files import ProjectFiles
 from termx.workspace.http import mount_workspace
 
 
-def setup(workspace):
+def setup(workspace, *, git_dir=None, worktree_base=None):
     service,owner,path=workspace
     root=path/'project';root.mkdir()
     def git(*args):
         return subprocess.run(['git','-C',str(root),*args],check=True,capture_output=True,text=True).stdout
-    git('init','-b','main');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
+    git('init','-b','main',*(['--separate-git-dir',str(git_dir)] if git_dir else []));git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
     (root/'base.txt').write_text('Needle exists in content, not filename\n')
     git('add','.');git('commit','-m','Fixture')
     project={'id':'project-a','name':'Fixture','path':str(root)}
     service.state.projects=SimpleNamespace(project=lambda identifier:project if identifier=='project-a' else (_ for _ in ()).throw(KeyError(identifier)),projects=lambda:[project],lock=threading.RLock())
     service.state.authorization=AuthorizationService(service.state.identity)
-    service.state.delivery=DeliveryService(path/'delivery')
+    service.state.delivery=DeliveryService((worktree_base if worktree_base is not None else path)/'delivery')
     tree=service.state.delivery.effect('project-a',str(root),'worktree-create',{'branch':'codex/quick-file','base':'main'})
     (root/'main-only.txt').write_text('Main source')
     (Path(tree['path'])/'isolated-only.txt').write_text('Isolated source')

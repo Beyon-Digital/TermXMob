@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/views/v_pivot/runs",
+    "as": "alice",
+    "body": null
+  },
+  "status": 200,
+  "response": {
+    "view_id": "v_pivot",
+    "runs": [
+      {
+        "job_id": "job_01",
+        "actor": {
+          "id": "p_alice",
+          "name": "alice"
+        },
+        "mine": true,
+        "view_revision": 1,
+        "mode": "rows",
+        "status": "completed",
+        "started_at": "<time>",
+        "finished_at": "<time>",
+        "duration_ms": "<ms>",
+        "row_count": 8,
+        "truncated": false,
+        "error": null
+      }
+    ],
+    "next_cursor": null
+  }
+}

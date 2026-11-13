@@ -25,10 +25,10 @@ it('lists the Studio groups as labelled navs', async () => {
   await expectNoAxeViolations(container);
 });
 
-it('offers Load schema before the source has been contacted', () => {
+it('offers Load tables before the source has been contacted', () => {
   const load = vi.fn();
   render(<DataNavigation {...props({source: {...idle, loadSchema: load}})}/>);
-  fireEvent.click(screen.getByRole('button', {name: 'Load schema'}));
+  fireEvent.click(screen.getByRole('button', {name: 'Load tables'}));
   expect(load).toHaveBeenCalledTimes(1);
 });
 

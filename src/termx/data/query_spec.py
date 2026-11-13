@@ -20,6 +20,11 @@ from termx.data.dialects.base import DATE_RE, MAX_FILTERS, Dialect
 
 MAX_PARAMETERS = 1000
 MAX_NESTING = 4
+PIVOT_MAX_COLUMNS = 12
+PIVOT_PROBE_ROWS = PIVOT_MAX_COLUMNS + 1
+SEGMENT_MAX_DEPTH = 3
+SEGMENT_MAX_EXPANSIONS = 20
+SEGMENT_MAX_LEAVES = 200
 
 ALIAS_PATTERN = r'^[A-Za-z_][A-Za-z0-9_]{0,31}$'
 Alias = Annotated[str, Field(pattern=ALIAS_PATTERN)]
@@ -103,8 +108,21 @@ class FilterLeaf(Spec):
         return self
 
 
+class FilterSegment(Spec):
+    """Membership of a saved segment: the segment's filters, inlined at compile time."""
+    segment: str = Field(min_length=1, max_length=64)
+    negate: bool = Field(default=False, strict=True)
+
+
 def _filter_tag(value: Any) -> str:
-    op = value.get('op') if isinstance(value, dict) else getattr(value, 'op', None)
+    if isinstance(value, dict):
+        if 'segment' in value:
+            return 'segment'
+        op = value.get('op')
+    else:
+        if isinstance(value, FilterSegment):
+            return 'segment'
+        op = getattr(value, 'op', None)
     return 'group' if op in ('and', 'or') else 'leaf'
 
 
@@ -113,8 +131,8 @@ class FilterGroup(Spec):
     items: list['FilterNode'] = Field(max_length=MAX_FILTERS)
 
 
-FilterNode = Annotated[Union[Annotated[FilterLeaf, Tag('leaf')], Annotated[FilterGroup, Tag('group')]],
-                       Discriminator(_filter_tag)]
+FilterNode = Annotated[Union[Annotated[FilterLeaf, Tag('leaf')], Annotated[FilterGroup, Tag('group')],
+                             Annotated[FilterSegment, Tag('segment')]], Discriminator(_filter_tag)]
 FilterGroup.model_rebuild()
 
 
@@ -137,6 +155,36 @@ class Aggregate(Spec):
             raise ValueError('Give both table_alias and column, or neither.')
         if self.fn != 'count' and self.column is None:
             raise ValueError(f"The '{self.fn}' aggregate needs a column.")
+        return self
+
+
+class PivotDim(Spec):
+    table_alias: Alias
+    column: Name
+    bucket: Bucket | None = None
+    label: Label | None = None
+
+
+class PivotValue(Aggregate):
+    """The measure of a pivot; same shape and rules as a summary aggregate."""
+
+
+class PivotSort(Spec):
+    by: Literal['rows', 'total'] = 'rows'
+    direction: Literal['asc', 'desc'] = 'asc'
+
+
+class PivotSpec(Spec):
+    rows: list[PivotDim] = Field(min_length=1, max_length=2)
+    columns: PivotDim | None = None
+    value: PivotValue
+    totals: bool = Field(default=True, strict=True)
+    sort: PivotSort = Field(default_factory=PivotSort)
+
+    @model_validator(mode='after')
+    def _has_a_value_column(self):
+        if self.columns is None and not self.totals:
+            raise ValueError('A pivot without columns needs its total column.')
         return self
 
 
@@ -167,6 +215,7 @@ class QuerySpec(Spec):
     sort: list[Union[ColumnSort, OutputSort]] = Field(default_factory=list, max_length=4)
     limit: int = Field(default=200, ge=1, le=1000, strict=True)
     offset: int = Field(default=0, ge=0, le=1_000_000, strict=True)
+    pivot: PivotSpec | None = None
 
     @model_validator(mode='after')
     def _filter_limits(self):
@@ -244,7 +293,7 @@ class SpecError:
         return {'code': self.code, 'path': self.path, 'message': self.message}
 
 
-_SECTIONS = ('from', 'joins', 'select', 'filters', 'group_by', 'aggregates', 'sort')
+_SECTIONS = ('from', 'joins', 'select', 'filters', 'group_by', 'aggregates', 'sort', 'pivot')
 
 
 def _section(error: SpecError) -> int:
@@ -312,18 +361,34 @@ class _Out:
     label_path: str = 'select'
     explicit: bool = False
     derived: bool = False   # an expression over the column (bucket, exact text), not the bare column
+    alias: str | None = None            # pivot outputs: a neutral SQL alias; the label is metadata only
+    column_value: object = None
+    column_empty: bool = False
+    value_column: str | None = None
 
     def public(self) -> dict:
         body: dict = {'label': self.label, 'value_kind': self.kind, 'role': self.role}
+        if self.alias is not None:
+            body['alias'] = self.alias
         for key in ('table_alias', 'column', 'fn', 'bucket'):
             if getattr(self, key) is not None:
                 body[key] = getattr(self, key)
+        if self.role == 'pivot_cell':
+            body['column_value'] = self.column_value
+            body['column_empty'] = self.column_empty
         return body
 
 
 class _Compiler:
-    def __init__(self, spec: QuerySpec, index: SchemaIndex, dialect: Dialect):
+    def __init__(self, spec: QuerySpec, index: SchemaIndex, dialect: Dialect, segments: dict | None = None,
+                 pivot_values: list | None = None):
         self.spec, self.index, self.d = spec, index, dialect
+        self.segments: dict = segments or {}
+        self.pivot_values = pivot_values
+        self.expansions = 0
+        self.expanded_leaves = 0
+        self._empty_segments: set[str] = set()
+        self._leaf_cap = False
         self.errors: list[SpecError] = []
         self.params: dict[str, object] = {}
         self.aliases: dict[str, TableInfo] = {}     # exact alias -> table
@@ -530,8 +595,10 @@ class _Compiler:
         self.finish_labels(outs)
         return outs, summary
 
-    def aggregate(self, i: int, agg: Aggregate) -> _Out | None:
-        path = f'aggregates[{i}]'
+    def aggregate(self, i: int, agg: Aggregate, path: str | None = None) -> _Out | None:
+        pivot = path is not None
+        path = path or f'aggregates[{i}]'
+        bad = 'pivot_value_type' if pivot else 'bad_type'
         expr_col, info, alias = None, None, None
         if agg.column is not None and agg.table_alias is not None:
             found = self.resolve_column(agg.table_alias, agg.column, path + '.column', path + '.table_alias')
@@ -541,15 +608,17 @@ class _Compiler:
             expr_col = self.col_sql(alias, info.name)
             if agg.fn == 'count_distinct' and info.kind == 'text':
                 expr_col = self.d.text_operand(expr_col, info.charset)
+            if agg.fn in ('min', 'max') and info.kind == 'text':
+                expr_col = self.d.text_order_operand(expr_col, info.charset)
             if agg.fn in ('sum', 'avg') and info.kind not in _NUMERIC:
-                self.err('bad_type', path + '.column', f"'{info.name}' is not a number column, so it cannot be "
+                self.err(bad, path + '.column', f"'{info.name}' is not a number column, so it cannot be "
                          f"{'totalled' if agg.fn == 'sum' else 'averaged'}.")
                 return None
             if agg.fn in ('min', 'max') and info.kind not in self.d.orderable_kinds:
-                self.err('bad_type', path + '.column', f"'{info.name}' cannot be used for the {'smallest' if agg.fn == 'min' else 'largest'} value.")
+                self.err(bad, path + '.column', f"'{info.name}' cannot be used for the {'smallest' if agg.fn == 'min' else 'largest'} value.")
                 return None
             if agg.fn == 'count_distinct' and info.kind == 'json':
-                self.err('bad_type', path + '.column', f"'{info.name}' holds JSON, which has no unique values.")
+                self.err(bad, path + '.column', f"'{info.name}' holds JSON, which has no unique values.")
                 return None
         if agg.fn == 'count':
             expr = f'COUNT({expr_col or "*"})'
@@ -573,8 +642,10 @@ class _Compiler:
             label = 'Number of rows'
         else:
             label = _AGGREGATE_LABELS[agg.fn].format(info.name)
-        return _Out(label, expr, kind, 'aggregate', alias, info.name if info else None, fn=agg.fn,
-                    label_path=path + '.label', explicit=bool(agg.label))
+        out = _Out(label, expr, kind, 'aggregate', alias, info.name if info else None, fn=agg.fn,
+                   label_path=path + '.label', explicit=bool(agg.label))
+        out.value_column = expr_col       # the column expression, for a pivot cell
+        return out
 
     def finish_labels(self, outs: list[_Out]) -> None:
         # A default label that collides with another default becomes "alias.column".
@@ -604,20 +675,82 @@ class _Compiler:
 
     # --- phase 3: filters ----------------------------------------------------------------
     def filters(self) -> str | None:
-        def group(node: FilterGroup, path: str, root: bool) -> str | None:
-            parts = []
-            for i, item in enumerate(node.items):
-                sub = f'{path}.items[{i}]'
-                text = group(item, sub, False) if isinstance(item, FilterGroup) else self.leaf(item, sub)
-                if text:
-                    parts.append(text)
-            if not parts:
-                return None
-            joined = f' {node.op.upper()} '.join(parts)
-            if len(parts) > 1 and not (root and node.op == 'and'):
-                return f'({joined})'
-            return joined
-        return group(self.spec.filters, 'filters', True)
+        return self.group(self.spec.filters, 'filters', True, None, (), self.spec)
+
+    def group(self, node: FilterGroup, path: str, root: bool, amap: dict[str, str] | None, stack: tuple[str, ...],
+              host: QuerySpec) -> str | None:
+        """Render a filter tree. `amap` maps the aliases of a segment's tree onto this query's aliases and `host`
+        is the spec whose table names the tree's aliases refer to. Errors inside a segment report the path of
+        the outermost reference."""
+        parts = []
+        for i, item in enumerate(node.items):
+            sub = f'{path}.items[{i}]' if amap is None else path
+            if isinstance(item, FilterGroup):
+                text = self.group(item, sub, False, amap, stack, host)
+            elif isinstance(item, FilterSegment):
+                text = self.segment(item, sub, amap, stack, host)
+            else:
+                if amap is not None:
+                    self.expanded_leaves += 1
+                    if self.expanded_leaves > SEGMENT_MAX_LEAVES:
+                        if not getattr(self, '_leaf_cap', False):
+                            self._leaf_cap = True
+                            self.err('segment_too_large', path, f'The segments used here add up to more than {SEGMENT_MAX_LEAVES} filters.')
+                        continue
+                    item = item.model_copy(update={'field': ColumnRef(
+                        table_alias=amap.get(item.field.table_alias, item.field.table_alias), column=item.field.column)})
+                before = len(self.errors)
+                text = self.leaf(item, sub)
+                if amap is not None:   # a problem inside a segment is reported at the outermost reference
+                    self.errors[before:] = [SpecError(e.code, path, e.message) for e in self.errors[before:]]
+            if text:
+                parts.append(text)
+        if not parts:
+            return None
+        joined = f' {node.op.upper()} '.join(parts)
+        if len(parts) > 1 and not (root and node.op == 'and'):
+            return f'({joined})'
+        return joined
+
+    def segment(self, node: FilterSegment, path: str, amap: dict[str, str] | None, stack: tuple[str, ...],
+                host: QuerySpec) -> str | None:
+        from termx.data.segments import MISSING, cycle_message, map_aliases
+        found = self.segments.get(node.segment)
+        if found is None:
+            self.err('segment_missing', path, MISSING)
+            return None
+        if node.segment in stack:
+            names = tuple(self.segments[s].name for s in (*stack, node.segment) if s in self.segments)
+            self.err('segment_cycle', path, cycle_message(names))
+            return None
+        if len(stack) + 1 > SEGMENT_MAX_DEPTH:
+            self.err('segment_depth', path, f'Segments can use other segments at most {SEGMENT_MAX_DEPTH} levels deep.')
+            return None
+        self.expansions += 1
+        if self.expansions > SEGMENT_MAX_EXPANSIONS:
+            if self.expansions == SEGMENT_MAX_EXPANSIONS + 1:
+                self.err('segment_too_large', path, f'A query can use at most {SEGMENT_MAX_EXPANSIONS} segments in total.')
+            return None
+        if found.source != self.spec.source:
+            self.err('segment_source_mismatch', path, f"The segment '{found.name}' belongs to a different source.")
+            return None
+        local, problem = map_aliases(host.from_, host.joins, found)
+        if problem is not None:
+            self.err(problem[0], path, problem[1])
+            return None
+        final = {k: (amap.get(v, v) if amap is not None else v) for k, v in local.items()}
+        text = self.group(found.filters, path, False, final, (*stack, node.segment), found.spec)
+        if not found.filters.items:
+            if node.segment not in self._empty_segments:
+                self._empty_segments.add(node.segment)
+                self.warnings.append({'code': 'segment_empty', 'message':
+                    f"The segment '{found.name}' has no filters, so it matches every row."})
+            text = '1 = 1'
+        elif text is None:
+            return None
+        if node.negate:
+            return f'CASE WHEN ({text}) THEN 1 ELSE 0 END = 0'
+        return text
 
     def leaf(self, node: FilterLeaf, path: str) -> str | None:
         ref = node.field
@@ -775,6 +908,9 @@ class _Compiler:
 
     # --- assembly ------------------------------------------------------------------------
     def build(self) -> CompiledQuery:
+        if self.spec.pivot is not None:
+            from termx.data.pivot import build_pivot
+            return build_pivot(self)
         spec, d = self.spec, self.d
         from_lines, join_infos = self.tables_and_joins()
         outs, summary = self.outputs()
@@ -825,6 +961,17 @@ class _Compiler:
                              fetch_limit, join_infos, self.warnings, digest)
 
 
-def compile_spec(spec: QuerySpec, schema: SchemaIndex, dialect: Dialect) -> CompiledQuery:
-    """Pure: no I/O, no clock. Raises SpecErrors listing every problem found."""
-    return _Compiler(spec, schema, dialect).build()
+def compile_spec(spec: QuerySpec, schema: SchemaIndex, dialect: Dialect, *, segments: dict | None = None,
+                 pivot_values: list | None = None) -> CompiledQuery:
+    """Pure: no I/O, no clock. Raises SpecErrors listing every problem found.
+
+    `segments` is the transitive closure of the segments the spec uses (id -> ResolvedSegment) and
+    `pivot_values` the distinct column values a pivot found with `compile_pivot_probe`. With `pivot_values`
+    None a pivot is only validated: its statement has row and total columns but no cell columns."""
+    return _Compiler(spec, schema, dialect, segments, pivot_values).build()
+
+
+def compile_pivot_probe(spec: QuerySpec, schema: SchemaIndex, dialect: Dialect, *, segments: dict | None = None) -> CompiledQuery:
+    """The bounded distinct read that decides a pivot's columns. Pure; the caller executes it."""
+    from termx.data.pivot import build_probe
+    return build_probe(_Compiler(spec, schema, dialect, segments, None))

@@ -1,0 +1,57 @@
+{
+  "request": {
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": []
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0,
+      "pivot": {
+        "rows": [
+          {
+            "table_alias": "sales",
+            "column": "region"
+          }
+        ],
+        "columns": {
+          "table_alias": "sales",
+          "column": "day",
+          "bucket": "month"
+        },
+        "value": {
+          "fn": "sum",
+          "table_alias": "sales",
+          "column": "amount",
+          "label": "Total amount"
+        },
+        "totals": true,
+        "sort": {
+          "by": "rows",
+          "direction": "asc"
+        }
+      }
+    }
+  },
+  "response": {
+    "ok": false,
+    "errors": [
+      {
+        "code": "pivot_too_many_columns",
+        "path": "pivot.columns",
+        "message": "Month has more than 12 different values. Pivots show at most 12 columns. Group by a larger step, or filter first."
+      }
+    ]
+  }
+}

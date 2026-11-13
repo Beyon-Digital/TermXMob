@@ -211,10 +211,12 @@ async def wait_for_pending_approval(store: AgentStore, task_id: str, kind: str) 
     raise AssertionError(f"task {task_id} did not request {kind} approval")
 
 
-def build_manager(tmp_path: Path, adapter: FakeAdapter) -> tuple[AgentManager, AgentStore]:
+def build_manager(
+    tmp_path: Path, adapter: FakeAdapter, *, store_path: Path | None = None,
+) -> tuple[AgentManager, AgentStore]:
     from termx.sandbox.host import HostSandboxRunner
 
-    store = AgentStore(tmp_path / "agent.sqlite3", tmp_path / "artifacts")
+    store = AgentStore(store_path if store_path is not None else tmp_path / "agent.sqlite3", tmp_path / "artifacts")
     credentials = CredentialStore(memory={})
     # Pin the host backend: these tests assert policy semantics against the
     # unrestricted envelope and must not depend on the machine's namespace

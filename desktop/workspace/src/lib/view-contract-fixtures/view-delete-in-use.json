@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/views/v_segment?revision=2",
+    "as": "alice",
+    "body": null
+  },
+  "status": 409,
+  "response": {
+    "detail": {
+      "code": "segment_in_use",
+      "message": "1 view uses this segment. Remove it from them first.",
+      "used_by": [
+        {
+          "id": "v_pivot",
+          "kind": "pivot",
+          "name": "Sales by region and month"
+        }
+      ]
+    }
+  }
+}

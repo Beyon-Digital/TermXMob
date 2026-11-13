@@ -60,6 +60,9 @@ class SQLiteDialect(Dialect):
     def bool_literal(self, value: bool) -> str:
         return '1' if value else '0'
 
+    def pivot_cell_value(self, kind: str, value: object) -> object:
+        return int(value) if isinstance(value, bool) else value
+
     def cast_text(self, expr: str) -> str:
         return f'CAST({expr} AS TEXT)'
 
@@ -86,7 +89,15 @@ class SQLiteDialect(Dialect):
 
     def date_bucket(self, column: str, kind: str, bucket: str) -> str:
         self._check_bucket(kind, bucket)
-        x = column
+        # SQLite reads numeric text as a Julian day, 'now' as the current time and rolls impossible days over. Only
+        # text that starts with a real ISO date counts; the date part as written is bucketed (a zone offset is
+        # ignored, not applied). Anything else is NULL, as on the engines that cannot hold such values.
+        x = f'substr({column},1,10)'
+        guard = f"{column} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date({x}) = {x}"
+        return f'CASE WHEN {guard} THEN {self._bucket_expression(x, bucket)} END'
+
+    @staticmethod
+    def _bucket_expression(x: str, bucket: str) -> str:
         if bucket == 'day':
             return f"strftime('%Y-%m-%d', {x})"
         if bucket == 'week':
