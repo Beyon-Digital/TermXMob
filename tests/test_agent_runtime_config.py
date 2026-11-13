@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
+from contextlib import contextmanager, ExitStack
+import functools
 import json
 from pathlib import Path
-from time import monotonic
+import sys
+from time import monotonic, perf_counter, process_time
+from unittest.mock import patch
 
 import pytest
 import httpx
 from fastapi.testclient import TestClient
 
 from _gql import data, err_status
+import test_desktop as desktop_fixtures
 from test_agent import FakeAdapter, build_manager, wait_for_status
 from termx.agent.limits import resolve_limits
 from termx.agent.providers import OpenAIResponsesAdapter, ProviderCall, ProviderTurn
@@ -17,16 +23,23 @@ from termx.app import AppState, create_app
 from termx.config import ConfigStore
 
 
+configuration_desktop_io = pytest.fixture(name="configuration_desktop_io", autouse=False)(
+    desktop_fixtures.desktop_io.__wrapped__)
+
+
 class ManyReads(FakeAdapter):
     def __init__(self, count=30):
         super().__init__()
         self.count = count
         self.seen = []
+        self.started_at = perf_counter()
+        self.turn_times = deque(maxlen=8)
 
     async def turn(self, **kwargs):
         history = kwargs.get("input_items") or []
         self.seen.append(history)
         self.turns += 1
+        self.turn_times.append({"turn": self.turns, "seconds": perf_counter() - self.started_at})
         if self.turns > self.count:
             return ProviderTurn("done", "verified", [], {})
         call = ProviderCall(type="function", call_id=f"read-{self.turns}",
@@ -36,16 +49,84 @@ class ManyReads(FakeAdapter):
              "name": "read_file", "arguments": '{"path":"sample.txt"}'}])
 
 
-async def _completed_internal_task(manager, store, task_id, adapter, *, timeout=10):
+def _code_positions(worker):
+    def frames(frame):
+        rows = []
+        while frame is not None and len(rows) < 12:
+            rows.append({"file": Path(frame.f_code.co_filename).name,
+                         "function": frame.f_code.co_name, "line": frame.f_lineno})
+            frame = frame.f_back
+        return rows
+
+    def chain(coroutine):
+        rows = []
+        for _ in range(24):
+            if coroutine is None:
+                break
+            frame = getattr(coroutine, "cr_frame", None) or getattr(coroutine, "gi_frame", None)
+            if frame is not None:
+                rows.append({"file": Path(frame.f_code.co_filename).name,
+                             "function": frame.f_code.co_name, "line": frame.f_lineno})
+            coroutine = getattr(coroutine, "cr_await", None) or getattr(coroutine, "gi_yieldfrom", None)
+        return rows
+
+    tasks = [worker] + sorted(asyncio.all_tasks() - {worker}, key=lambda task: task.get_name())[:11]
+    return {"worker_chain": chain(worker.get_coro()),
+            "tasks": [{"name": task.get_name()[:80], "chain": chain(task.get_coro())} for task in tasks],
+            "threads": [{"id": identifier, "frames": frames(frame)}
+                        for identifier, frame in sorted(sys._current_frames().items())[:8]]}
+
+
+@contextmanager
+def _runtime_method_timings(manager):
+    """Inclusive, overlapping wall times; original bound methods and instance state are restored."""
+    timings = {}
+
+    def timed(original, row, asynchronous):
+        def record(start):
+            elapsed = perf_counter() - start
+            row["count"] += 1
+            row["seconds"] += elapsed
+            row["max_seconds"] = max(row["max_seconds"], elapsed)
+        @functools.wraps(original)
+        def sync(*args, **kwargs):
+            start = perf_counter()
+            try: return original(*args, **kwargs)
+            finally: record(start)
+        @functools.wraps(original)
+        async def async_call(*args, **kwargs):
+            start = perf_counter()
+            try: return await original(*args, **kwargs)
+            finally: record(start)
+        return async_call if asynchronous else sync
+
+    with ExitStack() as stack:
+        for owner, name, asynchronous in ((manager, "_invoke_tool", True), (manager, "_tool_context", False),
+                (manager.store, "update_task", False), (manager.store, "append_event", False),
+                (manager.store, "get_task", False)):
+            row = {"count": 0, "seconds": 0.0, "max_seconds": 0.0}
+            timings[type(owner).__name__ + "." + name] = row
+            stack.enter_context(patch.object(owner, name, timed(getattr(owner, name), row, asynchronous)))
+        yield timings
+
+
+async def _completed_internal_task(manager, store, task_id, adapter, *, timeout=10, timings=None):
     worker = manager._workers[task_id]
+    started, cpu_started = perf_counter(), process_time()
 
     def observation(reason):
+        phase_times = {name: dict(values) for name, values in (timings or {}).items()}
         task = store.get_task(task_id)
         tail = store.events(task_id, tail_limit=5, event_types=(
             "task.status", "task.completed", "task.failed", "tool.finished", "approval.requested"))
         return {"reason": reason, "status": task["status"], "error": str(task.get("error") or "")[:400],
                 "turns": adapter.turns, "step": (task.get("runtime") or {}).get("step"),
                 "worker_done": worker.done(), "worker_cancelled": worker.cancelled(),
+                "wait_wall_seconds": perf_counter() - started, "process_cpu_seconds": process_time() - cpu_started,
+                "provider_turn_times": list(adapter.turn_times), "positions": _code_positions(worker),
+                "provider_age_at_wait_start_seconds": started - adapter.started_at,
+                "method_timings": phase_times,
+                "timing_scope": "inclusive/overlapping completed spans; active span excluded; uncalibrated observer overhead",
                 "event_tail": [{"sequence": event["sequence"], "type": event["type"],
                                 "call_id": event["payload"].get("call_id")} for event in tail]}
 
@@ -137,19 +218,39 @@ def test_completion_wait_timeout_captures_progress_before_worker_cleanup(tmp_pat
         manager, store = build_manager(tmp_path, adapter)
         worker = None
         try:
-            task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
-                                             provider_id="fake", mode="ask")
-            worker = manager._workers[task["id"]]
-            await asyncio.wait_for(entered.wait(), timeout=10)
+            missing = object()
+            originals = [(owner, name, owner.__dict__.get(name, missing)) for owner, name in (
+                (manager, "_invoke_tool"), (manager, "_tool_context"), (store, "update_task"),
+                (store, "append_event"), (store, "get_task"))]
             with pytest.raises(AssertionError) as error:
-                await _completed_internal_task(manager, store, task["id"], adapter, timeout=0)
+                with _runtime_method_timings(manager) as timings:
+                    task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
+                                                     provider_id="fake", mode="ask")
+                    worker = manager._workers[task["id"]]
+                    await asyncio.wait_for(entered.wait(), timeout=10)
+                    await _completed_internal_task(manager, store, task["id"], adapter, timeout=0, timings=timings)
             snapshot = error.value.args[0]
+            assert all(owner.__dict__.get(name, missing) is original for owner, name, original in originals)
+            assert set(snapshot["method_timings"]) == {"AgentManager._invoke_tool", "AgentManager._tool_context",
+                "AgentStore.update_task", "AgentStore.append_event", "AgentStore.get_task"}
+            assert all(row["count"] >= 0 and 0 <= row["max_seconds"] <= row["seconds"]
+                       for row in snapshot["method_timings"].values())
+            assert snapshot["method_timings"]["AgentStore.get_task"]["count"] > 0
             assert snapshot["reason"] == "completion_wait_timeout"
             assert snapshot["status"] == "running" and snapshot["turns"] == 1
             assert snapshot["step"] == 0 and snapshot["error"] == ""
             assert not snapshot["worker_done"] and not snapshot["worker_cancelled"]
             assert len(snapshot["event_tail"]) <= 5
             assert any(event["type"] == "task.status" for event in snapshot["event_tail"])
+            assert snapshot["provider_turn_times"] == [{"turn": 1, "seconds": adapter.turn_times[0]["seconds"]}]
+            assert snapshot["provider_turn_times"][0]["seconds"] >= 0
+            assert snapshot["positions"]["worker_chain"]
+            assert 1 <= len(snapshot["positions"]["tasks"]) <= 12
+            assert 1 <= len(snapshot["positions"]["threads"]) <= 8
+            assert any(position["function"] == "turn" for task in snapshot["positions"]["tasks"]
+                       for position in task["chain"])
+            assert all(set(position) == {"file", "function", "line"} for thread in snapshot["positions"]["threads"]
+                       for position in thread["frames"])
             assert not worker.done() and not worker.cancelled()
         finally:
             release.set()
@@ -168,7 +269,8 @@ def test_internal_task_survives_more_than_old_default_requests(tmp_path):
         try:
             task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
                                              provider_id="fake", mode="ask")
-            done = await _completed_internal_task(manager, store, task["id"], adapter)
+            with _runtime_method_timings(manager) as timings:
+                done = await _completed_internal_task(manager, store, task["id"], adapter, timings=timings)
             assert done["result"] == "verified"
             assert adapter.turns == 301
             events = store.events(task["id"])
@@ -264,7 +366,17 @@ def test_invalid_run_limits_are_actionable(limits):
         resolve_limits(limits)
 
 
-def test_graphql_host_agent_configuration_is_applied_and_reloaded(tmp_path):
+def test_graphql_host_agent_configuration_is_applied_and_reloaded(tmp_path, monkeypatch, configuration_desktop_io):
+    from termx.desktop import session
+    releases = []
+
+    def release_only(payload, *_args, **_kwargs):
+        if payload != {"type": "release_all"}:
+            configuration_desktop_io.blocked.append("unexpected configuration input")
+            raise AssertionError("configuration cleanup may only release_all")
+        releases.append(dict(payload))
+
+    monkeypatch.setattr(session, "apply_event", release_only)
     state = AppState(passcode="test-only")
     with TestClient(create_app(state)) as client:
         headers = {"X-Termx-Passcode": "test-only"}
@@ -278,6 +390,9 @@ def test_graphql_host_agent_configuration_is_applied_and_reloaded(tmp_path):
         assert out["agent_configuration"]["provider_timeout_s"] is None
         assert err_status(client, '{ agent_configuration }') == 401
     assert ConfigStore(state.store.path).get().agent.limits["max_steps"] is None
+    assert releases == [{"type": "release_all"}]
+    assert configuration_desktop_io.closed == ["capture", "capture"]
+    assert configuration_desktop_io.blocked == configuration_desktop_io.prompts == []
 
 
 @pytest.mark.parametrize("visible_output", [False, True])
