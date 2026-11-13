@@ -55,7 +55,13 @@ def test_builders_only_produce_allowed_commands_and_use_equals_for_values():
     assert not any(item in ad.FORBIDDEN_FLAGS for item in req.argv)
 
 
-@pytest.mark.parametrize("hostile", ["--headed", "--force", "-v", "--trace=/tmp/x", " spaced", "a" * 100_000, "@s1:e1 --headed", 'q"uo\\te'])
+# Pytest includes case IDs in PYTEST_CURRENT_TEST; Windows caps that value at 32,767 characters.
+@pytest.mark.parametrize(
+    "hostile",
+    ["--headed", "--force", "-v", "--trace=/tmp/x", " spaced", "a" * 100_000, "@s1:e1 --headed", 'q"uo\\te'],
+    ids=["headed-option", "force-option", "short-option", "trace-option", "leading-space",
+         "oversized-100k", "reference-plus-option", "quotes-and-backslash"],
+)
 def test_hostile_strings_never_become_flags(hostile):
     for build in (
         lambda: ad.req_find(app_name="Notes", name=hostile),
