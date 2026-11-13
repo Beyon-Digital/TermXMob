@@ -135,7 +135,12 @@ def run(destination, axe_source):
                         split_selector=editor_menu.get_by_role('combobox',name='Editor split layout',exact=True)
                         expect(split_selector).to_be_visible()
                         workbench['split_selector_visible']=split_selector.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('[role=dialog]').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom&&p.left>=0&&p.top>=0&&p.right<=innerWidth&&p.bottom<=innerHeight}")
-                        assert workbench['split_selector_visible'],'Editor split selector or its menu is clipped'
+                        workbench['split_selector_geometry']=split_selector.evaluate("e=>{const rect=node=>{const b=node.getBoundingClientRect();return {left:b.left,top:b.top,right:b.right,bottom:b.bottom,width:b.width,height:b.height}};const menu=e.closest('[role=dialog]');return {selector:rect(e),menu:rect(menu),style:menu.getAttribute('style'),viewport:{width:innerWidth,height:innerHeight}}}")
+                        if not workbench['split_selector_visible']:
+                            page.screenshot(path=str(destination/f'editor-menu-clipped-{theme}-{zoom}.png'))
+                            report['editor_menu_failure']={'theme':theme,'zoom_percent':zoom,**workbench['split_selector_geometry']}
+                            report['editor_menu_failure']['next_frame']=split_selector.evaluate("async e=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const p=e.closest('[role=dialog]'),b=p.getBoundingClientRect();return {left:b.left,top:b.top,right:b.right,bottom:b.bottom,style:p.getAttribute('style')}}")
+                        assert workbench['split_selector_visible'],('Editor split selector or its menu is clipped',workbench['split_selector_geometry'])
                         page.keyboard.press('Escape')
                         expect(editor_menu).to_be_hidden();expect(editor_actions).to_be_focused()
                         report['states'].append({'theme':theme,'zoom_percent':zoom,'layout':'workbench','reduced_motion':True,**workbench})
