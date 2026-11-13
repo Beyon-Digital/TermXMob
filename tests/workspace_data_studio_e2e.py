@@ -464,12 +464,12 @@ def browser_run(page,api,wid,button,pattern):
 
 def choose_report_data(page,scope,label,out=None,report=None,theme=None,width=None,state=None):
     """The Data field is a grouped Radix radio menu; choose the visible dataset name."""
-    trigger=scope.get_by_label('Data',exact=True);expect(trigger).to_have_attribute('aria-haspopup','menu')
+    trigger=scope.get_by_label('Data',exact=True);expect(trigger).to_have_attribute('aria-haspopup','menu');before=trigger.inner_text()
     trigger.focus();page.keyboard.press('Enter');menu=page.get_by_role('menu',name='Data',exact=True)
     for group in('Saved queries','Views','Tables'):expect(menu.get_by_role('group',name=group,exact=True)).to_be_visible()
     choice=menu.get_by_role('menuitemradio',name=label,exact=True);expect(choice).to_be_visible()
     if state:
-        before=trigger.inner_text();focus_sample(page,choice,'Report data choice',report,True,menu=True)
+        focus_sample(page,choice,'Report data choice',report,True,menu=True)
         capture(page,out,report,state,theme,width)
         page.keyboard.press('Escape');expect(menu).not_to_be_visible();expect(trigger).to_be_focused();expect(trigger).to_have_text(before)
         page.keyboard.press('Enter');expect(menu).to_be_visible()
