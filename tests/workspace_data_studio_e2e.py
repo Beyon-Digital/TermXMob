@@ -20,7 +20,7 @@ def focus_sample(page,element,label,report,strict,menu=False):
     Everything else the shared check enforces still is: a visible ring, exactly one, no clipping, and 44px targets on touch."""
     if menu:
         # Radix menu items use roving arrow-key focus, while Tab belongs to the enclosing dialog.
-        element.focus();page.keyboard.press('ArrowDown')
+        element.focus();expect(element).to_be_focused();page.keyboard.press('ArrowDown')
         expect(element).not_to_be_focused()
         expect(page.locator('[role="menuitemradio"]:focus')).to_have_count(1)
         page.keyboard.press('ArrowUp');expect(element).to_be_focused()
