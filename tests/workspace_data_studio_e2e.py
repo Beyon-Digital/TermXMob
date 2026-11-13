@@ -735,7 +735,7 @@ def copilot_browser(page,api,wid,cid,qid,path,mock,out,report,theme,width):
     assert pivot_run['_qa_request']['spec']['filters']['items']==[{'field':{'table_alias':'s','column':'amount'},'op':'between','values':[2450,2501]}],pivot_run
     with sqlite3.connect(path)as db:expected_pivot=dict(db.execute('SELECT region,COUNT(*) FROM sales WHERE amount BETWEEN 2450 AND 2501 GROUP BY region'))
     assert {row[0]:row[-1]for row in pivot_run['result']['rows']}==expected_pivot,(pivot_run,expected_pivot)
-    expect(data.get_by_role('tab',name=re.compile('^New pivot on Sales'),selected=True)).to_be_visible()
+    expect(data.get_by_role('tab',name='New pivot on sales',exact=True,selected=True)).to_be_visible()
     expect(data.get_by_role('grid',name=re.compile('^New pivot on Sales'))).to_be_visible()
     assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Pivot proposal silently saved a view'
     capture(page,out,report,'copilot-pivot-proposal-opened',theme,width)
