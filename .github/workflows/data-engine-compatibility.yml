@@ -1,0 +1,36 @@
+name: Data engine compatibility
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/termx/data/**', 'tests/test_data_*.py', 'tests/data_*.py', 'tests/conftest.py', 'scripts/test_data_engine_matrix.py', 'pyproject.toml', 'uv.lock', '.github/workflows/data-engine-compatibility.yml']
+  pull_request:
+    paths: ['src/termx/data/**', 'tests/test_data_*.py', 'tests/data_*.py', 'tests/conftest.py', 'scripts/test_data_engine_matrix.py', 'pyproject.toml', 'uv.lock', '.github/workflows/data-engine-compatibility.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: data-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: SQL conformance (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        target: [pg12, pg16, mysql8017, mysql84, maria106, maria1011, maria118]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Verify exact engine version and SQL behavior
+        run: uv run --locked --extra development --extra media python scripts/test_data_engine_matrix.py --only ${{ matrix.target }} --output-dir engine-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: data-engine-${{ matrix.target }}
+          path: engine-evidence

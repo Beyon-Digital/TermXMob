@@ -44,6 +44,9 @@ Existing account secrets stay in the host credential service. No provider calls 
 
 SQLite, PostgreSQL, MySQL and MariaDB each have their own adapter (`src/termx/data/dialects`). The same table view returns the same rows and the same JSON types on all four.
 
+SQL feature minimums are SQLite 3.30, PostgreSQL 12, MySQL 8.0.17 and MariaDB 10.6.
+See the [version matrix and reproduction commands](data-engine-compatibility.md) for exact coverage and its limits.
+
 - **Run limits.** Every source read has a server-side deadline: 30 seconds by default, set with `TERMX_DATA_STATEMENT_TIMEOUT_SECONDS` (0.1 to 600). SQLite uses a progress handler, PostgreSQL `statement_timeout`, MySQL `MAX_EXECUTION_TIME` and MariaDB `max_statement_time`. A run that hits it ends as failed with a plain message. One person can have 4 runs in flight and one connection 8; more get a 429. Source reads use their own pool of 16 threads.
 - **Text is compared exactly.** MySQL and MariaDB columns are case- and often accent-insensitive by default. Equality, "is any of", "contains", Group by, unique counts and matches between tables use a binary collation there, so `Alice` and `alice` are different values on every engine.
 - **Result types.** Whole-number results are integers, decimal and average results are numbers, yes/no columns are true or false, and datetimes read `YYYY-MM-DDTHH:MM:SS`.

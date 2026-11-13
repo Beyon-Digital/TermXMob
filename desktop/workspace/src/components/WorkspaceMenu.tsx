@@ -9,26 +9,30 @@ import './workspace-menu.css';
 /** A button-anchored command surface; Radix owns dismissal and focus scope. */
 export default function WorkspaceMenu({label,children,icon}:{label:string;children:ReactNode;icon?:ReactNode}){
  const [open,setOpen]=useState(false),[position,setPosition]=useState({top:0,left:0});
- const trigger=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null),sourceActive=useRef(true),observer=useRef<MutationObserver|null>(null);
+ const trigger=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null),sourceActive=useRef(true),observer=useRef<MutationObserver|null>(null),resize=useRef<ResizeObserver|null>(null);
  const layer=useNavigationLayerRef<HTMLDivElement>();
  const active=()=>!!trigger.current?.isConnected&&!trigger.current.closest('[hidden],[inert],[aria-hidden="true"]');
+ const place=useCallback(()=>{
+  const bounds=trigger.current?.getBoundingClientRect(),node=panel.current;if(!bounds||!node)return;
+  const width=node.offsetWidth||244,height=node.offsetHeight||260;
+  const below=bounds.bottom+8,above=bounds.top-height-8;
+  setPosition({top:Math.max(8,Math.min(below+height<=window.innerHeight-8?below:above,window.innerHeight-height-8)),left:Math.max(8,Math.min(bounds.right-width,window.innerWidth-width-8))});
+ },[]);
  const attach=useCallback((node:HTMLDivElement|null)=>{
+  if(panel.current)resize.current?.unobserve(panel.current);
   observer.current?.disconnect();panel.current=node;layer(node);
   observer.current=node?observeClosedState(node,()=>{if(sourceActive.current&&active())trigger.current?.focus({preventScroll:true})}):null;
- },[layer]);
+  // A Radix portal may attach after the open effect. Measure it before its
+  // first paint instead of displaying a position based on fallback dimensions.
+  if(node){place();resize.current?.observe(node)}
+ },[layer,place]);
  useLayoutEffect(()=>{
   if(!open)return;
-  const place=()=>{
-   const bounds=trigger.current?.getBoundingClientRect();if(!bounds)return;
-   const width=panel.current?.offsetWidth||244,height=panel.current?.offsetHeight||260;
-   const below=bounds.bottom+8,above=bounds.top-height-8;
-   setPosition({top:Math.max(8,Math.min(below+height<=window.innerHeight-8?below:above,window.innerHeight-height-8)),left:Math.max(8,Math.min(bounds.right-width,window.innerWidth-width-8))});
-  };
   place();window.addEventListener('resize',place);window.addEventListener('scroll',place,true);
-  const resize=typeof ResizeObserver==='undefined'?null:new ResizeObserver(place);
-  if(trigger.current)resize?.observe(trigger.current);if(panel.current)resize?.observe(panel.current);
-  return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);resize?.disconnect()};
- },[open]);
+  resize.current=typeof ResizeObserver==='undefined'?null:new ResizeObserver(place);
+  if(trigger.current)resize.current?.observe(trigger.current);if(panel.current)resize.current?.observe(panel.current);
+  return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);resize.current?.disconnect();resize.current=null};
+ },[open,place]);
  // Hiding a mounted source invalidates the portal and its focus return target.
  useLayoutEffect(()=>{sourceActive.current=active();if(open&&!sourceActive.current)setOpen(false)});
  const navigate=(event:KeyboardEvent<HTMLDivElement>)=>{
