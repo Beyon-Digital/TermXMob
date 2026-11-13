@@ -28,10 +28,40 @@ it('does not prefetch completed history while hidden, then reads up to ten recen
   expect(api.mock.calls.every(([path]) => !String(path).includes('/root-0?') && !String(path).includes('/root-4?'))).toBe(true);
   view.rerender(<SessionTaskSubagents {...props} tasks={[...tasks]} visible target={target}/>); await act(async () => {}); expect(api).toHaveBeenCalledTimes(10);
 });
-it('uses current child evidence to discover children and auto-open even when the sidebar is closed', async () => {
-  const evidence = {...root, children: [{...worker, status: 'running'}]};
+it.each([
+  {status: 'running', active: 1, done: 0},
+  {status: 'completed', active: 0, done: 1},
+])('discovers $status host children from current evidence while the sidebar is closed', async ({status, active, done}) => {
+  const hint = {...worker, id: 'hint-only-child', agent_label: 'Unverified child hint', status: 'running'};
+  const evidence = {...root, children: [hint]};
+  let finish!: (value: Task) => void;
+  api.mockReturnValue(new Promise<Task>(resolve => {finish = resolve;}));
+
   render(<SessionTaskSubagents {...props} tasks={[evidence]} visible={false} target={target}/>);
-  await screen.findByRole('button', {name: 'Open Review SQL boundaries'}); expect(api).toHaveBeenCalledTimes(1); expect(summary).toHaveBeenLastCalledWith(expect.objectContaining({hasContent: true}));
+
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(summary).toHaveBeenLastCalledWith(expect.objectContaining({
+    hasContent: false, loading: true, active: 0, done: 0, plans: 0,
+  }));
+  expect(screen.getByText('Loading subagents…')).toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Open Review SQL boundaries'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Open Unverified child hint'})).not.toBeInTheDocument();
+
+  await act(async () => {finish({...root, children: [{...worker, status}]});});
+  await waitFor(() => {
+    expect(screen.getByRole('button', {name: 'Open Review SQL boundaries'})).toBeInTheDocument();
+    expect(summary).toHaveBeenLastCalledWith(expect.objectContaining({
+      hasContent: true, loading: false, active, done, plans: 0,
+    }));
+  });
+
+  expect(screen.queryByText('Loading subagents…')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Open Unverified child hint'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Open Review SQL boundaries'}));
+  expect(inspect).toHaveBeenCalledWith(worker.id);
+  expect(api.mock.calls).toEqual([
+    ['/api/workspace/tasks/coding-root?activity=false', {signal: expect.any(AbortSignal)}],
+  ]);
 });
 it('clears stale authorization data on a rejected refresh, and allows a read-only retry', async () => {
   const tasks = [{...root, status: 'running'}];

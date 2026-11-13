@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import stat
 
@@ -10,6 +11,7 @@ import pytest
 from fastapi import HTTPException
 
 from termx.data.store import DataStore, timestamp
+from termx.private_files import private_path_permissions
 
 V1_DDL = '''
 CREATE TABLE data_records (kind TEXT NOT NULL, id TEXT NOT NULL PRIMARY KEY, workspace_id TEXT NOT NULL,
@@ -63,7 +65,11 @@ def test_a_version_1_store_is_migrated_without_touching_a_row(tmp_path):
     assert {'data_view_revisions', 'data_view_revisions_ws', 'data_job_view'} <= names
     assert digest(path) == before
     backup = tmp_path / 'm' / 'data.sqlite3.pre-views-v1'
-    assert backup.exists() and stat.S_IMODE(backup.stat().st_mode) == 0o600
+    assert backup.exists()
+    assert all(private_path_permissions(item) for item in (path.parent, path, backup))
+    if os.name != 'nt':
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+        assert all(stat.S_IMODE(item.stat().st_mode) == 0o600 for item in (path, backup))
     assert digest(backup) == before
     assert version(backup) == 1
 

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from termx.auth import extract_passcode
 from termx.media.studio_projects import project_mutation
+from termx.private_files import protect_private_path
 
 IMAGE_BYTES = 8 * 1024 * 1024
 IMAGE_PIXELS = 32_000_000
@@ -60,10 +61,12 @@ class StudioSubjectStore:
     def __init__(self, artifacts):
         self.artifacts = artifacts
         self.path = Path(artifacts.root) / 'studio-subjects.sqlite3'
-        # Create the file privately before SQLite opens it, including first use.
+        # Protect the directory first so SQLite journals inherit its private policy.
+        protect_private_path(self.path.parent, directory=True)
+        # Create and protect the file before SQLite opens it, including first use.
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)
-        self.path.chmod(0o600)
+        protect_private_path(self.path)
         with self.db() as db:
             db.executescript("""CREATE TABLE IF NOT EXISTS studio_subjects (
                 id TEXT PRIMARY KEY, owner TEXT NOT NULL, project TEXT,
