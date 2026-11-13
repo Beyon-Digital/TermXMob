@@ -13,12 +13,26 @@ from playwright.sync_api import expect,sync_playwright
 REPO=Path(os.environ.get('TERMX_DATA_QA_REPO')or(Path(__file__).resolve().parents[1]if Path(__file__).parent.name=='tests'else Path.cwd()))
 sys.path.insert(0,str(REPO/'tests'))
 import workspace_studio_projects_e2e as p
-from workspace_studio_composer_refinement_e2e import focus_sample as shared_focus_sample
+from workspace_studio_composer_refinement_e2e import FOCUS_JS,focus_sample as shared_focus_sample
 
-def focus_sample(page,element,label,report,strict):
+def focus_sample(page,element,label,report,strict,menu=False):
     """The shell paints Data focus rings with a 2px offset (DESIGN.md), so the shared inset-only rule is not applied here.
     Everything else the shared check enforces still is: a visible ring, exactly one, no clipping, and 44px targets on touch."""
-    value=shared_focus_sample(page,element,label,report,False)
+    if menu:
+        # Radix menu items use roving arrow-key focus, while Tab belongs to the enclosing dialog.
+        element.focus();page.keyboard.press('ArrowDown');page.keyboard.press('ArrowUp');expect(element).to_be_focused()
+        value=element.evaluate(FOCUS_JS);value['label']=label
+        rings=[row for row in value['chain']if row['ring']];value['ring_count']=len(rings);value['clipping']=[]
+        for index,row in enumerate(value['chain']):
+            if not row['ring']:continue
+            box=row['rect'];extra=row['expansion']
+            if box['x']-extra<-.5 or box['right']+extra>page.viewport_size['width']+.5:value['clipping'].append('viewport')
+            for parent in value['chain'][index+1:]:
+                bounds=parent['rect']
+                if parent['overflowX']in('hidden','clip','auto','scroll')and(box['x']-extra<bounds['x']-.5 or box['right']+extra>bounds['right']+.5):value['clipping'].append(parent['class'])
+                if parent['overflowY']in('hidden','clip','auto','scroll')and(box['y']-extra<bounds['y']-.5 or box['bottom']+extra>bounds['bottom']+.5):value['clipping'].append(parent['class'])
+        report['focus'].append(value)
+    else:value=shared_focus_sample(page,element,label,report,False)
     if strict:
         if page.viewport_size['width']<640:
             rect=value['hitTarget'];assert rect['height']>=44 and rect['width']>=44,('Coarse target below 44px',label,rect)
@@ -451,13 +465,15 @@ def browser_run(page,api,wid,button,pattern):
 def choose_report_data(page,scope,label,out=None,report=None,theme=None,width=None,state=None):
     """The Data field is a grouped Radix radio menu; choose the visible dataset name."""
     trigger=scope.get_by_label('Data',exact=True);expect(trigger).to_have_attribute('aria-haspopup','menu')
-    trigger.click();menu=page.get_by_role('menu',name='Data',exact=True)
+    trigger.focus();page.keyboard.press('Enter');menu=page.get_by_role('menu',name='Data',exact=True)
     for group in('Saved queries','Views','Tables'):expect(menu.get_by_role('group',name=group,exact=True)).to_be_visible()
     choice=menu.get_by_role('menuitemradio',name=label,exact=True);expect(choice).to_be_visible()
     if state:
-        choice.focus();focus_sample(page,choice,'Report data choice',report,True)
+        before=trigger.inner_text();focus_sample(page,choice,'Report data choice',report,True,menu=True)
         capture(page,out,report,state,theme,width)
-    choice.click();expect(menu).not_to_be_visible();expect(trigger).to_contain_text(label)
+        page.keyboard.press('Escape');expect(menu).not_to_be_visible();expect(trigger).to_be_focused();expect(trigger).to_have_text(before)
+        page.keyboard.press('Enter');expect(menu).to_be_visible()
+    choice.focus();page.keyboard.press('Enter');expect(menu).not_to_be_visible();expect(trigger).to_contain_text(label)
 
 def dialog_check(page,dialog,report,label,field=None):
     p.keyboard_dialog(page,dialog)
