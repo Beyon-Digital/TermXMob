@@ -304,7 +304,7 @@ MATRIX = {
     'postgresql': dict(qualified=False, requires_source_test=True, quote='"', table_qualification='schema', case_folding='unicode',
                        text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='12'),
     'mysql': dict(qualified=False, requires_source_test=True, quote='`', table_qualification='database', case_folding='unicode',
-                  text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='8.0'),
+                  text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='8.0.17'),
     'mariadb': dict(qualified=False, requires_source_test=True, quote='`', table_qualification='database', case_folding='unicode',
                     text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='10.6'),
 }

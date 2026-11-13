@@ -329,6 +329,8 @@ def test_live_uuid_filter_is_rejected_before_the_server_sees_it(engine):
     if engine == 'mysql':
         pytest.skip('MySQL has no uuid column type')
     with live_database(engine) as live:
+        if engine == 'mariadb' and live.version_parts < (10, 7):
+            pytest.skip('MariaDB Community native UUID requires 10.7; this server is ' + live.version)
         q = get_dialect(engine).quote
         ddl = 'uuid' if engine in ('postgresql', 'mariadb') else 'char(36)'
         live.conn.execute(text(f'CREATE TABLE {q(live.name)}.u(id integer PRIMARY KEY, token {ddl})'))
