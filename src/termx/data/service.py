@@ -32,6 +32,7 @@ class DataService:
         self._runtime = None
         self._bi = None
         self._copilot = None
+        self._query = None
 
     # Deferred imports avoid cycles between policy, typed tools, and execution.
     @property
@@ -40,6 +41,13 @@ class DataService:
             from termx.data.runtime import DataRuntime
             self._runtime = DataRuntime(self)
         return self._runtime
+
+    @property
+    def query(self):
+        if self._query is None:
+            from termx.data.query_service import QueryService
+            self._query = QueryService(self)
+        return self._query
 
     @property
     def bi(self):

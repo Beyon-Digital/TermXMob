@@ -1,0 +1,137 @@
+{
+  "request": {
+    "request_id": "fixture-request-id",
+    "spec": {
+      "version": 1,
+      "source": "conn_01",
+      "from": {
+        "table": "orders",
+        "alias": "o"
+      },
+      "joins": [
+        {
+          "kind": "left",
+          "table": "customers",
+          "alias": "c",
+          "on": [
+            {
+              "left": {
+                "table_alias": "o",
+                "column": "customer_id"
+              },
+              "right": {
+                "table_alias": "c",
+                "column": "id"
+              }
+            }
+          ]
+        }
+      ],
+      "select": [
+        {
+          "table_alias": "o",
+          "column": "id"
+        },
+        {
+          "table_alias": "o",
+          "column": "status"
+        },
+        {
+          "table_alias": "o",
+          "column": "amount"
+        },
+        {
+          "table_alias": "c",
+          "column": "name",
+          "label": "Customer"
+        }
+      ],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "o",
+              "column": "status"
+            },
+            "op": "in",
+            "values": [
+              "open",
+              "paid"
+            ]
+          },
+          {
+            "field": {
+              "table_alias": "o",
+              "column": "amount"
+            },
+            "op": "gt",
+            "value": 100
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [
+        {
+          "table_alias": "o",
+          "column": "amount",
+          "direction": "desc"
+        }
+      ],
+      "limit": 200,
+      "offset": 0
+    }
+  },
+  "response": {
+    "id": "job_77",
+    "status": "completed",
+    "connection_id": "conn_01",
+    "result": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "unknown"
+        },
+        {
+          "name": "status",
+          "type": "unknown"
+        },
+        {
+          "name": "amount",
+          "type": "unknown"
+        },
+        {
+          "name": "Customer",
+          "type": "unknown"
+        }
+      ],
+      "rows": [
+        [
+          81,
+          "paid",
+          499.0,
+          "100%_done"
+        ],
+        [
+          608,
+          "open",
+          499.0,
+          "Customer 09"
+        ],
+        [
+          1081,
+          "paid",
+          498.5,
+          "100%_done"
+        ]
+      ],
+      "row_count": 3,
+      "truncated": false
+    },
+    "created_at": 1789200000.1,
+    "updated_at": 1789200003.4,
+    "cancel_requested": false,
+    "preview_limit": 1000
+  }
+}

@@ -1,0 +1,232 @@
+{
+  "request": null,
+  "response": {
+    "tables": [
+      {
+        "name": "customers",
+        "schema": "main",
+        "kind": "table",
+        "row_estimate": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": true,
+            "value_kind": "integer"
+          },
+          {
+            "name": "name",
+            "type": "TEXT",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "text"
+          },
+          {
+            "name": "region",
+            "type": "TEXT",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "text"
+          },
+          {
+            "name": "created_on",
+            "type": "DATE",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "date"
+          }
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "loose",
+        "schema": "main",
+        "kind": "table",
+        "row_estimate": null,
+        "columns": [
+          {
+            "name": "a",
+            "type": "unknown",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "other"
+          },
+          {
+            "name": "b",
+            "type": "unknown",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "other"
+          }
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "order_items",
+        "schema": "main",
+        "kind": "table",
+        "row_estimate": null,
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": true,
+            "value_kind": "integer"
+          },
+          {
+            "name": "sku",
+            "type": "TEXT",
+            "nullable": true,
+            "primary_key": true,
+            "value_kind": "text"
+          },
+          {
+            "name": "qty",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "integer"
+          }
+        ],
+        "foreign_keys": [
+          {
+            "columns": [
+              "order_id"
+            ],
+            "referred_table": "orders",
+            "referred_columns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "order_totals",
+        "schema": "main",
+        "kind": "view",
+        "row_estimate": null,
+        "columns": [
+          {
+            "name": "customer_id",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "integer"
+          },
+          {
+            "name": "total",
+            "type": "unknown",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "other"
+          }
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "orders",
+        "schema": "main",
+        "kind": "table",
+        "row_estimate": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": true,
+            "value_kind": "integer"
+          },
+          {
+            "name": "customer_id",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "integer"
+          },
+          {
+            "name": "status",
+            "type": "TEXT",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "text"
+          },
+          {
+            "name": "amount",
+            "type": "REAL",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "number"
+          },
+          {
+            "name": "ordered_at",
+            "type": "DATETIME",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "datetime"
+          },
+          {
+            "name": "note",
+            "type": "TEXT",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "text"
+          },
+          {
+            "name": "paid",
+            "type": "BOOLEAN",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "boolean"
+          }
+        ],
+        "foreign_keys": [
+          {
+            "columns": [
+              "customer_id"
+            ],
+            "referred_table": "customers",
+            "referred_columns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "unsafe_view",
+        "schema": "main",
+        "kind": "view",
+        "columns": [],
+        "readable": false,
+        "reason": "This source view cannot be inspected under the read-only policy.",
+        "foreign_keys": [],
+        "row_estimate": null
+      },
+      {
+        "name": "weird",
+        "schema": "main",
+        "kind": "table",
+        "row_estimate": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "INTEGER",
+            "nullable": true,
+            "primary_key": true,
+            "value_kind": "integer"
+          },
+          {
+            "name": "we:ird",
+            "type": "TEXT",
+            "nullable": true,
+            "primary_key": false,
+            "value_kind": "text"
+          }
+        ],
+        "foreign_keys": []
+      }
+    ],
+    "engine": "sqlite"
+  }
+}

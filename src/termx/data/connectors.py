@@ -16,6 +16,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +24,26 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 PREVIEW_ROWS = 1000
+STATEMENT_TIMEOUT_DEFAULT = 30.0
+STATEMENT_TIMEOUT_ENV = 'TERMX_DATA_STATEMENT_TIMEOUT_SECONDS'
+
+
+def statement_timeout_seconds() -> float:
+    """Server-side deadline for one source read. Configurable per host; never unbounded."""
+    try:
+        value = float(os.environ.get(STATEMENT_TIMEOUT_ENV, ''))
+    except ValueError:
+        value = STATEMENT_TIMEOUT_DEFAULT
+    return min(max(value, 0.1), 600.0) if math.isfinite(value) else STATEMENT_TIMEOUT_DEFAULT
+
+
+class StatementTimeout(Exception):
+    """The source did not finish inside the deadline and the statement was stopped."""
+    def __init__(self, seconds: float):
+        self.seconds = seconds
+        shown = f'{seconds:g}'
+        super().__init__(f'The query ran longer than {shown} seconds and was stopped. '
+                         'Add a filter, remove a combined table or lower the row limit, then run it again.')
 # A deliberately small, common, side-effect-free function vocabulary. Source
 # functions and extensions are not included merely because they parse as SELECT.
 SAFE_FUNCTIONS = frozenset('''abs avg count sum min max total round ceil ceiling floor
@@ -38,7 +59,10 @@ json_extract json_extract_scalar json_value json_query json_type json_valid
 hex unhex quote unicode char typeof octet_length format printf
 power pow sqrt sign exp ln log log10 mod stddev stddev_pop stddev_samp variance
 var_pop var_samp bool_and bool_or every any_value percentile_cont percentile_disc
-filter array_size array_length cardinality'''.split())
+filter array_size array_length cardinality
+date_format quarter time_to_str ts_or_ds_to_timestamp and or collate'''.split())
+# `and`/`or`/`collate` are how sqlglot names operators it models as functions; `time_to_str` and `ts_or_ds_to_timestamp`
+# are its canonical nodes for strftime/to_char/date_format. `xor` is deliberately absent.
 
 
 def dependency_installed(name: str) -> bool:
@@ -180,6 +204,31 @@ def scalar(value: Any) -> Any:
     return str(value)
 
 
+_DB_DATETIME = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$')
+RESULT_KINDS = frozenset({'text', 'integer', 'number', 'boolean', 'date', 'datetime', 'time', 'json', 'binary', 'uuid', 'array', 'other'})
+
+
+def typed_scalar(value: Any, kind: str | None) -> Any:
+    """`scalar` plus one JSON type per column kind, whichever engine produced the value.
+
+    PostgreSQL, MySQL and MariaDB return DECIMAL (SUM of integers, AVG, NUMERIC columns) as Decimal and
+    MySQL returns BOOLEAN as 0 or 1; SQLite returns plain numbers and 0/1 as well but spells a datetime with
+    a space. A table cell must not change JSON type from one engine to the next.
+    """
+    if value is None:
+        return None
+    if kind == 'integer' and isinstance(value, decimal.Decimal) and value.is_finite():
+        return int(value) if value == value.to_integral_value() else float(value)
+    if kind == 'number' and isinstance(value, decimal.Decimal):
+        number = float(value)
+        return number if math.isfinite(number) else str(value)
+    if kind == 'boolean' and isinstance(value, int) and not isinstance(value, bool) and value in (0, 1):
+        return bool(value)
+    if kind == 'datetime' and isinstance(value, str) and _DB_DATETIME.match(value):
+        return value.replace(' ', 'T', 1)
+    return scalar(value)
+
+
 def rows_result(columns: list[str], rows: list, max_rows: int, types: list[str] | None = None) -> dict:
     truncated = len(rows) > max_rows
     return {'columns': [{'name': name, 'type': (types[i] if types else 'unknown')} for i, name in enumerate(columns)],
@@ -191,10 +240,11 @@ MAX_CELL_BYTES = 64 * 1024
 MAX_RESULT_BYTES = 4 * 1024 * 1024
 
 
-def collect_result(columns: list[str], cursor, max_rows: int) -> dict:
+def collect_result(columns: list[str], cursor, max_rows: int, kinds: list[str] | None = None) -> dict:
     """Bound display payloads while consuming one source row at a time."""
     output = {'columns': [{'name': name, 'type': 'unknown'} for name in columns],
               'rows': [], 'row_count': 0, 'truncated': False}
+    kinds = kinds if kinds and len(kinds) == len(columns) else [None] * len(columns)
     used = len(json.dumps(output, ensure_ascii=False).encode('utf-8'))
     clipped = False
     while True:
@@ -205,8 +255,8 @@ def collect_result(columns: list[str], cursor, max_rows: int) -> dict:
             output['truncated'] = True
             break
         values = []
-        for cell in row:
-            value = scalar(cell)
+        for cell, kind in zip(row, kinds):
+            value = typed_scalar(cell, kind)
             if isinstance(value, str) and len(value.encode('utf-8')) > MAX_CELL_BYTES:
                 value = value.encode('utf-8')[:MAX_CELL_BYTES].decode('utf-8', errors='ignore') + '… [preview truncated]'
                 clipped = True
@@ -250,12 +300,28 @@ class SQLiteConnector:
             db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024 * 1024)
             db.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, 1_000_000)
             db.set_authorizer(self._authorizer(schema))
-            db.set_progress_handler(lambda: 1 if self.cancel.is_set() else 0, 1000)
+            timeout = statement_timeout_seconds()
+            deadline = time.monotonic() + timeout
+            expired = []
+
+            def stop() -> int:
+                if self.cancel.is_set():
+                    return 1
+                if time.monotonic() > deadline:
+                    expired.append(True)
+                    return 1
+                return 0
+            db.set_progress_handler(stop, 1000)
             if self.active:
                 self.active(db)
             if self.cancel.is_set():
                 raise InterruptedError('Query cancelled.')
-            yield db
+            try:
+                yield db
+            except sqlite3.OperationalError:
+                if expired and not self.cancel.is_set():
+                    raise StatementTimeout(timeout) from None
+                raise
         finally:
             if self.active:
                 self.active(None)
@@ -270,7 +336,7 @@ class SQLiteConnector:
                 return sqlite3.SQLITE_OK
             if action == sqlite3.SQLITE_FUNCTION and str(arg2 or arg1).lower() in SAFE_FUNCTIONS:
                 return sqlite3.SQLITE_OK
-            if schema and action == sqlite3.SQLITE_PRAGMA and arg1 == 'table_xinfo':
+            if schema and action == sqlite3.SQLITE_PRAGMA and arg1 in {'table_xinfo', 'foreign_key_list'}:
                 return sqlite3.SQLITE_OK
             return sqlite3.SQLITE_DENY
         return authorize
@@ -293,18 +359,41 @@ class SQLiteConnector:
                     if kind != 'view':
                         raise
                     tables.append({'name': name, 'schema': 'main', 'kind': kind, 'columns': [], 'readable': False,
-                                   'reason': 'This source view cannot be inspected under the read-only policy.'})
+                                   'reason': 'This source view cannot be inspected under the read-only policy.',
+                                   'foreign_keys': [], 'row_estimate': None})
                     continue
-                tables.append({'name': name, 'schema': 'main', 'kind': kind,
-                               'columns': [{'name': c[1], 'type': c[2] or 'unknown', 'nullable': not bool(c[3]), 'primary_key': bool(c[5])} for c in columns if c[6] != 1]})
+                tables.append({'name': name, 'schema': 'main', 'kind': kind, 'row_estimate': None,
+                               'columns': [{'name': c[1], 'type': c[2] or 'unknown', 'nullable': not bool(c[3]), 'primary_key': bool(c[5])} for c in columns if c[6] != 1],
+                               'foreign_keys': self._foreign_keys(db, name)})
+        self._resolve_implicit_keys(tables)
         return {'tables': tables, 'engine': 'sqlite'}
 
-    def execute(self, sql: str, parameters: dict, max_rows: int) -> dict:
+    @staticmethod
+    def _foreign_keys(db, table: str) -> list[dict]:
+        grouped: dict[int, list] = {}
+        for row in db.execute('PRAGMA foreign_key_list(' + quote_identifier('sqlite', table) + ')').fetchall():
+            grouped.setdefault(row[0], []).append(row)   # id, seq, table, from, to, ...
+        return [{'columns': [r[3] for r in sorted(rows, key=lambda r: r[1])], 'referred_table': rows[0][2],
+                 'referred_columns': [r[4] for r in sorted(rows, key=lambda r: r[1])]}
+                for _, rows in sorted(grouped.items())]
+
+    @staticmethod
+    def _resolve_implicit_keys(tables: list[dict]) -> None:
+        # `REFERENCES parent` without columns means the parent's primary key.
+        by_name = {t['name']: t for t in tables}
+        for table in tables:
+            for key in table['foreign_keys']:
+                if any(column is None for column in key['referred_columns']):
+                    parent = by_name.get(key['referred_table'])
+                    primary = [c['name'] for c in (parent or {}).get('columns', []) if c['primary_key']]
+                    key['referred_columns'] = primary if len(primary) == len(key['columns']) else []
+
+    def execute(self, sql: str, parameters: dict, max_rows: int, kinds: list[str] | None = None) -> dict:
         with self.connection() as db:
             cursor = db.execute(sql, parameters)
             if not cursor.description:
                 raise HTTPException(422, 'The query did not return a result set.')
-            return collect_result([column[0] for column in cursor.description], cursor, max_rows)
+            return collect_result([column[0] for column in cursor.description], cursor, max_rows, kinds)
 
 
 class NetworkSQLConnector:
@@ -352,10 +441,30 @@ class NetworkSQLConnector:
                         self.active(None)
                     if self.cancel.is_set():
                         raise InterruptedError('Query cancelled.')
-                    yield conn
+                    timeout = self._apply_deadline(conn)
+                    try:
+                        yield conn
+                    except Exception as error:
+                        if self._timed_out(error):
+                            raise StatementTimeout(timeout) from None
+                        raise
                 # Read-only transactions never commit source changes.
         finally:
             source.dispose()
+
+    def _apply_deadline(self, conn) -> float:
+        """Ask the server to stop any statement of this session at the deadline."""
+        from termx.data.dialects import get_dialect
+        seconds = statement_timeout_seconds()
+        statement = get_dialect(self.engine).statement_timeout_sql(seconds)
+        if statement:
+            conn.exec_driver_sql(statement)
+        return seconds
+
+    def _timed_out(self, error: Exception) -> bool:
+        from termx.data.dialects import get_dialect
+        driver_error = getattr(error, 'orig', None) or error
+        return get_dialect(self.engine).is_statement_timeout(driver_error)
 
     def _prove_readonly(self, conn):
         from sqlalchemy import text
@@ -399,19 +508,78 @@ class NetworkSQLConnector:
                 'read_available': True, 'protection': 'Read-only transaction; live privilege proof; SQL/function allowlist; base tables only', 'qualified': False}
 
     def schema(self) -> dict:
-        from sqlalchemy import inspect
         with self.connection() as conn:
-            metadata = inspect(conn)
-            schema = self.config.get('schema') or ('public' if self.engine == 'postgresql' else self.config['database'])
-            tables = []
-            for name in metadata.get_table_names(schema=schema):
-                primary = set(metadata.get_pk_constraint(name, schema=schema).get('constrained_columns') or [])
-                columns = metadata.get_columns(name, schema=schema)
-                tables.append({'name': name, 'schema': schema, 'kind': 'table', 'columns': [
-                    {'name': c['name'], 'type': str(c['type']), 'nullable': bool(c.get('nullable', True)), 'primary_key': c['name'] in primary} for c in columns]})
+            return self.schema_from(conn)
+
+    def schema_from(self, conn) -> dict:
+        """Introspect through an already verified read-only connection."""
+        from sqlalchemy import inspect, text
+        metadata = inspect(conn)
+        schema = self.config.get('schema') or ('public' if self.engine == 'postgresql' else self.config['database'])
+        estimates = self._row_estimates(conn, schema, text)
+        names = metadata.get_table_names(schema=schema)
+        if self.engine == 'postgresql':
+            tables = self._postgresql_tables(conn, metadata, schema, names)
+        else:
+            tables = self._mysql_family_tables(conn, schema, names, text)
+        for table in tables:
+            table['row_estimate'] = estimates.get(table['name'])
         return {'tables': tables, 'engine': self.engine, 'limitations': 'Base tables only; source views and routines are excluded.'}
 
-    def execute(self, sql: str, parameters: dict, max_rows: int) -> dict:
+    @staticmethod
+    def _postgresql_tables(conn, metadata, schema: str, names: list[str]) -> list[dict]:
+        tables = []
+        for name in names:
+            primary = set(metadata.get_pk_constraint(name, schema=schema).get('constrained_columns') or [])
+            keys = [{'columns': list(k['constrained_columns']), 'referred_table': k['referred_table'],
+                     'referred_columns': list(k['referred_columns'])}
+                    for k in metadata.get_foreign_keys(name, schema=schema)
+                    if k.get('referred_schema') in (None, schema) and k.get('referred_table')]
+            tables.append({'name': name, 'schema': schema, 'kind': 'table', 'row_estimate': None, 'columns': [
+                {'name': c['name'], 'type': declared_type(c['type'], conn.dialect), 'nullable': bool(c.get('nullable', True)),
+                 'primary_key': c['name'] in primary} for c in metadata.get_columns(name, schema=schema)],
+                'foreign_keys': keys})
+        return tables
+
+    @staticmethod
+    def _mysql_family_tables(conn, schema: str, names: list[str], text) -> list[dict]:
+        """MySQL and MariaDB names come from information_schema. SQLAlchemy's reflection parses
+        SHOW CREATE TABLE and returns a backtick in a name doubled, so the real name would not be found."""
+        columns: dict[str, list[dict]] = {name: [] for name in names}
+        for table, column, declared, nullable, key, charset in conn.execute(text(
+                'SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, CHARACTER_SET_NAME '
+                'FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:schema ORDER BY TABLE_NAME, ORDINAL_POSITION'),
+                {'schema': schema}).all():
+            if table in columns:
+                columns[table].append({'name': column, 'type': str(declared), 'nullable': str(nullable).upper() == 'YES',
+                                       'primary_key': str(key).upper() == 'PRI', 'charset': charset})
+        grouped: dict[tuple[str, str], list[tuple]] = {}
+        for constraint, table, column, position, ref_schema, ref_table, ref_column in conn.execute(text(
+                'SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, REFERENCED_TABLE_SCHEMA, '
+                'REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE '
+                'WHERE TABLE_SCHEMA=:schema AND REFERENCED_TABLE_NAME IS NOT NULL '
+                'ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION'), {'schema': schema}).all():
+            if table in columns and ref_schema == schema:
+                grouped.setdefault((table, constraint), []).append((column, ref_table, ref_column))
+        keys: dict[str, list[dict]] = {name: [] for name in names}
+        for (table, _), rows in grouped.items():
+            keys[table].append({'columns': [r[0] for r in rows], 'referred_table': rows[0][1],
+                                'referred_columns': [r[2] for r in rows]})
+        return [{'name': name, 'schema': schema, 'kind': 'table', 'row_estimate': None,
+                 'columns': columns[name], 'foreign_keys': keys[name]} for name in names]
+
+    def _row_estimates(self, conn, schema: str, text) -> dict:
+        """Planner statistics, never a table scan. Negative or missing values become None."""
+        if self.engine == 'postgresql':
+            rows = conn.execute(text(
+                "SELECT c.relname, c.reltuples FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+                "WHERE n.nspname=:schema AND c.relkind IN ('r','p')"), {'schema': schema}).all()
+        else:
+            rows = conn.execute(text(
+                'SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA=:schema'), {'schema': schema}).all()
+        return {str(name): int(count) for name, count in rows if count is not None and float(count) >= 0}
+
+    def execute(self, sql: str, parameters: dict, max_rows: int, kinds: list[str] | None = None) -> dict:
         import sqlglot
         from sqlglot import exp
         from sqlalchemy import inspect, text
@@ -447,12 +615,20 @@ class NetworkSQLConnector:
             try:
                 if not result.returns_rows:
                     raise HTTPException(422, 'The query did not return rows.')
-                output = collect_result(list(result.keys()), result, max_rows)
+                output = collect_result(list(result.keys()), result, max_rows, kinds)
                 if self.cancel.is_set():
                     raise InterruptedError('Query cancelled after the source returned; source cancellation is unqualified.')
                 return output
             finally:
                 result.close()
+
+
+def declared_type(sql_type, dialect) -> str:
+    """The type as the server declares it, e.g. MySQL `TINYINT(1)`, which `str()` renders without its width."""
+    try:
+        return sql_type.compile(dialect=dialect)
+    except Exception:
+        return str(sql_type)
 
 
 def validate_read_sql(sql: str, engine: str = 'sqlite') -> str:

@@ -1,0 +1,38 @@
+{
+  "request": {
+    "table": "orders"
+  },
+  "response": {
+    "connection_id": "conn_01",
+    "relations": [
+      {
+        "child_table": "order_items",
+        "child_columns": [
+          "order_id"
+        ],
+        "parent_table": "orders",
+        "parent_columns": [
+          "id"
+        ],
+        "source": "foreign_key",
+        "confidence": "declared",
+        "cardinality": "many_to_one",
+        "sentence": "Order items to Orders: order_id matches id"
+      },
+      {
+        "child_table": "orders",
+        "child_columns": [
+          "customer_id"
+        ],
+        "parent_table": "customers",
+        "parent_columns": [
+          "id"
+        ],
+        "source": "foreign_key",
+        "confidence": "declared",
+        "cardinality": "many_to_one",
+        "sentence": "Orders to Customers: customer_id matches id"
+      }
+    ]
+  }
+}

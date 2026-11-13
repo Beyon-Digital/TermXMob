@@ -348,8 +348,9 @@ it('opens Data from the shared rail without exposing Agent navigation or losing 
  fireEvent.click(mode('Data'));const data=await screen.findByRole('textbox',{name:'Data draft'});
  expect(document.getElementById('data-workspace')).not.toHaveAttribute('hidden');
  expect(document.getElementById('agent-workspace')).toHaveAttribute('hidden');
- expect(screen.queryByRole('button',{name:'Show sidebar'})).not.toBeInTheDocument();
- expect(screen.queryByRole('button',{name:'Hide sidebar'})).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Hide sidebar'})).toBeInTheDocument();
+ expect(screen.getByRole('complementary',{name:'Data navigation'})).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'New chat'})).not.toBeInTheDocument();
  fireEvent.change(data,{target:{value:'SELECT * FROM revenue'}});
  fireEvent.blur(window);
  expect(screen.getByRole('region',{name:'Data fixture'})).toHaveAttribute('data-observing','true');
