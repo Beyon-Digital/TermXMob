@@ -1,0 +1,17 @@
+{
+  "request": {},
+  "response": {
+    "pivot": {
+      "max_columns": 12,
+      "max_row_dims": 2,
+      "column_kinds": [
+        "text",
+        "integer",
+        "boolean",
+        "uuid",
+        "date",
+        "datetime"
+      ]
+    }
+  }
+}

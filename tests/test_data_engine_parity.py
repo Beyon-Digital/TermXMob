@@ -81,20 +81,21 @@ def test_text_is_compared_grouped_and_counted_exactly_on_every_engine(engine):
     if engine in ('sqlite', 'postgresql'):
         assert operand == name   # already exact
     else:
-        assert 'utf8mb4_bin' in operand
+        assert operand.endswith('COLLATE ' + d.exact_collation)
 
 
 def test_mysql_and_mariadb_each_render_their_own_exact_text_operand():
-    assert get_dialect('mysql').text_operand('x') == 'x COLLATE utf8mb4_bin'
-    assert get_dialect('mariadb').text_operand('x') == 'x COLLATE utf8mb4_bin'
-    for engine in ('mysql', 'mariadb'):
-        # a column in another character set is converted first, since utf8mb4_bin is invalid for it
-        assert get_dialect(engine).text_operand('x', 'latin1') == 'CONVERT(x USING utf8mb4) COLLATE utf8mb4_bin'
+    # Both collations are NO PAD, so 'a' and 'a ' stay different values like on SQLite and PostgreSQL.
+    assert get_dialect('mysql').text_operand('x') == 'x COLLATE utf8mb4_0900_bin'
+    assert get_dialect('mariadb').text_operand('x') == 'x COLLATE utf8mb4_nopad_bin'
+    for engine, collation in (('mysql', 'utf8mb4_0900_bin'), ('mariadb', 'utf8mb4_nopad_bin')):
+        # a column in another character set is converted first, since the binary collation is invalid for it
+        assert get_dialect(engine).text_operand('x', 'latin1') == f'CONVERT(x USING utf8mb4) COLLATE {collation}'
     # MariaDB's ONLY_FULL_GROUP_BY check needs the bare column in GROUP BY next to the collated expression
-    assert get_dialect('mariadb').group_by_items('x COLLATE utf8mb4_bin', True, 'x') == \
-        ['x COLLATE utf8mb4_bin', 'x', '(x COLLATE utf8mb4_bin IS NULL)']
-    assert get_dialect('mysql').group_by_items('x COLLATE utf8mb4_bin', True, 'x') == \
-        ['x COLLATE utf8mb4_bin', '(x COLLATE utf8mb4_bin IS NULL)']
+    assert get_dialect('mariadb').group_by_items('x COLLATE utf8mb4_nopad_bin', True, 'x') == \
+        ['x COLLATE utf8mb4_nopad_bin', 'x', '(x COLLATE utf8mb4_nopad_bin IS NULL)']
+    assert get_dialect('mysql').group_by_items('x COLLATE utf8mb4_0900_bin', True, 'x') == \
+        ['x COLLATE utf8mb4_0900_bin', '(x COLLATE utf8mb4_0900_bin IS NULL)']
     assert get_dialect('mariadb').group_by_items("date_format(x,'%Y')", True, None) == \
         ["date_format(x,'%Y')", "(date_format(x,'%Y') IS NULL)"]
 
@@ -105,13 +106,13 @@ def test_a_join_on_text_columns_matches_exactly_on_the_mysql_family():
     body = S(**{'from': {'table': 'a', 'alias': 'a'}}, select=[C('a', 'id')],
              joins=[{'kind': 'inner', 'table': 'b', 'alias': 'b', 'on': [{'left': C('a', 'code'), 'right': C('b', 'code')}]}])
     sql = compile_spec(QuerySpec.model_validate(body), SchemaIndex.from_schema(raw, get_dialect('mysql')), get_dialect('mysql')).sql
-    assert '`a`.`code` COLLATE utf8mb4_bin = `b`.`code` COLLATE utf8mb4_bin' in sql
+    assert '`a`.`code` COLLATE utf8mb4_0900_bin = `b`.`code` COLLATE utf8mb4_0900_bin' in sql
 
 
 # --- numbers ---------------------------------------------------------------------------------------------
 @pytest.mark.parametrize('engine,expected', [
     ('sqlite', 'AVG("t"."n")'), ('postgresql', 'CAST(AVG("t"."n") AS DOUBLE PRECISION)'),
-    ('mysql', 'CAST(AVG(`t`.`n`) AS DOUBLE)'), ('mariadb', 'CAST(AVG(`t`.`n`) AS DOUBLE)')])
+    ('mysql', 'AVG((`t`.`n`) + 0e0)'), ('mariadb', 'AVG((`t`.`n`) + 0e0)')])
 def test_average_is_a_double_on_every_engine(engine, expected):
     assert expected in one(engine, [('id', 'integer'), ('n', 'integer')], aggregates=[{'fn': 'avg', **C('t', 'n')}]).sql
 
@@ -329,6 +330,8 @@ def test_live_uuid_filter_is_rejected_before_the_server_sees_it(engine):
     if engine == 'mysql':
         pytest.skip('MySQL has no uuid column type')
     with live_database(engine) as live:
+        if engine == 'mariadb' and live.version_parts < (10, 7):
+            pytest.skip('MariaDB Community native UUID requires 10.7; this server is ' + live.version)
         q = get_dialect(engine).quote
         ddl = 'uuid' if engine in ('postgresql', 'mariadb') else 'char(36)'
         live.conn.execute(text(f'CREATE TABLE {q(live.name)}.u(id integer PRIMARY KEY, token {ddl})'))

@@ -1,0 +1,53 @@
+{
+  "request": {
+    "query": "kind=pivot"
+  },
+  "response": {
+    "views": [
+      {
+        "id": "<id:view>",
+        "kind": "pivot",
+        "name": "Sales by region and month",
+        "description": "",
+        "connection_id": "<id:connection>",
+        "base_table": "sales",
+        "revision": 1,
+        "created_by": {
+          "id": "<id:person>",
+          "name": "Alice"
+        },
+        "updated_by": {
+          "id": "<id:person>",
+          "name": "Alice"
+        },
+        "created_at": "<time>",
+        "updated_at": "<time>",
+        "used_by_count": 0,
+        "can_edit": true,
+        "can_run": true
+      },
+      {
+        "id": "<id:view>",
+        "kind": "segment",
+        "name": "Big sales",
+        "description": "",
+        "connection_id": "<id:connection>",
+        "base_table": "sales",
+        "revision": 1,
+        "created_by": {
+          "id": "<id:person>",
+          "name": "Alice"
+        },
+        "updated_by": {
+          "id": "<id:person>",
+          "name": "Alice"
+        },
+        "created_at": "<time>",
+        "updated_at": "<time>",
+        "used_by_count": 2,
+        "can_edit": true,
+        "can_run": true
+      }
+    ]
+  }
+}

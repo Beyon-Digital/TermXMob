@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/views/v_segment",
+    "as": "bob",
+    "body": {
+      "revision": 1,
+      "description": "stale"
+    }
+  },
+  "status": 409,
+  "response": {
+    "detail": {
+      "code": "revision_conflict",
+      "message": "alice changed this view at <hh:mm> UTC. Reload to see the latest version.",
+      "current_revision": 2,
+      "updated_by": {
+        "id": "p_alice",
+        "name": "alice"
+      },
+      "updated_at": "<time>"
+    }
+  }
+}

@@ -161,7 +161,12 @@ def test_snapshot_omits_secrets_unshared_queries_viewer_drafts_and_activity(setu
     assert snapshot['activity'] == []
     service.change_member(actors['alice'], wid, member['id'], member['revision'], role='viewer')
     snapshot = service.snapshot(actors['bob'], wid)
-    assert snapshot['queries'] == [] and snapshot['connections'] == []
+    assert snapshot['queries'] == []
+    # A viewer learns only that a shared source exists, so the pivots and segments built on it can be listed. No path, account or policy.
+    assert [(row['id'], row['name'], row['engine'], row['shared_read'], row['config']) for row in snapshot['connections']] == [(source['id'], 'Business', 'sqlite', True, {})]
+    assert '/fixtures' not in json.dumps(snapshot) and 'credential' not in json.dumps(snapshot)
+    service.store.update('connection', source['id'], {'shared_read': False}, source['revision'])
+    assert service.snapshot(actors['bob'], wid)['connections'] == []
     assert snapshot['reports'] == [] and snapshot['activity'] == []
     expect_status(422, lambda: service.store.create('connection', wid, setup.alice.id, {'config': {'password': 'must-not-persist'}}))
     assert b'must-not-persist' not in service.store.path.read_bytes()

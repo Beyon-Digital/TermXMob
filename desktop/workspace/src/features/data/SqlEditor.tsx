@@ -11,7 +11,8 @@ type Props = {value: string; onChange: (value: string) => void; onRun?: () => vo
 // Colours come from the shared tokens, so the editor follows light and dark without a second palette.
 const theme = EditorView.theme({
   '&': {color: 'var(--text)', backgroundColor: 'var(--surface)', fontSize: '14px', border: '1px solid var(--border-strong)', borderRadius: '8px'},
-  '&.cm-focused': {outline: 'var(--control-focus-ring, 2px solid var(--accent))', outlineOffset: 'var(--control-focus-offset, -2px)'},
+  // Native focus updates immediately, before CodeMirror refreshes its cm-focused class.
+  '&:focus-within': {outline: 'var(--control-focus-ring, 2px solid var(--accent))', outlineOffset: 'var(--control-focus-offset, -2px)'},
   '.cm-scroller': {fontFamily: 'var(--font-mono)', lineHeight: '20px', maxHeight: '320px', padding: '8px 0'},
   '.cm-content': {padding: '0 12px', caretColor: 'var(--text)', minHeight: '144px'},
   '.cm-cursor': {borderLeftColor: 'var(--text)'},

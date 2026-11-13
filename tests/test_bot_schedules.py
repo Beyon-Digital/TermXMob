@@ -33,6 +33,21 @@ def add(workspace, owner, bot, request_id='1', prompt='Check the repo', **extra)
                                            spec=extra.pop('spec', SPEC), success_criteria='A short report', **extra)
 
 
+async def dispatch_ready(workspace, owner, bot, started):
+    """Wait for this real dispatch, rather than assuming run_now's 50 ms return window linked its task."""
+    worker = workspace.state.automation._dispatch_workers.get(started['id'])
+    if worker is not None:
+        await asyncio.wait_for(worker, timeout=5)
+    ready = next(row for row in workspace.bots.schedules.runs(owner, bot['id']) if row['id'] == started['id'])
+    assert ready['status'] in {'running', 'completed'}, ready
+    assert ready['task_id'], ready
+    task = workspace.state.agent_store.get_task(ready['task_id'])
+    assert task and task['custom_agent_id'] == bot['custom_agent_id'], ready
+    metadata = workspace.store.get('task', ready['task_id'])
+    assert metadata and metadata['conversation_id'] == bot['conversation_id'], ready
+    return ready
+
+
 # -- creating and listing ---------------------------------------------------------------
 
 def test_create_binds_the_schedule_to_the_bots_conversation_and_is_idempotent(tmp_path):
@@ -250,11 +265,48 @@ def test_run_now_runs_the_bot_and_lists_the_run(tmp_path):
             bot = make(workspace, owner)
             schedule = add(workspace, owner, bot)
             started = await workspace.bots.schedules.run_now(owner, bot['id'], schedule['id'], schedule['revision'])
+            started = await dispatch_ready(workspace, owner, bot, started)
             assert started['status'] in {'running', 'completed'} and started['manual'] is True
             runs = workspace.bots.schedules.runs(owner, bot['id'])
             assert [row['id'] for row in runs] == [started['id']] and runs[0]['schedule_id'] == schedule['id']
             assert runs[0]['bot_id'] == bot['id']
         finally:
+            await close(workspace, manager, ledger)
+    asyncio.run(run())
+
+
+def test_run_now_returns_before_a_blocked_dispatch_links_its_real_task(tmp_path, monkeypatch):
+    async def run():
+        workspace, owner, manager, ledger, registry, identity = setup(tmp_path)
+        entered, release = asyncio.Event(), asyncio.Event()
+        automation, _ = scheduler(workspace, identity)
+        original_send = workspace.send
+
+        async def gated_send(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return await original_send(*args, **kwargs)
+
+        monkeypatch.setattr(workspace, 'send', gated_send)
+        try:
+            bot = make(workspace, owner)
+            schedule = add(workspace, owner, bot, prompt='HOLD after the real dispatch')
+            before = {task['id'] for task in ledger.list_tasks(limit=500)}
+            started = await workspace.bots.schedules.run_now(owner, bot['id'], schedule['id'], schedule['revision'])
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            assert entered.is_set() and started['status'] == 'dispatching' and started['task_id'] is None
+            assert workspace.store.get('schedule_run', started['id'])['task_id'] is None
+            assert {task['id'] for task in ledger.list_tasks(limit=500)} == before
+
+            release.set()
+            ready = await dispatch_ready(workspace, owner, bot, started)
+            assert ready['status'] == 'running' and ready['manual'] is True
+            assert {task['id'] for task in ledger.list_tasks(limit=500)} - before == {ready['task_id']}
+            assert workspace.store.get('task', ready['task_id'])['delegation_id'] == schedule['grant_id']
+            assert ready['task_id'] in manager._workers and not manager._workers[ready['task_id']].done()
+        finally:
+            release.set()
+            await automation.close()
             await close(workspace, manager, ledger)
     asyncio.run(run())
 
@@ -269,6 +321,7 @@ def test_a_scheduled_run_that_needs_approval_parks_and_shows_in_the_inbox(tmp_pa
             bot = make(workspace, owner)
             schedule = add(workspace, owner, bot, prompt='HOLD for a moment')
             started = await workspace.bots.schedules.run_now(owner, bot['id'], schedule['id'], schedule['revision'])
+            started = await dispatch_ready(workspace, owner, bot, started)
             task_id = workspace.store.get('schedule_run', started['id'])['task_id']
             ledger.update_task(task_id, status='awaiting_approval')
             approval = ledger.create_approval(task_id, 'tool', {'title': 'Run git status'})
@@ -343,6 +396,7 @@ def test_a_finished_scheduled_run_posts_a_reference_only_report(tmp_path):
             bot = make(workspace, owner)
             schedule = add(workspace, owner, bot)
             started = await workspace.bots.schedules.run_now(owner, bot['id'], schedule['id'], schedule['revision'])
+            started = await dispatch_ready(workspace, owner, bot, started)
             task_id = workspace.store.get('schedule_run', started['id'])['task_id']
             ledger.update_task(task_id, status='completed', result='Found two new commits; nothing risky.')
             before = len(ledger.list_tasks(limit=500))

@@ -106,22 +106,92 @@ def test_a_join_where_neither_side_is_a_key_is_warned_about(env):
 
 
 def test_one_editor_cannot_starve_another_editors_queries(env, monkeypatch):
-    monkeypatch.setenv('TERMX_DATA_STATEMENT_TIMEOUT_SECONDS', '3')
+    import threading
+    from termx.data.connectors import SQLiteConnector
+
     cid = env.source['id']
-    heavy = self_join(cid)
-    answers = [post(env, '/query-specs/run', {'request_id': f'heavy-{i}', 'spec': heavy}) for i in range(40)]
-    accepted = [a.json()['id'] for a in answers if a.status_code == 200]
+    held = [spec(cid, select=[{**C('o', 'id'), 'label': f'held_{i}'}],
+                 sort=[{**C('o', 'id'), 'direction': 'asc'}], limit=1) for i in range(5)]
+    compiled = [post(env, '/query-specs/compile', {'spec': body}).json() for body in held]
+    assert all(body['ok'] for body in compiled)
+    entered = [threading.Event() for _ in held]
+    release = [threading.Event() for _ in held]
+    keys = {(body['sql'], json.dumps(body['parameters'], sort_keys=True)): i for i, body in enumerate(compiled)}
+    execute = SQLiteConnector.execute
+
+    def gated_execute(connector, sql, parameters, max_rows, kinds=None):
+        index = keys.get((sql, json.dumps(parameters, sort_keys=True)))
+        if index is not None:
+            entered[index].set()
+            release[index].wait()  # Only this test releases the admitted source reads.
+        return execute(connector, sql, parameters, max_rows, kinds=kinds)
+
+    monkeypatch.setattr(SQLiteConnector, 'execute', gated_execute)
+    accepted = []
+
+    def submit(request_id, body):
+        response = post(env, '/query-specs/run', {'request_id': request_id, 'spec': body})
+        if response.status_code == 200 and response.json()['id'] not in accepted:
+            accepted.append(response.json()['id'])
+        return response
+
+    def alice_slots():
+        with env.runtime._job_lock:
+            inflight = env.runtime._inflight.copy()
+        count = sum(actor == env.actors['alice'].id for actor, _ in inflight.values())
+        assert count <= 4, 'one person may have only 4 runs in flight'
+        return count
+
     try:
+        answers = [submit(f'held-{i}', held[i]) for i in range(4)]
+        assert all(answer.status_code == 200 for answer in answers)
+        assert all(event.wait(5) for event in entered[:4]), 'Alice source reads did not enter their gates'
         assert len(accepted) == 4, 'one person may have 4 runs in flight'
-        refused = [a for a in answers if a.status_code == 429]
-        assert len(refused) == 36 and 'already have 4 queries running' in refused[0].json()['detail']
-        job = post(env, '/query-specs/run', {'request_id': 'simple', 'spec': spec(cid, limit=5)}, 'bob').json()
-        status, _ = settle(env, job['id'], 'bob', 5)
-        assert status == 'completed', "bob's 5-row query did not finish in 5 seconds while alice had 4 runs in flight"
+        assert alice_slots() == 4
+        for i in range(4, 40):
+            response = submit(f'held-{i}', held[0])
+            assert response.status_code == 429 and 'already have 4 queries running' in response.json()['detail']
+            assert alice_slots() == 4
+
+        bob_spec = spec(cid, sort=[{**C('o', 'id'), 'direction': 'asc'}], limit=5)
+        response = post(env, '/query-specs/run', {'request_id': 'simple', 'spec': bob_spec}, 'bob')
+        assert response.status_code == 200, response.text
+        status, body = settle(env, response.json()['id'], 'bob', 5)
+        assert status == 'completed', "Bob's query did not finish in 5 seconds while Alice had 4 held runs"
+        # QuerySpec includes one extra row to detect a truncated five-row preview.
+        assert body['result']['rows'] == [[row['id'], row['status']] for row in env.rows['orders'][:6]]
+        assert not any(event.is_set() for event in release) and alice_slots() == 4
+
+        release[0].set()  # Distinct compiled SQL maps this gate to answers[0], irrespective of thread order.
+        status, body = settle(env, answers[0].json()['id'])
+        assert status == 'completed' and body['result']['rows'] == [[1], [2]]
+        deadline = time.monotonic() + 5
+        while alice_slots() != 3 and time.monotonic() < deadline:
+            time.sleep(.005)
+        assert alice_slots() == 3
+        replacement = submit('held-replacement', held[4])
+        assert replacement.status_code == 200, replacement.text
+        assert entered[4].wait(5) and alice_slots() == 4
+        replay = submit('held-replacement', held[4])
+        assert replay.status_code == 200 and replay.json()['id'] == replacement.json()['id']
+        assert alice_slots() == 4
+        assert submit('held-over-cap', held[4]).status_code == 429
+        assert alice_slots() == 4
+
+        for event in release:
+            event.set()
+        for jid in accepted:
+            status, body = settle(env, jid)
+            assert status == 'completed' and body['result']['rows'] == [[1], [2]]
     finally:
+        for event in release:
+            event.set()
         for jid in accepted:
             env.runtime.cancel(env.actors['alice'], env.wid, jid)
-        time.sleep(1)
+        deadline = time.monotonic() + 6
+        for jid in accepted:
+            status, _ = settle(env, jid, seconds=max(.01, deadline - time.monotonic()))
+            assert status not in ('queued', 'running'), 'Alice source worker did not settle during cleanup'
 
 
 def test_an_idempotent_replay_is_not_counted_against_the_cap(env, monkeypatch):

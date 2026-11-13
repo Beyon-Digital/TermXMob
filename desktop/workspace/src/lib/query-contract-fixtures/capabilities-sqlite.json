@@ -85,7 +85,19 @@
       ],
       "max_joins": 4,
       "max_filters": 50,
-      "pivot": false,
+      "pivot": {
+        "max_columns": 12,
+        "max_row_dims": 2,
+        "column_kinds": [
+          "text",
+          "integer",
+          "boolean",
+          "uuid",
+          "date",
+          "datetime",
+          "other"
+        ]
+      },
       "version_floor": "3.30"
     }
   }

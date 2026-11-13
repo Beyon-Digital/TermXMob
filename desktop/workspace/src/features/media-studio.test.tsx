@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {useState} from 'react';
+import {Profiler, useState} from 'react';
 import MediaStudio from './MediaStudio';
 import {loadStudioCatalog, loadStudioJobs, loadStudioHistory, refreshStudioJob, submitStudioJob, uploadStudioImage, type StudioCatalog, type StudioJob} from '../lib/media-studio';
 import {transfer} from '../lib/transfers';
@@ -422,14 +422,30 @@ it('does not let an older history response downgrade an already completed curren
   expect(screen.queryByRole('article', {name: 'Google still · Queued'})).not.toBeInTheDocument();
 });
 
-function previewObserver() {
+type PreviewObserverEvent = {event: string; observer: number; watched: number; target?: Element; removed?: Element[]};
+function previewObserver(trace?: (event: PreviewObserverEvent) => void) {
   const watched = new Map<Element, IntersectionObserverCallback>();
+  let nextObserver = 0;
   vi.stubGlobal('IntersectionObserver', class {
     callback: IntersectionObserverCallback;
-    constructor(callback: IntersectionObserverCallback) {this.callback = callback;}
-    observe(element: Element) {watched.set(element, this.callback);}
-    unobserve(element: Element) {watched.delete(element);}
-    disconnect() {for (const [element, callback] of watched) if (callback === this.callback) watched.delete(element);}
+    id = ++nextObserver;
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback;
+      trace?.({event: 'construct', observer: this.id, watched: watched.size});
+    }
+    observe(element: Element) {
+      watched.set(element, this.callback);
+      trace?.({event: 'observe', observer: this.id, watched: watched.size, target: element});
+    }
+    unobserve(element: Element) {
+      watched.delete(element);
+      trace?.({event: 'unobserve', observer: this.id, watched: watched.size, target: element});
+    }
+    disconnect() {
+      const removed = [...watched].filter(([, callback]) => callback === this.callback).map(([element]) => element);
+      for (const element of removed) watched.delete(element);
+      trace?.({event: 'disconnect', observer: this.id, watched: watched.size, removed});
+    }
   });
   return {
     watched,
@@ -447,11 +463,82 @@ it('defers authenticated gallery previews until their output enters the viewport
   vi.mocked(loadStudioJobs).mockResolvedValue(Array.from({length: 40}, (_, index) => ({...job, id: 'preview-' + index, status: 'completed', outputs: ['/api/media/artifacts/preview-' + index + '/export?format=original']})));
   render(<MediaStudio projectId="project"/>); await ready(false);
   fireEvent.click(screen.getByRole('button', {name: 'Library'}));
-  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(40));
+  await waitFor(() => {
+    expect(screen.getAllByRole('article')).toHaveLength(40);
+    expect(observer.watched.size).toBe(40);
+  });
   expect(screen.getAllByRole('article')).toHaveLength(40);
   expect(transfer).not.toHaveBeenCalled();
   expect(create).not.toHaveBeenCalled();
   expect(observer.watched.size).toBe(40);
+});
+it('registers all committed gallery outputs after the history commit before fetching visible previews', async () => {
+  const events: Array<Record<string, unknown>> = [];
+  const record = (event: Record<string, unknown>) => {events.push({index: events.length, ...event});};
+  const targetName = (element: Element) => element.querySelector('a[download]')?.getAttribute('aria-label');
+  const observer = previewObserver(({event, observer, watched, target, removed}) => record({
+    event, observer, watched, target: target && targetName(target), connected: target?.isConnected,
+    removed: removed?.map(targetName),
+  }));
+  const create = vi.fn(() => 'blob:committed-preview'), revoke = vi.fn();
+  Object.defineProperty(URL, 'createObjectURL', {configurable: true, value: create});
+  Object.defineProperty(URL, 'revokeObjectURL', {configurable: true, value: revoke});
+  vi.mocked(transfer).mockResolvedValue(new Blob(['image'], {type: 'image/png'}));
+  const jobs: StudioJob[] = Array.from({length: 40}, (_, index) => ({
+    ...job, id: 'commit-' + index, status: 'completed',
+    outputs: ['/api/media/artifacts/commit-' + index + '/export?format=original'],
+  }));
+  vi.mocked(loadStudioJobs).mockResolvedValue(jobs);
+  let finishHistory!: (value: Awaited<ReturnType<typeof loadStudioHistory>>) => void;
+  vi.mocked(loadStudioHistory).mockReturnValue(new Promise(resolve => {finishHistory = resolve;}));
+  const container = document.createElement('div');
+  document.body.append(container);
+  let firstGallery: {index: number; roots: Element[]; watched: number; connected: number; actions: number; waiting: number; urls: Array<string | null>} | undefined;
+  const view = render(<Profiler id="gallery" onRender={(_id, phase) => {
+    const roots = [...container.querySelectorAll('.studio-output')];
+    const snapshot = {
+      event: 'commit', phase, articles: container.querySelectorAll('article.studio-job').length,
+      outputs: roots.length, watched: observer.watched.size, connected: roots.filter(root => root.isConnected).length,
+      actions: roots.filter(root => root.querySelector('.studio-output-actions')).length,
+      waiting: roots.filter(root => root.textContent?.includes('Preview loads when visible')).length,
+      urls: roots.map(root => root.querySelector('a[download]')?.getAttribute('href') ?? null),
+    };
+    if (snapshot.articles === 40 && !firstGallery) firstGallery = {index: events.length, roots, ...snapshot};
+    record(snapshot);
+  }}><MediaStudio projectId="project"/></Profiler>, {container});
+  await ready(false);
+  await waitFor(() => expect(observer.watched.size).toBe(1));
+  fireEvent.click(screen.getByRole('button', {name: 'Library'}));
+  await waitFor(() => {
+    expect(loadStudioHistory).toHaveBeenCalledTimes(1);
+    expect(screen.queryAllByRole('article')).toHaveLength(0);
+    expect(observer.watched.size).toBe(0);
+  });
+  record({event: 'history-response'});
+  await act(async () => {finishHistory({items: jobs, next_cursor: null});});
+  await waitFor(() => {
+    expect(screen.getAllByRole('article')).toHaveLength(40);
+    expect(observer.watched.size).toBe(40);
+  });
+  expect(firstGallery).toMatchObject({
+    watched: 0, connected: 40, actions: 40, waiting: 40, urls: jobs.map(item => item.outputs[0]),
+  });
+  expect(new Set(observer.watched.keys())).toEqual(new Set(firstGallery!.roots));
+  const registered = events.slice(firstGallery!.index + 1).filter(event => event.event === 'observe');
+  expect(registered).toHaveLength(40);
+  expect(registered.every(event => event.connected === true)).toBe(true);
+  expect(transfer).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+  record({event: 'registered', watched: observer.watched.size, transfers: vi.mocked(transfer).mock.calls.length, blobs: create.mock.calls.length});
+
+  await act(async () => {observer.visible(firstGallery!.roots[0], true);});
+  await screen.findByRole('img', {name: 'Generation commit-0, output 1'});
+  expect(transfer).toHaveBeenCalledTimes(1);
+  expect(create).toHaveBeenCalledTimes(1);
+  view.unmount();
+  expect(observer.watched.size).toBe(0);
+  expect(revoke).toHaveBeenCalledWith('blob:committed-preview');
+  record({event: 'unmounted', watched: observer.watched.size});
 });
 it('loads an entering preview once and releases its blob when it leaves or locks', async () => {
   const observer = previewObserver(), revoke = vi.fn();

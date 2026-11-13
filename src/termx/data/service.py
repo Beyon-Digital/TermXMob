@@ -33,6 +33,7 @@ class DataService:
         self._bi = None
         self._copilot = None
         self._query = None
+        self._views = None
 
     # Deferred imports avoid cycles between policy, typed tools, and execution.
     @property
@@ -48,6 +49,13 @@ class DataService:
             from termx.data.query_service import QueryService
             self._query = QueryService(self)
         return self._query
+
+    @property
+    def views(self):
+        if self._views is None:
+            from termx.data.views import ViewService
+            self._views = ViewService(self)
+        return self._views
 
     @property
     def bi(self):
@@ -238,7 +246,11 @@ class DataService:
     def connections(self, actor, wid: str):
         workspace = self.require(actor, wid)
         if workspace['role'] == 'viewer':
-            return []
+            # Viewers only learn that a shared source exists, so the views built on it can be listed. No path, account or policy.
+            return [{'id': record['id'], 'workspace_id': wid, 'revision': record['revision'], 'name': record['name'], 'engine': record['engine'],
+                     'shared_read': True, 'config': {}}
+                    for record in self.store.list('connection', wid)
+                    if record.get('shared_read') and not record.get('revoked')]
         result = []
         for record in self.store.list('connection', wid):
             try:

@@ -46,3 +46,18 @@ it('follows the actual trigger when its scroll container moves',()=>{
  fireEvent.click(trigger);const dialog=screen.getByRole('dialog',{name:'Scroll actions'});expect(dialog.style.top).toBe('160px');expect(dialog.style.left).toBe('556px');
  top=180;fireEvent.scroll(window);expect(dialog.style.top).toBe('220px');expect(dialog.style.left).toBe('556px');
 });
+
+it('places a newly attached portal using its rendered width before a resize notification',()=>{
+ const width=vi.spyOn(HTMLElement.prototype,'offsetWidth','get').mockImplementation(function(this:HTMLElement){return this.classList.contains('workspace-command-menu')?260:0});
+ const height=vi.spyOn(HTMLElement.prototype,'offsetHeight','get').mockImplementation(function(this:HTMLElement){return this.classList.contains('workspace-command-menu')?245:0});
+ vi.stubGlobal('innerWidth',720);vi.stubGlobal('innerHeight',450);
+ try{
+  render(<WorkspaceMenu label="Editor actions"><select aria-label="Editor split layout"><option>Single editor</option></select></WorkspaceMenu>);
+  const trigger=screen.getByRole('button',{name:'Editor actions'});
+  trigger.getBoundingClientRect=()=>({x:675,y:92.5,left:675,right:707,top:92.5,bottom:124.5,width:32,height:32,toJSON:()=>({})});
+  fireEvent.click(trigger);
+  const dialog=screen.getByRole('dialog',{name:'Editor actions'});
+  expect(dialog.style.left).toBe('447px');expect(dialog.style.top).toBe('132.5px');
+  expect(Number.parseFloat(dialog.style.left)+dialog.offsetWidth).toBeLessThanOrEqual(window.innerWidth);
+ }finally{width.mockRestore();height.mockRestore();vi.unstubAllGlobals()}
+});

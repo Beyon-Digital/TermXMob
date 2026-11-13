@@ -4,7 +4,7 @@
 No real profile, production database, external inference, deployment or invitations.
 """
 from __future__ import annotations
-import asyncio,csv,hashlib,io,json,os,re,shutil,sqlite3,sys,tempfile,threading,uuid
+import asyncio,csv,hashlib,io,json,os,re,shutil,sqlite3,subprocess,sys,tempfile,threading,uuid
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -13,12 +13,29 @@ from playwright.sync_api import expect,sync_playwright
 REPO=Path(os.environ.get('TERMX_DATA_QA_REPO')or(Path(__file__).resolve().parents[1]if Path(__file__).parent.name=='tests'else Path.cwd()))
 sys.path.insert(0,str(REPO/'tests'))
 import workspace_studio_projects_e2e as p
-from workspace_studio_composer_refinement_e2e import focus_sample as shared_focus_sample
+from workspace_studio_composer_refinement_e2e import FOCUS_JS,focus_sample as shared_focus_sample
 
-def focus_sample(page,element,label,report,strict):
+def focus_sample(page,element,label,report,strict,menu=False):
     """The shell paints Data focus rings with a 2px offset (DESIGN.md), so the shared inset-only rule is not applied here.
     Everything else the shared check enforces still is: a visible ring, exactly one, no clipping, and 44px targets on touch."""
-    value=shared_focus_sample(page,element,label,report,False)
+    if menu:
+        # Radix menu items use roving arrow-key focus, while Tab belongs to the enclosing dialog.
+        element.focus();expect(element).to_be_focused();page.keyboard.press('ArrowDown')
+        expect(element).not_to_be_focused()
+        expect(page.locator('[role="menuitemradio"]:focus')).to_have_count(1)
+        page.keyboard.press('ArrowUp');expect(element).to_be_focused()
+        value=element.evaluate(FOCUS_JS);value['label']=label
+        rings=[row for row in value['chain']if row['ring']];value['ring_count']=len(rings);value['clipping']=[]
+        for index,row in enumerate(value['chain']):
+            if not row['ring']:continue
+            box=row['rect'];extra=row['expansion']
+            if box['x']-extra<-.5 or box['right']+extra>page.viewport_size['width']+.5:value['clipping'].append('viewport')
+            for parent in value['chain'][index+1:]:
+                bounds=parent['rect']
+                if parent['overflowX']in('hidden','clip','auto','scroll')and(box['x']-extra<bounds['x']-.5 or box['right']+extra>bounds['right']+.5):value['clipping'].append(parent['class'])
+                if parent['overflowY']in('hidden','clip','auto','scroll')and(box['y']-extra<bounds['y']-.5 or box['bottom']+extra>bounds['bottom']+.5):value['clipping'].append(parent['class'])
+        report['focus'].append(value)
+    else:value=shared_focus_sample(page,element,label,report,False)
     if strict:
         if page.viewport_size['width']<640:
             rect=value['hitTarget'];assert rect['height']>=44 and rect['width']>=44,('Coarse target below 44px',label,rect)
@@ -67,9 +84,10 @@ def protect_context(context,base,report):
         route.continue_()
     context.route('**/*',network)
 
-def capture(page,out,report,name,theme,width):
+def capture(page,out,report,name,theme,width,expect_alert=False):
     item=p.audit(page,out,report,name,theme,width,REPO/'desktop/workspace/node_modules/axe-core/axe.min.js')
-    assert not item['alerts'],('Unexpected visible error in Data happy path',name,item['alerts'])
+    if expect_alert:assert item['alerts'],('Expected the visible notice for this state',name)
+    else:assert not item['alerts'],('Unexpected visible error in Data happy path',name,item['alerts'])
     item['data_geometry']=page.locator('.data-studio').evaluate("e=>({rect:e.getBoundingClientRect().toJSON(),computed:{background:getComputedStyle(e).backgroundColor,color:getComputedStyle(e).color},coarse:matchMedia('(pointer:coarse)').matches,reduced:matchMedia('(prefers-reduced-motion:reduce)').matches})")
     return item
 
@@ -138,12 +156,12 @@ def visual_journey(page,data,path,out,report,theme,width):
         keys.append(page.evaluate("document.activeElement.textContent.trim()"));page.keyboard.press('Tab')
     assert keys==['Combine with another table','Summarize','Columns','Show SQL','Export CSV'],keys
     # Sorting from the header, descending on the second click.
-    amount=tab.get_by_role('button',name='amount',exact=True);amount.click();amount.click()
-    expect(tab.get_by_role('columnheader',name=re.compile('^amount'))).to_have_attribute('aria-sort','descending')
+    amount=tab.get_by_role('button',name='Amount',exact=True);amount.click();amount.click()
+    expect(tab.get_by_role('columnheader',name=re.compile('^Amount'))).to_have_attribute('aria-sort','descending')
     expect(grid.get_by_role('row').nth(1).get_by_role('cell').nth(2)).to_have_text(str(ROWS))
     # Filters: from the column popover and from "Add filter", shown as sentences.
-    tab.get_by_role('button',name='Filter region',exact=True).click()
-    popover=page.get_by_role('dialog',name='Filter region',exact=True)
+    tab.get_by_role('button',name='Filter Region',exact=True).click()
+    popover=page.get_by_role('dialog',name='Filter Region',exact=True)
     popover.get_by_label('Condition',exact=True).select_option('eq');popover.get_by_label('Value',exact=True).fill('East');popover.get_by_role('button',name='Apply',exact=True).click()
     expect(tab.get_by_role('button',name='Region is East',exact=True)).to_be_visible()
     tab.get_by_role('button',name='Add filter',exact=True).click()
@@ -173,9 +191,9 @@ def visual_journey(page,data,path,out,report,theme,width):
     combine.get_by_label('Table to combine',exact=True).select_option('regions');combine.get_by_label('This column',exact=True).select_option(label='Customers · region_id')
     combine.get_by_label('Matches this column',exact=True).select_option('id');combine.get_by_role('button',name='Add table',exact=True).click()
     expect(joined).to_contain_text('Combined with Regions: region_id matches id')
-    expect(tab.get_by_role('columnheader',name=re.compile('^regions.name'))).to_be_visible()
-    tab.get_by_role('button',name='Filter regions.name',exact=True).click()
-    popover=page.get_by_role('dialog',name='Filter regions.name',exact=True)
+    expect(tab.get_by_role('columnheader',name=re.compile('^Regions · Name'))).to_be_visible()
+    tab.get_by_role('button',name='Filter Regions · Name',exact=True).click()
+    popover=page.get_by_role('dialog',name='Filter Regions · Name',exact=True)
     popover.get_by_label('Condition',exact=True).select_option('eq');popover.get_by_label('Value',exact=True).fill('North');popover.get_by_role('button',name='Apply',exact=True).click()
     expect(tab.get_by_role('button',name='Regions · Name is North',exact=True)).to_be_visible()
     expect(grid.get_by_role('row').nth(1)).to_contain_text('North')
@@ -203,6 +221,233 @@ def visual_journey(page,data,path,out,report,theme,width):
     report['checks'].append({'check':'actual-sqlite-visual-query-journey','theme':theme,'width':width,'tables':['sales','customers','regions'],'sorted':True,'filter_chips_all_any':True,'joins':2,'summary_by_region':expected_by_region(path),'summary_total':TOTAL,'show_sql_read_only':True,'csv_rows':len(exported)})
 
 
+MONTH='2026-01'
+SEGMENT='Big sales'
+PIVOT='Sales by region and month'
+
+def oracle_pivot(path):
+    """Region by month totals computed straight from the file, independent of the app."""
+    with sqlite3.connect(path)as db:
+        return {region:int(total) for region,total in db.execute("SELECT region, SUM(amount) FROM sales WHERE substr(day,1,7)=? GROUP BY region ORDER BY region",(MONTH,))}
+
+def oracle_count(path,where,params=()):
+    with sqlite3.connect(path)as db:return db.execute('SELECT COUNT(*) FROM sales WHERE '+where,params).fetchone()[0]
+
+def pivot_rows(grid):
+    """[[row label, number, ...]] read from the pivot grid (row headers first)."""
+    return grid.locator('tbody tr').evaluate_all("rows=>rows.map(r=>[...r.children].map(c=>c.textContent.trim()))")
+
+def tab_named(data,pattern):
+    return data.get_by_role('tablist',name='Open tables and queries',exact=True).get_by_role('tab',name=re.compile(pattern)).last
+
+def segment_button(page):
+    return side(page).get_by_role('navigation',name='Segments',exact=True).get_by_role('button',name=re.compile('^'+SEGMENT))
+
+def views_api(api,prefix):
+    return {row['name']:row for row in request(api,'GET',prefix+'/views')['views']}
+
+def add_amount_filter(page,tab,condition,value):
+    tab.get_by_role('button',name='Add filter',exact=True).click()
+    adding=page.get_by_role('dialog',name='Add filter',exact=True)
+    adding.get_by_label('Column',exact=True).select_option(label='Amount');adding.get_by_label('Condition',exact=True).select_option(condition);adding.get_by_label('Value',exact=True).fill(value)
+    adding.get_by_role('button',name='Apply',exact=True).click()
+
+def pivot_journey(page,data,api,path,prefix,cid,out,report,theme,width):
+    """Build a pivot (rows region, columns month, value total of amount), drill into a cell, save it as a view, then drill through the saved view."""
+    pivots=side(page).get_by_role('navigation',name='Pivots',exact=True)
+    pivots.get_by_role('button',name='New pivot',exact=True).click()
+    chooser=page.get_by_role('dialog',name='New pivot',exact=True);expect(chooser.get_by_role('button',name='sales',exact=True)).to_be_visible()
+    chooser.get_by_role('button',name='sales',exact=True).click();hide_side(page)
+    tab=data.get_by_role('region',name='Pivot New pivot on Sales',exact=True);expect(tab).to_be_visible()
+    setup=tab.get_by_role('region',name='Pivot setup',exact=True)
+    expect(setup.get_by_role('group',name='Rows',exact=True).get_by_label('Row',exact=True)).to_have_value(re.compile('region'))
+    expect(tab.get_by_role('button',name='Save view',exact=True)).to_be_visible()
+    columns=setup.get_by_role('group',name='Columns',exact=True);columns.get_by_label('Column',exact=True).select_option(label='Day')
+    expect(columns.get_by_label('Columns by',exact=True)).to_have_value('month')
+    value=setup.get_by_role('group',name='Value',exact=True);value.get_by_label('Show',exact=True).select_option('sum')
+    expect(value.get_by_label('Column',exact=True).locator('option:checked')).to_have_text('Amount')
+    grid=tab.get_by_role('grid',name='New pivot on Sales',exact=True);expect(grid).to_be_visible()
+    expect(grid.get_by_role('columnheader')).to_have_count(3)
+    expected=oracle_pivot(path);assert expected==EXPECTED,expected
+    expect(grid.locator('tbody tr')).to_have_count(2)
+    shown=pivot_rows(grid);assert [r[0]for r in shown]==['East','West'],shown
+    assert [[int(c.replace(',',''))for c in r[1:]]for r in shown]==[[expected[r[0]],expected[r[0]]]for r in shown],(shown,expected)
+    assert grid.get_by_role('columnheader').all_inner_texts()[1]==MONTH,grid.get_by_role('columnheader').all_inner_texts()
+    capture(page,out,report,'pivot-builder-unsaved',theme,width)
+    # Drill into the East cell of the month. The pivot is not saved yet, so the rows are opened from the visible definition.
+    east=grid.locator('tbody tr').first.get_by_role('gridcell').first;east.focus();page.keyboard.press('Enter')
+    drilled=data.get_by_role('region',name=f'Table East · {MONTH}',exact=True);expect(drilled).to_be_visible()
+    expect(drilled.get_by_text('Rows 1 to 200',exact=True)).to_be_visible()
+    drilled.get_by_role('button',name='Summarize',exact=True).click()
+    summary=drilled.get_by_role('region',name='Summarize',exact=True);summary.get_by_label('Measure',exact=True).select_option('count')
+    east_rows=oracle_count(path,"region='East' AND day>=? AND day<?",(MONTH+'-01','2026-02-01'))
+    result=drilled.get_by_role('table',name='Result table',exact=True);expect(result.get_by_role('row')).to_have_count(2)
+    assert rows_of(result)==[[str(east_rows)]],rows_of(result)
+    capture(page,out,report,'pivot-drill-unsaved',theme,width)
+    summary.get_by_role('button',name='Clear summary',exact=True).click();expect(drilled.get_by_text('Rows 1 to 200',exact=True)).to_be_visible()
+    # Save the pivot as a view.
+    tab_named(data,'New pivot on sales').click();expect(tab).to_be_visible()
+    tab.get_by_role('button',name='Save view',exact=True).click()
+    saving=page.get_by_role('dialog',name='Save pivot',exact=True);p.keyboard_dialog(page,saving)
+    saving.get_by_label('Name',exact=True).fill(PIVOT)
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/views')as made:saving.get_by_role('button',name='Save view',exact=True).click()
+    created=made.value.json();assert made.value.ok and created['kind']=='pivot'and created['revision']==1,created
+    expect(saving).not_to_be_visible()
+    saved=data.get_by_role('region',name='Pivot '+PIVOT,exact=True);expect(saved).to_be_visible()
+    expect(saved.get_by_role('button',name='Save changes',exact=True)).to_have_count(0)
+    expect(side(page).get_by_role('navigation',name='Pivots',exact=True).get_by_role('button',name=PIVOT,exact=True)).to_be_visible();hide_side(page)
+    grid=saved.get_by_role('grid',name=PIVOT,exact=True);expect(grid.locator('tbody tr')).to_have_count(2)
+    assert [r[0]for r in pivot_rows(grid)]==['East','West']
+    capture(page,out,report,'pivot-saved-view',theme,width)
+    # A saved, unchanged pivot drills through the server, and its runs are attributed to the view.
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+f'/views/{created["id"]}/drill')as drill:
+        grid.locator('tbody tr').nth(1).get_by_role('gridcell').first.click()
+    answer=drill.value.json();assert drill.value.ok and answer['exact']is True,answer
+    assert any(item.get('value')=='West'for item in answer['spec']['filters']['items']),answer
+    expect(data.get_by_role('region',name=f'Table West · {MONTH}',exact=True)).to_be_visible()
+    runs=request(api,'GET',prefix+f'/views/{created["id"]}/runs')['runs'];assert runs and all(r['view_revision']==1 for r in runs),runs
+    report['checks'].append({'check':'pivot-build-drill-save-run-history','theme':theme,'width':width,'pivot':expected,'drill_rows_east':east_rows,'server_drill_exact':answer['exact'],'view_runs':len(runs)})
+    return created
+
+def segment_journey(page,data,api,path,prefix,cid,out,report,theme,width):
+    """Create a segment from table filters, reuse it as a filter in another table tab, edit it and read the audit."""
+    # Start from a clean table: the earlier journey left combined tables and Show SQL open in the sales tab, so close it and open it again.
+    side(page).get_by_role('navigation',name='Tables',exact=True).get_by_role('button',name='sales',exact=True).click()
+    data.get_by_role('button',name='Close sales',exact=True).click();hide_side(page)
+    side(page).get_by_role('navigation',name='Tables',exact=True).get_by_role('button',name='sales',exact=True).click()
+    tab=data.get_by_role('region',name='Table sales',exact=True);expect(tab.get_by_text('Rows 1 to 200',exact=True)).to_be_visible()
+    expect(tab.get_by_role('list',name='Combined tables',exact=True)).to_have_count(0)
+    add_amount_filter(page,tab,'gt','2400')
+    expect(tab.get_by_role('button',name='Amount is greater than 2400',exact=True)).to_be_visible()
+    expect(tab.get_by_text('Rows 1 to 101 of 101',exact=True)).to_be_visible();expect(tab.locator('[data-stale]')).to_have_count(0)
+    tab.get_by_role('button',name='Save as segment',exact=True).click()
+    naming=page.get_by_role('dialog',name='Save as segment',exact=True);p.keyboard_dialog(page,naming)
+    capture(page,out,report,'segment-save-dialog',theme,width)
+    naming.get_by_label('Name',exact=True).fill(SEGMENT)
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/views')as made:naming.get_by_role('button',name='Save segment',exact=True).click()
+    segment=made.value.json();assert made.value.ok and segment['kind']=='segment'and segment['revision']==1,segment
+    expect(naming).not_to_be_visible();expect(tab.get_by_text('Saved segment '+SEGMENT,exact=True)).to_be_visible()
+    expect(segment_button(page)).to_be_visible();hide_side(page)
+    # Reuse it in another table tab: the East rows of the month that the pivot drill opened.
+    tab_named(data,f'East · {MONTH}').click()
+    other=data.get_by_role('region',name=f'Table East · {MONTH}',exact=True);expect(other).to_be_visible()
+    other.get_by_role('button',name='Add segment',exact=True).click()
+    menu=page.get_by_role('dialog',name='Add segment filter',exact=True)
+    menu.get_by_role('button',name=SEGMENT,exact=True).click()
+    expect(other.get_by_role('button',name=re.compile('^In segment '+SEGMENT))).to_be_visible()
+    members=oracle_count(path,"region='East' AND day>=? AND day<? AND amount>2400",(MONTH+'-01','2026-02-01'))
+    expect(other.get_by_text(f'Rows 1 to {members} of {members}',exact=True)).to_be_visible()
+    capture(page,out,report,'segment-used-in-table-tab',theme,width)
+    # The segment tab: plain definition, one primary action, audit with the creation revision.
+    segment_button(page).click();hide_side(page)
+    seg=data.get_by_role('region',name='Segment '+SEGMENT,exact=True);expect(seg).to_be_visible()
+    expect(seg.get_by_text('Amount is greater than 2400')).to_be_visible()
+    expect(seg.get_by_role('button',name='Show underlying rows',exact=True)).to_be_visible()
+    audit=seg.get_by_role('region',name='Audit',exact=True);expect(audit.get_by_role('list',name='Revisions',exact=True)).to_contain_text('Created by '+p.USERNAME)
+    capture(page,out,report,'segment-tab-audit-created',theme,width)
+    # Edit: replace the filter, save, and see revision 2 with who and what changed.
+    seg.get_by_role('button',name='Edit filters',exact=True).click()
+    add_amount_filter(page,seg,'gt','2450')
+    seg.get_by_role('button',name='Remove filter: Amount is greater than 2400',exact=True).click()
+    expect(seg.get_by_role('button',name='Save changes',exact=True)).to_be_visible()
+    with page.expect_response(lambda r:r.request.method=='PATCH'and urlsplit(r.url).path==prefix+f'/views/{segment["id"]}')as patched:seg.get_by_role('button',name='Save changes',exact=True).click()
+    changed=patched.value.json();assert patched.value.ok and changed['revision']==2 and patched.value.request.post_data_json['revision']==1,changed
+    revisions=audit.get_by_role('list',name='Revisions',exact=True)
+    expect(revisions.locator(':scope > li')).to_have_count(2)
+    expect(revisions.locator(':scope > li').first).to_contain_text('Revision 2 · '+p.USERNAME)
+    expect(revisions.locator(':scope > li').first).to_contain_text('Added filter: Amount is greater than 2450')
+    expect(revisions.locator(':scope > li').first).to_contain_text('Removed filter: Amount is greater than 2400')
+    history=request(api,'GET',prefix+f'/views/{segment["id"]}/history')['revisions'];assert [r['revision']for r in history]==[2,1] and history[0]['actor']['name']==p.USERNAME,history
+    # Counting members is a run; it appears under Runs with who, rows, result and the revision it ran on.
+    seg.get_by_role('button',name='Done editing',exact=True).click()
+    seg.get_by_role('button',name='Count members',exact=True).click()
+    big=oracle_count(path,'amount>2450');expect(seg.get_by_text(f'{big} members',exact=True)).to_be_visible()
+    audit.get_by_role('tab',name='Runs',exact=True).click()
+    runs=audit.get_by_role('table',name='Runs',exact=True);expect(runs.get_by_role('row')).to_have_count(2)
+    latest=runs.get_by_role('row').nth(1);expect(latest).to_contain_text('You');expect(latest).to_contain_text('Count');expect(latest).to_contain_text('Completed')
+    runs_api=request(api,'GET',prefix+f'/views/{segment["id"]}/runs')['runs'];assert runs_api and runs_api[0]['mode']=='count'and runs_api[0]['view_revision']==2 and runs_api[0]['status']=='completed',runs_api
+    capture(page,out,report,'segment-audit-revision-and-runs',theme,width)
+    # A segment that a saved view uses cannot be deleted; the server says who uses it.
+    pivot=views_api(api,prefix)[PIVOT];detail=request(api,'GET',prefix+'/views/'+pivot['id'])
+    using=json.loads(json.dumps(detail['spec']));using['filters']['items'].append({'segment':segment['id'],'negate':False})
+    holder=request(api,'POST',prefix+'/views',{'kind':'pivot','name':'Big sales by region','spec':using},code=201)
+    current=request(api,'GET',prefix+'/views/'+segment['id'])
+    blocked=api.request('DELETE',prefix+f'/views/{segment["id"]}?revision={current["revision"]}')
+    assert blocked.status_code==409 and blocked.json()['detail']['code']=='segment_in_use'and blocked.json()['detail']['used_by'][0]['name']=='Big sales by region',blocked.text
+    request(api,'DELETE',prefix+f'/views/{holder["id"]}?revision={holder["revision"]}')
+    report['checks'].append({'check':'segment-create-reuse-edit-audit-runs','theme':theme,'width':width,'members_in_east_month':members,'members_after_edit':big,'revisions':[r['revision']for r in history],'delete_in_use_409':True})
+    return segment,big
+
+def viewer_views_checks(viewer_page,member_api,prefix,segment,pivot,big,out,report,theme,width):
+    """A viewer reads and counts a segment but cannot edit, see history, drill or save."""
+    listed=views_api(member_api,prefix);assert {SEGMENT,PIVOT}<=set(listed),listed
+    seen=request(member_api,'GET',prefix+'/views/'+segment['id']);assert seen['can_edit']is False and seen['can_run']is True and seen['used_by']==[],seen
+    denials={'create':denied(member_api,'POST',prefix+'/views',{'kind':'segment','name':'Denied viewer segment','spec':seen['spec']},codes=(403,)),
+        'update':denied(member_api,'PATCH',prefix+'/views/'+segment['id'],{'revision':seen['revision'],'name':'Denied rename'},codes=(403,)),
+        'delete':denied(member_api,'DELETE',prefix+f'/views/{segment["id"]}?revision={seen["revision"]}',codes=(403,)),
+        'history':denied(member_api,'GET',prefix+f'/views/{segment["id"]}/history',codes=(403,)),
+        'drill':denied(member_api,'POST',prefix+f'/views/{pivot["id"]}/drill',{'coordinates':{'rows':['East'],'column':{'value':MONTH,'empty':False}}},codes=(403,)),
+        'segment_drill':denied(member_api,'POST',prefix+f'/views/{segment["id"]}/drill',{'coordinates':{}},codes=(403,))}
+    segment_button(viewer_page).click();hide_side(viewer_page)
+    data=viewer_page.get_by_role('region',name='Data Studio',exact=True)
+    seg=data.get_by_role('region',name='Segment '+SEGMENT,exact=True);expect(seg).to_be_visible()
+    for name in('Edit filters','Show underlying rows','Save changes','Use as source for a pivot'):expect(seg.get_by_role('button',name=name,exact=True)).to_have_count(0)
+    expect(seg.get_by_role('button',name='More actions for this segment',exact=True)).to_have_count(0)
+    audit=seg.get_by_role('region',name='Audit',exact=True);expect(audit.get_by_role('tab',name='Revisions',exact=True)).to_have_count(0)
+    expect(audit.get_by_role('tab',name='Your runs',exact=True)).to_be_visible()
+    seg.get_by_role('button',name='Count members',exact=True).click()
+    expect(seg.get_by_text(f'{big} members',exact=True)).to_be_visible()
+    runs=audit.get_by_role('table',name='Your runs',exact=True);expect(runs.get_by_role('row')).to_have_count(2)
+    expect(runs.get_by_role('row').nth(1).get_by_role('rowheader')).to_have_text('You')
+    mine=request(member_api,'GET',prefix+f'/views/{segment["id"]}/runs')['runs'];assert mine and all(r['mine']for r in mine),mine
+    capture(viewer_page,out,report,'viewer-segment-read-only',theme,width)
+    report['checks'].append({'check':'viewer-views-read-only','theme':theme,'width':width,'denials':denials,'own_runs':len(mine)})
+
+def failed_run_check(page,data,path,out,report,theme,width):
+    """The source file goes away: the saved pivot says so inline with a way to retry, and recovers once the file is back."""
+    tab_named(data,PIVOT).click()
+    saved=data.get_by_role('region',name='Pivot '+PIVOT,exact=True);expect(saved).to_be_visible()
+    away=Path(str(path)+'.away');Path(path).rename(away)
+    try:
+        saved.get_by_role('button',name='Refresh',exact=True).click()
+        results=saved.get_by_role('region',name='Results',exact=True);expect(results.get_by_role('alert')).to_be_visible()
+        expect(results.get_by_role('button',name='Try again',exact=True)).to_be_visible()
+        capture(page,out,report,'pivot-run-failed',theme,width,expect_alert=True)
+    finally:away.rename(path)
+    results.get_by_role('button',name='Try again',exact=True).click()
+    expect(saved.get_by_role('grid',name=PIVOT,exact=True)).to_be_visible();expect(results.get_by_role('alert')).to_have_count(0)
+    report['checks'].append({'check':'pivot-failed-run-inline-error-and-retry','theme':theme,'width':width})
+
+
+def conflict_journey(page,data,api,member_api,prefix,segment,out,report,theme,width):
+    """The owner holds a stale revision while an editor saves; the owner's save is refused with a banner and nothing is overwritten."""
+    segment_button(page).click();hide_side(page)
+    seg=data.get_by_role('region',name='Segment '+SEGMENT,exact=True);expect(seg).to_be_visible()
+    held=request(api,'GET',prefix+'/views/'+segment['id'])['revision']
+    seg.get_by_role('button',name='Edit filters',exact=True).click()
+    add_amount_filter(page,seg,'lt','2490')
+    expect(seg.get_by_role('button',name='Save changes',exact=True)).to_be_visible()
+    theirs=request(member_api,'PATCH',prefix+'/views/'+segment['id'],{'revision':held,'description':'Edited by the second editor'})
+    assert theirs['revision']==held+1 and theirs['updated_by']['name']==SECOND,theirs
+    with page.expect_response(lambda r:r.request.method=='PATCH'and urlsplit(r.url).path==prefix+f'/views/{segment["id"]}')as stale:seg.get_by_role('button',name='Save changes',exact=True).click()
+    assert stale.value.status==409,stale.value.text()
+    detail=stale.value.json()['detail'];assert detail['code']=='revision_conflict'and detail['current_revision']==held+1 and detail['updated_by']['name']==SECOND,detail
+    banner=seg.get_by_role('alert');expect(banner).to_contain_text(SECOND+' changed this view')
+    expect(banner).to_be_focused();expect(banner.get_by_role('heading')).to_have_count(0)
+    assert seg.locator('.button-primary:visible').all_inner_texts()==['Save changes'],seg.locator('.button-primary:visible').all_inner_texts()   # one primary action while the conflict is open
+    capture(page,out,report,'segment-conflict-banner',theme,width,expect_alert=True)
+    assert request(api,'GET',prefix+'/views/'+segment['id'])['revision']==held+1,'The stale save changed the view'
+    banner.get_by_role('button',name='Reload latest',exact=True).click()
+    expect(seg.get_by_text(f'Segment on Sales · revision {held+1}',exact=True)).to_be_visible()
+    expect(seg.get_by_role('alert')).to_have_count(0)
+    p.wait(lambda:page.evaluate("()=>{const a=document.activeElement;return !!a&&a!==document.body&&!!a.closest('.data-tab-panel')}"),page=page,seconds=10)   # focus did not drop to the page
+    revisions=seg.get_by_role('region',name='Audit',exact=True).get_by_role('list',name='Revisions',exact=True)
+    expect(revisions.locator(':scope > li').first).to_contain_text(f'Revision {held+1} · {SECOND}')
+    final=request(api,'GET',prefix+'/views/'+segment['id']);assert final['revision']==held+1 and len(final['spec']['filters']['items'])==1,final
+    report['checks'].append({'check':'segment-409-conflict-banner-reload','theme':theme,'width':width,'held_revision':held,'current_revision':held+1,'editor':SECOND,'stale_save_persisted':False})
+
+
+
 def finish(api,wid,job,page=None):
     value=job
     def done():
@@ -213,12 +458,33 @@ def finish(api,wid,job,page=None):
     assert value['status']=='completed',value
     return value
 
-def browser_run(page,api,wid,button,pattern):
-    with page.expect_response(lambda r:r.request.method=='POST'and re.fullmatch(pattern,urlsplit(r.url).path))as result:button.click()
+def browser_run(page,api,wid,button,pattern,pivot_identity=None):
+    def matches(response):
+        if response.request.method!='POST'or not re.fullmatch(pattern,urlsplit(response.url).path):return False
+        if pivot_identity is None:return True
+        # Returning from BI remounts retained tabs, which may run at this same endpoint.
+        # Identify the clicked pivot by immutable source/from, never by edited filter values.
+        payload=response.request.post_data_json
+        spec=payload.get('spec')if isinstance(payload,dict)else None
+        return isinstance(spec,dict)and isinstance(spec.get('pivot'),dict)and spec.get('source')==pivot_identity['source']and spec.get('from')==pivot_identity['from']
+    with page.expect_response(matches)as result:button.click()
     response=result.value;assert response.ok,response.text()
     value=finish(api,wid,response.json(),page)
     value['_qa_request']=response.request.post_data_json
     return value
+
+def choose_report_data(page,scope,label,out=None,report=None,theme=None,width=None,state=None):
+    """The Data field is a grouped Radix radio menu; choose the visible dataset name."""
+    trigger=scope.get_by_label('Data',exact=True);expect(trigger).to_have_attribute('aria-haspopup','menu');before=trigger.inner_text()
+    trigger.focus();page.keyboard.press('Enter');menu=page.get_by_role('menu',name='Data',exact=True)
+    for group in('Saved queries','Views','Tables'):expect(menu.get_by_role('group',name=group,exact=True)).to_be_visible()
+    choice=menu.get_by_role('menuitemradio',name=label,exact=True);expect(choice).to_be_visible()
+    if state:
+        focus_sample(page,choice,'Report data choice',report,True,menu=True)
+        capture(page,out,report,state,theme,width)
+        page.keyboard.press('Escape');expect(menu).not_to_be_visible();expect(trigger).to_be_focused();expect(trigger).to_have_text(before)
+        page.keyboard.press('Enter');expect(menu).to_be_visible()
+    choice.focus();page.keyboard.press('Enter');expect(menu).not_to_be_visible();expect(trigger).to_contain_text(label)
 
 def dialog_check(page,dialog,report,label,field=None):
     p.keyboard_dialog(page,dialog)
@@ -271,10 +537,14 @@ def copilot_transport(state,report):
         names={t.get('name',t.get('function',{}).get('name'))for t in body.get('tools',[])}
         assert not(names&{'run_shell','computer','write_file'}),'Native tools entered Data model payload'
         report['inference_mock_requests'].append({'round':n,'path':req.url.path,'tool_names':sorted(names),'payload_bytes':len(req.content),'external':False})
-        tools={1:('read_schema',{'connection_id':fixture['cid']}),2:('read_query',{'connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),3:('propose_query',{'name':'Synthetic Copilot total','connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),4:('propose_report',{'name':'Synthetic Copilot report proposal','query_id':fixture['qid'],'visual':{'kind':'metric','y':'amount','aggregate':'sum'},'filters':[]})}
+        base={'version':1,'source':fixture['cid'],'from':{'table':'sales','alias':'s'},'joins':[],'select':[],'filters':{'op':'and','items':[]},'group_by':[],'aggregates':[],'sort':[],'limit':200,'offset':0}
+        tools={1:('read_schema',{'connection_id':fixture['cid']}),2:('read_query',{'connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),3:('propose_query',{'name':'Synthetic Copilot total','connection_id':fixture['cid'],'sql':'SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales'}),4:('propose_report',{'name':'Synthetic Copilot report proposal','query_id':fixture['qid'],'visual':{'kind':'metric','y':'amount','aggregate':'sum'},'filters':[]}),5:('propose_pivot',{'name':'Synthetic Copilot pivot','spec':{**base,'filters':{'op':'and','items':[{'field':{'table_alias':'s','column':'amount'},'op':'between','values':[2400,2450]}]},'pivot':{'rows':[{'table_alias':'s','column':'region'}],'columns':None,'value':{'fn':'count'},'totals':True,'sort':{'by':'rows','direction':'asc'}}}})}
         if n in tools:
             name,args=tools[n]
             output=[{'type':'function_call','call_id':'synthetic-data-tool-'+str(n),'name':name,'arguments':json.dumps(args)}]
+            if n==5:
+                drafts=[('propose_query_spec',{'name':'Synthetic Copilot table','spec':{**base,'select':[{'table_alias':'s','column':column}for column in('id','region','amount','day')],'limit':50,'filters':{'op':'and','items':[{'field':{'table_alias':'s','column':'amount'},'op':'gt','value':2400}]}}}),('propose_segment',{'name':'Synthetic Copilot segment','spec':{**base,'filters':{'op':'and','items':[{'field':{'table_alias':'s','column':'amount'},'op':'in','values':[2401,2402]}]}}})]
+                output.extend({'type':'function_call','call_id':'synthetic-data-tool-5-'+str(index),'name':tool,'arguments':json.dumps(arguments)}for index,(tool,arguments)in enumerate(drafts))
         else:
             assert str(TOTAL)in encoded and str(ROWS)in encoded,'Actual SQL tool results did not reach the model loop'
             output=[{'type':'message','role':'assistant','content':[{'type':'output_text','text':f'Synthetic QA observation: {ROWS} rows total {TOTAL}. The proposals are drafts for review.'}]}]
@@ -294,7 +564,109 @@ def copilot_transport(state,report):
     state.agent._adapter=adapter
     return fixture,clients
 
-def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
+def view_report_journey(page,api,wid,prefix,path,segment,pivot,big,out,report,theme,width):
+    """Build reports on a saved pivot and on a segment from the browser, without writing SQL, and check them against the file."""
+    bi=page.get_by_role('region',name='BI workspace',exact=True)
+    bi.get_by_role('navigation',name='BI views',exact=True).get_by_role('button',name='Reports',exact=True).click()
+    bi.get_by_role('button',name='New report',exact=True).click()
+    creating=page.get_by_role('dialog',name='Create report',exact=True)
+    creating.get_by_role('textbox',name='Name',exact=True).fill('Synthetic report on a pivot')
+    choose_report_data(page,creating,pivot['name'],out,report,theme,width,'report-saved-view-picker-open')
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as made:creating.get_by_role('button',name='Create',exact=True).click()
+    sent=made.value.request.post_data_json;assert sent['view_id']==pivot['id']and'query_id'not in sent,sent
+    expect(creating).not_to_be_visible()
+    # The fields of the view are offered before anything has run.
+    bi.get_by_role('combobox',name='Visual',exact=True).select_option('bar')
+    bi.get_by_role('combobox',name='Category',exact=True).select_option('pv_r1')
+    bi.get_by_role('combobox',name='Value',exact=True).select_option('pv_total')
+    bi.get_by_role('combobox',name='Aggregate',exact=True).select_option('sum')
+    bi.get_by_role('button',name='Save changes',exact=True).click();expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    pattern=re.escape(prefix)+r'/reports/[^/]+/run'
+    ran=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    direct=finish(api,wid,request(api,'POST',prefix+f"/views/{pivot['id']}/run",{'request_id':'e2e-view-report-'+uuid.uuid4().hex}),page)
+    expected={r[0]:r[-1]for r in direct['result']['rows']}
+    assert expected and {r[0]:r[1]for r in ran['result']['rows']}==expected,(ran['result']['rows'],expected)
+    assert ran['report_context']['dataset_view_id']==pivot['id']
+    # "Is any of" with a comma separated list, chosen before running.
+    bi.get_by_role('button',name='Add filter',exact=True).click()
+    bi.get_by_role('combobox',name='Filter field',exact=True).select_option('pv_r1')
+    bi.get_by_role('combobox',name='Condition',exact=True).select_option('in')
+    bi.get_by_label('Values',exact=True).fill('East, West')
+    bi.get_by_role('button',name='Save changes',exact=True).click();expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    filtered=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    assert {r[0]:r[1]for r in filtered['result']['rows']}=={k:v for k,v in expected.items()if k in('East','West')},filtered['result']['rows']
+    bi.get_by_role('img',name='Synthetic report on a pivot — bar chart',exact=True).scroll_into_view_if_needed()
+    capture(page,out,report,'report-on-pivot-view',theme,width)
+    bi.get_by_role('button',name='New report',exact=True).click()
+    creating=page.get_by_role('dialog',name='Create report',exact=True)
+    creating.get_by_role('textbox',name='Name',exact=True).fill('Synthetic report on a segment')
+    choose_report_data(page,creating,segment['name'])
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as made:creating.get_by_role('button',name='Create',exact=True).click()
+    expect(creating).not_to_be_visible()
+    bi.get_by_role('combobox',name='Visual',exact=True).select_option('metric')
+    bi.get_by_role('combobox',name='Aggregate',exact=True).select_option('count')
+    bi.get_by_role('button',name='Save changes',exact=True).click();expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    counted=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    assert counted['result']['rows']==[[big]]and big==oracle_count(path,'amount>2450'),(counted['result']['rows'],big)
+    capture(page,out,report,'report-on-segment-view',theme,width)
+    report['checks'].append({'check':'reports-on-saved-views-through-ui','theme':theme,'width':width,'pivot_regions':sorted(expected),'segment_members':big,'in_filter_regions':sorted(r[0]for r in filtered['result']['rows']),'sql_written':False})
+    return archived_view_report_journey(page,api,wid,prefix,pivot,out,report,theme,width)
+
+def assert_report_labels(scope,job,expected=('Sales region','Revenue')):
+    """Metadata names the UI while the two neutral result identifiers remain stable."""
+    assert [column['name']for column in job['result']['columns']]==['pv_r1','pv_total'],job
+    assert [(column['alias'],column['label'])for column in job['output']['columns']]==list(zip(('pv_r1','pv_total'),expected)),job
+    chart=scope.get_by_role('img',name='Synthetic archived view report — bar chart',exact=True)
+    expect(chart).to_be_visible();expect(chart.locator('desc')).to_contain_text(expected[0]+' by '+expected[1])
+    fallback=scope.get_by_role('button',name='View data table',exact=True)
+    if fallback.get_attribute('aria-expanded')!='true':fallback.click()
+    headers=scope.get_by_role('region',name='Report data',exact=True).get_by_role('columnheader')
+    expect(headers).to_have_text(list(expected))
+    assert not re.search(r'\bpv_(?:r\d+|c\d+|total)\b',scope.locator('.bi-result').inner_text()),'Neutral aliases leaked into report display'
+
+def archived_view_report_journey(page,api,wid,prefix,pivot,out,report,theme,width):
+    """A dedicated view can archive after publication; both owner and viewer keep the pinned report and labels."""
+    spec=json.loads(json.dumps(request(api,'GET',prefix+'/views/'+pivot['id'])['spec']))
+    spec['pivot']['rows'][0]['label']='Sales region';spec['pivot']['value']['label']='Revenue'
+    copied=request(api,'POST',prefix+'/views',{'kind':'pivot','name':'Synthetic report archive copy','spec':spec},code=201)
+    chart=request(api,'POST',prefix+'/reports',{'name':'Synthetic archived view report','view_id':copied['id'],'visual':{'kind':'bar','x':'pv_r1','y':'pv_total','aggregate':'sum'},'filters':[]})
+    published=request(api,'POST',prefix+f'/reports/{chart["id"]}/publish',{'revision':chart['revision']})
+    dashboard=request(api,'POST',prefix+'/dashboards',{'name':'Synthetic archived view dashboard','report_ids':[chart['id']]})
+    # Cached editable field labels deliberately differ from the published metadata.
+    spec['pivot']['rows'][0]['label']='Draft region';spec['pivot']['value']['label']='Draft revenue'
+    changed=request(api,'PATCH',prefix+'/views/'+copied['id'],{'revision':copied['revision'],'spec':spec})
+    nav(page,'Data');nav(page,'BI');bi=page.get_by_role('region',name='BI workspace',exact=True)
+    bi.locator('.bi-object-list').get_by_role('button',name=re.compile('^Synthetic archived view report')).click()
+    pattern=re.escape(prefix)+r'/reports/'+re.escape(chart['id'])+r'/run'
+    live=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    assert_report_labels(bi,live,('Draft region','Draft revenue'))
+    assert dict(live['result']['rows'])==EXPECTED,live
+    request(api,'DELETE',prefix+f'/views/{copied["id"]}?revision={changed["revision"]}')
+    pinned=request(api,'GET',prefix+'/reports/'+chart['id']);assert pinned['using_published_version']is True,pinned
+    archived_fields=[]
+    page.on('request',lambda req:archived_fields.append(req.url)if urlsplit(req.url).path==prefix+f'/views/{copied["id"]}/fields'else None)
+    nav(page,'Data');nav(page,'BI');bi=page.get_by_role('region',name='BI workspace',exact=True)
+    bi.locator('.bi-object-list').get_by_role('button',name=re.compile('^Synthetic archived view report')).click()
+    expect(bi.get_by_text('Choose different data to edit this report.',exact=True)).to_be_visible()
+    expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    expect(bi.get_by_role('button',name='Publish to workspace',exact=True)).to_be_disabled()
+    archived=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
+    assert archived['report_context']['report_version_id']==published['published_version_id'],archived
+    assert dict(archived['result']['rows'])==EXPECTED,archived
+    assert_report_labels(bi,archived)
+    assert not archived_fields,'The archived view fields endpoint was fetched instead of using publication metadata'
+    capture(page,out,report,'owner-report-archived-view-pinned-labels',theme,width)
+    with page.expect_download()as exported:bi.get_by_role('button',name='SVG',exact=True).click()
+    svg=Path(exported.value.path()).read_text();assert 'Sales region'in svg and 'Revenue'in svg and 'pv_r1'not in svg and 'pv_total'not in svg,svg
+    bi.get_by_role('navigation',name='BI views',exact=True).get_by_role('button',name='Dashboards',exact=True).click()
+    bi.locator('.bi-object-list').get_by_role('button',name='Synthetic archived view dashboard',exact=True).click()
+    dashboard_job=browser_run(page,api,wid,bi.get_by_role('button',name='Run dashboard',exact=True),pattern)
+    assert_report_labels(bi,dashboard_job);assert dict(dashboard_job['result']['rows'])==EXPECTED,dashboard_job
+    capture(page,out,report,'owner-dashboard-archived-view-labels',theme,width)
+    report['checks'].append({'check':'owner-published-view-archive-pinned-report-labels','theme':theme,'width':width,'report':chart['id'],'archived_view':copied['id'],'published_version':published['published_version_id'],'raw_columns':['pv_r1','pv_total'],'friendly_labels':['Sales region','Revenue'],'regions':EXPECTED,'dashboard':dashboard['id'],'svg_labels':True})
+    return {'report_id':chart['id'],'dashboard_id':dashboard['id'],'version_id':published['published_version_id']}
+
+def copilot_browser(page,api,wid,cid,qid,path,mock,out,report,theme,width):
     prefix=f'/api/data/workspaces/{wid}'
     assert mock['round']==0,'Data initialization silently triggered model inference'
     data=page.get_by_role('region',name='Data Studio',exact=True)
@@ -315,9 +687,9 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     expect(setup.get_by_role('button',name='Off',exact=True)).to_have_attribute('aria-pressed','false')
     capture(page,out,report,'copilot-explicit-account-setup',theme,width)
     setup.get_by_role('button',name='Save',exact=True).click();expect(setup).not_to_be_visible()
-    schema=panel.get_by_role('button',name='Schema',exact=True);results=panel.get_by_role('button',name='Results',exact=True)
+    schema=panel.get_by_role('switch',name='Table and column names',exact=True);results=panel.get_by_role('switch',name='Rows from the open query',exact=True)
     expect(schema).to_be_enabled();expect(results).to_be_enabled()
-    expect(schema).to_have_attribute('aria-pressed','false');expect(results).to_have_attribute('aria-pressed','false')
+    expect(schema).to_have_attribute('aria-checked','false');expect(results).to_have_attribute('aria-checked','false')
     expect(panel.get_by_role('checkbox')).to_have_count(0)
     assert mock['round']==0,'Copilot setup silently triggered inference'
     schema.click();results.click()
@@ -333,12 +705,12 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
         nonlocal final
         final=request(api,'GET',prefix+'/copilot/runs/'+run['id']);return final['status']not in('queued','running')
     p.wait(done,page=page,seconds=30)
-    assert final['status']=='completed'and str(TOTAL)in final['answer']and len(final['proposals'])==2,final
-    assert mock['round']==5,mock
+    assert final['status']=='completed'and str(TOTAL)in final['answer']and len(final['proposals'])==5,final
+    assert mock['round']==6,mock
     replay=request(api,'POST',prefix+'/copilot/messages',body)
-    assert replay['id']==run['id']and mock['round']==5,'Copilot replay repeated inference'
+    assert replay['id']==run['id']and mock['round']==6,'Copilot replay repeated inference'
     assert len(request(api,'GET',prefix+'/queries'))==before_queries and len(request(api,'GET',prefix+'/reports'))==before_reports,'Proposal silently persisted a query/report'
-    expect(panel.locator('.copilot-answer')).to_contain_text(str(TOTAL))
+    expect(panel.get_by_role('log',name='Conversation',exact=True)).to_contain_text(str(TOTAL))
     activity=panel.get_by_role('button',name=re.compile('^View activity'))
     expect(activity).to_have_attribute('data-state','closed')
     capture(page,out,report,'copilot-actual-sql-tool-proposals',theme,width)
@@ -346,6 +718,67 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as saved:report_proposal.get_by_role('button',name='Save report',exact=True).click()
     assert saved.value.ok,saved.value.text()
     assert len(request(api,'GET',prefix+'/reports'))==before_reports+1
+    # A structured pivot proposal is checked by the server, shown as a card, and opens as an unsaved pivot tab on request only.
+    proposal_runs=[]
+    page.on('request',lambda req:proposal_runs.append(req.url)if req.method=='POST'and urlsplit(req.url).path==prefix+'/query-specs/run'else None)
+    pivot_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot pivot')
+    expect(pivot_proposal).to_be_visible()
+    views_before=len(request(api,'GET',prefix+'/views')['views'])
+    pivot_proposal.get_by_role('button',name='Edit Amount is between 2400 and 2450',exact=True).click()
+    values=page.get_by_role('dialog',name='Edit filter values',exact=True);p.keyboard_dialog(page,values)
+    values.get_by_label('From',exact=True).fill('2450');values.get_by_label('To',exact=True).fill('2501')
+    capture(page,out,report,'copilot-range-values-editor',theme,width)
+    values.get_by_role('button',name='Update suggestion',exact=True).click();expect(values).not_to_be_visible()
+    assert not proposal_runs,'Editing range values executed a proposal'
+    assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Editing a proposal saved a view'
+    pivot_run=browser_run(page,api,wid,pivot_proposal.get_by_role('button',name='Open as pivot',exact=True),re.escape(prefix)+r'/query-specs/run',pivot_identity={'source':cid,'from':{'table':'sales','alias':'s'}})
+    assert pivot_run['_qa_request']['spec']['filters']['items']==[{'field':{'table_alias':'s','column':'amount'},'op':'between','values':[2450,2501]}],pivot_run
+    with sqlite3.connect(path)as db:expected_pivot=dict(db.execute('SELECT region,COUNT(*) FROM sales WHERE amount BETWEEN 2450 AND 2501 GROUP BY region'))
+    assert {row[0]:row[-1]for row in pivot_run['result']['rows']}==expected_pivot,(pivot_run,expected_pivot)
+    expect(data.get_by_role('tab',name='New pivot on sales',exact=True,selected=True)).to_be_visible()
+    expect(data.get_by_role('grid',name=re.compile('^New pivot on Sales'))).to_be_visible()
+    assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Pivot proposal silently saved a view'
+    capture(page,out,report,'copilot-pivot-proposal-opened',theme,width)
+    table_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot table')
+    runs_before_edit=len(proposal_runs)
+    table_proposal.get_by_role('button',name='Edit Amount is greater than 2400',exact=True).click()
+    values=page.get_by_role('dialog',name='Edit filter values',exact=True)
+    values.get_by_label('Value',exact=True).fill('invalid')
+    values.get_by_role('button',name='Update suggestion',exact=True).click()
+    expect(values.get_by_role('alert')).to_contain_text('Enter a number')
+    capture(page,out,report,'copilot-scalar-validation-error',theme,width,expect_alert=True)
+    values.get_by_label('Value',exact=True).fill('2450')
+    values.get_by_role('button',name='Update suggestion',exact=True).click();expect(values).not_to_be_visible()
+    table_proposal.get_by_role('button',name='Edit First 50',exact=True).click()
+    rows_dialog=page.get_by_role('dialog',name='Edit rows shown',exact=True);rows_dialog.get_by_label('Rows shown',exact=True).fill('25')
+    rows_dialog.get_by_role('button',name='Update suggestion',exact=True).click();expect(rows_dialog).not_to_be_visible()
+    assert len(proposal_runs)==runs_before_edit,'Editing scalar values or a row limit executed a proposal'
+    table_run=browser_run(page,api,wid,table_proposal.get_by_role('button',name='Apply to table',exact=True),re.escape(prefix)+r'/query-specs/run')
+    table_spec=table_run['_qa_request']['spec'];assert table_spec['limit']==25 and table_spec['filters']['items']==[{'field':{'table_alias':'s','column':'amount'},'op':'gt','value':2450}],table_spec
+    with sqlite3.connect(path)as db:expected_table=[list(row)for row in db.execute('SELECT id,region,amount,day FROM sales WHERE amount>2450 LIMIT 25')]
+    assert table_run['result']['rows'][:25]==expected_table,(table_run,expected_table)
+    assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Applying a table proposal silently saved a view'
+    capture(page,out,report,'copilot-scalar-table-applied',theme,width)
+    segment_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot segment')
+    runs_before_edit=len(proposal_runs)
+    segment_proposal.get_by_role('button',name='Edit Amount is any of 2401, 2402',exact=True).click()
+    values=page.get_by_role('dialog',name='Edit filter values',exact=True)
+    values.get_by_label('Value 1',exact=True).fill('2499');values.get_by_label('Value 2',exact=True).fill('2500')
+    values.get_by_role('button',name='Add value',exact=True).click();values.get_by_label('Value 3',exact=True).fill('2501')
+    capture(page,out,report,'copilot-list-values-editor',theme,width)
+    values.get_by_role('button',name='Update suggestion',exact=True).click();expect(values).not_to_be_visible()
+    assert len(proposal_runs)==runs_before_edit,'Editing list values executed a proposal'
+    segment_proposal.get_by_role('button',name='Save as segment',exact=True).click()
+    saving=page.get_by_role('dialog',name='Save as segment',exact=True)
+    assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Opening the naming dialog saved a segment'
+    with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/views')as saved_segment:saving.get_by_role('button',name='Save segment',exact=True).click()
+    saved_spec=saved_segment.value.request.post_data_json['spec'];created_segment=saved_segment.value.json()
+    assert saved_segment.value.ok and saved_spec['filters']['items']==[{'field':{'table_alias':'s','column':'amount'},'op':'in','values':[2499,2500,2501]}]and saved_spec['select']==[],saved_spec
+    counted=finish(api,wid,request(api,'POST',prefix+f'/views/{created_segment["id"]}/run',{'request_id':'copilot-edited-list-'+uuid.uuid4().hex,'mode':'count'}),page)
+    expected_members=oracle_count(path,'amount IN (?,?,?)',(2499,2500,2501));assert counted['result']['rows']==[[expected_members]]and expected_members==3,counted
+    expect(segment_proposal.get_by_role('status')).to_contain_text('Segment saved.')
+    capture(page,out,report,'copilot-list-segment-saved',theme,width)
+    panel.get_by_role('button',name=re.compile('^Advanced')).click()  # written SQL proposals sit under Advanced
     query_proposal=panel.locator('.copilot-proposal').filter(has_text='Synthetic Copilot total')
     query_proposal.get_by_role('button',name='Open query',exact=True).click()
     expect(page.locator('#data-sql')).to_contain_text('SELECT COUNT(*) AS rows, SUM(amount) AS total FROM sales')
@@ -354,11 +787,13 @@ def copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width):
     capture(page,out,report,'copilot-open-query-draft',theme,width)
     reduced=data.locator('*').evaluate_all("rows=>rows.filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).map(e=>({animation:getComputedStyle(e).animationName,transition:getComputedStyle(e).transitionDuration})).filter(s=>s.animation!=='none'||s.transition.split(',').some(v=>parseFloat(v)>0))")
     assert not reduced,('Data motion remained active under reduce',reduced)
-    report['checks'].append({'check':'real-adapter-mock-inference-actual-sqlite-tools-through-ui','theme':theme,'width':width,'inference_requests':5,'tools':[e['title']for e in final['events']if e['kind']=='tool.completed'],'total_observed':TOTAL,'typed_proposals':2,'proposal_auto_saves':0,'explicit_report_save':True,'explicit_query_draft_open':True,'replayed_run_no_inference':True,'context_opted_in':{'schema':True,'results':True},'team_account_share':False,'visible_motion_under_reduce':reduced})
+    report['checks'].append({'check':'real-adapter-mock-inference-actual-sqlite-tools-through-ui','theme':theme,'width':width,'inference_requests':6,'tools':[e['title']for e in final['events']if e['kind']=='tool.completed'],'total_observed':TOTAL,'typed_proposals':5,'proposal_auto_saves':0,'explicit_report_save':True,'explicit_query_draft_open':True,'replayed_run_no_inference':True,'context_opted_in':{'schema':True,'results':True},'team_account_share':False,'edited_range_pivot':expected_pivot,'edited_scalar_table_rows':len(expected_table),'edited_list_segment_members':expected_members,'visible_motion_under_reduce':reduced})
 
 
-def policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,ownerjob,out,report,theme,width):
+def policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,ownerjob,views_state,out,report,theme,width):
     prefix=f'/api/data/workspaces/{wid}'
+    editor_panel=page.get_by_role('dialog',name='SQL editor',exact=True)
+    if editor_panel.count():close_advanced(page,editor_panel)
     nav(page,'Team');team=page.get_by_role('region',name='Workspace team',exact=True)
     team.get_by_role('button',name='Add member',exact=True).click()
     dialog=page.get_by_role('dialog',name='Add workspace member',exact=True);dialog_check(page,dialog,report,'Exact team username','Exact username')
@@ -399,11 +834,27 @@ def policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,ownerjob
             expect(viewer_bi.get_by_role('img',name='Synthetic regional revenue — bar chart',exact=True)).to_be_visible()
             viewer_bi.get_by_role('img',name='Synthetic regional revenue — bar chart',exact=True).scroll_into_view_if_needed()
             capture(viewer_page,out,report,'viewer-published-report',theme,width)
+            archived=views_state['archived_report']
+            viewer_bi.locator('.bi-object-list').get_by_role('button',name=re.compile('^Synthetic archived view report')).click()
+            pattern=re.escape(prefix)+r'/reports/'+re.escape(archived['report_id'])+r'/run'
+            archived_job=browser_run(viewer_page,member_api,wid,viewer_bi.get_by_role('button',name='Run report',exact=True),pattern)
+            assert archived_job['report_context']['report_version_id']==archived['version_id']and dict(archived_job['result']['rows'])==EXPECTED,archived_job
+            assert_report_labels(viewer_bi,archived_job)
+            capture(viewer_page,out,report,'viewer-published-archived-view-labels',theme,width)
+            viewer_bi.get_by_role('navigation',name='BI views',exact=True).get_by_role('button',name='Dashboards',exact=True).click()
+            viewer_bi.locator('.bi-object-list').get_by_role('button',name='Synthetic archived view dashboard',exact=True).click()
+            tile=browser_run(viewer_page,member_api,wid,viewer_bi.get_by_role('button',name='Run dashboard',exact=True),pattern)
+            assert tile['report_context']['report_version_id']==archived['version_id']and dict(tile['result']['rows'])==EXPECTED,tile
+            assert_report_labels(viewer_bi,tile)
+            capture(viewer_page,out,report,'viewer-dashboard-archived-view-labels',theme,width)
+            report['checks'].append({'check':'viewer-published-archived-view-report-and-dashboard','theme':theme,'width':width,'friendly_labels':['Sales region','Revenue'],'raw_columns':['pv_r1','pv_total'],'published_version':archived['version_id'],'regions':EXPECTED})
+            viewer_views_checks(viewer_page,member_api,prefix,views_state['segment'],views_state['pivot'],views_state['big'],out,report,theme,width)
         finally:viewer_context.close()
         members=request(api,'GET',prefix+'/members');member=next(row for row in members if row['principal_id']!=owner.id)
         request(api,'PATCH',prefix+'/members/'+member['id'],{'revision':member['revision'],'role':'editor'})
         editorjob=finish(member_api,wid,request(member_api,'POST',prefix+'/query-runs',{'request_id':'editor-shared-read','connection_id':cid,'sql':'SELECT COUNT(*) AS rows FROM sales'}))
         assert editorjob['result']['rows']==[[ROWS]]
+        conflict_journey(page,page.get_by_role('region',name='Data Studio',exact=True),api,member_api,prefix,views_state['segment'],out,report,theme,width)
         checks['editor_modify_other_source']=denied(member_api,'PATCH',prefix+'/connections/'+cid,{'revision':source['revision'],'name':'Denied source mutation'})
         checks['copilot_personal_account_not_shared']=denied(member_api,'POST',prefix+'/copilot/messages',{'request_id':'member-personal-denied','message':'Read this source'})
         source=request(api,'PATCH',prefix+'/connections/'+cid,{'revision':source['revision'],'shared_read':False})
@@ -445,7 +896,7 @@ def exercise(browser,out,report,ui_dist,width,theme):
             workspace=created.value.json();wid=workspace['id'];mock['wid']=wid;prefix=f'/api/data/workspaces/{wid}'
             expect(dialog).not_to_be_visible()
             workspace_select=side(page).get_by_role('combobox',name='Data workspace',exact=True)
-            expect(workspace_select).to_be_enabled();expect(workspace_select).to_have_value(wid)
+            expect(workspace_select).to_be_enabled();expect(workspace_select).to_have_text('Synthetic QA team')
             focus_sample(page,workspace_select,'Data workspace selector',report,True);hide_side(page)
             data.get_by_role('button',name='Connect database',exact=True).last.click()
             connection_dialog=page.get_by_role('dialog',name='Connect database',exact=True)
@@ -460,13 +911,17 @@ def exercise(browser,out,report,ui_dist,width,theme):
             assert connection['config']['path']==str(path)and not connection['shared_read']
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+f'/connections/{cid}/test')as tested:data.get_by_role('button',name='Test connection',exact=True).click()
             assert tested.value.json()['ok']
-            data.get_by_role('button',name='Load schema',exact=True).first.click()
+            data.get_by_role('button',name='Load tables',exact=True).first.click()
             overview=data.get_by_role('region',name='Tables overview',exact=True)
             for table in('customers','regions','sales'):expect(overview).to_contain_text(table)
             capture(page,out,report,'tables-overview',theme,width)
             overview.get_by_role('button',name='Count rows in sales',exact=True).click()
             expect(overview.get_by_text(f'{ROWS:,}',exact=True)).to_be_visible()
             visual_journey(page,data,path,out,report,theme,width)
+            pivot=pivot_journey(page,data,api,path,prefix,cid,out,report,theme,width)
+            failed_run_check(page,data,path,out,report,theme,width)
+            segment,big=segment_journey(page,data,api,path,prefix,cid,out,report,theme,width)
+            views_state={'pivot':pivot,'segment':segment,'big':big}
             panel=open_advanced(page)
             sql=set_sql(page,SQL);focus_sample(page,page.locator('#data-sql'),'Read-only SQL editor',report,True)
             capture(page,out,report,'sqlite-advanced-panel',theme,width)
@@ -500,7 +955,7 @@ def exercise(browser,out,report,ui_dist,width,theme):
             bi.get_by_role('button',name='New report',exact=True).click()
             creating=page.get_by_role('dialog',name='Create report',exact=True);dialog_check(page,creating,report,'New report name','Name')
             creating.get_by_role('textbox',name='Name',exact=True).fill('Synthetic regional revenue')
-            creating.get_by_role('combobox',name='Saved query',exact=True).select_option(qid)
+            choose_report_data(page,creating,'Synthetic full sales',out,report,theme,width,'report-data-picker-open')
             with page.expect_response(lambda r:r.request.method=='POST'and urlsplit(r.url).path==prefix+'/reports')as made:creating.get_by_role('button',name='Create',exact=True).click()
             rid=made.value.json()['id'];expect(creating).not_to_be_visible()
             tablejob=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),re.escape(prefix)+r'/reports/[^/]+/run')
@@ -537,11 +992,12 @@ def exercise(browser,out,report,ui_dist,width,theme):
             expect(bi.get_by_role('img',name='Synthetic regional revenue — bar chart',exact=True)).to_be_visible()
             bi.get_by_role('img',name='Synthetic regional revenue — bar chart',exact=True).scroll_into_view_if_needed()
             capture(page,out,report,'published-dashboard',theme,width)
-            copilot_browser(page,api,wid,cid,qid,mock,out,report,theme,width)
-            policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,job,out,report,theme,width)
+            views_state['archived_report']=view_report_journey(page,api,wid,prefix,path,views_state['segment'],views_state['pivot'],views_state['big'],out,report,theme,width)
+            copilot_browser(page,api,wid,cid,qid,path,mock,out,report,theme,width)
+            policy_checks(page,browser,base,api,state,owner,wid,cid,qid,rid,did,job,views_state,out,report,theme,width)
             report['checks'].append({'check':'actual-sqlite-browser-query-bi-journey','theme':theme,'width':width,'synthetic_business_rows':ROWS,'source_sha256':before,'preview_rows':1000,'preview_truncated':True,'csv_scope':'actual1000-row preview with header','full_source_aggregate':EXPECTED,'full_total':TOTAL,'readonly_delete_rejected':True,'long_recursive_query_cancelled':True,'chart_svg_downloaded':True,'published_dashboard':True,'actual_filesystem_chooser':True})
             assert hashlib.sha256(path.read_bytes()).hexdigest()==before,'Read-only source bytes changed'
-            assert mock['round']==5,'Unexpected inference beyond the explicit Copilot tool loop'
+            assert mock['round']==6,'Unexpected inference beyond the explicit Copilot tool loop'
         except BaseException:
             page.screenshot(path=str(out/f'failure-{theme}-{width}.png'),full_page=True)
             page.locator('input[type=password]').evaluate_all('rows=>rows.forEach(e=>e.value="")')
@@ -558,6 +1014,8 @@ def exercise(browser,out,report,ui_dist,width,theme):
 def run(destination,ui_dist):
     out=Path(destination).resolve();out.mkdir(parents=True,exist_ok=False)
     report={'result':'running','mode':'after','output':str(out),'ui_dist':str(Path(ui_dist).resolve()),'states':[],'checks':[],'focus':[],'backend_requests':[],'inference_mock_requests':[],'external_browser_requests':[],'errors':[],'started_at_utc':datetime.now(timezone.utc).isoformat(),'runner_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'limitations':['Only explicit synthetic2501-row business SQLite files and scratch managed identities/stores are used. No real source/profile or remote database is connected.','Provider inference, when exercised, uses real adapter code over MockTransport; no paid model calls.','375px touch emulation and Chromium screenshots do not prove native/physical device behavior.','CSV exports contain the actual bounded query preview; aggregate reports execute against full source through the runtime.','Axe incomplete items remain in the report; automated checks do not establish screen-reader behavior.']}
+    report['source_commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
+    report['source_tracked_changes']=subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=REPO,text=True).splitlines()
     try:
         with sync_playwright()as playwright:
             executable=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')or next((str(path)for path in(Path(playwright.chromium.executable_path),Path('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'))if path.is_file()),None)

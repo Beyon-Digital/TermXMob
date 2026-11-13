@@ -1,0 +1,63 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/query-specs/compile",
+    "as": "alice",
+    "body": {
+      "spec": {
+        "version": 1,
+        "source": "conn_01",
+        "from": {
+          "table": "sales",
+          "alias": "s"
+        },
+        "joins": [],
+        "select": [
+          {
+            "table_alias": "s",
+            "column": "id"
+          },
+          {
+            "table_alias": "s",
+            "column": "region"
+          },
+          {
+            "table_alias": "s",
+            "column": "amount"
+          }
+        ],
+        "filters": {
+          "op": "and",
+          "items": [
+            {
+              "segment": "seg_missing",
+              "negate": false
+            }
+          ]
+        },
+        "group_by": [],
+        "aggregates": [],
+        "sort": [
+          {
+            "table_alias": "s",
+            "column": "id",
+            "direction": "asc"
+          }
+        ],
+        "limit": 200,
+        "offset": 0
+      }
+    }
+  },
+  "status": 200,
+  "response": {
+    "ok": false,
+    "errors": [
+      {
+        "code": "segment_missing",
+        "path": "filters.items[0]",
+        "message": "The segment this filter uses was deleted. Remove the filter or pick another segment."
+      }
+    ]
+  }
+}

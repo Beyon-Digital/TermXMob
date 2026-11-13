@@ -221,13 +221,15 @@ def test_iso_dates_roundtrip_through_python_dates(dialect):
 
 
 # --- date buckets: golden SQL ----------------------------------------------------------
+# SQLite reads only text that starts with a real ISO date, bucketing the date part as written.
+ISO_GUARD = "CASE WHEN X GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(X,1,10)) = substr(X,1,10) THEN "
 GOLDEN = {
-    'sqlite': {
-        'day': "strftime('%Y-%m-%d', X)",
-        'week': "strftime('%Y', date(X,'-3 days','weekday 4')) || printf('-W%02d', (CAST(strftime('%j', date(X,'-3 days','weekday 4')) AS INTEGER) - 1) / 7 + 1)",
-        'month': "strftime('%Y-%m', X)",
-        'quarter': "strftime('%Y', X) || '-Q' || ((CAST(strftime('%m', X) AS INTEGER) + 2) / 3)",
-        'year': "strftime('%Y', X)"},
+    'sqlite': {bucket: ISO_GUARD + inner + ' END' for bucket, inner in {
+        'day': "strftime('%Y-%m-%d', @@)",
+        'week': "strftime('%Y', date(@@,'-3 days','weekday 4')) || printf('-W%02d', (CAST(strftime('%j', date(@@,'-3 days','weekday 4')) AS INTEGER) - 1) / 7 + 1)",
+        'month': "strftime('%Y-%m', @@)",
+        'quarter': "strftime('%Y', @@) || '-Q' || ((CAST(strftime('%m', @@) AS INTEGER) + 2) / 3)",
+        'year': "strftime('%Y', @@)"}.items()},
     'postgresql': {
         'day': "to_char(X,'YYYY-MM-DD')", 'week': "to_char(X,'IYYY-\"W\"IW')", 'month': "to_char(X,'YYYY-MM')",
         'quarter': "to_char(X,'YYYY-\"Q\"Q')", 'year': "to_char(X,'YYYY')"},
@@ -242,7 +244,7 @@ GOLDEN['mariadb'] = GOLDEN['mysql']
 def test_date_bucket_golden_sql(engine):
     d = get_dialect(engine)
     for bucket, sql in GOLDEN[engine].items():
-        assert d.date_bucket('X', 'datetime', bucket) == sql
+        assert d.date_bucket('X', 'datetime', bucket) == (sql.replace('@@', 'substr(X,1,10)') if engine == 'sqlite' else sql)
 
 
 def test_date_bucket_kinds_and_unknown_bucket(dialect):
@@ -304,7 +306,7 @@ MATRIX = {
     'postgresql': dict(qualified=False, requires_source_test=True, quote='"', table_qualification='schema', case_folding='unicode',
                        text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='12'),
     'mysql': dict(qualified=False, requires_source_test=True, quote='`', table_qualification='database', case_folding='unicode',
-                  text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='8.0'),
+                  text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='8.0.17'),
     'mariadb': dict(qualified=False, requires_source_test=True, quote='`', table_qualification='database', case_folding='unicode',
                     text_equality='exact', bind='boolean', literals=('TRUE', 'FALSE'), kinds=['date', 'datetime'], floor='10.6'),
 }
@@ -335,7 +337,9 @@ def test_capability_matrix(engine):
         'labels': {'day': 'YYYY-MM-DD', 'week': 'YYYY-Www', 'month': 'YYYY-MM', 'quarter': 'YYYY-Qn', 'year': 'YYYY'},
         'kinds': expected['kinds']}
     assert spec['join_kinds'] == ['inner', 'left'] and spec['max_joins'] == 4 and spec['max_filters'] == 50
-    assert spec['pivot'] is False and spec['version_floor'] == expected['floor']
+    assert spec['pivot']['max_columns'] == 12 and spec['pivot']['max_row_dims'] == 2
+    assert {'text', 'integer', 'boolean', 'date', 'datetime'} <= set(spec['pivot']['column_kinds'])
+    assert spec['version_floor'] == expected['floor']
 
 
 def test_capability_flags_mirror_the_engine_catalog():

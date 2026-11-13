@@ -3,6 +3,7 @@ import {X} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '../../components/ui/tabs';
 import type {DataTab, DataTabsState} from '../../lib/data-tabs';
+import {focusLost, focusPanel} from './focus';
 
 type Props = {
   state: DataTabsState; title: (tab: DataTab) => string; onSelect: (id: string) => void; onClose: (id: string) => void;
@@ -17,6 +18,12 @@ export default function DataTabs({state, title, onSelect, onClose, actions, bann
   const activeTab = state.tabs.find(tab => tab.id === state.activeId), list = useRef<HTMLDivElement>(null);
   // A narrow strip scrolls sideways, so keep the selected tab in view.
   useEffect(() => {list.current?.querySelector<HTMLElement>('[role=tab][data-state=active]')?.scrollIntoView?.({block: 'nearest', inline: 'nearest'});}, [state.activeId]);
+  // Opening a tab from a control in another tab (drill-down, show rows) hides that control. Move focus to the new panel instead of dropping it on the page.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {mounted.current = true; return;}
+    if (focusLost() || document.activeElement?.closest('.data-tab-panel[hidden]')) focusPanel(document.querySelector<HTMLElement>('.data-tab-panel:not([hidden])'));
+  }, [state.activeId]);
   return <Tabs className="data-tabs" value={state.activeId} onValueChange={onSelect}>
     <header className="data-header">
       <TabsList ref={list} className="data-tab-list" aria-label="Open tables and queries">

@@ -14,6 +14,7 @@ class MariaDBDialect(MySQLFamilyDialect):
     label = 'MariaDB'
     version_floor = '10.6'
     timeout_error_code = 1969   # ER_STATEMENT_TIMEOUT
+    exact_collation = 'utf8mb4_nopad_bin'   # NO PAD
 
     def _extra_kind(self, text: str):
         # Native UUID values are validated like PostgreSQL's; the address types render and compare as text.

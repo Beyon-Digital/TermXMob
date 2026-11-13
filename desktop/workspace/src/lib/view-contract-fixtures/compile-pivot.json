@@ -1,0 +1,152 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/query-specs/compile",
+    "as": "alice",
+    "body": {
+      "spec": {
+        "version": 1,
+        "source": "conn_01",
+        "from": {
+          "table": "sales",
+          "alias": "s"
+        },
+        "joins": [],
+        "select": [],
+        "filters": {
+          "op": "and",
+          "items": []
+        },
+        "group_by": [],
+        "aggregates": [],
+        "sort": [],
+        "limit": 200,
+        "offset": 0,
+        "pivot": {
+          "rows": [
+            {
+              "table_alias": "s",
+              "column": "region"
+            }
+          ],
+          "columns": {
+            "table_alias": "s",
+            "column": "day",
+            "bucket": "month"
+          },
+          "value": {
+            "fn": "sum",
+            "table_alias": "s",
+            "column": "amount",
+            "label": "Total amount"
+          },
+          "totals": true,
+          "sort": {
+            "by": "rows",
+            "direction": "asc"
+          }
+        }
+      }
+    }
+  },
+  "status": 200,
+  "response": {
+    "ok": true,
+    "dialect": "sqlite",
+    "sql": "SELECT \"s\".\"region\" AS \"pv_r1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p1 THEN \"s\".\"amount\" END) AS \"pv_c1\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p2 THEN \"s\".\"amount\" END) AS \"pv_c2\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p3 THEN \"s\".\"amount\" END) AS \"pv_c3\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p4 THEN \"s\".\"amount\" END) AS \"pv_c4\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END = :p5 THEN \"s\".\"amount\" END) AS \"pv_c5\", SUM(CASE WHEN CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL THEN \"s\".\"amount\" END) AS \"pv_c6\", SUM(\"s\".\"amount\") AS \"pv_total\"\nFROM \"sales\" AS \"s\"\nWHERE (CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IN (:p6, :p7, :p8, :p9, :p10) OR CASE WHEN \"s\".\"day\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(substr(\"s\".\"day\",1,10)) = substr(\"s\".\"day\",1,10) THEN strftime('%Y-%m', substr(\"s\".\"day\",1,10)) END IS NULL)\nGROUP BY \"s\".\"region\"\nORDER BY \"s\".\"region\" ASC NULLS LAST\nLIMIT 201 OFFSET 0",
+    "parameters": {
+      "p1": "2020-12",
+      "p2": "2021-01",
+      "p3": "2026-01",
+      "p4": "2026-02",
+      "p5": "2026-03",
+      "p6": "2020-12",
+      "p7": "2021-01",
+      "p8": "2026-01",
+      "p9": "2026-02",
+      "p10": "2026-03"
+    },
+    "columns": [
+      {
+        "label": "region",
+        "value_kind": "text",
+        "role": "pivot_row",
+        "alias": "pv_r1",
+        "table_alias": "s",
+        "column": "region"
+      },
+      {
+        "label": "2020-12",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "alias": "pv_c1",
+        "fn": "sum",
+        "column_value": "2020-12",
+        "column_empty": false
+      },
+      {
+        "label": "2021-01",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "alias": "pv_c2",
+        "fn": "sum",
+        "column_value": "2021-01",
+        "column_empty": false
+      },
+      {
+        "label": "2026-01",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "alias": "pv_c3",
+        "fn": "sum",
+        "column_value": "2026-01",
+        "column_empty": false
+      },
+      {
+        "label": "2026-02",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "alias": "pv_c4",
+        "fn": "sum",
+        "column_value": "2026-02",
+        "column_empty": false
+      },
+      {
+        "label": "2026-03",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "alias": "pv_c5",
+        "fn": "sum",
+        "column_value": "2026-03",
+        "column_empty": false
+      },
+      {
+        "label": "(empty)",
+        "value_kind": "integer",
+        "role": "pivot_cell",
+        "alias": "pv_c6",
+        "fn": "sum",
+        "column_value": null,
+        "column_empty": true
+      },
+      {
+        "label": "Total amount",
+        "value_kind": "integer",
+        "role": "pivot_total",
+        "alias": "pv_total",
+        "fn": "sum"
+      }
+    ],
+    "limit": 200,
+    "offset": 0,
+    "fetch_limit": 201,
+    "joins": [],
+    "warnings": [],
+    "pivot": {
+      "probed": true,
+      "column_count": 6,
+      "limit": 12
+    },
+    "schema_hash": "<hash>"
+  }
+}

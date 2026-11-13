@@ -1,8 +1,10 @@
 /* Tabs, popover and menu share the neutral overlay surface: tokens only, border plus overlay shadow, no blur. */
 .ui-tabs-list{display:flex;align-items:stretch;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .ui-tabs-list::-webkit-scrollbar{display:none}
-.ui-tabs-trigger{position:relative;display:inline-flex;align-items:center;gap:8px;flex-shrink:0;height:40px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--text-2);font:inherit;font-size:14px;line-height:20px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background-color 140ms ease-out,color 140ms ease-out}
+.ui-tabs-trigger{position:relative;display:inline-flex;align-items:center;gap:8px;flex-shrink:0;height:40px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--text-2);font:inherit;font-size:14px;line-height:20px;font-weight:500;cursor:pointer;white-space:nowrap}
 .ui-tabs-trigger:hover{background:var(--surface-2);color:var(--text)}
+/* The list scrolls, so an outside ring would be clipped top and bottom. Draw it inside the trigger. */
+:root[data-app-workspace] .ui-tabs-trigger:focus-visible{outline-offset:-2px}
 .ui-tabs-trigger[data-state=active]{color:var(--text)}
 .ui-tabs-trigger[data-state=active]::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;background:var(--accent)}
 .ui-tabs-trigger:disabled{opacity:.5;cursor:not-allowed}
@@ -20,4 +22,4 @@
 .ui-menu-separator{height:1px;margin:4px 0;background:var(--border)}
 @keyframes ui-overlay-in{from{opacity:0}to{opacity:1}}
 @media(pointer:coarse){.ui-tabs-trigger{height:44px}.ui-menu-item{min-height:44px}}
-@media(prefers-reduced-motion:reduce){.ui-popover,.ui-menu,.ui-tabs-trigger{animation:none;transition:none}}
+@media(prefers-reduced-motion:reduce){.ui-popover,.ui-menu{animation:none;transition:none}}

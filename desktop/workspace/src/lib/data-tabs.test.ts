@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
-import {closeTab, dataTabsKey, initialTabs, openTab, pruneTabs, readTabs, rememberTabs, selectTab, tableTabId, queryTabId, type DataTab} from './data-tabs';
+import {closeTab, dataTabsKey, initialTabs, openTab, pruneTabs, readTabs, rememberTabs, schemaFor, selectTab, tableTabId, queryTabId, type DataTab} from './data-tabs';
 
 const orders: DataTab = {id: tableTabId('src', 'orders'), kind: 'table', connectionId: 'src', table: 'orders'};
 const customers: DataTab = {id: tableTabId('src', 'customers'), kind: 'table', connectionId: 'src', table: 'customers'};
@@ -97,4 +97,12 @@ it('caps the number of open tabs', () => {
   for (let index = 0; index < 40; index++) state = openTab(state, {id: tableTabId('src', 't' + index), kind: 'table', connectionId: 'src', table: 't' + index});
   expect(state.tabs.length).toBeLessThanOrEqual(24);
   expect(state.activeId).toBe(tableTabId('src', 't39'));
+});
+
+it('finds the schema of a table by its name, so tabs opened from a spec match the schema list (SQLite tables live in "main")', () => {
+  const tables = [{name: 'sales', schema: 'main'}, {name: 'plain'}];
+  expect(schemaFor(tables, 'sales')).toBe('main');
+  expect(schemaFor(tables, 'plain')).toBeUndefined();
+  expect(schemaFor(tables, 'missing')).toBeUndefined();
+  expect(schemaFor(undefined, 'sales')).toBeUndefined();
 });

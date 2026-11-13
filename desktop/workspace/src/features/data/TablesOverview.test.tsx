@@ -37,18 +37,18 @@ it('tells a viewer to ask an editor instead of offering to connect', () => {
   expect(screen.queryByRole('button', {name: 'Connect database'})).not.toBeInTheDocument();
 });
 
-it('asks for Load schema before listing tables', () => {
+it('asks for Load tables before listing tables', () => {
   const controller = {...idle, loadSchema: vi.fn()};
   render(<TablesOverview {...props({controller})}/>);
-  expect(screen.getByText('Load the schema to see the tables in this source.')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', {name: 'Load schema'}));
+  expect(screen.getByText('Load the tables to see what is in this source.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Load tables'}));
   expect(controller.loadSchema).toHaveBeenCalled();
   expect(screen.queryByRole('group', {name: 'Table layout'})).not.toBeInTheDocument();
 });
 
-it('disables Load schema when the engine cannot introspect', () => {
+it('disables Load tables when the engine cannot introspect', () => {
   render(<TablesOverview {...props({engine: {...engine, capabilities: {read: true}}})}/>);
-  expect(screen.getByRole('button', {name: 'Load schema'})).toBeDisabled();
+  expect(screen.getByRole('button', {name: 'Load tables'})).toBeDisabled();
 });
 
 it('shows skeletons while loading and marks the region busy', () => {
@@ -113,7 +113,7 @@ it('shows a schema error with Try again, or Test connection for a 409', () => {
 it('has a sentence and a retry when the source has no visible tables', () => {
   render(<TablesOverview {...props({controller: {...idle, schemaStatus: 'ready', schema: {tables: []}}})}/>);
   expect(screen.getByText('This source has no visible tables.')).toBeInTheDocument();
-  expect(screen.getByRole('button', {name: 'Load schema'})).toBeInTheDocument();
+  expect(screen.getByRole('button', {name: 'Load tables'})).toBeInTheDocument();
 });
 
 it('shows source actions to editors only, honouring ownership', () => {

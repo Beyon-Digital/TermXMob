@@ -1,0 +1,117 @@
+{
+  "request": {
+    "kind": "pivot",
+    "name": "Sales by region and month",
+    "description": "",
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": []
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0,
+      "pivot": {
+        "rows": [
+          {
+            "table_alias": "sales",
+            "column": "region"
+          }
+        ],
+        "columns": {
+          "table_alias": "sales",
+          "column": "day",
+          "bucket": "month"
+        },
+        "value": {
+          "fn": "sum",
+          "table_alias": "sales",
+          "column": "amount",
+          "label": "Total amount"
+        },
+        "totals": true,
+        "sort": {
+          "by": "rows",
+          "direction": "asc"
+        }
+      }
+    }
+  },
+  "response": {
+    "id": "<id:view>",
+    "kind": "pivot",
+    "name": "Sales by region and month",
+    "description": "",
+    "connection_id": "<id:connection>",
+    "base_table": "sales",
+    "revision": 1,
+    "created_by": {
+      "id": "<id:person>",
+      "name": "Alice"
+    },
+    "updated_by": {
+      "id": "<id:person>",
+      "name": "Alice"
+    },
+    "created_at": "<time>",
+    "updated_at": "<time>",
+    "used_by_count": 0,
+    "can_edit": true,
+    "can_run": true,
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": []
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0,
+      "pivot": {
+        "rows": [
+          {
+            "table_alias": "sales",
+            "column": "region"
+          }
+        ],
+        "columns": {
+          "table_alias": "sales",
+          "column": "day",
+          "bucket": "month"
+        },
+        "value": {
+          "fn": "sum",
+          "table_alias": "sales",
+          "column": "amount",
+          "label": "Total amount"
+        },
+        "totals": true,
+        "sort": {
+          "by": "rows",
+          "direction": "asc"
+        }
+      }
+    },
+    "references": [],
+    "used_by": []
+  }
+}

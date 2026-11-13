@@ -1,6 +1,25 @@
 # Data Studio: no-SQL query experience
 
-Date: 2026-11-12. Status: draft for review. Path: architectural.
+Original date: 2026-11-12. Status: implemented design record; delivery notes updated 2026-11-14. Path: architectural.
+
+## Delivered implementation
+
+Delivery landed in [#54](https://github.com/Beyon-Digital/TermXMob/pull/54) (foundation), [#55](https://github.com/Beyon-Digital/TermXMob/pull/55) (pivots, segments and audit), then [#56](https://github.com/Beyon-Digital/TermXMob/pull/56) (Copilot, reports on views and Advanced SQL). The last PR combines phases 3 and 4 below. Use the [current user guide](../../data-studio.md), [engine compatibility guide](../../data-engine-compatibility.md) and [dated verification record](../../verification/data-studio-2026-11-14.md) for shipped behavior and tested revisions.
+
+The design and schematic contracts below preserve the original proposal, not a replacement API reference. Implementation details and bounds live in `src/termx/data/query_spec.py`, `query_service.py`, `view_http.py` and the frontend `lib/query-spec.ts` / `lib/data-views.ts`.
+
+Delivery clarifications:
+
+- Sidebar, table tabs, all-tables list/tiles, sortable keyboard-navigable grid, All/Any filter chips, up to four additional tables, summaries and read-only Show SQL shipped. Advanced SQL is an optional floating non-modal panel; existing SQL queries remain usable.
+- Saved table/pivot/segment views have revisions and run audit. Segments filter a base table plus its joins, rather than materializing memberships or arbitrary views over views. Pivots support one or two row dimensions, one optional column dimension and at most 12 distinct column values (including empty), with role-checked drill-down.
+- SQLite, PostgreSQL, MySQL and MariaDB have distinct adapters. Seven tested network-server versions are recorded separately; they do not qualify every newer release or the complete TLS/account enrollment flow.
+- Copilot proposal cards support renaming, chip removal and typed scalar/range/list edits. Apply/Open pivot/Save segment receive those edits, including table-proposal row limits. The value editor does not change fields, operators or group rules.
+- Reports and dashboards can use tables or saved views. Charts show friendly labels. Publications pin definitions and labels, not source rows. Archiving a used view requires a compatible publication or removal of its live dependencies; matching complete publications preserve report use, subject to current permissions.
+- The report Data picker uses the shared accessible app component. Keyboard radio focus, dialog focus restoration and result-table row/cell semantics have regression coverage.
+- Schema and Results consent start off. **Known mismatch:** despite the “next message only” hint, enabled switches persist across sends in the same context. Results consent permits authorized source queries, not only visible result rows. See the user guide before relying on consent scope.
+- Metadata schema v2 backs up a nonempty v1 store once before migrating and preserves that backup on reopen. It does not migrate or back up the connected business database.
+
+The [foundation plan](../plans/2026-11-12-data-studio-foundation.md) and [pivots/segments plan](../plans/2026-11-13-data-studio-pivots-segments.md) remain as implementation history.
 
 ## Outcome
 

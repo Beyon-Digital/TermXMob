@@ -114,7 +114,7 @@ def test_summary_columns_and_labels(shop):
         {'label': 'Month', 'value_kind': 'text', 'role': 'group', 'table_alias': 'o', 'column': 'ordered_at', 'bucket': 'month'},
         {'label': 'Total amount', 'value_kind': 'number', 'role': 'aggregate', 'fn': 'sum', 'table_alias': 'o', 'column': 'amount'},
         {'label': 'Number of rows', 'value_kind': 'integer', 'role': 'aggregate', 'fn': 'count'}]
-    assert 'GROUP BY strftime' in compiled.sql and 'ORDER BY strftime' in compiled.sql
+    assert 'GROUP BY CASE WHEN' in compiled.sql and 'ORDER BY CASE WHEN' in compiled.sql
     assert ' AS "Month"' in compiled.sql
     # output aliases never appear in ORDER BY or GROUP BY (PostgreSQL rejects them in expressions)
     order = compiled.sql.split('ORDER BY')[1]

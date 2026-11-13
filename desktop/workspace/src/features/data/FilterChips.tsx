@@ -1,19 +1,23 @@
-import {useRef} from 'react';
-import {Plus, X} from 'lucide-react';
+import {useId, useRef} from 'react';
+import {Plus, TriangleAlert, X} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Select} from '../../components/ui/select';
 import {addFilterNode, describeFilter, isFilterGroup, refKey, removeFilterNode, replaceFilterNode, setGroupMode, type FilterContext, type GroupPath} from '../../lib/query-builder';
-import type {FilterGroup, FilterLeaf, LeafOp} from '../../lib/query-spec';
+import {isFilterLeaf, isSegmentFilter, type FilterGroup, type FilterLeaf, type LeafOp} from '../../lib/query-spec';
+import {describeSegmentNode} from '../../lib/segments';
+import {Popover, PopoverContent, PopoverTrigger} from '../../components/ui/popover';
 import {FilterPopover, type ColumnOption} from './ColumnFilter';
+import SegmentFilterMenu, {MembershipChoice, type SegmentContext} from './SegmentFilterMenu';
 
 type Props = {
   filters: FilterGroup; context: FilterContext; options: ColumnOption[]; allowedOps?: readonly LeafOp[]; onChange: (filters: FilterGroup) => void;
   /** Disables adding. Existing chips can still be removed. */ readOnly?: boolean;
+  /** Lets people filter by membership in a saved segment, and names the segments in chips. */ segments?: SegmentContext;
 };
 
 /** Plain-language filter chips with "Match all of these" and "Match any of these" groups. One level of nesting. */
-export default function FilterChips({filters, context, options, allowedOps, onChange, readOnly = false}: Props) {
-  const focusAdd = useRef<HTMLButtonElement>(null);
+export default function FilterChips({filters, context, options, allowedOps, onChange, readOnly = false, segments}: Props) {
+  const focusAdd = useRef<HTMLButtonElement>(null), choiceName = useId();
   const optionFor = (leaf: FilterLeaf) => options.find(row => refKey(row.ref) === refKey(leaf.field));
   function renderGroup(group: FilterGroup, path: GroupPath) {
     const nested = path.length > 0;
@@ -25,7 +29,22 @@ export default function FilterChips({filters, context, options, allowedOps, onCh
         <ul className="data-chip-list">
           {group.items.map((item, index) => isFilterGroup(item)
             ? <li key={index} className="data-chip-group">{renderGroup(item, [...path, index])}<Button variant="ghost" size="sm" aria-label={'Remove group ' + (index + 1)} onClick={() => onChange(removeFilterNode(filters, path, index))}><X size={16} strokeWidth={1.5}/>Remove group</Button></li>
+            : isSegmentFilter(item) ? (() => {
+              const sentence = describeSegmentNode(item, segments?.names ?? (() => undefined)), missing = !segments?.names(item.segment);
+              const remove = () => {onChange(removeFilterNode(filters, path, index)); focusAdd.current?.focus();};
+              return <li key={index} className="data-chip" data-missing={missing || undefined}>
+                {missing && <TriangleAlert size={16} strokeWidth={1.5} className="data-chip-warning" aria-hidden="true"/>}
+                {missing ? <span className="data-chip-text">{sentence}</span> : <Popover>
+                  <PopoverTrigger asChild><button type="button" className="data-chip-text" disabled={readOnly} onKeyDown={event => {if (event.key === 'Delete' || event.key === 'Backspace') {event.preventDefault(); remove();}}}>{sentence}</button></PopoverTrigger>
+                  <PopoverContent className="data-filter-popover" aria-label={'Edit filter: ' + sentence}><div className="data-filter-form">
+                    <MembershipChoice value={!!item.negate} name={choiceName + index} onChange={negate => onChange(replaceFilterNode(filters, path, index, {segment: item.segment, ...(negate ? {negate: true} : {})}))}/>
+                  </div></PopoverContent>
+                </Popover>}
+                <button type="button" className="data-chip-remove" aria-label={'Remove filter: ' + sentence} onClick={remove}><X size={16} strokeWidth={1.5}/></button>
+              </li>;
+            })()
             : (() => {
+              if (!isFilterLeaf(item)) return null;
               const sentence = describeFilter(item, context), option = optionFor(item);
               const remove = () => {onChange(removeFilterNode(filters, path, index)); focusAdd.current?.focus();};
               return <li key={index} className="data-chip">
@@ -37,6 +56,7 @@ export default function FilterChips({filters, context, options, allowedOps, onCh
             })())}
         </ul>
         {readOnly ? addButton : <FilterPopover title="Add filter" columns={options} allowedOps={allowedOps} onApply={leaf => onChange(addFilterNode(filters, path, leaf))}>{addButton}</FilterPopover>}
+        {!nested && !readOnly && segments && <SegmentFilterMenu context={segments}/>}
         {!nested && !readOnly && filters.items.length > 0 && <Button variant="ghost" size="sm" onClick={() => onChange(addFilterNode(filters, [], {op: 'or', items: []}))}><Plus size={16} strokeWidth={1.5}/>Add group</Button>}
       </div>
     </div>;

@@ -1,0 +1,44 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/views/v_segment/drill",
+    "as": "alice",
+    "body": {
+      "coordinates": {}
+    }
+  },
+  "status": 200,
+  "response": {
+    "spec": {
+      "version": 1,
+      "source": "conn_01",
+      "from": {
+        "table": "sales",
+        "alias": "s"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "s",
+              "column": "amount"
+            },
+            "op": "gt",
+            "value": 200
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    },
+    "exact": true,
+    "notes": [],
+    "job": null
+  }
+}

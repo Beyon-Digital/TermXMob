@@ -1,7 +1,10 @@
 """Saved-set metadata, scoped HTTP authority and bounded image validation."""
 import io
 import json
+import os
+import sqlite3
 import stat
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +14,7 @@ from PIL import Image
 
 from termx.media.http import mount_media
 from termx.media.studio_subjects import StudioSubjectInput, StudioSubjectStore
+from termx.private_files import private_path_permissions
 
 
 def png():
@@ -65,12 +69,57 @@ def test_http_crud_restarts_and_keeps_underlying_images(workspace):
     listing = client.get('/api/media/studio/subjects?project_id=project-a', headers=headers)
     assert listing.json() == [subject] and listing.headers['cache-control'] == 'no-store'
     assert StudioSubjectStore(state.artifacts).list('alice', 'project-a') == [subject]
-    assert stat.S_IMODE(state.studio_subjects.path.stat().st_mode) == 0o600
+    assert private_path_permissions(state.artifacts.root)
+    assert private_path_permissions(state.studio_subjects.path)
+    if os.name != 'nt':
+        assert stat.S_IMODE(state.artifacts.root.stat().st_mode) == 0o700
+        assert stat.S_IMODE(state.studio_subjects.path.stat().st_mode) == 0o600
     deleted = client.delete('/api/media/studio/subjects/' + subject['id'], headers=headers)
     assert deleted.status_code == 204 and deleted.content == b''
     assert client.get('/api/media/studio/subjects?project_id=project-a', headers=headers).json() == []
     assert state.artifacts.binary('alice', photo)[0] == png()
     assert ('alice', 'agent-run', 'project-a') in decisions
+
+
+@pytest.mark.parametrize('existing', [False, True], ids=['first-use', 'existing-empty'])
+def test_subject_metadata_is_private_before_open_and_journals_stay_private(tmp_path, monkeypatch, existing):
+    root = tmp_path / 'workspace-artifacts'
+    root.mkdir()
+    if os.name != 'nt':
+        root.chmod(0o755)
+    path = root / 'studio-subjects.sqlite3'
+    if existing:
+        path.touch()
+        path.chmod(0o666)
+    connect = sqlite3.connect
+    opened = []
+
+    def private_connect(database, *args, **kwargs):
+        assert Path(database) == path
+        assert private_path_permissions(root)
+        assert private_path_permissions(path)
+        if os.name != 'nt':
+            assert stat.S_IMODE(root.stat().st_mode) == 0o700
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        opened.append(Path(database))
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', private_connect)
+    artifacts = SimpleNamespace(root=root)
+    store = StudioSubjectStore(artifacts)
+    assert opened == [path]
+    with store.db() as db:
+        db.execute('INSERT INTO studio_subjects VALUES(?,?,?,?,?,?,?)',
+                   ('saved-set', 'alice', 'project-a', 'Saved', '', '["image-id"]', 10))
+        journal = path.with_name(path.name + '-journal')
+        assert journal.is_file()
+        # Journals inherit the protected parent's owner/SYSTEM/admin policy.
+        assert private_path_permissions(journal, require_protected=False)
+    assert StudioSubjectStore(artifacts).list('alice', 'project-a') == [
+        {'id': 'saved-set', 'project_id': 'project-a', 'name': 'Saved', 'description': '',
+         'image_ids': ['image-id'], 'created': 10},
+    ]
+    assert len(opened) == 4
 
 
 def test_http_identity_exact_owner_project_and_revocation(workspace):
@@ -117,7 +166,8 @@ def test_http_input_bounds_precede_metadata_persistence(workspace, change):
     ('image/jpeg', png(), 'input'), ('image/svg+xml', b'<svg/>', 'input'),
     ('image/png', b'not an image', 'input'), ('image/png', png(), 'audio'),
     ('image/png', b'', 'input'), ('image/png', b'x'*(8*1024*1024+1), 'input'),
-])
+], ids=['mime-content-mismatch', 'svg-content', 'invalid-image-bytes',
+        'non-image-artifact-kind', 'empty-payload', 'oversized-8mib-plus-one'])
 def test_saved_references_must_be_bounded_binary_images(workspace, mime, blob, kind):
     client, state, _, _ = workspace
     photo = image(state, mime=mime, blob=blob, kind=kind)

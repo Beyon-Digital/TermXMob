@@ -1,5 +1,7 @@
 # Data Studio foundation (PR 1) implementation plan
 
+**Historical plan — delivered in [#54](https://github.com/Beyon-Digital/TermXMob/pull/54).** Retained as written for implementation history; findings below describe the pre-implementation checkout. Later phases landed in #55 and #56. Use the [current user guide](../../data-studio.md), [updated design record](../specs/2026-11-12-data-studio-query-ux-design.md) and [dated verification record](../../verification/data-studio-2026-11-14.md) for the shipped behavior, current limits and exact tested revisions. Commands and contract sketches below are historical instructions, not a claim that they were rerun for this documentation update.
+
 Date: 2026-11-12. Spec: `docs/superpowers/specs/2026-11-12-data-studio-query-ux-design.md` (approved). Scope: PR 1 "Foundation" only. Pivots, segments, views storage and audit (PR 2), Copilot proposals (PR 3) and BI-on-views (PR 4) are out of scope.
 
 Two lanes can run in parallel from the first commit. The backend lane touches only `src/termx/data/**` and `tests/**` (Python). The frontend lane touches only `desktop/workspace/**`. The two meet at one contract (section 4), which is frozen by task T0 and checked on both sides against the same JSON fixtures.
@@ -522,7 +524,7 @@ Client rule for results: `visibleRows = result.rows.slice(0, spec.limit)`, `hasM
 
 ## 5. Frontend
 
-All UI work follows `/Users/jai/.agents/skills/frontend-design-spec/SKILL.md` and `/Users/jai/.agents/DESIGN.md`: tokens only (no hex, no arbitrary values; the checklist `rg -n '#[0-9a-fA-F]{3,8}\b|-\[(#|\d)[^\]]*\]' src --glob '!*.css'` must return nothing for new files), Lucide icons (16px inline, 20px standalone, stroke 1.5), sentence case, Radix for every overlay, one primary action per view, 36px sidebar rows, 40px controls (32px compact on desktop, 44px only under `pointer: coarse`), 40px table rows, no zebra or vertical lines, numbers right-aligned with `tabular-nums`, radius 8 or 12 only, no gradients or emoji.
+All UI work follows `~/.agents/skills/frontend-design-spec/SKILL.md` and `~/.agents/DESIGN.md`: tokens only (no hex, no arbitrary values; the checklist `rg -n '#[0-9a-fA-F]{3,8}\b|-\[(#|\d)[^\]]*\]' src --glob '!*.css'` must return nothing for new files), Lucide icons (16px inline, 20px standalone, stroke 1.5), sentence case, Radix for every overlay, one primary action per view, 36px sidebar rows, 40px controls (32px compact on desktop, 44px only under `pointer: coarse`), 40px table rows, no zebra or vertical lines, numbers right-aligned with `tabular-nums`, radius 8 or 12 only, no gradients or emoji.
 
 ### 5.1 Files
 

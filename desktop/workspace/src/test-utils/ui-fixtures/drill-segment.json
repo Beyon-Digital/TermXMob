@@ -1,0 +1,38 @@
+{
+  "request": {
+    "coordinates": {}
+  },
+  "response": {
+    "spec": {
+      "version": 1,
+      "source": "<id:connection>",
+      "from": {
+        "table": "sales",
+        "alias": "sales"
+      },
+      "joins": [],
+      "select": [],
+      "filters": {
+        "op": "and",
+        "items": [
+          {
+            "field": {
+              "table_alias": "sales",
+              "column": "amount"
+            },
+            "op": "gte",
+            "value": 5000
+          }
+        ]
+      },
+      "group_by": [],
+      "aggregates": [],
+      "sort": [],
+      "limit": 200,
+      "offset": 0
+    },
+    "exact": true,
+    "notes": [],
+    "job": null
+  }
+}

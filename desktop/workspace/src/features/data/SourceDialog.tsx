@@ -47,7 +47,7 @@ export default function SourceDialog({open, record, engines, workspaceId, ownerI
   return <Dialog open={open} onOpenChange={next => {if (!next && !busy) onClose();}}>
     <DialogContent className="data-dialog" closeDisabled={busy}>
       <DialogTitle>{draft.id ? 'Edit connection' : 'Connect database'}</DialogTitle>
-      <DialogDescription>Save a source profile. The database is contacted only when you test, load schema or run a query.</DialogDescription>
+      <DialogDescription>Save a source profile. The database is contacted only when you test, load tables or run a query.</DialogDescription>
       <form onSubmit={event => {event.preventDefault(); void save();}}>
         <label>Connection name<Input value={draft.name} onChange={event => setDraft(value => ({...value, name: event.target.value}))} autoComplete="off" required disabled={busy}/></label>
         <label>Database engine<Select value={draft.engine} onChange={event => {const next = engines.find(row => row.id === event.target.value); setDraft(value => ({...newSource(next), name: value.name}));}} required disabled={busy || !!draft.id}>

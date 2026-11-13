@@ -2,21 +2,12 @@
 for real against SQLite (always) and against PostgreSQL, MySQL and MariaDB (when the matching
 environment variable is set). Results are compared with an independent Python oracle.
 
-Live containers (not started by CI). Start them, run, then remove them:
+Run the disposable Docker version matrix (also used by the engine CI workflow):
 
-    docker run -d --rm --name termx-test-pg -e POSTGRES_PASSWORD=termx -e POSTGRES_USER=termx \\
-        -e POSTGRES_DB=termx -p 55432:5432 postgres:16
-    docker run -d --rm --name termx-test-mysql -e MYSQL_ROOT_PASSWORD=termx -e MYSQL_DATABASE=termx \\
-        -p 53306:3306 mysql:8.4
-    docker run -d --rm --name termx-test-mariadb -e MARIADB_ROOT_PASSWORD=termx -e MARIADB_DATABASE=termx \\
-        -p 53307:3306 mariadb:10.11
+    uv run --locked --extra development --extra media python scripts/test_data_engine_matrix.py --output-dir /tmp/termx-engine-evidence
 
-    TERMX_TEST_PG_URL=postgresql+psycopg://termx:termx@127.0.0.1:55432/termx \\
-    TERMX_TEST_MYSQL_URL=mysql+pymysql://root:termx@127.0.0.1:53306/termx \\
-    TERMX_TEST_MARIADB_URL=mysql+pymysql://root:termx@127.0.0.1:53307/termx \\
-    uv run pytest tests/test_data_conformance.py -q
-
-    docker rm -f termx-test-pg termx-test-mysql termx-test-mariadb
+To use an existing synthetic test server, set TERMX_TEST_PG_URL, TERMX_TEST_MYSQL_URL or
+TERMX_TEST_MARIADB_URL. TERMX_TEST_SERVER_VERSION optionally asserts an exact version prefix.
 
 Each live test loads the fixture rows into a uniquely named schema (PostgreSQL) or database
 (MySQL, MariaDB) and drops it afterwards.
@@ -375,6 +366,54 @@ DDL = {
 DDL['mariadb'] = DDL['mysql']
 
 
+def live_server_version(conn, engine_name):
+    """Fail on a wrong engine, unsupported version or accidentally reused matrix endpoint."""
+    version = str(conn.exec_driver_sql('SELECT version()').scalar())
+    match = re.search(r'(\d+)\.(\d+)(?:\.(\d+))?', version)
+    assert match, f'Unrecognised {engine_name} server version: {version}'
+    parts = tuple(int(n or 0) for n in match.groups())
+    if engine_name != 'postgresql':
+        assert ('mariadb' in version.lower()) == (engine_name == 'mariadb'), version
+    else:
+        assert version.startswith('PostgreSQL '), version
+    floor = tuple(int(n) for n in get_dialect(engine_name).version_floor.split('.'))
+    assert parts >= floor, f'{engine_name} {version} is below the supported minimum {floor}'
+    expected = os.environ.get('TERMX_TEST_SERVER_VERSION')
+    if expected:
+        wanted = tuple(int(n) for n in expected.split('.'))
+        assert parts[:len(wanted)] == wanted, f'Expected {engine_name} {expected}, got {version}'
+    return version, parts
+
+
+@pytest.mark.parametrize('engine,version,expected,valid', [
+    ('postgresql', 'PostgreSQL 12.22 on aarch64-unknown-linux-gnu', '12', True),
+    ('mysql', '8.0.17', '8.0.17', True),
+    ('mariadb', '10.6.24-MariaDB-ubu2004', '10.6', True),
+    ('postgresql', 'PostgreSQL 11.22 on aarch64-unknown-linux-gnu', None, False),
+    ('mysql', '8.0.16', None, False),
+    ('mysql', '10.11.14-MariaDB', None, False),
+    ('mariadb', '8.4.7', None, False),
+    ('postgresql', 'PostgreSQL 16.11 on aarch64-unknown-linux-gnu', '12', False),
+])
+def test_live_version_guard_checks_family_floor_and_matrix_endpoint(monkeypatch, engine, version, expected, valid):
+    class Connection:
+        def exec_driver_sql(self, sql):
+            assert sql == 'SELECT version()'
+            return self
+
+        def scalar(self):
+            return version
+
+    monkeypatch.delenv('TERMX_TEST_SERVER_VERSION', raising=False)
+    if expected:
+        monkeypatch.setenv('TERMX_TEST_SERVER_VERSION', expected)
+    if valid:
+        assert live_server_version(Connection(), engine)[0] == version
+    else:
+        with pytest.raises(AssertionError):
+            live_server_version(Connection(), engine)
+
+
 @contextlib.contextmanager
 def live_database(engine_name):
     url = os.environ.get(LIVE_URLS[engine_name])
@@ -387,6 +426,7 @@ def live_database(engine_name):
     rows = build_rows()
     with source.connect() as conn:
         try:
+            version, version_parts = live_server_version(conn, engine_name)
             conn.execute(text(f'CREATE SCHEMA {quoted}' if engine_name == 'postgresql' else f'CREATE DATABASE {quoted}'))
             for table in ('customers', 'orders', 'order_items'):
                 conn.execute(text(DDL[engine_name][table].format(s=quoted)))
@@ -406,7 +446,8 @@ def live_database(engine_name):
                 conn.exec_driver_sql("SET SESSION sql_mode = CONCAT(@@sql_mode, ',ONLY_FULL_GROUP_BY')")
             if engine_name != 'postgresql':
                 assert 'ONLY_FULL_GROUP_BY' in conn.exec_driver_sql('SELECT @@sql_mode').scalar()
-            yield type('Live', (), {'conn': conn, 'name': name, 'rows': rows, 'days': days, 'engine': engine_name})
+            yield type('Live', (), {'conn': conn, 'name': name, 'rows': rows, 'days': days, 'engine': engine_name,
+                                  'version': version, 'version_parts': version_parts})
         finally:
             conn.rollback()
             conn = conn.execution_options(stream_results=False)

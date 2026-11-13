@@ -1,7 +1,7 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {cleanup, fireEvent, render, screen, within} from '@testing-library/react';
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import DataNavigation, {TABLE_PAGE} from './DataNavigation';
+import DataNavigation from './DataNavigation';
 import {expectNoAxeViolations} from '../../test-axe';
 import type {SourceController} from './use-source';
 import type {DataQuery} from '../../lib/data-studio';
@@ -25,10 +25,10 @@ it('lists the Studio groups as labelled navs', async () => {
   await expectNoAxeViolations(container);
 });
 
-it('offers Load schema before the source has been contacted', () => {
+it('offers Load tables before the source has been contacted', () => {
   const load = vi.fn();
   render(<DataNavigation {...props({source: {...idle, loadSchema: load}})}/>);
-  fireEvent.click(screen.getByRole('button', {name: 'Load schema'}));
+  fireEvent.click(screen.getByRole('button', {name: 'Load tables'}));
   expect(load).toHaveBeenCalledTimes(1);
 });
 
@@ -63,12 +63,16 @@ it('filters tables and saved queries by the search text and announces the result
   expect(screen.getByText('No saved queries match.')).toBeInTheDocument();
 });
 
-it('renders a long table list in pages instead of all at once', () => {
-  render(<DataNavigation {...props({source: ready(Array.from({length: TABLE_PAGE + 50}, (_, index) => 't' + String(index).padStart(3, '0')))})}/>);
+it('keeps a long table list virtual: only the rows in view are in the page, and arrows move between them', () => {
+  render(<DataNavigation {...props({source: ready(Array.from({length: 5000}, (_, index) => 't' + String(index).padStart(4, '0')))})}/>);
   const nav = screen.getByRole('navigation', {name: 'Tables'});
-  expect(within(nav).getAllByRole('button').filter(button => /^t\d+$/.test(button.textContent || ''))).toHaveLength(TABLE_PAGE);
-  fireEvent.click(within(nav).getByRole('button', {name: 'Show more tables'}));
-  expect(within(nav).getAllByRole('button').filter(button => /^t\d+$/.test(button.textContent || ''))).toHaveLength(TABLE_PAGE + 50);
+  const rows = () => within(nav).getAllByRole('button').filter(button => /^t\d+$/.test(button.textContent || ''));
+  expect(rows().length).toBeGreaterThan(5);
+  expect(rows().length).toBeLessThan(40);
+  expect(rows()[0]).toHaveTextContent('t0000');
+  rows()[0].focus();
+  fireEvent.keyDown(rows()[0], {key: 'ArrowDown'});
+  return waitFor(() => expect(rows()[1]).toHaveFocus());
 });
 
 it('marks the active tab row as the current page and opens tables, queries and views', () => {
@@ -96,7 +100,7 @@ it('disables a table the connector excluded and explains why', () => {
 
 it('has a one-sentence empty state with no source and no table group', () => {
   render(<DataNavigation {...props({connections: [], connectionId: '', queries: []})}/>);
-  expect(screen.getByRole('combobox', {name: 'Data source'})).toHaveDisplayValue('No sources yet');
+  expect(screen.getByRole('combobox', {name: 'Data source'})).toHaveTextContent('No sources yet');
   expect(screen.queryByRole('navigation', {name: 'Tables'})).not.toBeInTheDocument();
   expect(screen.queryByRole('button', {name: 'Connect database'})).not.toBeInTheDocument();
 });

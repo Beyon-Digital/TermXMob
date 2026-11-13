@@ -1,5 +1,7 @@
 # Data Studio pivots, segments and audit (PR 2) implementation plan
 
+**Historical plan — delivered in [#55](https://github.com/Beyon-Digital/TermXMob/pull/55).** This previously local plan is preserved with the design history. Findings below describe its original checkout; Copilot and BI-on-views subsequently landed in #56. Use the [current user guide](../../data-studio.md), [updated design record](../specs/2026-11-12-data-studio-query-ux-design.md) and [dated verification record](../../verification/data-studio-2026-11-14.md) for shipped behavior, current limits and exact tested revisions. Historical task lists are not pending work or proof of a new test run.
+
 Date: 2026-11-13. Spec: `docs/superpowers/specs/2026-11-12-data-studio-query-ux-design.md` (approved). Builds on PR 1: `docs/superpowers/plans/2026-11-12-data-studio-foundation.md` (branch `worktree-wf_5c5c02ca-43a-9`, already merged into this worktree). Scope: PR 2 only. The Copilot sidebar (PR 3) and BI reports built on views (PR 4) are out of scope.
 
 Two lanes can start after task T0. The backend lane touches `src/termx/data/**` and `tests/**` (Python). The frontend lane touches `desktop/workspace/**`. They meet at one contract (section 4), frozen by T0 and checked on both sides against the same JSON fixtures, exactly as in PR 1.
@@ -619,7 +621,7 @@ Client functions: `listViews`, `getView`, `createView`, `updateView`, `archiveVi
 
 ## 8. Frontend
 
-Read first: `/Users/jai/.agents/skills/frontend-design-spec/SKILL.md` and `/Users/jai/.agents/DESIGN.md`. Rules that bind every file below: tokens only (no hex, no `!important`, no gradients), Lucide icons at 16px/1.5 stroke, sentence case, one primary action per view, all states (loading skeleton shaped like the content, empty with one action, inline error with recovery, disabled with a reason), keyboard path for every action, Radix for overlays (Dialog, Popover, DropdownMenu, Tabs), non-technical wording (no "SQL", "join", "WHERE", "CASE", "aggregate" in default UI; use "Combine", "Match", "Total of", "Rows", "Columns", "Value").
+Read first: `~/.agents/skills/frontend-design-spec/SKILL.md` and `~/.agents/DESIGN.md`. Rules that bind every file below: tokens only (no hex, no `!important`, no gradients), Lucide icons at 16px/1.5 stroke, sentence case, one primary action per view, all states (loading skeleton shaped like the content, empty with one action, inline error with recovery, disabled with a reason), keyboard path for every action, Radix for overlays (Dialog, Popover, DropdownMenu, Tabs), non-technical wording (no "SQL", "join", "WHERE", "CASE", "aggregate" in default UI; use "Combine", "Match", "Total of", "Rows", "Columns", "Value").
 
 ### 8.1 Files
 
