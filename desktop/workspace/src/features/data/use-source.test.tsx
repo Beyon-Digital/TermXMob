@@ -96,7 +96,7 @@ it.each(changes)('drops a pending schema when %s changes', async (_name, change)
   let resolve!: (value: unknown) => void;
   api.mockReturnValue(new Promise(done => {resolve = done;}));
   const initial: DataConnection = {...generated, shared_read: true, credential_configured: true, password_configured: true, read_policy: {verified: true}};
-  const {result, rerender} = renderHook(({row}: {row: DataConnection | undefined}) => useDataSource('workspace', row, refresh), {initialProps: {row: initial}});
+  const {result, rerender} = renderHook(({row}: {row: DataConnection | undefined}) => useDataSource('workspace', row, refresh), {initialProps: {row: initial as DataConnection | undefined}});
   act(() => result.current.loadSchema());
   rerender({row: change(initial)});
   await act(async () => resolve({tables: [{name: 'private_previous_table', columns: []}]}));
