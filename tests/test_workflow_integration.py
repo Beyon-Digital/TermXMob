@@ -109,7 +109,7 @@ def post(client, headers, path, body, expected=200):
     return response.json()
 
 
-def wait_run(client, run_id, statuses=TERMINAL, seconds=15):
+def wait_run(client, run_id, statuses=TERMINAL, seconds=15, poll_interval=.025):
     deadline = monotonic() + seconds
     last = None
     while monotonic() < deadline:
@@ -118,7 +118,7 @@ def wait_run(client, run_id, statuses=TERMINAL, seconds=15):
         last = response.json()
         if last["status"] in statuses:
             return last
-        sleep(.025)
+        sleep(poll_interval)
     raise AssertionError("Workflow did not reach " + repr(statuses) + ": " + repr(last))
 
 
@@ -303,7 +303,9 @@ return {calls:600,jobs:12000,positive:total>0};"""
     definition = post(client, headers, PREFIX, {"request_id": "legacy-limits-create", "name": "Long workflow", "source": source, "limits": {"max_agents": 1, "concurrency": 1, "timeout_s": 1}})
     assert definition["limits"] == {"max_agents": None, "concurrency": None, "timeout_s": None}
     run = post(client, headers, PREFIX + "/runs", {"request_id": "unlimited-long-run", "workflow_id": definition["id"], "revision": definition["revision"]})
-    final = wait_run(client, run["id"], seconds=40)
+    # Each status read serializes the retained call/event history. Leave time
+    # for the same ledger to record progress between these heavier reads.
+    final = wait_run(client, run["id"], seconds=40, poll_interval=.2)
     assert final["status"] == "completed", final
     assert final["limits"] == {"max_agents": None, "concurrency": None, "timeout_s": None}
     assert final["result"] == {"calls": 600, "jobs": 12000, "positive": True}
