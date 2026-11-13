@@ -252,3 +252,40 @@ it('keeps recovery guidance and the Data picker available when an archived table
   expect(request.mock.calls.some(([path]) => path.includes('/fields'))).toBe(false);
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
+
+it.each(['New report', 'Create report'])('restores the exact %s opener after escaping the report data menu and dialog', async openerName => {
+  const user = userEvent.setup();
+  api([]);
+  render(<BIStudio {...props}/>);
+  await screen.findByText('No reports yet');
+
+  const opener = screen.getByRole('button', {name: openerName});
+  for (let step = 0; step < 8 && document.activeElement !== opener; step += 1) {
+    await user.tab();
+  }
+  expect(opener).toHaveFocus();
+  await user.keyboard('{Enter}');
+
+  const dialog = await screen.findByRole('dialog', {name: 'Create report'});
+  await waitFor(() => expect(within(dialog).getByLabelText('Name')).toHaveFocus());
+  await user.tab();
+  const data = within(dialog).getByLabelText('Data');
+  expect(data).toHaveFocus();
+  await user.keyboard('{Enter}');
+
+  const menu = await screen.findByRole('menu', {name: 'Data'});
+  const choice = within(menu).getByRole('menuitemradio', {name: 'Sales by region'});
+  await waitFor(() => expect(choice).toHaveFocus());
+  expect(choice).toHaveAttribute('aria-checked', 'true');
+
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+  expect(dialog).toBeInTheDocument();
+  await waitFor(() => expect(data).toHaveFocus());
+  expect(data).toHaveTextContent('Sales by region');
+
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() => expect(opener).toHaveFocus());
+  expect(request.mock.calls.some(([, init]) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init?.method || ''))).toBe(false);
+});
