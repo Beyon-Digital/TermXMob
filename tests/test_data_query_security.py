@@ -137,7 +137,8 @@ def test_one_editor_cannot_starve_another_editors_queries(env, monkeypatch):
 
     def alice_slots():
         with env.runtime._job_lock:
-            count = sum(actor == env.actors['alice'].id for actor, _ in env.runtime._inflight.values())
+            inflight = env.runtime._inflight.copy()
+        count = sum(actor == env.actors['alice'].id for actor, _ in inflight.values())
         assert count <= 4, 'one person may have only 4 runs in flight'
         return count
 
