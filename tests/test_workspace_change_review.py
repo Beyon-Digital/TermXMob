@@ -86,9 +86,19 @@ def test_checkout_switch_accepts_long_enrolled_paths_without_relaxing_session_in
         remaining = 201 - len(str(deep / 'project'))
         deep /= 'd' * min(48, max(1, remaining - 1))
     deep.mkdir(parents=True, exist_ok=True)
-    service, owner, root, tree, row, _, _ = setup((service, owner, deep))
+    # Git for Windows limits mkdir paths to <248 characters by default. Keep
+    # its .git/worktrees/<id> metadata short without changing Git configuration;
+    # both real enrolled working folders still exceed the session text cap.
+    git_dir = path.resolve() / 'git'
+    service, owner, root, tree, row, _, _ = setup((service, owner, deep), git_dir=git_dir)
     checkout = str(Path(tree['path']).resolve())
     assert len(str(root)) > 200 and len(checkout) > 200
+    assert (root / '.git').is_file()
+    common = subprocess.run(['git', '-C', str(root), 'rev-parse', '--git-common-dir'],
+                            check=True, capture_output=True, text=True).stdout.strip()
+    assert (root / common).resolve() == git_dir
+    assert len(str(git_dir / 'worktrees' / tree['id'])) < 248
+    assert len(checkout) < 248 and len(str(Path(checkout) / 'base.txt')) < 260
 
     project = service.update_session(owner, row['id'], revision=row['revision'], changes={'worktree_id': None})
     assert project['cwd'] == str(root) and project['worktree_id'] is None

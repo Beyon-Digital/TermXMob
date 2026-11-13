@@ -16,12 +16,12 @@ from termx.project_files import ProjectFiles
 from termx.workspace.http import mount_workspace
 
 
-def setup(workspace):
+def setup(workspace, *, git_dir=None):
     service,owner,path=workspace
     root=path/'project';root.mkdir()
     def git(*args):
         return subprocess.run(['git','-C',str(root),*args],check=True,capture_output=True,text=True).stdout
-    git('init','-b','main');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
+    git('init','-b','main',*(['--separate-git-dir',str(git_dir)] if git_dir else []));git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
     (root/'base.txt').write_text('Needle exists in content, not filename\n')
     git('add','.');git('commit','-m','Fixture')
     project={'id':'project-a','name':'Fixture','path':str(root)}

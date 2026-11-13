@@ -278,15 +278,38 @@ def test_packaged_host_uses_only_allowlisted_self_worker_and_same_sandbox(monkey
     assert str(Path(sys.executable).resolve().parent) in runner.spec.read_only_roots
 
 
-def test_backend_worker_entry_is_json_only_and_starts_before_cli(tmp_path):
+def _backend_worker_environment(root):
     import os
+
+    env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(root / "src"), "PYTHONDONTWRITEBYTECODE": "1"}
+    if sys.platform == "win32":
+        # CPython's Winsock provider initialization needs the OS directory,
+        # even when this child only rejects an invalid protocol frame.
+        env["SystemRoot"] = os.environ["SystemRoot"]
+    return env
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+def test_backend_worker_environment_keeps_only_required_variables(tmp_path, monkeypatch, platform):
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setenv("PATH", "fixture-bin")
+    monkeypatch.setenv("PYTHONPATH", "parent-packages-must-not-be-inherited")
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+    monkeypatch.setenv("UNRELATED_BACKEND_TEST_VALUE", "must-not-be-inherited")
+    expected = {"PATH": "fixture-bin", "PYTHONPATH": str(tmp_path / "src"), "PYTHONDONTWRITEBYTECODE": "1"}
+    if platform == "win32":
+        expected["SystemRoot"] = r"C:\Windows"
+    assert _backend_worker_environment(tmp_path) == expected
+
+
+def test_backend_worker_entry_is_json_only_and_starts_before_cli(tmp_path):
     import subprocess
     root = Path(__file__).resolve().parents[1]
     # Invalid protocol is rejected before importing QuickJS, so this exercises
     # the actual entry path even while dependency installation is blocked.
     result = subprocess.run([sys.executable, "-B", str(root / "desktop" / "backend_entry.py"),
         "--runtime-module", "termx.workspace.workflows.worker"], input=b'{"type":"unexpected"}\n',
-        env={"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(root / "src"), "PYTHONDONTWRITEBYTECODE": "1"},
+        env=_backend_worker_environment(root),
         cwd=tmp_path, capture_output=True, timeout=5)
     assert result.returncode == 1
     assert not result.stderr
