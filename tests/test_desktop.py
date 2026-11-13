@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -48,6 +49,82 @@ class FakeAdapter(VirtualAdapter):
         self.destroyed.append(name)
 
 
+@pytest.fixture(autouse=True)
+def desktop_io(monkeypatch, isolated_virtual_registry):
+    """Unit contracts use explicit ports; unexpected physical I/O fails the test."""
+    from termx import notify
+    from termx.desktop import broker, capture, input as desktop_input, session
+
+    io = SimpleNamespace(blocked=[], expected_blocked=[], prompts=[], closed=[])
+
+    def forbidden(name):
+        def block(*_args, **_kwargs):
+            io.blocked.append(name)
+            raise AssertionError("Unexpected physical desktop I/O: " + name)
+        return block
+
+    def no_capture(*_args, **_kwargs):
+        raise RuntimeError("physical capture is outside these unit contracts")
+
+    monkeypatch.setattr(session, "grab_jpeg", no_capture)
+    monkeypatch.setattr(capture, "_target", forbidden("capture target"))
+    for module in (session, capture):
+        monkeypatch.setattr(module, "close_capture", lambda: io.closed.append("capture"))
+    for name in ("_HELPER", "_HELPER_BIN", "_HELPER_DISPLAY"):
+        monkeypatch.setattr(capture, name, None)  # Restore handles; never close a preexisting helper.
+    monkeypatch.setattr(capture, "list_physical_displays", lambda: [
+        {"id": "fixture-main", "name": "Fixture", "kind": "physical", "main": True,
+         "width": 800, "height": 600},
+    ])
+    monkeypatch.setattr(session, "_prompt_once", io.prompts.append)
+    monkeypatch.setattr(notify, "permission", io.prompts.append)
+    monkeypatch.setattr(broker, "available", lambda: False)
+    monkeypatch.setattr(broker, "stop_capture", lambda: io.closed.append("broker"))
+    for name in ("_call", "capture_frame", "send_input", "send_relative_move", "request_permission", "set_autostart"):
+        monkeypatch.setattr(broker, name, forbidden("broker " + name))
+    for module in (session, desktop_input):
+        monkeypatch.setattr(module, "apply_event", forbidden("session input" if module is session else "input"))
+        for name in ("clipboard_get", "clipboard_set"):
+            monkeypatch.setattr(module, name, forbidden("clipboard " + name))
+    for name in ("_apply_event", "_release_all", "_cg_pointer", "_cg_scroll", "_mac_key", "_send_inputs"):
+        monkeypatch.setattr(desktop_input, name, forbidden("input " + name))
+
+    # Keep the actual registered objects and order, while detaching native ports.
+    for adapter in vmod._ADAPTERS:
+        monkeypatch.setattr(adapter, "available", lambda: False)
+        monkeypatch.setattr(adapter, "can_create", lambda: False)
+        monkeypatch.setattr(adapter, "create", forbidden("adapter create"))
+        monkeypatch.setattr(adapter, "destroy", forbidden("adapter destroy"))
+        if hasattr(adapter, "list_existing"):
+            monkeypatch.setattr(adapter, "list_existing", lambda: [])
+        if hasattr(adapter, "_procs"):
+            monkeypatch.setattr(adapter, "_procs", {})  # Detach and restore, without killing handles.
+    monkeypatch.setattr(vmod.HelperAdapter, "_bin", lambda _self: None)
+    monkeypatch.setattr(vmod.HelperAdapter, "create", forbidden("helper create"))
+    monkeypatch.setattr(vmod, "_run", forbidden("virtual command"))
+    monkeypatch.setattr(vmod, "_run_shell", forbidden("virtual shell"))
+    monkeypatch.setattr(vmod, "_help_text", lambda _binary: None)
+    yield io
+    # Background workers may catch exceptions: the ledger still makes those calls fail.
+    assert io.blocked == io.expected_blocked
+
+
+def test_desktop_io_guards_stop_native_actions(desktop_io):
+    from termx.desktop import broker, capture, session
+
+    desktop_io.expected_blocked = ["capture target", "session input", "broker capture_frame",
+                                   "adapter create", "virtual command"]
+    operations = [lambda: capture._target(None),
+                  lambda: session.apply_event({"type": "key", "key": "A"}),
+                  lambda: broker.capture_frame(None),
+                  lambda: vmod._adapter_by_id("helper").create("fixture", 800, 600, 1, 60),
+                  lambda: vmod._run(["unexpected-helper", "create"])]
+    for operation in operations:
+        with pytest.raises(AssertionError, match="Unexpected physical desktop I/O"):
+            operation()
+    assert list_virtual_displays() == []
+
+
 def test_probe_does_not_crash() -> None:
     probe = probe_desktop()
     assert probe.helper["installed"] is True
@@ -81,26 +158,53 @@ def test_probe_does_not_advertise_unimplemented_ydotool_backend(monkeypatch) -> 
     )
 
 
-def test_virtual_display_is_explicitly_unsupported() -> None:
-    adapter = active_adapter()
-    if adapter is not None and adapter.can_create():
+@pytest.mark.parametrize("support", ["unsupported", "supported", "creation-fails"])
+def test_virtual_display_creation_unit_contract(monkeypatch, support) -> None:
+    """Exercise selection, success and error interfaces without a physical display."""
+    attempts = []
+
+    class Adapter(FakeAdapter):
+        def available(self):
+            return support != "unsupported"
+
+        def create(self, *args):
+            attempts.append(args[0])
+            if support == "creation-fails":
+                raise VirtualDisplayError("synthetic creation failure")
+            return super().create(*args)
+
+    adapter = Adapter()
+    monkeypatch.setattr(vmod, "_ADAPTERS", [adapter])
+    selected = active_adapter()
+    if support == "unsupported":
+        assert selected is None
+    else:
+        assert selected is adapter
+    if selected is not None and selected.can_create():
         try:
             created = create_virtual_display(800, 600)
         except VirtualDisplayError as exc:
-            # can_create() is optimistic; headless hosts fail with a clear reason.
+            assert support == "creation-fails"
+            assert len(attempts) == 1
             assert str(exc)
             return
         try:
+            assert support == "supported"
             assert created["kind"] == "virtual"
             assert created["adapter"] == adapter.id
+            assert attempts == [created["id"]]
+            assert created["name"] in adapter.created
         finally:
             destroy_virtual_display(str(created["id"]))
+        assert adapter.destroyed == [created["name"]]
         return
+    assert support == "unsupported"
     try:
         create_virtual_display(800, 600)
         raise AssertionError("expected VirtualDisplayError")
     except VirtualDisplayError as exc:
         assert str(exc)
+        assert attempts == []
 
 
 def test_registry_create_destroy_with_fake_adapter() -> None:
@@ -355,22 +459,43 @@ def test_view_only_preference_persists(tmp_path, monkeypatch) -> None:
     assert DesktopManager(ConfigStore()).view_only is False
 
 
-def test_control_message_updates_preference(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("accessibility", ["granted", "denied"])
+def test_control_message_updates_preference(tmp_path, monkeypatch, desktop_io, accessibility) -> None:
     monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
     from fastapi.testclient import TestClient
 
     from termx.app import AppState, create_app
+    from termx.desktop import session
+
+    # Exercise the real Mac permission decision on every host, without changing global sys.platform.
+    monkeypatch.setattr(session, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(session, "permission_snapshot", lambda: {
+        "screen_recording": "granted", "accessibility": accessibility,
+    })
 
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
     with client.websocket_connect("/api/desktop/session?k=secret") as ws:
         ws.receive_json()
         ws.send_json({"type": "control", "view_only": False})
-        assert ws.receive_json()["view_only"] is False
+        if accessibility == "granted":
+            assert ws.receive_json()["view_only"] is False
+        else:
+            denied = ws.receive_json()
+            assert denied["type"] == "denied" and denied["view_only"] is True
+            assert "Accessibility permission" in denied["message"]
+            ws.send_json({"type": "key", "key": "A", "action": "down"})
+            assert ws.receive_json() == {"type": "denied", "message": "view-only"}
     state.store.__class__  # keep reference; preference is written synchronously
     from termx.config import ConfigStore
 
-    assert ConfigStore(state.store.path).get().desktop.view_only_default is False
+    if accessibility == "granted":
+        assert ConfigStore(state.store.path).get().desktop.view_only_default is False
+        assert desktop_io.prompts == []
+    else:
+        assert ConfigStore(state.store.path).get().desktop.view_only_default is True
+        assert desktop_io.prompts == ["accessibility"]
+    assert desktop_io.blocked == []
 
 
 def test_capture_blocked_without_screen_recording(monkeypatch) -> None:
@@ -432,14 +557,6 @@ def _fake_virtual_helper(tmp_path, output: str) -> str:
     return str(script)
 
 
-# The helper is a POSIX executable (and macOS-only in production), so these
-# tests only run where such a script can be executed.
-needs_posix_helper = pytest.mark.skipif(
-    sys.platform == "win32", reason="the virtual-display helper is a POSIX executable"
-)
-
-
-@needs_posix_helper
 def test_virtual_displays_adopted_and_orphans_pruned(tmp_path, monkeypatch) -> None:
     import json as json_module
 
@@ -471,7 +588,21 @@ def test_virtual_displays_adopted_and_orphans_pruned(tmp_path, monkeypatch) -> N
     # test exercises it on purpose.
     monkeypatch.setattr(virtual_module, "_adopt_helper_displays", _REAL_ADOPT)
 
+    calls = []
+
+    def fake_run(argv, timeout=20):
+        calls.append(list(argv))
+        assert argv[0] == binary
+        assert argv[1:] in (["list"], ["destroy", "434343"])
+        return subprocess.CompletedProcess(argv, 0, outputs if argv[1:] == ["list"] else "", "")
+
+    # Run the real parser and ownership logic over synthetic CLI responses, on every OS.
+    monkeypatch.setattr(virtual_module, "_run", fake_run)
     adapter = virtual_module.HelperAdapter()
+    monkeypatch.setattr(adapter, "_bin", lambda: binary)
+    registered = virtual_module._adapter_by_id("helper")
+    monkeypatch.setattr(registered, "_bin", lambda: binary)
+    monkeypatch.setattr(registered, "list_existing", adapter.list_existing)
     existing = adapter.list_existing()
     assert [item["id"] for item in existing] == ["live0001"]
 
@@ -482,9 +613,10 @@ def test_virtual_displays_adopted_and_orphans_pruned(tmp_path, monkeypatch) -> N
     assert [item["id"] for item in adopted] == ["424242"]
     assert adopted[0]["adopted"] is True
     assert adopted[0]["width"] == 1170
+    assert calls == [[binary, "list"], [binary, "destroy", "434343"],
+                     [binary, "list"], [binary, "destroy", "434343"]]
 
 
-@needs_posix_helper
 def test_virtual_display_destroy_uses_helper_cli(tmp_path, monkeypatch) -> None:
     from termx.desktop import virtual as virtual_module
 
@@ -498,6 +630,7 @@ def test_virtual_display_destroy_uses_helper_cli(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("TERMX_VIRTUAL_DISPLAY_BIN", binary)
     monkeypatch.setattr(virtual_module, "_run", fake_run)
     adapter = virtual_module.HelperAdapter()
+    monkeypatch.setattr(adapter, "_bin", lambda: binary)
     virtual_module._active.clear()
     virtual_module._impls.clear()
     virtual_module._active["424242"] = {
@@ -610,12 +743,19 @@ def test_ws_rtc_signalling_reports_availability(tmp_path, monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
     from termx.app import AppState, create_app
+    from termx.desktop import session as session_module
     from termx.desktop.webrtc import AiortcBackend
 
     # This case verifies unavailable signalling, independently of installed extras.
     # A minimal v=0 string is not a valid real peer's video offer.
     monkeypatch.setattr(AiortcBackend, "available", False)
 
+    def _no_capture(*_args, **_kwargs):
+        raise RuntimeError("capture is outside this signalling test")
+
+    # The independent frame pump must not race a host CaptureError against the
+    # RTC response. As in the display-control test, stop that pump silently.
+    monkeypatch.setattr(session_module, "grab_jpeg", _no_capture)
     state = AppState(passcode="secret")
     client = TestClient(create_app(state, web_dir=None))
     with client.websocket_connect("/api/desktop/session?k=secret") as ws:
@@ -626,6 +766,35 @@ def test_ws_rtc_signalling_reports_availability(tmp_path, monkeypatch) -> None:
         assert state.rtc.available() is False
         assert reply["ok"] is False
         assert "unavailable" in reply["error"]
+
+
+def test_ws_rtc_unavailable_reply_is_separate_from_capture_error(tmp_path, monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+    from termx.desktop import session as session_module
+    from termx.desktop.webrtc import AiortcBackend
+
+    monkeypatch.setenv("TERMX_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setattr(AiortcBackend, "available", False)
+
+    def unavailable_capture(*_args, **_kwargs):
+        raise session_module.CaptureError("synthetic capture unavailable")
+
+    monkeypatch.setattr(session_module, "grab_jpeg", unavailable_capture)
+    state = AppState(passcode="secret")
+    client = TestClient(create_app(state, web_dir=None))
+    with client.websocket_connect("/api/desktop/session?k=secret") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        capture_error = ws.receive_json()
+        assert capture_error == {"type": "error", "message": "synthetic capture unavailable"}
+        ws.send_json({"type": "rtc", "action": "offer", "session_id": "abc",
+                      "offer": {"type": "offer", "sdp": "v=0\r\n"}})
+        reply = ws.receive_json()
+        assert reply == {"type": "rtc", "action": "offer", "ok": False,
+                         "error": "WebRTC is unavailable on this host; using WebSocket frames"}
+        assert state.rtc.available() is False
+        print(json.dumps({"capture_error": capture_error, "rtc_reply": reply}))
 
 
 def test_update_version_ordering() -> None:
