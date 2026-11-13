@@ -202,3 +202,53 @@ it('labels an aggregated KPI using its returned alias and backend visual', () =>
   expect(screen.getByText('Sum of sales total')).toBeInTheDocument();
   expect(screen.getByText('12')).toBeInTheDocument();
 });
+
+it.each(['owner', 'editor'] as const)('opens and runs an archived published report as %s without fetching the archived view, then rebinds it', async role => {
+  const user = userEvent.setup(), currentView = {...view, id: 'v2', name: 'Current sales'};
+  const archived = {...report, published_version_id: 'published', using_published_version: true,
+    visual: {kind: 'bar' as const, x: 'pv_r1', y: 'pv_total', aggregate: 'none' as const}};
+  const rebound = {...report, view_id: 'v2', revision: 2};
+  request.mockImplementation(async (path, init) => {
+    if (path.endsWith('/reports')) return [archived];
+    if (path.endsWith('/dashboards')) return [];
+    if (path.endsWith('/reports/r/run')) return {id: 'j', revision: 1, status: 'completed', connection_id: 'c',
+      output: {columns: [{alias: 'pv_r1', label: 'Region', role: 'column', value_kind: 'text'}, {alias: 'pv_total', label: 'Sales total', role: 'column', value_kind: 'number'}], warnings: []},
+      result: {columns: [{name: 'pv_r1'}, {name: 'pv_total'}], rows: [['East', 5]], row_count: 1, truncated: false}};
+    if (path.endsWith('/report-datasets/views/v2/fields')) return {view_id: 'v2', fields};
+    if (path.endsWith('/reports/r') && init?.method === 'PATCH') return rebound;
+    throw new Error('View not found');
+  });
+  render(<BIStudio {...props} role={role} views={[currentView]}/>);
+  await screen.findByRole('heading', {name: 'On a view'});
+  expect(screen.getByText('Published version · source view archived')).toBeInTheDocument();
+  expect(screen.getByText('Choose different data to edit this report.')).toBeInTheDocument();
+  expect(screen.queryByText('Loading the fields of this view…')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name: 'Publish to workspace'})).toBeDisabled();
+  await user.click(screen.getByRole('button', {name: 'Run report'}));
+  expect((await screen.findByRole('img')).querySelector('desc')).toHaveTextContent('Region by Sales total');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(request.mock.calls.some(([path]) => path.endsWith('/report-datasets/views/v1/fields'))).toBe(false);
+  await user.click(screen.getByLabelText('Data'));
+  await user.click(screen.getByRole('menuitemradio', {name: 'Current sales'}));
+  await waitFor(() => expect(request.mock.calls.some(([path]) => path.endsWith('/report-datasets/views/v2/fields'))).toBe(true));
+  expect(screen.getByRole('button', {name: 'Save changes'})).toBeEnabled();
+  await user.click(screen.getByRole('button', {name: 'Save changes'}));
+  await waitFor(() => expect(screen.queryByText('Published version · source view archived')).not.toBeInTheDocument());
+  const saved = JSON.parse(String(request.mock.calls.find(([, init]) => init?.method === 'PATCH')![1]?.body));
+  expect(saved).toMatchObject({revision: 1, view_id: 'v2', visual: {kind: 'table', aggregate: 'none'}, filters: []});
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('keeps recovery guidance and the Data picker available when an archived table report is edited', async () => {
+  const user = userEvent.setup(), query = {id: 'q1', revision: 1, name: 'Current sales', connection_id: 'c', sql: 'select 1'};
+  api([{...report, published_version_id: 'published', using_published_version: true}]);
+  render(<BIStudio {...props} views={[]} queries={[query]}/>);
+  await screen.findByRole('heading', {name: 'On a view'});
+  await user.type(screen.getByLabelText('Name'), ' renamed');
+  expect(screen.getByText('Choose different data to edit this report.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Data')).toBeEnabled();
+  expect(screen.getByRole('button', {name: 'Save changes'})).toBeDisabled();
+  expect(screen.getByRole('button', {name: 'Run report'})).toBeDisabled();
+  expect(request.mock.calls.some(([path]) => path.includes('/fields'))).toBe(false);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
