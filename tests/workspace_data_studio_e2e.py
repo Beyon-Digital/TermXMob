@@ -591,7 +591,8 @@ def assert_report_labels(scope,job,expected=('Sales region','Revenue')):
     assert [(column['alias'],column['label'])for column in job['output']['columns']]==list(zip(('pv_r1','pv_total'),expected)),job
     chart=scope.get_by_role('img',name='Synthetic archived view report — bar chart',exact=True)
     expect(chart).to_be_visible();expect(chart.locator('desc')).to_contain_text(expected[0]+' by '+expected[1])
-    scope.get_by_role('button',name='View data table',exact=True).click()
+    fallback=scope.get_by_role('button',name='View data table',exact=True)
+    if fallback.get_attribute('aria-expanded')!='true':fallback.click()
     headers=scope.get_by_role('region',name='Report data',exact=True).get_by_role('columnheader')
     expect(headers).to_have_text(list(expected))
     assert not re.search(r'\bpv_(?:r\d+|c\d+|total)\b',scope.locator('.bi-result').inner_text()),'Neutral aliases leaked into report display'
@@ -615,12 +616,18 @@ def archived_view_report_journey(page,api,wid,prefix,pivot,out,report,theme,widt
     assert dict(live['result']['rows'])==EXPECTED,live
     request(api,'DELETE',prefix+f'/views/{copied["id"]}?revision={changed["revision"]}')
     pinned=request(api,'GET',prefix+'/reports/'+chart['id']);assert pinned['using_published_version']is True,pinned
+    archived_fields=[]
+    page.on('request',lambda req:archived_fields.append(req.url)if urlsplit(req.url).path==prefix+f'/views/{copied["id"]}/fields'else None)
+    nav(page,'Data');nav(page,'BI');bi=page.get_by_role('region',name='BI workspace',exact=True)
+    bi.locator('.bi-object-list').get_by_role('button',name=re.compile('^Synthetic archived view report')).click()
+    expect(bi.get_by_text('Choose different data to edit this report.',exact=True)).to_be_visible()
+    expect(bi.get_by_role('button',name='Save changes',exact=True)).to_be_disabled()
+    expect(bi.get_by_role('button',name='Publish to workspace',exact=True)).to_be_disabled()
     archived=browser_run(page,api,wid,bi.get_by_role('button',name='Run report',exact=True),pattern)
     assert archived['report_context']['report_version_id']==published['published_version_id'],archived
     assert dict(archived['result']['rows'])==EXPECTED,archived
-    # The fallback table is already open from the first run; close it before checking the next result.
-    bi.get_by_role('button',name='View data table',exact=True).click()
     assert_report_labels(bi,archived)
+    assert not archived_fields,'The archived view fields endpoint was fetched instead of using publication metadata'
     capture(page,out,report,'owner-report-archived-view-pinned-labels',theme,width)
     with page.expect_download()as exported:bi.get_by_role('button',name='SVG',exact=True).click()
     svg=Path(exported.value.path()).read_text();assert 'Sales region'in svg and 'Revenue'in svg and 'pv_r1'not in svg and 'pv_total'not in svg,svg
