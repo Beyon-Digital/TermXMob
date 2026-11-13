@@ -458,8 +458,16 @@ def finish(api,wid,job,page=None):
     assert value['status']=='completed',value
     return value
 
-def browser_run(page,api,wid,button,pattern):
-    with page.expect_response(lambda r:r.request.method=='POST'and re.fullmatch(pattern,urlsplit(r.url).path))as result:button.click()
+def browser_run(page,api,wid,button,pattern,pivot_identity=None):
+    def matches(response):
+        if response.request.method!='POST'or not re.fullmatch(pattern,urlsplit(response.url).path):return False
+        if pivot_identity is None:return True
+        # Returning from BI remounts retained tabs, which may run at this same endpoint.
+        # Identify the clicked pivot by immutable source/from, never by edited filter values.
+        payload=response.request.post_data_json
+        spec=payload.get('spec')if isinstance(payload,dict)else None
+        return isinstance(spec,dict)and isinstance(spec.get('pivot'),dict)and spec.get('source')==pivot_identity['source']and spec.get('from')==pivot_identity['from']
+    with page.expect_response(matches)as result:button.click()
     response=result.value;assert response.ok,response.text()
     value=finish(api,wid,response.json(),page)
     value['_qa_request']=response.request.post_data_json
@@ -723,10 +731,11 @@ def copilot_browser(page,api,wid,cid,qid,path,mock,out,report,theme,width):
     values.get_by_role('button',name='Update suggestion',exact=True).click();expect(values).not_to_be_visible()
     assert not proposal_runs,'Editing range values executed a proposal'
     assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Editing a proposal saved a view'
-    pivot_run=browser_run(page,api,wid,pivot_proposal.get_by_role('button',name='Open as pivot',exact=True),re.escape(prefix)+r'/query-specs/run')
+    pivot_run=browser_run(page,api,wid,pivot_proposal.get_by_role('button',name='Open as pivot',exact=True),re.escape(prefix)+r'/query-specs/run',pivot_identity={'source':cid,'from':{'table':'sales','alias':'s'}})
     assert pivot_run['_qa_request']['spec']['filters']['items']==[{'field':{'table_alias':'s','column':'amount'},'op':'between','values':[2450,2501]}],pivot_run
     with sqlite3.connect(path)as db:expected_pivot=dict(db.execute('SELECT region,COUNT(*) FROM sales WHERE amount BETWEEN 2450 AND 2501 GROUP BY region'))
     assert {row[0]:row[-1]for row in pivot_run['result']['rows']}==expected_pivot,(pivot_run,expected_pivot)
+    expect(data.get_by_role('tab',name=re.compile('^New pivot on Sales'),selected=True)).to_be_visible()
     expect(data.get_by_role('grid',name=re.compile('^New pivot on Sales'))).to_be_visible()
     assert len(request(api,'GET',prefix+'/views')['views'])==views_before,'Pivot proposal silently saved a view'
     capture(page,out,report,'copilot-pivot-proposal-opened',theme,width)

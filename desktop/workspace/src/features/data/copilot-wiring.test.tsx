@@ -1,7 +1,8 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
-import {cleanup, render, screen, waitFor} from '@testing-library/react';
+import {cleanup, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DataStudio from './DataStudio';
+import ProposalCard from './ProposalCard';
 import {request} from '../../lib/api';
 import {sizeGridScrollers} from '../../test-utils/virtual';
 import '../../test-utils/codemirror';
@@ -10,6 +11,7 @@ import type {QuerySpec} from '../../lib/query-spec';
 const spec: QuerySpec = {version: 1, source: 'source', from: {table: 'orders', alias: 'o'}, joins: [], select: [{table_alias: 'o', column: 'id'}],
   filters: {op: 'and', items: [{field: {table_alias: 'o', column: 'customer_id'}, op: 'eq', value: 7}]}, group_by: [], aggregates: [], sort: [], limit: 50, offset: 0};
 const pivot: QuerySpec = {...spec, select: [], pivot: {rows: [{table_alias: 'o', column: 'customer_id'}], columns: null, value: {fn: 'count'}, totals: true, sort: {by: 'rows', direction: 'asc'}}};
+const editablePivot: QuerySpec = {...pivot, filters: {op: 'and', items: [{field: {table_alias: 'o', column: 'amount'}, op: 'between', values: [2400, 2450]}]}};
 
 vi.mock('../../lib/api', () => ({request: vi.fn(), ApiError: class ApiError extends Error {constructor(public status: number, message: string) {super(message);}}}));
 vi.mock('../../lib/transfers', () => ({transfer: vi.fn()}));
@@ -18,9 +20,11 @@ vi.mock('./DataCopilot', () => ({default: (props: {role: string; connectionId?: 
   <section aria-label="Copilot conversation"><p>Role {props.role}, source {props.connectionId}</p>
     <button onClick={() => props.onApplyTable(spec, 'Orders for customer 7', 'Suggested by Copilot.')}>Test apply</button>
     <button onClick={() => props.onOpenPivot(pivot, 'Orders by customer')}>Test pivot</button>
+    <ProposalCard id="editable-pivot" canSave={props.role !== 'viewer'} onOpenPivot={props.onOpenPivot}
+      proposal={{type: 'pivot', title: 'Editable orders pivot', definition: {kind: 'pivot', name: 'Editable orders pivot', description: '', connection_id: 'source', spec: editablePivot}}}/>
     <button onClick={() => void props.onSaveSegment({...spec, select: []}, 'Customer 7', '')}>Test segment</button></section>}));
 
-const tables = [{name: 'orders', columns: [{name: 'id', type: 'INTEGER', primary_key: true, value_kind: 'integer'}, {name: 'customer_id', type: 'INTEGER', value_kind: 'integer'}], row_estimate: null}];
+const tables = [{name: 'orders', columns: [{name: 'id', type: 'INTEGER', primary_key: true, value_kind: 'integer'}, {name: 'customer_id', type: 'INTEGER', value_kind: 'integer'}, {name: 'amount', type: 'REAL', value_kind: 'number'}], row_estimate: null}];
 const api = vi.mocked(request);
 let created: unknown[];
 beforeEach(() => {
@@ -79,4 +83,47 @@ it('saves a segment only when the card asks, as a segment view', async () => {
   await user.click(screen.getByRole('button', {name: 'Test segment'}));
   await waitFor(() => expect(created).toHaveLength(1));
   expect(created[0]).toMatchObject({kind: 'segment', name: 'Customer 7', spec: {select: []}});
+});
+
+it('runs a new pivot with values edited in the actual proposal card', async () => {
+  const user = userEvent.setup();
+  await openCopilot(user);
+  const card = screen.getByRole('region', {name: 'Editable orders pivot'});
+  const callsBeforeEditing = api.mock.calls.length;
+
+  await user.click(within(card).getByRole('button', {name: 'Edit Amount is between 2400 and 2450'}));
+  const editor = await screen.findByRole('dialog', {name: 'Edit filter values'});
+  await user.clear(within(editor).getByLabelText('From'));
+  await user.type(within(editor).getByLabelText('From'), '2450');
+  await user.clear(within(editor).getByLabelText('To'));
+  await user.type(within(editor).getByLabelText('To'), '2501');
+  await user.click(within(editor).getByRole('button', {name: 'Update suggestion'}));
+  await waitFor(() => expect(screen.queryByRole('dialog', {name: 'Edit filter values'})).not.toBeInTheDocument());
+  expect(within(card).getByRole('button', {name: 'Edit Amount is between 2450 and 2501'})).toBeInTheDocument();
+  expect(screen.queryByRole('tab', {name: /New pivot on orders/})).not.toBeInTheDocument();
+  expect(api.mock.calls.slice(callsBeforeEditing).filter(([path, init]) =>
+    /\/(?:query-specs\/(?:compile|run)|query-runs)$/.test(String(path)) ||
+    ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init?.method || ''))).toEqual([]);
+  expect(created).toEqual([]);
+
+  const callsBeforeOpening = api.mock.calls.length;
+  await user.click(within(card).getByRole('button', {name: 'Open as pivot'}));
+  const tab = await screen.findByRole('tab', {name: /New pivot on orders/});
+  expect(tab).toHaveAttribute('aria-selected', 'true');
+
+  const pivotRequests = (suffix: string) => api.mock.calls.slice(callsBeforeOpening)
+    .filter(([path, init]) => String(path).endsWith(suffix) && JSON.parse(String(init?.body)).spec?.pivot)
+    .map(([, init]) => JSON.parse(String(init?.body)).spec as QuerySpec);
+  await waitFor(() => expect(pivotRequests('/query-specs/compile')).toHaveLength(1));
+  await waitFor(() => expect(pivotRequests('/query-specs/run')).toHaveLength(1));
+  for (const actual of [...pivotRequests('/query-specs/compile'), ...pivotRequests('/query-specs/run')]) {
+    expect(actual).toMatchObject({
+      source: editablePivot.source,
+      from: editablePivot.from,
+      filters: {op: 'and', items: [{field: {table_alias: 'o', column: 'amount'}, op: 'between', values: [2450, 2501]}]},
+      pivot: editablePivot.pivot,
+    });
+  }
+  expect(tab).toHaveAttribute('aria-selected', 'true');
+  expect(created).toEqual([]);
 });
