@@ -6,6 +6,7 @@ import {request, ApiError} from '../../lib/api';
 import {transfer} from '../../lib/transfers';
 import type {SourceController} from './use-source';
 import type {QuerySpec, SchemaTable} from '../../lib/query-spec';
+import {emptySpec} from '../../lib/query-builder';
 import {expectNoAxeViolations} from '../../test-axe';
 import {sizeGridScrollers} from '../../test-utils/virtual';
 
@@ -355,4 +356,36 @@ it('titles a header with its full name so a long column is readable on hover', a
   view();
   await screen.findByRole('cell', {name: '120.5'});
   expect(screen.getByRole('button', {name: 'Customer id'})).toHaveAttribute('title', 'Customer id');
+});
+
+it.each([
+  {caption: 'a supplied seed limit of 25', seedLimit: 25, pageSize: 25},
+  {caption: 'the default 200 when the seed limit is omitted', seedLimit: undefined, pageSize: 200},
+])('uses $caption for compile, run and paging', async ({seedLimit, pageSize}) => {
+  const user = userEvent.setup();
+  const {limit: _defaultLimit, ...seedWithoutLimit} = emptySpec('c1', 'orders');
+  const seed = seedLimit === undefined ? seedWithoutLimit : {...seedWithoutLimit, limit: seedLimit};
+  const firstPage = Array.from({length: pageSize + 1}, (_, index) => [index + 1, 1, 'open', 1, '2026-01-01']);
+  orderRows = firstPage;
+  // QuerySpec requires limit, but a legacy/runtime seed may omit it.
+  view({}, {seed: seed as QuerySpec});
+
+  await screen.findByText('Rows 1 to ' + pageSize);
+  expect(lastSpec()).toMatchObject({limit: pageSize, offset: 0});
+  expect(lastRun()).toMatchObject({limit: pageSize, offset: 0});
+  expect(screen.getByRole('button', {name: 'Next'})).toBeEnabled();
+
+  const finalRow = pageSize + 1;
+  orderRows = [[finalRow, 1, 'open', 1, '2026-01-01']];
+  await user.click(screen.getByRole('button', {name: 'Next'}));
+  await waitFor(() => expect(lastRun()).toMatchObject({limit: pageSize, offset: pageSize}));
+  expect(lastSpec()).toMatchObject({limit: pageSize, offset: pageSize});
+  await screen.findByText('Rows ' + finalRow + ' to ' + finalRow + ' of ' + finalRow);
+  expect(screen.getByRole('button', {name: 'Next'})).toBeDisabled();
+
+  orderRows = firstPage;
+  await user.click(screen.getByRole('button', {name: 'Previous'}));
+  await waitFor(() => expect(lastRun()).toMatchObject({limit: pageSize, offset: 0}));
+  expect(lastSpec()).toMatchObject({limit: pageSize, offset: 0});
+  await screen.findByText('Rows 1 to ' + pageSize);
 });

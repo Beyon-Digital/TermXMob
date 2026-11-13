@@ -56,7 +56,7 @@ const compact = (group: FilterGroup): FilterGroup => ({...group, items: group.it
 
 function TableWorkspace({workspaceId, connectionId, label, controller, table, tables, onOpenAdvanced, combineRequest, views, canSave = false, onViewSaved, seed, subtitle}: Props & {table: SchemaTable; tables: SchemaTable[]}) {
   const scope = useDataScope();
-  const base = useMemo(() => seed ? {...emptySpec(connectionId, table.name), from: seed.from} : emptySpec(connectionId, table.name), [connectionId, table.name, seed]);
+  const base = useMemo(() => seed ? {...emptySpec(connectionId, table.name), from: seed.from, limit: seed.limit ?? DEFAULT_PAGE} : emptySpec(connectionId, table.name), [connectionId, table.name, seed]);
   const [view, setView] = useState<View>(() => seed ? {joins: seed.joins, filters: seed.filters, sort: seed.sort, offset: 0, visible: seed.select.length ? seed.select : null, summary: null}
     : {joins: [], filters: base.filters, sort: [], offset: 0, visible: null, summary: null});
   const [saving, setSaving] = useState(false), [message, setMessage] = useState(''), [segmentError, setSegmentError] = useState('');
