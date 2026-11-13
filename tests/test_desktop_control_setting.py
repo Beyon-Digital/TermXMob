@@ -11,6 +11,7 @@ import pytest
 from agent_desktop_release_server import client_for, fake_cli_source, good_members, make_archive, pins_for
 from termx.desktop import agent_desktop as ad
 from termx.desktop import agent_desktop_setting as setting
+from termx.private_files import private_path_permissions
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
 
@@ -90,9 +91,12 @@ def test_a_program_that_does_not_answer_like_the_cli_is_rejected(client, tmp_pat
 
 def test_the_saved_path_round_trips_and_is_private(tmp_path):
     root = tmp_path / "desktop-control"
+    path = str(tmp_path / "program" / ad.detect_platform().binary_name)
     assert setting.load_setting(root) is None
-    setting.save_setting(root, "/opt/ad/agent-desktop")
-    assert setting.load_setting(root) == "/opt/ad/agent-desktop"
+    setting.save_setting(root, path)
+    assert setting.load_setting(root) == path
+    assert private_path_permissions(root)
+    assert private_path_permissions(root / "setting.json")
     if os.name != "nt":
         assert (root / "setting.json").stat().st_mode & 0o777 == 0o600
     setting.save_setting(root, None)
@@ -115,14 +119,16 @@ def test_save_refuses_paths_that_cannot_be_a_program(tmp_path):
 
 def test_get_client_prefers_the_environment_then_the_saved_path(tmp_path, monkeypatch):
     root = tmp_path / "termx-config" / "desktop-control"
-    setting.save_setting(root, "/saved/agent-desktop")
+    saved_path = str(tmp_path / "saved" / ad.detect_platform().binary_name)
+    env_path = str(tmp_path / "env" / ad.detect_platform().binary_name)
+    setting.save_setting(root, saved_path)
     ad.set_client(None)
     monkeypatch.delenv(ad.SETTING_ENV, raising=False)
     try:
-        assert ad.get_client().setting == "/saved/agent-desktop"
+        assert ad.get_client().setting == saved_path
         ad.set_client(None)
-        monkeypatch.setenv(ad.SETTING_ENV, "/env/agent-desktop")
-        assert ad.get_client().setting == "/env/agent-desktop"
+        monkeypatch.setenv(ad.SETTING_ENV, env_path)
+        assert ad.get_client().setting == env_path
     finally:
         ad.set_client(None)
 
@@ -184,15 +190,17 @@ def test_the_saved_file_is_never_world_readable_even_for_a_moment(tmp_path, monk
     assert (tmp_path / "desktop-control").stat().st_mode & 0o077 == 0
 
 
-def test_valid_path_is_one_rule_for_the_api_and_the_file():
-    assert setting.valid_path("/opt/ad/agent-desktop") == "/opt/ad/agent-desktop"
+def test_valid_path_is_one_rule_for_the_api_and_the_file(tmp_path):
+    path = str(tmp_path / "program" / ad.detect_platform().binary_name)
+    assert setting.valid_path(path) == path
     for bad in ("relative", "", "x" * 5000, "/a\x00b", "/a\nb", 5, None):
         assert setting.valid_path(bad) is None
 
 
 def test_json_shape_of_the_saved_file(tmp_path):
-    setting.save_setting(tmp_path, "/opt/ad/agent-desktop")
-    assert json.loads((tmp_path / "setting.json").read_text()) == {"path": "/opt/ad/agent-desktop"}
+    path = str(tmp_path / "program" / ad.detect_platform().binary_name)
+    setting.save_setting(tmp_path, path)
+    assert json.loads((tmp_path / "setting.json").read_text()) == {"path": path}
 
 
 @pytest.mark.parametrize("path", [
