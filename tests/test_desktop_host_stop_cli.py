@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from secrets import token_hex
 import socket
 import subprocess
 import sys
@@ -10,6 +11,30 @@ from types import ModuleType, SimpleNamespace
 
 import httpx
 import pytest
+
+
+_IDENTITY_FIELDS = ('nonce', 'owner_pid', 'pid', 'ppid', 'root', 'entrypoint')
+
+
+def _owned_identity(record, *, nonce, owner_pid, launcher_pid, platform, root, started=None):
+    """Bind a guarded runtime to this invocation, including Windows venv redirectors."""
+    assert all(name in record for name in _IDENTITY_FIELDS)
+    identity = {name: record[name] for name in _IDENTITY_FIELDS}
+    assert record['guards_installed'] is True
+    assert identity['nonce'] == nonce and identity['owner_pid'] == owner_pid
+    assert all(type(identity[name]) is int and identity[name] > 0 for name in ('owner_pid', 'pid', 'ppid'))
+    assert identity['pid'] not in (owner_pid, identity['ppid'])
+    assert identity['root'] == str(root.resolve())
+    assert identity['entrypoint'] == str(Path(__file__).resolve())
+    if identity['pid'] == launcher_pid:
+        assert identity['ppid'] == owner_pid
+    else:
+        # CPython's Windows venv redirector starts Python, waits for that child,
+        # and returns its status. A different PID must be exactly that child.
+        assert platform == 'win32' and identity['ppid'] == launcher_pid
+    if started is not None:
+        assert identity == started
+    return identity
 
 
 def _owned_environment(root, source=None):
@@ -120,7 +145,7 @@ def _owned_hardware_guards(replace=setattr, ledger=None):
     return ledger
 
 
-def _owned_daemon(root, arguments):
+def _owned_daemon(root, owner_pid, nonce, arguments):
     root = root.resolve()
     for name, child in (('TERMX_CONFIG_DIR', 'config'), ('TERMX_AGENTS_DIR', 'agents'), ('TERMX_ACP_HOME', 'acp')):
         assert Path(os.environ[name]).resolve() == root/child
@@ -129,10 +154,16 @@ def _owned_daemon(root, arguments):
         assert Path(os.environ['USERPROFILE']).resolve() == home
         home.mkdir(exist_ok=True)
     ledger = {'forbidden': [], 'cleanup': [], 'bindings': [], 'memory_credentials': 0,
-              'pid': os.getpid(), 'guards_installed': False, 'cli_entered': False, 'exit_code': None}
+              'nonce': nonce, 'owner_pid': owner_pid, 'pid': os.getpid(), 'ppid': os.getppid(),
+              'root': str(root), 'entrypoint': str(Path(__file__).resolve()),
+              'guards_installed': False, 'cli_entered': False, 'exit_code': None}
     try:
         _owned_hardware_guards(ledger=ledger)
         ledger['guards_installed'] = True
+        # The parent validates this receipt while its Popen is alive, before
+        # authentication or stop requests. Never replace a previous receipt.
+        with (root/'started-identity.json').open('x', encoding='utf-8') as receipt:
+            json.dump(ledger, receipt)
         from termx import cli
         sys.argv = ['termx', *arguments]
         ledger['cli_entered'] = True
@@ -219,13 +250,70 @@ def test_owned_daemon_guards_aliases_and_records_cleanup(monkeypatch):
                                    'native_broker', 'window_capture']
 
 
+@pytest.fixture
+def owned_identity_record(tmp_path):
+    return {'nonce': 'a'*64, 'owner_pid': 101, 'pid': 201, 'ppid': 101,
+            'root': str(tmp_path.resolve()), 'entrypoint': str(Path(__file__).resolve()),
+            'guards_installed': True}
+
+
+@pytest.mark.parametrize('platform,pid,ppid', [
+    ('darwin', 201, 101), ('linux', 201, 101), ('win32', 201, 101), ('win32', 301, 201),
+])
+def test_owned_identity_accepts_only_direct_or_windows_child(tmp_path, owned_identity_record, platform, pid, ppid):
+    owned_identity_record.update(pid=pid, ppid=ppid)
+    assert _owned_identity(owned_identity_record, nonce='a'*64, owner_pid=101, launcher_pid=201,
+                           platform=platform, root=tmp_path) == {
+        name: owned_identity_record[name] for name in _IDENTITY_FIELDS}
+
+
+@pytest.mark.parametrize('change', [
+    {'nonce': 'b'*64}, {'owner_pid': 999}, {'ppid': 999}, {'pid': False}, {'pid': 0},
+    {'pid': 101, 'ppid': 201}, {'pid': 201, 'ppid': 201},
+    {'root': 'foreign-root'}, {'entrypoint': 'foreign-bootstrap'}, {'guards_installed': False},
+])
+def test_owned_identity_rejects_stale_forged_or_foreign_records(tmp_path, owned_identity_record, change):
+    owned_identity_record.update(change)
+    with pytest.raises(AssertionError):
+        _owned_identity(owned_identity_record, nonce='a'*64, owner_pid=101, launcher_pid=201,
+                        platform='win32', root=tmp_path)
+
+
+@pytest.mark.parametrize('missing', ['nonce', 'owner_pid', 'pid', 'ppid'])
+def test_owned_identity_requires_launch_attestation(tmp_path, owned_identity_record, missing):
+    owned_identity_record.pop(missing)
+    with pytest.raises(AssertionError):
+        _owned_identity(owned_identity_record, nonce='a'*64, owner_pid=101, launcher_pid=201,
+                        platform='win32', root=tmp_path)
+
+
+@pytest.mark.parametrize('platform', ['darwin', 'linux'])
+def test_owned_identity_rejects_delegation_off_windows(tmp_path, owned_identity_record, platform):
+    owned_identity_record.update(pid=301, ppid=201)
+    with pytest.raises(AssertionError):
+        _owned_identity(owned_identity_record, nonce='a'*64, owner_pid=101, launcher_pid=201,
+                        platform=platform, root=tmp_path)
+
+
+def test_owned_audit_cannot_substitute_another_child(tmp_path, owned_identity_record):
+    owned_identity_record.update(pid=301, ppid=201)
+    options = dict(nonce='a'*64, owner_pid=101, launcher_pid=201, platform='win32', root=tmp_path)
+    started = _owned_identity(owned_identity_record, **options)
+    forged = {**owned_identity_record, 'pid': 302}
+    assert _owned_identity(forged, **options)['pid'] == 302
+    with pytest.raises(AssertionError):
+        _owned_identity(forged, **options, started=started)
+
+
 @pytest.mark.parametrize('desktop', [False, True])
 def test_explicit_host_stop_has_intentional_desktop_exit_status(tmp_path, desktop):
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     environment = _owned_environment(tmp_path)
+    owner_pid, nonce = os.getpid(), token_hex(32)
     command = [sys.executable, '-B', str(Path(__file__).resolve()), '--owned-daemon', str(tmp_path),
+               str(owner_pid), nonce,
                '--host', '127.0.0.1', '--port', str(port),
                '--passcode', 'owned-host-stop-fixture', '--web-dir', str(tmp_path/'web')]
     if desktop:
@@ -238,6 +326,8 @@ def test_explicit_host_stop_has_intentional_desktop_exit_status(tmp_path, deskto
         process = subprocess.Popen(command, env=environment, cwd=Path(__file__).resolve().parents[1],
                                    stdout=stdout_log, stderr=stderr_log, text=True)
         try:
+            identity_options = dict(nonce=nonce, owner_pid=owner_pid, launcher_pid=process.pid,
+                                    platform=sys.platform, root=tmp_path)
             with httpx.Client(base_url=f'http://127.0.0.1:{port}', timeout=5, trust_env=False,
                               headers={'Origin':f'http://127.0.0.1:{port}'}) as client:
                 deadline = monotonic()+35
@@ -251,6 +341,9 @@ def test_explicit_host_stop_has_intentional_desktop_exit_status(tmp_path, deskto
                     assert monotonic() < deadline, ('Owned fixture daemon did not become ready\n'
                                                    + stderr_path.read_text(encoding='utf-8'))
                     sleep(.1)
+                assert process.poll() is None, stderr_path.read_text(encoding='utf-8')
+                started = _owned_identity(json.loads((tmp_path/'started-identity.json').read_text(encoding='utf-8')),
+                                          **identity_options)
                 login = client.post('/auth/setup', headers={'X-Termx-Passcode':'owned-host-stop-fixture'},
                                     json={'username':'owned-stop-owner','password':'owned-stop-password-123',
                                           'transport':'bearer','device_name':'Owned test'})
@@ -271,7 +364,8 @@ def test_explicit_host_stop_has_intentional_desktop_exit_status(tmp_path, deskto
             assert [row for row in events if row.get('termx') == 'stopping'] == (
                 [{'termx':'stopping','reason':'host-stop'}] if desktop else [])
             audit = json.loads((tmp_path/'hardware-audit.json').read_text(encoding='utf-8'))
-            assert audit['pid'] == process.pid and audit['guards_installed'] and audit['cli_entered']
+            _owned_identity(audit, **identity_options, started=started)
+            assert audit['guards_installed'] and audit['cli_entered']
             assert audit['exit_code'] == process.returncode and audit['memory_credentials'] == 1
             assert audit['forbidden'] == []
             assert {'release_all', 'close_capture', 'empty_virtual_cleanup'} <= set(audit['cleanup'])
@@ -287,4 +381,4 @@ def test_explicit_host_stop_has_intentional_desktop_exit_status(tmp_path, deskto
 
 if __name__ == '__main__':
     assert sys.argv[1] == '--owned-daemon'
-    _owned_daemon(Path(sys.argv[2]), sys.argv[3:])
+    _owned_daemon(Path(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5:])
