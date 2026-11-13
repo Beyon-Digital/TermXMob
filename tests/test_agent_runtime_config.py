@@ -36,6 +36,130 @@ class ManyReads(FakeAdapter):
              "name": "read_file", "arguments": '{"path":"sample.txt"}'}])
 
 
+async def _completed_internal_task(manager, store, task_id, adapter, *, timeout=10):
+    worker = manager._workers[task_id]
+
+    def observation(reason):
+        task = store.get_task(task_id)
+        tail = store.events(task_id, tail_limit=5, event_types=(
+            "task.status", "task.completed", "task.failed", "tool.finished", "approval.requested"))
+        return {"reason": reason, "status": task["status"], "error": str(task.get("error") or "")[:400],
+                "turns": adapter.turns, "step": (task.get("runtime") or {}).get("step"),
+                "worker_done": worker.done(), "worker_cancelled": worker.cancelled(),
+                "event_tail": [{"sequence": event["sequence"], "type": event["type"],
+                                "call_id": event["payload"].get("call_id")} for event in tail]}
+
+    try:
+        # Join execution and its final cleanup without repeatedly replaying the
+        # growing durable history. Keep the original ten-second safety guard.
+        await asyncio.wait_for(asyncio.shield(worker), timeout=timeout)
+    except TimeoutError as exc:
+        # Capture progress before the caller's finally block cancels and joins
+        # the worker through manager.close(), then closes the store.
+        raise AssertionError(observation("completion_wait_timeout")) from exc
+    task = store.get_task(task_id)
+    assert task["status"] == "completed", observation("worker_stopped_without_completion")
+    return task
+
+
+def test_completion_wait_joins_worker_without_replaying_live_history(tmp_path, monkeypatch):
+    (tmp_path / "sample.txt").write_text("sample")
+
+    async def run():
+        reached_second_turn, release = asyncio.Event(), asyncio.Event()
+
+        class GatedReads(ManyReads):
+            async def turn(self, **kwargs):
+                if self.turns == 1:
+                    reached_second_turn.set()
+                    await release.wait()
+                return await super().turn(**kwargs)
+
+        adapter = GatedReads(2)
+        manager, store = build_manager(tmp_path, adapter)
+        waiter = None
+        try:
+            task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
+                                             provider_id="fake", mode="ask")
+            worker = manager._workers[task["id"]]
+            await asyncio.wait_for(reached_second_turn.wait(), timeout=10)
+            replayed_rows = []
+            events = store.events
+
+            def observed_events(*args, **kwargs):
+                rows = events(*args, **kwargs)
+                if asyncio.current_task() is waiter and not worker.done():
+                    replayed_rows.append(len(rows))
+                return rows
+
+            monkeypatch.setattr(store, "events", observed_events)
+            waiting = asyncio.Event()
+
+            async def observe_completion():
+                waiting.set()
+                return await _completed_internal_task(manager, store, task["id"], adapter)
+
+            waiter = asyncio.create_task(observe_completion())
+            await waiting.wait()
+            release.set()
+            done = await waiter
+            assert replayed_rows == [], f"completion observer replayed live event rows: {replayed_rows}"
+            assert worker.done() and not worker.cancelled()
+            assert done["status"] == "completed" and done["result"] == "verified"
+            assert adapter.turns == 3
+            finished = [e for e in store.events(task["id"]) if e["type"] == "tool.finished"]
+            assert [e["payload"]["call_id"] for e in finished] == ["read-1", "read-2"]
+            assert all(e["payload"]["result"]["content"] == "sample" for e in finished)
+            assert not any(e["type"] == "task.failed" for e in store.events(task["id"]))
+        finally:
+            release.set()
+            if waiter is not None and not waiter.done():
+                waiter.cancel()
+                await asyncio.gather(waiter, return_exceptions=True)
+            await manager.close()
+            store.close()
+
+    asyncio.run(run())
+
+
+def test_completion_wait_timeout_captures_progress_before_worker_cleanup(tmp_path):
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        class BlockedAnswer(ManyReads):
+            async def turn(self, **kwargs):
+                answer = await super().turn(**kwargs)
+                entered.set()
+                await release.wait()
+                return answer
+
+        adapter = BlockedAnswer(0)
+        manager, store = build_manager(tmp_path, adapter)
+        worker = None
+        try:
+            task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
+                                             provider_id="fake", mode="ask")
+            worker = manager._workers[task["id"]]
+            await asyncio.wait_for(entered.wait(), timeout=10)
+            with pytest.raises(AssertionError) as error:
+                await _completed_internal_task(manager, store, task["id"], adapter, timeout=0)
+            snapshot = error.value.args[0]
+            assert snapshot["reason"] == "completion_wait_timeout"
+            assert snapshot["status"] == "running" and snapshot["turns"] == 1
+            assert snapshot["step"] == 0 and snapshot["error"] == ""
+            assert not snapshot["worker_done"] and not snapshot["worker_cancelled"]
+            assert len(snapshot["event_tail"]) <= 5
+            assert any(event["type"] == "task.status" for event in snapshot["event_tail"])
+            assert not worker.done() and not worker.cancelled()
+        finally:
+            release.set()
+            await manager.close()
+            assert worker is None or worker.done()
+            store.close()
+
+    asyncio.run(run())
+
+
 def test_internal_task_survives_more_than_old_default_requests(tmp_path):
     (tmp_path / "sample.txt").write_text("sample")
     async def run():
@@ -44,11 +168,17 @@ def test_internal_task_survives_more_than_old_default_requests(tmp_path):
         try:
             task = await manager.create_task(prompt="Inspect", cwd=str(tmp_path),
                                              provider_id="fake", mode="ask")
-            done = await wait_for_status(store, task["id"], "completed", timeout=10)
+            done = await _completed_internal_task(manager, store, task["id"], adapter)
             assert done["result"] == "verified"
             assert adapter.turns == 301
-            assert len([e for e in store.events(task["id"]) if e["type"] == "tool.finished"]) == 300
-            assert not any(e["type"] == "task.failed" for e in store.events(task["id"]))
+            events = store.events(task["id"])
+            finished = [e for e in events if e["type"] == "tool.finished"]
+            assert len(finished) == 300
+            assert [e["payload"]["call_id"] for e in finished] == [f"read-{i}" for i in range(1, 301)]
+            assert all(e["payload"]["result"]["ok"] and e["payload"]["result"]["content"] == "sample"
+                       for e in finished)
+            assert done["mode"] == "ask" and all(value is None for value in done["limits"].values())
+            assert not any(e["type"] == "task.failed" for e in events)
         finally:
             await manager.close()
             store.close()
