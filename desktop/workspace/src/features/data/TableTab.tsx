@@ -56,7 +56,7 @@ const compact = (group: FilterGroup): FilterGroup => ({...group, items: group.it
 
 function TableWorkspace({workspaceId, connectionId, label, controller, table, tables, onOpenAdvanced, combineRequest, views, canSave = false, onViewSaved, seed, subtitle}: Props & {table: SchemaTable; tables: SchemaTable[]}) {
   const scope = useDataScope();
-  const base = useMemo(() => seed ? {...emptySpec(connectionId, table.name), from: seed.from} : emptySpec(connectionId, table.name), [connectionId, table.name, seed]);
+  const base = useMemo(() => seed ? {...emptySpec(connectionId, table.name), from: seed.from, limit: seed.limit ?? DEFAULT_PAGE} : emptySpec(connectionId, table.name), [connectionId, table.name, seed]);
   const [view, setView] = useState<View>(() => seed ? {joins: seed.joins, filters: seed.filters, sort: seed.sort, offset: 0, visible: seed.select.length ? seed.select : null, summary: null}
     : {joins: [], filters: base.filters, sort: [], offset: 0, visible: null, summary: null});
   const [saving, setSaving] = useState(false), [message, setMessage] = useState(''), [segmentError, setSegmentError] = useState('');
@@ -98,13 +98,15 @@ function TableWorkspace({workspaceId, connectionId, label, controller, table, ta
   const pageRows = rows.slice(0, limit), hasMore = !!shown && (shown.job.result!.truncated || rows.length > limit);
   const gridColumns = useMemo<GridColumn[]>(() => {
     const columns = shown?.compile.columns;
-    if (!columns) return table.columns.map(column => ({key: column.name, label: column.name, kind: column.value_kind}));
+    if (!columns) return table.columns.map(column => ({key: column.name, label: humanize(column.name), kind: column.value_kind}));
     return columns.map(column => {
       const byColumn = column.role === 'column' && column.table_alias && column.column;
       const key = shown.spec.sort.find(item => byColumn ? 'table_alias' in item && item.table_alias === column.table_alias && item.column === column.column : 'output' in item && item.output === column.label);
-      return {key: column.label, label: column.label, kind: column.value_kind, sortable: true, sort: key?.direction};
+      // A plain column reads the way its filter chip does ('Customer id'); summary results keep the names the person typed.
+      const text = byColumn ? labelFor({table_alias: column.table_alias!, column: column.column!}) : column.label;
+      return {key: column.label, label: text, kind: column.value_kind, sortable: true, sort: key?.direction};
     });
-  }, [shown, table.columns]);
+  }, [shown, table.columns, labelFor]);
   function sortBy(index: number, additive: boolean) {
     const column = shown?.compile.columns[index];
     if (!column) return;

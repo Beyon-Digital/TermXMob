@@ -6,6 +6,7 @@ import {request, ApiError} from '../../lib/api';
 import {transfer} from '../../lib/transfers';
 import type {SourceController} from './use-source';
 import type {QuerySpec, SchemaTable} from '../../lib/query-spec';
+import {emptySpec} from '../../lib/query-builder';
 import {expectNoAxeViolations} from '../../test-axe';
 import {sizeGridScrollers} from '../../test-utils/virtual';
 
@@ -80,18 +81,18 @@ it('sorts from a column header and cycles to descending', async () => {
   const user = userEvent.setup();
   view();
   await screen.findByRole('cell', {name: '120.5'});
-  await user.click(screen.getByRole('button', {name: 'amount'}));
+  await user.click(screen.getByRole('button', {name: 'Amount'}));
   await waitFor(() => expect(lastRun().sort).toEqual([{table_alias: 'orders', column: 'amount', direction: 'asc'}]));
-  await waitFor(() => expect(screen.getByRole('columnheader', {name: /^amount/})).toHaveAttribute('aria-sort', 'ascending'));
-  await user.click(screen.getByRole('button', {name: 'amount'}));
+  await waitFor(() => expect(screen.getByRole('columnheader', {name: /^Amount/})).toHaveAttribute('aria-sort', 'ascending'));
+  await user.click(screen.getByRole('button', {name: 'Amount'}));
   await waitFor(() => expect(lastRun().sort[0]).toMatchObject({direction: 'desc'}));
 });
 it('filters from a column popover into a plain-language chip and removes it', async () => {
   const user = userEvent.setup();
   view();
   await screen.findByRole('cell', {name: '120.5'});
-  await user.click(screen.getByRole('button', {name: 'Filter amount'}));
-  const dialog = await screen.findByRole('dialog', {name: 'Filter amount'});
+  await user.click(screen.getByRole('button', {name: 'Filter Amount'}));
+  const dialog = await screen.findByRole('dialog', {name: 'Filter Amount'});
   await user.selectOptions(within(dialog).getByLabelText('Condition'), 'gt');
   await user.type(within(dialog).getByLabelText('Value'), '100');
   await user.click(within(dialog).getByRole('button', {name: 'Apply'}));
@@ -112,7 +113,7 @@ it('combines with a suggested table as a readable sentence and shows the repeat 
   const list = await screen.findByRole('list', {name: 'Combined tables'});
   expect(within(list).getByText('Combined with Customers: customer_id matches id')).toBeInTheDocument();
   await waitFor(() => expect(lastRun().joins).toEqual([{kind: 'left', table: 'customers', alias: 'customers', on: [{left: {table_alias: 'orders', column: 'customer_id'}, right: {table_alias: 'customers', column: 'id'}}]}]));
-  expect(await screen.findByRole('columnheader', {name: /customers\.name/})).toBeInTheDocument();
+  expect(await screen.findByRole('columnheader', {name: /Customers · Name/})).toBeInTheDocument();
   await user.click(screen.getByRole('button', {name: 'Remove Customers'}));
   await waitFor(() => expect(lastRun().joins).toEqual([]));
   expect(screen.queryByRole('list', {name: 'Combined tables'})).not.toBeInTheDocument();
@@ -225,7 +226,7 @@ it('says when no rows match and offers to clear the filters', async () => {
   view();
   await screen.findByRole('cell', {name: '120.5'});
   orderRows = [];
-  await user.click(screen.getByRole('button', {name: 'Filter status'}));
+  await user.click(screen.getByRole('button', {name: 'Filter Status'}));
   const dialog = await screen.findByRole('dialog');
   await user.selectOptions(within(dialog).getByLabelText('Condition'), 'eq');
   await user.type(within(dialog).getByLabelText('Value'), 'nothing');
@@ -354,5 +355,37 @@ it('explains a disabled Columns button while a summary is on instead of printing
 it('titles a header with its full name so a long column is readable on hover', async () => {
   view();
   await screen.findByRole('cell', {name: '120.5'});
-  expect(screen.getByRole('button', {name: 'customer_id'})).toHaveAttribute('title', 'customer_id');
+  expect(screen.getByRole('button', {name: 'Customer id'})).toHaveAttribute('title', 'Customer id');
+});
+
+it.each([
+  {caption: 'a supplied seed limit of 25', seedLimit: 25, pageSize: 25},
+  {caption: 'the default 200 when the seed limit is omitted', seedLimit: undefined, pageSize: 200},
+])('uses $caption for compile, run and paging', async ({seedLimit, pageSize}) => {
+  const user = userEvent.setup();
+  const {limit: _defaultLimit, ...seedWithoutLimit} = emptySpec('c1', 'orders');
+  const seed = seedLimit === undefined ? seedWithoutLimit : {...seedWithoutLimit, limit: seedLimit};
+  const firstPage = Array.from({length: pageSize + 1}, (_, index) => [index + 1, 1, 'open', 1, '2026-01-01']);
+  orderRows = firstPage;
+  // QuerySpec requires limit, but a legacy/runtime seed may omit it.
+  view({}, {seed: seed as QuerySpec});
+
+  await screen.findByText('Rows 1 to ' + pageSize);
+  expect(lastSpec()).toMatchObject({limit: pageSize, offset: 0});
+  expect(lastRun()).toMatchObject({limit: pageSize, offset: 0});
+  expect(screen.getByRole('button', {name: 'Next'})).toBeEnabled();
+
+  const finalRow = pageSize + 1;
+  orderRows = [[finalRow, 1, 'open', 1, '2026-01-01']];
+  await user.click(screen.getByRole('button', {name: 'Next'}));
+  await waitFor(() => expect(lastRun()).toMatchObject({limit: pageSize, offset: pageSize}));
+  expect(lastSpec()).toMatchObject({limit: pageSize, offset: pageSize});
+  await screen.findByText('Rows ' + finalRow + ' to ' + finalRow + ' of ' + finalRow);
+  expect(screen.getByRole('button', {name: 'Next'})).toBeDisabled();
+
+  orderRows = firstPage;
+  await user.click(screen.getByRole('button', {name: 'Previous'}));
+  await waitFor(() => expect(lastRun()).toMatchObject({limit: pageSize, offset: 0}));
+  expect(lastSpec()).toMatchObject({limit: pageSize, offset: 0});
+  await screen.findByText('Rows 1 to ' + pageSize);
 });

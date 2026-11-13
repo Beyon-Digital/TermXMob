@@ -99,11 +99,13 @@ function defaultPivot(table: SchemaTable, alias: string): PivotSpec {
 
 function PivotWorkspace({workspaceId, connectionId, tab, controller, views, onOpenAdvanced, onSaved, onArchived, onDrill, onClose, detail, table, tables, readOnly, reload, reloading, seed}: WorkspaceProps) {
   const scope = useDataScope();
-  const base = useMemo<QuerySpec>(() => detail ? {...emptySpec(connectionId, detail.spec.from.table), from: detail.spec.from} : emptySpec(connectionId, table!.name), [connectionId, detail, table]);
+  // A pivot Copilot suggested arrives as `tab.spec`; it seeds the setup once and stays unsaved.
+  const proposed = !detail ? tab.spec : undefined;
+  const base = useMemo<QuerySpec>(() => detail ? {...emptySpec(connectionId, detail.spec.from.table), from: detail.spec.from} : proposed ? {...emptySpec(connectionId, proposed.from.table), from: proposed.from} : emptySpec(connectionId, table!.name), [connectionId, detail, table, proposed]);
   const [saved, setSaved] = useState<ViewDetail | null>(detail);
-  const [joins, setJoins] = useState<Join[]>(() => detail ? detail.spec.joins : seed?.joins || []);
-  const [filters, setFilters] = useState<FilterGroup>(() => detail ? detail.spec.filters : seed?.filters || base.filters);
-  const [pivot, setPivot] = useState<PivotSpec>(() => detail ? detail.spec.pivot || emptyPivot() : table ? defaultPivot(table, base.from.alias) : emptyPivot());
+  const [joins, setJoins] = useState<Join[]>(() => detail ? detail.spec.joins : proposed?.joins || seed?.joins || []);
+  const [filters, setFilters] = useState<FilterGroup>(() => detail ? detail.spec.filters : proposed?.filters || seed?.filters || base.filters);
+  const [pivot, setPivot] = useState<PivotSpec>(() => detail ? detail.spec.pivot || emptyPivot() : proposed?.pivot ? proposed.pivot : table ? defaultPivot(table, base.from.alias) : emptyPivot());
   const [offset, setOffset] = useState(0), [sql, setSql] = useState(false), [busy, setBusy] = useState(false);
   // On a narrow screen a saved pivot opens on its numbers; the setup is one tap away.
   const [setup, setSetup] = useState(() => !detail || !window.matchMedia?.('(max-width: 767px)').matches);

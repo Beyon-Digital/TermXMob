@@ -4,14 +4,14 @@ export type BIKind = 'table'|'bar'|'line'|'area'|'scatter'|'pie'|'metric'|'pivot
 export type BIAggregate = 'none'|'sum'|'count'|'avg'|'min'|'max';
 export type BIVisual = {kind:BIKind; x?:string; y?:string; aggregate?:BIAggregate};
 export type BIFilter = {field:string; operator:string; value?:unknown};
-export type BIReportDefinition = {name:string; query_id:string; visual:BIVisual; filters?:BIFilter[]; description?:string};
+export type BIReportDefinition = {name:string; query_id?:string; view_id?:string; visual:BIVisual; filters?:BIFilter[]; description?:string};
 export type BIPublication = DataRecord & {version?:number; definition?:BIReportDefinition; published_at?:string};
-export type BIReport = DataRecord & BIReportDefinition & {published?:boolean; published_version?:number|BIPublication; publication?:BIPublication; published_version_id?:string; published_revision?:number; version?:number; versions?:BIPublication[]};
+export type BIReport = DataRecord & BIReportDefinition & {published?:boolean; published_version?:number|BIPublication; publication?:BIPublication; published_version_id?:string; published_revision?:number; version?:number; versions?:BIPublication[]; using_published_version?:boolean};
 export type BIDashboard = DataRecord & {name:string; report_ids:string[]};
 export type ChartPoint = {label:string; value:number; x:number; row:number};
 export const BI_KINDS:{value:BIKind;label:string}[] = [{value:'table',label:'Table'},{value:'metric',label:'KPI'},{value:'bar',label:'Bar'},{value:'line',label:'Line'},{value:'area',label:'Area'},{value:'scatter',label:'Scatter'},{value:'pie',label:'Pie'},{value:'pivot',label:'Pivot'}];
 export const BI_AGGREGATES:{value:BIAggregate;label:string}[] = [{value:'none',label:'None'},{value:'sum',label:'Sum'},{value:'count',label:'Count'},{value:'avg',label:'Average'},{value:'min',label:'Minimum'},{value:'max',label:'Maximum'}];
-export const BI_FILTERS = [{value:'eq',label:'Equals'},{value:'ne',label:'Does not equal'},{value:'gt',label:'Greater than'},{value:'gte',label:'At least'},{value:'lt',label:'Less than'},{value:'lte',label:'At most'},{value:'contains',label:'Contains'},{value:'is_null',label:'Is empty'},{value:'not_null',label:'Is not empty'}];
+export const BI_FILTERS = [{value:'eq',label:'Equals'},{value:'ne',label:'Does not equal'},{value:'gt',label:'Greater than'},{value:'gte',label:'At least'},{value:'lt',label:'Less than'},{value:'lte',label:'At most'},{value:'contains',label:'Contains'},{value:'in',label:'Is any of'},{value:'not_in',label:'Is none of'},{value:'is_null',label:'Is empty'},{value:'not_null',label:'Is not empty'}];
 
 /** Keep nulls, booleans and empty strings out of numeric plots. */
 export function biNumber(value:unknown):number|null {
@@ -46,10 +46,10 @@ export function biDomain(values:number[],includeZero=true):[number,number] {
 export function biScale(value:number,domain:[number,number],start:number,end:number){return start+(value-domain[0])/(domain[1]-domain[0])*(end-start)}
 export function biFormat(value:number){return new Intl.NumberFormat(undefined,{maximumFractionDigits:4}).format(value)}
 export function biPublished(report:BIReport){return !!(report.published||report.published_version||report.publication)}
-export function biDefinition(report:BIReport):BIReportDefinition {return {name:report.name,query_id:report.query_id,visual:{...report.visual},filters:(report.filters||[]).map(filter=>({...filter})),description:report.description||''}}
+export function biDefinition(report:BIReport):BIReportDefinition {return {name:report.name,...(report.query_id?{query_id:report.query_id}:{}),...(report.view_id?{view_id:report.view_id}:{}),visual:{...report.visual},filters:(report.filters||[]).map(filter=>({...filter})),description:report.description||''}}
 export function biValidDefinition(value:unknown):value is BIReportDefinition {
  if(!value||typeof value!=='object')return false;
- const row=value as Partial<BIReportDefinition>;return typeof row.name==='string'&&typeof row.query_id==='string'&&!!row.visual&&BI_KINDS.some(kind=>kind.value===row.visual?.kind);
+ const row=value as Partial<BIReportDefinition>;return typeof row.name==='string'&&(typeof row.query_id==='string'||typeof row.view_id==='string')&&!!row.visual&&BI_KINDS.some(kind=>kind.value===row.visual?.kind);
 }
 /** Export the rendered marks and labels, with resolved colors for a standalone SVG. */
 export function biSvg(node:SVGSVGElement):string {
@@ -74,3 +74,8 @@ export function biChartLayout(measuredWidth:number,values:number[]){
  const tickCount=Math.max(1,Math.min(6,Math.floor((right-left)/80))),labelLength=Math.max(4,Math.min(16,Math.floor((right-left)/tickCount/7)-1));
  return {width,height,left,right,top,bottom,domain,ticks,tickCount,labelLength};
 }
+
+export const biIsList=(operator:string)=>operator==='in'||operator==='not_in';
+export function biListText(value:unknown){return Array.isArray(value)?value.map(item=>item===null?'':String(item)).join(', '):value===null||value===undefined?'':String(value)}
+/** "a, b, 3" becomes ['a','b',3] when the field is numeric; blanks are dropped. */
+export function biListValue(text:string,numeric:boolean){return text.split(',').map(part=>part.trim()).filter(Boolean).map(part=>numeric&&Number.isFinite(Number(part))?Number(part):part)}

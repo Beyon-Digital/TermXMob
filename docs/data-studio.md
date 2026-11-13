@@ -7,7 +7,7 @@ Open **Data** in the app rail, or use `/?workspace=data`. The Data sidebar lists
 1. Create a Data workspace. It does not need an Agent project or folder.
 2. Choose **Connect database**. SQLite uses the host filesystem chooser. Network profiles accept an explicit server, database, account and password.
 3. Press **Test connection**, choose **Load tables** to list them (opening a table or a saved view loads them for you) (Overview offers a list or tile layout), then open **New query** in the sidebar, enter a read query and press **Run**. Save reusable queries by name. Parameters are JSON values bound by the adapter.
-4. Open Reports, create a report from a saved query, choose a visual and run it. Save changes before running a changed definition. Publish a version for viewers or add the report to a dashboard.
+4. Open Reports, create a report from a table, a saved view (table, pivot or segment) or a saved query, choose a visual and run it. Save changes before running a changed definition. Publish a version for viewers or add the report to a dashboard.
 5. In Team > Members, add an existing host username as editor or viewer. Sources require their creator to enable shared read access. Viewers run published reports; they cannot run arbitrary SQL or see unpublished edits.
 6. Open Copilot and choose an existing account/model in its settings. Account sharing is explicit. Schema and Results context are optional. Query/report proposals require **Open query** or **Save report**; they do not silently publish.
 
@@ -93,6 +93,28 @@ The viewer's workspace snapshot lists a shared source with its name and engine o
 
 ## Decisions
 
-- The sidebar Tables group shows 200 tables at a time with "Show more tables", not a virtualized list. Search filters the whole list, and virtualization is deferred until a source needs it.
+- The sidebar Tables group is a virtual list: a window of at most 360px scrolls and only the visible rows are in the page. Up, Down, Home and End move between rows. Search filters the whole list.
+- Grid cells use `role="cell"` inside `role="table"` with a roving tab stop, not `role="grid"`, so existing selectors and screen reader table reading keep working.
+- A table chosen as report data becomes a saved table view named `Report data: <table>`. It is an ordinary view: it shows in Views, can be renamed or archived, and the report keeps working through the same code as any other view.
 - The shared theme tokens keep the repository's monochrome accent. Moving Data to the DESIGN.md accent is a decision for the design owner, because Agent and Studio share the same tokens.
 - Pivots have a Total column but no bottom total row, because averages and unique counts cannot be added up. Run history keeps job results as long as jobs are kept; a retention rule needs an owner decision.
+
+## Copilot proposals
+
+Copilot is a right panel (drag its edge or use the arrow keys to resize). It proposes; it never saves or runs. A **table** proposal (`propose_query_spec`), a **pivot** proposal (`propose_pivot`) and a **segment** proposal (`propose_segment`) are validated on the server with the same checks a save uses: the query model, the view-kind rules, the live schema, the segment graph and a full compile. A rejected proposal comes back to the model as an error it can fix, and without the schema switch on, the error names no tables or columns. Each card shows the proposal as filter chips you can edit, then **Apply to table**, **Open as pivot** or **Save as segment**. A proposal that no structured query can express is offered as SQL under Advanced, never run. Schema and Results context are optional switches, and data returned by the source is treated as untrusted text, not as instructions.
+
+## Reports on views
+
+A report's data is one of: a saved query (unchanged), or a saved view (table, pivot or segment). Pick it in **Data** when you create the report or in **Edit report**; choosing a table creates a plain table view for it. The fields, aggregates and filters are the same for every kind of data, and the field lists come from the view, so you can build a chart or add filters before the first run, with the names people read ("Region", "Total") rather than the SQL names.
+
+- **All rows.** The report wraps the view's statement as a derived table without its own sort, page size or offset, so totals cover every row, not the page the view shows.
+- **Per engine.** The wrapped statement is built from the engine's own adapter. On MySQL and MariaDB, text fields from a view are grouped and compared with the exact collation, so `East` and `east` are different values, as on SQLite and PostgreSQL. Saved SQL reports keep the behaviour they had.
+- **Filters.** Equals, does not equal, greater, less, contains, **is any of** and **is none of**, is empty and is not empty. "Is any of" takes values separated by commas. Empty values match neither list.
+- **Versions.** Publishing pins the view's definition and the segments it uses. Viewers run the pinned version even if the view or a segment changes later, and never see the view's definition. A segment that is missing blocks publishing with a message. Reports on saved queries are unchanged.
+- **Access.** Editors can pick views on sources they can use. Viewers run published reports on shared sources only.
+
+## Advanced SQL, grid and sidebar
+
+- The **Advanced SQL** panel lists the saved queries of the open source, shows the run shortcut (Ctrl+Enter or ⌘+Enter) next to **Run**, and puts the error inside the panel in plain words ("There is no table "ordres" in this source."). Messages that are not recognised are shown as the database wrote them. Its size and position are remembered per person in this browser: resize from the corner, move with the grip button (drag, or arrow keys), and reset with the circular arrow. On a phone the panel keeps its default layout.
+- **Grid keyboard.** Tab enters the results once. Arrows move between cells, Home and End go to the first and last cell of the row (with Ctrl, the first and last row), Page Up and Page Down move a page, and Enter opens the filter of the cell's column. Column headers use the same words as filter chips ("Customer id").
+- **Workspace and Source** use a searchable popover picker instead of the browser's select: Enter or Space picks, arrows move, Esc closes and returns focus. The Tables group is virtual.

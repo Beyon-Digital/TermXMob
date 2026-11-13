@@ -1,9 +1,10 @@
-import {useMemo, useState, type KeyboardEvent} from 'react';
+import {useMemo, useRef, useState, type KeyboardEvent} from 'react';
+import {useVirtualizer} from '@tanstack/react-virtual';
 import {Plus} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {Input} from '../../components/ui/input';
 import {Popover, PopoverContent, PopoverTrigger} from '../../components/ui/popover';
-import {Select} from '../../components/ui/select';
+import DataPicker from './DataPicker';
 import {pivotViewTabId, segmentTabId} from '../../lib/data-tabs';
 import type {ViewSummary} from '../../lib/data-views';
 import type {ViewsController} from './use-views';
@@ -21,7 +22,9 @@ type Props = {
   onOpenPivot?: (view: ViewSummary) => void; onOpenSegment?: (view: ViewSummary) => void; onNewPivot?: (table: SchemaTable) => void;
   onOpenOverview: () => void; onOpenTable: (table: SchemaTable) => void; onOpenQuery: (query: DataQuery) => void; onNewQuery: () => void; onOpenView: (view: 'bi' | 'team') => void;
 };
-export const TABLE_PAGE = 200;
+/** The Tables list shows a window of this many rows at most; it scrolls, and only the visible rows are in the page. */
+export const TABLE_WINDOW = 360;
+const rowHeight = () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 44 : 36;
 /** Identity of a table inside a source. */
 export const tableKey = (table: SchemaTable) => (table.schema ? table.schema + '.' : '') + table.name;
 /** What people read: the default schema (main, public) is implied. */
@@ -32,7 +35,7 @@ const matches = (text: string, needle: string) => text.toLowerCase().includes(ne
 /** Studio-pattern sidebar for Data: scope switchers, search, then Tables, Saved queries, Reports, Dashboards and Team. */
 export default function DataNavigation(props: Props) {
   const {loading, workspaces, workspaceId, workspaceBusy, role, connections, connectionId, source, queries, reports, dashboards, view, activeTabId} = props;
-  const writable = role !== 'viewer', [search, setSearch] = useState(''), [shown, setShown] = useState(TABLE_PAGE), needle = search.trim().toLowerCase();
+  const writable = role !== 'viewer', [search, setSearch] = useState(''), needle = search.trim().toLowerCase();
   const tables = useMemo(() => (source.schema?.tables || []).filter(table => !needle || matches(tableKey(table), needle)), [source.schema, needle]);
   const savedQueries = useMemo(() => queries.filter(row => row.connection_id === connectionId && (!needle || matches(row.name, needle))), [queries, connectionId, needle]);
   const viewRows = (kind: 'pivot' | 'segment') => (props.views?.views || []).filter(row => row.kind === kind && row.connection_id === connectionId && (!needle || matches(row.name, needle)));
@@ -42,24 +45,20 @@ export default function DataNavigation(props: Props) {
     <div className="data-nav-scope">
       <div className="data-nav-field"><label htmlFor="data-nav-workspace">Workspace</label>
         <div className="data-nav-field-row">
-          <Select id="data-nav-workspace" className="data-compact" aria-label="Data workspace" value={workspaceId} onChange={event => props.onWorkspace(event.target.value)} disabled={!workspaces.length || workspaceBusy}>
-            {!workspaces.length && <option value="">No workspaces</option>}
-            {workspaces.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}
-          </Select>
+          <DataPicker id="data-nav-workspace" className="data-compact" label="Data workspace" value={workspaceId} options={workspaces.map(row => ({value: row.id, label: row.name}))}
+            emptyText="No workspaces" onChange={props.onWorkspace} disabled={!workspaces.length || workspaceBusy}/>
           <Button variant="ghost" size="icon" className="data-compact" aria-label="New workspace" title="New workspace" onClick={props.onCreateWorkspace} disabled={loading}><Plus size={16}/></Button>
         </div>
       </div>
       {workspaceId && <div className="data-nav-field"><label htmlFor="data-nav-source">Source</label>
         <div className="data-nav-field-row">
-          <Select id="data-nav-source" className="data-compact" aria-label="Data source" value={connectionId} onChange={event => props.onConnection(event.target.value)} disabled={!connections.length}>
-            {!connections.length && <option value="">No sources yet</option>}
-            {connections.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}
-          </Select>
+          <DataPicker id="data-nav-source" className="data-compact" label="Data source" value={connectionId} options={connections.map(row => ({value: row.id, label: row.name}))}
+            emptyText="No sources yet" onChange={props.onConnection} disabled={!connections.length}/>
           {writable && connections.length > 0 && <Button variant="ghost" size="icon" className="data-compact" aria-label="Connect database" title="Connect database" onClick={props.onConnect}><Plus size={16}/></Button>}
         </div>
       </div>}
       {connectionId && writable && <div className="data-nav-field"><label htmlFor="data-nav-search">Search tables</label>
-        <Input id="data-nav-search" className="data-compact" type="search" autoComplete="off" value={search} onChange={event => {setSearch(event.target.value); setShown(TABLE_PAGE);}}/>
+        <Input id="data-nav-search" className="data-compact" type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)}/>
         {needle && <p className="visually-hidden" role="status">{tables.length} {tables.length === 1 ? 'table matches' : 'tables match'}, {props.views ? pivots.length + (pivots.length === 1 ? ' pivot, ' : ' pivots, ') + segments.length + (segments.length === 1 ? ' segment, ' : ' segments, ') : ''}{savedQueries.length} saved {savedQueries.length === 1 ? 'query' : 'queries'}</p>}
       </div>}
     </div>
@@ -72,11 +71,7 @@ export default function DataNavigation(props: Props) {
           {source.schemaStatus === 'loading' && <div className="data-skeleton-list" role="status" aria-label="Loading tables">{[0, 1, 2, 3].map(index => <span className="data-skeleton-row" key={index}/>)}</div>}
           {source.schemaStatus === 'error' && <div className="data-nav-note"><p role="alert">{source.schemaError}</p>{source.needsTest ? <Button variant="ghost" size="sm" onClick={source.testConnection} disabled={source.testing}>{source.testing ? 'Testing…' : 'Test connection'}</Button> : <Button variant="ghost" size="sm" onClick={source.loadSchema}>Try again</Button>}</div>}
           {source.schemaStatus === 'ready' && (!source.schema?.tables.length ? <p className="data-nav-note">No visible tables.</p> : !tables.length ? <p className="data-nav-note">No tables match.</p> : <>
-            {tables.slice(0, shown).map(table => {
-              const id = 'table:' + connectionId + ':' + tableKey(table), blocked = table.readable === false;
-              return <button type="button" key={id} className="data-nav-row" aria-current={current(id)} disabled={blocked} title={blocked ? table.reason || 'This table cannot be read.' : tableLabel(table)} onClick={() => props.onOpenTable(table)}><span>{tableLabel(table)}</span></button>;
-            })}
-            {tables.length > shown && <Button variant="ghost" className="data-nav-row data-nav-action" onClick={() => setShown(value => value + TABLE_PAGE)}>Show more tables</Button>}
+            <TableList tables={tables} connectionId={connectionId} current={current} onOpen={props.onOpenTable}/>
           </>)}
         </>}
       </nav>}
@@ -141,4 +136,35 @@ function NewPivot({tables, status, onLoad, onPick}: {tables: SchemaTable[]; stat
       </div>
     </PopoverContent>
   </Popover>;
+}
+
+/** Only the rows in view are in the document, so a source with thousands of tables stays fast. Up and Down move between rows. */
+function TableList({tables, connectionId, current, onOpen}: {tables: SchemaTable[]; connectionId: string; current: (id: string) => 'page' | undefined; onOpen: (table: SchemaTable) => void}) {
+  const scroller = useRef<HTMLDivElement>(null), height = rowHeight();
+  const windowHeight = Math.min(tables.length * height, TABLE_WINDOW);
+  // The window has a fixed height set below, so it is reported directly instead of measured.
+  const virtual = useVirtualizer({count: tables.length, getScrollElement: () => scroller.current, estimateSize: () => height, overscan: 6,
+    initialRect: {width: 240, height: windowHeight}, observeElementRect: (_instance, report) => {report({width: 240, height: windowHeight}); return () => undefined;}});
+  function keys(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return;
+    const at = Number((document.activeElement as HTMLElement | null)?.dataset.index ?? -1);
+    if (Number.isNaN(at) || at < 0) return;
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? tables.length - 1 : Math.max(0, Math.min(tables.length - 1, at + (event.key === 'ArrowDown' ? 1 : -1)));
+    event.preventDefault();
+    virtual.scrollToIndex(target);
+    const focus = (tries: number) => {
+      const node = scroller.current?.querySelector<HTMLElement>('[data-index="' + target + '"]');
+      if (node) node.focus(); else if (tries > 0) requestAnimationFrame(() => focus(tries - 1));
+    };
+    focus(8);
+  }
+  return <div ref={scroller} className="data-nav-virtual" style={{height: windowHeight}} onKeyDown={keys}>
+    <div style={{height: virtual.getTotalSize(), position: 'relative'}}>
+      {virtual.getVirtualItems().map(item => {
+        const table = tables[item.index], id = 'table:' + connectionId + ':' + tableKey(table), blocked = table.readable === false;
+        return <button type="button" key={id} data-index={item.index} className="data-nav-row data-nav-virtual-row" style={{transform: 'translateY(' + item.start + 'px)'}} aria-current={current(id)} disabled={blocked}
+          title={blocked ? table.reason || 'This table cannot be read.' : tableLabel(table)} onClick={() => onOpen(table)}><span>{tableLabel(table)}</span></button>;
+      })}
+    </div>
+  </div>;
 }

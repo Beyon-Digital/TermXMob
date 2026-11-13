@@ -131,11 +131,13 @@ it('closes the tab of a view someone else deleted and says so', async () => {
   expect(screen.getByRole('tab', {name: 'Overview', selected: true})).toBeInTheDocument();
 });
 it('aborts the views request when the workspace changes', async () => {
+  const user = userEvent.setup();
   render(<DataStudio ownerId="owner" visible/>);
   await ready();
   await within(sidebar()).findByRole('button', {name: 'Sales by region'});
   const first = signals[0];
-  fireEvent.change(screen.getByLabelText('Data workspace'), {target: {value: 'second'}});
+  await user.click(screen.getByRole('combobox', {name: 'Data workspace'}));
+  await user.click(await screen.findByRole('option', {name: 'Finance'}));
   await screen.findByRole('heading', {name: 'Finance source'});
   expect(first.aborted).toBe(true);
 });
@@ -177,7 +179,8 @@ it('clears the connection notice when another source or workspace is chosen', as
   await ready();
   await saveConnection(user);
   await screen.findByText(/Connection saved/);
-  fireEvent.change(screen.getByLabelText('Data workspace'), {target: {value: 'second'}});
+  await user.click(screen.getByRole('combobox', {name: 'Data workspace'}));
+  await user.click(await screen.findByRole('option', {name: 'Finance'}));
   await screen.findByRole('heading', {name: 'Finance source'});
   expect(screen.queryByText(/Connection saved/)).toBeNull();
 });

@@ -117,26 +117,46 @@ class QueryService:
         index, dialect = await self.view_index(actor, wid, view_id, connection)
         return await self._compile(actor, wid, connection, index, dialect, spec, view_id)
 
-    async def _compile(self, actor, wid: str, connection: dict, index, dialect: Dialect, spec: QuerySpec, view_id: str | None) -> dict:
-        segments = self.service.views.load_segments(wid, references_of(spec.filters))
+    async def compile_dataset(self, actor, wid: str, connection: dict, spec: QuerySpec, segments: dict, authorize,
+                              context: dict) -> dict:
+        """A view's statement without ordering or paging, for a report to wrap as a derived table. `authorize`
+        repeats the report authority after the schema read; `context` is the report's own read context."""
+        dialect = get_dialect(connection['engine'])
+        key = self._key(wid, connection)
+        index = self.cache.get(key)
+        if index is None:
+            raw = await self.runtime.schema_for_authorized(connection, wid, authorize)
+            index = SchemaIndex.from_schema(raw, dialect)
+            self.cache.put(key, index)
+        return await self._compile(actor, wid, connection, index, dialect, spec, None,
+                                   segments=segments, dataset=True, context=context)
+
+    async def _compile(self, actor, wid: str, connection: dict, index, dialect: Dialect, spec: QuerySpec, view_id: str | None,
+                       *, segments: dict | None = None, dataset: bool = False, context: dict | None = None) -> dict:
+        if segments is None:
+            segments = self.service.views.load_segments(wid, references_of(spec.filters))
         extra: dict = {}
         try:
             values = None
             if spec.pivot is not None and spec.pivot.columns is not None:
                 # Validate first, so nothing is read for a pivot that cannot compile. The one bounded probe then
                 # runs under the same authority, deadline and verified-source rule as any run.
-                compile_spec(spec, index, dialect, segments=segments)
+                compile_spec(spec, index, dialect, segments=segments, dataset=dataset)
                 probe = compile_pivot_probe(spec, index, dialect, segments=segments)
                 self.runtime.require_verified_read(connection)
                 kind = probe.columns[0]['value_kind']
                 # The probe counts against the same per-person and per-connection caps as a run (429 when full).
+                definition = {'connection_id': connection['id'], 'sql': probe.sql, 'parameters': probe.parameters,
+                              'column_kinds': [kind]}
+                if context is not None:
+                    definition['report_context'] = context
                 async with self.runtime.read_slot(actor, connection['id']) as cancel:
                     found = await self.runtime.execute_read(
-                        actor, wid, {'connection_id': connection['id'], 'sql': probe.sql, 'parameters': probe.parameters,
-                                     'column_kinds': [kind]}, max_rows=PIVOT_PROBE_ROWS, view_id=view_id, cancel_event=cancel)
+                        actor, wid, definition, max_rows=PIVOT_PROBE_ROWS, from_report=context is not None,
+                        view_id=view_id, cancel_event=cancel)
                 values = pivot_values_from_rows(found['rows'], kind, probe.columns[0]['name'])
                 extra['pivot'] = {'probed': True, 'column_count': len(values), 'limit': PIVOT_MAX_COLUMNS}
-            compiled = compile_spec(spec, index, dialect, segments=segments, pivot_values=values)
+            compiled = compile_spec(spec, index, dialect, segments=segments, pivot_values=values, dataset=dataset)
         except SpecErrors as error:
             return {'ok': False, 'errors': [item.as_dict() for item in error.errors]}
         self._safety_net(connection, compiled)

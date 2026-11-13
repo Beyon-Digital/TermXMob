@@ -1,2 +1,7 @@
 allowBuilds:
   esbuild: true
+# Dialog and Menu must share their focus and dismissal stacks when a menu is
+# portaled from a modal dialog. Keep these at Menu's already-locked versions.
+overrides:
+  '@radix-ui/react-dialog@1.2.0>@radix-ui/react-focus-scope': 1.3.1
+  '@radix-ui/react-dialog@1.2.0>@radix-ui/react-dismissable-layer': 1.2.1

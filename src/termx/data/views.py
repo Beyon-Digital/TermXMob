@@ -421,6 +421,11 @@ class ViewService:
                 raise coded(409, 'segment_in_use', f'{len(referrers)} view{"s use" if len(referrers) != 1 else " uses"} this segment. '
                             'Remove it from them first.',
                             used_by=[{'id': r['id'], 'kind': r['view_kind'], 'name': r['name']} for r in referrers])
+            reports = self.service.bi.view_archive_blockers(wid, current, db)
+            if reports:
+                raise coded(409, 'view_in_use', f'{len(reports)} report{"s use" if len(reports) != 1 else " uses"} this view without a '
+                            'matching publication. Publish them, choose another dataset, or archive the reports first.',
+                            used_by=[{'id': r['id'], 'kind': 'report', 'name': r['name']} for r in reports])
             updated = self.store._update(db, 'view', vid, {'archived': True, 'updated_by': person.id, 'updated_by_name': person.display_name}, revision)
             snapshot = {'view_kind': current['view_kind'], 'name': current['name'], 'description': current.get('description', ''), 'spec': current['spec']}
             self.store._revision_insert(db, view_id=vid, revision=updated['revision'], workspace_id=wid, actor_id=person.id,
