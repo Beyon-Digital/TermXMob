@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
-import {cleanup, fireEvent, render, screen, within} from '@testing-library/react';
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import QueryGrid, {type GridColumn} from './QueryGrid';
 import {expectNoAxeViolations} from '../../test-axe';
 import {sizeGridScrollers} from '../../test-utils/virtual';
@@ -76,4 +76,59 @@ it('moves between cells with arrows, Home and End, and opens the column filter w
   fireEvent.keyDown(cell(0, 0), {key: 'ArrowRight'});
   fireEvent.keyDown(cell(0, 1), {key: 'Enter'});
   expect(opened).toHaveBeenCalledWith(1);
+});
+
+it('exposes only real rows through initial loading, readiness and refresh', async () => {
+  const readyRows = rows.slice(0, 3);
+  const {container, rerender} = render(<QueryGrid columns={columns} rows={[]} loading/>);
+  const table = screen.getByRole('table', {name: 'Result table'});
+
+  expect(table).toHaveAttribute('aria-busy', 'true');
+  expect(table).toHaveAttribute('aria-rowcount', '1');
+  expect(within(table).getAllByRole('columnheader')).toHaveLength(columns.length);
+  expect(within(table).getAllByRole('row')).toHaveLength(1);
+  expect(within(table).getAllByRole('rowgroup')).toHaveLength(1);
+  expect(within(table).queryAllByRole('cell')).toHaveLength(0);
+  expect(container.querySelectorAll('.data-skeleton-text').length).toBeGreaterThan(0);
+  await expectNoAxeViolations(container);
+
+  rerender(<QueryGrid columns={columns} rows={readyRows}/>);
+  await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(readyRows.length + 1));
+  expect(table).not.toHaveAttribute('aria-busy', 'true');
+  expect(table).toHaveAttribute('aria-rowcount', '4');
+  expect(within(table).getAllByRole('rowgroup')).toHaveLength(2);
+  expect(within(table).getAllByRole('cell')).toHaveLength(readyRows.length * columns.length);
+  within(table).getAllByRole('row').slice(1).forEach((row, index) => {
+    expect(row).toHaveAttribute('aria-rowindex', String(index + 2));
+    expect(within(row).getAllByRole('cell')).toHaveLength(columns.length);
+  });
+  await expectNoAxeViolations(container);
+
+  rerender(<QueryGrid columns={columns} rows={readyRows} loading/>);
+  expect(table).toHaveAttribute('aria-busy', 'true');
+  expect(table).toHaveAttribute('aria-rowcount', '4');
+  expect(within(table).getAllByRole('row')).toHaveLength(readyRows.length + 1);
+  expect(within(table).getAllByRole('cell')).toHaveLength(readyRows.length * columns.length);
+  expect(container.querySelector('.data-skeleton-text')).toBeNull();
+  const firstRowCells = within(within(table).getAllByRole('row')[1]).getAllByRole('cell');
+  firstRowCells[0].focus();
+  fireEvent.keyDown(firstRowCells[0], {key: 'ArrowRight'});
+  expect(firstRowCells[1]).toHaveFocus();
+  await expectNoAxeViolations(container);
+
+  rerender(<QueryGrid columns={columns} rows={readyRows.slice(0, 1)}/>);
+  await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(2));
+  expect(table).not.toHaveAttribute('aria-busy', 'true');
+  expect(table).toHaveAttribute('aria-rowcount', '2');
+  expect(within(table).getAllByRole('cell')).toHaveLength(columns.length);
+  expect(within(table).getAllByRole('row')[1]).toHaveAttribute('aria-rowindex', '2');
+  await expectNoAxeViolations(container);
+
+  rerender(<QueryGrid columns={columns} rows={[]}/>);
+  await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(1));
+  expect(table).not.toHaveAttribute('aria-busy', 'true');
+  expect(table).toHaveAttribute('aria-rowcount', '1');
+  expect(within(table).getAllByRole('rowgroup')).toHaveLength(1);
+  expect(within(table).queryAllByRole('cell')).toHaveLength(0);
+  await expectNoAxeViolations(container);
 });

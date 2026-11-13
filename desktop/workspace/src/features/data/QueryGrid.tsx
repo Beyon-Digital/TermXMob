@@ -17,7 +17,7 @@ const SKELETON_ROWS = 8;
 export default function QueryGrid({columns, rows, loading = false, onSort, renderFilter, firstRow = 1, label = 'Result table'}: Props) {
   const scroller = useRef<HTMLDivElement>(null), widths = columns.map(column => columnWidth(column.label, column.kind));
   const template = widths.map(width => width + 'px').join(' '), total = widths.reduce((sum, width) => sum + width, 0);
-  const count = loading && !rows.length ? SKELETON_ROWS : rows.length;
+  const skeletonOnly = loading && !rows.length, count = skeletonOnly ? SKELETON_ROWS : rows.length;
   const virtual = useVirtualizer({count, getScrollElement: () => scroller.current, estimateSize: () => ROW_HEIGHT, overscan: 8, initialRect: {width: 800, height: 400}});
   const [active, setActive] = useState({row: 0, col: 0}), wantFocus = useRef(false), range = virtual.getVirtualItems();
   const at_ = {row: Math.min(active.row, Math.max(0, rows.length - 1)), col: Math.min(active.col, Math.max(0, columns.length - 1))};
@@ -55,7 +55,7 @@ export default function QueryGrid({columns, rows, loading = false, onSort, rende
   }
   const style = {'--grid-columns': template, '--grid-width': total + 'px'} as React.CSSProperties;
   return <div ref={scroller} className="data-grid-scroll" role="region" aria-label={label} tabIndex={0}>
-    <div className="data-grid" role="table" aria-label={label} onKeyDown={navigate} aria-rowcount={rows.length + 1} aria-colcount={columns.length} style={style}>
+    <div className="data-grid" role="table" aria-label={label} aria-busy={loading} onKeyDown={navigate} aria-rowcount={rows.length + 1} aria-colcount={columns.length} style={style}>
       <div className="data-grid-head" role="rowgroup"><div className="data-grid-row" role="row" aria-rowindex={1}>
         {columns.map((column, index) => <div className="data-grid-cell data-grid-header" role="columnheader" key={column.key + index} data-align={alignFor(column.kind)}
           aria-sort={column.sort ? (column.sort === 'asc' ? 'ascending' : 'descending') : column.sortable ? 'none' : undefined}>
@@ -66,12 +66,14 @@ export default function QueryGrid({columns, rows, loading = false, onSort, rende
           {renderFilter?.(index, column)}
         </div>)}
       </div></div>
-      <div className="data-grid-body" role="rowgroup" style={{height: virtual.getTotalSize()}}>
+      {/* Placeholders keep the layout, but only real data contributes rows and cells. */}
+      <div className="data-grid-body" role={rows.length ? 'rowgroup' : 'presentation'} aria-hidden={rows.length ? undefined : true} style={{height: virtual.getTotalSize()}}>
         {virtual.getVirtualItems().map(item => {
           const row = rows[item.index];
-          return <div className="data-grid-row" role="row" key={item.key} aria-rowindex={item.index + 2} data-row={firstRow + item.index} style={{transform: 'translateY(' + item.start + 'px)'}}>
+          if (!row && !skeletonOnly) return null;
+          return <div className="data-grid-row" role={row ? 'row' : undefined} key={item.key} aria-rowindex={row ? item.index + 2 : undefined} data-row={row ? firstRow + item.index : undefined} style={{transform: 'translateY(' + item.start + 'px)'}}>
             {columns.map((column, index) => {
-              if (!row) return <div className="data-grid-cell" role="cell" key={index} aria-hidden="true"><span className="data-skeleton-text"/></div>;
+              if (!row) return <div className="data-grid-cell" key={index}><span className="data-skeleton-text"/></div>;
               const cell = formatCell(row[index], column.kind);
               const here = item.index === at_.row && index === at_.col;
               return <div className="data-grid-cell" role="cell" key={index} tabIndex={here ? 0 : -1} data-r={item.index} data-c={index} onFocus={() => setActive({row: item.index, col: index})} data-align={alignFor(column.kind)} data-empty={cell.empty || undefined} title={cell.empty ? undefined : cell.text}>{cell.text}</div>;
