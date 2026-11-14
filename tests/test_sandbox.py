@@ -376,6 +376,46 @@ def test_host_runner_respects_spawn_env_and_cwd(tmp_path):
     asyncio.run(run())
 
 
+def _linux_process_is_dead(pid: int) -> bool:
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    except (FileNotFoundError, ProcessLookupError):
+        # Reaping can remove the entry before open (ENOENT), or after open
+        # but before read (ESRCH). Both mean the observed process is gone.
+        return True
+    return fields[0] == "Z"
+
+
+@pytest.mark.parametrize("state, expected", [("S", False), ("R", False), ("Z", True)])
+def test_linux_process_death_probe_distinguishes_live_and_zombie(monkeypatch, state, expected):
+    def read_stat(path):
+        assert path == Path("/proc/12345/stat")
+        return f"12345 (command with ) in its name) {state} 123 456"
+
+    monkeypatch.setattr(Path, "read_text", read_stat)
+    assert _linux_process_is_dead(12345) is expected
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError, ProcessLookupError])
+def test_linux_process_death_probe_handles_reaping_during_read(monkeypatch, error):
+    def read_stat(path):
+        assert path == Path("/proc/12345/stat")
+        raise error("process reaped during stat read")
+
+    monkeypatch.setattr(Path, "read_text", read_stat)
+    assert _linux_process_is_dead(12345)
+
+
+def test_linux_process_death_probe_does_not_hide_permission_errors(monkeypatch):
+    def read_stat(path):
+        assert path == Path("/proc/12345/stat")
+        raise PermissionError("stat access denied")
+
+    monkeypatch.setattr(Path, "read_text", read_stat)
+    with pytest.raises(PermissionError, match="stat access denied"):
+        _linux_process_is_dead(12345)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX killpg tree-kill semantics")
 def test_host_runner_terminate_kills_process_tree(tmp_path):
     """Cancel must kill the whole spawned tree — the child a shell backgrounds
@@ -408,13 +448,8 @@ def test_host_runner_terminate_kills_process_tree(tmp_path):
                 os.kill(child_pid, 0)
             except ProcessLookupError:
                 return
-            if sys.platform.startswith('linux'):
-                try:
-                    fields = Path(f'/proc/{child_pid}/stat').read_text().rsplit(')', 1)[1].split()
-                except FileNotFoundError:
-                    return
-                if fields[0] == 'Z':
-                    return
+            if sys.platform.startswith("linux") and _linux_process_is_dead(child_pid):
+                return
             await asyncio.sleep(0.05)
         raise AssertionError(f"descendant pid {child_pid} survived tree kill")
 
