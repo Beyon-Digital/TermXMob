@@ -5,6 +5,8 @@ SQLite's minimum is 3.30. These are SQL feature minimums. Each network source st
 requires its own verified TLS connection and restricted read-only account; the
 engine catalogue continues to report network qualification as pending.
 
+The [2026-11-14 delivery record](verification/data-studio-2026-11-14.md#live-engine-coverage) lists the exact server versions and source revisions verified for the merged Data Studio stack. Version-line targets below are not a claim that every patch release has been tested.
+
 MySQL's minimum is 8.0.17 because exact text comparisons use the NO PAD
 `utf8mb4_0900_bin` collation, which Oracle added in that release ([release notes](https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-17.html)).
 MariaDB Community 10.6 does not have a native UUID type. Its UUID reflection/filter

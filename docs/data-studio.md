@@ -1,32 +1,36 @@
 # Data Studio
 
+This guide describes the implementation delivered by [#54](https://github.com/Beyon-Digital/TermXMob/pull/54), [#55](https://github.com/Beyon-Digital/TermXMob/pull/55) and [#56](https://github.com/Beyon-Digital/TermXMob/pull/56). The [dated verification record](verification/data-studio-2026-11-14.md) identifies tested revisions, results and limits. The [original design](superpowers/specs/2026-11-12-data-studio-query-ux-design.md) and its plans are retained as historical records.
+
 Open **Data** in the app rail, or use `/?workspace=data`. The Data sidebar lists the workspace, the source, its tables, saved queries, reports, dashboards and the team. Each table or saved query opens as a closable tab next to the **Overview** tab; open tabs are remembered by id only. **Copilot** opens the right panel.
 
 ## Use it
 
 1. Create a Data workspace. It does not need an Agent project or folder.
 2. Choose **Connect database**. SQLite uses the host filesystem chooser. Network profiles accept an explicit server, database, account and password.
-3. Press **Test connection**, choose **Load tables** to list them (opening a table or a saved view loads them for you) (Overview offers a list or tile layout), then open **New query** in the sidebar, enter a read query and press **Run**. Save reusable queries by name. Parameters are JSON values bound by the adapter.
+3. Press **Test connection**, then **Load tables**. Open a table from the sidebar or the Overview list/tiles. Sort headers, add filter chips with **Match all / Match any**, combine tables, or summarize without writing SQL. Opening a table or saved view also loads its source tables. **Save view** keeps the structured definition for reuse.
 4. Open Reports, create a report from a table, a saved view (table, pivot or segment) or a saved query, choose a visual and run it. Save changes before running a changed definition. Publish a version for viewers or add the report to a dashboard.
 5. In Team > Members, add an existing host username as editor or viewer. Sources require their creator to enable shared read access. Viewers run published reports; they cannot run arbitrary SQL or see unpublished edits.
-6. Open Copilot and choose an existing account/model in its settings. Account sharing is explicit. Schema and Results context are optional. Query/report proposals require **Open query** or **Save report**; they do not silently publish.
+6. Open Copilot and choose an existing account/model in its settings. Account sharing is explicit. Schema and Results context start off. Review proposals and choose **Apply to table**, **Open as pivot** or **Save as segment**. SQL/report suggestions require **Open query** or **Save report**; they do not silently publish. Read the consent limits below before enabling context.
+7. For SQL, open the optional **Advanced SQL** panel, enter a read query and press **Run** (Ctrl+Enter or ⌘+Enter). Existing saved SQL queries still work; parameters are JSON values bound by the adapter.
 
 ## Current support
 
 | Engine | Status |
 | --- | --- |
 | SQLite | Actual synthetic-file read, schema, cancellation, CSV and BI workflows verified. |
-| PostgreSQL | Fixed driver installed. Test/Run require explicit credentials, verified TLS and a strict live read-only role. Real-server qualification pending. |
-| MySQL / MariaDB | Fixed driver installed with verified TLS and restricted read-only account checks. Real-server qualification pending. |
+| PostgreSQL | Distinct adapter and fixed driver; selected live tests passed on 12.22 and 16.16. Each source needs verified TLS and a strict live read-only role; catalogue qualification remains pending. |
+| MySQL | Distinct adapter and fixed driver; selected live tests passed on 8.0.17 and 8.4.13. TLS/account enrollment qualification remains pending. |
+| MariaDB | Distinct adapter and fixed driver; selected live tests passed on 10.6.28, 10.11.19 and 11.8.9. TLS/account enrollment qualification remains pending. |
 | Other listed engine families | Explicitly unsupported until their adapters are implemented and qualified. |
 
-The qualified operation is read-only. Source writes, migrations, backup/restore and arbitrary connector plugins are unavailable. SQLite source enrollment also requires live host file-read authority; Data membership alone does not grant host filesystem access.
+Source access is read-only. Writing, migrating or backing up business databases and arbitrary connector plugins are unavailable. The separate TermX Data metadata store has the upgrade backup described below. SQLite source enrollment also requires live host file-read authority; Data membership alone does not grant host filesystem access. Tested server versions do not establish coverage of every intermediate release or deployment configuration.
 
 ## Results and reports
 
 Query results show up to 1,000 rows within a bounded payload. Truncation is visible; CSV exports contain that available preview. BI aggregates run against the full saved source query, rather than summing the preview.
 
-Reports support table, one-dimension pivot, KPI, bar, line, area, scatter and pie views, with typed filters. Published versions pin their SQL/parameters. Dashboards run the selected published reports. CSV and SVG exports are implemented.
+Reports support table, one-dimension pivot, KPI, bar, line, area, scatter and pie views, with typed filters. Publications pin report and dataset definitions, including view labels and segment definitions. They do not freeze source rows: a later run reads current data and may change or fail if the source changes. Viewers run published versions; editors normally run the draft. Dashboard tiles use the same report execution and authority checks. CSV and SVG exports are implemented.
 
 Advanced relationship models, DAX/M, preparation/extract pipelines, scheduled refresh, alerts, goals, paginated/PDF/XLSX outputs and Microsoft/Fabric format/service compatibility remain outside this usable slice. This is not full Power BI parity.
 
@@ -34,9 +38,9 @@ Advanced relationship models, DAX/M, preparation/extract pipelines, scheduled re
 
 Teams share the same authenticated TermX host. The release adds logical workspaces, owner/editor/viewer roles, revision conflicts, live revocation and publication boundaries. It does not deploy a hosted service or add multi-host synchronization.
 
-Jobs and Copilot receipts persist in the host's separate Data store. Interrupted host runs become unknown and are not automatically replayed. Query cancellation has an acknowledged SQLite path; network cancellation waits for the driver to return and discards the result. No arbitrary job time deadline is imposed.
+Jobs and Copilot receipts persist in the host's separate Data store. Interrupted host runs become unknown and are not automatically replayed. Request IDs provide durable idempotency for repeated submissions. Query cancellation has an acknowledged SQLite path; network cancellation waits for the driver to return and discards the result. Source statement deadlines and concurrency limits still apply, as described below.
 
-Existing account secrets stay in the host credential service. No provider calls run on initialization. The integration was tested with synthetic databases and mocked inference, without paid requests or real-source access.
+Existing account secrets stay in the host credential service. No provider calls run on initialization. Browser journeys used synthetic data and mocked inference, without paid provider requests or user-source access; the engine matrix used disposable live servers.
 
 [Verification and screenshots](implementation-status.md#verification) · [Canonical plan and remaining scope](implementation-status.md#data-studio)
 
@@ -95,23 +99,37 @@ The viewer's workspace snapshot lists a shared source with its name and engine o
 
 - The sidebar Tables group is a virtual list: a window of at most 360px scrolls and only the visible rows are in the page. Up, Down, Home and End move between rows. Search filters the whole list.
 - Grid cells use `role="cell"` inside `role="table"` with a roving tab stop, not `role="grid"`, so existing selectors and screen reader table reading keep working.
-- A table chosen as report data becomes a saved table view named `Report data: <table>`. It is an ordinary view: it shows in Views, can be renamed or archived, and the report keeps working through the same code as any other view.
+- A table chosen as report data becomes a saved table view named `Report data: <table>`. It shows in Views and can be renamed. Archiving a report's view is protected by the publication checks described below.
 - The shared theme tokens keep the repository's monochrome accent. Moving Data to the DESIGN.md accent is a decision for the design owner, because Agent and Studio share the same tokens.
 - Pivots have a Total column but no bottom total row, because averages and unique counts cannot be added up. Run history keeps job results as long as jobs are kept; a retention rule needs an owner decision.
 
 ## Copilot proposals
 
-Copilot is a right panel (drag its edge or use the arrow keys to resize). It proposes; it never saves or runs. A **table** proposal (`propose_query_spec`), a **pivot** proposal (`propose_pivot`) and a **segment** proposal (`propose_segment`) are validated on the server with the same checks a save uses: the query model, the view-kind rules, the live schema, the segment graph and a full compile. A rejected proposal comes back to the model as an error it can fix, and without the schema switch on, the error names no tables or columns. Each card shows the proposal as filter chips you can edit, then **Apply to table**, **Open as pivot** or **Save as segment**. A proposal that no structured query can express is offered as SQL under Advanced, never run. Schema and Results context are optional switches, and data returned by the source is treated as untrusted text, not as instructions.
+Copilot is a right panel (drag its edge or use the arrow keys to resize). Generating a proposal does not save or execute it. **Table** (`propose_query_spec`), **pivot** (`propose_pivot`) and **segment** (`propose_segment`) proposals use the same server validation as a save: query model, view-kind rules, live schema, segment graph and full compile. Structured proposal validation requires Schema consent. A rejected proposal returns an error the model can correct; without Schema consent, errors disclose no table or column names.
+
+Proposal cards support renaming, chip removal and typed value edits. Edit scalar values, both ends of a range, or list items; strings, finite numbers and Yes/No values keep their existing type. Lists accept 1–200 values; numeric ranges reject reversed bounds. This editor does not change fields, operators, group rules or segment references. A table proposal's row-limit chip accepts 1–1,000 and is preserved when applied. Edits remain local until an action is chosen; **Undo changes** restores the original suggestion.
+
+**Apply to table** and **Open as pivot** use the edited definition in an unsaved tab. **Save as segment** asks for a name and explicitly saves a filter-only segment. SQL suggestions stay under Advanced and require an explicit action to open/run; report suggestions are explicitly saved as drafts, never published automatically.
+
+### Copilot consent and its current limit
+
+Schema and Results switches initialize off. Changes to workspace, source, query, visibility or role reset them. Schema permits schema tools. Results permits authorized read-only query execution, including a saved query or SQL on the selected source; it is not limited to rows already visible on screen. Source permissions, validation, result bounds and deadlines are rechecked by the server. Source text is treated as untrusted data, not instructions.
+
+**Current limitation:** the UI hint says context is for the “next message only”, but enabled switches persist across successful sends in the same context. Turn them off explicitly when finished; do not rely on one-shot reset. This documentation records the shipped behavior rather than claiming that mismatch is fixed.
+
+The switches do not redact what you type. With both off, the message still reaches the TermX message API with selected connection/query IDs, and Copilot can list authorized connection identities without configuration or credentials. This is not an audit of every field ultimately included in provider context. Team account sharing is a separate explicit permission.
 
 ## Reports on views
 
-A report's data is one of: a saved query (unchanged), or a saved view (table, pivot or segment). Pick it in **Data** when you create the report or in **Edit report**; choosing a table creates a plain table view for it. The fields, aggregates and filters are the same for every kind of data, and the field lists come from the view, so you can build a chart or add filters before the first run, with the names people read ("Region", "Total") rather than the SQL names.
+A report's data is a saved query or a saved view (table, pivot or segment). Pick it in **Data** when creating or editing a report; choosing a table creates a plain table view. The Data picker uses the shared app popover and radio selection, with keyboard selection, Escape and focus restoration to its trigger. Field lists come from the view before the first run. Pickers, charts and exports use friendly labels ("Region", "Total"), while names such as `pv_r1` remain internal bindings.
 
 - **All rows.** The report wraps the view's statement as a derived table without its own sort, page size or offset, so totals cover every row, not the page the view shows.
 - **Per engine.** The wrapped statement is built from the engine's own adapter. On MySQL and MariaDB, text fields from a view are grouped and compared with the exact collation, so `East` and `east` are different values, as on SQLite and PostgreSQL. Saved SQL reports keep the behaviour they had.
 - **Filters.** Equals, does not equal, greater, less, contains, **is any of** and **is none of**, is empty and is not empty. "Is any of" takes values separated by commas. Empty values match neither list.
 - **Versions.** Publishing pins the view's definition and the segments it uses. Viewers run the pinned version even if the view or a segment changes later, and never see the view's definition. A segment that is missing blocks publishing with a message. Reports on saved queries are unchanged.
 - **Access.** Editors can pick views on sources they can use. Viewers run published reports on shared sources only.
+- **Archiving a report's view.** Publish a compatible version first, or rebind/archive the dependent report. Reports without a compatible matching publication block archive with a 409 and recovery instructions. A compatible publication pins the complete same-view definition and labels, keeping the report visible and runnable after archive; editors are told when that version is used. A draft rebound to a different dataset cannot fall back to an unrelated publication. A segment used by live views cannot be archived.
+- **Live authority.** Publications and archive fallback do not grant permanent access. Revoked membership or source sharing still denies runs and old-job access; a dashboard can show an error for an affected tile.
 
 ## Advanced SQL, grid and sidebar
 
