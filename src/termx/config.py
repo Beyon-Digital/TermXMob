@@ -10,7 +10,7 @@ import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from time import time
+from time import sleep, time
 from typing import Any
 
 from termx.sessions import default_shell
@@ -129,6 +129,26 @@ def list_dir_entries(path: str | None = None, include_files: bool = False) -> di
     }
 
 
+_IS_WINDOWS = os.name == "nt"
+
+
+def _replace(src: str, dst: Path) -> None:
+    """``os.replace`` that rides out a reader on Windows.
+
+    Windows refuses to replace a file another process (a watchdog polling the heartbeat, a virus scanner) has open
+    at that instant, with ``PermissionError``. The window is milliseconds, so retry briefly; POSIX never needs it.
+    """
+    attempts = 40 if _IS_WINDOWS else 1
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            sleep(0.005 * (attempt + 1))
+
+
 def atomic_write(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     from termx.private_files import protect_private_path
@@ -141,7 +161,7 @@ def atomic_write(path: Path, data: str) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
         protect_private_path(path)
     except Exception:
         try:

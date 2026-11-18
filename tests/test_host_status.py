@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import stat
+import sys
 import threading
 import time
 from types import SimpleNamespace
@@ -80,7 +81,8 @@ def test_the_payload_reports_uptime_service_holder_recovery_keep_awake_and_heart
     assert status["uptime_s"] >= 0 and status["started_at"] > 1_600_000_000
     assert status["service"]["state"] == "not_installed" and status["service"]["installed"] is False and status["service"]["managed"] is False
     # the suite runs direct on purpose (TERMX_PTY_HOLDER=direct): the status says so and why
-    assert status["holder"]["mode"] == "direct" and status["holder"]["requested"] == "direct" and "turned off" in status["holder"]["reason"]
+    assert status["holder"]["mode"] == "direct" and status["holder"]["requested"] == "direct"
+    assert ("not supported on Windows" if os.name == "nt" else "turned off") in status["holder"]["reason"]
     assert status["holder"]["running"] is False and status["holder"]["sessions"] == 0 and status["holder"]["direct_terminals"] == 0
     assert status["recovery"] == {"recovering_tasks": 0, "running_tasks": 0, "lost_cli_sessions": 0, "resumable_cli_sessions": 0, "live_cli_sessions": 0,
                                   "lost_engine_sessions": 0, "resumable_engine_sessions": 0}
@@ -92,12 +94,13 @@ def test_the_payload_reports_uptime_service_holder_recovery_keep_awake_and_heart
 def test_direct_terminals_are_counted_so_the_app_can_warn(tmp_path):
     state, app = boot()
     with TestClient(app, base_url="http://localhost") as client:
-        session = state.sessions.create(argv=["/bin/sh", "-c", "sleep 30"], cwd=str(tmp_path))
+        session = state.sessions.create(argv=[sys.executable, "-c", "import time; time.sleep(30)"], cwd=str(tmp_path))
         status = data(client, QUERY, "host_status", headers=headers("host-secret"))
         assert status["holder"]["direct_terminals"] == 1
         state.sessions.kill(session.id)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="the PTY holder is POSIX only; Windows reports it as unsupported")
 def test_a_failed_holder_is_explained_in_the_status_and_announced_once(monkeypatch):
     monkeypatch.setenv("TERMX_PTY_HOLDER", "auto")
     state, app = boot()
@@ -197,7 +200,9 @@ def test_heartbeat_file_is_private_json_with_only_liveness_facts():
     service = make_service()
     service.write_heartbeat()
     path = service.heartbeat_path
-    assert path.name == "heartbeat.json" and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert path.name == "heartbeat.json"
+    if os.name == "posix":  # Windows has no mode bits; privacy there is an ACL (see private_files)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     body = json.loads(path.read_text())
     assert body["pid"] == os.getpid() and body["version"] == __version__ and body["state"] == "running" and body["port"] == 8787
     assert abs(body["at"] - time.time()) < 5 and set(body) == {"schema", "state", "pid", "version", "port", "at", "started_at", "interval_s"}
@@ -217,6 +222,8 @@ def test_heartbeat_replacement_is_atomic_for_a_concurrent_watchdog():
                 text = service.heartbeat_path.read_text()
             except FileNotFoundError:
                 torn.append("missing")
+                continue
+            except PermissionError:  # Windows: the swap is in progress; a reader may retry, it never sees a torn file
                 continue
             try:
                 seen.append(json.loads(text)["at"])
@@ -291,3 +298,27 @@ def test_stable_view_ignores_per_second_noise():
     later = {"uptime_s": 9.0, "heartbeat": {"at": 9.0, "age_s": 0.1, "interval_s": 10}, "holder": {"mode": "held"}}
     assert HS.stable_view(base) == HS.stable_view(later)
     assert HS.stable_view(base) != HS.stable_view({**later, "holder": {"mode": "direct"}})
+
+
+def test_atomic_write_rides_out_a_windows_sharing_violation(tmp_path, monkeypatch):
+    """A watchdog holding the heartbeat open makes ``os.replace`` raise PermissionError on Windows for a moment."""
+    from termx import config
+
+    real, calls = os.replace, {"n": 0}
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 4:
+            raise PermissionError(5, "Access is denied")
+        return real(src, dst)
+
+    monkeypatch.setattr(config, "_IS_WINDOWS", True)
+    monkeypatch.setattr(config.os, "replace", flaky)
+    target = tmp_path / "heartbeat.json"
+    config.atomic_write(target, "{}")
+    assert target.read_text() == "{}" and calls["n"] == 4
+
+    calls["n"] = -1000  # never succeeds: the error surfaces after the bounded retries, and no temp file is left behind
+    with pytest.raises(PermissionError):
+        config.atomic_write(target, "{}")
+    assert [p.name for p in tmp_path.iterdir()] == ["heartbeat.json"]
