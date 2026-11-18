@@ -62,20 +62,24 @@ class HostStatusService:
         self.started_at = time.time()
         self._stopping = False
         sessions = getattr(self.state, "sessions", None)
+        terminals = 0
         if sessions is not None:
             try:
                 adopted = sessions.reattach()
+                terminals = len(adopted or ())
                 if adopted:
                     log_event("terminals_reattached", count=len(adopted))
             except Exception:  # noqa: BLE001 - never block startup on the holder
                 log_event("terminals_reattach_error")
         cli = getattr(self.state, "cli_sessions", None)
+        recovered: dict[str, int] = {}
         if cli is not None:
             try:
-                await cli.recover()
+                recovered = await cli.recover() or {}
             except Exception:  # noqa: BLE001
                 log_event("cli_sessions_recover_error")
         self._announce_fallback()
+        self._push_recovered(terminals, recovered)
         await asyncio.to_thread(self.write_heartbeat)
         self.evaluate()
         if any(not task.done() for task in self._tasks):
@@ -95,6 +99,28 @@ class HostStatusService:
             await asyncio.to_thread(self.write_heartbeat, "stopping")
         except Exception:  # noqa: BLE001
             pass
+
+    def _push_recovered(self, terminals: int, cli: dict[str, int]) -> None:
+        """One push ``host.recovered`` when a restart re-adopted or lost work: counts only, nothing from any session."""
+        parts: list[str] = []
+        plain = max(0, terminals - int(cli.get("adopted", 0)) - int(cli.get("finished", 0)))
+        for count, text in ((plain, "terminal{s} kept"), (cli.get("adopted", 0), "CLI session{s} re-attached"),
+                            (cli.get("finished", 0), "CLI session{s} finished while the host was down"), (cli.get("lost", 0), "CLI session{s} lost")):
+            if count:
+                parts.append(f"{count} " + text.format(s="" if count == 1 else "s"))
+        try:
+            tasks = len(self.state.agent.pending_recoveries())
+        except Exception:  # noqa: BLE001
+            tasks = 0
+        if tasks:
+            parts.append(f"{tasks} task{'' if tasks == 1 else 's'} recovering")
+        push = getattr(self.state, "push", None)
+        if not parts or push is None:
+            return
+        try:
+            push.enqueue("host.recovered", "host", "TermX restarted and recovered work", "; ".join(parts) + ".", key=str(int(self.started_at)))
+        except Exception:  # noqa: BLE001 - a notification problem never blocks startup
+            log_event("host_recovered_push_error")
 
     def _announce_fallback(self) -> None:
         """Tell the owner, once, when terminals will NOT survive a restart (never a silent downgrade)."""
