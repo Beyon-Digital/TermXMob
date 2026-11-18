@@ -7,7 +7,7 @@
 .chat-toolbar .chat-settings-button{border-radius:50%;height:36px;width:36px;color:var(--secondary)}
 .chat-region .conversation-scroll{padding-top:18px;scroll-padding-bottom:24px}
 .chat-region .composer-container{max-width:852px;padding:16px 30px 14px;max-height:48%;overflow:visible;position:relative;isolation:isolate;flex-shrink:0;display:flex;flex-direction:column;min-height:0}
-.chat-region .composer-container:before{content:'';position:absolute;z-index:-1;inset:0 -20px -8px;background:linear-gradient(to bottom,transparent,var(--background) 32%);pointer-events:none}
+.chat-region .composer-container:before{content:'';position:absolute;z-index:-1;inset:0 -20px -8px;background:var(--background);pointer-events:none}
 .chat-region .composer{background:var(--surface);border:1px solid color-mix(in srgb,var(--border) 75%,transparent);border-radius:28px;padding:16px 14px 10px;box-shadow:0 8px 28px #0000000c,0 1px 3px #0000000a;max-height:100%;min-height:0;flex:0 1 auto;overflow:hidden}
 .composer-draft-body{display:flex;flex-direction:column;flex:1 1 auto;min-height:32px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .chat-region .composer:focus-within{border-color:color-mix(in srgb,var(--secondary) 65%,var(--border));box-shadow:0 8px 28px #0000000c,0 0 0 1px color-mix(in srgb,var(--secondary) 12%,transparent)}

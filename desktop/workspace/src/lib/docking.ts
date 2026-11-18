@@ -1,3 +1,9 @@
+/**
+ * @deprecated Classic workspace layout (the dock of seven panels and eight presets), kept for one release as a rollback
+ * path behind `?shell=classic` or Settings > General > "Use the classic workspace layout (deprecated)". The default is
+ * the tab-group IDE layout (`lib/layout/`, `shell/IdeFrame.tsx`). Removal scheduled for the release after this one. The v1 layout migration (`lib/layout/migrate-v1.ts`) reads its types and presets, so
+ * it is removed together with that migration.
+ */
 export const panels=['editor','conversation','review','browser','terminal','computer','artifacts'] as const;
 export type DockPanel=typeof panels[number];
 export type DockRegion='left'|'main'|'split'|'right'|'bottom'|'hidden';

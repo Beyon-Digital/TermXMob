@@ -1,6 +1,7 @@
 /* TEMPORARY. Maps the retired variable names to the tokens in tokens.css so the
    existing component CSS keeps rendering while each file is migrated to tokens.
-   Delete a line when `rg 'var\(--name' src` stops matching; delete the file in U7.
+   Delete a line when `rg 'var\(--name' src` stops matching. Still referenced by the legacy layer CSS, which the
+   classic layout and the older surfaces share; the file goes with the last of those migrations.
    Values here are references only: no colours, no new sizes. */
 :root {
   /* colour: shadcn-era names */
@@ -46,8 +47,6 @@
   --agent-space-16: var(--space-16);
   --agent-space-24: var(--space-24);
   --agent-space-32: var(--space-32);
-  --agent-space-48: var(--space-48);
-  --agent-space-64: var(--space-64);
 
   /* type */
   --agent-text-xs: var(--text-xs);
@@ -72,7 +71,6 @@
   --agent-rail-width: 52px;       /* replaced by the 48px activity bar in U4 */
   --agent-reading-width: var(--reading-width);
   --agent-content-width: var(--content-width);
-  --agent-prose-width: var(--prose-width);
 
   /* motion */
   --motion-fast: var(--duration-fast);

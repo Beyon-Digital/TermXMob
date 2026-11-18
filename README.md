@@ -56,6 +56,12 @@ The same versioned workspace serves the native shell and external browsers.
 `desktop/scripts/update_web_ui.sh` builds it from `desktop/workspace`; incompatible
 or missing bundles show an update instruction instead of the old Expo interface.
 
+The workspace is an agent-first IDE shell: an activity bar (Agents, Explorer, Search,
+Source control, Sites, Data, Studio), split tab groups for chats, files, diffs,
+terminals, CLI sessions and browser pages, a bottom panel, native menus and one command
+palette. See [Workspace UI](docs/workspace-ui.md). The earlier dock layout remains
+for one release behind `?shell=classic` and is deprecated.
+
 Installers (`.dmg`, MSI/NSIS, `.deb`/`.rpm`/`.AppImage`) are produced by
 `.github/workflows/desktop.yml`. Push a `vX.Y.Z` tag that matches the app version (or
 run the workflow manually) and GitHub builds, signs, and publishes the release; see

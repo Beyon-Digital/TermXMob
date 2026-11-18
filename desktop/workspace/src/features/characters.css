@@ -150,7 +150,6 @@
   align-items: center;
   justify-content: flex-end;
   padding: 12px;
-  background: radial-gradient(ellipse at center, var(--accent-soft) 0, transparent 68%);
   border-bottom: 1px solid var(--border);
 }
 

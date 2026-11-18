@@ -1,3 +1,8 @@
+/**
+ * @deprecated Classic workspace layout (the dock of seven panels and eight presets), kept for one release as a rollback
+ * path behind `?shell=classic` or Settings > General > "Use the classic workspace layout (deprecated)". The default is
+ * the tab-group IDE layout (`lib/layout/`, `shell/IdeFrame.tsx`). Removal scheduled for the release after this one.
+ */
 import {useEffect,useId,useRef,useState,type ReactNode} from 'react';
 import {GripVertical,ExternalLink,Check,Plus,X,Maximize2,Minimize2,MessageSquare,ChevronUp,ChevronDown} from 'lucide-react';
 import WorkspaceMenu from './WorkspaceMenu';
