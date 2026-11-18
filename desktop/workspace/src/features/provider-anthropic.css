@@ -22,6 +22,19 @@
     color: var(--success);
   }
 
+  .anthropic-account-form input[type="checkbox"],
+  .model-row-include input,
+  .settings-radio-option input {
+    accent-color: var(--accent);
+  }
+
+  .settings-inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-8);
+  }
+
   .model-row-default {
     color: var(--text-2);
     font-weight: 400;

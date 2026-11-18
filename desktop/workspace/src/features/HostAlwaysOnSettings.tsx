@@ -34,7 +34,9 @@ const HOLDER_OPTIONS: {value: HolderMode; label: string; help: string}[] = [
 ];
 
 const asMode = (value: string): HolderMode => (value === 'held' || value === 'direct' ? value : 'auto');
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+/** The host words its reasons in lower case; the page shows sentences. */
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const plural =(count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 const SERVICE_TEXT: Record<string, string> = {
   running_managed: 'Installed, and this host is running as the service',
@@ -81,7 +83,7 @@ function Facts({status}: {status: HostStatus}) {
       {holder.reason && (
         <>
           <dt>Why</dt>
-          <dd>{holder.reason}</dd>
+          <dd>{sentence(holder.reason)}</dd>
         </>
       )}
       {holder.running && (
@@ -203,7 +205,7 @@ export default function HostAlwaysOnSettings({admin}: {admin: boolean}) {
           <HostForm key={`${status.keep_awake.enabled}:${status.holder.setting}`} status={status} onChanged={setStatus} />
         </>
       )}
-      <div className="manager-item-actions">
+      <div className="settings-inline-actions">
         <Button type="button" variant="ghost" data-keeps-draft onClick={() => setVersion(value => value + 1)}>Refresh host status</Button>
       </div>
     </section>

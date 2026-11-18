@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
+import {Check} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import {FormField} from '../components/ui/form-field';
 import {Input} from '../components/ui/input';
@@ -103,7 +104,7 @@ function KeyForm({status, onChanged}: {status: WebSearchStatus; onChanged: (next
         <div className="form-field">
           <span className="form-field-label" id="web-search-key-label">{provider} API key</span>
           <div className="key-saved" role="group" aria-labelledby="web-search-key-label">
-            <span className="key-saved-state">Key saved</span>
+            <span className="key-saved-state"><Check size={16} strokeWidth={1.5} aria-hidden="true" />Key saved</span>
             <Button type="button" variant="secondary" disabled={busy} onClick={() => setReplacing(true)}>Replace key</Button>
             <Button type="button" variant="secondary" disabled={busy} onClick={() => void remove()}>Remove key</Button>
           </div>
