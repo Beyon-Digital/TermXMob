@@ -124,7 +124,11 @@ AUTONOMOUS_BLOCKED_RISKS = frozenset(
 # Capabilities the host process exercises itself, never inside a sandboxed spawn.
 # A sandbox profile neither grants nor limits them, so the envelope check skips
 # them; capability denies and the remembered-rule precedence still apply.
-HOST_MEDIATED_CAPABILITIES = frozenset({"computer.control", "memory.write", "skills.preview", "bot.message"})
+HOST_MEDIATED_CAPABILITIES = frozenset({"computer.control", "memory.write", "skills.preview", "bot.message", "browser.site"})
+# Tools the host performs itself on its own socket (web_fetch, web_search), never inside a sandboxed spawn. They name
+# `net.outbound:<host>` so a capability deny (bots deny net.outbound:any) still stops them, but the sandbox envelope
+# neither grants nor limits them, and approving one must never widen a sandbox's network access.
+HOST_MEDIATED_TOOLS = frozenset({"web_fetch", "web_search"})
 # Capabilities remembered allow rules may never imply by side effect.
 UNGRANTABLE_CAPABILITIES = frozenset(
     {

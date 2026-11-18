@@ -1009,6 +1009,39 @@ class ActivityEvent(DictBacked):
         return ActivityItem.wrap(object.__getattribute__(self, '_d').get('activity'))
 
 
+@strawberry.type
+class BrowserSite(DictBacked):
+    """A saved site (``/api/browser/sites`` row): pinned origin, usage counters and its profile/tab bindings."""
+
+    id: str
+    project_id: str
+    origin: str
+    start_url: str
+    title: str
+    profile_id: str
+    open_mode: str
+    pinned: bool
+    position: int
+    visit_count: int
+    last_visited: float | None
+    frecency: float
+    tab_id: str | None
+    note_count: int
+    created: float
+    updated: float
+
+
+@strawberry.type
+class BrowserSiteEvent(DictBacked):
+    """``browser.site.upserted`` / ``browser.site.visited`` (site set) or ``browser.site.removed`` (id set)."""
+
+    type: str
+    id: str | None
+    @strawberry.field
+    def site(self) -> BrowserSite | None:
+        return BrowserSite.wrap(object.__getattribute__(self, '_d').get('site'))
+
+
 # -- Generic results --------------------------------------------------------------
 
 

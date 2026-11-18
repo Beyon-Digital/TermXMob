@@ -113,15 +113,16 @@ class NotifyInput:
 @strawberry.input
 class AgentProviderInput:
     id: str
-    kind: str = "openai"
+    kind: str = "openai"  # "openai", "openai-compatible" or "anthropic" (native Messages API)
     name: str = ""
+    # For kind "anthropic" the OpenAI default below means api.anthropic.com.
     base_url: str = "https://api.openai.com/v1"
     model: str = ""
     capabilities: list[str] | None = None
     api_key: str | None = None
     # {model_id: {context_window, max_output, price_in, price_out, capabilities}}; user values win over discovered ones.
     model_meta: JSON | None = None
-    wire: str | None = None  # "responses" (default) or "chat" (Chat Completions)
+    wire: str | None = None  # "responses" (default) or "chat" (Chat Completions); "messages" is implied by kind "anthropic"
     limits: JSON | None = None  # Explicit per-provider request controls; omitted values are unlimited.
 
 

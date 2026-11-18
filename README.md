@@ -327,6 +327,31 @@ executed by the upgraded backend.
 The adapter follows the official [ACP session configuration contract](https://agentclientprotocol.com/protocol/v1/session-config-options)
 using the [Python SDK](https://agentclientprotocol.com/libraries/python).
 
+### Anthropic API (Claude) accounts
+
+An API account of kind `anthropic` drives the **TermX internal** engine through
+the native Messages API (streaming, tool use, prompt caching and adaptive
+thinking) next to the OpenAI Responses and Chat Completions accounts. Save it
+with `kind: "anthropic"` and an API key (stored in the OS credential store, as
+for every account); the URL defaults to `https://api.anthropic.com` and the
+wire is always `messages`. With no models typed in, `claude-opus-5-5` (default),
+`claude-fable-5-2`, `claude-sonnet-5-5` and `claude-haiku-5-5` are offered;
+**Refresh** lists the account's real models with their context windows and
+output limits (prices are not reported, so cost shows as unpriced until you set
+them). The connection test lists models and never bills.
+
+Requests use adaptive thinking at `high` effort and never send sampling
+parameters or a forced `tool_choice`, which current models reject. The system
+prompt, tools and the task's first message (its project snapshot is frozen for
+the task) stay byte-identical across turns so the prompt cache holds; cache
+read/write tokens appear in task metrics. Thinking blocks are stored in the
+task history and replayed unchanged; context compaction drops them from the
+turns it keeps. On `api.anthropic.com` the request also sets
+`thinking.block_binding.prefix_mismatch_behavior: "drop_block"` (history edits
+degrade instead of failing) and, for Opus, Sonnet 5.5 and Fable, the server-side
+refusal `fallbacks: "default"` (a refused request may be answered by a fallback
+model, billed at its rates). A gateway URL receives neither beta control.
+
 ### Sign in with ChatGPT
 
 In **Settings → AI & Models**, choose **Continue with ChatGPT**. Complete the

@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
+# Anthropic prices cached prompt tokens against the base input price: reads at 0.1x and 5-minute
+# writes at 1.25x. Models released since read cheaper still, so a cost with cache reads is an upper bound.
+CACHE_READ_PRICE_FACTOR = 0.1
+CACHE_WRITE_PRICE_FACTOR = 1.25
+
 
 class TaskMetrics:
     def __init__(self, existing: dict[str, Any] | None = None) -> None:
@@ -23,6 +28,9 @@ class TaskMetrics:
             "desktop_bytes": 0,
             "input_tokens": 0,
             "output_tokens": 0,
+            # Prompt tokens served from / written to the provider's prompt cache (included in input_tokens).
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
             # USD from per-model prices; None until a priced turn is recorded.
             "cost_usd": None,
             # Tokens from turns whose model has no known price.
@@ -56,14 +64,22 @@ class TaskMetrics:
         if usage:
             turn_in = _count(usage.get("input_tokens"))
             turn_out = _count(usage.get("output_tokens"))
+            cache_read = _count(usage.get("cache_read_input_tokens"))
+            cache_written = _count(usage.get("cache_creation_input_tokens"))
             price_in, price_out = prices or (None, None)
             if price_in is not None and price_out is not None:
-                cost = (turn_in * price_in + turn_out * price_out) / 1_000_000
+                uncached = max(0, turn_in - cache_read - cache_written)
+                cost = (
+                    (uncached + cache_read * CACHE_READ_PRICE_FACTOR + cache_written * CACHE_WRITE_PRICE_FACTOR) * price_in
+                    + turn_out * price_out
+                ) / 1_000_000
                 self._data["cost_usd"] = (self._data["cost_usd"] or 0.0) + cost
             else:
                 self._data["unpriced_tokens"] += turn_in + turn_out
             self._data["input_tokens"] += turn_in
             self._data["output_tokens"] += turn_out
+            self._data["cache_read_tokens"] += cache_read
+            self._data["cache_creation_tokens"] += cache_written
             self._data["provider_output_tokens"] += turn_out
         return cost
 
