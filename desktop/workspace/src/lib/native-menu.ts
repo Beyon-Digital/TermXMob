@@ -12,8 +12,13 @@ export const NATIVE_MENU_EVENT = 'termx-menu-command';
 
 export async function listenNativeMenu(handler: (commandId: string) => void): Promise<UnlistenFn> {
   if (!nativeWorkspace()) return () => {};
-  return getCurrentWindow().listen<{id: string}>(NATIVE_MENU_EVENT, event => {
-    const id = event.payload?.id;
-    if (typeof id === 'string') handler(id);
-  });
+  try {
+    return await getCurrentWindow().listen<{id: string}>(NATIVE_MENU_EVENT, event => {
+      const id = event.payload?.id;
+      if (typeof id === 'string') handler(id);
+    });
+  } catch {
+    // No window bridge (an embedded or test webview): the menu then simply does nothing here.
+    return () => {};
+  }
 }

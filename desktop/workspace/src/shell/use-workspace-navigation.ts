@@ -66,6 +66,8 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
   const navigationIntent = useRef(0);
   const workspaceControlFocus = useRef<WorkspaceMode | null>(null);
   const pendingView = useRef<'data' | 'studio' | null>(null);
+  // A manager page named by the address in the tab layout: opened as a tab once the layout is restored.
+  const pendingManager = useRef('');
   useLayoutEffect(() => {
     projectWorkbenchNow.current = projectWorkbenchId;
   });
@@ -343,14 +345,27 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
     setProjectWorkbenchId(routeWorkbenchProject(route));
     projectWorkbenchNow.current = routeWorkbenchProject(route);
     // In the tab layout `?workspace=data` and `?workspace=studio` open the view and its tab once the layout is restored.
-    const viewMode = tree && (mode === 'data' || mode === 'studio') ? mode : null;
+    const viewMode =
+      tree && (mode === 'data' || mode === 'studio')
+        ? mode
+        : tree && route.manager === 'media'
+          ? 'studio'
+          : tree && route.manager === 'data'
+            ? 'data'
+            : null;
     pendingView.current = viewMode;
     setWorkspaceState(viewMode ? 'agent' : mode);
     hosts.setStudioVisited(!tree && mode === 'studio');
     hosts.setDataVisited(!tree && mode === 'data');
     hosts.setWorkflowsVisited(route.manager === 'workflows');
     hosts.setWorkflowRunId(null);
-    setManager(route.manager);
+    if (tree) {
+      // There is no manager overlay in the tab layout: /manage/<page> opens its tab once the layout is restored.
+      pendingManager.current = routeManager(route);
+      setManagerState('');
+    } else {
+      setManager(route.manager);
+    }
   }, [auth?.principal.id]);
 
   useEffect(() => {
@@ -360,11 +375,18 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
     layout.showSideBarView(view);
   }, [auth?.principal.id, layout.ready]);
 
+  useEffect(() => {
+    if (!auth || !layout.ready || !pendingManager.current) return;
+    const page = pendingManager.current;
+    pendingManager.current = '';
+    setManager(page);
+  }, [auth?.principal.id, layout.ready]);
+
   // With nothing selected and nothing asked for in the address, open the main agent.
   useEffect(() => {
     if (!auth || !layout.ready || locked || workspace !== 'agent') return;
     const route = workspaceRoute();
-    if (!route.selected && !projectWorkbenchId && !manager && !selection.current && !managerNow.current)
+    if (!route.selected && !projectWorkbenchId && !manager && !selection.current && !managerNow.current && !(tree && route.manager))
       void openMainAgent(true);
   }, [auth?.principal.id, layout.ready, locked, homeRequest, manager, workspace, projectWorkbenchId]);
 

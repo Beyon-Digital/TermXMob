@@ -316,9 +316,11 @@
     color: var(--text);
     font-size: var(--text-sm);
   }
-  @media (max-width: 700px) {
+  /* Under the tab layout's own breakpoint the category list becomes a Category select (row 2), as in the dialog. */
+  @media (max-width: 768px) {
     .settings-surface-page {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
     }
   }
 

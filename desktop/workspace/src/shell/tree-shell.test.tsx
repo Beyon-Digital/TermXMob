@@ -640,6 +640,31 @@ describe('detached windows and phones', () => {
     expect(editorGroups((stored().current as {root: Group | Split}).root as never)).toHaveLength(2);
   });
 
+  it('shows a tab that is opened from More even after another tab was chosen in the switcher', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({matches: query.includes('767'), addEventListener: vi.fn(), removeEventListener: vi.fn()})));
+    render(<App />);
+    const top = await screen.findByRole('banner', {name: 'Window'});
+    await waitFor(() => expect(within(top).getByRole('heading')).toHaveTextContent('Tree shell'));
+    const more = () => user.click(within(screen.getByRole('navigation', {name: 'Primary'})).getByRole('button', {name: 'More'}));
+    await more();
+    await user.click(await screen.findByRole('menuitem', {name: 'Settings'}));
+    await waitFor(() => expect(within(top).getByRole('heading')).toHaveTextContent('Settings'));
+    // Go back to the chat with the switcher, as a person moving between tabs does, then open Settings again.
+    await user.click(within(top).getByRole('button', {name: /Switch tab/}));
+    await user.click(await screen.findByRole('menuitem', {name: 'Tree shell'}));
+    await waitFor(() => expect(within(top).getByRole('heading')).toHaveTextContent('Tree shell'));
+    await more();
+    await user.click(await screen.findByRole('menuitem', {name: 'Settings'}));
+    await waitFor(() => expect(within(top).getByRole('heading')).toHaveTextContent('Settings'));
+    expect(await screen.findByRole('combobox', {name: 'Settings category'})).toBeInTheDocument();
+    // A phone has no tab strip: the switcher closes the tab on screen.
+    await user.click(within(top).getByRole('button', {name: /Switch tab/}));
+    await user.click(await screen.findByRole('menuitem', {name: 'Close tab'}));
+    await waitFor(() => expect(within(top).getByRole('heading')).toHaveTextContent('Tree shell'));
+    await waitFor(() => expect(allTabs(book().current).some(tab => tab.kind === 'settings')).toBe(false));
+  });
+
   it('opens the side bar as a drawer on a phone, from the top bar and from the bottom nav, and Escape closes it', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({matches: query.includes('767'), addEventListener: vi.fn(), removeEventListener: vi.fn()})));
@@ -651,6 +676,40 @@ describe('detached windows and phones', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await user.click(within(screen.getByRole('navigation', {name: 'Primary'})).getByRole('button', {name: 'Files'}));
     expect(await screen.findByRole('dialog', {name: 'Explorer'})).toBeInTheDocument();
+  });
+});
+
+describe('deep links in the default layout', () => {
+  it('opens /manage/<settings category> as the Settings tab on that category, with no overlay', async () => {
+    history.replaceState(null, '', '/manage/access');
+    render(<App />);
+    const tab = await screen.findByRole('tab', {name: /^Settings/});
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    const nav = await screen.findByRole('navigation', {name: 'Settings categories'});
+    expect(within(nav).getByRole('link', {name: 'Access & sessions'})).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('dialog', {name: 'Settings'})).not.toBeInTheDocument();
+  });
+
+  it('opens /manage/projects as the Projects tab', async () => {
+    history.replaceState(null, '', '/manage/projects');
+    render(<App />);
+    const tab = await screen.findByRole('tab', {name: 'Projects'});
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('opens ?workspace=data and ?workspace=studio as the view and its tab, not a workspace mode', async () => {
+    for (const [mode, name] of [
+      ['data', 'Data'],
+      ['studio', 'Studio'],
+    ] as const) {
+      openUrl('?session=conversation&workspace=' + mode);
+      const view = render(<App />);
+      const tab = await screen.findByRole('tab', {name});
+      expect(tab).toHaveAttribute('aria-selected', 'true');
+      expect(within(screen.getByRole('toolbar', {name: 'Activity bar'})).getByRole('button', {name})).toHaveAttribute('aria-pressed', 'true');
+      view.unmount();
+      localStorage.clear();
+    }
   });
 });
 

@@ -108,6 +108,9 @@ function Frame(props: Props) {
   const [drawer, setDrawer] = useState(false);
   const [drawerView, setDrawerView] = useState<SideBarView>('agents');
   const [phoneTab, setPhoneTab] = useState<string | null>(null);
+  // Opening a tab (Settings from More, a file from the drawer) takes the single stack, even when the tab chosen from the
+  // switcher is not the one the layout has active.
+  useEffect(() => setPhoneTab(null), [layout.tree.openCount]);
   const cli = useCliSessions();
   const browserTitles = useBrowserTabTitles();
   const [cliDialog, setCliDialog] = useState(false);
@@ -323,6 +326,7 @@ function Frame(props: Props) {
               setDrawer(true);
             }}
             onPickTab={setPhoneTab}
+            onCloseTab={activeTitle ? () => layout.tree.closeTab(activeTitle) : undefined}
           />
         ) : (
           <TitleBar

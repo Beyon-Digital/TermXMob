@@ -1,6 +1,6 @@
 import {Bot, ChevronDown, Ellipsis, Files, GitBranch, Menu, SquareTerminal, type LucideIcon} from 'lucide-react';
 import type {ReactNode} from 'react';
-import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger} from '../ui/dropdown-menu';
+import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger} from '../ui/dropdown-menu';
 import './chrome.css';
 
 export type MobileTab = {id: string; title: string};
@@ -13,13 +13,15 @@ type TopProps = {
   attention: number;
   onMenu: () => void;
   onPickTab: (id: string) => void;
+  /** Close the tab on screen. A phone has no tab strip, so the switcher offers it (only with more than one tab open). */
+  onCloseTab?: () => void;
 };
 
 /**
  * The 48px top bar of a phone: a hamburger that opens the side bar drawer, the active tab's title and a switcher listing
  * the open tabs. The tab stack is a projection of the stored layout: choosing a tab here never changes the layout.
  */
-export function MobileTopBar({title, tabs, activeTab, attention, onMenu, onPickTab}: TopProps) {
+export function MobileTopBar({title, tabs, activeTab, attention, onMenu, onPickTab, onCloseTab}: TopProps) {
   return (
     <header className="mobile-top" aria-label="Window">
       <button type="button" className="mobile-button" aria-label="Open side bar" onClick={onMenu}>
@@ -39,6 +41,12 @@ export function MobileTopBar({title, tabs, activeTab, attention, onMenu, onPickT
               {tab.title}
             </DropdownMenuItem>
           ))}
+          {onCloseTab && tabs.length > 1 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={onCloseTab}>Close tab</DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </header>

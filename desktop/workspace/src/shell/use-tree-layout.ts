@@ -144,7 +144,12 @@ function focusContent(tab: Tab | undefined) {
  */
 export function useTreeLayout(deps: LayoutDeps): TreeController {
   const {ownerId, ownerNow, setWorkspace, setWorkspaceState, setManagerScope, report, palette} = deps;
-  const [state, dispatchRaw] = useReducer(reducer, undefined, initialState);
+  const [state, reduce] = useReducer(reducer, undefined, initialState);
+  const [openCount, setOpenCount] = useState(0);
+  const dispatchRaw = useCallback((action: Action) => {
+    if (action.type === 'openTab') setOpenCount(count => count + 1);
+    reduce(action);
+  }, []);
   const [restoredFor, setRestoredFor] = useState('');
   const [dirty, setDirtyTabs] = useState<ReadonlySet<string>>(() => new Set());
   const store = useRef<LayoutBookStore | null>(null);
@@ -369,6 +374,7 @@ export function useTreeLayout(deps: LayoutDeps): TreeController {
     tree: {
       layout,
       dispatch,
+      openCount,
       closeTab,
       dirty,
       setCloseGuard,

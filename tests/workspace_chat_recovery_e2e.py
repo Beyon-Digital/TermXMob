@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -154,8 +155,10 @@ def run(destination):
                     page.on('pageerror', lambda error: report['errors'].append(str(error)))
                     def request_seen(request):
                         path = urlparse(request.url).path
-                        if request.method == 'GET' and path == '/api/workspace/tasks/'+completed['id']:
-                            report['task_reads'].append(path)
+                        # The Agents view's Sub-agents list reads the task header (`?activity=false`) for its counts; only a read
+                        # that asks for the activity itself is the transcript loading saved history.
+                        if request.method == 'GET' and path == '/api/workspace/tasks/'+completed['id'] and 'activity=false' not in request.url:
+                            report['task_reads'].append(request.url.replace(base, ''))
                     page.on('request', request_seen)
                     refresh_responses = []
                     page.on('response', lambda response: refresh_responses.append(response.status) if urlparse(response.url).path == '/auth/refresh' else None)
@@ -169,7 +172,7 @@ def run(destination):
                     page.get_by_role('log').evaluate('(node)=>node.scrollTop=0')
                     page.screenshot(path=str(output/'first-desktop-dark.png'))
                     print(json.dumps({'screenshot': str(output/'first-desktop-dark.png'), 'stage': 'real password login and saved response rendered'}), flush=True)
-                    assert not report['task_reads'], 'Completed activity fetched before it was expanded'
+                    assert not report['task_reads'], ('Completed activity fetched before it was expanded', report['task_reads'])
                     expect(page.locator('.message-response table')).to_have_count(1)
                     expect(page.locator('.message-response [data-streamdown="code-block"]')).to_have_count(1)
                     expect(page.locator('.message-response pre')).to_contain_text('def keep_session(error):')
@@ -177,9 +180,9 @@ def run(destination):
                     activity.click()
                     expect(page.get_by_role('heading', name='Agent team')).to_be_visible()
                     assert len(report['task_reads']) == 1
-                    page.get_by_role('button', name='Auth reviewer', exact=False).click()
+                    page.get_by_role('log').get_by_role('button', name='Auth reviewer', exact=False).click()
                     expect(page.get_by_text('Session renewal and task errors remain separate.', exact=True)).to_be_visible()
-                    page.get_by_role('button', name='Guard reviewer', exact=False).click()
+                    page.get_by_role('log').get_by_role('button', name='Guard reviewer', exact=False).click()
                     expect(page.get_by_text('The guard preserves an authenticated account.', exact=True)).to_be_visible()
                     page.screenshot(path=str(output/'saved-nested-activity-dark.png'))
                     page.get_by_role('button', name='Read file · identity/guard.py', exact=False).click()
@@ -224,16 +227,29 @@ def run(destination):
                     def set_theme(theme):
                         if page.locator('html').get_attribute('data-theme') == theme:
                             return
-                        page.get_by_role('button', name='Workspace actions', exact=True).click()
-                        page.get_by_role('button', name='Appearance', exact=True).click()
-                        preferences = page.get_by_role('dialog', name='Settings', exact=True)
-                        # General is a desktop link and a native Category choice on narrow screens.
-                        category = preferences.get_by_role('combobox', name='Settings category', exact=True)
-                        if category.is_visible(): expect(category).to_have_value('preferences')
-                        else: expect(preferences.get_by_role('navigation', name='Settings categories').get_by_role('link', name='General', exact=True)).to_have_attribute('aria-current', 'page')
+                        if page.viewport_size['width'] < 768:
+                            # The phone projection: Settings is in the bottom navigation's More menu, and the conversation
+                            # is one entry of the tab switcher.
+                            page.get_by_role('navigation', name='Primary').get_by_role('button', name='More').click()
+                            page.get_by_role('menuitem', name='Settings', exact=True).click()
+                            expect(page.get_by_role('heading', name='General', exact=True)).to_be_visible()
+                            page.get_by_role('combobox', name='Theme preference', exact=True).select_option(theme)
+                            expect(page.locator('html')).to_have_attribute('data-theme', theme)
+                            # A phone has no tab strip: the switcher closes the Settings tab and the conversation is back.
+                            page.get_by_role('button', name=re.compile('Switch tab')).click()
+                            page.get_by_role('menuitem', name='Close tab', exact=True).click()
+                            expect(page.get_by_role('textbox', name='Message', exact=True)).to_be_visible()
+                            return
+                        # The default IDE layout: Settings is a tab, opened from the activity bar and closed again.
+                        page.get_by_role('toolbar', name='Activity bar', exact=True).get_by_role('button', name='Settings', exact=True).click()
+                        settings_tab = page.get_by_role('tab', name=re.compile('^Settings'))
+                        expect(settings_tab).to_have_attribute('aria-selected', 'true')
+                        preferences = page.get_by_role('region', name='Settings', exact=True)
+                        expect(preferences.get_by_role('navigation', name='Settings categories').get_by_role('link', name='General', exact=True)).to_have_attribute('aria-current', 'page')
                         preferences.get_by_role('combobox', name='Theme preference', exact=True).select_option(theme)
-                        preferences.get_by_role('button', name='Close', exact=True).click()
                         expect(page.locator('html')).to_have_attribute('data-theme', theme)
+                        settings_tab.locator('.tab-close').click()
+                        expect(settings_tab).to_have_count(0)
 
                     axe = Path(__file__).resolve().parents[1]/'desktop/workspace/node_modules/axe-core/axe.min.js'
                     def audit(surface, selector, width, theme):
@@ -243,7 +259,7 @@ def run(destination):
                         assert not failures, failures
 
                     def bounds(width, height):
-                        values = page.locator('.chat-region').evaluate('''node=>{const rect=n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};const controls=[...node.querySelectorAll('.composer-controls button')].map(n=>({name:n.getAttribute('aria-label'),...rect(n),covered:!n.contains(document.elementFromPoint(n.getBoundingClientRect().x+n.clientWidth/2,n.getBoundingClientRect().y+n.clientHeight/2))}));return {region:rect(node),composer:rect(node.querySelector('.composer')),draftBody:rect(node.querySelector('.composer-draft-body')||node.querySelector('textarea[aria-label="Message"]')),controlRow:rect(node.querySelector('.composer-controls')),toolbar:rect(node.closest('.workspace-shell').querySelector('.workspace-header')),controls,overflow:node.querySelector('.composer-controls').scrollWidth>node.querySelector('.composer-controls').clientWidth,pageOverflow:document.documentElement.scrollWidth>innerWidth}}''')
+                        values = page.locator('.chat-region').evaluate('''node=>{const rect=n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};const controls=[...node.querySelectorAll('.composer-controls button')].map(n=>({name:n.getAttribute('aria-label'),...rect(n),covered:!n.contains(document.elementFromPoint(n.getBoundingClientRect().x+n.clientWidth/2,n.getBoundingClientRect().y+n.clientHeight/2))}));return {region:rect(node),composer:rect(node.querySelector('.composer')),draftBody:rect(node.querySelector('.composer-draft-body')||node.querySelector('textarea[aria-label="Message"]')),controlRow:rect(node.querySelector('.composer-controls')),toolbar:rect(document.querySelector('header[aria-label="Window"]')),controls,overflow:node.querySelector('.composer-controls').scrollWidth>node.querySelector('.composer-controls').clientWidth,pageOverflow:document.documentElement.scrollWidth>innerWidth}}''')
                         assert not values['overflow'] and not values['pageOverflow'], values
                         for box in [values['composer'], values['toolbar'], *values['controls']]:
                             assert box['x'] >= -1 and box['right'] <= width+1 and box['y'] >= -1 and box['bottom'] <= height+1, box
@@ -257,8 +273,6 @@ def run(destination):
                         page.set_viewport_size({'width': width, 'height': height})
                         for theme in ['dark', 'light']:
                             set_theme(theme)
-                            hide = page.get_by_role('navigation', name='Workspace navigation', exact=True).get_by_role('button', name='Hide sidebar', exact=True)
-                            if width <= 850 and hide.count() and hide.is_visible(): hide.click()
                             composer.fill('Keep this draft while changing models and settings.\nThe next message stays right here.')
                             values = bounds(width, height)
                             page.screenshot(path=str(output/f'chat-{width}x{height}-{theme}.png'))
@@ -298,7 +312,7 @@ def run(destination):
                     composer = page.get_by_role('textbox', name='Message', exact=True)
                     expect(composer).to_be_enabled(timeout=20000)
                     expect(composer).to_have_value(preserved_draft)
-                    expect(page.locator('.breadcrumb')).to_contain_text('Keep the conversation going')
+                    expect(page.get_by_role('banner', name='Window').get_by_role('heading')).to_contain_text('Keep the conversation going')
                     assert 200 in refresh_responses, refresh_responses
                     me = page.request.get(base+'/auth/me')
                     assert me.ok and me.json()['principal']['id'] == owner.id

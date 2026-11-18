@@ -146,6 +146,8 @@ export interface TreeView {
   dirty: ReadonlySet<string>;
   setDirty: (tab: string, dirty: boolean) => void;
   setCloseGuard: (guard: CloseGuard | null) => void;
+  /** Counts every request to open a tab (even one for a tab that is already showing); the phone stack follows it. */
+  openCount: number;
 }
 
 export type LegacyController = LayoutCommon & {engine: 'legacy'; legacy: LegacyView};
