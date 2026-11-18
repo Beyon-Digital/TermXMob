@@ -74,8 +74,17 @@ export type TabGroupsProps = {
   canDetach?: (tab: Tab) => boolean;
   /** Kinds the `+` menu offers. */
   openable?: readonly TabKind[];
+  /** Kinds the `+` menu of one group offers (the bottom panel offers other kinds than the editor area). */
+  openableFor?: (group: Group) => readonly TabKind[];
+  /** The `+` menu chose a kind. Return true when the host handled it (a new terminal, Quick open); otherwise a tab opens. */
+  onNewTab?: (kind: TabKind, group: string | undefined) => boolean;
+  /** Draw no tab strips on a phone (the host provides its own title and tab switcher). */
+  hideStrip?: boolean;
   /** Force the one-stack phone projection on or off. By default it follows `(max-width: 767px)`. */
   phone?: boolean;
+  /** Phone: the tab shown in the stack, when the host owns that choice (its top bar switches tabs). */
+  chosenTab?: string | null;
+  onChosenTab?: (id: string) => void;
   /** Skip measuring (tests, or a host that already knows its size). */
   size?: {width: number; height: number};
   label?: string;
@@ -131,13 +140,16 @@ export default function TabGroups(props: TabGroupsProps) {
   const detectedPhone = usePhone();
   const phone = props.phone ?? detectedPhone;
   const root = useRef<HTMLDivElement>(null);
-  const {size, strip} = useMeasure(root, props.size);
+  const {size, strip: measuredStrip} = useMeasure(root, props.size);
+  const strip = phone && props.hideStrip ? 0 : measuredStrip;
   const rects = layoutRects(layout, size.width, size.height);
   const close = useCallback((tab: Tab) => (onClose ? onClose(tab) : dispatch({type: 'closeTab', tab: tab.id})), [onClose, dispatch]);
 
   // Phone: every tab in one stack. The user's choice among them is local state, never written to the layout.
   const stack = phoneStack(layout);
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [localChosen, setLocalChosen] = useState<string | null>(null);
+  const chosen = props.chosenTab !== undefined ? props.chosenTab : localChosen;
+  const setChosen = props.onChosenTab ?? setLocalChosen;
   const focused = focusedTab(layout);
   useEffect(() => {
     if (focused) setChosen(focused.id);
@@ -171,7 +183,9 @@ export default function TabGroups(props: TabGroupsProps) {
       dispatch={dispatch}
       titleOf={titleOf}
       dirty={dirty}
-      openable={openable}
+      openable={props.openableFor ? props.openableFor(group) : openable}
+      onNewTab={props.onNewTab}
+      hideStrip={isPhone && props.hideStrip}
       onClose={close}
       onDetach={onDetach}
       canDetach={canDetach}
@@ -225,6 +239,8 @@ type FrameProps = {
   titleOf: (tab: Tab) => string;
   dirty?: ReadonlySet<string>;
   openable: readonly TabKind[];
+  onNewTab?: (kind: TabKind, group: string | undefined) => boolean;
+  hideStrip?: boolean;
   onClose: (tab: Tab) => void;
   onDetach?: (tab: Tab) => void;
   canDetach?: (tab: Tab) => boolean;
@@ -237,6 +253,9 @@ function GroupFrame(props: FrameProps) {
   const {group, rect, label, focused, phone, layout, dispatch, titleOf, dirty, openable, onClose, onDetach, canDetach} = props;
   const [menu, setMenu] = useState<{tab: Tab; x: number; y: number} | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  const open = (kind: TabKind, target: string | undefined) => {
+    if (!props.onNewTab?.(kind, target)) dispatch({type: 'openTab', kind, group: target});
+  };
   const active = group.tabs.find(tab => tab.id === group.active);
   // A tab's title can change after it is shown (the conversation's name arrives late) and change its width.
   const titles = group.tabs.map(titleOf).join('\u0000');
@@ -279,6 +298,7 @@ function GroupFrame(props: FrameProps) {
       onFocusCapture={() => !phone && dispatch({type: 'focusGroup', group: group.id})}
       style={{left: rect.x, top: rect.y, width: rect.w, height: rect.h}}
     >
+      {!props.hideStrip && (
       <div className="tab-strip">
         <Tabs.Root className="tab-strip-tabs" value={group.active ?? ''} onValueChange={select} activationMode="automatic">
           <Tabs.List ref={list} className="tab-list" aria-label={label + ' tabs'}>
@@ -335,7 +355,7 @@ function GroupFrame(props: FrameProps) {
           </Tabs.List>
         </Tabs.Root>
         <div className="tab-strip-actions">
-          <AddMenu layout={layout} openable={openable} onOpen={kind => dispatch({type: 'openTab', kind, group: phone ? undefined : group.id})} />
+          <AddMenu layout={layout} openable={openable} onOpen={kind => open(kind, phone ? undefined : group.id)} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" className="tab-action" aria-label="Tab actions" disabled={!active}>
@@ -355,11 +375,12 @@ function GroupFrame(props: FrameProps) {
           </DropdownMenu>
         </div>
       </div>
+      )}
       <div className="tab-group-body">
         {group.tabs.length === 0 && (
           <div className="tab-empty">
             <p>No tabs open in this group.</p>
-            <AddMenu layout={layout} openable={openable} label="Open a tab" onOpen={kind => dispatch({type: 'openTab', kind, group: group.id})} />
+            <AddMenu layout={layout} openable={openable} label="Open a tab" onOpen={kind => open(kind, group.id)} />
           </div>
         )}
       </div>

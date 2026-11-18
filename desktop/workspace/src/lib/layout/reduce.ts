@@ -54,6 +54,8 @@ export type LayoutState = {
 export type LayoutAction =
   | {type: 'openTab'; kind: TabKind; ref?: string; group?: string; forceNew?: boolean}
   | {type: 'closeTab'; tab: string; force?: boolean}
+  /** Point a tab at another file or shell (an unattached terminal tab that found its shell). Closes the tab if another already shows it. */
+  | {type: 'setRef'; tab: string; ref: string}
   | {type: 'closeOthers'; tab: string}
   | {type: 'closeGroup'; group: string}
   | {type: 'reopenTab'}
@@ -237,7 +239,11 @@ export function reduceLayout(state: LayoutState, action: LayoutAction, options: 
 
   switch (action.type) {
     case 'openTab': {
-      const existing = action.forceNew ? undefined : allTabs(layout).find(tab => sameTab(tab, action, multi));
+      // Asking for a multi-instance kind without a `ref` (Focus terminal, the Editor entry in a menu) reveals one that is open.
+      const existing = action.forceNew
+        ? undefined
+        : allTabs(layout).find(tab => sameTab(tab, action, multi)) ??
+          (multi.has(action.kind) && action.ref === undefined ? allTabs(layout).find(tab => tab.kind === action.kind) : undefined);
       if (existing) {
         const found = findTab(layout, existing.id)!;
         let next = reveal(layout, found.group, existing.id);
@@ -249,6 +255,21 @@ export function reduceLayout(state: LayoutState, action: LayoutAction, options: 
           }));
         }
         return commit(state, next, {undo: false});
+      }
+      // A multi-instance tab that has no `ref` yet (the panel's starting Terminal, an empty Editor) takes the first one asked for.
+      const loose =
+        !action.forceNew && multi.has(action.kind) && action.ref !== undefined
+          ? allTabs(layout).find(tab => tab.kind === action.kind && tab.ref === undefined)
+          : undefined;
+      if (loose) {
+        const found = findTab(layout, loose.id)!;
+        if (!action.group || action.group === found.group.id) {
+          const attached = setGroup(layout, found.group.id, group => ({
+            ...group,
+            tabs: group.tabs.map(tab => (tab.id === loose.id ? {...tab, ref: action.ref} : tab)),
+          }));
+          return commit(state, reveal(attached, found.group, loose.id), {undo: false});
+        }
       }
       if (allTabs(layout).length >= LIMITS.tabs) return state;
       const target =
@@ -273,6 +294,21 @@ export function reduceLayout(state: LayoutState, action: LayoutAction, options: 
       const next = afterTabLeft(taken.layout, taken.group);
       const row = {tab: taken.tab, group: taken.group.id, index: taken.index};
       return {...commit(state, next), closed: pushClosed(state.closed, [row])};
+    }
+
+    case 'setRef': {
+      const found = findTab(layout, action.tab);
+      if (!found || found.tab.ref === action.ref) return state;
+      const clash = allTabs(layout).find(tab => tab.id !== action.tab && tab.kind === found.tab.kind && tab.ref === action.ref);
+      if (clash && multi.has(found.tab.kind)) {
+        const taken = takeTab(layout, action.tab)!;
+        return commit(state, reveal(afterTabLeft(taken.layout, taken.group), findTab(taken.layout, clash.id)!.group, clash.id), {undo: false});
+      }
+      return commit(
+        state,
+        setGroup(layout, found.group.id, group => ({...group, tabs: group.tabs.map(tab => (tab.id === action.tab ? {...tab, ref: action.ref} : tab))})),
+        {undo: false},
+      );
     }
 
     case 'closeOthers': {

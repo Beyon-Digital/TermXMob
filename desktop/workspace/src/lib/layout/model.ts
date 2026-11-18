@@ -21,6 +21,9 @@ export const TAB_KINDS = [
   'settings',
   'projects',
   'workflows',
+  'problems',
+  'preview',
+  'debug',
 ] as const;
 export type TabKind = (typeof TAB_KINDS)[number];
 
@@ -70,16 +73,20 @@ export const LIMITS = {
 } as const;
 
 /**
- * Kinds that can have several tabs at once (one per `ref`). None yet: every panel the workspace wraps today is a single
- * component with its own inner tabs (terminal sessions, editor files, browser tabs), so a second instance would show
- * the same data twice. The reducer and the validator support multi-instance kinds fully (the reducer takes the set as
- * an option); add a kind here when its host renders one instance per `ref`.
+ * Kinds that can have several tabs at once, one per `ref`: a file tab per open file (`ref` is the buffer key) and a terminal
+ * tab per shell (`ref` is the PTY session id). Every other kind is a singleton, because its host is one component with its
+ * own state: Chat follows the selected conversation (hosting one Chat per conversation would duplicate its subscriptions
+ * and drafts), the browser keeps its own inner tabs, and so on. Opening a singleton that is already open reveals it. The
+ * reducer and the validator support multi-instance kinds fully (the reducer takes the set as an option).
  */
-export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>();
+export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal']);
+
+/** Kinds that belong in the bottom panel by default. */
+const PANEL_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['terminal', 'problems', 'preview', 'debug']);
 
 /** Where a new tab of this kind goes when nothing says otherwise. */
 export function defaultZone(kind: TabKind): 'editor' | 'panel' {
-  return kind === 'terminal' ? 'panel' : 'editor';
+  return PANEL_KINDS.has(kind) ? 'panel' : 'editor';
 }
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;

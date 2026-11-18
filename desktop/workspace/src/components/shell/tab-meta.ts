@@ -1,7 +1,9 @@
 import {
   Boxes,
+  Bug,
   Clapperboard,
   Database,
+  Eye,
   Folder,
   GitCompareArrows,
   Globe,
@@ -9,6 +11,7 @@ import {
   Monitor,
   Settings,
   SquareTerminal,
+  TriangleAlert,
   Workflow,
   FileCode,
   type LucideIcon,
@@ -30,6 +33,9 @@ export const KIND_LABEL: Record<TabKind, string> = {
   settings: 'Settings',
   projects: 'Projects',
   workflows: 'Workflows',
+  problems: 'Problems',
+  preview: 'Preview',
+  debug: 'Run and debug',
 };
 
 export const KIND_ICON: Record<TabKind, LucideIcon> = {
@@ -46,17 +52,20 @@ export const KIND_ICON: Record<TabKind, LucideIcon> = {
   settings: Settings,
   projects: Folder,
   workflows: Workflow,
+  problems: TriangleAlert,
+  preview: Eye,
+  debug: Bug,
 };
 
 /**
- * The kinds the `+` menu offers. `cli` is left out until the host can list CLI sessions (it has no content yet), and every
- * kind here is a singleton in this release: choosing one that is open reveals it.
+ * The kinds the `+` menu of an editor-area group offers. `cli` is left out until the host can list CLI sessions (it has no
+ * content yet). Singletons reveal themselves when open; `file` opens Quick open and `terminal` is not here (it lives in the
+ * bottom panel).
  */
 export const OPENABLE_KINDS: readonly TabKind[] = [
   'chat',
   'file',
   'diff',
-  'terminal',
   'browser',
   'computer',
   'artifacts',
@@ -66,3 +75,6 @@ export const OPENABLE_KINDS: readonly TabKind[] = [
   'workflows',
   'settings',
 ];
+
+/** What the `+` menu of the bottom panel offers: a new terminal and the panel's other tabs. */
+export const PANEL_OPENABLE_KINDS: readonly TabKind[] = ['terminal', 'problems', 'preview', 'debug'];

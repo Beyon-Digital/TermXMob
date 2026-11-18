@@ -57,8 +57,8 @@ describe('defaultLayout', () => {
     expect(validateLayout(value)).toEqual(value);
   });
 
-  it('knows thirteen kinds', () => {
-    expect(TAB_KINDS).toHaveLength(13);
+  it('knows sixteen kinds: the thirteen panels and pages plus the bottom panel\'s Problems, Preview and Run and debug', () => {
+    expect(TAB_KINDS).toHaveLength(16);
   });
 });
 

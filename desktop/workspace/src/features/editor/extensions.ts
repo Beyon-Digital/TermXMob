@@ -17,6 +17,8 @@ export type BufferOptions = {
   editable?: boolean;
   onSave: () => void;
   onDocChange: (state: EditorState) => void;
+  /** Extra extensions for one host, for example a listener that reports the caret to the status bar. */
+  extra?: Extension[];
 };
 
 const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -34,7 +36,7 @@ export function openReplace(view: EditorView) {
 }
 
 export function editorExtensions(options: Omit<BufferOptions, 'doc'>): Extension[] {
-  const {label, path, editable = true, onSave, onDocChange} = options;
+  const {label, path, editable = true, onSave, onDocChange, extra = []} = options;
   return [
     EditorView.contentAttributes.of({'aria-label': label}),
     lineNumbers(),
@@ -60,6 +62,7 @@ export function editorExtensions(options: Omit<BufferOptions, 'doc'>): Extension
     EditorView.editable.of(editable),
     EditorState.readOnly.of(!editable),
     EditorView.updateListener.of((update) => { if (update.docChanged) onDocChange(update.state); }),
+    ...extra,
   ];
 }
 
