@@ -38,13 +38,20 @@ from termx.agent.policy import (
     redact,
 )
 from termx.agent.provider_limits import clean_provider_limits
+from termx.agent.anthropic_wire import strip_thinking
 from termx.agent.providers import (
+    ANTHROPIC_BASE_URL,
+    ANTHROPIC_MODELS,
+    AnthropicMessagesAdapter,
+    DEFAULT_MAX_TOKENS,
     OpenAIChatAdapter,
     OpenAIResponsesAdapter,
     ProviderAdapter,
     ProviderCall,
     ProviderError,
     ProviderTurn,
+    anthropic_base_url,
+    make_anthropic_client,
 )
 from termx.agent.recovery import public_checkpoint, recovery_decision
 from termx.agent.runtime import ProviderHttpRuntime
@@ -376,12 +383,23 @@ class AgentManager:
         current = self.store.get_provider(provider_id)
         if provider_id.startswith("chatgpt-") or (current and current["kind"] == "chatgpt"):
             raise ValueError("ChatGPT providers are managed through Sign in with ChatGPT")
-        if kind not in {"openai", "openai-compatible"}:
-            raise ValueError("provider kind must be openai or openai-compatible")
+        if kind not in {"openai", "openai-compatible", "anthropic"}:
+            raise ValueError("provider kind must be openai, openai-compatible or anthropic")
+        if kind == "anthropic":
+            # The GraphQL input defaults to the OpenAI URL. The SDK appends /v1/messages to the origin.
+            if _origin(base_url)[1] == "api.openai.com":
+                base_url = ANTHROPIC_BASE_URL
+            if wire not in {None, "messages"}:
+                raise ValueError("an Anthropic provider speaks the 'messages' wire")
+            wire = "messages"
+            # No models typed in: offer the current Claude models, default first.
+            model = model if model.strip() else "\n".join(ANTHROPIC_MODELS)
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("provider URL must use HTTP or HTTPS")
-        if wire is not None and wire not in {"responses", "chat"}:
+        if kind != "anthropic" and wire is not None and wire not in {"responses", "chat"}:
             raise ValueError("provider wire must be 'responses' or 'chat'")
+        if kind == "anthropic":
+            base_url = anthropic_base_url(base_url)
         overrides = clean_overrides(model_meta) if model_meta is not None else None
         provider_limits = clean_provider_limits(limits) if limits is not None else None
         # These are account declarations, not a probe of model entitlement or
@@ -1396,7 +1414,8 @@ class AgentManager:
             plan_step=step,
             payload=payload,
         )
-        history = compaction["history"]
+        # Thinking blocks are bound to the prefix that produced them; the retained turns now sit behind a summary.
+        history = strip_thinking(compaction["history"])
         # Re-serialize the injected message with the real checkpoint id (its
         # content stays a plain user message).
         for item in history:
@@ -1503,7 +1522,8 @@ class AgentManager:
                     kwargs: dict[str, Any] = {
                         "prompt": task["prompt"],
                         "cwd": task["cwd"],
-                        "manifest": manifest,
+                        # A prompt-caching wire needs the task's first message byte-identical on every turn.
+                        "manifest": engine.frozen_snapshot(manifest) if provider["kind"] == "anthropic" else manifest,
                         "input_items": history if history else None,
                         "read_only": read_only,
                         # Terminal-parent gate: children may not fan out further.
@@ -3327,6 +3347,8 @@ class AgentManager:
         if not self.tools_supported(provider, provider["model"]):
             # A model that cannot call tools gets a plain conversation: no function tools.
             capabilities = [c for c in capabilities if c not in {"shell", "functions", "computer"}]
+        if provider["kind"] == "anthropic":
+            return self._anthropic_adapter(provider, key, capabilities)
         adapter = (OpenAIChatAdapter if provider.get("wire") == "chat" else OpenAIResponsesAdapter)(
             base_url=provider["base_url"],
             model=provider["model"],
@@ -3341,6 +3363,22 @@ class AgentManager:
             headers=adapter.request_headers(),
         )
         return adapter
+
+    def _anthropic_adapter(self, provider: dict[str, Any], key: str, capabilities: list[str]) -> ProviderAdapter:
+        timeout_s = (provider.get("limits") or {}).get("request_timeout_s")
+        base_url = anthropic_base_url(provider["base_url"])
+        meta = provider.get("meta") or {}
+        # An explicit limit wins; else the model's reported output cap, never above the streaming default.
+        cap = _output_cap(meta, provider.get("limits")) or min(meta.get("max_output") or DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
+        # The SDK owns its connection pool, so it is pooled and evicted per provider like the httpx clients.
+        sdk = self._http.sdk_client_for(
+            provider["id"], (base_url, hashlib.sha256(key.encode()).hexdigest(), timeout_s),
+            lambda: make_anthropic_client(base_url, key, timeout_s),
+        )
+        return AnthropicMessagesAdapter(
+            base_url=base_url, model=provider["model"], api_key=key, capabilities=capabilities,
+            timeout_s=timeout_s, max_output_tokens=cap, sdk=sdk,
+        )
 
     def _task(self, task_id: str) -> dict[str, Any]:
         task = self.store.get_task(task_id)

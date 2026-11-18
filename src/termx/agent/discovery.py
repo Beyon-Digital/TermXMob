@@ -218,6 +218,15 @@ async def discover_models(
     final listing request fails, so callers can tell a bad key from an
     unreachable host.
     """
+    if provider.get("kind") == "anthropic":
+        # The SDK owns this transport (its own pool, auth headers and typed errors).
+        from termx.agent.providers import make_anthropic_client
+
+        sdk = make_anthropic_client(str(provider["base_url"]), api_key, timeout_s)
+        try:
+            return await discover_anthropic(sdk, timeout_s=timeout_s, now=now)
+        finally:
+            await sdk.close()
     base = str(provider["base_url"]).rstrip("/")
     headers = {"User-Agent": "termx-agent/1"}
     if api_key:
@@ -232,6 +241,49 @@ async def discover_models(
     finally:
         if owned:
             await client.aclose()
+
+
+async def discover_anthropic(
+    sdk: Any, *, timeout_s: float = DISCOVERY_TIMEOUT_S, now: Callable[[], float] = time.time
+) -> dict[str, dict[str, Any]]:
+    """List models through the SDK's ``models.list()``.
+
+    ``max_input_tokens`` is the context window and ``max_tokens`` the output cap. Prices are not
+    reported, so they stay unknown. Errors map to ``ProviderError`` like every other flavour.
+    """
+    import anthropic
+
+    fetched_at = now()
+    catalog: dict[str, dict[str, Any]] = {}
+    try:
+        async for item in sdk.models.list(limit=1000, timeout=timeout_s):
+            if len(catalog) >= MAX_MODELS:
+                break
+            if not isinstance(item.id, str) or not item.id or getattr(item, "lifecycle", "active") == "retired":
+                continue
+            catalog[item.id] = model_info(
+                "anthropic", fetched_at,
+                context_window=item.max_input_tokens, max_output=item.max_tokens,
+                capabilities=_anthropic_capabilities(item.capabilities),
+            )
+    except anthropic.APIStatusError as exc:
+        reason = (
+            "The provider rejected the API key" if exc.status_code in {401, 403}
+            else f"The provider could not list models (HTTP {exc.status_code})"
+        )
+        raise ProviderError(reason, status_code=exc.status_code) from None
+    except anthropic.APIConnectionError as exc:
+        raise ProviderError(f"Could not reach provider ({type(exc).__name__})", network=True) from None
+    return _bounded(catalog)
+
+
+def _anthropic_capabilities(capabilities: Any) -> list[str]:
+    """Every Messages model calls tools; vision and thinking come from the reported capabilities."""
+    found = ["tools"]
+    for field, name in (("image_input", "vision"), ("thinking", "reasoning")):
+        if getattr(getattr(capabilities, field, None), "supported", False):
+            found.append(name)
+    return found
 
 
 async def _discover(

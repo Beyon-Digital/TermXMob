@@ -236,6 +236,7 @@ class ContextEngine:
         self._limits = {**DEFAULT_CONTEXT_LIMITS, **(limits or {})}
         self._snapshot: dict[str, Any] | None = None
         self._snapshot_at = 0.0
+        self._frozen: dict[str, Any] | None = None
         # (input_tokens, history length) of the last real provider turn.
         self._usage: tuple[int, int] | None = None
 
@@ -266,6 +267,16 @@ class ContextEngine:
             self._snapshot = await asyncio.to_thread(project_snapshot, self._root)
             self._snapshot_at = time.monotonic()
         return self._snapshot
+
+    def frozen_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """The first snapshot offered for this task, returned unchanged on every later call.
+
+        The snapshot is rendered into the task's first message. A provider that caches the prompt prefix
+        (and binds thinking blocks to it) needs that message to stay byte-identical for the whole task.
+        """
+        if self._frozen is None:
+            self._frozen = snapshot
+        return self._frozen
 
     def note_mutation(self) -> None:
         self._snapshot = None
