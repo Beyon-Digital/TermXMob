@@ -65,6 +65,8 @@ jobs:
           path: desktop/workspace/dist
 
   python:
+    # Failsafe only: the whole matrix is expected to finish well inside this (Windows ~25 min).
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       # PRs run Linux only (macOS runners are the expensive ones and macOS is

@@ -97,6 +97,11 @@ async def test_queue_wait_is_not_misclassified_as_missed(workspace):
     clock[0]+=180
     service.agents.update_task(first['task_id'],status='completed')
     await automation.tick()
+    # the queued run starts in the background after the tick; give a loaded runner time instead of assuming it is instant
+    import asyncio
+    for _ in range(100):
+        if service.state.agent.calls==2: break
+        await asyncio.sleep(.02);await automation.tick()
     assert service.state.agent.calls==2
     assert not service.store.get('schedule',row['id'])['queued']
 

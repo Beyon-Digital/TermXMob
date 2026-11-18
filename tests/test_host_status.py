@@ -229,6 +229,7 @@ def test_heartbeat_replacement_is_atomic_for_a_concurrent_watchdog():
                 seen.append(json.loads(text)["at"])
             except ValueError:
                 torn.append(text[:40])
+            stop.wait(0.002)  # a watchdog polls; three readers spinning flat out never let Windows swap the file
 
     readers = [threading.Thread(target=watchdog) for _ in range(3)]
     for reader in readers:
@@ -247,7 +248,12 @@ def test_the_heartbeat_loop_rewrites_it_and_shutdown_marks_it_stopping():
         service = make_service(heartbeat_s=0.1, poll_s=0.1)
         await service.start()
         first = json.loads(service.heartbeat_path.read_text())["at"]
-        await asyncio.sleep(0.45)
+        # The loop rewrites every 0.1 s; wait for the next write instead of assuming it lands within a fixed 0.45 s,
+        # which a loaded CI runner (or a coarse Windows clock) does not honour.
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if json.loads(service.heartbeat_path.read_text())["at"] > first:
+                break
         assert json.loads(service.heartbeat_path.read_text())["at"] > first
         await service.close()
         assert json.loads(service.heartbeat_path.read_text())["state"] == "stopping"
