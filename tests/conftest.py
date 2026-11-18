@@ -1,6 +1,30 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def sqlite_does_not_fsync_every_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip SQLite's per-commit fsync inside the test process.
+
+    The stores commit constantly (one test made 4,500 commits over 3,400 connections), and each commit fsyncs the
+    journal. That is milliseconds on a Mac or Linux disk but 10-40 ms on a Windows CI runner, which is why the same
+    tests took 15-80 times longer there (a 0.5 s test took 43 s). The data still reaches the OS and every connection or
+    restart sees it; only surviving a power cut is given up, which no test exercises. Production keeps full durability.
+    """
+    connect = sqlite3.connect
+
+    def relaxed(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        try:
+            connection.execute("PRAGMA synchronous=OFF")
+        except sqlite3.Error:
+            pass  # e.g. a read-only or special database; durability is irrelevant to it
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", relaxed)
 
 
 @pytest.fixture(autouse=True)

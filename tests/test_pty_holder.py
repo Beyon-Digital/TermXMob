@@ -383,7 +383,10 @@ def test_a_peer_with_another_uid_is_refused(inproc, monkeypatch):
     sock = socket.socket(socket.AF_UNIX)
     sock.settimeout(3)
     sock.connect(str(H.holder_dir(config_dir()) / H.SOCKET_NAME))
-    sock.sendall(H.encode_json(H.HELLO, 1, {"protocol": H.PROTOCOL}))
+    try:
+        sock.sendall(H.encode_json(H.HELLO, 1, {"protocol": H.PROTOCOL}))
+    except OSError:
+        pass  # the holder may refuse and close before our HELLO is written; its ERR frame is still readable below
     data = b""
     try:
         while True:

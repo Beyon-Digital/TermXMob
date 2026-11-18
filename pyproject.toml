@@ -42,6 +42,8 @@ webrtc = [
 development = [
     "basedpyright>=1.40.2",
     "debugpy>=1.8.22",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
 ]
 media = [
     "imageio-ffmpeg>=0.6.0",
