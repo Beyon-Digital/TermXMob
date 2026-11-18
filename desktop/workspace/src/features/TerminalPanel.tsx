@@ -1,7 +1,7 @@
 import {rememberTerminal, recalledTerminal} from '../lib/window-state';
 import {readTerminalSelection, saveTerminalSelection} from '../lib/terminal-selection';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ChevronDown, ChevronUp, Plus, Trash2, X} from 'lucide-react';
+import {ChevronDown, ChevronUp, CircleStop, Plus, Trash2, X} from 'lucide-react';
 import {gql, request, type Project} from '../lib/api';
 import {Button} from '../components/ui/button';
 import {Tabs, TabsContent} from '../components/ui/tabs';
@@ -118,6 +118,8 @@ export default function TerminalPanel({project, onError, workspaceSession, execu
   const mounted = useMemo(() => sessions.filter((row) => row.id === selected || visited.includes(row.id)), [sessions, visited, selected]);
 
   useEffect(() => { if (focusTick) handles.current.get(selectedRef.current)?.focus(); }, [focusTick]);
+  // A tab chosen elsewhere (a new terminal, a handoff) may sit past the visible end of a scrolling strip.
+  useEffect(() => { tablist.current?.querySelector<HTMLElement>('[role=tab][data-state=active]')?.scrollIntoView?.({block: 'nearest', inline: 'nearest'}); }, [selected, sessions.length]);
 
   async function create() {
     if (!project || paused.current) return;
@@ -203,7 +205,7 @@ export default function TerminalPanel({project, onError, workspaceSession, execu
           {selected && <Button variant="ghost" size="icon" aria-label="Close terminal" title="Close this terminal and end its shell" disabled={!!closing} onClick={() => void close(selected)}><Trash2 size={16} strokeWidth={1.5} aria-hidden="true" /></Button>}
           <span className="flex-spacer" />
           <small className="terminal-status" aria-live="polite">{project ? label : 'No project open'}</small>
-          {selected && <Button variant="ghost" size="sm" onClick={() => handles.current.get(selected)?.interrupt()}>Interrupt</Button>}
+          {selected && <Button className="terminal-interrupt" variant="ghost" size="sm" aria-label="Interrupt" title="Send Control-C to the running command" onClick={() => handles.current.get(selected)?.interrupt()}><CircleStop size={16} strokeWidth={1.5} aria-hidden="true" /><span className="terminal-interrupt-label">Interrupt</span></Button>}
         </div>
         {finding && (
           <div className="terminal-find" role="search" aria-label="Find in terminal">

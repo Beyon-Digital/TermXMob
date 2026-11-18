@@ -12,6 +12,7 @@
     width: 100%;
     background: var(--bg);
     color: var(--text);
+    container-type: inline-size;
   }
 
   .terminal-tabs-root {
@@ -42,7 +43,7 @@
     display: flex;
     align-items: stretch;
     flex: 0 1 auto;
-    min-width: 0;
+    min-width: var(--space-64);
     height: 100%;
     gap: 0;
     padding: 0;
@@ -52,6 +53,8 @@
     scrollbar-width: none;
     background: transparent;
   }
+
+  .terminal-region .terminal-tabs:empty { display: none; }
 
   .terminal-region .terminal-tabs [role='tab'] {
     display: flex;
@@ -120,6 +123,14 @@
     border-radius: var(--radius);
   }
 
+  .terminal-region .terminal-toolbar > .button { flex: none; }
+
+  .terminal-region .terminal-interrupt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
   .terminal-region .terminal-status {
     color: var(--text-3);
     font-size: var(--text-xs);
@@ -134,9 +145,24 @@
     font-size: var(--text-sm);
   }
 
+  /* A narrow terminal keeps the tabs and drops text: the state is still announced, and Interrupt shows its icon only. */
+  @container (max-width: 480px) {
+    .terminal-region .terminal-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .terminal-region .terminal-interrupt-label { display: none; }
+  }
+
   /* Find in terminal */
   .terminal-find {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     flex: none;
     gap: var(--space-8);
@@ -146,7 +172,8 @@
   }
 
   .terminal-find-input {
-    flex: 0 1 240px;
+    flex: 1 1 var(--space-64);
+    max-width: 240px;
     min-width: 0;
     height: var(--ide-input-h);
     padding: 0 var(--space-8);

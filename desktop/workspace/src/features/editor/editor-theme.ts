@@ -104,7 +104,7 @@ export const editorChromeSpec = {
   '.cm-panel.cm-search .cm-button:hover': {backgroundColor: 'var(--surface-2)'},
   '.cm-panel.cm-search .cm-button:active': {backgroundImage: 'none', backgroundColor: 'var(--surface-2)'},
   '.cm-panel.cm-search .cm-button:focus-visible': {outline: focusRing, outlineOffset: '2px'},
-  '.cm-panel.cm-search label': {display: 'inline-flex', alignItems: 'center', gap: 'var(--space-4)', color: 'var(--text-2)'},
+  '.cm-panel.cm-search label': {display: 'inline-flex', flexDirection: 'row', alignItems: 'center', gap: 'var(--space-4)', color: 'var(--text-2)', whiteSpace: 'nowrap'},
   '.cm-panel.cm-search [name=close]': {
     position: 'absolute',
     top: 'var(--space-8)',
