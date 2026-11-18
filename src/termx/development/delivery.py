@@ -20,10 +20,13 @@ from contextlib import contextmanager
 
 from fastapi import HTTPException
 from termx import git_ops
+from termx.development import discard
 from termx.audit import log_event
 
 PUBLISH = {"push", "pr-create", "pr-update", "pr-comment", "pr-review"}
-OPERATIONS = {"stage", "unstage", "hunk", "commit", "branch", "fetch", "pull", "push",
+# Operations that wait for an exact confirmation: publishing, and the two that destroy local work.
+CONFIRMED = {*PUBLISH, "worktree-remove", "discard"}
+OPERATIONS = {"stage", "unstage", "hunk", "commit", "branch", "fetch", "pull", "push", "discard",
               "worktree-create", "worktree-remove", *PUBLISH}
 
 
@@ -119,9 +122,9 @@ class DeliveryService:
                 git_ops._require_ok(result)
             digest.update(result.stdout.encode())
             digest.update(b'\0')
-        if operation in {'commit', 'stage', 'unstage', 'hunk', 'branch', 'pull', 'worktree-remove'}:
+        if operation in {'commit', 'stage', 'unstage', 'hunk', 'branch', 'pull', 'worktree-remove', 'discard'}:
             digest.update(git_ops._require_ok(git_ops._git(root, 'ls-files', '--stage', '-z')).encode())
-        if operation in {'stage', 'hunk', 'branch', 'pull', 'worktree-remove'}:
+        if operation in {'stage', 'hunk', 'branch', 'pull', 'worktree-remove', 'discard'}:
             # -z avoids quoting ambiguities for spaces, newlines and renames.
             changed = git_ops._require_ok(git_ops._git(root, 'status', '--porcelain=v1', '-z', '--untracked-files=all'))
             digest.update(changed.encode())
@@ -160,12 +163,21 @@ class DeliveryService:
         identifier = uuid.uuid4().hex
         target = self.target(project, root, arguments.get("worktree_id"))
         head = self.head(target)
+        review = None
+        if operation == "discard":
+            # The dry run is what the confirmation shows; the digest binds the action to exactly this content.
+            review = discard.review(target, arguments.get("paths"))
         state_digest = self.state_digest(target, operation)
+        if operation == "discard" and discard.review(target, arguments.get("paths")) != review:
+            raise HTTPException(409, "Files changed while preparing; review the discard again")
         with self.lock, self.db() as db:
             db.execute("INSERT INTO actions (id,principal,project,operation,arguments,digest,head,status,result,created,state_digest) VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', NULL, ?, ?)",
                        (identifier, principal, project, operation, body, hashlib.sha256(body.encode()).hexdigest(), head, time(), state_digest))
-        return {"id": identifier, "operation": operation, "arguments": arguments, "head": head,
-                "requires_confirmation": operation in PUBLISH or operation == "worktree-remove"}
+        prepared = {"id": identifier, "operation": operation, "arguments": arguments, "head": head,
+                    "requires_confirmation": operation in CONFIRMED}
+        if review is not None:
+            prepared["review"] = review
+        return prepared
 
     def record(self, identifier, principal, project):
         with self.db() as db:
@@ -194,8 +206,8 @@ class DeliveryService:
                 return {"status": row["status"], "result": json.loads(row["result"]) if row["result"] else None}
             if row["created"] + 300 <= time():
                 raise HTTPException(409, "Delivery confirmation expired; prepare again")
-            if (row["operation"] in PUBLISH or row["operation"] == "worktree-remove") and not confirmed:
-                raise HTTPException(409, "This exact publication/removal requires confirmation")
+            if row["operation"] in CONFIRMED and not confirmed:
+                raise HTTPException(409, "This exact publication, removal or discard requires confirmation")
             target = self.target(project, root, json.loads(row["arguments"]).get("worktree_id"))
             if self.head(target) != row["head"]:
                 raise HTTPException(409, "Repository HEAD changed; review the operation again")
@@ -215,6 +227,10 @@ class DeliveryService:
         with self.lock, self.db() as db:
             db.execute("UPDATE actions SET status=?, result=? WHERE id=?", (status, json.dumps(result), identifier))
         log_event("delivery_action", action_id=identifier, project_id=project, operation=row["operation"], outcome=status)
+        if row["operation"] == "discard":
+            discarded = result.get("discarded", []) if isinstance(result, dict) else []
+            log_event("delivery_discard", action_id=identifier, project_id=project, outcome=status,
+                      count=len(discarded), paths=[item["path"] for item in discarded[:50]])
         return {"status": status, "result": result}
 
     def worktrees(self, project):
@@ -289,6 +305,8 @@ class DeliveryService:
             return git_ops.stage(target, self.paths(target, args.get("paths")), operation == "stage")
         if operation == "hunk":
             return git_ops.stage_hunk(target, args["patch"], args.get("stage", True))
+        if operation == "discard":
+            return discard.apply(target, args.get("paths"))
         if operation == "commit":
             if not isinstance(args.get("message"), str) or not args["message"].strip():
                 raise HTTPException(400, "Commit message is required")
