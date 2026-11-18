@@ -31,6 +31,8 @@ class CliSession(DictBacked):
     ended_reason: str | None
     native_session_id: str | None
     resumable: bool | None
+    resumed_from: str | None
+    resumed_to: str | None
     attention: bool | None
 
 

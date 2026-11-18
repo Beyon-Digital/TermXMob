@@ -148,6 +148,20 @@ class HookTokens:
         self._grants[self._digest(token)] = _Grant(session_id, cli, time.time(), deque())
         return token
 
+    def digest_of(self, session_id: str) -> str | None:
+        """The SHA-256 of a session's token, for persisting. A digest of a 256-bit random value is not a credential."""
+        for key, grant in self._grants.items():
+            if grant.session_id == session_id:
+                return key
+        return None
+
+    def restore(self, session_id: str, cli: str, digest: str) -> bool:
+        """Re-register a persisted digest after a host restart so the CLI's own hook keeps working."""
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            return False
+        self._grants[digest] = _Grant(session_id, cli, time.time(), deque())
+        return True
+
     def revoke_session(self, session_id: str) -> int:
         doomed = [key for key, grant in self._grants.items() if grant.session_id == session_id]
         for key in doomed:

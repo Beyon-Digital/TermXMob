@@ -287,9 +287,26 @@ def build_resume(
     working_dir: str,
     native_session_id: str | None,
     settings_args: tuple[str, ...] = (),
+    mode: str = "default",
+    allow_bypass: bool = False,
 ) -> LaunchPlan:
-    """Argv that reopens the CLI's own saved conversation (never a bypass)."""
+    """Argv that reopens the CLI's own saved conversation.
+
+    A session that ran in ``bypass`` mode resumes in it only when the host says a human re-confirmed it and the
+    session runs in a restricted sandbox (``allow_bypass``), exactly as for ``build_launch``; otherwise it is refused.
+    """
     spec = spec_for(cli)
+    if mode not in MODES:
+        raise CatalogueError("Choose a mode: " + ", ".join(MODES))
+    mode_args: list[str] = []
+    if mode == "bypass":
+        if not allow_bypass:
+            raise BypassRefused("Permission-bypass mode needs a restricted sandbox profile and explicit human approval")
+        mode_args = _bypass_args(spec)
+    elif mode not in spec.modes:
+        raise CatalogueError(f"{spec.label} has no verified {mode.replace('_', ' ')} mode")
+    else:
+        mode_args = list(spec.modes[mode])
     if native_session_id:
         if not _SESSION_ID.match(native_session_id):
             raise CatalogueError("The native session id has unsupported characters")
@@ -303,10 +320,11 @@ def build_resume(
     if spec.cwd_flag:
         argv += [spec.cwd_flag, working_dir]
     # Codex takes global flags before the `resume` subcommand; claude takes them anywhere.
+    argv += mode_args
     argv += list(settings_args)
     argv += list(base) + list(tail)
-    assert_no_bypass(cli, argv)
-    return LaunchPlan(cli, argv, None, native_session_id, "default", False, " ".join(argv[1:]), len(argv))
+    assert_no_bypass(cli, argv, allow=allow_bypass and mode == "bypass")
+    return LaunchPlan(cli, argv, None, native_session_id, mode, False, " ".join(argv[1:]), len(argv))
 
 
 def scrub_environment(spec: CliSpec, base: dict[str, str]) -> dict[str, str]:

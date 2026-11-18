@@ -43,6 +43,12 @@ class CreateCliSession(BaseModel):
     title: str | None = Field(default=None, max_length=120)
 
 
+class ResumeCliSession(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Needed again to resume a session that ran in bypass mode (a restricted sandbox profile is required too).
+    confirm_bypass: bool = False
+
+
 class CliInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(default="", max_length=MAX_SEND_CHARS)
@@ -76,7 +82,11 @@ def mount_cli_sessions(app, state) -> CliSessionService:
     service = getattr(state, "cli_sessions", None)
     if service is None:
         service = state.cli_sessions = CliSessionService(state)
-    service.reconcile()
+    # With a PTY holder the lifespan re-adopts what survived (``service.recover``) before anything is marked
+    # lost; without one nothing from a previous run can be live, so say so immediately.
+    holder = getattr(state.sessions, "holder", None)
+    if holder is None or holder.unsupported() is not None or holder.requested == "direct":
+        service.reconcile()
     router = APIRouter(prefix="/api")
     cache: dict[str, Any] = {"at": 0.0, "agents": []}
 
@@ -175,6 +185,18 @@ def mount_cli_sessions(app, state) -> CliSessionService:
     async def stop(request: Request, session_id: str) -> dict[str, Any]:
         owner, _, _ = gate_row(request, session_id, "terminal-control")
         return await acall(service.stop(owner, session_id))
+
+    @router.post("/cli-sessions/{session_id}/resume", status_code=201)
+    async def resume(request: Request, session_id: str, body: ResumeCliSession | None = None) -> dict[str, Any]:
+        owner, token, row = gate_row(request, session_id, "terminal-control")
+        project_id = row.get("project_id")
+        if project_id:
+            state.authorization.require(token, "terminal-control", project_id=project_id)
+
+        def claim(pty_id: str) -> None:
+            state.authorization.claim(token, "terminal", pty_id, project_id)
+
+        return await acall(service.resume(owner, session_id, confirm_bypass=bool(body and body.confirm_bypass), claim=claim))
 
     @router.post("/cli-sessions/hook/{token}")
     async def hook(token: str, request: Request) -> dict[str, Any]:
