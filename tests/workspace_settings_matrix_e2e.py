@@ -1,5 +1,6 @@
 """Recovered from codex/audit-publish-20261029 (tag archive/2026-11-18/branch-audit-publish-20261029).
-Not yet re-run against the current settings layout.
+Known not to pass on the current layout (asserts the old activity-rail 'Home' button at line ~72); kept as the
+requirements checklist for the settings screens in the IDE-shell redesign. Not run by CI.
 
 Bounded real-host responsive settings proof. Only temporary identities/state.
 
