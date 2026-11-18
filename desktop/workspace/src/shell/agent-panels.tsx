@@ -17,6 +17,9 @@ const BrowserSurface = lazy(() => import('../features/BrowserSurface'));
 const ComputerSurface = lazy(() => import('../features/ComputerSurface'));
 const Artifacts = lazy(() => import('../features/Media'));
 
+/** What a panel may be told beyond whether it shows: the browser can be pinned to one built-in tab (a browser tab with a ref). */
+export type PanelOptions = {browserTab?: string; onClose?: () => void};
+
 export type FileRequest = {id: number; sessionId: string; root: string; path: string; line?: number};
 
 /** What the Agent panels need from the shell, whichever layout engine shows them. */
@@ -72,7 +75,7 @@ export function useAgentPanels(props: AgentPanelProps) {
   } = useWorkspaceData();
   const report = props.onError;
 
-  return function panel(name: DockPanel, panelVisible: boolean): ReactNode {
+  return function panel(name: DockPanel, panelVisible: boolean, options?: PanelOptions): ReactNode {
     const visible = workspaceActive && panelVisible;
     switch (name) {
       case 'editor':
@@ -95,6 +98,7 @@ export function useAgentPanels(props: AgentPanelProps) {
           <div className="conversation-home">
             <OrchestratorStatus
               presentation="sidebar"
+              compact={coordination.compact}
               sidebarTarget={coordination.target}
               selectedTasks={coordination.tasks}
               sidebarVisible={coordination.visible}
@@ -103,7 +107,7 @@ export function useAgentPanels(props: AgentPanelProps) {
               quietWhenIdle
               ownerId={auth.principal.id}
               selected={selected}
-              enabled={visible || (workspaceActive && coordination.open)}
+              enabled={visible || (workspaceActive && (coordination.open || coordination.compact))}
               onPrimary={onPrimary}
               onOpen={onOpenConversation}
             />
@@ -186,6 +190,8 @@ export function useAgentPanels(props: AgentPanelProps) {
       case 'browser':
         return (
           <BrowserSurface
+            tabId={options?.browserTab}
+            onClose={options?.onClose}
             visible={visible}
             locked={locked}
             projectId={project?.id}

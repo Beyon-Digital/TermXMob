@@ -199,6 +199,7 @@ export default function TabGroups(props: TabGroupsProps) {
     <div
       ref={root}
       className="tab-workspace"
+      role="region"
       data-phone={phone || undefined}
       data-dragging={drag.state ? '' : undefined}
       aria-label={label}

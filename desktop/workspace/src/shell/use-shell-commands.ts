@@ -14,6 +14,7 @@ import {useAuth} from './AuthGate';
 import type {LayoutController} from './layout-controller';
 import type {ShellNavigation} from './navigation-state';
 import type {WorkspaceNavigation} from './use-workspace-navigation';
+import {requestAgentSurface} from '../lib/agent-surface-requests';
 import {useShortcuts} from './use-shortcuts';
 import {useWorkspaceData} from './WorkspaceDataProvider';
 
@@ -110,6 +111,10 @@ export function useShellCommands(options: Options) {
     newTerminal: layout.commands.newTerminal,
     showView: layout.showSideBarView,
     openNewChatWithOptions: options.openNewChatWithOptions,
+    newCliSession: () => requestAgentSurface('cli.new'),
+    focusCliSession: () => requestAgentSurface('cli.focus'),
+    addCurrentSite: () => requestAgentSurface('sites.addCurrent'),
+    showHostStatus: () => requestAgentSurface('host.status'),
     detachWorkspace: options.detachWorkspace,
     returnToMain: options.returnToMain,
     recoverWindows: options.recoverWindows,

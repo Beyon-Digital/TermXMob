@@ -10,6 +10,10 @@ type Facts = {
   sessionTitle: string | undefined;
   /** The open file for a buffer key: its path, and whether it is a recovered copy. */
   file: (key: string) => {path: string; recovered: boolean} | undefined;
+  /** What a CLI session is called, by session id. */
+  cli?: (id: string) => string | undefined;
+  /** The page title of a built-in browser tab, by tab id. */
+  browser?: (id: string) => string | undefined;
 };
 
 const fileName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path;
@@ -31,6 +35,10 @@ export function tabTitle(tab: Tab, facts: Facts): string {
       const index = facts.tabs.filter(item => item.kind === 'terminal').findIndex(item => item.id === tab.id);
       return index > 0 ? KIND_LABEL.terminal + ' ' + (index + 1) : KIND_LABEL.terminal;
     }
+    case 'cli':
+      return (tab.ref && facts.cli?.(tab.ref)) || KIND_LABEL.cli;
+    case 'browser':
+      return (tab.ref && facts.browser?.(tab.ref)) || KIND_LABEL.browser;
     default:
       return KIND_LABEL[tab.kind];
   }

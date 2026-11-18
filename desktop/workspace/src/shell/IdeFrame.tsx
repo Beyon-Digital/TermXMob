@@ -1,6 +1,7 @@
 import {Search} from 'lucide-react';
-import {lazy, Suspense, useState, type ReactNode} from 'react';
+import {lazy, Suspense, useEffect, useRef, useState, type ReactNode} from 'react';
 import ActivityBar, {VIEW_META, activitySelection} from '../components/shell/ActivityBar';
+import HostStatusPopover from '../components/shell/HostStatusPopover';
 import {MobileNav, MobileTopBar} from '../components/shell/MobileChrome';
 import SideBar from '../components/shell/SideBar';
 import StatusBar from '../components/shell/StatusBar';
@@ -9,11 +10,18 @@ import TitleBar from '../components/shell/TitleBar';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../components/ui/dialog';
 import {DropdownMenuItem, DropdownMenuSeparator} from '../components/ui/dropdown-menu';
 import {TooltipProvider} from '../components/ui/tooltip';
+import {CliSessionsProvider, useCliSessions} from '../features/cli/CliSessionsProvider';
+import NewCliSessionDialog from '../features/cli/NewCliSessionDialog';
+import {OpenCliSessionContext} from '../features/cli/open-cli-context';
 import {BufferProvider, useBuffers} from '../features/editor/buffer-store';
 import {openFileTab} from '../features/editor/file-navigation';
 import ExplorerView from '../features/explorer/ExplorerView';
+import {useHostStatus} from '../features/host/use-host-status';
 import SearchView from '../features/search/SearchView';
+import {onAgentSurfaceRequest, type AgentSurfaceRequest} from '../lib/agent-surface-requests';
 import {signOut} from '../lib/api';
+import {useBrowserTabTitles} from '../lib/browser-tab-titles';
+import {needsPerson, sessionName} from '../lib/cli-sessions';
 import {allTabs, type SideBarView} from '../lib/layout/model';
 import {focusedTab} from '../lib/layout/reduce';
 import {phoneStack} from '../lib/layout/rects';
@@ -80,11 +88,13 @@ type Props = {
 /** The new frame: the buffers of the window above everything that shows or edits a file. */
 export default function IdeFrame(props: Props) {
   const {auth} = useAuth();
-  const {session} = useWorkspaceData();
+  const {session, projects} = useWorkspaceData();
   const report = useReport();
   return (
     <BufferProvider ownerId={auth.principal.id} session={session} onError={report}>
-      <Frame {...props} />
+      <CliSessionsProvider enabled={!props.locked && auth.principal.scopes.includes('terminal-view')} projects={projects}>
+        <Frame {...props} />
+      </CliSessionsProvider>
     </BufferProvider>
   );
 }
@@ -99,6 +109,11 @@ function Frame(props: Props) {
   const [drawer, setDrawer] = useState(false);
   const [drawerView, setDrawerView] = useState<SideBarView>('agents');
   const [phoneTab, setPhoneTab] = useState<string | null>(null);
+  const cli = useCliSessions();
+  const browserTitles = useBrowserTabTitles();
+  const [cliDialog, setCliDialog] = useState(false);
+  const [hostOpen, setHostOpen] = useState(false);
+  const hostHealth = useHostStatus(!props.locked && auth.principal.scopes.includes('machine-view'));
   const book = layout.tree.layout;
   const dispatch = layout.tree.dispatch;
   const project = nav.project;
@@ -107,7 +122,7 @@ function Frame(props: Props) {
   const git = useGitStatus(project, !props.locked);
   const hostName = useHostName(!props.locked);
   const needs = useNeedsYouItems(!props.locked && view === 'agents' && (phone ? drawer : book.sideBar.visible));
-  const attention = props.botsWaiting + coordination.summary.attention;
+  const attention = props.botsWaiting + coordination.summary.attention + (coordination.summary.blocked ?? 0) + cli.attention;
   const problems = Object.values(store.diagnostics).reduce((sum, items) => sum + items.length, 0);
   const target = {project, session};
 
@@ -129,6 +144,45 @@ function Frame(props: Props) {
   };
   const toggleSideBar = () => (phone ? setDrawer(open => !open) : dispatch({type: 'toggleSideBar'}));
 
+  /** Show a browser tab or a CLI session in the editor area. On a phone it takes over the single stack. */
+  const openAgentTab = (kind: 'browser' | 'cli', ref: string) => {
+    dispatch({type: 'openTab', kind, ref});
+    if (phone) {
+      setPhoneTab(null);
+      setDrawer(false);
+    }
+  };
+  const openCliSession = (id: string) => openAgentTab('cli', id);
+  const openCliList = () => {
+    showView('agents');
+    setTimeout(() => document.getElementById('agents-cli')?.scrollIntoView?.({block: 'nearest'}), 60);
+  };
+  const focusCliSession = () => {
+    const target = cli.sessions.find(needsPerson) ?? cli.sessions.find(item => item.status !== 'done' && item.status !== 'failed' && item.status !== 'lost');
+    if (target) openCliSession(target.id);
+    else openCliList();
+  };
+  const addCurrentSite = () => {
+    const browsers = allTabs(book).filter(tab => tab.kind === 'browser');
+    const target = focused?.kind === 'browser' ? focused : browsers[0];
+    if (!target) {
+      dispatch({type: 'openTab', kind: 'browser'});
+      return;
+    }
+    dispatch({type: 'openTab', kind: 'browser', ref: target.ref});
+    setTimeout(() => window.dispatchEvent(new Event('termx-site-add-current')), 160);
+  };
+
+  // Commands raise requests; this frame owns the dialogs and views they act on.
+  const answer = useRef<(request: AgentSurfaceRequest) => void>(() => {});
+  answer.current = request => {
+    if (request === 'cli.new') setCliDialog(true);
+    else if (request === 'cli.focus') focusCliSession();
+    else if (request === 'host.status') setHostOpen(true);
+    else addCurrentSite();
+  };
+  useEffect(() => onAgentSurfaceRequest(request => answer.current(request)), []);
+
   const mainStatus = (() => {
     if (nav.mainState === 'loading') return 'starting';
     if (nav.mainState === 'failed') return 'unavailable';
@@ -148,6 +202,11 @@ function Frame(props: Props) {
       primaryId: nav.primaryId,
       selected,
       sessionTitle: session?.title,
+      cli: id => {
+        const row = cli.get(id);
+        return row ? sessionName(row) : undefined;
+      },
+      browser: id => browserTitles.get(id),
       file: key => {
         const buffer = store.get(key);
         return buffer && {path: buffer.path, recovered: buffer.key.includes(':handoff:')};
@@ -174,6 +233,11 @@ function Frame(props: Props) {
             onOpenConversation={nav.openConversation}
             onFindConversation={props.sidebar.openSearch}
             onReviewNeeds={() => nav.setManager('bots')}
+            onNewCliSession={() => {
+              setDrawer(false);
+              setCliDialog(true);
+            }}
+            onOpenCliSession={openCliSession}
           />
         );
       case 'explorer':
@@ -203,7 +267,7 @@ function Frame(props: Props) {
           />
         );
       case 'sites':
-        return <SitesView />;
+        return <SitesView projectId={project?.id ?? ''} onOpenTab={id => openAgentTab('browser', id)} />;
       case 'data':
         return <DataView host={hosts.setDataSidebarHost} />;
       case 'studio':
@@ -235,6 +299,7 @@ function Frame(props: Props) {
   });
 
   return (
+    <OpenCliSessionContext.Provider value={openCliSession}>
     <TooltipProvider delayDuration={400}>
       <div
         className="workspace-root workspace-shell ide-shell"
@@ -306,6 +371,21 @@ function Frame(props: Props) {
           mainAgent={mainStatus}
           cursor={cursor}
           compact={phone}
+          disconnected={hostHealth.disconnected}
+          hostOpen={hostOpen}
+          onHostOpenChange={setHostOpen}
+          hostDetails={
+            hostHealth.availability === 'ready' ? (
+              <HostStatusPopover
+                health={hostHealth}
+                hostName={hostName}
+                onOpenAgents={() => {
+                  setHostOpen(false);
+                  openCliList();
+                }}
+              />
+            ) : undefined
+          }
           capture={
             <Suspense fallback={null}>
               <CaptureStatus
@@ -337,6 +417,8 @@ function Frame(props: Props) {
                   Search
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => showView('sites')}>Sites</DropdownMenuItem>
+                {cli.available && <DropdownMenuItem onSelect={openCliList}>CLI sessions</DropdownMenuItem>}
+                {hostHealth.availability === 'ready' && <DropdownMenuItem onSelect={() => setHostOpen(true)}>Host status</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={() => showView('data')}>Data</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => showView('studio')}>Studio</DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -358,7 +440,7 @@ function Frame(props: Props) {
               <div
                 className="drawer-body"
                 onClick={event => {
-                  const hit = (event.target as HTMLElement).closest('.session-row > button, .tree-row, .search-hit, .scm-row, .main-agent-row, .view-primary');
+                  const hit = (event.target as HTMLElement).closest('.session-row > button, .tree-row, .search-hit, .scm-row, .main-agent-row, .view-primary, .site-open:not(.site-static), .cli-row, .needs-cli');
                   if (hit) setDrawer(false);
                 }}
               >
@@ -368,6 +450,13 @@ function Frame(props: Props) {
           </Dialog>
         )}
         {props.overlays}
+        <NewCliSessionDialog
+          open={cliDialog}
+          onOpenChange={setCliDialog}
+          projects={projects}
+          projectId={project?.id ?? ''}
+          onCreated={session => openCliSession(session.id)}
+        />
         <QuickOpenDialog
           open={props.quick.open}
           onOpenChange={open => props.setQuick({open, commandsFirst: props.quick.commandsFirst})}
@@ -380,5 +469,6 @@ function Frame(props: Props) {
         />
       </div>
     </TooltipProvider>
+    </OpenCliSessionContext.Provider>
   );
 }
