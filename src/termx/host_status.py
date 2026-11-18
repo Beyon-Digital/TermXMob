@@ -238,6 +238,12 @@ class HostStatusService:
             status = holder.status()
         terminals = sessions.list() if sessions is not None else []
         status["direct_terminals"] = sum(1 for item in terminals if not getattr(item, "durable", False) and not item.exited)
+        # The saved choice, and whether TERMX_PTY_HOLDER overrides it: ``requested`` is what is in force.
+        try:
+            status["setting"] = self.state.store.get().host.pty_holder
+        except Exception:  # noqa: BLE001
+            status["setting"] = "auto"
+        status["env_override"] = bool((os.environ.get("TERMX_PTY_HOLDER") or "").strip())
         return status
 
     def _recovery(self) -> dict[str, Any]:

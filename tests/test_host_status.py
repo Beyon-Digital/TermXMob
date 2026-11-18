@@ -144,6 +144,18 @@ def test_settings_survive_a_restart_of_the_config_store(tmp_path):
         store.update_host(pty_holder="bogus")
 
 
+def test_the_saved_terminal_setting_is_reported_apart_from_what_is_in_force(monkeypatch):
+    state, app = boot()
+    query = "{ host_status { holder { requested setting env_override } } }"
+    with TestClient(app, base_url="http://localhost") as client:
+        monkeypatch.delenv("TERMX_PTY_HOLDER", raising=False)
+        assert data(client, query, "host_status", headers=headers("host-secret"))["holder"] == {"requested": "auto", "setting": "auto", "env_override": False}
+        state.store.update_host(pty_holder="held")
+        assert data(client, query, "host_status", headers=headers("host-secret"))["holder"] == {"requested": "held", "setting": "held", "env_override": False}
+        monkeypatch.setenv("TERMX_PTY_HOLDER", "direct")
+        assert data(client, query, "host_status", headers=headers("host-secret"))["holder"] == {"requested": "direct", "setting": "held", "env_override": True}
+
+
 def test_keep_awake_follows_running_agent_tasks_and_working_cli_sessions():
     from termx.cli_sessions import status as S
 

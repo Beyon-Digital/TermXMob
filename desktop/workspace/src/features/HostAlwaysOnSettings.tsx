@@ -12,7 +12,7 @@ export interface HostStatus {
   uptime_s: number;
   service: {backend: string; supported: boolean; installed: boolean; managed: boolean; state: string};
   holder: {
-    mode: 'held' | 'direct'; requested: string; reason: string | null; running: boolean; pid: number | null;
+    mode: 'held' | 'direct'; requested: string; setting: string; env_override: boolean; reason: string | null; running: boolean; pid: number | null;
     sessions: number; draining: boolean; direct_terminals: number;
   };
   keep_awake: {enabled: boolean; active: boolean; supported: boolean; backend: string | null; reasons: string[]; error: string | null};
@@ -21,7 +21,7 @@ export interface HostStatus {
 
 const FIELDS = `version pid uptime_s
   service { backend supported installed managed state }
-  holder { mode requested reason running pid sessions draining direct_terminals }
+  holder { mode requested setting env_override reason running pid sessions draining direct_terminals }
   keep_awake { enabled active supported backend reasons error }
   heartbeat { at age_s interval_s file error }`;
 const STATUS_QUERY = `{ host_status { ${FIELDS} } }`;
@@ -101,7 +101,7 @@ function Facts({status}: {status: HostStatus}) {
 function HostForm({status, onChanged}: {status: HostStatus; onChanged: (next: HostStatus) => void}) {
   const {formProps, markClean} = useDirtyForm('host-always-on');
   const [keepAwake, setKeepAwake] = useState(status.keep_awake.enabled);
-  const [holder, setHolder] = useState<HolderMode>(asMode(status.holder.requested));
+  const [holder, setHolder] = useState<HolderMode>(asMode(status.holder.setting));
   const [error, setError] = useState(''), [saving, setSaving] = useState(false);
   const flight = useRef(false);
   const supported = status.keep_awake.supported;
@@ -110,7 +110,7 @@ function HostForm({status, onChanged}: {status: HostStatus; onChanged: (next: Ho
     if (flight.current) return;
     const input: {keep_awake?: boolean; pty_holder?: HolderMode} = {};
     if (keepAwake !== status.keep_awake.enabled) input.keep_awake = keepAwake;
-    if (holder !== asMode(status.holder.requested)) input.pty_holder = holder;
+    if (holder !== asMode(status.holder.setting)) input.pty_holder = holder;
     if (!Object.keys(input).length) {
       markClean();
       return;
@@ -164,6 +164,9 @@ function HostForm({status, onChanged}: {status: HostStatus; onChanged: (next: Ho
           </label>
         ))}
         <p className="settings-reason">A change applies to terminals you open next. Terminals already running keep their mode.</p>
+        {status.holder.env_override && (
+          <p className="settings-reason">TERMX_PTY_HOLDER is set on the host and overrides this choice. Unset it and restart the host to use the saved choice.</p>
+        )}
       </fieldset>
       {error && <p role="alert" className="inline-error">{error}</p>}
     </form>
@@ -197,7 +200,7 @@ export default function HostAlwaysOnSettings({admin}: {admin: boolean}) {
       {status && (
         <>
           <Facts status={status} />
-          <HostForm key={`${status.keep_awake.enabled}:${status.holder.requested}`} status={status} onChanged={setStatus} />
+          <HostForm key={`${status.keep_awake.enabled}:${status.holder.setting}`} status={status} onChanged={setStatus} />
         </>
       )}
       <div className="manager-item-actions">

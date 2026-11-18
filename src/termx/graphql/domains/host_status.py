@@ -35,10 +35,13 @@ class HostServiceState(DictBacked):
 class HostHolderState(DictBacked):
     """The detached PTY holder. ``mode`` is ``held`` (terminals survive a restart) or ``direct`` (they do not);
     ``reason`` says why whenever direct was not asked for. ``sessions`` is live terminals the holder owns,
-    ``direct_terminals`` live terminals that would end with this host."""
+    ``direct_terminals`` live terminals that would end with this host. ``requested`` is what is in force; ``setting`` is
+    the saved choice (``auto``, ``held`` or ``direct``) and ``env_override`` says TERMX_PTY_HOLDER overrides it."""
 
     mode: str
     requested: str
+    setting: str
+    env_override: bool
     reason: str | None
     running: bool
     pid: int | None

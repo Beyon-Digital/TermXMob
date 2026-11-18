@@ -881,6 +881,8 @@ type HostHeartbeat {
 type HostHolderState {
   mode: String!
   requested: String!
+  setting: String!
+  env_override: Boolean!
   reason: String
   running: Boolean!
   pid: Int

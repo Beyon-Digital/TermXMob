@@ -16,14 +16,14 @@ beforeEach(() => {
 const base: HostStatus = {
   version: '1.0.0', pid: 4242, uptime_s: 120,
   service: {backend: 'launchd', supported: true, installed: true, managed: true, state: 'running_managed'},
-  holder: {mode: 'held', requested: 'auto', reason: null, running: true, pid: 4300, sessions: 2, draining: false, direct_terminals: 0},
+  holder: {mode: 'held', requested: 'auto', setting: 'auto', env_override: false, reason: null, running: true, pid: 4300, sessions: 2, draining: false, direct_terminals: 0},
   keep_awake: {enabled: false, active: false, supported: true, backend: 'caffeinate', reasons: [], error: null},
   heartbeat: {at: 1, age_s: 4, interval_s: 10, file: 'heartbeat.json', error: null},
 };
 const direct: HostStatus = {
   ...base,
   service: {backend: 'launchd', supported: true, installed: false, managed: false, state: 'not_installed'},
-  holder: {mode: 'direct', requested: 'auto', reason: 'The terminal helper could not start: cannot start. Terminals will not survive a restart.', running: false, pid: null, sessions: 0, draining: false, direct_terminals: 3},
+  holder: {mode: 'direct', requested: 'auto', setting: 'auto', env_override: false, reason: 'The terminal helper could not start: cannot start. Terminals will not survive a restart.', running: false, pid: null, sessions: 0, draining: false, direct_terminals: 3},
 };
 
 function backend(initial: HostStatus, options: {fail?: string} = {}) {
@@ -38,7 +38,7 @@ function backend(initial: HostStatus, options: {fail?: string} = {}) {
       status = {
         ...status,
         keep_awake: {...status.keep_awake, enabled: input.keep_awake ?? status.keep_awake.enabled, active: input.keep_awake ?? status.keep_awake.active},
-        holder: {...status.holder, requested: input.pty_holder ?? status.holder.requested},
+        holder: {...status.holder, setting: input.pty_holder ?? status.holder.setting, requested: status.holder.env_override ? status.holder.requested : input.pty_holder ?? status.holder.requested},
       };
       return {data: {update_host_settings: status}} as never;
     }
@@ -71,7 +71,7 @@ it('explains a downgrade to direct mode with the host reason and the terminals t
 });
 
 it('starts from what the host asked for and describes each terminal choice in plain words', async () => {
-  backend({...base, holder: {...base.holder, requested: 'held'}});
+  backend({...base, holder: {...base.holder, requested: 'held', setting: 'held'}});
   render(<HostAlwaysOnSettings admin />);
   const group = await screen.findByRole('group', {name: 'Terminals when the app or service stops'});
   expect(within(group).getByRole('radio', {name: /Keep running/})).toBeChecked();
@@ -92,6 +92,18 @@ it('sends only the fields that changed and shows the new state afterwards', asyn
   fireEvent.submit(screen.getByRole('form', {name: 'Always-on host settings'}));
   await waitFor(() => expect(updates).toEqual([{keep_awake: true}, {pty_holder: 'direct'}]));
   expect(await screen.findByRole('radio', {name: /End with the host/})).toBeChecked();
+});
+
+it('shows the saved choice and says when a host variable overrides it', async () => {
+  const updates = backend({...direct, holder: {...direct.holder, requested: 'direct', setting: 'held', env_override: true}});
+  render(<HostAlwaysOnSettings admin />);
+  expect(await screen.findByRole('radio', {name: /Keep running/})).toBeChecked();
+  expect(screen.getByText(/TERMX_PTY_HOLDER is set on the host and overrides this choice/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('radio', {name: /Automatic/}));
+  fireEvent.submit(screen.getByRole('form', {name: 'Always-on host settings'}));
+  await waitFor(() => expect(updates).toEqual([{pty_holder: 'auto'}]));
+  expect(await screen.findByRole('radio', {name: /Automatic/})).toBeChecked();
+  expect(screen.getByText(/Terminals end with this host/)).toBeInTheDocument();
 });
 
 it('keeps the edit and shows the host refusal beside the form', async () => {
