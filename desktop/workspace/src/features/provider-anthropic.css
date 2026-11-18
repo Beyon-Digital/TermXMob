@@ -1,0 +1,118 @@
+/* Settings for the backend capabilities: Anthropic accounts, web search and the always-on host.
+   Tokens only (src/styles/tokens.css). Borders, no shadows; labels sit above controls. */
+@layer surfaces {
+  .key-saved {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-12);
+  }
+
+  .key-saved-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-8);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .key-saved-state svg {
+    color: var(--success);
+  }
+
+  .model-row-default {
+    color: var(--text-2);
+    font-weight: 400;
+  }
+
+  .settings-facts {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: var(--space-8) var(--space-16);
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+
+  .settings-facts dt {
+    color: var(--text-2);
+  }
+
+  .settings-facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--text);
+  }
+
+  .settings-facts dd code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  .settings-radio-group {
+    display: grid;
+    gap: var(--space-8);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .settings-radio-group legend {
+    padding: 0;
+    margin-bottom: var(--space-8);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+    font-weight: 500;
+  }
+
+  .settings-radio-option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--space-12);
+    align-items: start;
+    min-height: 40px;
+    margin: 0;
+    font-weight: 400;
+  }
+
+  .settings-radio-option input {
+    margin: var(--space-4) 0 0;
+  }
+
+  .settings-radio-option span {
+    display: grid;
+    gap: var(--space-4);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+    color: var(--text);
+  }
+
+  .settings-radio-option small {
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+    color: var(--text-3);
+  }
+
+  .settings-reason {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+    color: var(--text-3);
+    max-width: 68ch;
+  }
+
+  @media (max-width: 640px) {
+    .settings-facts {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-4);
+    }
+
+    .settings-facts dd {
+      margin-bottom: var(--space-8);
+    }
+  }
+}

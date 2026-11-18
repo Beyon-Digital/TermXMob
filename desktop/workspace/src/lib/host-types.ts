@@ -42,11 +42,13 @@ export interface ProviderAccount {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[];
   model_catalog: Record<string, ModelInfo>; model_overrides: ModelOverrides; limits?: ProviderLimits | null;
   catalog_refreshed_at: number | null; catalog_error: string | null; wire?: string | null;
+  /** Whether the host already holds a key for this account. The key itself is never sent to the browser. */
+  secret_configured?: boolean;
 }
 /** What ProviderAccountForm submits; matches `AgentProviderInput`. `model` lists the included models, empty meaning all. */
 export interface ProviderAccountInput {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[]; api_key: string | null;
-  model_meta?: ModelOverrides; wire?: 'responses' | 'chat'; limits?: ProviderLimits;
+  model_meta?: ModelOverrides; wire?: 'responses' | 'chat' | 'messages'; limits?: ProviderLimits;
 }
 
 export function providerAccount(provider: AgentProvider): ProviderAccount {
@@ -54,6 +56,7 @@ export function providerAccount(provider: AgentProvider): ProviderAccount {
     id: provider.id, name: provider.name, kind: provider.kind, base_url: provider.base_url ?? '', model: provider.model ?? '', capabilities: provider.capabilities ?? [],
     model_catalog: provider.model_catalog ?? {}, model_overrides: provider.model_overrides ?? {}, limits: provider.limits ?? {max_output_tokens: null, request_timeout_s: null},
     catalog_refreshed_at: provider.catalog_refreshed_at ?? null, catalog_error: provider.catalog_error ?? null, wire: provider.wire ?? null,
+    secret_configured: provider.secret_configured === true,
   };
 }
 

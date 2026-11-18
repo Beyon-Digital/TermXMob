@@ -4,6 +4,7 @@ import {Button} from '../components/ui/button';
 import {Input} from '../components/ui/input';
 import './browser.css';
 import {GeneralPolicyManager} from './GeneralPolicyManager';
+import {OPENAI_WIRE_ONLY_KINDS} from '../lib/provider-kinds';
 type Config={provider_id:string;model:string;version:string;evaluation_id:string};
 type Pricing={currency:string;input_per_million:string;cached_input_per_million:string;output_per_million:string;source:string;effective_date:string;version:string};
 type Evaluation={model_identity?:{pinned:boolean;qualified_model:string|null;missing_requests:number};id:string;provider_id:string;model:string;reviewer_version:string;qualified:boolean;activation_eligible:boolean;false_allow_count:number;case_count:number;structured_valid_count:number;escalation_rate:number;p95_latency_ms:number;created_at:number;limit:string;usage?:Record<string,number>;cost?:{reported:boolean;amount?:string;currency?:string;reason:string;bounds?:{minimum:string;maximum:string};pricing?:Pricing}};
@@ -20,7 +21,7 @@ export function SafetyManager(){
  const load=useCallback(async()=>{
   const [configuration,history,remembered,me]=await Promise.all([request<{configuration:Config|null;evaluations:Evaluation[];active:boolean}>('/api/browser/reviewer'),request<Review[]>('/api/browser/reviews'),request<Rule[]>('/api/browser/rules'),request<{principal:{scopes:string[]}}>('/auth/me')]);
   setState(configuration);setReviews(history);setRules(remembered);const canConfigure=!!me.principal?.scopes?.includes('host-admin');setAdmin(canConfigure);
-  if(canConfigure){const body=await request<{data?:{agent_providers:Provider[]};errors?:{message:string}[]}>('/graphql',post({query:'query { agent_providers { id name kind model secret_configured } }'}));if(body.errors)throw new Error(body.errors[0]?.message||'Provider catalog unavailable');setProviders((body.data?.agent_providers||[]).filter(p=>['openai','openai-compatible'].includes(p.kind)));}
+  if(canConfigure){const body=await request<{data?:{agent_providers:Provider[]};errors?:{message:string}[]}>('/graphql',post({query:'query { agent_providers { id name kind model secret_configured } }'}));if(body.errors)throw new Error(body.errors[0]?.message||'Provider catalog unavailable');setProviders((body.data?.agent_providers||[]).filter(p=>OPENAI_WIRE_ONLY_KINDS.includes(p.kind)));}
   setProviderId(current=>current||configuration.configuration?.provider_id||'');setVersion(current=>current||configuration.configuration?.version||'');
  },[]);
  const run=useCallback(async(job:()=>Promise<unknown>)=>{setBusy(true);setError('');setMessage('');try{await job()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}},[]);
