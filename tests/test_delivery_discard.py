@@ -46,8 +46,8 @@ def prepare(service, repo, paths, **extra):
     return service.prepare("owner", "project", str(repo), "discard", {"paths": paths, **extra})
 
 
-def run(service, repo, paths):
-    action = prepare(service, repo, paths)
+def run(service, repo, paths, **extra):
+    action = prepare(service, repo, paths, **extra)
     return service.execute(action["id"], "owner", "project", str(repo), confirmed=True)
 
 
@@ -67,7 +67,7 @@ def test_a_tracked_edit_is_restored_from_the_index(repo, service):
 def test_a_deleted_file_comes_back(repo, service):
     (repo / "tracked.txt").unlink()
     action = prepare(service, repo, ["tracked.txt"])
-    assert action["review"]["files"] == [{"path": "tracked.txt", "kind": "deleted", "staged": False, "worktree": True}]
+    assert action["review"]["files"] == [{"path": "tracked.txt", "kind": "deleted", "staged": False, "worktree": True, "keeps_staged": False}]
     assert service.execute(action["id"], "owner", "project", str(repo), confirmed=True)["status"] == "completed"
     assert (repo / "tracked.txt").read_text() == "original\n"
 
@@ -79,7 +79,7 @@ def test_staged_changes_are_restored_from_head_in_the_index_and_the_tree(repo, s
     new = repo / "new.txt"
     new.write_text("new\n")
     git(repo, "add", "new.txt")
-    outcome = run(service, repo, ["tracked.txt", "new.txt"])
+    outcome = run(service, repo, ["tracked.txt", "new.txt"], include_staged=True)
     assert outcome["status"] == "completed"
     assert outcome["result"]["counts"]["staged"] == 2
     assert (repo / "tracked.txt").read_text() == "original\n"
@@ -87,9 +87,32 @@ def test_staged_changes_are_restored_from_head_in_the_index_and_the_tree(repo, s
     assert porcelain(repo) == ""
 
 
+def test_by_default_only_the_unstaged_side_is_discarded_and_staged_work_stays(repo, service):
+    (repo / "tracked.txt").write_text("staged\n")
+    git(repo, "add", "tracked.txt")
+    (repo / "tracked.txt").write_text("staged and edited\n")
+    (repo / "other.txt").write_text("only staged\n")
+    git(repo, "add", "other.txt")
+    action = prepare(service, repo, ["tracked.txt", "other.txt"])
+    assert [item["path"] for item in action["review"]["files"]] == ["tracked.txt"]
+    assert action["review"]["files"][0]["keeps_staged"] is True
+    assert action["review"]["already_clean"] == ["other.txt"]
+    assert service.execute(action["id"], "owner", "project", str(repo), confirmed=True)["status"] == "completed"
+    assert (repo / "tracked.txt").read_text() == "staged\n"
+    assert (repo / "other.txt").read_text() == "only staged\n"
+    assert git(repo, "diff", "--cached", "--name-only").splitlines() == ["other.txt", "tracked.txt"]
+
+
+def test_include_staged_must_be_a_boolean(repo, service):
+    (repo / "tracked.txt").write_text("edited\n")
+    with pytest.raises(HTTPException) as refused:
+        prepare(service, repo, ["tracked.txt"], include_staged="yes")
+    assert refused.value.status_code == 400
+
+
 def test_a_staged_rename_is_undone_with_its_original(repo, service):
     git(repo, "mv", "other.txt", "renamed.txt")
-    action = prepare(service, repo, ["renamed.txt"])
+    action = prepare(service, repo, ["renamed.txt"], include_staged=True)
     assert action["review"]["files"][0]["origin"] == "other.txt"
     assert service.execute(action["id"], "owner", "project", str(repo), confirmed=True)["status"] == "completed"
     assert (repo / "other.txt").read_text() == "other\n"
@@ -136,7 +159,7 @@ def test_a_mixed_selection_is_restored_and_removed_in_one_action(repo, service):
     (repo / "src" / "mod.py").unlink()
     (repo / "loose.txt").write_text("loose\n")
     paths = ["tracked.txt", "other.txt", "src/mod.py", "loose.txt", "never-existed.txt"]
-    action = prepare(service, repo, paths)
+    action = prepare(service, repo, paths, include_staged=True)
     assert action["review"]["counts"] == {"modified": 1, "deleted": 1, "staged": 1, "untracked": 1}
     assert action["review"]["already_clean"] == ["never-existed.txt"]
     outcome = service.execute(action["id"], "owner", "project", str(repo), confirmed=True)

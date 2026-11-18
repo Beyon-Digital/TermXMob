@@ -7,7 +7,9 @@ Every step is deliberately narrow:
 * paths are literal (no globs, no pathspec magic) and the number of paths is capped;
 * tracked changes are restored from the index or HEAD, untracked files are removed with ``git clean -f`` (never ``-x``);
 * a folder is accepted only when everything git reports inside it is untracked;
-* merge conflicts are never discarded here.
+* merge conflicts are never discarded here;
+* by default only the unstaged side is discarded (restored from the index, so staged work stays); ``include_staged``
+  also drops the staged side (restored from HEAD), which is what discarding from the Staged changes group means.
 
 ``review`` is the dry run: exactly what would be lost, shown in the confirmation. ``apply`` repeats it and acts on that.
 """
@@ -71,7 +73,7 @@ def _inside(path: str, folder: str) -> bool:
     return path == folder or path.startswith(folder + "/")
 
 
-def review(root: str, paths: Any) -> dict[str, Any]:
+def review(root: str, paths: Any, include_staged: bool = False) -> dict[str, Any]:
     """Dry run. Returns what would be lost, per file, and what is already clean. Changes nothing."""
     requested = normalize(root, paths)
     base = Path(root).resolve()
@@ -105,6 +107,12 @@ def review(root: str, paths: Any) -> dict[str, Any]:
                 continue
             staged = code[0] not in " ?"
             worktree = code[1] not in " ?"
+            keeps_staged = staged and not include_staged
+            if keeps_staged:
+                if not worktree:
+                    clean.append(entry["path"])
+                    continue
+                staged = False
             if code == "??":
                 kind = "untracked"
             elif staged:
@@ -113,7 +121,7 @@ def review(root: str, paths: Any) -> dict[str, Any]:
                 kind = "deleted"
             else:
                 kind = "modified"
-            record = {"path": entry["path"], "kind": kind, "staged": staged, "worktree": worktree}
+            record = {"path": entry["path"], "kind": kind, "staged": staged, "worktree": worktree, "keeps_staged": keeps_staged}
             if entry["origin"]:
                 record["origin"] = entry["origin"]
             if all(item["path"] != record["path"] for item in files):
@@ -124,9 +132,9 @@ def review(root: str, paths: Any) -> dict[str, Any]:
     return {"files": files, "folders": folders, "already_clean": clean, "counts": counts}
 
 
-def apply(root: str, paths: Any) -> dict[str, Any]:
+def apply(root: str, paths: Any, include_staged: bool = False) -> dict[str, Any]:
     """Discard what ``review`` lists. A change that is already gone is not an error."""
-    plan = review(root, paths)
+    plan = review(root, paths, include_staged)
     files = plan["files"]
     folders = plan["folders"]
     staged = []

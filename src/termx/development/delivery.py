@@ -166,9 +166,9 @@ class DeliveryService:
         review = None
         if operation == "discard":
             # The dry run is what the confirmation shows; the digest binds the action to exactly this content.
-            review = discard.review(target, arguments.get("paths"))
+            review = discard.review(target, arguments.get("paths"), self.include_staged(arguments))
         state_digest = self.state_digest(target, operation)
-        if operation == "discard" and discard.review(target, arguments.get("paths")) != review:
+        if operation == "discard" and discard.review(target, arguments.get("paths"), self.include_staged(arguments)) != review:
             raise HTTPException(409, "Files changed while preparing; review the discard again")
         with self.lock, self.db() as db:
             db.execute("INSERT INTO actions (id,principal,project,operation,arguments,digest,head,status,result,created,state_digest) VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', NULL, ?, ?)",
@@ -290,6 +290,13 @@ class DeliveryService:
         return item["path"]
 
     @staticmethod
+    def include_staged(arguments):
+        value = arguments.get("include_staged", False)
+        if not isinstance(value, bool):
+            raise HTTPException(400, "include_staged must be true or false")
+        return value
+
+    @staticmethod
     def paths(root, paths):
         base = Path(root).resolve()
         if not isinstance(paths, list) or not paths:
@@ -306,7 +313,7 @@ class DeliveryService:
         if operation == "hunk":
             return git_ops.stage_hunk(target, args["patch"], args.get("stage", True))
         if operation == "discard":
-            return discard.apply(target, args.get("paths"))
+            return discard.apply(target, args.get("paths"), self.include_staged(args))
         if operation == "commit":
             if not isinstance(args.get("message"), str) or not args["message"].strip():
                 raise HTTPException(400, "Commit message is required")
