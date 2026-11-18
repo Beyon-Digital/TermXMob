@@ -127,6 +127,26 @@
     margin: 0;
   }
 
+  .diff-split-labels {
+    display: grid;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+  .diff-split-labels span {
+    padding: var(--space-4) var(--space-12);
+  }
+  .diff-split-labels span + span {
+    border-left: 1px solid var(--border);
+  }
+
   /* Lines. */
   .diff-row,
   .diff-split-row {

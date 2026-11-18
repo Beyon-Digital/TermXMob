@@ -213,13 +213,21 @@ function FileDiff({project, session, visible, side, path, onOpenFile, onClose}: 
       );
     }
     return (
-      <DiffBody
-        blocks={shown}
-        mode={showMode}
-        total={hunkCount}
-        action={hunkAction}
-        onExpand={(gap, hidden) => setRevealed(value => ({...value, [gap]: (value[gap] ?? 0) + Math.min(EXPAND_STEP, hidden)}))}
-      />
+      <>
+        {showMode === 'split' && (
+          <div className="diff-split-labels" aria-hidden="true">
+            <span>Before</span>
+            <span>After</span>
+          </div>
+        )}
+        <DiffBody
+          blocks={shown}
+          mode={showMode}
+          total={hunkCount}
+          action={hunkAction}
+          onExpand={(gap, hidden) => setRevealed(value => ({...value, [gap]: (value[gap] ?? 0) + Math.min(EXPAND_STEP, hidden)}))}
+        />
+      </>
     );
   })();
 

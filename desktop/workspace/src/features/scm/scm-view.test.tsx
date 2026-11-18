@@ -262,6 +262,16 @@ describe('ScmView push', () => {
     expect(host.operations()[0]).toEqual({operation: 'push', arguments: {remote: 'origin', branch: 'feature'}});
   });
 
+  it('has no axe violations with the confirmation open', async () => {
+    const user = userEvent.setup();
+    view(deliveryHost({ahead: 1}), {source: source([])});
+    const push = await screen.findByRole('button', {name: 'Push'});
+    await waitFor(() => expect(push).toBeEnabled());
+    await user.click(push);
+    await screen.findByRole('dialog');
+    await expectNoAxeViolations(document.body);
+  });
+
   it('stays a disabled Commit while there are changes, even when ahead', async () => {
     view(deliveryHost({ahead: 3}), {source: source([file('a.ts', ' ', 'M')])});
     await screen.findByRole('button', {name: 'Commit'});

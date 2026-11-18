@@ -150,6 +150,27 @@ describe('command registry', () => {
     for (const id of ['view-agents', 'view-sites', 'view-data', 'view-studio']) expect(findCommand(id)?.engine, id).toBe('tree');
   });
 
+  it('has the source control commands in the new layout: F7 steps between changes, the rest show the view and act in it', () => {
+    const showView = vi.fn();
+    const scmCommand = vi.fn();
+    const changeStep = vi.fn();
+    const actions = {showView, scmCommand, changeStep} as unknown as CommandActions;
+    const run = (id: string) => findCommand(id)!.run(actions, {source: 'palette', terminalFocused: false});
+    run('nextChange');
+    run('previousChange');
+    expect(changeStep.mock.calls.map(call => call[0])).toEqual(['next', 'previous']);
+    expect([defaults.nextChange, defaults.previousChange]).toEqual(['F7', 'Shift+F7']);
+    run('scm-commit');
+    run('scm-stage-all');
+    run('scm-refresh');
+    expect(showView.mock.calls.map(call => call[0])).toEqual(['scm', 'scm', 'scm']);
+    expect(scmCommand.mock.calls.map(call => call[0])).toEqual(['commit', 'stageAll', 'refresh']);
+    for (const id of ['nextChange', 'previousChange', 'scm-commit', 'scm-stage-all', 'scm-refresh']) {
+      expect(findCommand(id)?.engine, id).toBe('tree');
+      expect(findCommand(id)?.category, id).toBe('Source control');
+    }
+  });
+
   it('toggles focus: into the terminal, and back to the conversation from inside it', () => {
     const actions = {openSurface: vi.fn(), focusPanel: vi.fn()} as unknown as CommandActions;
     keyedSpecs.focusTerminal.run(actions, {source: 'shortcut', terminalFocused: false});
