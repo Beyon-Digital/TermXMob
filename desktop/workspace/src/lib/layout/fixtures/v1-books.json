@@ -1,0 +1,266 @@
+{
+  "owner": "owner-1",
+  "device": "device-0001",
+  "presets": {
+    "chat": {
+      "editor": "hidden",
+      "conversation": "main",
+      "review": "hidden",
+      "browser": "hidden",
+      "terminal": "hidden",
+      "computer": "hidden",
+      "artifacts": "hidden"
+    },
+    "workbench": {
+      "editor": "main",
+      "conversation": "right",
+      "review": "hidden",
+      "browser": "hidden",
+      "terminal": "hidden",
+      "computer": "hidden",
+      "artifacts": "hidden"
+    },
+    "browser": {
+      "editor": "hidden",
+      "conversation": "right",
+      "review": "hidden",
+      "browser": "main",
+      "terminal": "hidden",
+      "computer": "hidden",
+      "artifacts": "hidden"
+    },
+    "computer": {
+      "editor": "hidden",
+      "conversation": "right",
+      "review": "hidden",
+      "browser": "hidden",
+      "terminal": "hidden",
+      "computer": "main",
+      "artifacts": "hidden"
+    },
+    "artifacts": {
+      "editor": "hidden",
+      "conversation": "right",
+      "review": "hidden",
+      "browser": "hidden",
+      "terminal": "hidden",
+      "computer": "hidden",
+      "artifacts": "main"
+    },
+    "review": {
+      "editor": "hidden",
+      "conversation": "right",
+      "review": "main",
+      "browser": "hidden",
+      "terminal": "hidden",
+      "computer": "hidden",
+      "artifacts": "hidden"
+    },
+    "terminal": {
+      "editor": "hidden",
+      "conversation": "right",
+      "review": "hidden",
+      "browser": "hidden",
+      "terminal": "main",
+      "computer": "hidden",
+      "artifacts": "hidden"
+    },
+    "focus": {
+      "editor": "main",
+      "conversation": "hidden",
+      "review": "hidden",
+      "browser": "hidden",
+      "terminal": "hidden",
+      "computer": "hidden",
+      "artifacts": "hidden"
+    }
+  },
+  "snapshots": {
+    "chat": {
+      "layout": "chat",
+      "dock": {
+        "editor": "hidden",
+        "conversation": "main",
+        "review": "hidden",
+        "browser": "hidden",
+        "terminal": "hidden",
+        "computer": "hidden",
+        "artifacts": "hidden"
+      },
+      "left": true,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "workbench": {
+      "layout": "workbench",
+      "dock": {
+        "editor": "main",
+        "conversation": "right",
+        "review": "hidden",
+        "browser": "hidden",
+        "terminal": "hidden",
+        "computer": "hidden",
+        "artifacts": "hidden"
+      },
+      "left": false,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "browser": {
+      "layout": "browser",
+      "dock": {
+        "editor": "hidden",
+        "conversation": "right",
+        "review": "hidden",
+        "browser": "main",
+        "terminal": "hidden",
+        "computer": "hidden",
+        "artifacts": "hidden"
+      },
+      "left": true,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "computer": {
+      "layout": "computer",
+      "dock": {
+        "editor": "hidden",
+        "conversation": "right",
+        "review": "hidden",
+        "browser": "hidden",
+        "terminal": "hidden",
+        "computer": "main",
+        "artifacts": "hidden"
+      },
+      "left": true,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "artifacts": {
+      "layout": "artifacts",
+      "dock": {
+        "editor": "hidden",
+        "conversation": "right",
+        "review": "hidden",
+        "browser": "hidden",
+        "terminal": "hidden",
+        "computer": "hidden",
+        "artifacts": "main"
+      },
+      "left": true,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "review": {
+      "layout": "review",
+      "dock": {
+        "editor": "hidden",
+        "conversation": "right",
+        "review": "main",
+        "browser": "hidden",
+        "terminal": "hidden",
+        "computer": "hidden",
+        "artifacts": "hidden"
+      },
+      "left": false,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "terminal": {
+      "layout": "terminal",
+      "dock": {
+        "editor": "hidden",
+        "conversation": "right",
+        "review": "hidden",
+        "browser": "hidden",
+        "terminal": "main",
+        "computer": "hidden",
+        "artifacts": "hidden"
+      },
+      "left": true,
+      "right": true,
+      "bottom": true,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    },
+    "focus": {
+      "layout": "focus",
+      "dock": {
+        "editor": "main",
+        "conversation": "hidden",
+        "review": "hidden",
+        "browser": "hidden",
+        "terminal": "hidden",
+        "computer": "hidden",
+        "artifacts": "hidden"
+      },
+      "left": false,
+      "right": false,
+      "bottom": false,
+      "dockGeometry": {
+        "left": 220,
+        "split": 420,
+        "bottom": 260
+      },
+      "sidebarWidth": 240,
+      "rightWidth": 380
+    }
+  },
+  "books": {
+    "chat": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"chat\",\"arrangements\":{\"chat\":{\"layout\":\"chat\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"main\",\"review\":\"hidden\",\"browser\":\"hidden\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "workbench": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"workbench\",\"arrangements\":{\"workbench\":{\"layout\":\"workbench\",\"dock\":{\"editor\":\"main\",\"conversation\":\"right\",\"review\":\"hidden\",\"browser\":\"hidden\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":false,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "browser": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"browser\",\"arrangements\":{\"browser\":{\"layout\":\"browser\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"right\",\"review\":\"hidden\",\"browser\":\"main\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "computer": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"computer\",\"arrangements\":{\"computer\":{\"layout\":\"computer\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"right\",\"review\":\"hidden\",\"browser\":\"hidden\",\"terminal\":\"hidden\",\"computer\":\"main\",\"artifacts\":\"hidden\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "artifacts": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"artifacts\",\"arrangements\":{\"artifacts\":{\"layout\":\"artifacts\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"right\",\"review\":\"hidden\",\"browser\":\"hidden\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"main\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "review": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"review\",\"arrangements\":{\"review\":{\"layout\":\"review\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"right\",\"review\":\"main\",\"browser\":\"hidden\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":false,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "terminal": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"terminal\",\"arrangements\":{\"terminal\":{\"layout\":\"terminal\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"right\",\"review\":\"hidden\",\"browser\":\"hidden\",\"terminal\":\"main\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}}},\"named\":[]}",
+    "custom": "{\"version\":1,\"owner\":\"owner-1\",\"device\":\"device-0001\",\"last\":\"workbench\",\"arrangements\":{\"chat\":{\"layout\":\"chat\",\"dock\":{\"editor\":\"hidden\",\"conversation\":\"main\",\"review\":\"hidden\",\"browser\":\"right\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":240,\"rightWidth\":500,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}},\"workbench\":{\"layout\":\"workbench\",\"dock\":{\"editor\":\"main\",\"conversation\":\"right\",\"review\":\"split\",\"browser\":\"hidden\",\"terminal\":\"bottom\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":true,\"right\":true,\"bottom\":true,\"sidebarWidth\":300,\"rightWidth\":360,\"dockGeometry\":{\"left\":300,\"split\":500,\"bottom\":320}}},\"named\":[{\"id\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"Review layout\",\"snapshot\":{\"layout\":\"review\",\"dock\":{\"editor\":\"split\",\"conversation\":\"right\",\"review\":\"main\",\"browser\":\"hidden\",\"terminal\":\"hidden\",\"computer\":\"hidden\",\"artifacts\":\"hidden\"},\"left\":false,\"right\":true,\"bottom\":false,\"sidebarWidth\":240,\"rightWidth\":380,\"dockGeometry\":{\"left\":220,\"split\":420,\"bottom\":260}},\"updated\":1700000000000}]}"
+  }
+}
