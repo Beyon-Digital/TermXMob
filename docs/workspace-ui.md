@@ -8,7 +8,7 @@ TermX is moving from a ChatGPT-style chat frame to an **agent-first IDE shell**:
 | --- | --- | --- |
 | **U0 Foundations** | One token file, Inter and JetBrains Mono, CSS layers, design guard, 720px chat column | Landed in this branch |
 | U1 Editor and terminal polish | Editor and ANSI themes, languages, find, fold, terminal tabs | Planned |
-| U2 Decompose `App.tsx` and commands | `shell/routes.ts`, one command registry feeding palette, keys and menus | Planned |
+| **U2 Decompose `App.tsx` and commands** | `shell/` modules, one command registry feeding the palette, the key settings and the shortcut dispatcher | Landed in this branch (behaviour-neutral except the registry additions below) |
 | U3 Layout engine | Recursive split tree, tab groups, v1 layout migration, detach mapping | Planned |
 | U4 Chrome | Activity bar, side bar, title and status bars, mobile projection; Settings, Projects, Workflows as tabs | Planned |
 | U5 Source control | Merged source control view and diff tab | Planned |
@@ -292,6 +292,12 @@ The [local activation receipt](implementation-status.md#verification) records th
 | Toggle window full screen | `Ctrl+Meta+F` (Control+Command+F on macOS) |
 | New / close Browser page tab | `Mod+Alt+T` / `Mod+Alt+W` |
 | Reopen Browser page tab | `Mod+Alt+Shift+T` |
+| Focus terminal (from a terminal, back to Chat) | `Ctrl+backtick` |
+| Explorer / Search files / Source control | `Mod+Shift+E` / `Mod+Shift+F` / `Ctrl+Shift+G` (Explorer and Search open Files; Source control opens Changes) |
+| Settings | `Mod+,` |
+| Next / previous workspace tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+
+The command registry (`shell/commands.ts`) is the single list behind the palette, these bindings and the shortcut dispatcher. A focused terminal keeps every key except the command palette, the panel toggles, tab switching and Focus terminal; inside a terminal `Mod` means the platform command key only (Command on macOS, Control elsewhere), so Ctrl+B, Ctrl+J and Ctrl+P still reach the shell on a Mac. Browser and Computer remote input keeps every key.
 
 ## Sidebar behavior
 
