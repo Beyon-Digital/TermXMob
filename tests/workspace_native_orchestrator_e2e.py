@@ -246,7 +246,7 @@ def run(destination):
             'configuration': {'models': ['native-model'], 'default_model': 'native-model'},
             'refreshed_at': time(), 'stale': False, 'refresh_error': None}
         source = Path(os.environ.get('TERMX_UI_PROOF_DIST', str(Path(__file__).resolve().parents[1] / 'desktop/workspace/dist')))
-        app = create_app(state, web_dir=snapshot_ui(root, source))
+        app = create_app(state, web_dir=snapshot_ui(root, source,classic=True))
         # WorkspaceService is mounted by create_app, not AppState.__init__.
         idle = state.workspace.create_session(owner, title=IDLE_TITLE, engine=ENGINE, model='native-model', mode='agent')
         report['ui_sha256'] = json.loads((root / 'fixture-ui-snapshot.json').read_text())

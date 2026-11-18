@@ -316,7 +316,7 @@ function StudioTab({visible, host}: {visible: boolean; host: TabHost}) {
   const {load} = useWorkspaceData();
   const {studio} = host;
   return (
-    <div className="workspace-studio-host">
+    <div id="studio-workspace" className="workspace-studio-host">
       <MediaWorkspace
         key={auth.principal.id}
         section={studio.section}

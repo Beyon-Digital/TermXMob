@@ -22,7 +22,7 @@ type Props = {
   cursor: EditorCursor | null;
   /** Capture controls, rendered only when there is something to show. */
   capture?: ReactNode;
-  /** The phone shows a health dot and the approvals badge only. */
+  /** The phone shows a health dot, the approvals badge and active capture controls (a safety indicator) only. */
   compact?: boolean;
   /** The host has not answered for more than 30 seconds: the dot turns red and the text says Disconnected. */
   disconnected?: boolean;
@@ -82,7 +82,7 @@ export default function StatusBar(props: Props) {
           {props.problems === 1 ? '1 problem' : props.problems + ' problems'}
         </button>
       )}
-      {!props.compact && props.capture}
+      {props.capture}
       {needYou > 0 && (
         <button type="button" className="status-item status-button" onClick={props.onOpenAgents}>
           {needs}

@@ -27,7 +27,7 @@ def run(destination):
         from workspace_ui_snapshot import snapshot_ui
         adapter=FakeAdapter();state=AppState(passcode=None,credentials=CredentialStore(memory={}),adapter_factory=lambda *_:adapter)
         owner=state.identity.setup_owner('extension-owner','extension-proof-password-123');project=state.projects.register(str(project_root),name='Extension proof')
-        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist')))))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True))
         state.extensions.transport=transport;state.skill_sources.compatibility_home=root/'compat-home'
         state.workspace.save_memory(owner,content='Manager header geometry fixture',provenance='Isolated rendered proof',project_id=project['id']);report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text());session=state.workspace.create_session(owner,title='Extension manager proof',project_id=project['id'],cwd=str(project_root),mode='ask')
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]

@@ -247,6 +247,11 @@ describe('StatusBar', () => {
     expect(screen.queryByText(/Ln 1/)).not.toBeInTheDocument();
   });
 
+  it('keeps the active capture controls on a phone', () => {
+    statusBar({compact: true, capture: <button type="button">Stop capture</button>});
+    expect(screen.getByRole('button', {name: 'Stop capture'})).toBeInTheDocument();
+  });
+
   it('has no axe violations', async () => {
     const {container} = statusBar({problems: 1, needYou: 1, cursor: {line: 1, column: 1, language: 'TypeScript'}});
     await expectNoAxeViolations(container);

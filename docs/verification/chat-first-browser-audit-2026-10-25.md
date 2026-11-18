@@ -38,7 +38,7 @@ browser were subsequently confirmed closed.
 
 ## Follow-up verification
 
-`tests/workspace_chat_first_e2e.py` is the new opt-in production-bundle proof.
+`tests/workspace_chat_first_e2e.py` (retired when the IDE shell became the default; its behavioural assertions moved to `tests/workspace_ide_design_e2e.py`) was the opt-in production-bundle proof.
 It uses actual host/authentication stores, approvals, child task creation,
 conversation links, ownership handoff, direct interaction and cancellation.
 Only provider plan/turn inference is replaced with an explicit no-network

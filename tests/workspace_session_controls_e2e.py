@@ -19,7 +19,7 @@ def run(destination):
         pinned=state.projects.register(str(root/'Pinned project'),name='Pinned project')
         recent=state.projects.register(str(root/'Recent project'),name='Recent project')
         state.agent_store.put_provider('fixture',kind='openai-compatible',name='Fixture account',base_url='http://127.0.0.1:1/v1',model='fixture-a,fixture-b',capabilities=['chat'],secret_configured=False)
-        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist')))))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True))
         session=state.workspace.create_session(owner,title='Configuration proof',project_id=recent['id'],cwd=recent['path'],provider_id='fixture',model='fixture-a')
         report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]

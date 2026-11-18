@@ -374,7 +374,7 @@ def run(destination):
         state = AppState(passcode=None, credentials=CredentialStore({}))
         owner = state.identity.setup_owner('studio-owner', 'studio-fixture-password-123')
         project = state.projects.register(str(root), name='Studio UI fixture')
-        app = create_app(state, web_dir=snapshot_ui(root, repo / 'desktop/workspace/dist'))
+        app = create_app(state, web_dir=snapshot_ui(root, repo / 'desktop/workspace/dist',classic=True))
         session = state.workspace.create_session(
             owner, title='Studio verification', project_id=project['id'], cwd=str(root))
         state.workspace.orchestrator.ensure(owner, session_id=session['id'])
