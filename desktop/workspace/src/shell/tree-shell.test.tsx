@@ -7,6 +7,7 @@ import {LayoutPresetStore, defaultLayout as v1Default} from '../lib/layout-prese
 import {allTabs, editorGroups, type Group, type Split} from '../lib/layout/model';
 import {LayoutBookStore, V2_PREFIX} from '../lib/layout/store';
 import {SHELL_ENGINE_KEY, resetShellEngineMemory} from '../lib/shell-engine';
+import {useBuffers} from '../features/editor/buffer-store';
 
 const fixture = vi.hoisted(() => ({
   owner: 'tree-shell-owner',
@@ -43,6 +44,9 @@ vi.mock('../lib/api', async original => ({
     if (path === '/auth/me')
       return {principal: {id: fixture.owner, display_name: 'Owner', scopes: []}, session_id: 'authenticated-session'};
     if (path === '/api/workspace/project-pins') return {revision: 0, projects: []};
+    if (path.includes('operation=tree')) return {entries: [{name: 'a.py', path: 'a.py', directory: false}, {name: 'src', path: 'src', directory: true}]};
+    if (path.includes('operation=quick-open')) return {results: [{path: 'a.py'}, {path: 'src/b.py'}], truncated: false};
+    if (path.includes('/delivery')) return {worktrees: []};
     throw Error('Unexpected request: ' + path);
   }),
   gql: vi.fn(async () => ({projects: [fixture.project], engines: [], agent_providers: []})),
@@ -61,6 +65,7 @@ vi.mock('../lib/session-changes', () => ({
 }));
 vi.mock('../features/CompanionHabitat', () => ({default: () => null}));
 vi.mock('../features/CaptureStatus', () => ({default: () => null}));
+vi.mock('../features/OrchestratorStatus', () => ({default: () => null}));
 vi.mock('../features/BrowserSurface', () => ({default: () => null}));
 vi.mock('../features/Chat', () => ({
   default: ({session, onOpenSurface}: {session: unknown; onOpenSurface: (surface: 'editor' | 'terminal' | 'browser') => void}) => (
@@ -106,6 +111,53 @@ vi.mock('../features/TerminalPanel', () => ({
   },
 }));
 
+vi.mock('../features/editor/FileTab', () => ({
+  default: function FileTab({visible, fileKey}: {visible: boolean; fileKey?: string}) {
+    const store = useBuffers();
+    const counted = useRef(false);
+    useEffect(() => {
+      if (!counted.current) {
+        counted.current = true;
+        fixture.mounts.editor = (fixture.mounts.editor ?? 0) + 1;
+      }
+    }, []);
+    return (
+      <section aria-label="Editor fixture" data-visible={visible} data-file={fileKey}>
+        <textarea aria-label="Unsaved editor buffer" defaultValue="" />
+        {fileKey && (
+          <button
+            onClick={() =>
+              store.add({key: fileKey, project_id: 'project', path: fileKey.split(':').at(-1)!, content: 'edited', revision: '1', editable: true, dirty: true, root: '/workspace/project'})
+            }
+          >
+            Make an unsaved edit
+          </button>
+        )}
+      </section>
+    );
+  },
+}));
+const shells = vi.hoisted(() => ({next: 0, deleted: [] as string[]}));
+vi.mock('../features/terminal/terminal-api', () => ({
+  createPty: vi.fn(async () => ({id: 'pty-' + ++shells.next, title: 'Project', cwd: '/workspace/project', exited: false})),
+  deletePty: vi.fn(async (id: string) => {
+    shells.deleted.push(id);
+  }),
+  listPtys: vi.fn(async () => []),
+}));
+vi.mock('../features/terminal/TerminalTab', () => ({
+  default: function TerminalTab({ptyId}: {ptyId?: string}) {
+    const counted = useRef(false);
+    useEffect(() => {
+      if (!counted.current) {
+        counted.current = true;
+        fixture.mounts.terminal = (fixture.mounts.terminal ?? 0) + 1;
+      }
+    }, []);
+    return <section aria-label="Terminal fixture">terminal {ptyId ?? 'unattached'}</section>;
+  },
+}));
+
 function openUrl(search: string) {
   history.replaceState(null, '', '/' + search);
 }
@@ -116,6 +168,8 @@ beforeEach(() => {
   resetShellEngineMemory();
   fixture.mounts = {};
   fixture.detached = false;
+  shells.next = 0;
+  shells.deleted = [];
   openUrl('?session=conversation&shell=ide');
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', vi.fn(() => ({matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn()})));
@@ -204,9 +258,14 @@ describe('the tab layout in the shell', () => {
     await ready();
     const tabs = within(screen.getByRole('tablist', {name: 'Editor group 1 tabs'})).getAllByRole('tab');
     expect(tabs.map(tab => tab.textContent)).toEqual(['Tree shell']);
-    expect(screen.getByRole('navigation', {name: 'Workspace navigation'})).toBeInTheDocument();
+    expect(screen.getByRole('toolbar', {name: 'Activity bar'})).toBeInTheDocument();
+    // The Workspace actions menu, sidebar hover and the old rail are gone: every item lives in a command, the title bar or the menus.
+    expect(screen.queryByRole('button', {name: 'Workspace actions'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', {name: 'Workspace navigation'})).not.toBeInTheDocument();
+    expect(screen.getByRole('banner', {name: 'Window'})).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo', {name: 'Status'})).toBeInTheDocument();
     expect(screen.queryByRole('group', {name: 'Panel'})).not.toBeInTheDocument();
-    expect(screen.getByRole('complementary', {name: 'Chats and agents'})).toBeInTheDocument();
+    expect(screen.getByRole('complementary', {name: 'Agents'})).toBeInTheDocument();
   });
 
   it('opens an editor tab from the chat and keeps the editor mounted through a split and a move', async () => {
@@ -295,10 +354,10 @@ describe('the tab layout in the shell', () => {
     const user = userEvent.setup();
     render(<App />);
     await ready();
-    await user.click(screen.getByRole('button', {name: 'Workspace actions'}));
-    await user.click(within(await screen.findByRole('dialog', {name: 'Workspace actions'})).getByRole('button', {name: 'Commands'}));
-    const palette = await screen.findByRole('dialog', {name: 'Workspace commands'});
-    expect(within(palette).getByText('Split group right')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Search files and commands'}));
+    const palette = await screen.findByRole('dialog', {name: 'Search files and commands'});
+    await user.type(within(palette).getByRole('combobox', {name: 'Search files and commands'}), '>');
+    expect(await within(palette).findByText('Split group right')).toBeInTheDocument();
     expect(within(palette).getByText('Move tab to other group')).toBeInTheDocument();
     expect(within(palette).queryByText('Toggle right panel')).not.toBeInTheDocument();
     expect(within(palette).queryByText('Focus mode / restore layout')).not.toBeInTheDocument();
@@ -358,6 +417,168 @@ describe('the tab layout in the shell', () => {
   });
 });
 
+describe('the IDE chrome in the shell', () => {
+  it('shows the project and branch, the status bar, and the approvals badge only when something needs the owner', async () => {
+    render(<App />);
+    await ready();
+    expect(within(screen.getByRole('banner', {name: 'Window'})).getByRole('navigation', {name: 'Project and branch'})).toHaveTextContent('Project');
+    const status = screen.getByRole('contentinfo', {name: 'Status'});
+    expect(within(status).getByRole('status')).toHaveTextContent('Connected');
+    expect(within(status).getByRole('button', {name: 'Lock'})).toBeInTheDocument();
+    await waitFor(() => expect(within(status).getByRole('button', {name: /Main agent/})).toBeInTheDocument());
+    expect(within(screen.getByRole('banner', {name: 'Window'})).queryByText(/need/)).not.toBeInTheDocument();
+  });
+
+  it('switches the side bar view from the activity bar, and the selected view toggles the side bar', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    const bar = screen.getByRole('toolbar', {name: 'Activity bar'});
+    expect(within(bar).getByRole('button', {name: 'Agents'})).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(bar).getByRole('button', {name: 'Explorer'}));
+    expect(await screen.findByRole('complementary', {name: 'Explorer'})).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', {name: 'Agents'})).not.toBeInTheDocument();
+    expect(await screen.findByRole('tree', {name: 'Files'})).toBeInTheDocument();
+    await user.click(within(bar).getByRole('button', {name: 'Search'}));
+    expect(await screen.findByRole('complementary', {name: 'Search'})).toBeInTheDocument();
+    await user.click(within(bar).getByRole('button', {name: 'Source control'}));
+    expect(await screen.findByRole('complementary', {name: 'Source control'})).toBeInTheDocument();
+    await user.click(within(bar).getByRole('button', {name: 'Sites'}));
+    expect(await screen.findByText('No saved sites yet.')).toBeInTheDocument();
+    // The selected view again hides the side bar, and the toggle shows it again.
+    await user.click(within(bar).getByRole('button', {name: 'Sites'}));
+    await waitFor(() => expect(screen.queryByRole('complementary', {name: 'Sites'})).not.toBeInTheDocument());
+    await waitFor(() => expect(stored().current.sideBar.visible).toBe(false));
+    await user.click(screen.getByRole('button', {name: 'Toggle side bar'}));
+    expect(await screen.findByRole('complementary', {name: 'Sites'})).toBeInTheDocument();
+    expect(stored().current.sideBar.view).toBe('sites');
+  });
+
+  it('resizes the side bar with the keyboard between 200 and 420 and remembers the width', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    const handle = screen.getByRole('separator', {name: 'Resize side bar'});
+    expect(handle).toHaveAttribute('aria-valuenow', '260');
+    handle.focus();
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    await waitFor(() => expect(screen.getByRole('separator', {name: 'Resize side bar'})).toHaveAttribute('aria-valuenow', '292'));
+    await user.keyboard('{End}');
+    expect(screen.getByRole('separator', {name: 'Resize side bar'})).toHaveAttribute('aria-valuenow', '420');
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('separator', {name: 'Resize side bar'})).toHaveAttribute('aria-valuenow', '200');
+    await waitFor(() => expect(stored().current.sideBar.size).toBe(200));
+  });
+
+  it('opens Settings and Projects as tabs from the activity bar', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    await user.click(within(screen.getByRole('toolbar', {name: 'Activity bar'})).getByRole('button', {name: 'Settings'}));
+    expect(await screen.findByRole('tab', {name: 'Settings'})).toHaveAttribute('aria-selected', 'true');
+    await user.click(within(screen.getByRole('toolbar', {name: 'Activity bar'})).getByRole('button', {name: 'Projects'}));
+    expect(await screen.findByRole('tab', {name: 'Projects'})).toBeInTheDocument();
+  });
+
+  it('opens a file from Quick open into a tab, once, and a second file into a second tab, and splits it like any tab', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    const open = async (name: string) => {
+      await user.click(screen.getByRole('button', {name: 'Search files and commands'}));
+      const dialog = await screen.findByRole('dialog', {name: 'Search files and commands'});
+      await user.click(await within(dialog).findByRole('option', {name: new RegExp(name.replace('.', '\\.'))}));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    };
+    await open('a.py');
+    const strip = () => within(screen.getByRole('tablist', {name: 'Editor group 1 tabs'}));
+    expect(strip().getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Tree shell', 'a.py']);
+    expect(strip().getByRole('tab', {name: 'a.py'})).toHaveAttribute('aria-selected', 'true');
+    // The same file again reveals its tab instead of adding a second one.
+    await user.click(strip().getByRole('tab', {name: 'Tree shell'}));
+    await open('a.py');
+    expect(strip().getAllByRole('tab')).toHaveLength(2);
+    expect(strip().getByRole('tab', {name: 'a.py'})).toHaveAttribute('aria-selected', 'true');
+    await open('b.py');
+    expect(strip().getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Tree shell', 'a.py', 'b.py']);
+    await user.pointer({keys: '[MouseRight]', target: strip().getByRole('tab', {name: 'b.py'})});
+    await user.click(await screen.findByRole('menuitem', {name: 'Split right'}));
+    expect(screen.getAllByRole('tablist')).toHaveLength(2);
+    expect(within(screen.getByRole('tablist', {name: 'Editor group 2 tabs'})).getByRole('tab', {name: 'b.py'})).toBeInTheDocument();
+  });
+
+  it('opens a file from the Explorer tree', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    await user.click(within(screen.getByRole('toolbar', {name: 'Activity bar'})).getByRole('button', {name: 'Explorer'}));
+    await user.click(await screen.findByRole('treeitem', {name: /a\.py/}));
+    expect(await screen.findByRole('tab', {name: 'a.py'})).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('asks before closing a file tab with unsaved edits: keep editing keeps it, discard closes it and drops the buffer', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    await user.click(screen.getByRole('button', {name: 'Search files and commands'}));
+    await user.click(await within(await screen.findByRole('dialog')).findByRole('option', {name: /a\.py/}));
+    await user.click(await screen.findByRole('button', {name: 'Make an unsaved edit'}));
+    const tab = await screen.findByRole('tab', {name: /a\.py/});
+    await waitFor(() => expect(tab).toHaveTextContent('unsaved changes'));
+    await user.click(tab.querySelector('.tab-close')!);
+    const dialog = await screen.findByRole('dialog', {name: 'Discard unsaved changes?'});
+    await user.click(within(dialog).getByRole('button', {name: 'Keep editing'}));
+    expect(screen.getByRole('tab', {name: /a\.py/})).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', {name: /a\.py/}).querySelector('.tab-close')!);
+    await user.click(within(await screen.findByRole('dialog', {name: 'Discard unsaved changes?'})).getByRole('button', {name: 'Discard changes'}));
+    await waitFor(() => expect(screen.queryByRole('tab', {name: /a\.py/})).not.toBeInTheDocument());
+    // The dropped buffer does not come back as an orphan tab.
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(screen.queryByRole('tab', {name: /a\.py/})).not.toBeInTheDocument();
+  });
+
+  it('shows Terminal in the bottom panel and starts one shell per tab with the + menu and Control+Shift+backtick', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    fireEvent.keyDown(window, {key: 'j', ctrlKey: true});
+    const panel = await screen.findByRole('group', {name: 'Panel'});
+    expect(within(panel).getByRole('tab', {name: 'Terminal'})).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', {name: 'New tab'}));
+    await user.click(await screen.findByRole('menuitemcheckbox', {name: 'Terminal'}));
+    await waitFor(() => expect(screen.getByText('terminal pty-1')).toBeInTheDocument());
+    // The panel's starting Terminal tab takes the first shell.
+    expect(within(panel).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Terminal']);
+    await user.click(within(panel).getByRole('button', {name: 'New tab'}));
+    await user.click(await screen.findByRole('menuitemcheckbox', {name: 'Terminal'}));
+    await waitFor(() => expect(within(panel).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Terminal', 'Terminal 2']));
+    expect(screen.getByText('terminal pty-2')).toBeInTheDocument();
+    fireEvent.keyDown(window, {key: '`', code: 'Backquote', ctrlKey: true, shiftKey: true});
+    await waitFor(() => expect(within(panel).getAllByRole('tab')).toHaveLength(3));
+    expect(screen.getByText('terminal pty-3')).toBeInTheDocument();
+    // Only the panel's own kinds are offered there.
+    await user.click(within(panel).getByRole('button', {name: 'New tab'}));
+    expect((await screen.findAllByRole('menuitemcheckbox')).map(item => item.textContent)).toEqual(['Terminal', 'Problems', 'Preview', 'Run and debug']);
+  });
+
+  it('ends a shell when its tab closes, and keeps the others', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await ready();
+    fireEvent.keyDown(window, {key: 'j', ctrlKey: true});
+    const panel = await screen.findByRole('group', {name: 'Panel'});
+    for (let count = 0; count < 2; count++) {
+      await user.click(within(panel).getByRole('button', {name: 'New tab'}));
+      await user.click(await screen.findByRole('menuitemcheckbox', {name: 'Terminal'}));
+      await waitFor(() => expect(shells.next).toBe(count + 1));
+    }
+    await waitFor(() => expect(within(panel).getAllByRole('tab')).toHaveLength(2));
+    await user.click(within(panel).getByRole('tab', {name: 'Terminal 2'}).querySelector('.tab-close')!);
+    await waitFor(() => expect(shells.deleted).toEqual(['pty-2']));
+    expect(within(panel).getAllByRole('tab')).toHaveLength(1);
+  });
+});
+
 describe('detached windows and phones', () => {
   it('boots a detached window with one tab and never writes the main window\'s layout', async () => {
     fixture.detached = true;
@@ -369,7 +590,7 @@ describe('detached windows and phones', () => {
     expect(stored()).toBeNull();
   });
 
-  it('projects the tree to one tab stack on a phone and leaves the stored layout alone', async () => {
+  it('projects the tree to one tab stack on a phone, with a top bar and bottom nav, and leaves the stored layout alone', async () => {
     const user = userEvent.setup();
     const view = render(<App />);
     await ready();
@@ -382,12 +603,32 @@ describe('detached windows and phones', () => {
 
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({matches: query.includes('767'), addEventListener: vi.fn(), removeEventListener: vi.fn()})));
     render(<App />);
-    await waitFor(() => expect(screen.getAllByRole('tablist')).toHaveLength(1));
+    // One stack: no tab strips and no splitters; the top bar names the tab and switches between them.
+    const top = await screen.findByRole('banner', {name: 'Window'});
+    await waitFor(() => expect(screen.queryAllByRole('tablist')).toHaveLength(0));
     expect(screen.queryByRole('separator', {name: 'Resize groups'})).not.toBeInTheDocument();
-    await user.click(screen.getByRole('tab', {name: 'Editor'}));
+    expect(within(top).getByRole('button', {name: 'Open side bar'})).toBeInTheDocument();
+    expect(screen.getByRole('navigation', {name: 'Primary'})).toBeInTheDocument();
+    expect(screen.queryByRole('toolbar', {name: 'Activity bar'})).not.toBeInTheDocument();
+    await user.click(within(top).getByRole('button', {name: /Switch tab/}));
+    await user.click(await screen.findByRole('menuitem', {name: 'Editor'}));
+    expect(within(top).getByRole('heading', {name: 'Editor'})).toBeInTheDocument();
     await new Promise(resolve => setTimeout(resolve, 300));
     expect(stored()).toEqual(JSON.parse(before));
     expect(editorGroups((stored().current as {root: Group | Split}).root as never)).toHaveLength(2);
+  });
+
+  it('opens the side bar as a drawer on a phone, from the top bar and from the bottom nav, and Escape closes it', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({matches: query.includes('767'), addEventListener: vi.fn(), removeEventListener: vi.fn()})));
+    render(<App />);
+    await user.click(await screen.findByRole('button', {name: 'Open side bar'}));
+    const drawer = await screen.findByRole('dialog', {name: 'Agents'});
+    expect(within(drawer).getByRole('button', {name: 'New chat'})).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(within(screen.getByRole('navigation', {name: 'Primary'})).getByRole('button', {name: 'Files'}));
+    expect(await screen.findByRole('dialog', {name: 'Explorer'})).toBeInTheDocument();
   });
 });
 

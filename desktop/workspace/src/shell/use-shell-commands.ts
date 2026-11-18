@@ -8,6 +8,8 @@ import {
   type CommandContext,
   type CommandInvocation,
 } from './commands';
+import {isDetachedWindow, nativeWorkspace} from '../lib/native';
+import {detachedBrowser} from '../lib/window-journal';
 import {useAuth} from './AuthGate';
 import type {LayoutController} from './layout-controller';
 import type {ShellNavigation} from './navigation-state';
@@ -23,6 +25,12 @@ type Options = {
   togglePalette: () => void;
   openSavedLayouts: () => void;
   toggleFullscreen: () => void;
+  openNewChatWithOptions: () => void;
+  /** Quick open in the tab layout: a file tab opens from the chosen result. */
+  openQuickOpen: () => void;
+  detachWorkspace: () => void;
+  returnToMain: () => void;
+  recoverWindows: () => void;
 };
 
 /**
@@ -47,6 +55,8 @@ export function useShellCommands(options: Options) {
     workspace,
     hostAdmin: !!auth?.principal.scopes.includes('host-admin'),
     engine: layout.engine,
+    detached: isDetachedWindow() || (!nativeWorkspace() && detachedBrowser),
+    native: nativeWorkspace(),
   };
   const actions: CommandActions = {
     setManager: nav.setManager,
@@ -64,6 +74,11 @@ export function useShellCommands(options: Options) {
     openSurface: layout.openSurface,
     focusPanel: layout.focusPanel,
     quickOpen: () => {
+      if (layout.engine === 'tree') {
+        nav.setManager('');
+        options.openQuickOpen();
+        return;
+      }
       layout.requestQuickOpen();
       nav.setManager('');
       layout.chooseLayout('workbench');
@@ -93,6 +108,11 @@ export function useShellCommands(options: Options) {
     maximizeGroup: layout.commands.maximizeGroup,
     moveTabToOtherGroup: layout.commands.moveTabToOtherGroup,
     newTerminal: layout.commands.newTerminal,
+    showView: layout.showSideBarView,
+    openNewChatWithOptions: options.openNewChatWithOptions,
+    detachWorkspace: options.detachWorkspace,
+    returnToMain: options.returnToMain,
+    recoverWindows: options.recoverWindows,
   };
 
   function runCommand(command: Command, invocation: CommandInvocation) {

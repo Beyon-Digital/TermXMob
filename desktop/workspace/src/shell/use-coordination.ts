@@ -24,8 +24,8 @@ const storageKey = (ownerId: string) => 'termx-coordination-sidebar:' + ownerId;
 
 export type InspectedTask = {id: string; owner: string; sessionId: string};
 
-export function useCoordination(options: {workspace: WorkspaceMode; manager: string}) {
-  const {workspace, manager} = options;
+export function useCoordination(options: {workspace: WorkspaceMode; manager: string; /** The sub-agents list is on screen in the side bar (tab layout): it is always open. */ pinned?: boolean}) {
+  const {workspace, manager, pinned = false} = options;
   const {auth} = useAuth();
   const {session, selected} = useWorkspaceData();
   const [open, setOpen] = useState(false);
@@ -37,7 +37,7 @@ export function useCoordination(options: {workspace: WorkspaceMode; manager: str
   const asideRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const ownerId = auth.principal.id;
-  const visible = workspace === 'agent' && !manager && open;
+  const visible = workspace === 'agent' && !manager && (open || pinned);
 
   // Keep the panel mounted while it animates closed.
   useEffect(() => {

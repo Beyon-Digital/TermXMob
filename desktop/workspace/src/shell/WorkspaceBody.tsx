@@ -12,7 +12,7 @@ import type {LayoutController} from './layout-controller';
 import ManagerOverlay from './ManagerOverlay';
 import type {ShellNavigation} from './navigation-state';
 import StudioHost from './StudioHost';
-import type {TabHost} from './tab-content';
+import type {TabHostInput} from './tab-content';
 import type {Coordination} from './use-coordination';
 import type {HostsState} from './use-hosts-state';
 import type {WorkspaceNavigation as Navigation} from './use-workspace-navigation';
@@ -39,6 +39,12 @@ type Props = {
   toggleFullscreen: () => void;
   onDetach: (panel: WindowPanel) => void;
   report: (reason: unknown) => void;
+  /** The tab layout: open a file in a tab, show Quick open, and draw no tab strips on a phone. */
+  openFile?: (path: string, line?: number) => void;
+  findFile?: () => void;
+  hideStrip?: boolean;
+  chosenTab?: string | null;
+  onChosenTab?: (id: string) => void;
 };
 
 /**
@@ -61,7 +67,7 @@ export default function WorkspaceBody(props: Props) {
     layout.chooseLayout(view);
   }
 
-  const tabHost: Omit<TabHost, 'panel' | 'closeTab' | 'setDirty'> = {
+  const tabHost: TabHostInput = {
     project: nav.project,
     projectWorkbenchId: nav.projectWorkbenchId,
     manager: {
@@ -78,6 +84,19 @@ export default function WorkspaceBody(props: Props) {
     openManager: (page, ref) => void layout.openManager(page, ref),
     openKind: kind => {
       if (layout.engine === 'tree') layout.tree.dispatch({type: 'openTab', kind});
+    },
+    openFile: props.openFile ?? (() => {}),
+    findFile: props.findFile ?? (() => {}),
+    data: {navigationHost: hosts.dataSidebarHost},
+    studio: {
+      section: hosts.studioSection,
+      onSection: hosts.setStudioSection,
+      projectId: hosts.studioProjectId,
+      projectName: hosts.studioProject?.name,
+      readOnly: hosts.studioProjectReadOnly,
+      onProjectActivity: hosts.studioProjectGuard.receive,
+      onConfigureProvider: () => nav.openStudioSection('settings'),
+      onContext: nav.attachStudioContext,
     },
     onNew: props.openNewChat,
     onAddProject: props.openAddProject,
@@ -129,6 +148,7 @@ export default function WorkspaceBody(props: Props) {
               onNavigate={nav.setManager}
             />
           )}
+          {!tree && (
           <StudioHost
             workspace={workspace}
             manager={manager}
@@ -144,6 +164,8 @@ export default function WorkspaceBody(props: Props) {
             onConfigureProvider={() => nav.openStudioSection('settings')}
             onContext={nav.attachStudioContext}
           />
+          )}
+          {!tree && (
           <DataHost
             workspace={workspace}
             manager={manager}
@@ -154,6 +176,7 @@ export default function WorkspaceBody(props: Props) {
               if (matchMedia('(max-width:850px)').matches) hosts.setDataSidebarOpen(false);
             }}
           />
+          )}
           <AgentWorkspace
             workspace={workspace}
             manager={manager}
@@ -161,6 +184,9 @@ export default function WorkspaceBody(props: Props) {
             onFullscreen={props.toggleFullscreen}
             onDetach={props.onDetach}
             tabHost={tabHost}
+            hideStrip={props.hideStrip}
+            chosenTab={props.chosenTab}
+            onChosenTab={props.onChosenTab}
             panels={{
               project: nav.project,
               fileRequest: nav.fileRequest,
@@ -183,7 +209,7 @@ export default function WorkspaceBody(props: Props) {
               onError: report,
             }}
           />
-          <CoordinationSidebar coordination={coordination} />
+          {!tree && <CoordinationSidebar coordination={coordination} />}
         </>
       </Suspense>
     </main>

@@ -58,7 +58,7 @@ export default function ShellOverlays(props: Props) {
   const {sessions, projects, projectId, setProjectId} = useWorkspaceData();
   return (
     <>
-      {!locked && (
+      {!locked && layout.engine !== 'tree' && (
         <Suspense fallback={null}>
           <div hidden={workspace !== 'agent'} inert={workspace !== 'agent'}>
             <CompanionHabitat

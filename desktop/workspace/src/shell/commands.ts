@@ -1,4 +1,5 @@
 import type {DockPanel} from '../lib/docking';
+import type {SideBarView} from '../lib/layout/model';
 import {settingsCategories} from '../lib/settings-categories';
 import type {Layout} from '../lib/use-layout';
 import type {ShellEngine} from '../lib/shell-engine';
@@ -47,6 +48,12 @@ export interface CommandActions {
   maximizeGroup: () => void;
   moveTabToOtherGroup: () => void;
   newTerminal: () => void;
+  /** Show a side bar view. The old dock has no views and shows the surface that matches. */
+  showView: (view: SideBarView) => void;
+  openNewChatWithOptions: () => void;
+  detachWorkspace: () => void;
+  returnToMain: () => void;
+  recoverWindows: () => void;
 }
 
 export type CommandSource = 'shortcut' | 'palette';
@@ -62,10 +69,14 @@ export interface CommandContext {
   hostAdmin: boolean;
   /** The layout engine in force: the old dock or the tab-group tree. Absent means the old dock. */
   engine?: ShellEngine;
+  /** This window is a detached surface that can return to the main workspace. */
+  detached?: boolean;
+  /** The native desktop shell is running (the browser keeps a recovery journal for unsaved windows instead). */
+  native?: boolean;
 }
 
 /** `agent` commands act on the Agent workspace's panels; they are hidden and inert in Studio and Data. */
-export type When = 'agent' | 'host-admin';
+export type When = 'agent' | 'host-admin' | 'detached' | 'web';
 
 export type CommandCategory =
   | 'Go'
@@ -323,22 +334,22 @@ const specs = keyed({
     category: 'View',
     defaultKeys: 'Mod+Shift+E',
     leavesManager: true,
-    run: a => a.chooseLayout('workbench'),
+    run: a => a.showView('explorer'),
   },
   search: {
-    // The editor's own search tab has no external entry point yet, so this opens the files surface.
+    // The old editor's search tab has no external entry point, so there this opens the files surface.
     title: 'Search files',
     category: 'View',
     defaultKeys: 'Mod+Shift+F',
     leavesManager: true,
-    run: a => a.chooseLayout('workbench'),
+    run: a => a.showView('search'),
   },
   sourceControl: {
     title: 'Show Source control',
     category: 'View',
     defaultKeys: 'Ctrl+Shift+G',
     leavesManager: true,
-    run: a => a.openSurface('review'),
+    run: a => a.showView('scm'),
   },
   settings: {
     title: 'Open Settings',
@@ -481,6 +492,46 @@ const before: Command[] = [
 /** Palette-only entries for the tab-group layout. */
 const treeOnly: Command[] = [
   {
+    id: 'view-agents',
+    title: 'Show Agents',
+    category: 'View',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'needs you inbox main agent sub-agents subagents cli sessions chats conversations',
+    leavesManager: true,
+    run: a => a.showView('agents'),
+  },
+  {
+    id: 'view-sites',
+    title: 'Show Sites',
+    category: 'View',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'saved sites browser pinned',
+    leavesManager: true,
+    run: a => a.showView('sites'),
+  },
+  {
+    id: 'view-data',
+    title: 'Show Data',
+    category: 'View',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'database bi analytics queries reports',
+    leavesManager: true,
+    run: a => a.showView('data'),
+  },
+  {
+    id: 'view-studio',
+    title: 'Show Studio',
+    category: 'View',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'creative image video cinema music',
+    leavesManager: true,
+    run: a => a.showView('studio'),
+  },
+  {
     id: 'move-tab-other-group',
     title: 'Move tab to other group',
     category: 'Layout',
@@ -488,6 +539,55 @@ const treeOnly: Command[] = [
     engine: 'tree',
     keywords: 'tab group split move editor area',
     run: a => a.moveTabToOtherGroup(),
+  },
+];
+
+/** Entries that stand in for the retired Workspace actions menu, in both layouts. */
+const windowAndWork: Command[] = [
+  {
+    id: 'new-conversation-options',
+    title: 'New chat with options',
+    category: 'Chat',
+    keywords: 'new conversation project agent preset folder',
+    run: a => a.openNewChatWithOptions(),
+  },
+  {
+    id: 'projects-overview',
+    title: 'Projects overview',
+    category: 'Go',
+    keywords: 'overview dashboard control plane',
+    run: a => a.setManager('overview'),
+  },
+  {
+    id: 'projects-activity',
+    title: 'Activity',
+    category: 'Go',
+    keywords: 'runs tasks operations history',
+    run: a => a.setManager('tasks'),
+  },
+  {
+    id: 'detach-workspace',
+    title: 'Detach workspace',
+    category: 'Window',
+    when: 'agent',
+    keywords: 'new window popout move',
+    run: a => a.detachWorkspace(),
+  },
+  {
+    id: 'return-to-main',
+    title: 'Return to main workspace',
+    category: 'Window',
+    when: 'detached',
+    keywords: 'redock dock back window',
+    run: a => a.returnToMain(),
+  },
+  {
+    id: 'recover-windows',
+    title: 'Recover unsaved windows',
+    category: 'Window',
+    when: 'web',
+    keywords: 'crash closed unsaved files drafts',
+    run: a => a.recoverWindows(),
   },
 ];
 
@@ -544,7 +644,7 @@ const keyedCommands: Command[] = Object.entries(keyedSpecs).map(([id, spec]) => 
 }));
 
 /** Every command, in palette order. */
-export const commands: readonly Command[] = [...before, ...settingsPages, ...middle, ...treeOnly, ...keyedCommands];
+export const commands: readonly Command[] = [...before, ...settingsPages, ...middle, ...windowAndWork, ...treeOnly, ...keyedCommands];
 
 const byId = new Map(commands.map(command => [command.id, command]));
 
@@ -560,6 +660,8 @@ export function commandAvailable(command: Pick<Command, 'when' | 'engine'>, cont
   if (command.engine && command.engine !== (context.engine ?? 'legacy')) return false;
   if (command.when === 'agent') return context.workspace === 'agent';
   if (command.when === 'host-admin') return context.hostAdmin;
+  if (command.when === 'detached') return !!context.detached;
+  if (command.when === 'web') return !context.native;
   return true;
 }
 

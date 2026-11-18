@@ -22,10 +22,6 @@
     font-size: var(--text-xs);
     line-height: var(--line-xs);
   }
-  .explorer-controls .select {
-    height: var(--ide-input-h);
-    font-size: var(--ide-input-size);
-  }
   .explorer-controls > .button {
     align-self: flex-end;
   }
@@ -113,8 +109,6 @@
   .search-form .input {
     flex: 1;
     min-width: 0;
-    height: var(--ide-input-h);
-    font-size: var(--ide-input-size);
   }
   .search-results {
     flex: 1;

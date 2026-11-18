@@ -16,14 +16,14 @@ const COLLAPSED_KEY = 'termx-collapsed:';
 
 /** A row is taller when it shows a preview line, and on touch screens. */
 const previewRowHeight = 68;
-const rowHeight = (coarse: boolean) => (coarse ? 44 : 40);
+const rowHeight = (coarse: boolean, compact = false) => (coarse ? 44 : compact ? 36 : 40);
 
 /**
  * The conversation list's own state: search text and whether the search field is open, the state filter, grouping by
  * project, which project groups are collapsed (remembered per principal), and the virtualized rows. It lives with the
  * shell, not inside the sidebar, so a search or filter survives switching workspaces and back.
  */
-export function useSidebarState(options: {primaryId: string; scopeProjectId: string}) {
+export function useSidebarState(options: {primaryId: string; scopeProjectId: string; /** 36px rows, for the IDE side bar. */ compact?: boolean}) {
   const {auth} = useAuth();
   const report = useReport();
   const {sessions, projects, session, projectPins, refresh} = useWorkspaceData();
@@ -96,7 +96,7 @@ export function useSidebarState(options: {primaryId: string; scopeProjectId: str
   const virtual = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: index => (previews.get(rows[index]?.key) ? previewRowHeight : rowHeight(coarse)),
+    estimateSize: index => (previews.get(rows[index]?.key) ? previewRowHeight : rowHeight(coarse, options.compact)),
     overscan: 12,
     getItemKey: index => rows[index].key,
   });
@@ -162,6 +162,8 @@ type Props = {
   onOpenMainAgent: () => void;
   onOpenConversation: (id: string) => void;
   onFindConversation: () => void;
+  /** Show only the conversation list: the IDE side bar has its own New chat and Main agent rows. */
+  listOnly?: boolean;
 };
 
 /** Chats and agents: New chat, the main agent, filters, search and the virtualized conversation list. */
@@ -184,6 +186,8 @@ export default function AgentSidebar(props: Props) {
   const statusOf = (chat: Session) => (chat.id === session?.id ? session.latest_status : chat.latest_status);
   return (
     <>
+      {!props.listOnly && (
+        <>
       <Button
         variant="ghost"
         className="nav-action sidebar-new"
@@ -204,8 +208,10 @@ export default function AgentSidebar(props: Props) {
         <Home size={16} aria-hidden="true" />
         <span>Main agent</span>
       </Button>
+        </>
+      )}
       <div className="sidebar-section-heading">
-        <span>Recent chats</span>
+        <span>{props.listOnly ? 'Chats' : 'Recent chats'}</span>
         <Button
           variant="ghost"
           size="icon"

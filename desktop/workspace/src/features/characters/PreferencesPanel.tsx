@@ -3,6 +3,7 @@ import {Button} from '../../components/ui/button';
 import {Select} from '../../components/ui/select';
 import {SettingsRow, SettingsSection} from '../../components/ui/settings-section';
 import {companionHome, type CompanionCapabilities} from '../../lib/companion-native';
+import {useSidebarSprite, writeSidebarSprite} from '../../lib/sidebar-sprite';
 import type {CompanionPreferences} from '../../lib/characters';
 import type {SavePreferences} from './use-character-library';
 import {ActionError, useAction} from './use-action';
@@ -22,6 +23,7 @@ interface Props {
 
 export function PreferencesPanel({preferences, capabilities, save}: Props) {
   const action = useAction();
+  const sprite = useSidebarSprite();
   const change = (build: Parameters<SavePreferences>[0]) => void action.run(() => save(build));
   return (
     <SettingsSection
@@ -88,6 +90,12 @@ export function PreferencesPanel({preferences, capabilities, save}: Props) {
             onChange={() => change(current => ({reduced_motion: !current.reduced_motion}))}
           />
         )}
+      </SettingsRow>
+      <SettingsRow
+        label="Show a character beside Main agent"
+        description="In the new workspace layout the character stays still next to the Main agent row. It is off by default and saved on this device."
+      >
+        {control => <input {...control} type="checkbox" checked={sprite} onChange={() => writeSidebarSprite(!sprite)} />}
       </SettingsRow>
       <SettingsRow label="Characters at home" description={capabilities?.reason}>
         <Button variant="outline" onClick={() => void action.run(() => companionHome())}>

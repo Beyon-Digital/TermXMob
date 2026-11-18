@@ -1,13 +1,20 @@
 import {lazy, type Dispatch, type ReactNode, type SetStateAction} from 'react';
 import {Button} from '../components/ui/button';
 import ControlPlane, {type ControlPage} from '../features/ControlPlane';
+import FileTab from '../features/editor/FileTab';
+import ProblemsTab from '../features/editor/ProblemsTab';
+import TerminalTab from '../features/terminal/TerminalTab';
 import type {Project} from '../lib/api';
 import type {DockPanel} from '../lib/docking';
 import type {Bindings} from '../lib/keybindings';
 import type {Tab, TabKind} from '../lib/layout/model';
+import type {LayoutAction} from '../lib/layout/reduce';
+import type {StudioProjectActivity} from '../lib/studio-draft-state';
+import type {StudioSection} from '../lib/workspace-mode';
 import type {ThemePreference} from '../lib/theme';
 import type {Layout} from '../lib/use-layout';
 import {useAuth} from './AuthGate';
+import {useReport} from './errors';
 import SettingsHost, {type ManagerScope} from './SettingsHost';
 import {useWorkspaceData} from './WorkspaceDataProvider';
 import {workflowSessionId} from './WorkflowsHost';
@@ -15,13 +22,13 @@ import {workflowSessionId} from './WorkflowsHost';
 const Workflows = lazy(() => import('../features/Workflows'));
 const DataStudio = lazy(() => import('../features/data/DataStudio'));
 const MediaWorkspace = lazy(() => import('../features/MediaWorkspace'));
+const Preview = lazy(() => import('../features/Preview'));
+const Debugger = lazy(() => import('../features/Debugger'));
 
 /** The tab kinds whose content is one of the seven Agent panels, and which panel. */
 const PANEL_OF_KIND: Partial<Record<TabKind, DockPanel>> = {
   chat: 'conversation',
-  file: 'editor',
   diff: 'review',
-  terminal: 'terminal',
   browser: 'browser',
   computer: 'computer',
   artifacts: 'artifacts',
@@ -30,9 +37,10 @@ const PANEL_OF_KIND: Partial<Record<TabKind, DockPanel>> = {
 /**
  * What a tab needs from the shell, beyond the panels themselves.
  *
- * Every kind is a singleton in this release, so a tab's `ref` retargets it: the Chat tab follows the selected
- * conversation, a Settings tab shows the category in its `ref`, a Projects tab one of Overview, Projects or Activity, a
- * Workflows tab a run. The panels wrapped here are the same components the old dock shows, unchanged.
+ * File and terminal tabs are multi-instance: a file tab shows the buffer named by its `ref`, a terminal tab the shell named by
+ * its `ref`. Every other kind is a singleton, so its `ref` retargets it: the Chat tab follows the selected conversation, a
+ * Settings tab shows the category in its `ref`, a Projects tab one of Overview, Projects or Activity, a Workflows tab a run.
+ * The panels wrapped here are the same components the old dock shows, unchanged.
  */
 export type TabHost = {
   /** One of the seven Agent panels, as the old dock renders it. */
@@ -56,6 +64,25 @@ export type TabHost = {
   openKind: (kind: TabKind) => void;
   closeTab: (tab: Tab) => void;
   setDirty: (tab: string, dirty: boolean) => void;
+  dispatch: (action: LayoutAction) => void;
+  /** The shells that terminal tabs already show, so an unattached terminal tab never takes one of them. */
+  terminalRefs: readonly string[];
+  /** Open a file in a tab of its own, at a line when one is given. */
+  openFile: (path: string, line?: number) => void;
+  /** Show Quick open. */
+  findFile: () => void;
+  /** Data and Studio draw their navigation in the side bar. */
+  data: {navigationHost: HTMLElement | null};
+  studio: {
+    section: StudioSection;
+    onSection: (section: StudioSection) => void;
+    projectId: string;
+    projectName?: string;
+    readOnly: boolean;
+    onProjectActivity: (activity: StudioProjectActivity) => void;
+    onConfigureProvider: () => void;
+    onContext: (text: string, attachments: unknown[]) => void;
+  };
   onNew: (projectId?: string) => void;
   onAddProject: () => void;
   /** Open a conversation from the Projects page, in a given view. */
@@ -65,12 +92,34 @@ export type TabHost = {
   onContext: (text: string, attachments: unknown[]) => void;
 };
 
+/** What the shell hands the tab layout; the layout adds the panels, the close and dirty hooks, `dispatch` and the shell list. */
+export type TabHostInput = Omit<TabHost, 'panel' | 'closeTab' | 'setDirty' | 'dispatch' | 'terminalRefs'>;
+
 type Props = {tab: Tab; visible: boolean; host: TabHost};
 
 export default function TabContent({tab, visible, host}: Props) {
   const panel = PANEL_OF_KIND[tab.kind];
   if (panel) return <>{host.panel(panel, visible)}</>;
   switch (tab.kind) {
+    case 'file':
+      return (
+        <FileTab
+          fileKey={tab.ref}
+          visible={visible}
+          project={host.project}
+          onFindFile={host.findFile}
+          onOpenFile={host.openFile}
+          onClose={() => host.closeTab(tab)}
+        />
+      );
+    case 'terminal':
+      return <TerminalTabHost tab={tab} visible={visible} host={host} />;
+    case 'problems':
+      return <ProblemsTab project={host.project} onOpenFile={host.openFile} />;
+    case 'preview':
+      return <PreviewTab host={host} />;
+    case 'debug':
+      return <DebugTab host={host} />;
     case 'settings':
       return <SettingsTab tab={tab} host={host} />;
     case 'projects':
@@ -78,7 +127,7 @@ export default function TabContent({tab, visible, host}: Props) {
     case 'workflows':
       return <WorkflowsTab tab={tab} visible={visible} host={host} />;
     case 'data':
-      return <DataTab visible={visible} />;
+      return <DataTab visible={visible} host={host} />;
     case 'studio':
       return <StudioTab visible={visible} host={host} />;
     default:
@@ -165,11 +214,56 @@ function WorkflowsTab({tab, visible, host}: {tab: Tab; visible: boolean; host: T
   );
 }
 
-function DataTab({visible}: {visible: boolean}) {
+function TerminalTabHost({tab, visible, host}: {tab: Tab; visible: boolean; host: TabHost}) {
+  const {auth} = useAuth();
+  const {session} = useWorkspaceData();
+  const report = useReport();
+  return (
+    <TerminalTab
+      ptyId={tab.ref}
+      tabDomId={'tab-' + tab.id}
+      visible={visible}
+      ownerId={auth.principal.id}
+      project={host.project}
+      session={session}
+      taken={new Set(host.terminalRefs.filter(ref => ref !== tab.ref))}
+      onAttach={id => host.dispatch({type: 'setRef', tab: tab.id, ref: id})}
+      onEnded={() => host.dispatch({type: 'closeTab', tab: tab.id, force: true})}
+      onError={report}
+    />
+  );
+}
+
+function PreviewTab({host}: {host: TabHost}) {
+  const report = useReport();
+  return (
+    <div className="panel-pane">
+      <Preview project={host.project} onError={report} />
+    </div>
+  );
+}
+
+function DebugTab({host}: {host: TabHost}) {
+  const report = useReport();
+  const {session} = useWorkspaceData();
+  return (
+    <div className="panel-pane">
+      <Debugger project={host.project} workspaceSession={session?.id} cloudRunner={!!session?.runner_id} onError={report} />
+    </div>
+  );
+}
+
+function DataTab({visible, host}: {visible: boolean; host: TabHost}) {
   const {auth, locked} = useAuth();
   return (
     <div className="workspace-data-host">
-      <DataStudio ownerId={auth.principal.id} visible={visible} observing={visible} locked={locked} />
+      <DataStudio
+        ownerId={auth.principal.id}
+        visible={visible}
+        observing={visible}
+        locked={locked}
+        navigationHost={host.data.navigationHost ?? undefined}
+      />
     </div>
   );
 }
@@ -177,18 +271,25 @@ function DataTab({visible}: {visible: boolean}) {
 function StudioTab({visible, host}: {visible: boolean; host: TabHost}) {
   const {auth, locked} = useAuth();
   const {load} = useWorkspaceData();
+  const {studio} = host;
   return (
     <div className="workspace-studio-host">
       <MediaWorkspace
         key={auth.principal.id}
+        section={studio.section}
+        onSectionChange={studio.onSection}
+        presentation="standalone"
         ownerId={auth.principal.id}
-        projectId={host.project?.id ?? null}
-        projectName={host.project?.name}
+        projectId={studio.projectId || null}
+        projectName={studio.projectName}
+        readOnly={studio.readOnly}
+        onProjectActivity={studio.onProjectActivity}
         visible={visible}
         observing={visible}
         locked={locked}
+        onConfigureProvider={studio.onConfigureProvider}
         onProvidersChanged={() => void load()}
-        onContext={host.onContext}
+        onContext={studio.onContext}
       />
     </div>
   );

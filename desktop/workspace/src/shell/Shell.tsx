@@ -18,6 +18,7 @@ import WorkspaceBody from './WorkspaceBody';
 import WorkspaceDataProvider, {useWorkspaceData} from './WorkspaceDataProvider';
 import WorkspaceHeader from './WorkspaceHeader';
 import {useShellNavigation, type ShellNavigation} from './navigation-state';
+import IdeFrame, {type Quick} from './IdeFrame';
 import {useWorkspaceThemeScope} from './routes';
 import {
   isControlPage,
@@ -71,7 +72,11 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
   const {session, selected, setSelected, setSession, sessionCache, sessionsState, workspaceActive} =
     useWorkspaceData();
   const [theme, setTheme] = useTheme();
+  const treeEngine = engine === 'tree';
+  // The old layout's palette lists commands; the new layout's command center finds files too (QuickOpenDialog).
   const [palette, setPalette] = useState(false);
+  const [quick, setQuick] = useState<Quick>({open: false, commandsFirst: false});
+  const transferRef = useRef<ReturnType<typeof useWindowTransfer> | null>(null);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [layoutsOpen, setLayoutsOpen] = useState(false);
   useWorkspaceThemeScope(workspace);
@@ -94,7 +99,7 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
     report,
     theme,
     setTheme,
-    palette,
+    palette: treeEngine ? quick.open : palette,
   });
   const nav = useWorkspaceNavigation({navigation, hosts, layout, report});
   navigationRef.current = nav;
@@ -123,9 +128,15 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
     nav,
     layout,
     openNewChat: () => newChat.openNewChat(),
-    togglePalette: () => setPalette(value => !value),
+    togglePalette: () =>
+      treeEngine ? setQuick(value => ({open: !value.open, commandsFirst: true})) : setPalette(value => !value),
     openSavedLayouts: () => setLayoutsOpen(true),
     toggleFullscreen: () => void chrome.toggleFullscreen(),
+    openNewChatWithOptions: () => newChat.openNewChatWithOptions(),
+    openQuickOpen: () => setQuick({open: true, commandsFirst: false}),
+    detachWorkspace: () => transferRef.current?.detach(),
+    returnToMain: () => void transferRef.current?.redock(),
+    recoverWindows: () => void transferRef.current?.recoverWindows(),
   });
   const transfer = useWindowTransfer({
     selected,
@@ -141,9 +152,14 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     },
   });
-  const coordination = useCoordination({workspace, manager});
+  transferRef.current = transfer;
+  const coordination = useCoordination({workspace, manager, pinned: treeEngine});
   const botsWaiting = useBotsNeedYouCount(!!auth && workspace !== 'data');
-  const sidebar = useSidebarState({primaryId: nav.primaryId, scopeProjectId: nav.project?.id || nav.projectWorkbenchId});
+  const sidebar = useSidebarState({
+    primaryId: nav.primaryId,
+    scopeProjectId: nav.project?.id || nav.projectWorkbenchId,
+    compact: treeEngine,
+  });
   const changesSource = useSessionChanges({
     ownerId: auth?.principal.id,
     project: nav.project,
@@ -174,6 +190,98 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
   };
   const context = statusContext(facts);
   const shellManager = pageBehindSettings(manager, nav.previousManager.current);
+
+  const overlays = (
+    <ShellOverlays
+      navigation={navigation}
+      nav={nav}
+      hosts={hosts}
+      layout={layout}
+      coordination={coordination}
+      newChat={newChat}
+      transfer={transfer}
+      error={error}
+      clearError={clearError}
+      report={report}
+      botsWaiting={botsWaiting}
+      theme={theme}
+      setTheme={setTheme}
+      bindings={commands.bindings}
+      setBindings={commands.setBindings}
+      commandContext={commands.context}
+      onRunCommand={command => commands.runCommand(command, {source: 'palette', terminalFocused: false})}
+      palette={treeEngine ? false : palette}
+      setPalette={setPalette}
+      addProjectOpen={addProjectOpen}
+      setAddProjectOpen={setAddProjectOpen}
+      layoutsOpen={layoutsOpen}
+      setLayoutsOpen={setLayoutsOpen}
+    />
+  );
+
+  if (layout.engine === 'tree') {
+    return (
+      <>
+        <IdeFrame
+          nav={nav}
+          hosts={hosts}
+          layout={layout}
+          coordination={coordination}
+          changesSource={changesSource}
+          sidebar={sidebar}
+          commands={commands}
+          botsWaiting={botsWaiting}
+          online={chrome.online}
+          locked={locked}
+          redocking={transfer.redocking}
+          registering={newChat.registering}
+          workspace={workspace}
+          quick={quick}
+          setQuick={setQuick}
+          onNewChat={() => newChat.openNewChat()}
+          onAddProject={() => setAddProjectOpen(true)}
+          openCaptureSurface={surface => {
+            nav.setManager('');
+            layout.chooseLayout(surface);
+          }}
+          renderBody={extras => (
+            <WorkspaceBody
+              navigation={navigation}
+              nav={nav}
+              hosts={hosts}
+              layout={layout}
+              coordination={coordination}
+              changesSource={changesSource}
+              taskId={runningBrowserTaskId(session)}
+              botsWaiting={botsWaiting}
+              theme={theme}
+              setTheme={setTheme}
+              bindings={commands.bindings}
+              setBindings={commands.setBindings}
+              controlPage={controlPage}
+              openNewChat={id => newChat.openNewChat(id)}
+              openAddProject={() => setAddProjectOpen(true)}
+              toggleFullscreen={() => void chrome.toggleFullscreen()}
+              onDetach={transfer.detachSurface}
+              report={report}
+              openFile={extras.openFile}
+              findFile={extras.findFile}
+              hideStrip={extras.hideStrip}
+              chosenTab={extras.chosenTab}
+              onChosenTab={extras.onChosenTab}
+            />
+          )}
+          overlays={overlays}
+        />
+        <StudioProjectSwitchDialog
+          open={!!hosts.studioProjectGuard.pending && !locked}
+          busy={hosts.studioProjectGuard.activity.busy}
+          onDecision={hosts.studioProjectGuard.decide}
+        />
+        {transfer.redocking && !locked && <RedockCover />}
+      </>
+    );
+  }
 
   return (
     <>
@@ -288,31 +396,7 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
             onOpenPalette={() => setPalette(true)}
           />
         </div>
-        <ShellOverlays
-          navigation={navigation}
-          nav={nav}
-          hosts={hosts}
-          layout={layout}
-          coordination={coordination}
-          newChat={newChat}
-          transfer={transfer}
-          error={error}
-          clearError={clearError}
-          report={report}
-          botsWaiting={botsWaiting}
-          theme={theme}
-          setTheme={setTheme}
-          bindings={commands.bindings}
-          setBindings={commands.setBindings}
-          commandContext={commands.context}
-          onRunCommand={command => commands.runCommand(command, {source: 'palette', terminalFocused: false})}
-          palette={palette}
-          setPalette={setPalette}
-          addProjectOpen={addProjectOpen}
-          setAddProjectOpen={setAddProjectOpen}
-          layoutsOpen={layoutsOpen}
-          setLayoutsOpen={setLayoutsOpen}
-        />
+        {overlays}
       </div>
       <StudioProjectSwitchDialog
         open={!!hosts.studioProjectGuard.pending && !locked}

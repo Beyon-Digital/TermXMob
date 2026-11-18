@@ -340,6 +340,11 @@ export function useLegacyLayout(deps: LayoutDeps): LegacyController {
     chooseLayout,
     openSurface,
     focusPanel,
+    showSideBarView: view => {
+      if (view === 'explorer' || view === 'search') chooseLayout('workbench');
+      else if (view === 'scm') openSurface('review');
+      else chooseLayout('chat');
+    },
     openManager: () => false,
     revealConversation: () => {
       setRight(true);

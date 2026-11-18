@@ -135,6 +135,21 @@ describe('command registry', () => {
     }
   });
 
+  it('shows a side bar view from the view commands, and the old dock\'s Files and Changes through the same entry', () => {
+    const showView = vi.fn();
+    const actions = {showView} as unknown as CommandActions;
+    const run = (id: string) => findCommand(id)!.run(actions, {source: 'shortcut', terminalFocused: false});
+    run('explorer');
+    run('search');
+    run('sourceControl');
+    run('view-agents');
+    run('view-sites');
+    run('view-data');
+    run('view-studio');
+    expect(showView.mock.calls.map(call => call[0])).toEqual(['explorer', 'search', 'scm', 'agents', 'sites', 'data', 'studio']);
+    for (const id of ['view-agents', 'view-sites', 'view-data', 'view-studio']) expect(findCommand(id)?.engine, id).toBe('tree');
+  });
+
   it('toggles focus: into the terminal, and back to the conversation from inside it', () => {
     const actions = {openSurface: vi.fn(), focusPanel: vi.fn()} as unknown as CommandActions;
     keyedSpecs.focusTerminal.run(actions, {source: 'shortcut', terminalFocused: false});
@@ -192,7 +207,10 @@ describe('command palette', () => {
 
   it('lists exactly the registry for the context, in registry order, with the stored shortcuts', () => {
     const entries = paletteEntries(agent, {...defaults, palette: 'Mod+Alt+P'}, () => {});
-    expect(entries.map(entry => entry.id)).toEqual(commands.filter(command => command.engine !== 'tree').map(command => command.id));
+    // 'Return to main workspace' exists only in a detached window.
+    expect(entries.map(entry => entry.id)).toEqual(
+      commands.filter(command => command.engine !== 'tree' && command.when !== 'detached').map(command => command.id),
+    );
     expect(entries.find(entry => entry.id === 'palette')?.shortcut).toBe('Mod+Alt+P');
     expect(entries.find(entry => entry.id === 'lock')?.shortcut).toBeUndefined();
     for (const category of settingsCategories)

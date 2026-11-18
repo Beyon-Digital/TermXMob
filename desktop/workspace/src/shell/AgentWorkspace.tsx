@@ -4,7 +4,7 @@ import type {WindowPanel} from '../lib/window-journal';
 import type {WorkspaceMode} from '../lib/workspace-mode';
 import {useAgentPanels, type AgentPanelProps} from './agent-panels';
 import type {LayoutController, LegacyController} from './layout-controller';
-import type {TabHost} from './tab-content';
+import type {TabHostInput} from './tab-content';
 import TreeWorkspace from './TreeWorkspace';
 import {useAuth} from './AuthGate';
 
@@ -20,7 +20,11 @@ type Props = {
   /** Open a surface in its own window. */
   onDetach: (panel: WindowPanel) => void;
   /** What the tab layout's Settings, Projects, Workflows, Data and Studio tabs need. Unused by the old dock. */
-  tabHost: Omit<TabHost, 'panel' | 'closeTab' | 'setDirty'>;
+  tabHost: TabHostInput;
+  /** Phone: the tab layout draws no tab strips. */
+  hideStrip?: boolean;
+  chosenTab?: string | null;
+  onChosenTab?: (id: string) => void;
 };
 
 /**
@@ -38,6 +42,9 @@ export default function AgentWorkspace(props: Props) {
         panels={{...props.panels, bottom: false}}
         host={props.tabHost}
         onDetach={props.onDetach}
+        hideStrip={props.hideStrip}
+        chosenTab={props.chosenTab}
+        onChosenTab={props.onChosenTab}
       />
     );
   }

@@ -1,6 +1,6 @@
 import type {Dispatch, PointerEvent as ReactPointerEvent, SetStateAction} from 'react';
 import type {DockGeometry, DockMap, DockPanel} from '../lib/docking';
-import type {Layout as TreeLayout, Tab} from '../lib/layout/model';
+import type {Layout as TreeLayout, SideBarView, Tab} from '../lib/layout/model';
 import type {LayoutAction} from '../lib/layout/reduce';
 import type {ShellEngine} from '../lib/shell-engine';
 import type {ThemePreference} from '../lib/theme';
@@ -65,6 +65,11 @@ export interface LayoutCommon {
   // Navigation
   chooseLayout: (layout: Layout, reveal?: DockPanel) => void;
   openSurface: (surface: Surface) => void;
+  /**
+   * Show a side bar view (Agents, Explorer, Search, Source control, Sites, Data, Studio). The tab layout switches its side
+   * bar; the old dock has no views, so it shows the surface that matches (Files, Changes or the chat).
+   */
+  showSideBarView: (view: SideBarView) => void;
   focusPanel: (panel: DockPanel) => void;
   /**
    * Open a manager or settings page. The tab layout opens it as a tab and returns `true`; the old dock returns `false`
@@ -125,6 +130,12 @@ export interface LegacyView {
   changeDock: (map: DockMap) => void;
 }
 
+/**
+ * Asked before tabs are closed. It returns true when it took over (it asks the person, then calls `proceed`), and false
+ * when the tabs can close now. File tabs with unsaved edits ask first; terminal tabs end their shell.
+ */
+export type CloseGuard = (tabs: Tab[], proceed: () => void) => boolean;
+
 /** The tab-group layout. */
 export interface TreeView {
   layout: TreeLayout;
@@ -134,6 +145,7 @@ export interface TreeView {
   /** Tabs with unsaved edits. */
   dirty: ReadonlySet<string>;
   setDirty: (tab: string, dirty: boolean) => void;
+  setCloseGuard: (guard: CloseGuard | null) => void;
 }
 
 export type LegacyController = LayoutCommon & {engine: 'legacy'; legacy: LegacyView};

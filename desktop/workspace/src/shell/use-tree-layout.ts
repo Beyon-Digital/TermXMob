@@ -10,6 +10,7 @@ import {
   newTab,
   type Book,
   type Layout as TreeLayout,
+  type SideBarView,
   type Tab,
   type TabKind,
 } from '../lib/layout/model';
@@ -30,7 +31,7 @@ import type {Layout} from '../lib/use-layout';
 import {detachedBrowser, type WindowPanel} from '../lib/window-journal';
 import type {DockPanel} from '../lib/docking';
 import type {PanelCommand, Surface} from './commands';
-import type {LayoutDeps, TreeController} from './layout-controller';
+import type {CloseGuard, LayoutDeps, TreeController} from './layout-controller';
 import {routeInitialLayout, workspaceRoute} from './routes';
 import {useSidebarResize} from './use-sidebar-resize';
 import {useSurfaceRequests} from './use-surface-requests';
@@ -101,6 +102,23 @@ function reducer(state: LayoutState, action: Action): LayoutState {
 /** Actions that can drop a Settings tab with unsaved edits without going through its own close. */
 const DISCARDING: LayoutAction['type'][] = ['closeOthers', 'closeGroup', 'loadNamed', 'resetToDefault'];
 
+/** The tabs an action would close, for the close guard. A forced close (a shell that already ended) is never asked about. */
+export function closing(book: TreeLayout, action: LayoutAction): Tab[] {
+  if (action.type === 'closeTab') {
+    if (action.force) return [];
+    const found = allGroups(book).flatMap(group => group.tabs).find(tab => tab.id === action.tab);
+    return found && !found.pinned ? [found] : [];
+  }
+  if (action.type === 'closeGroup') {
+    return allGroups(book).find(group => group.id === action.group)?.tabs.filter(tab => !tab.pinned) ?? [];
+  }
+  if (action.type === 'closeOthers') {
+    const group = allGroups(book).find(item => item.tabs.some(tab => tab.id === action.tab));
+    return group?.tabs.filter(tab => tab.id !== action.tab && !tab.pinned) ?? [];
+  }
+  return [];
+}
+
 /** A layout of one tab, for a window that was detached to show a single surface. */
 export function oneTabLayout(kind: TabKind): TreeLayout {
   const group = newGroup([newTab(kind)]);
@@ -135,17 +153,29 @@ export function useTreeLayout(deps: LayoutDeps): TreeController {
   const layout = state.book.current;
   const detached = isDetachedWindow() || detachedBrowser;
 
+  // The host asks before tabs with unsaved files or live shells close (see `CloseGuard`).
+  const guard = useRef<CloseGuard | null>(null);
+  const setCloseGuard = useCallback((next: CloseGuard | null) => {
+    guard.current = next;
+  }, []);
+
   const dispatch = useCallback((action: LayoutAction) => {
     const hasSettings = allTabs(latest.current.book.current).some(tab => tab.kind === 'settings');
-    if (hasSettings && DISCARDING.includes(action.type)) leaveSettings(() => dispatchRaw(action));
-    else dispatchRaw(action);
+    const run = () => {
+      if (hasSettings && DISCARDING.includes(action.type)) leaveSettings(() => dispatchRaw(action));
+      else dispatchRaw(action);
+    };
+    const tabs = closing(latest.current.book.current, action);
+    if (tabs.length && guard.current?.(tabs, run)) return;
+    run();
   }, []);
 
   const closeTab = useCallback((tab: Tab) => {
     const close = () => dispatchRaw({type: 'closeTab', tab: tab.id});
     // Settings keeps its dirty-form guard: closing the tab asks first, with the same discard dialog.
-    if (tab.kind === 'settings') leaveSettings(close);
-    else close();
+    const run = () => (tab.kind === 'settings' ? leaveSettings(close) : close());
+    if (guard.current?.([tab], run)) return;
+    run();
   }, []);
 
   // Restore this principal's layout.
@@ -221,6 +251,12 @@ export function useTreeLayout(deps: LayoutDeps): TreeController {
       (element?.querySelector<HTMLElement>('textarea,input,[tabindex="0"],button') || element)?.focus();
     }, 350);
   }
+  function showSideBarView(view: SideBarView) {
+    setWorkspaceState('agent');
+    dispatchRaw({type: 'setSideBarView', view});
+    dispatchRaw({type: 'setSideBar', visible: true});
+    if (view === 'data' || view === 'studio') open(view);
+  }
   function openManager(page: string, ref?: string) {
     if (!page) return true;
     const target = managerTab(page);
@@ -266,6 +302,7 @@ export function useTreeLayout(deps: LayoutDeps): TreeController {
     surface: (focused && windowPanelForKind(focused.kind)) || 'chat',
     chooseLayout,
     openSurface,
+    showSideBarView,
     focusPanel,
     openManager,
     revealConversation: () => focusPanel('conversation'),
@@ -324,10 +361,8 @@ export function useTreeLayout(deps: LayoutDeps): TreeController {
         const to = groups[(from + 1) % groups.length];
         if (to && groups.length > 1) dispatchRaw({type: 'moveTab', tab: tab.id, group: to.id});
       },
-      newTerminal: () => {
-        open('terminal');
-        requestNewTerminal();
-      },
+      // The terminal host starts the shell and opens its tab; it may not be mounted yet, so the request waits for it.
+      newTerminal: () => requestNewTerminal(),
     },
     requestQuickOpen,
     requestBrowserCommand,
@@ -336,6 +371,7 @@ export function useTreeLayout(deps: LayoutDeps): TreeController {
       dispatch,
       closeTab,
       dirty,
+      setCloseGuard,
       setDirty: (tab, value) =>
         setDirtyTabs(previous => {
           if (previous.has(tab) === value) return previous;

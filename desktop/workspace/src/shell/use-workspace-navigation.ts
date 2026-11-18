@@ -4,6 +4,7 @@ import {json, request, type Project, type Session} from '../lib/api';
 import {isSettingsCategory} from '../lib/settings-categories';
 import {readStudioSection, readWorkspaceMode, type StudioSection, type WorkspaceMode} from '../lib/workspace-mode';
 import {workspaceFilePath} from '../lib/workspace-files';
+import {openFileTab} from '../features/editor/file-navigation';
 import type {IncomingContext} from '../lib/context';
 import {useAuth} from './AuthGate';
 import type {FileRequest} from './agent-panels';
@@ -64,6 +65,7 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
   const primaryFlight = useRef<Promise<Session> | null>(null);
   const navigationIntent = useRef(0);
   const workspaceControlFocus = useRef<WorkspaceMode | null>(null);
+  const pendingView = useRef<'data' | 'studio' | null>(null);
   useLayoutEffect(() => {
     projectWorkbenchNow.current = projectWorkbenchId;
   });
@@ -158,6 +160,19 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
   }
 
   function setWorkspace(value: WorkspaceMode, afterOpen?: () => void) {
+    // In the tab layout, Studio and Data are a side bar view and a tab; the workspace stays the tab layout.
+    if (tree && (value === 'data' || value === 'studio')) {
+      const show = () => {
+        navigationIntent.current++;
+        if (value === 'studio' && !hosts.studioProjectId && project) hosts.setStudioProjectId(project.id);
+        setWorkspaceState('agent');
+        afterOpen?.();
+        layout.showSideBarView(value);
+      };
+      if (isSettingsCategory(manager)) leaveSettings(show);
+      else show();
+      return;
+    }
     const open = () => {
       navigationIntent.current++;
       setWorkspaceState(value);
@@ -250,6 +265,10 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
       report(Error('This file reference is outside the selected conversation checkout.'));
       return;
     }
+    if (layout.engine === 'tree') {
+      openFileTab(layout.tree.dispatch, {project, session}, relative, line);
+      return;
+    }
     setFileRequest({id: performance.now(), sessionId: session.id, root, path: relative, line});
     layout.openSurface('editor');
   }
@@ -323,13 +342,23 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
     setProjectId(route.project);
     setProjectWorkbenchId(routeWorkbenchProject(route));
     projectWorkbenchNow.current = routeWorkbenchProject(route);
-    setWorkspaceState(mode);
-    hosts.setStudioVisited(mode === 'studio');
-    hosts.setDataVisited(mode === 'data');
+    // In the tab layout `?workspace=data` and `?workspace=studio` open the view and its tab once the layout is restored.
+    const viewMode = tree && (mode === 'data' || mode === 'studio') ? mode : null;
+    pendingView.current = viewMode;
+    setWorkspaceState(viewMode ? 'agent' : mode);
+    hosts.setStudioVisited(!tree && mode === 'studio');
+    hosts.setDataVisited(!tree && mode === 'data');
     hosts.setWorkflowsVisited(route.manager === 'workflows');
     hosts.setWorkflowRunId(null);
     setManager(route.manager);
   }, [auth?.principal.id]);
+
+  useEffect(() => {
+    if (!auth || !layout.ready || !pendingView.current) return;
+    const view = pendingView.current;
+    pendingView.current = null;
+    layout.showSideBarView(view);
+  }, [auth?.principal.id, layout.ready]);
 
   // With nothing selected and nothing asked for in the address, open the main agent.
   useEffect(() => {
@@ -355,12 +384,18 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
     projectWorkbenchId,
     onRoute: ({route, mode, studioSection: section}) => {
       navigationIntent.current++;
-      setWorkspaceState(mode);
       hosts.setStudioSection(section);
-      if (mode === 'data') hosts.setDataVisited(true);
-      if (mode === 'studio') {
-        if (!hosts.studioVisited) hosts.setStudioProjectId(project?.id || '');
-        hosts.setStudioVisited(true);
+      if (tree && (mode === 'data' || mode === 'studio')) {
+        // The tab layout shows Data and Studio as a side bar view and a tab, not as a workspace.
+        setWorkspaceState('agent');
+        layout.showSideBarView(mode);
+      } else {
+        setWorkspaceState(mode);
+        if (mode === 'data') hosts.setDataVisited(true);
+        if (mode === 'studio') {
+          if (!hosts.studioVisited) hosts.setStudioProjectId(project?.id || '');
+          hosts.setStudioVisited(true);
+        }
       }
       setSelected(route.selected);
       setSession(null);
