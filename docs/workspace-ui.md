@@ -7,7 +7,7 @@ TermX is moving from a ChatGPT-style chat frame to an **agent-first IDE shell**:
 | Slice | Scope | State |
 | --- | --- | --- |
 | **U0 Foundations** | One token file, Inter and JetBrains Mono, CSS layers, design guard, 720px chat column | Landed in this branch |
-| U1 Editor and terminal polish | Editor and ANSI themes, languages, find, fold, terminal tabs | Planned |
+| **U1 Editor and terminal polish** | Editor and ANSI themes, languages, find, fold, terminal tabs | Landed in this branch, on the current shell |
 | U2 Decompose `App.tsx` and commands | `shell/routes.ts`, one command registry feeding palette, keys and menus | Planned |
 | U3 Layout engine | Recursive split tree, tab groups, v1 layout migration, detach mapping | Planned |
 | U4 Chrome | Activity bar, side bar, title and status bars, mobile projection; Settings, Projects, Workflows as tabs | Planned |
@@ -16,6 +16,11 @@ TermX is moving from a ChatGPT-style chat frame to an **agent-first IDE shell**:
 | U7 Completion | Studio and Data as views, native menus, flip the flag, delete the old dock and aliases, guard budgets to zero | Planned |
 
 The IDE shell is built behind `?shell=ide` and a Settings toggle until U7. The running app is still the chat-first shell, restyled by U0 only through tokens, fonts and one column width. No layout, dock, editor or terminal behaviour changed in U0.
+
+### U1: editor and terminal (current shell)
+
+- **Editor** (`src/features/Workbench.tsx`, `src/features/editor/`). `editor-theme.ts` is a CodeMirror theme made only of CSS variables (`--bg`, `--text`, `--surface-2`, `--selection`, `--syntax-*`, the diff tints), so light, dark and system switch without reconfiguring or re-creating the editor; the theme test fails on a literal colour. The grammar comes from the file extension through the lazily loaded `@codemirror/language-data` (`language.ts`); an unknown extension is plain text. The editor has line numbers, active-line highlight, a fold gutter, bracket matching, find and replace (`Mod+F`; `Mod+Alt+F` focuses replace) and breadcrumbs under the tab strip. Code is 14/20 mono; the caret stops blinking under `prefers-reduced-motion`.
+- **Terminal** (`src/features/TerminalPanel.tsx`, `src/features/terminal/`). `terminal-theme.ts` reads the 16 `--ansi-*` colours, `--bg`, `--text`, `--accent` and `--selection` from computed variables and re-applies them when `data-theme`, the `dark` class or the system colour scheme changes. Sessions are Radix tabs (36px, arrow keys, Home, End) with one xterm per PTY, each kept mounted and connected while its tab is hidden. `+` opens a terminal, the tab mark or the toolbar's **Close terminal** ends the shell (`delete_session`). `Mod+F` in the terminal opens find (Control+Shift+F off macOS; plain Control+F stays shell input); web links open on Command-click or Control-click. The PTY websocket protocol is unchanged.
 
 ## Visual baseline
 

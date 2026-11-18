@@ -25,9 +25,6 @@
 .workbench .bottom-panel>nav{gap:17px;padding:0 13px;height:33px;min-height:33px;border-bottom:1px solid color-mix(in srgb,var(--border) 40%,transparent)}
 .workbench .bottom-panel>nav button{font-size:11px;padding:9px 0 7px;white-space:nowrap;border-bottom:1px solid transparent}
 .workbench .bottom-panel>nav button.active{border-bottom-color:var(--foreground)}
-.workbench .terminal-toolbar{gap:9px;padding:0 13px;min-height:27px;height:27px}
-.workbench .terminal-toolbar .button{height:25px;font-size:11px;padding:2px 6px;border-radius:3px}
-.workbench .terminal-keyboard-hint{display:none}
 .problems-tab-pane{flex:1;min-height:0;overflow:auto;font-size:12px;padding:7px 0}
 .problems-tab-pane>p{padding:9px 15px;color:var(--secondary)}
 .problem-row{display:flex;align-items:center;gap:15px;width:100%;text-align:left;padding:5px 15px;font-size:12px}
@@ -53,5 +50,5 @@
 @media(max-width:560px){.workbench .file-explorer{width:145px;min-width:130px}.workbench .bottom-panel>nav{gap:8px;padding:0 8px}.workbench .bottom-panel>nav button{font-size:11px}.problem-row{align-items:flex-start;flex-direction:column;gap:3px}}
 @media(prefers-reduced-motion:reduce){.dock-workspace .dock-pane-header>svg{transition:none}}
 
-.explorer-empty-state{display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:14px;font-size:12px;line-height:1.6;color:var(--secondary)}.explorer-empty-state p{margin:0}.terminal-empty{margin:0;padding:8px 12px;font-size:12px;color:var(--secondary)}
+.explorer-empty-state{display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:14px;font-size:12px;line-height:1.6;color:var(--secondary)}.explorer-empty-state p{margin:0}
 }
