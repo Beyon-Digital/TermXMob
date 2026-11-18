@@ -1,8 +1,10 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {act,cleanup,render,screen,waitFor} from '@testing-library/react';
 const mock=vi.hoisted(()=>({instances:[] as any[],remembered:new Map<string,string>(),gql:vi.fn(),request:vi.fn()}));
-vi.mock('@xterm/xterm',()=>({Terminal:class{options:any;reset=vi.fn();write=vi.fn();dispose=vi.fn();cols=80;rows=24;constructor(options:any){this.options=options;mock.instances.push(this)}loadAddon(){}open(){}onData(){}attachCustomKeyEventHandler(){}}}));
+vi.mock('@xterm/xterm',()=>({Terminal:class{options:any;reset=vi.fn();write=vi.fn();dispose=vi.fn();focus=vi.fn();cols=80;rows=24;constructor(options:any){this.options=options;mock.instances.push(this)}loadAddon(){}open(){}onData(){}attachCustomKeyEventHandler(){}}}));
 vi.mock('@xterm/addon-fit',()=>({FitAddon:class{fit(){}}}));
+vi.mock('@xterm/addon-search',()=>({SearchAddon:class{findNext=vi.fn();findPrevious=vi.fn();clearDecorations=vi.fn();onDidChangeResults=vi.fn()}}));
+vi.mock('@xterm/addon-web-links',()=>({WebLinksAddon:class{}}));
 vi.mock('../lib/api',()=>({gql:mock.gql,request:mock.request}));
 vi.mock('../lib/window-state',()=>({rememberTerminal:(id:string,terminal:string)=>mock.remembered.set(id,terminal),recalledTerminal:(id:string)=>mock.remembered.get(id)||''}));
 import TerminalPanel from './TerminalPanel';
@@ -45,19 +47,19 @@ it('ignores a handoff response after switching to another canonical conversation
  const view=render(<TerminalPanel project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);await waitFor(()=>expect(Socket.items).toHaveLength(1));
  const pending=deferred<{sessions:typeof row[]}>();mock.gql.mockReturnValueOnce(pending.promise);act(()=>window.dispatchEvent(new CustomEvent('termx-terminal-handoff',{detail:{sessionId:'conversation-a',id:'pty-returned'}})));
  mock.remembered.set('conversation-b','pty-b');mock.gql.mockResolvedValue({sessions:[{...row,id:'pty-b'}]});view.rerender(<TerminalPanel project={project} workspaceSession="conversation-b" onError={vi.fn()}/>);await waitFor(()=>expect(Socket.items.at(-1)?.url).toContain('/api/sessions/pty-b/pty'));
- const count=Socket.items.length;await act(async()=>pending.resolve({sessions:[{...row,id:'pty-returned'}]}));expect(Socket.items).toHaveLength(count);expect(screen.getByRole('combobox',{name:'Terminal session'})).toHaveValue('pty-b');
+ const count=Socket.items.length;await act(async()=>pending.resolve({sessions:[{...row,id:'pty-returned'}]}));expect(Socket.items).toHaveLength(count);expect(document.querySelector('[role=tab][aria-selected=true]')).toHaveAttribute('data-session-id','pty-b');
 });
 it('recovers a reloaded window selection only after the host authorizes the exact PTY',async()=>{
  mock.remembered.clear();saveTerminalSelection('owner-a','conversation-a','pty-a');const result=deferred<{sessions:typeof row[]}>();mock.gql.mockReturnValueOnce(result.promise);
  render(<TerminalPanel ownerId="owner-a" project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);expect(Socket.items).toHaveLength(0);await act(async()=>result.resolve({sessions:[row]}));await waitFor(()=>expect(Socket.items).toHaveLength(1));expect(Socket.items[0].url).toContain('/api/sessions/pty-a/pty');
 });
 it('never connects a stored PTY that is absent from the current authorized inventory',async()=>{
- mock.remembered.clear();saveTerminalSelection('owner-a','conversation-a','pty-a');mock.gql.mockResolvedValue({sessions:[]});render(<TerminalPanel ownerId="owner-a" project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);await waitFor(()=>expect(mock.gql).toHaveBeenCalledOnce());expect(Socket.items).toHaveLength(0);expect(screen.getByRole('combobox',{name:'Terminal session'})).toHaveValue('');
+ mock.remembered.clear();saveTerminalSelection('owner-a','conversation-a','pty-a');mock.gql.mockResolvedValue({sessions:[]});render(<TerminalPanel ownerId="owner-a" project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);await waitFor(()=>expect(mock.gql).toHaveBeenCalledOnce());expect(Socket.items).toHaveLength(0);expect(screen.queryByRole('tab',{selected:true})).toBeNull();
 });
 
 it('waits for a fresh authorized inventory on same-mounted unlock and refuses a removed PTY',async()=>{
  render(<TerminalPanel project={project} workspaceSession="conversation-a" onError={vi.fn()}/>);await waitFor(()=>expect(Socket.items).toHaveLength(1));act(()=>Socket.items[0].onopen());
  act(()=>window.dispatchEvent(new Event('termx-locked')));const fresh=deferred<{sessions:typeof row[]}>();mock.gql.mockReturnValueOnce(fresh.promise);
  act(()=>window.dispatchEvent(new Event('termx-session-unlocked')));expect(Socket.items).toHaveLength(1);expect(mock.instances[0].options.disableStdin).toBe(true);
- await act(async()=>fresh.resolve({sessions:[]}));expect(Socket.items).toHaveLength(1);expect(screen.getByRole('combobox',{name:'Terminal session'})).toHaveValue('');
+ await act(async()=>fresh.resolve({sessions:[]}));expect(Socket.items).toHaveLength(1);expect(screen.queryAllByRole('tab')).toHaveLength(0);
 });

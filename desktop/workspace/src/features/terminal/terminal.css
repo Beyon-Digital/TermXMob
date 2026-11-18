@@ -1,0 +1,250 @@
+/* Terminal surface: session tab strip, find bar and the xterm hosts. Tokens only (src/styles/tokens.css).
+   xterm.css is unlayered and styles the emulator itself; the colours inside it come from terminal-theme.ts. */
+@layer legacy, primitives, shell, surfaces;
+
+@layer surfaces {
+  .terminal-region {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    container-type: inline-size;
+  }
+
+  .terminal-tabs-root {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .terminal-region .terminal-toolbar {
+    display: flex;
+    align-items: center;
+    flex: none;
+    flex-wrap: nowrap;
+    gap: var(--space-4);
+    height: var(--ide-tab-h);
+    min-height: var(--ide-tab-h);
+    padding: 0 var(--space-8);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+
+  .terminal-region .terminal-tabs {
+    display: flex;
+    align-items: stretch;
+    flex: 0 1 auto;
+    min-width: var(--space-64);
+    height: 100%;
+    gap: 0;
+    padding: 0;
+    border: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    background: transparent;
+  }
+
+  .terminal-region .terminal-tabs:empty { display: none; }
+
+  .terminal-region .terminal-tabs [role='tab'] {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: var(--space-4);
+    max-width: 200px;
+    height: 100%;
+    padding: 0 var(--space-4) 0 var(--space-12);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: var(--line-sm);
+    white-space: nowrap;
+  }
+
+  .terminal-region .terminal-tabs [role='tab']:hover { background: var(--surface-2); }
+
+  .terminal-region .terminal-tabs [role='tab'][data-state='active'] {
+    background: var(--surface-2);
+    border-bottom-color: var(--accent);
+    color: var(--text);
+  }
+
+  .terminal-region .terminal-tabs [role='tab']:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .terminal-region .terminal-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Pointer affordance only; the keyboard route is the "Close terminal" button. */
+  .terminal-region .terminal-tab-close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--ide-action);
+    height: var(--ide-action);
+    border-radius: var(--radius);
+    color: var(--text-3);
+    opacity: 0;
+  }
+
+  .terminal-region [role='tab']:hover .terminal-tab-close,
+  .terminal-region [role='tab'][data-state='active'] .terminal-tab-close { opacity: 1; }
+
+  .terminal-region .terminal-tab-close:hover { background: var(--border); color: var(--text); }
+
+  /* Touch has no hover, so the close mark is always present. */
+  @media (pointer: coarse) {
+    .terminal-region .terminal-tab-close { opacity: 1; }
+  }
+
+  .terminal-region .terminal-toolbar > .button-icon {
+    width: var(--ide-action);
+    height: var(--ide-action);
+    padding: 0;
+    border-radius: var(--radius);
+  }
+
+  .terminal-region .terminal-toolbar > .button { flex: none; }
+
+  .terminal-region .terminal-interrupt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  .terminal-region .terminal-status {
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+    white-space: nowrap;
+  }
+
+  .terminal-region .terminal-toolbar > .button-sm {
+    height: var(--ide-input-h);
+    padding: 0 var(--space-8);
+    border-radius: var(--radius);
+    font-size: var(--text-sm);
+  }
+
+  /* A narrow terminal keeps the tabs and drops text: the state is still announced, and Interrupt shows its icon only. */
+  @container (max-width: 480px) {
+    .terminal-region .terminal-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .terminal-region .terminal-interrupt-label { display: none; }
+  }
+
+  /* Find in terminal */
+  .terminal-find {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    flex: none;
+    gap: var(--space-8);
+    padding: var(--space-4) var(--space-8);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .terminal-find-input {
+    flex: 1 1 var(--space-64);
+    max-width: 240px;
+    min-width: 0;
+    height: var(--ide-input-h);
+    padding: 0 var(--space-8);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--ide-input-size);
+    line-height: var(--ide-input-line);
+  }
+
+  .terminal-find-input::placeholder { color: var(--text-3); }
+
+  .terminal-find-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .terminal-find-count {
+    min-width: var(--space-64);
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .terminal-find > .button-icon {
+    width: var(--ide-action);
+    height: var(--ide-action);
+    padding: 0;
+    border-radius: var(--radius);
+  }
+
+  /* One xterm per session, all mounted; only the selected tab's pane is shown. */
+  .terminal-panes {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .terminal-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .terminal-pane[hidden],
+  .terminal-pane[data-state='inactive'] { display: none; }
+
+  .terminal-region .terminal-host {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--space-8);
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .terminal-region .terminal-host .xterm { height: 100%; }
+
+  .terminal-region .terminal-empty {
+    margin: 0;
+    padding: var(--space-12) var(--space-16);
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+}

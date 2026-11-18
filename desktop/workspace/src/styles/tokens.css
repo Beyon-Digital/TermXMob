@@ -198,6 +198,9 @@
   --ansi-bright-cyan: color-mix(in srgb, var(--ansi-cyan) 80%, var(--text));
   --ansi-bright-white: var(--text);
 
+  /* text selection in the editor and terminal: accent at 24% over the surface */
+  --selection: color-mix(in srgb, var(--accent) 24%, transparent);
+
   /* diff tints: 12% of the status colour over whatever surface it sits on */
   --diff-add: color-mix(in srgb, var(--success) 12%, transparent);
   --diff-del: color-mix(in srgb, var(--danger) 12%, transparent);
