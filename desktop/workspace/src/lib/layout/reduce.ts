@@ -7,6 +7,7 @@ import {
   defaultZone,
   editorGroups,
   findGroup,
+  findSplit,
   findTab,
   isEditorGroup,
   isGroup,
@@ -153,16 +154,6 @@ function insertBeside(root: Node, target: string, added: Group, dir: 'row' | 'co
     return {...node, children: node.children.map(place)};
   };
   return place(root);
-}
-
-function findSplit(node: Node, id: string): Split | undefined {
-  if (!isSplit(node)) return undefined;
-  if (node.id === id) return node;
-  for (const child of node.children) {
-    const found = findSplit(child, id);
-    if (found) return found;
-  }
-  return undefined;
 }
 
 function replaceSplit(node: Node, id: string, next: Split): Node {

@@ -173,3 +173,23 @@ export function phoneStack(layout: Layout, preferred: string | null = null): Pho
     [preferred, own, tabs[0]?.tab.id ?? null].find(id => id && tabs.some(item => item.tab.id === id)) ?? null;
   return {tabs, active};
 }
+
+// ---- placements: where each tab's content goes -----------------------------------------------------------------
+
+export type Placement = {
+  tab: Tab;
+  group: string;
+  /** The content rectangle when the tab is the active one of a group that is on screen, else `null`. */
+  rect: Rect | null;
+};
+
+/** One placement per tab in the layout. Only the active tab of an on-screen group has a rectangle. */
+export function placements(layout: Layout, rects: Rects, strip: number): Placement[] {
+  return allGroups(layout).flatMap(group =>
+    group.tabs.map(tab => {
+      const frame = rects.groups[group.id];
+      const body = frame && group.active === tab.id ? bodyRect(frame, strip) : null;
+      return {tab, group: group.id, rect: body && body.w > 0 && body.h > 0 ? body : null};
+    }),
+  );
+}

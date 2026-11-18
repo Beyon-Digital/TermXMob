@@ -1,0 +1,307 @@
+/* Tab groups, splitters, the flat content layer and drop zones.
+   Tokens only (src/styles/tokens.css). Chrome is borders, never shadows; motion is opacity only. */
+@layer shell {
+  .tab-workspace {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+
+  /* ---- a group: tab strip over a body --------------------------------------------------------------------------- */
+  .tab-group {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg);
+  }
+  .tab-group-body {
+    flex: 1;
+    min-height: 0;
+  }
+  .tab-strip {
+    display: flex;
+    flex: none;
+    align-items: stretch;
+    height: var(--ide-tab-h);
+    min-width: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .tab-strip-tabs {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+  }
+  .tab-list {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-8);
+    max-width: 200px;
+    height: 100%;
+    padding: 0 var(--space-8) 0 var(--space-12);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-2);
+    font: inherit;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    touch-action: pan-x;
+  }
+  .tab:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .tab[data-state="active"] {
+    color: var(--text);
+    border-bottom-color: var(--border-strong);
+  }
+  .tab-group[data-focused] .tab[data-state="active"] {
+    border-bottom-color: var(--accent);
+  }
+  .tab:focus-visible,
+  .tab-action:focus-visible,
+  .tab-splitter:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tab[data-dragging] {
+    opacity: 0.5;
+  }
+  .tab svg {
+    flex: none;
+  }
+  .tab-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-dirty {
+    flex: none;
+    width: var(--space-8);
+    height: var(--space-8);
+    border-radius: 999px;
+    background: var(--text-2);
+  }
+  .tab-close {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: var(--ide-action);
+    height: var(--ide-action);
+    border-radius: var(--radius);
+    color: var(--text-3);
+  }
+  .tab-close:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .tab-strip-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 0 var(--space-8);
+  }
+  .tab-action {
+    display: inline-grid;
+    place-items: center;
+    width: var(--ide-action);
+    height: var(--ide-action);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .tab-action:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  .tab-anchor {
+    position: fixed;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .tab-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+  }
+  .tab-menu-item svg {
+    flex: none;
+    color: var(--text-2);
+  }
+  .tab-menu-kbd {
+    margin-left: auto;
+    padding-left: var(--space-16);
+    color: var(--text-3);
+    font-size: var(--text-xs);
+  }
+
+  .tab-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-12);
+    height: 100%;
+    padding: var(--space-16);
+    color: var(--text-2);
+    text-align: center;
+  }
+  .tab-empty p {
+    margin: 0;
+  }
+
+  /* ---- splitters: a 1px line with an 8px hit area ---------------------------------------------------------------- */
+  .tab-splitter {
+    position: absolute;
+    z-index: 3;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    touch-action: none;
+  }
+  .tab-splitter[data-dir="row"] {
+    cursor: col-resize;
+  }
+  .tab-splitter[data-dir="column"] {
+    cursor: row-resize;
+  }
+  .tab-splitter::before {
+    content: "";
+    position: absolute;
+    background: var(--border);
+  }
+  .tab-splitter[data-dir="row"]::before {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+  }
+  .tab-splitter[data-dir="column"]::before {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+  }
+  .tab-splitter:hover::before,
+  .tab-splitter[data-active]::before,
+  .tab-splitter:focus-visible::before {
+    background: var(--accent);
+  }
+  .tab-splitter[data-dir="row"]:hover::before,
+  .tab-splitter[data-dir="row"][data-active]::before {
+    left: calc(50% - 1px);
+    width: 2px;
+  }
+  .tab-splitter[data-dir="column"]:hover::before,
+  .tab-splitter[data-dir="column"][data-active]::before {
+    top: calc(50% - 1px);
+    height: 2px;
+  }
+
+  /* ---- the flat content layer: one box per tab, placed from the rectangles ---------------------------------------- */
+  .tab-content-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .tab-content {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    pointer-events: auto;
+    background: var(--bg);
+  }
+  .tab-content[hidden] {
+    display: none;
+  }
+  .tab-content > .dock-pane-content {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .tab-workspace[data-dragging] .tab-content iframe,
+  .tab-workspace[data-dragging] .tab-content canvas {
+    pointer-events: none;
+  }
+  .tab-workspace[data-dragging] {
+    user-select: none;
+  }
+
+  /* ---- drag: where the tab would land, and the chip that follows the pointer ------------------------------------- */
+  .tab-drop {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    border: 2px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--selection);
+    transition: opacity var(--duration-fast) var(--ease-out);
+  }
+  .tab-drag-chip {
+    position: fixed;
+    z-index: 70;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-8);
+    max-width: 240px;
+    height: var(--ide-tab-h);
+    padding: 0 var(--space-12);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ---- phone: one stack of tabs, no splitters ------------------------------------------------------------------------ */
+  .tab-workspace[data-phone] .tab-group {
+    inset: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tab-drop {
+      transition: none;
+    }
+  }
+}

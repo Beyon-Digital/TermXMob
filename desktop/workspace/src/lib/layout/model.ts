@@ -142,6 +142,16 @@ export function allTabs(layout: Layout): Tab[] {
   return allGroups(layout).flatMap(group => group.tabs);
 }
 
+export function findSplit(node: Node, id: string): Split | undefined {
+  if (!isSplit(node)) return undefined;
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findSplit(child, id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function treeDepth(node: Node): number {
   return isSplit(node) ? 1 + Math.max(...node.children.map(treeDepth)) : 1;
 }
