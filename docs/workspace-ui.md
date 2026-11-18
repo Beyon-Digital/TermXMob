@@ -32,7 +32,7 @@ The IDE layout is the default. The earlier dock of seven panels is the **classic
 - **Tab groups** (`components/shell/TabGroups.tsx`). A recursive split tree, below.
 - **Bottom panel.** Its own tab group: Terminal, Problems (language server diagnostics for open files), Preview (the dev-server preview) and Run and debug. Output has no data source today, so it is not offered.
 - **Status bar** (24px). Host health dot and name (a button that opens the host popover), branch with `*` when the checkout is dirty, problems (hidden at 0), active capture controls, "N need you", Main agent state, Ln and Col with the language for the focused file tab, Lock. An item is a button only when it does something.
-- **Phone** (under 768px). A 48px top bar (hamburger, the active tab's title, a tab switcher that also closes the tab on screen), one tab stack, a bottom navigation of Agents, Files, Git, Term and More with 44px targets, the side bar as a Radix drawer, and a status bar reduced to the health dot, the capture controls and the "N need you" badge. The projection is made at render time; choosing a tab there never writes the stored layout, and opening a tab (Settings from More, a file from the drawer) takes the stack.
+- **Phone** (under 768px). A 48px top bar (hamburger, the active tab's title, a tab switcher that also closes the tab on screen), one tab stack, a bottom navigation of Agents, Files, Git, Term and More with 44px targets, the side bar as a Radix drawer (Data's navigation lives only there), and a status bar reduced to the health dot, the capture controls and the "N need you" badge. The projection is made at render time; choosing a tab there never writes the stored layout, and opening a tab (Settings from More, a file from the drawer) takes the stack.
 
 Chrome is separated by 1px borders: no shadow, gradient or blur. Overlays (menu, popover, dialog) use a border and `--shadow-overlay`.
 
@@ -41,7 +41,7 @@ Chrome is separated by 1px borders: no shadow, gradient or blur. Overlays (menu,
 | View | What it shows |
 | --- | --- |
 | **Agents** | New chat (the view's one primary button), Needs you, Main agent with its state, Sub-agents (a compact list that keeps updating while the Chat tab is behind another tab), CLI sessions, and the chat list at 36px rows. |
-| **Explorer** | The project and checkout, an ARIA tree of 32px rows with a source control letter on changed files. Enter opens a file tab. |
+| **Explorer** | The project and checkout, an ARIA tree of 32px rows with a source control letter on changed files. Enter opens a file tab. With no project it says so and offers Add project; Search and Source control do the same. |
 | **Search** | Workspace text search through the host's file search. A result opens its file at the line. |
 | **Source control** | Branch, commit box and the changed files, below. |
 | **Sites** | Pinned, saved, suggested and open pages, below. |
