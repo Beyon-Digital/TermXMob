@@ -310,7 +310,28 @@ def views_and_tabs(case: Case) -> None:
         page.keyboard.press('Escape')
     else:
         expect(page.get_by_role('tab', name='Data')).to_have_attribute('aria-selected', 'true')
+    data = page.get_by_role('region', name='Data Studio', exact=True)
+    expect(data).to_be_visible(timeout=30000)
+    expect(data.get_by_role('heading').first).to_be_visible(timeout=30000)
     case.audit('data')
+    if not case.phone:
+        # Data Studio works in its tab: a workspace exists (created here the first time; the host keeps it for the later
+        # cases) and the Copilot panel asks for a connection before it will accept a message.
+        picker = page.get_by_role('complementary', name='Data').get_by_role('combobox', name='Data workspace', exact=True)
+        expect(picker).to_be_visible(timeout=30000)
+        if 'No workspaces' in picker.inner_text():
+            data.get_by_role('button', name='Create workspace', exact=True).click()
+            dialog = page.get_by_role('dialog', name='Create workspace', exact=True)
+            dialog.get_by_role('textbox', name='Workspace name', exact=True).fill('Synthetic QA team')
+            dialog.get_by_role('button', name='Create workspace', exact=True).click()
+            expect(dialog).not_to_be_visible()
+        expect(picker).to_have_text('Synthetic QA team')
+        data.get_by_role('button', name='Copilot', exact=True).click()
+        panel = page.get_by_role('region', name='Data Copilot chat', exact=True)
+        expect(panel.get_by_role('heading', name='Connect Copilot', exact=True)).to_be_visible()
+        expect(panel.get_by_role('textbox', name='Message Copilot', exact=True)).to_be_disabled()
+        panel.get_by_role('button', name='Close Copilot', exact=True).click()
+        expect(panel).to_have_count(0)
     if case.phone:
         page.get_by_role('banner', name='Window').get_by_role('button', name=re.compile('Switch tab')).click()
         page.get_by_role('menuitem', name='Studio').click()

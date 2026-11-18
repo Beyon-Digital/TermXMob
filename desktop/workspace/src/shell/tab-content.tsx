@@ -1,5 +1,6 @@
 import {lazy, type Dispatch, type ReactNode, type SetStateAction} from 'react';
 import {Button} from '../components/ui/button';
+import {usePhone} from '../components/shell/TabGroups';
 import ControlPlane, {type ControlPage} from '../features/ControlPlane';
 import CliTab from '../features/cli/CliTab';
 import FileTab from '../features/editor/FileTab';
@@ -298,6 +299,8 @@ function DebugTab({host}: {host: TabHost}) {
 
 function DataTab({visible, host}: {visible: boolean; host: TabHost}) {
   const {auth, locked} = useAuth();
+  // Without the side bar's host the navigation draws itself beside the canvas; on a phone it lives only in the drawer.
+  const phone = usePhone();
   return (
     <div className="workspace-data-host">
       <DataStudio
@@ -305,7 +308,7 @@ function DataTab({visible, host}: {visible: boolean; host: TabHost}) {
         visible={visible}
         observing={visible}
         locked={locked}
-        navigationHost={host.data.navigationHost ?? undefined}
+        navigationHost={host.data.navigationHost ?? (phone ? null : undefined)}
       />
     </div>
   );

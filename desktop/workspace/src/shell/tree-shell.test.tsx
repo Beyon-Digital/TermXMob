@@ -45,6 +45,7 @@ vi.mock('../lib/api', async original => ({
     if (path === '/auth/me')
       return {principal: {id: fixture.owner, display_name: 'Owner', scopes: []}, session_id: 'authenticated-session'};
     if (path === '/api/workspace/project-pins') return {revision: 0, projects: []};
+    if (path === '/api/workspace/orchestrator/ensure') return {session: fixture.session};
     if (path.includes('operation=tree')) return {entries: [{name: 'a.py', path: 'a.py', directory: false}, {name: 'src', path: 'src', directory: true}]};
     if (path.includes('operation=quick-open')) return {results: [{path: 'a.py'}, {path: 'src/b.py'}], truncated: false};
     if (path.includes('/delivery')) return {worktrees: []};
@@ -710,6 +711,34 @@ describe('deep links in the default layout', () => {
       view.unmount();
       localStorage.clear();
     }
+  });
+});
+
+describe('deep links with no conversation in the address', () => {
+  it('keeps the Data and Studio views in front while the main agent opens behind them', async () => {
+    for (const [mode, name] of [
+      ['data', 'Data'],
+      ['studio', 'Studio'],
+    ] as const) {
+      openUrl('?workspace=' + mode);
+      const view = render(<App />);
+      await screen.findByRole('tab', {name});
+      // The main agent is ensured and selected once the layout is ready; its chat tab must not take the front.
+      await waitFor(() => expect(screen.getAllByRole('tab').length).toBeGreaterThanOrEqual(2));
+      await new Promise(resolve => setTimeout(resolve, 150));
+      expect(screen.getByRole('tab', {name})).toHaveAttribute('aria-selected', 'true');
+      view.unmount();
+      localStorage.clear();
+    }
+  });
+
+  it('keeps a /manage page in front the same way', async () => {
+    history.replaceState(null, '', '/manage/projects');
+    render(<App />);
+    await screen.findByRole('tab', {name: 'Projects'});
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(screen.getByRole('tab', {name: 'Projects'})).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Main agent', 'Projects']);
   });
 });
 

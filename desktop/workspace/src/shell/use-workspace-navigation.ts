@@ -68,6 +68,9 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
   const pendingView = useRef<'data' | 'studio' | null>(null);
   // A manager page named by the address in the tab layout: opened as a tab once the layout is restored.
   const pendingManager = useRef('');
+  // The address asked for a view or a page in the tab layout: opening the main agent in the background must not take
+  // the front from it.
+  const addressTab = useRef(false);
   useLayoutEffect(() => {
     projectWorkbenchNow.current = projectWorkbenchId;
   });
@@ -134,7 +137,9 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
         setSession(value);
         setSelected(value.id);
         setManagerState('');
-        if (!automatic || !new URLSearchParams(location.search).has('layout')) layout.chooseLayout('chat');
+        const keepFront = automatic && addressTab.current;
+        addressTab.current = false;
+        if (!keepFront && (!automatic || !new URLSearchParams(location.search).has('layout'))) layout.chooseLayout('chat');
         if (innerWidth <= 850) layout.setLeft(false);
       }
       void load();
@@ -362,6 +367,7 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
     if (tree) {
       // There is no manager overlay in the tab layout: /manage/<page> opens its tab once the layout is restored.
       pendingManager.current = routeManager(route);
+      addressTab.current = !!(viewMode || pendingManager.current);
       setManagerState('');
     } else {
       setManager(route.manager);
@@ -386,7 +392,7 @@ export function useWorkspaceNavigation({navigation, hosts, layout, report}: Opti
   useEffect(() => {
     if (!auth || !layout.ready || locked || workspace !== 'agent') return;
     const route = workspaceRoute();
-    if (!route.selected && !projectWorkbenchId && !manager && !selection.current && !managerNow.current && !(tree && route.manager))
+    if (!route.selected && !projectWorkbenchId && !manager && !selection.current && !managerNow.current)
       void openMainAgent(true);
   }, [auth?.principal.id, layout.ready, locked, homeRequest, manager, workspace, projectWorkbenchId]);
 
