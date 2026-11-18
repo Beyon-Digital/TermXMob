@@ -1,9 +1,12 @@
 import {Plus} from 'lucide-react';
 import {Button} from '../../components/ui/button';
 import {needsYouCount, type NeedsYouItem} from '../../lib/bot-schedules';
+import {useCliSessions} from '../../features/cli/CliSessionsProvider';
+import {needsPerson, sessionName, statusPresentation} from '../../lib/cli-sessions';
 import {useSidebarSprite} from '../../lib/sidebar-sprite';
 import AgentSidebar, {type SidebarState} from '../AgentSidebar';
 import type {Coordination} from '../use-coordination';
+import CliSessionsSection from './CliSessionsSection';
 import MainAgentSprite from './MainAgentSprite';
 import './views.css';
 
@@ -24,6 +27,10 @@ type Props = {
   onFindConversation: () => void;
   /** Answering an item happens in Settings > Bots, where the full request is shown. */
   onReviewNeeds: () => void;
+  /** Open the New CLI session dialog. */
+  onNewCliSession: () => void;
+  /** Show a CLI session's tab. */
+  onOpenCliSession: (sessionId: string) => void;
 };
 
 /**
@@ -33,7 +40,10 @@ type Props = {
 export default function AgentsView(props: Props) {
   const {coordination, needs} = props;
   const sprite = useSidebarSprite();
-  const attention = coordination.summary.attention;
+  const attention = coordination.summary.attention + (coordination.summary.blocked ?? 0);
+  const cli = useCliSessions();
+  const cliNeeds = cli.sessions.filter(needsPerson);
+  const waiting = needs.length + cliNeeds.length;
   return (
     <div className="agents-view">
       <div className="view-section view-section-first">
@@ -43,13 +53,23 @@ export default function AgentsView(props: Props) {
         </Button>
       </div>
 
-      {needs.length > 0 && (
+      {waiting > 0 && (
         <section className="view-section" aria-labelledby="agents-needs">
           <h3 id="agents-needs" className="view-heading">
             Needs you
-            <span className="view-count">{needsYouCount(needs.length)}</span>
+            <span className="view-count">{needsYouCount(waiting)}</span>
           </h3>
           <ul className="view-list">
+            {cliNeeds.slice(0, 5).map(session => (
+              <li key={session.id}>
+                <button type="button" className="view-row needs-row needs-cli" onClick={() => props.onOpenCliSession(session.id)}>
+                  <span className="needs-title">
+                    {sessionName(session)}: {statusPresentation(session.status).label.toLowerCase()}
+                  </span>
+                  <small>CLI session</small>
+                </button>
+              </li>
+            ))}
             {needs.slice(0, 5).map(item => (
               <li key={item.id} className="needs-row">
                 <span className="needs-title">{item.title}</span>
@@ -57,9 +77,11 @@ export default function AgentsView(props: Props) {
               </li>
             ))}
           </ul>
-          <Button variant="ghost" size="sm" className="view-link" onClick={props.onReviewNeeds}>
-            {needs.length > 5 ? 'Review all ' + needs.length : 'Review'}
-          </Button>
+          {needs.length > 0 && (
+            <Button variant="ghost" size="sm" className="view-link" onClick={props.onReviewNeeds}>
+              {needs.length > 5 ? 'Review all ' + needs.length : 'Review'}
+            </Button>
+          )}
         </section>
       )}
 
@@ -88,12 +110,7 @@ export default function AgentsView(props: Props) {
         <div className="subagents-target" ref={coordination.setTarget} />
       </section>
 
-      <section className="view-section" aria-labelledby="agents-cli">
-        <h3 id="agents-cli" className="view-heading">
-          CLI sessions
-        </h3>
-        <p className="view-empty">Claude Code, Codex and other CLI sessions on this host will appear here.</p>
-      </section>
+      <CliSessionsSection onNew={props.onNewCliSession} onOpen={props.onOpenCliSession} />
 
       <section className="view-section agents-chats" aria-label="Chats">
         <AgentSidebar
