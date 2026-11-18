@@ -5,7 +5,7 @@ import {Button} from '../components/ui/button';
 import {Select} from '../components/ui/select';
 import {Input} from '../components/ui/input';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '../components/ui/dialog';
-import {settingsCategories,settingsGroups,canonicalSettingsCategory} from '../lib/settings-categories';
+import {settingsCategories,settingsGroups,canonicalSettingsCategory,settingsSearchText} from '../lib/settings-categories';
 import SettingsIcon from '../components/SettingsIcon';
 import {SETTINGS_LEAVE,SettingsFormsContext,type SettingsFormsRegistry} from './settings-forms';
 import {useBotsNeedYouCount} from './bot-attention';
@@ -31,7 +31,7 @@ export function SettingsNavigation({category,onSelect,waiting:given}:{category:s
  const selected=canonicalSettingsCategory(category);
  const [query,setQuery]=useState('');
  const terms=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
- const matches=settingsCategories.filter(row=>terms.every(term=>(row.label+' '+row.id).toLocaleLowerCase().includes(term)));
+ const matches=settingsCategories.filter(row=>terms.every(term=>settingsSearchText(row).includes(term)));
  // Not a notification centre: one count on the Bots entry, so a bot waiting for an answer is noticed from any settings page.
  const own=useBotsNeedYouCount(given===undefined),waiting=given??own;
  function follow(event:MouseEvent<HTMLAnchorElement>,id:string){
