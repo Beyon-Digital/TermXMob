@@ -3,12 +3,31 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
 from pathlib import Path
 from time import time
 from typing import Any
+
+
+MEMORY_FTS = ("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5("
+              "content, memory_id UNINDEXED, owner UNINDEXED, tokenize='porter unicode61')")
+_TERM = re.compile(r'\w+')
+
+
+def fts_match(text: str, *, any_term: bool = False) -> str | None:
+    """An FTS5 MATCH expression from free text, or None when it holds no searchable word.
+
+    Every word becomes `("word" OR "word"*)`: the plain term is stemmed by the tokenizer (deploying finds deployment) and
+    the prefix form is not (auth finds authentication). Words are quoted, so user text can never inject FTS syntax
+    (NEAR, column filters, NOT).
+    """
+    terms = _TERM.findall(str(text or ''))[:12]
+    if not terms:
+        return None
+    return (' OR ' if any_term else ' AND ').join(f'("{term}" OR "{term}"*)' for term in terms)
 
 
 class WorkspaceStore:
@@ -37,12 +56,71 @@ class WorkspaceStore:
             payload TEXT NOT NULL, created REAL NOT NULL);
         ''')
         self.db.commit()
+        # A build without FTS5 still serves memory: reads fall back to substring matching.
+        self.memory_fts = self._ensure_memory_fts()
         if os.name == 'posix':
             path.chmod(0o600)
 
     def close(self):
         with self.lock:
             self.db.close()
+
+    # -- memory recall index ----------------------------------------------------------------------------------------
+    # memory_fts mirrors the `memory` records. Every write goes through create/update/delete below, so the index is
+    # changed in the same transaction as the record it describes.
+
+    def _ensure_memory_fts(self) -> bool:
+        """Create the index and backfill it. Rows written before it existed (or by a build without FTS5) are
+        indexed by a rebuild whenever the index and the records disagree on how many notes exist."""
+        try:
+            with self.lock:
+                self.db.execute(MEMORY_FTS)
+                indexed = self.db.execute('SELECT COUNT(*) FROM memory_fts').fetchone()[0]
+                notes = self.db.execute("SELECT COUNT(*) FROM records WHERE kind='memory'").fetchone()[0]
+                if indexed != notes:
+                    self.rebuild_memory_index()
+                self.db.commit()
+            return True
+        except sqlite3.OperationalError:
+            return False
+
+    def rebuild_memory_index(self) -> None:
+        with self.lock:
+            self.db.execute('DELETE FROM memory_fts')
+            for row in self.db.execute("SELECT id,owner,body FROM records WHERE kind='memory'").fetchall():
+                self.db.execute('INSERT INTO memory_fts(content,memory_id,owner) VALUES(?,?,?)',
+                                (_memory_text(row['body']), row['id'], row['owner']))
+            self.db.commit()
+
+    def _index_memory(self, kind: str, identifier: str, owner: str, body: dict | str) -> None:
+        if kind != 'memory' or not self.memory_fts:
+            return
+        try:
+            self.db.execute('DELETE FROM memory_fts WHERE memory_id=?', (identifier,))
+            self.db.execute('INSERT INTO memory_fts(content,memory_id,owner) VALUES(?,?,?)',
+                            (_memory_text(body), identifier, owner))
+        except sqlite3.OperationalError:
+            self.memory_fts = False
+
+    def search_memory(self, owner: str, query: str, limit: int = 200) -> list[str] | None:
+        """This owner's memory ids, best match first by bm25; every word is a prefix and all must match, and when
+        none does any word may. None when the index cannot answer (no FTS5, no searchable word): the caller falls
+        back to substring matching."""
+        if not self.memory_fts:
+            return None
+        try:
+            for match in (fts_match(query), fts_match(query, any_term=True)):
+                if match is None:
+                    return None
+                with self.lock:
+                    rows = self.db.execute(
+                        'SELECT memory_id FROM memory_fts WHERE memory_fts MATCH ? AND owner=? '
+                        'ORDER BY bm25(memory_fts) LIMIT ?', (match, owner, limit)).fetchall()
+                if rows:
+                    return [row[0] for row in rows]
+            return []
+        except sqlite3.OperationalError:
+            return None
 
     @staticmethod
     def unpack(row) -> dict[str, Any]:
@@ -57,6 +135,7 @@ class WorkspaceStore:
         with self.lock:
             self.db.execute('INSERT INTO records VALUES(?,?,?,?,?,?,?,?)',
                             (kind, identifier, owner, project, 1, json.dumps(body), now, now))
+            self._index_memory(kind, identifier, owner, body)
             self.db.commit()
             return self.get(kind, identifier)
 
@@ -90,6 +169,7 @@ class WorkspaceStore:
             if changed.rowcount != 1:
                 self.db.rollback()
                 raise Conflict('Resource changed; reload before saving')
+            self._index_memory(kind, identifier, current['owner'], clean)
             self.db.commit()
             return self.get(kind, identifier)
 
@@ -188,6 +268,11 @@ class WorkspaceStore:
     def delete(self, kind, identifier):
         with self.lock:
             self.db.execute('DELETE FROM records WHERE kind=? AND id=?', (kind, identifier))
+            if kind == 'memory' and self.memory_fts:
+                try:
+                    self.db.execute('DELETE FROM memory_fts WHERE memory_id=?', (identifier,))
+                except sqlite3.OperationalError:
+                    self.memory_fts = False
             self.db.commit()
 
     def log(self, owner, kind, identifier, event, payload=None):
@@ -201,6 +286,14 @@ class WorkspaceStore:
         with self.lock:
             return [{**dict(row), 'payload': json.loads(row['payload'])} for row in self.db.execute(
                 'SELECT * FROM audit WHERE owner=? ORDER BY seq DESC LIMIT ?', (owner, max(1,min(limit,500))))]
+
+
+def _memory_text(body: dict | str) -> str:
+    try:
+        data = json.loads(body) if isinstance(body, str) else body
+        return str(data.get('content') or '')
+    except (ValueError, AttributeError):
+        return ''
 
 
 class Conflict(ValueError):

@@ -25,6 +25,7 @@ from termx.config import config_dir
 from termx.desktop.apps import combine
 from termx.identity import Principal
 from termx.workspace.store import Conflict, WorkspaceStore
+from termx.workspace.usage import UsageHistory, clean_text
 from termx.workspace.presets import resolve_preset,available_presets
 from termx.workspace.public_events import public_task_events, public_task_approvals
 from termx.workspace import session_lifecycle
@@ -39,6 +40,7 @@ class WorkspaceService:
     def __init__(self, state, path: Path | None = None, *, project_check=None, hook_runner=None):
         self.state = state
         self.store = WorkspaceStore(path or config_dir() / 'workspace.sqlite3')
+        self.usage = UsageHistory(self.store)
         self.agents = state.agent_store
         self.project_check = project_check
         self.hook_runner = hook_runner
@@ -1134,20 +1136,43 @@ class WorkspaceService:
         return self.memory_view(saved)
 
     def read_task_memory(self, task_id, *, query='', limit=20):
-        """memory_read: active notes this task's agent may see, as the task's owner. Proposals are never returned."""
+        """memory_read: active notes this task's agent may see, as the task's owner. Proposals are never returned.
+
+        With a query the notes are ranked by bm25 over the FTS5 index. Scope, exclusion and proposals are decided
+        first by `memories()`, so the index only orders notes this agent could already read. When the index cannot
+        answer (no FTS5, nothing searchable in the query, no hit) the old case-insensitive substring match runs.
+        """
         principal, row, agent_id = self._task_memory_authority(task_id, 'agent-view')
         needle = str(query or '').strip().lower()
+        visible = self.memories(principal, project_id=row.get('project_id'), include_excluded=False,
+                                agent_id=agent_id, state='active')
+        ordered = visible
+        if needle:
+            by_id = {item['id']: item for item in visible}
+            ranked = [by_id[i] for i in (self.store.search_memory(principal.id, needle) or []) if i in by_id]
+            ordered = ranked or [item for item in visible
+                                 if needle in item['content'].lower() or needle in item['provenance'].lower()]
         found, size = [], 0
-        for item in self.memories(principal, project_id=row.get('project_id'), include_excluded=False,
-                                  agent_id=agent_id, state='active'):
-            if needle and needle not in item['content'].lower() and needle not in item['provenance'].lower():
-                continue
+        for item in ordered:
             size += len(item['content'])
             if len(found) >= max(1, min(int(limit), 50)) or size > 32_000:
                 break
             found.append({'id':item['id'],'content':item['content'],'provenance':item['provenance'],
                           'scope':item['scope'],'written_by':item['author']})
         return found
+
+    def query_task_usage(self, task_id, *, mode='recent', kind=None, query='', since=None, limit=10):
+        """usage_query: this task owner's history. Events outside the task's project (other than project-less ones such
+        as browsing) stay out of view, the same boundary memory has."""
+        principal, row, _agent_id = self._task_memory_authority(task_id, 'agent-view')
+        scope = {'kind': kind or None, 'since': since, 'limit': limit, 'project_id': row.get('project_id')}
+        if mode == 'top':
+            return self.usage.top(principal.id, **scope)
+        if mode == 'search':
+            return self.usage.search(principal.id, query, **scope)
+        if mode == 'recent':
+            return self.usage.recent(principal.id, **scope)
+        raise ValueError('mode must be top, recent or search')
 
     def delete_memory(self,principal,identifier):
         self.record(principal,'memory',identifier,scope='agent-control')
@@ -1222,6 +1247,8 @@ class WorkspaceService:
                 self.orchestrator.enroll(task_id,child_id,event.get('payload') or {})
             return
         self.orchestrator.on_event(task_id,event)
+        if event.get('type') in {'task.completed','task.failed','task.cancelled'}:
+            self._record_task_usage(task_id,event['type'].split('.',1)[1])
         if event.get('type') not in {'task.completed','task.failed'}:
             return
         row = self.store.get('task',task_id)
@@ -1244,6 +1271,29 @@ class WorkspaceService:
                     'after_turn' if event['type']=='task.completed' else 'task_failed',row['cwd'],resource_id=row.get('conversation_id')))
                 self._workers.add(worker)
                 worker.add_done_callback(self._hook_done)
+
+    def _record_task_usage(self,task_id,outcome):
+        """One usage event per finished top-level task: a display line (the conversation's title, else the start of the
+        redacted prompt) and counters. The prompt, result and tool arguments are never stored."""
+        try:
+            row = self.store.get('task',task_id)
+            if not row or row.get('parent_id'):
+                return
+            task = self.agents.get_task(task_id) or {}
+            conversation = (self.agents.get_conversation(row['conversation_id'],include_turns=False)
+                            if row.get('conversation_id') else None) or {}
+            subject = clean_text(conversation.get('title') or '',200) or clean_text(task.get('prompt') or '',80)
+            metrics = task.get('metrics') or {}
+            detail = {'outcome':outcome,'model':task.get('model'),'mode':task.get('mode'),
+                      'tokens':int(metrics.get('input_tokens') or 0)+int(metrics.get('output_tokens') or 0),
+                      'tool_calls':sum(int(n or 0) for n in (metrics.get('tool_calls') or {}).values()),
+                      'seconds':round(max(0.0,float(task.get('updated_at') or 0)-float(task.get('created_at') or 0)))}
+            if metrics.get('cost_usd') is not None:
+                detail['cost_usd']=round(float(metrics['cost_usd']),4)
+            self.usage.record(row['owner'],'task',subject or 'Agent task',detail=detail,
+                              project_id=row.get('project_id'),key=task_id)
+        except Exception:
+            pass  # History is a convenience; it must never disturb the task that just finished.
 
     def _hook_done(self,worker):
         self._workers.discard(worker)

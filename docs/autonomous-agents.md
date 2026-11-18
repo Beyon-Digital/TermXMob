@@ -194,6 +194,60 @@ and are returned to agents marked as untrusted data). `BrowserService.on_visit`
 is an optional callback called once per counted visit with the user, project,
 profile, origin, title and query-free URL, for usage history.
 
+## Web, memory and usage tools
+
+These Internal-engine tools run in the host process, so they work with every
+provider and follow host policy.
+
+| Tool | What it does | Approval |
+| --- | --- | --- |
+| `web_fetch {url, max_chars}` | Reads one http(s) page as text (HTML is reduced to its visible text). | Per host, remembered like other rules. |
+| `web_search {query, limit}` | Returns titles, URLs and snippets from the configured search API. | Per backend host; the approval shows the query. |
+| `memory_read {query, limit}` | Ranks saved notes by relevance. | None. |
+| `usage_query {mode, kind, query, since, limit}` | Answers what the owner uses most (`top`), most recently (`recent`) or what matches some words (`search`). | None; read-only. |
+
+**Web tools.** Both need Agent mode (they are not offered in Ask mode, because a
+URL or query can carry data out) and ask before each new host. The approval names
+the capability `net.outbound:<host>` and remembers the host, so `docs.example.com`
+being allowed does not allow another host or another port. Bots deny
+`net.outbound:any` by default, which also stops these tools until the owner
+raises the ceiling. The sandbox profile does not limit them, and approving one
+never gives a sandboxed shell network access. Autonomous approval mode and Auto do
+not answer for the owner; only a remembered host rule does.
+
+Every request resolves the host once through the browser's `NetworkPolicy` and
+connects to that exact address, with TLS still verified against the name, so DNS
+rebinding cannot swap in a private address. Redirects are followed by hand and
+checked again at each hop (five at most). Private, loopback, link-local, multicast,
+reserved and cloud-metadata destinations (including IPv4 addresses wrapped in
+IPv6), non-http(s) schemes, credentials in URLs, HTTPS-to-HTTP redirects, binary
+content and bodies over 2 MiB are refused. Proxy environment variables are
+ignored. The reply is marked `untrusted`, redacted and capped at 50,000 characters
+(20,000 by default); it is data, never instructions.
+
+`web_search` is hidden until a backend is configured. One backend is implemented,
+the Brave Search API. Store its key as the `web-search` credential or set
+`TERMX_AI_WEB_SEARCH_API_KEY` on the host. `TERMX_WEB_SEARCH_URL` points it at
+another endpoint (for example a compatible self-hosted service; that exact origin
+is then allowed even if it is private) and `TERMX_WEB_SEARCH_PROVIDER` selects the
+backend (`brave`). A new backend is a small class with `request()` and `parse()`
+registered in `BACKENDS` in `agent/tools/web.py`.
+
+**Memory recall.** `memory_read` ranks with SQLite FTS5 (bm25, word stems and
+prefixes) when a query is given, and falls back to the old substring match when
+the index is unavailable or finds nothing. The index only orders notes the agent
+could already read, so the agent, project and user scopes, excluded notes and
+unreviewed proposals behave as before. Databases from before the index are
+backfilled when they are opened.
+
+**Usage history.** `workspace/usage.py` keeps redacted events (`usage_events`,
+with an FTS index over the subject) for the owner: a finished task records its
+conversation title (or the first 80 characters of its redacted prompt) with
+counters, never the prompt, result or tool arguments. Events older than 180 days
+are dropped. Other features add events with `UsageHistory.record(owner, kind,
+subject, detail=..., project_id=...)`. `usage_query` sees the owner's events with
+no project plus those of the task's project.
+
 ## Restart behavior and live verification
 
 Schedule definitions, run reservations, task IDs and events are durable. Restart

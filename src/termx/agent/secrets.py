@@ -13,6 +13,8 @@ from pathlib import Path
 from termx.config import config_dir
 
 SERVICE = "com.termx.agent"
+# The web_search backend's API key lives under this id: TERMX_AI_WEB_SEARCH_API_KEY, or the OS credential store.
+WEB_SEARCH_CREDENTIAL = "web-search"
 
 
 def _env_name(provider_id: str) -> str:
