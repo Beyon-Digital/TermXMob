@@ -500,6 +500,17 @@ describe('shortcut dispatch and terminal focus', () => {
     expect(run).toHaveBeenLastCalledWith('maximizeGroup', false);
   });
 
+  it('keeps a chord armed across the modifier key press between its two steps', () => {
+    const run = vi.fn();
+    renderHook(() => useShortcuts({bindings: {...defaults}, engine: 'tree', suspended: () => false, run}));
+    press(document.body, {key: 'k', metaKey: true});
+    // A real keyboard sends the modifier's own keydown again before the second step.
+    press(document.body, {key: 'Meta', metaKey: true});
+    press(document.body, {key: '\\', metaKey: true});
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith('splitDown', false);
+  });
+
   it('exposes the terminal allowlist as the commands that opt in', () => {
     expect(
       keyed

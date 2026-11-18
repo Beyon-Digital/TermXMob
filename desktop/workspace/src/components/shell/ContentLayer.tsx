@@ -17,7 +17,10 @@ import './layout.css';
 
 export type TabRender = (tab: Tab, state: {visible: boolean}) => ReactNode;
 
-/** Legacy panel class names (`dock-conversation`, `dock-editor`...) that existing panel CSS and focus code look for. */
+/**
+ * Legacy panel class names (`dock-conversation`, `dock-editor`...) that existing panel CSS and focus code look for. The old
+ * `dock-pane` class is left off on purpose: legacy rules hide `.dock-pane` by matching its inline `style` for `left`.
+ */
 const PANEL_CLASS: Partial<Record<TabKind, string>> = {chat: 'conversation', file: 'editor', diff: 'review'};
 export const panelClass = (kind: TabKind) => PANEL_CLASS[kind] ?? kind;
 
@@ -48,7 +51,7 @@ export default function ContentLayer({placements, render, onFocusGroup}: Props) 
             id={'panel-' + id}
             role="tabpanel"
             aria-labelledby={'tab-' + id}
-            className={'tab-content dock-pane dock-' + panel}
+            className={'tab-content dock-' + panel}
             data-tab={id}
             data-kind={tab.kind}
             data-panel={panel}

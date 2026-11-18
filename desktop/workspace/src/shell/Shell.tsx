@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import StudioProjectSwitchDialog from '../features/StudioProjectSwitchDialog';
 import {useBotsNeedYouCount} from '../features/bot-attention';
 import {isSettingsCategory} from '../lib/settings-categories';
@@ -48,6 +48,13 @@ import {RedockCover, useWindowTransfer} from './WindowTransfer';
 export default function Shell() {
   const navigation = useShellNavigation();
   const engine = useShellEngine();
+  // A page that was open in the old layout's overlay has no meaning in the other layout: start from the workspace.
+  const shown = useRef(engine);
+  useLayoutEffect(() => {
+    if (shown.current === engine) return;
+    shown.current = engine;
+    navigation.setManagerState('');
+  }, [engine]);
   return (
     <WorkspaceDataProvider workspace={navigation.workspace} manager={navigation.manager}>
       {/* Keyed by engine: switching layouts remounts the shell, so the hooks of one engine never run beside the other's. */}

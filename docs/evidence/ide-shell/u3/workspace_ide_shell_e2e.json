@@ -1,0 +1,33 @@
+{
+  "steps": [
+    "light: default layout",
+    "light: opened Browser and Editor from the + menu",
+    "light: split right with Control+\\",
+    "light: resized the splitter by keyboard (50 -> 58, Home 5, Enter 50)",
+    "light: split down with the Control+K Control+\\ chord",
+    "light: dragged a tab to the left drop zone of another group",
+    "light: maximized a group with Control+K Z and restored with Escape",
+    "light: opened the bottom panel with Control+J and resized it by keyboard",
+    "light: reloaded: 3 groups and the panel came back",
+    "light: 375px: one tab stack of 4 tabs, tree unchanged",
+    "dark: default layout",
+    "dark: opened Browser and Editor from the + menu",
+    "dark: split right with Control+\\",
+    "dark: resized the splitter by keyboard (50 -> 58, Home 5, Enter 50)",
+    "dark: split down with the Control+K Control+\\ chord",
+    "dark: dragged a tab to the left drop zone of another group",
+    "dark: maximized a group with Control+K Z and restored with Escape",
+    "dark: opened the bottom panel with Control+J and resized it by keyboard",
+    "dark: reloaded: 3 groups and the panel came back",
+    "dark: 375px: one tab stack of 4 tabs, tree unchanged"
+  ],
+  "errors": [],
+  "overflow": [],
+  "axe": {
+    "light-1280-layout": [],
+    "light-375-layout": [],
+    "dark-1280-layout": [],
+    "dark-375-layout": []
+  },
+  "axe_violations": []
+}

@@ -34,7 +34,8 @@ export default function AgentWorkspace(props: Props) {
       <TreeWorkspace
         workspace={workspace}
         tree={layout.tree}
-        panels={{...props.panels, bottom: layout.tree.layout.panel.visible}}
+        // The editor's own drawer (Terminal, Problems, Run & debug, Preview) stays closed: the layout has a real bottom panel.
+        panels={{...props.panels, bottom: false}}
         host={props.tabHost}
         onDetach={props.onDetach}
       />

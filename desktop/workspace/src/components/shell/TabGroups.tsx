@@ -108,8 +108,8 @@ function useMeasure(ref: RefObject<HTMLElement | null>, fixed?: {width: number; 
       const tab = parseFloat(getComputedStyle(node).getPropertyValue('--ide-tab-h'));
       if (tab > 0) setStrip(tab);
       if (fixed) return;
-      // Without ResizeObserver (jsdom) there is no layout to read; keep the fallback.
-      if (typeof ResizeObserver === 'undefined') return;
+      // No layout to read (jsdom, or a container that is display: none): keep the last size, or the fallback.
+      if (typeof ResizeObserver === 'undefined' || box.width === 0 || box.height === 0) return;
       setSize(previous =>
         previous.width === Math.round(box.width) && previous.height === Math.round(box.height)
           ? previous
@@ -243,7 +243,7 @@ function GroupFrame(props: FrameProps) {
   useEffect(() => {
     if (!group.active) return;
     document.getElementById('tab-' + group.active)?.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
-  }, [group.active, group.tabs.length]);
+  }, [group.active, group.tabs.length, rect.w]);
 
   function select(id: string) {
     if (props.onSelect) props.onSelect(id);
@@ -266,6 +266,9 @@ function GroupFrame(props: FrameProps) {
       data-group={group.id}
       data-focused={focused || undefined}
       data-panel-group={group.id === layout.panel.group.id || undefined}
+      // Touching a group's strip makes it the focused group, even when the tab you touched was already the active one.
+      onPointerDownCapture={() => !phone && dispatch({type: 'focusGroup', group: group.id})}
+      onFocusCapture={() => !phone && dispatch({type: 'focusGroup', group: group.id})}
       style={{left: rect.x, top: rect.y, width: rect.w, height: rect.h}}
     >
       <div className="tab-strip">

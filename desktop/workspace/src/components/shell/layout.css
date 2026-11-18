@@ -257,6 +257,9 @@
     min-height: 0;
     overflow: hidden;
   }
+  .tab-content .chat-region {
+    width: 100%;
+  }
   .tab-workspace[data-dragging] .tab-content iframe,
   .tab-workspace[data-dragging] .tab-content canvas {
     pointer-events: none;

@@ -1,5 +1,6 @@
 import {rememberTerminal, recalledTerminal} from '../lib/window-state';
 import {readTerminalSelection, saveTerminalSelection} from '../lib/terminal-selection';
+import {NEW_TERMINAL_EVENT, takeNewTerminalRequest} from '../lib/terminal-requests';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {ChevronDown, ChevronUp, CircleStop, Plus, Trash2, X} from 'lucide-react';
 import {gql, request, type Project} from '../lib/api';
@@ -141,6 +142,19 @@ export default function TerminalPanel({project, onError, workspaceSession, execu
       if (targetGeneration.current.generation === generation) setCreating(false);
     }
   }
+
+  // "New terminal" from a command: take the request once this panel may attach (the host inventory has answered).
+  const wantNew = useRef<boolean | null>(null);
+  if (wantNew.current === null) wantNew.current = takeNewTerminalRequest();
+  const [, wake] = useState(0);
+  useEffect(() => {
+    const request = () => { wantNew.current = takeNewTerminalRequest() || wantNew.current; wake((value) => value + 1); };
+    window.addEventListener(NEW_TERMINAL_EVENT, request);
+    return () => window.removeEventListener(NEW_TERMINAL_EVENT, request);
+  }, []);
+  useEffect(() => {
+    if (wantNew.current && authorized && !creating && project) { wantNew.current = false; void create(); }
+  });
 
   async function close(id: string) {
     if (paused.current || closing) return;

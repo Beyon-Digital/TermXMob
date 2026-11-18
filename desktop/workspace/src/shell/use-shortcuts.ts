@@ -15,6 +15,7 @@ type ShortcutOptions = {
 };
 
 const CHORD_TIMEOUT = 900;
+const MODIFIER_KEYS = new Set(['Meta', 'Control', 'Alt', 'Shift', 'AltGraph', 'OS']);
 
 const steps = (binding: string) => binding.trim().split(/\s+/);
 
@@ -43,6 +44,8 @@ export function useShortcuts(options: ShortcutOptions) {
     const shortcuts = (event: KeyboardEvent) => {
       const current = latest.current;
       if (current.suspended() || event.defaultPrevented || event.isComposing || event.repeat) return;
+      // Pressing a modifier again between the two steps of a chord (Command K, then Command + backslash) is not a stroke.
+      if (MODIFIER_KEYS.has(event.key)) return;
       const surface = shortcutSurface(event.target);
       if (surface === 'remote') return;
       const terminal = surface === 'terminal';

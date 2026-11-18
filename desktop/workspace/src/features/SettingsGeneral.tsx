@@ -5,6 +5,7 @@ import {Select} from '../components/ui/select';
 import {gql} from '../lib/api';
 import type {ThemePreference} from '../lib/theme';
 import type {Bindings} from '../lib/keybindings';
+import {shellEngineLockedByUrl, useShellEngine, writeShellEngine} from '../lib/shell-engine';
 
 const Keybindings=lazy(()=>import('./Keybindings'));
 
@@ -13,6 +14,7 @@ export type SettingsGeneralProps={account:string;theme:ThemePreference;onTheme:(
 /** The Preferences page. Mount it with `key` set to the account and host so a different identity starts clean. */
 export default function SettingsGeneral({account,theme,onTheme,bindings,onBindings,onSignOut}:SettingsGeneralProps){
  const [host,setHost]=useState('Connected host'),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const engine=useShellEngine(),engineLocked=shellEngineLockedByUrl();
  useEffect(()=>{
   let live=true;
   void gql<{machine:{hostname:string}}>('{ machine { hostname } }').then(value=>{if(live&&value.machine?.hostname)setHost(value.machine.hostname)}).catch(()=>{});
@@ -35,6 +37,11 @@ export default function SettingsGeneral({account,theme,onTheme,bindings,onBindin
   <div className="settings-appearance" data-settings-autosave>
    <SettingsSection level={3} title="Appearance">
     <SettingsRow label="Theme" description="System follows your device appearance.">{control=><Select {...control} aria-label="Theme preference" value={theme} onChange={event=>onTheme(event.target.value as ThemePreference)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select>}</SettingsRow>
+   </SettingsSection>
+  </div>
+  <div className="settings-layout-preview" data-settings-autosave>
+   <SettingsSection level={3} title="Workspace layout">
+    <SettingsRow label="Use the new workspace layout (preview)" description={engineLocked?'The address of this window sets the layout. Remove ?shell from it to use this setting.':'Tabs in split groups, a bottom panel and Settings as a tab. Your saved layouts carry over. Takes effect now.'}>{control=><input type="checkbox" {...control} checked={engine==='tree'} disabled={engineLocked} onChange={event=>writeShellEngine(event.target.checked?'tree':'legacy')}/>}</SettingsRow>
    </SettingsSection>
   </div>
   <section className="settings-block" aria-labelledby="preferences-shortcuts" data-settings-autosave>
