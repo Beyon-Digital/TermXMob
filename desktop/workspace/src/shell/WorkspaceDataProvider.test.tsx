@@ -76,6 +76,7 @@ function renderProvider(props: {workspace?: WorkspaceMode; manager?: string} = {
 
 beforeEach(() => {
   shownError = '';
+  data = undefined as unknown as WorkspaceData;
   mocks.request.mockImplementation(async (path: string) => {
     if (path === '/auth/methods') return {configured: true, methods: []};
     if (path === '/auth/me') return auth;
@@ -109,7 +110,7 @@ afterEach(() => {
 describe('WorkspaceDataProvider', () => {
   it('loads projects, installed engines, providers, conversations and pins on demand', async () => {
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     expect(data.sessionsState).toBe('loading');
     await act(async () => {
       await data.load();
@@ -126,7 +127,7 @@ describe('WorkspaceDataProvider', () => {
   it('marks only the failing part as failed and reports what went wrong', async () => {
     mocks.listSessions.mockRejectedValue(new Error('List unavailable'));
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     await act(async () => {
       await data.load();
     });
@@ -137,7 +138,7 @@ describe('WorkspaceDataProvider', () => {
 
   it('does not load while the Data workspace is showing, and loads again when leaving it', async () => {
     const view = renderProvider({workspace: 'data'});
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     await act(async () => {
       await data.load();
     });
@@ -149,7 +150,7 @@ describe('WorkspaceDataProvider', () => {
 
   it('reloads the list with the archive filter when it changes', async () => {
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     await act(async () => {
       await data.load();
     });
@@ -160,7 +161,7 @@ describe('WorkspaceDataProvider', () => {
 
   it('refreshes the list and then re-reads the selected conversation', async () => {
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     act(() => data.setSelected('two'));
     await waitFor(() => expect(data.session?.id).toBe('two'));
     mocks.read.mockClear();
@@ -175,7 +176,7 @@ describe('WorkspaceDataProvider', () => {
 
   it('pins and unpins a project against the stored revision', async () => {
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     await act(async () => {
       await data.load();
     });
@@ -194,7 +195,7 @@ describe('WorkspaceDataProvider', () => {
 
   it('ignores a pin request until the pins have loaded', async () => {
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     await act(async () => {
       await data.pinProject('proj');
     });
@@ -203,7 +204,7 @@ describe('WorkspaceDataProvider', () => {
 
   it('reloads the pins from the host when a pin change fails', async () => {
     renderProvider();
-    await waitFor(() => expect(data).toBeDefined());
+    await screen.findByTestId('state');
     await act(async () => {
       await data.load();
     });

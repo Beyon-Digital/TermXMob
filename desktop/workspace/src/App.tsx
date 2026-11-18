@@ -147,6 +147,7 @@ import {
   type CommandInvocation,
 } from './shell/commands';
 import {useShortcuts} from './shell/use-shortcuts';
+import {RedockCover, useWindowTransfer} from './shell/WindowTransfer';
 import {
   layouts,
   validateDockMap,
@@ -644,11 +645,31 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
 
   const studioProjects = useStudioProjects({ownerId: auth?.principal.id, enabled: studioVisible});
   const studioProjectGuard = useStudioProjectGuard(auth?.principal.id, studioProjectId || null, locked);
-  const [redocking, setRedocking] = useState(false),
-    [recoveryOpen, setRecoveryOpen] = useState(false),
-    [recoveryRows, setRecoveryRows] = useState<
-      (WindowRecord & {drafts: number; buffers: number; artifacts: number})[]
-    >([]);
+  const {
+    redocking,
+    redock,
+    detach,
+    detachSurface,
+    recoverWindows,
+    reopenRecovered,
+    recoveryOpen,
+    setRecoveryOpen,
+    recoveryRows,
+  } = useWindowTransfer({
+    selected,
+    surface: workspaceSurface(layout, dock),
+    onArrive: async ({sessionId, panel, hasBuffers}) => {
+      navigationIntent.current++;
+      setProjectWorkbenchId('');
+      setSelected(sessionId);
+      setManager('');
+      if (hasBuffers) setVisited(old => new Set([...old, 'editor']));
+      chooseLayout(panel);
+      setSession(await sessionCache.current.read(sessionId));
+      clearError();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    },
+  });
   const [collapsed, setCollapsed] = useState<string[]>([]),
     [sessionFilter, setSessionFilter] = useState('all');
   const [bindings, setBindings] = useState<Bindings>({...defaults});
@@ -1456,185 +1477,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
-  }
-  async function applyRedock(event: {
-    id: string;
-    ownerId: string;
-    sessionId: string;
-    panel: WindowPanel;
-    payload: unknown;
-  }) {
-    if (!auth || event.ownerId !== auth.principal.id) throw new Error('Workspace handoff principal changed');
-    const state = validateWindowState(event.payload);
-    if (state.sessionId !== event.sessionId) throw new Error('Workspace handoff conversation changed');
-    const current = await request<Session>('/api/workspace/sessions/' + state.sessionId + '?turns=false');
-    const draft = sessionDrafts.get(state.sessionId);
-    if (
-      state.draft &&
-      draft &&
-      ((draft.dirty &&
-        (draft.text !== state.draft.text ||
-          JSON.stringify(draft.context || []) !== JSON.stringify(state.draft.context || []))) ||
-        (!!draft.attachments?.length &&
-          JSON.stringify(draft.attachments) !== JSON.stringify(state.draft.attachments || [])))
-    )
-      throw new Error('Main workspace has a different unsent draft. Review both windows before returning.');
-    if (
-      state.draft &&
-      (current.draft_text !== state.draft.text ||
-        JSON.stringify(current.draft_context || []) !== JSON.stringify(state.draft.context || []))
-    )
-      throw new Error('Conversation draft changed during handoff; this window remains open');
-    const allowed = await gql<{projects: Project[]}>('query{projects{id name path}}');
-    if (state.buffers.some(buffer => !allowed.projects.some(project => project.id === buffer.project_id)))
-      throw new Error('An editor buffer belongs to a project you can no longer access');
-    for (const artifact of state.artifacts || []) {
-      const current = await request<{project: string | null; kind: string}>(
-        '/api/media/artifacts/' + artifact.artifact_id,
-      );
-      if (current.project !== artifact.project_id || current.kind !== artifact.kind)
-        throw Error('Artifact access or kind changed during handoff.');
-    }
-    await receiveArtifactDrafts(auth.principal.id, state.artifacts || [], event.id);
-    await receiveBuffers(auth.principal.id, state.buffers, event.id);
-    const live = await request<Auth>('/auth/me');
-    if (live.principal.id !== event.ownerId) throw new Error('Workspace handoff principal changed');
-    acceptTransferredDraft(state);
-    if (state.draft) await persistWindowDraft(auth.principal.id, state.sessionId, state.draft);
-    if (state.terminalId) {
-      const visible = await gql<{sessions: {id: string; cwd: string; exited: boolean}[]}>(
-        'query{sessions{id cwd exited}}',
-      );
-      if (
-        !visible.sessions.some(row => row.id === state.terminalId && !row.exited && row.cwd === current.cwd)
-      )
-        throw new Error('Transferred terminal is no longer available in this checkout');
-      rememberTerminal(state.sessionId, state.terminalId);
-      window.dispatchEvent(
-        new CustomEvent('termx-terminal-handoff', {
-          detail: {sessionId: state.sessionId, id: state.terminalId},
-        }),
-      );
-    }
-    navigationIntent.current++;
-    setProjectWorkbenchId('');
-    setSelected(state.sessionId);
-    setManager('');
-    if (state.buffers.length) setVisited(old => new Set([...old, 'editor']));
-    chooseLayout(event.panel);
-    setSession(await sessionCache.current.read(state.sessionId));
-    clearError();
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-  }
-  useEffect(() => {
-    if (!auth) return;
-    let stopped = false,
-      release: (() => void) | undefined;
-    if (nativeWorkspace()) {
-      if (isDetachedWindow()) return;
-      listenNativeRedock(event => {
-        void (async () => {
-          try {
-            if (stopped || !event.sessionId) throw new Error('Workspace handoff unavailable');
-            await applyRedock({...event, sessionId: event.sessionId});
-            if (stopped) throw new Error('Workspace handoff unavailable');
-            await acceptRedock(event.id);
-          } catch (error) {
-            await rejectRedock(event.id).catch(() => {});
-            report(error);
-          }
-        })();
-      })
-        .then(value => {
-          if (stopped) value();
-          else release = value;
-        })
-        .catch(report);
-    } else {
-      release = listenBrowserRedock(auth.principal.id, async event => {
-        if (stopped) throw new Error('Workspace handoff unavailable');
-        await applyRedock(event);
-        if (stopped) throw new Error('Workspace handoff unavailable');
-      });
-    }
-    return () => {
-      stopped = true;
-      release?.();
-    };
-  }, [auth?.principal.id]);
-  useEffect(() => {
-    if (auth && !nativeWorkspace())
-      void persistWindowRecord(auth.principal.id, selected || null, workspaceSurface(layout, dock)).catch(
-        report,
-      );
-  }, [auth?.principal.id, selected, layout, dock]);
-  async function redock() {
-    if (!auth || !selected || redocking) return;
-    setRedocking(true);
-    let token: string | undefined,
-      committed = false;
-    const originalArtifacts = snapshotArtifactDrafts(auth.principal.id);
-    try {
-      await freezeWindowBuffers();
-      await freezeArtifactDrafts();
-      await flushRedockDraft(selected);
-      const state = snapshotWindow(auth.principal.id, selected);
-      token = nativeWorkspace()
-        ? await requestRedock(selected, workspaceSurface(layout, dock), state)
-        : await requestBrowserRedock(auth.principal.id, selected, workspaceSurface(layout, dock), state);
-      if (JSON.stringify(snapshotWindow(auth.principal.id, selected)) !== JSON.stringify(state))
-        throw new Error('Workspace state changed during handoff. This window remains open.');
-      await dropWindowBuffers(auth.principal.id);
-      window.dispatchEvent(new CustomEvent('termx-redock-committing', {detail: true}));
-      if (JSON.stringify(snapshotWindow(auth.principal.id, selected)) !== JSON.stringify(state))
-        throw new Error('Workspace state changed during handoff. This window remains open.');
-      if (nativeWorkspace()) await commitRedock(token);
-      else await commitBrowserRedock(token);
-      await dropArtifactDrafts(auth.principal.id);
-      committed = true;
-    } catch (error) {
-      if (token) {
-        if (nativeWorkspace()) await cancelRedock(token).catch(() => {});
-        else cancelBrowserRedock(token);
-      }
-      report(error);
-    } finally {
-      if (!committed) {
-        unfreezeWindowBuffers();
-        unfreezeArtifactDrafts();
-        await persistArtifactDrafts(auth.principal.id, originalArtifacts).catch(report);
-        await persistBuffers(auth.principal.id, snapshotBuffers(auth.principal.id)).catch(report);
-        window.dispatchEvent(new CustomEvent('termx-redock-committing', {detail: false}));
-        setRedocking(false);
-      }
-    }
-  }
-  async function recoverWindows() {
-    if (!auth) return;
-    try {
-      const rows = await recoverableWindows(auth.principal.id);
-      const candidates = await Promise.all(
-        rows.map(async row => ({
-          ...row,
-          buffers: await bufferCount(auth.principal.id, row.slot),
-          artifacts: (await restoreArtifactDrafts(auth.principal.id, row.slot)).length,
-        })),
-      );
-      setRecoveryRows(candidates.filter(row => row.buffers || row.drafts || row.artifacts));
-      setRecoveryOpen(true);
-    } catch (error) {
-      report(error);
-    }
-  }
-  function detach() {
-    if (nativeWorkspace()) {
-      void detachWorkspace(selected || null, workspaceSurface(layout, dock)).catch(report);
-      return;
-    }
-    if (auth)
-      void openBrowserWindow(auth.principal.id, selected || null, workspaceSurface(layout, dock)).catch(
-        report,
-      );
   }
   const controlPage = ['overview', 'projects', 'tasks'].includes(manager);
   const workspaceControlPage = controlPage || manager === 'workflows';
@@ -2474,12 +2316,7 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
                     geometry={dockGeometry}
                     onGeometry={setDockGeometry}
                     onResizeStart={rememberLayout}
-                    onDetach={panel => {
-                      const target = panelSurface(panel);
-                      if (nativeWorkspace()) void detachWorkspace(selected || null, target).catch(report);
-                      else if (auth)
-                        void openBrowserWindow(auth.principal.id, selected || null, target).catch(report);
-                    }}
+                    onDetach={panel => detachSurface(panelSurface(panel))}
                     children={{
                       editor: visited.has('editor') ? (
                         <Workbench
@@ -2834,12 +2671,7 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
                   {row.buffers} unsaved files · {row.drafts} drafts · {row.artifacts} unsaved artifacts
                 </span>
                 <Button
-                  onClick={() => {
-                    if (!auth || !row.sessionId) return;
-                    void openBrowserWindow(auth.principal.id, row.sessionId, row.panel, row)
-                      .then(() => setRecoveryOpen(false))
-                      .catch(report);
-                  }}
+                  onClick={() => void reopenRecovered(row)}
                   disabled={!row.sessionId}
                 >
                   Reopen window
@@ -2967,11 +2799,7 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
         busy={studioProjectGuard.activity.busy}
         onDecision={studioProjectGuard.decide}
       />
-      {redocking && !locked && (
-        <div className="redock-cover" role="status">
-          Returning your draft and unsaved files to the main workspace…
-        </div>
-      )}
+      {redocking && !locked && <RedockCover />}
     </>
   );
 }
