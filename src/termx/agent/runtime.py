@@ -80,6 +80,8 @@ class ProviderHttpRuntime:
     def __init__(self) -> None:
         self._clients: dict[str, _PooledAsyncClient] = {}
         self._retired: set[_PooledAsyncClient] = set()
+        self._sdk: dict[str, tuple[tuple[Any, ...], Any]] = {}
+        self._retired_sdk: set[Any] = set()
         self._pending: set[asyncio.Task[None]] = set()
 
     def client_for(
@@ -103,7 +105,44 @@ class ProviderHttpRuntime:
             client.timeout = timeout_s
         return client
 
+    def sdk_client_for(self, key: str, signature: tuple[Any, ...], factory: Callable[[], Any]) -> Any:
+        """One pooled SDK client per provider (the Anthropic SDK owns its own httpx2 pool).
+
+        ``signature`` is everything the client was built from (URL, a key digest, timeout): when it
+        changes, the old client is retired like an evicted httpx client and a new one is built.
+        """
+        cached = self._sdk.get(key)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        if cached is not None:
+            self._retire_sdk(self._sdk.pop(key)[1])
+        client = factory()
+        self._sdk[key] = (signature, client)
+        return client
+
+    def _retire_sdk(self, client: Any) -> None:
+        self._retired_sdk.add(client)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # aclose() at shutdown drains it
+        task = loop.create_task(self._deferred_close_sdk(client))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _deferred_close_sdk(self, client: Any) -> None:
+        await asyncio.sleep(_EVICT_GRACE_S)
+        try:
+            await client.close()
+        except Exception:
+            pass
+        else:
+            self._retired_sdk.discard(client)
+
     def evict(self, key: str) -> None:
+        cached = self._sdk.pop(key, None)
+        if cached is not None:
+            self._retire_sdk(cached[1])
         client = self._clients.pop(key, None)
         if client is None:
             return
@@ -130,13 +169,17 @@ class ProviderHttpRuntime:
 
     async def aclose(self) -> None:
         clients = list(self._clients.values()) + list(self._retired)
+        sdk_clients = [client for _, client in self._sdk.values()] + list(self._retired_sdk)
         self._clients.clear()
         self._retired.clear()
+        self._sdk.clear()
+        self._retired_sdk.clear()
         pending = list(self._pending)
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
         await asyncio.gather(
             *(client.aclose() for client in clients),
+            *(client.close() for client in sdk_clients),
             return_exceptions=True,
         )
