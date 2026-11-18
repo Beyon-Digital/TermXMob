@@ -238,12 +238,20 @@ function GroupFrame(props: FrameProps) {
   const [menu, setMenu] = useState<{tab: Tab; x: number; y: number} | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const active = group.tabs.find(tab => tab.id === group.active);
+  // A tab's title can change after it is shown (the conversation's name arrives late) and change its width.
+  const titles = group.tabs.map(titleOf).join('\u0000');
 
-  // Keep the active tab in view when the strip overflows.
+  // Keep the active tab in view when the strip overflows. Scroll the strip itself, not every ancestor: scrollIntoView would
+  // also shift an `overflow: hidden` workspace sideways.
   useEffect(() => {
-    if (!group.active) return;
-    document.getElementById('tab-' + group.active)?.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
-  }, [group.active, group.tabs.length, rect.w]);
+    const strip = list.current;
+    const tab = group.active ? document.getElementById('tab-' + group.active) : null;
+    if (!strip || !tab) return;
+    const a = tab.getBoundingClientRect();
+    const b = strip.getBoundingClientRect();
+    if (a.left < b.left) strip.scrollLeft -= b.left - a.left;
+    else if (a.right > b.right) strip.scrollLeft += a.right - b.right;
+  }, [group.active, group.tabs.length, titles, rect.w]);
 
   function select(id: string) {
     if (props.onSelect) props.onSelect(id);

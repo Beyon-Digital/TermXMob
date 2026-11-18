@@ -9,7 +9,7 @@
     "light: maximized a group with Control+K Z and restored with Escape",
     "light: opened the bottom panel with Control+J and resized it by keyboard",
     "light: reloaded: 3 groups and the panel came back",
-    "light: 375px: one tab stack of 4 tabs, tree unchanged",
+    "light: 375px: 5 desktop layouts shown as one tab stack of 4 tabs, tree unchanged",
     "dark: default layout",
     "dark: opened Browser and Editor from the + menu",
     "dark: split right with Control+\\",
@@ -19,14 +19,16 @@
     "dark: maximized a group with Control+K Z and restored with Escape",
     "dark: opened the bottom panel with Control+J and resized it by keyboard",
     "dark: reloaded: 3 groups and the panel came back",
-    "dark: 375px: one tab stack of 4 tabs, tree unchanged"
+    "dark: 375px: 5 desktop layouts shown as one tab stack of 4 tabs, tree unchanged"
   ],
   "errors": [],
   "overflow": [],
   "axe": {
     "light-1280-layout": [],
+    "light-375-panel-with-terminal": [],
     "light-375-layout": [],
     "dark-1280-layout": [],
+    "dark-375-panel-with-terminal": [],
     "dark-375-layout": []
   },
   "axe_violations": []

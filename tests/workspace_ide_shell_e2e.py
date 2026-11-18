@@ -131,10 +131,15 @@ def run(destination: str, axe_path: str | None) -> None:
                 page.on('pageerror', lambda error: report['errors'].append(str(error)))
                 step = lambda name: report['steps'].append(f'{scheme}: {name}')
 
-                def shot(label: str, width: int = 1280) -> None:
+                books: dict[str, dict] = {}
+
+                def shot(label: str, width: int = 1280, remember: bool = True) -> None:
                     settle(page)
                     page.screenshot(path=str(out / f'{label}-{scheme}-{width}.png'))
                     no_overflow(page, f'{label}-{scheme}-{width}', report)
+                    if remember:
+                        page.wait_for_timeout(300)
+                        books[label] = stored_layout(page)
 
                 # --- default layout: one group, the chat, the side bar open, no panel ---------------------------
                 sign_in(page, base, session['id'])
@@ -197,13 +202,14 @@ def run(destination: str, axe_path: str | None) -> None:
                 page.mouse.move(target_box['x'] + 30, target_box['y'] + target_box['height'] / 2 + 40, steps=12)
                 hint = page.locator('.tab-drop')
                 expect(hint).to_have_attribute('data-zone', 'left')
-                shot('drag-over-drop-zone')
+                shot('drag-over-drop-zone', remember=False)
                 page.mouse.up()
                 expect(page.locator('.tab-drop')).to_have_count(0)
                 step('dragged a tab to the left drop zone of another group')
 
                 # --- maximize and restore -----------------------------------------------------------------------------------
                 count = groups(page)
+                page.get_by_role('tab', name='Editor').click()
                 page.keyboard.press('ControlOrMeta+k')
                 page.keyboard.press('z')
                 expect(page.locator(EDITOR_GROUPS)).to_have_count(1)
@@ -240,7 +246,7 @@ def run(destination: str, axe_path: str | None) -> None:
                 no_overflow(page, f'{scheme}-1280', report)
                 context.close()
 
-                # --- the 375px projection --------------------------------------------------------------------------------------------
+                # --- the 375px projection: every desktop state, folded into one tab stack ----------------------------------
                 phone = browser.new_context(viewport={'width': 375, 'height': 812}, color_scheme=scheme, reduced_motion='reduce', has_touch=False)
                 small = phone.new_page()
                 small.on('pageerror', lambda error: report['errors'].append(str(error)))
@@ -249,28 +255,35 @@ def run(destination: str, axe_path: str | None) -> None:
                 small.get_by_label('Password', exact=True).fill(PASSWORD)
                 small.get_by_role('button', name='Continue with password').click()
                 small.locator('.tab-list').first.wait_for(timeout=60000)
-                # Start from the same stored layout as the desktop window: let the first layout finish saving, copy the
-                # desktop book over it and reload.
-                small.wait_for_timeout(600)
-                small.evaluate("(layout) => { const key = Object.keys(localStorage).find(item => item.startsWith('termx-layout-v2:')) || 'termx-layout-v2:x'; localStorage.setItem(key, JSON.stringify(layout)) }", saved)
-                small.reload()
-                small.locator('.tab-list').first.wait_for(timeout=60000)
-                assert small.locator('.tab-list').count() == 1, 'one stack on a phone'
-                assert small.get_by_role('separator', name='Resize groups').count() == 0
+                small.wait_for_timeout(600)  # let the first layout finish saving before it is replaced
+
+                def seed(book: dict) -> None:
+                    small.evaluate("(book) => { const key = Object.keys(localStorage).find(item => item.startsWith('termx-layout-v2:')) || 'termx-layout-v2:x'; localStorage.setItem(key, JSON.stringify(book)) }", book)
+                    small.reload()
+                    small.locator('.tab-list').first.wait_for(timeout=60000)
+                    settle(small)
+
+                for label, book in books.items():
+                    seed(book)
+                    assert small.locator('.tab-list').count() == 1, f'{label}: one stack on a phone'
+                    assert small.get_by_role('separator', name='Resize groups').count() == 0
+                    small.screenshot(path=str(out / f'{label}-{scheme}-375.png'))
+                    no_overflow(small, f'{label}-{scheme}-375', report)
+                    if label == 'panel-with-terminal':
+                        axe(small, f'{scheme}-375-{label}', report, axe_source)
+
+                seed(saved)
                 small.get_by_role('button', name='Tab actions').click()
                 items = small.get_by_role('menuitem').all_inner_texts()
                 assert 'Split right' not in items and 'Split down' not in items, items
                 small.keyboard.press('Escape')
-                settle(small)
-                small.screenshot(path=str(out / f'phone-projection-{scheme}-375.png'))
-                no_overflow(small, f'phone-{scheme}-375', report)
                 tabs_on_phone = small.get_by_role('tab').count()
                 small.get_by_role('tab').nth(min(1, tabs_on_phone - 1)).click()
                 settle(small)
                 after_phone = stored_layout(small)
                 assert editor_group_count(after_phone) == editor_group_count(saved), f'a phone session must not change the tree: {json.dumps(saved["current"]["root"])} -> {json.dumps(after_phone["current"]["root"])}'
                 axe(small, f'{scheme}-375-layout', report, axe_source)
-                step(f'375px: one tab stack of {tabs_on_phone} tabs, tree unchanged')
+                step(f'375px: {len(books)} desktop layouts shown as one tab stack of {tabs_on_phone} tabs, tree unchanged')
                 phone.close()
             browser.close()
 
