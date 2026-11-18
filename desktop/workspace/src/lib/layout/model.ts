@@ -86,10 +86,11 @@ export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['fil
 
 /**
  * The multi-instance kinds whose tab with no `ref` is only a placeholder (an empty Editor, a Terminal that has not found its
- * shell): asking for the kind with no `ref` reveals any tab of it, and the first `ref` asked for attaches to the placeholder.
- * A ref-less browser tab is a real surface (the whole browser), and a CLI tab always names its session, so neither is here.
+ * shell, a Changes tab that has not picked a file): asking for the kind with no `ref` reveals any tab of it, and the first
+ * `ref` asked for attaches to the placeholder. A ref-less browser tab is a real surface (the whole browser), and a CLI tab
+ * always names its session, so neither is here.
  */
-export const PLACEHOLDER_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal']);
+export const PLACEHOLDER_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal', 'diff']);
 
 /** Kinds that belong in the bottom panel by default. */
 const PANEL_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['terminal', 'problems', 'preview', 'debug']);
