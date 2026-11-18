@@ -21,9 +21,12 @@ describe('tab kind to window panel', () => {
   });
 
   it('maps every instance of a multi-instance kind to the same panel: a file tab to the workbench window, a shell to the terminal window', () => {
-    expect([...MULTI_INSTANCE_KINDS].sort()).toEqual(['file', 'terminal']);
+    expect([...MULTI_INSTANCE_KINDS].sort()).toEqual(['browser', 'cli', 'file', 'terminal']);
     expect(windowPanelForKind('file')).toBe('workbench');
     expect(windowPanelForKind('terminal')).toBe('terminal');
+    // A CLI session streams through the terminal component, so its window is the terminal one; a browser tab's is the browser.
+    expect(windowPanelForKind('cli')).toBe('terminal');
+    expect(windowPanelForKind('browser')).toBe('browser');
     // A detached window opens one tab of the kind with no ref; its buffers and shell arrive through the handoff.
     expect(kindForWindowPanel('workbench')).toBe('file');
     expect(kindForWindowPanel('terminal')).toBe('terminal');

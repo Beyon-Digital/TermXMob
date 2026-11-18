@@ -1,0 +1,17 @@
+/* A browser tab in the IDE layout: the status line under the address bar and the closed-page state. Tokens only. */
+@layer legacy, primitives, shell, surfaces;
+
+@layer surfaces {
+  .browser-workspace .browser-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-8);
+    padding: var(--space-4) var(--space-12);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+}

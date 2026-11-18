@@ -1,6 +1,8 @@
 import {GitBranch, Lock, TriangleAlert} from 'lucide-react';
 import type {ReactNode} from 'react';
+import {Popover, PopoverContent, PopoverTrigger} from '../ui/popover';
 import './chrome.css';
+import './host-status.css';
 
 export type EditorCursor = {line: number; column: number; language: string};
 
@@ -22,6 +24,12 @@ type Props = {
   capture?: ReactNode;
   /** The phone shows a health dot and the approvals badge only. */
   compact?: boolean;
+  /** The host has not answered for more than 30 seconds: the dot turns red and the text says Disconnected. */
+  disconnected?: boolean;
+  /** The host health popover, when this sign-in may read it. Without it the health item is plain text. */
+  hostDetails?: ReactNode;
+  hostOpen?: boolean;
+  onHostOpenChange?: (open: boolean) => void;
   onOpenSourceControl: () => void;
   onOpenProblems: () => void;
   onOpenAgents: () => void;
@@ -32,14 +40,33 @@ type Props = {
 /** The 24px status bar. An item is a button only when it does something; the rest is text. */
 export default function StatusBar(props: Props) {
   const {online, hostName, branch, needYou, cursor} = props;
-  const health = online ? 'Connected' : 'Offline';
+  const health = !online ? 'Offline' : props.disconnected ? 'Disconnected' : 'Connected';
+  const down = !online || !!props.disconnected;
+  const label = (
+    <>
+      <span className={'status-health ' + (down ? 'down' : 'ok')} aria-hidden="true" />
+      {health}
+      {!props.compact && hostName ? ' · ' + hostName : ''}
+    </>
+  );
   const needs = needYou === 1 ? '1 needs you' : needYou + ' need you';
   return (
     <footer className="status-strip" aria-label="Status">
       <span className="status-item" role="status">
-        <span className={'status-health ' + (online ? 'ok' : 'down')} aria-hidden="true" />
-        {health}
-        {!props.compact && hostName ? ' · ' + hostName : ''}
+        {props.hostDetails ? (
+          <Popover open={props.hostOpen} onOpenChange={props.onHostOpenChange}>
+            <PopoverTrigger asChild>
+              <button type="button" className="status-item status-button status-health-button" aria-haspopup="dialog">
+                {label}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="host-popover" side="top" align="start">
+              {props.hostDetails}
+            </PopoverContent>
+          </Popover>
+        ) : (
+          label
+        )}
       </span>
       {!props.compact && branch && (
         <button type="button" className="status-item status-button" onClick={props.onOpenSourceControl}>

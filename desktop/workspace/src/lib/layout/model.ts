@@ -73,13 +73,22 @@ export const LIMITS = {
 } as const;
 
 /**
- * Kinds that can have several tabs at once, one per `ref`: a file tab per open file (`ref` is the buffer key) and a terminal
- * tab per shell (`ref` is the PTY session id). Every other kind is a singleton, because its host is one component with its
- * own state: Chat follows the selected conversation (hosting one Chat per conversation would duplicate its subscriptions
- * and drafts), the browser keeps its own inner tabs, and so on. Opening a singleton that is already open reveals it. The
- * reducer and the validator support multi-instance kinds fully (the reducer takes the set as an option).
+ * Kinds that can have several tabs at once, one per `ref`: a file tab per open file (`ref` is the buffer key), a terminal
+ * tab per shell (`ref` is the PTY session id), a CLI tab per CLI session (`ref` is the session id) and a browser tab per
+ * built-in browser tab (`ref` is the browser tab id; a browser tab with no `ref` is the whole browser, with its own inner
+ * tabs, as before). Every other kind is a singleton, because its host is one component with its own state: Chat follows the
+ * selected conversation (hosting one Chat per conversation would duplicate its subscriptions and drafts), and so on.
+ * Opening a singleton that is already open reveals it. The reducer and the validator support multi-instance kinds fully
+ * (the reducer takes the set as an option).
  */
-export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal']);
+export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal', 'cli', 'browser']);
+
+/**
+ * The multi-instance kinds whose tab with no `ref` is only a placeholder (an empty Editor, a Terminal that has not found its
+ * shell): asking for the kind with no `ref` reveals any tab of it, and the first `ref` asked for attaches to the placeholder.
+ * A ref-less browser tab is a real surface (the whole browser), and a CLI tab always names its session, so neither is here.
+ */
+export const PLACEHOLDER_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal']);
 
 /** Kinds that belong in the bottom panel by default. */
 const PANEL_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['terminal', 'problems', 'preview', 'debug']);

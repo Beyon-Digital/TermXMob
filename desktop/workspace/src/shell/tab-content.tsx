@@ -1,6 +1,7 @@
 import {lazy, type Dispatch, type ReactNode, type SetStateAction} from 'react';
 import {Button} from '../components/ui/button';
 import ControlPlane, {type ControlPage} from '../features/ControlPlane';
+import CliTab from '../features/cli/CliTab';
 import FileTab from '../features/editor/FileTab';
 import ProblemsTab from '../features/editor/ProblemsTab';
 import TerminalTab from '../features/terminal/TerminalTab';
@@ -14,6 +15,7 @@ import type {StudioSection} from '../lib/workspace-mode';
 import type {ThemePreference} from '../lib/theme';
 import type {Layout} from '../lib/use-layout';
 import {useAuth} from './AuthGate';
+import type {PanelOptions} from './agent-panels';
 import {useReport} from './errors';
 import SettingsHost, {type ManagerScope} from './SettingsHost';
 import {useWorkspaceData} from './WorkspaceDataProvider';
@@ -37,14 +39,15 @@ const PANEL_OF_KIND: Partial<Record<TabKind, DockPanel>> = {
 /**
  * What a tab needs from the shell, beyond the panels themselves.
  *
- * File and terminal tabs are multi-instance: a file tab shows the buffer named by its `ref`, a terminal tab the shell named by
- * its `ref`. Every other kind is a singleton, so its `ref` retargets it: the Chat tab follows the selected conversation, a
+ * File, terminal, CLI and browser tabs are multi-instance: a file tab shows the buffer named by its `ref`, a terminal tab the shell
+ * named by its `ref`, a CLI tab the CLI session named by its `ref`, a browser tab the built-in tab named by its `ref` (with no `ref`
+ * it is the whole browser). Every other kind is a singleton, so its `ref` retargets it: the Chat tab follows the selected conversation, a
  * Settings tab shows the category in its `ref`, a Projects tab one of Overview, Projects or Activity, a Workflows tab a run.
  * The panels wrapped here are the same components the old dock shows, unchanged.
  */
 export type TabHost = {
   /** One of the seven Agent panels, as the old dock renders it. */
-  panel: (name: DockPanel, visible: boolean) => ReactNode;
+  panel: (name: DockPanel, visible: boolean, options?: PanelOptions) => ReactNode;
   project: Project | null;
   projectWorkbenchId: string;
   manager: {
@@ -98,6 +101,8 @@ export type TabHostInput = Omit<TabHost, 'panel' | 'closeTab' | 'setDirty' | 'di
 type Props = {tab: Tab; visible: boolean; host: TabHost};
 
 export default function TabContent({tab, visible, host}: Props) {
+  // A browser tab with a ref shows that one built-in tab; with no ref it is the whole browser, as before.
+  if (tab.kind === 'browser' && tab.ref) return <>{host.panel('browser', visible, {browserTab: tab.ref, onClose: () => host.closeTab(tab)})}</>;
   const panel = PANEL_OF_KIND[tab.kind];
   if (panel) return <>{host.panel(panel, visible)}</>;
   switch (tab.kind) {
@@ -114,6 +119,8 @@ export default function TabContent({tab, visible, host}: Props) {
       );
     case 'terminal':
       return <TerminalTabHost tab={tab} visible={visible} host={host} />;
+    case 'cli':
+      return <CliTabHost tab={tab} visible={visible} host={host} />;
     case 'problems':
       return <ProblemsTab project={host.project} onOpenFile={host.openFile} />;
     case 'preview':
@@ -234,6 +241,24 @@ function TerminalTabHost({tab, visible, host}: {tab: Tab; visible: boolean; host
   );
 }
 
+function CliTabHost({tab, visible, host}: {tab: Tab; visible: boolean; host: TabHost}) {
+  const {auth, locked} = useAuth();
+  const report = useReport();
+  if (!tab.ref) return <Unavailable kind="cli" onClose={() => host.closeTab(tab)} />;
+  return (
+    <CliTab
+      sessionId={tab.ref}
+      tabDomId={'tab-' + tab.id}
+      visible={visible}
+      ownerId={auth.principal.id}
+      locked={locked}
+      onClose={() => host.closeTab(tab)}
+      onOpenSession={id => host.dispatch({type: 'openTab', kind: 'cli', ref: id})}
+      onError={report}
+    />
+  );
+}
+
 function PreviewTab({host}: {host: TabHost}) {
   const report = useReport();
   return (
@@ -295,11 +320,11 @@ function StudioTab({visible, host}: {visible: boolean; host: TabHost}) {
   );
 }
 
-/** A tab kind that has no content yet (CLI sessions arrive with the host support). One sentence and one action. */
+/** A tab that has nothing to show (a CLI tab with no session). One sentence and one action. */
 function Unavailable({kind, onClose}: {kind: TabKind; onClose: () => void}) {
   return (
     <div className="tab-empty" role="status">
-      <p>{kind === 'cli' ? 'CLI sessions open here once this host supports them.' : 'This tab has nothing to show.'}</p>
+      <p>{kind === 'cli' ? 'Open a CLI session from the Agents view.' : 'This tab has nothing to show.'}</p>
       <Button variant="outline" onClick={onClose}>
         Close tab
       </Button>

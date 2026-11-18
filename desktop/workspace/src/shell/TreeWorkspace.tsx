@@ -2,7 +2,10 @@ import {Suspense, useEffect, useMemo, useState} from 'react';
 import TabGroups from '../components/shell/TabGroups';
 import {KIND_LABEL, OPENABLE_KINDS, PANEL_OPENABLE_KINDS} from '../components/shell/tab-meta';
 import {useBuffers} from '../features/editor/buffer-store';
+import {useCliSessions} from '../features/cli/CliSessionsProvider';
 import {deletePty} from '../features/terminal/terminal-api';
+import {useBrowserTabTitles} from '../lib/browser-tab-titles';
+import {sessionName} from '../lib/cli-sessions';
 import {allTabs, type Tab} from '../lib/layout/model';
 import type {WindowPanel} from '../lib/window-journal';
 import type {WorkspaceMode} from '../lib/workspace-mode';
@@ -37,6 +40,8 @@ export default function TreeWorkspace({workspace, tree, panels, host, onDetach, 
   const store = useBuffers();
   const report = useReport();
   const [discard, setDiscard] = useState<{paths: string[]; run: () => void} | null>(null);
+  const cliSessions = useCliSessions();
+  const browserTitles = useBrowserTabTitles();
   const terminals = useTerminalTabs({dispatch: tree.dispatch, project: host.project, session, onError: report});
   const tabs = allTabs(tree.layout);
   const terminalRefs = tabs.flatMap(tab => (tab.kind === 'terminal' && tab.ref ? [tab.ref] : []));
@@ -84,6 +89,11 @@ export default function TreeWorkspace({workspace, tree, panels, host, onDetach, 
         const buffer = store.get(key);
         return buffer && {path: buffer.path, recovered: buffer.key.includes(':handoff:')};
       },
+      cli: id => {
+        const row = cliSessions.get(id);
+        return row ? sessionName(row) : undefined;
+      },
+      browser: id => browserTitles.get(id),
     });
 
   return (

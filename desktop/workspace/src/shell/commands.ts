@@ -51,6 +51,11 @@ export interface CommandActions {
   /** Show a side bar view. The old dock has no views and shows the surface that matches. */
   showView: (view: SideBarView) => void;
   openNewChatWithOptions: () => void;
+  /** The agent surfaces (new layout): the New CLI session dialog, the CLI tab that needs a person, the active page as a saved site, the host health popover. */
+  newCliSession: () => void;
+  focusCliSession: () => void;
+  addCurrentSite: () => void;
+  showHostStatus: () => void;
   detachWorkspace: () => void;
   returnToMain: () => void;
   recoverWindows: () => void;
@@ -510,6 +515,41 @@ const treeOnly: Command[] = [
     keywords: 'saved sites browser pinned',
     leavesManager: true,
     run: a => a.showView('sites'),
+  },
+  {
+    id: 'cli-new',
+    title: 'New CLI session',
+    category: 'Terminal',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'claude codex gemini aider cli coding agent terminal session start',
+    run: a => a.newCliSession(),
+  },
+  {
+    id: 'cli-focus',
+    title: 'Focus CLI session',
+    category: 'Terminal',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'claude codex cli session needs approval waiting input attention',
+    run: a => a.focusCliSession(),
+  },
+  {
+    id: 'sites-add-current',
+    title: 'Add current page to Sites',
+    category: 'Browser',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'saved sites pin bookmark browser page',
+    run: a => a.addCurrentSite(),
+  },
+  {
+    id: 'host-status',
+    title: 'Show host status',
+    category: 'Workspace',
+    engine: 'tree',
+    keywords: 'health uptime service holder terminals keep awake heartbeat recovery connection',
+    run: a => a.showHostStatus(),
   },
   {
     id: 'view-data',

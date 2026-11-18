@@ -10,7 +10,7 @@ import type {CoordinationSidebarSummary} from './OrchestratorStatus';
 
 type TreeTask = Omit<Task, 'children'> & {agent_label?: string; delegated_task?: string; updated_at?: number; created_at?: number; parent_id?: string; truncated?: boolean; children?: TreeTask[]};
 type Receipt = {key: string; trees: Record<string, TreeTask>; error: string; retry: string};
-type Props = {ownerId: string; sessionId: string; tasks: Task[]; visible: boolean; enabled: boolean; resolving?: boolean; target: HTMLElement|null; onSummary?: (value: CoordinationSidebarSummary) => void; onInspectTask?: (id: string) => void};
+type Props = {ownerId: string; sessionId: string; tasks: Task[]; visible: boolean; enabled: boolean; resolving?: boolean; target: HTMLElement|null; onSummary?: (value: CoordinationSidebarSummary) => void; onInspectTask?: (id: string) => void; compact?: boolean};
 const emptyChildren: [] = [];
 const title = (task: TreeTask) => [task.agent_label, task.delegated_task, task.prompt].find(value => typeof value === 'string' && value.trim())?.replace(/\s+/g, ' ').trim().slice(0, 160) || 'Untitled subagent';
 function hasChildren(task: Task) {return !!task.children?.length || delegatedActivities(task.events || [], [], task.status).length > 0;}
@@ -31,7 +31,7 @@ function flatten(trees: Record<string, TreeTask>, roots: Task[]) {
 }
 
 /** One bounded, authorized tree reader for this conversation, never global chat history. */
-export default function SessionTaskSubagents({ownerId, sessionId, tasks, visible, enabled, resolving = false, target, onSummary, onInspectTask}: Props) {
+export default function SessionTaskSubagents({ownerId, sessionId, tasks, visible, enabled, resolving = false, target, onSummary, onInspectTask, compact = false}: Props) {
   const roots = useMemo(() => [...new Map(tasks.filter(task => task.engine !== 'coordination' && !task.coordination_report).slice(-10).map(task => [task.id, task])).values()].reverse(), [tasks]);
   const key = ownerId + ':' + sessionId + ':' + roots.map(task => task.id).join(',');
   const [receipt, setReceipt] = useState<Receipt|null>(null), [retry, setRetry] = useState(0);
@@ -66,6 +66,6 @@ export default function SessionTaskSubagents({ownerId, sessionId, tasks, visible
   return <>
     {current?.error && <div className="orchestrator-error" role="alert"><span>Subagent tasks are unavailable. {current.error}</span><Button variant="ghost" size="sm" disabled={!enabled} onClick={() => setRetry(value => value + 1)}><RefreshCw size={14}/>Refresh subagents</Button></div>}
     {attention.length > 0 && <div className="orchestrator-sidebar-attention" role="status"><CircleAlert size={16} aria-hidden="true"/><span>{attention.length} {attention.length === 1 ? 'subagent needs' : 'subagents need'} attention</span><Button variant="ghost" size="sm" onClick={() => inspect(attention[0].id)}>Inspect task</Button></div>}
-    {target && createPortal(<CoordinationSidebar ownerId={key} children={emptyChildren} items={rows} showPlans={false} selected="" loading={loading} stale={!!current?.error} error={current?.error || ''} enabled={enabled} truncated={truncated} truncatedNote="Some task children were omitted. Open the source run to inspect its current tree." note="Subagents from up to 10 recent runs in this conversation." board={null} boardError="" planOpen={false} onPlanOpenChange={() => {}} planContent={null} activity={[]} onOpen={inspect} onRefresh={() => setRetry(value => value + 1)}/>, target)}
+    {target && createPortal(<CoordinationSidebar ownerId={key} children={emptyChildren} items={rows} showPlans={false} selected="" loading={loading} stale={!!current?.error} error={current?.error || ''} enabled={enabled} truncated={truncated} truncatedNote="Some task children were omitted. Open the source run to inspect its current tree." note="Subagents from up to 10 recent runs in this conversation." board={null} boardError="" planOpen={false} onPlanOpenChange={() => {}} planContent={null} activity={[]} onOpen={inspect} onRefresh={() => setRetry(value => value + 1)} compact={compact}/>, target)}
   </>;
 }

@@ -8,9 +8,11 @@ import {writeSidebarSprite} from '../../lib/sidebar-sprite';
 import type {Coordination} from '../use-coordination';
 import AgentsView from './AgentsView';
 import DataView from './DataView';
-import SitesView from './SitesView';
 import SourceControlView from './SourceControlView';
 
+vi.mock('../../features/cli/CliSessionsProvider', () => ({
+  useCliSessions: () => ({sessions: [], loaded: true, available: true, error: '', attention: 0, resumable: 0, get: () => undefined, placeOf: () => ''}),
+}));
 vi.mock('../AgentSidebar', () => ({default: ({listOnly}: {listOnly?: boolean}) => <div data-testid="chat-list" data-list-only={String(!!listOnly)} />}));
 vi.mock('./MainAgentSprite', () => ({default: () => <span data-testid="sprite" />}));
 
@@ -35,6 +37,8 @@ function agents(extra: Partial<React.ComponentProps<typeof AgentsView>> = {}) {
     onOpenConversation: vi.fn(),
     onFindConversation: vi.fn(),
     onReviewNeeds: vi.fn(),
+    onNewCliSession: vi.fn(),
+    onOpenCliSession: vi.fn(),
     ...extra,
   };
   return {props, ...render(<AgentsView {...props} />)};
@@ -86,11 +90,15 @@ describe('AgentsView', () => {
     expect(screen.getByRole('heading', {name: /Sub-agents/})).toHaveTextContent('2 need you');
   });
 
-  it('shows CLI sessions as one sentence with no action', () => {
-    agents();
+  it('shows CLI sessions as one sentence and one ghost action', async () => {
+    const user = userEvent.setup();
+    const {props} = agents();
     const section = screen.getByRole('region', {name: 'CLI sessions'});
-    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
     expect(within(section).getByText(/CLI sessions on this host will appear here/)).toBeInTheDocument();
+    const start = within(section).getByRole('button', {name: 'New CLI session'});
+    expect(start).not.toHaveClass('button-primary');
+    await user.click(start);
+    expect(props.onNewCliSession).toHaveBeenCalled();
   });
 
   it('shows a still character beside Main agent only when the person turned it on', () => {
@@ -163,14 +171,7 @@ describe('SourceControlView', () => {
   });
 });
 
-describe('SitesView and DataView', () => {
-  it('shows Sites as one sentence with no action', async () => {
-    const {container} = render(<SitesView />);
-    expect(screen.getByText('No saved sites yet.')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    await expectNoAxeViolations(container);
-  });
-
+describe('DataView', () => {
   it('gives the Data workspace an element for its navigation', () => {
     const host = vi.fn();
     render(<DataView host={host} />);

@@ -18,6 +18,7 @@ const emptySummary: CoordinationSidebarSummary = {
   done: 0,
   plans: 0,
   stale: false,
+  blocked: 0,
 };
 
 const storageKey = (ownerId: string) => 'termx-coordination-sidebar:' + ownerId;
@@ -92,6 +93,8 @@ export function useCoordination(options: {workspace: WorkspaceMode; manager: str
   return {
     open,
     visible,
+    /** The sub-agents are one compact list under the Agents view's own heading (the new layout). */
+    compact: pinned,
     retained,
     summary,
     tasks,
