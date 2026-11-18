@@ -213,4 +213,10 @@ describe('extension sources and registries',()=>{
  it('sends private registry credentials once without exposing a provider reference or retaining the secret in the form',async()=>{
   mocked.mockImplementation(async(path)=>defaults(path) as any);render(<ExtensionManager data={{}} projectId="p" onChanged={vi.fn()}/>);fireEvent.click(screen.getByText('Public & private registries'));fireEvent.change(screen.getByLabelText('Registry adapter'),{target:{value:'private_https'}});fireEvent.change(screen.getByLabelText('Registry name'),{target:{value:'Private'}});fireEvent.change(screen.getByLabelText('HTTPS index URL'),{target:{value:'https://registry.example/index'}});fireEvent.change(screen.getByLabelText('Registry credential'),{target:{value:'private-fixture-secret'}});fireEvent.click(screen.getByRole('button',{name:'Add registry'}));await waitFor(()=>expect(mocked.mock.calls.some(([p,init])=>p==='/api/workspace/registries'&&init?.method==='POST')).toBe(true));const payload=JSON.parse(String(mocked.mock.calls.find(([p])=>p==='/api/workspace/registries')![1]?.body));expect(payload).toEqual({name:'Private',kind:'private_https',url:'https://registry.example/index',credential:'private-fixture-secret'});expect(screen.getByLabelText('Registry credential')).toHaveValue('');
  });
+ // Recovered from codex/audit-publish-20261029 (tag archive/2026-11-18/branch-audit-publish-20261029).
+ it('keeps source inventory read-only when the host does not advertise an editable root',async()=>{
+  mocked.mockImplementation(async(path)=>path.includes('/compatibility')?{sources:[]}:{sources:[{...source,scope:'user'}],roots:[],diagnostics:[]});
+  render(<ExtensionManager data={{}} projectId={null} onChanged={vi.fn()}/>);
+  await screen.findByRole('heading',{name:'Inspect'});expect(screen.queryByText('Add a skill')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Edit source'})).not.toBeInTheDocument();expect(screen.queryByLabelText('Skill instructions')).not.toBeInTheDocument();
+ });
 });
